@@ -7,8 +7,10 @@ import (
 	"net/http"
 	"time"
 
+	auditapp "github.com/cobo/cobo_iam_services/internal/audit/app"
 	auditappimpl "github.com/cobo/cobo_iam_services/internal/audit/appimpl"
 	auditinmem "github.com/cobo/cobo_iam_services/internal/audit/infra/inmemory"
+	auditmysql "github.com/cobo/cobo_iam_services/internal/audit/infra/mysql"
 	authapp "github.com/cobo/cobo_iam_services/internal/authorization/app"
 	authinmem "github.com/cobo/cobo_iam_services/internal/authorization/infra/inmemory"
 	authmysql "github.com/cobo/cobo_iam_services/internal/authorization/infra/mysql"
@@ -48,7 +50,7 @@ import (
 type Deps struct {
 	Log    *slog.Logger
 	Config config.Config
-	DB     *sql.DB // optional; when set: IAM sessions + credentials + membership query + authz repo + P1 repos + MySQL outbox
+	DB     *sql.DB // optional; when set: IAM sessions + credentials + membership query + authz repo + audit_logs + P1 repos + MySQL outbox
 }
 
 // New builds the full API http.Handler and an optional cleanup (e.g. close Redis).
@@ -100,7 +102,11 @@ type pingDB interface {
 func register(mux *http.ServeMux, log *slog.Logger, sqlDB pingDB, projectionStore authprojection.SnapshotStore, outboxRepo platformoutbox.Repository, pool *sql.DB, outboxSQL *outboxmysql.Repository) {
 	id := idgen.UUIDv7Generator{}
 	tokenManager := iaminmem.NewTokenManager(id)
-	auditRepo := auditinmem.NewRepository()
+	var auditRepo auditapp.Repository = auditinmem.NewRepository()
+	if pool != nil {
+		auditRepo = auditmysql.NewRepository(pool)
+		log.Info("audit logs using MySQL (audit_logs)")
+	}
 	auditSvc := auditappimpl.NewService(auditRepo, platformclock.System{}, id)
 	outboxPublisher := platformoutbox.NewPublisher(outboxRepo)
 

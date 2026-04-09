@@ -21,4 +21,5 @@
 ## Luu y van hanh
 
 - Bang P1 FK toi `companies` — can co company hop le trong DB (fixture / seed) truoc khi insert disclosure/workflow/notification.
-- Authz van in-memory; membership query van in-memory — user `u_123`/`m_001`/`c_001` khop fixture.
+- Khi co `MYSQL_DSN`: IAM session/credential + membership query + authorization runtime doc MySQL; migration **0005** + seed `seed_dev_identity_authorization.sql` cho dev. Khong DSN: authz + membership + IAM session van in-memory fixture.
+- Chi tiet IAM/authz MySQL: `docs/ai-cache/cobo-iam-services-iam-authz-mysql-summary.md`.

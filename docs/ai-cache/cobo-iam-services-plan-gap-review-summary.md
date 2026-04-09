@@ -1,59 +1,66 @@
-# Rà soát logic vs implementation-step-by-step (tóm tắt)
+# Rà soát code vs plan (`implementation-step-by-step.md`) — cập nhật
 
-Ngày tham chiếu: plan `docs/implementation-step-by-step.md` + code tree hiện tại.
+Tham chiếu: `docs/implementation-step-by-step.md` + wire `internal/httpserver/server.go`.
 
-## Đã khớp plan (ở mức bootstrap / tối thiểu)
+## Đã khớp / đã bù so với plan (bootstrap → runtime DB)
 
-- P0.1–P0.3, P0.5–P0.6 (kể cả `/me/capabilities`), P2.2 Redis, P2.3 hooks, README, outbox MySQL + worker poll + backoff cơ bản.
-- P1 HTTP + authorize + MySQL repos disclosure/workflow/notification (0004), transactional notification enqueue + outbox.
+- **P0.1–P0.3**, **P0.4** (login, refresh **rotation**, select/switch, logout), **P0.5–P0.6** (authorize, me, effective access, capabilities theo tiến độ đã implement).
+- **P0.8** (khi `MYSQL_DSN`): IAM **sessions + credentials** MySQL; **membership query** MySQL; **authorization repository** MySQL (permissions/assignments/departments + `membership_effective_responsibilities`); migration **0005** + seed dev.
+- **Audit**: khi có DSN ghi **`audit_logs`** (`internal/audit/infra/mysql`); không DSN vẫn in-memory.
+- **P1 HTTP + MySQL**: disclosure / workflow / notification repos 0004; **notification enqueue** transactional với outbox MySQL.
+- **P2.2** Redis cache projection; **P2.3** SSO/MFA hooks (interfaces).
+- **Outbox MySQL** + worker poll + **backoff** retry cơ bản (`internal/platform/outbox`).
 - Integration smoke `internal/httpserver` (không DB).
 
-## Khoảng trống chính (theo mức độ rủi ro / plan)
+## Khoảng trống còn lại (ưu tiên theo rủi ro / plan)
 
-### A. IAM & session (P0.4)
+### 1. Admin P1.4 — persist
 
-- **Refresh token rotation**: **đã bổ sung** — `Refresh` phát `refresh_token` mới + `RotateRefreshToken`; token cũ vô hiệu. Client bắt buộc lưu token mới (xem `docs/api-contracts-json.md`).
+- `adminRepo := cainmem.NewAdminRepository()` — **chưa** có `AdminRepository` MySQL; thay đổi access model **không** sống qua restart khi chỉ có DB cho runtime khác.
 
-### B. Dữ liệu runtime vs schema 0001 (P0.2 / Sec 14)
+### 2. Authorization — checker vs DB
 
-- **IAM** (`users`, `credentials`, `sessions`, …): schema có, **runtime vẫn in-memory** (static user + session map).
-- **Authorization** (`permissions`, `role_permissions`, …): **chưa đọc từ MySQL**; resolver/checker dùng fixture in-memory.
-- **Audit**: **in-memory**; `AppendAuditLog` có field snapshot nhưng admin/iam hook **chưa gửi** `effective_*_snapshot` đầy đủ theo Sec 16.
-- **Idempotency**: bảng `idempotency_keys` có, **chưa gắn** vào confirm/submit/approve.
+- **Resolver** đọc DB (hoặc fixture khi không DSN); **checker** vẫn `authinmem.NewChecker()` — map action → permission **cố định trong code**. Plan muốn consistency end-to-end: cần rà soát drift checker vs `permissions`/`role_permissions` trong DB (hoặc generate checker từ DB sau này).
 
-### C. Projection P2.1
+### 3. Audit đầy đủ (Sec 16)
 
-- Migration **0003** tạo bảng projection (`membership_effective_*`) nhưng **không có** code ghi/đọc hay **recompute từ outbox** (plan: “Recompute tu outbox events”).
-- Cache hiện tại là **snapshot resolver in-memory/Redis**, không đồng bộ với bảng 0003.
+- Cột `effective_permissions_snapshot` / `effective_scope_snapshot` có trong schema; **IAM/admin hooks hiện ít khi gửi** (metadata có, snapshot thường trống).
+- **login_attempts** (0001): schema có thể có — **chưa** ghi rate/audit login attempt từ app.
 
-### D. Outbox & worker (P0.7 / Sec 15)
+### 4. Idempotency (0001)
 
-- **Transactional outbox toàn diện**: mới **notification enqueue**; disclosure/workflow/admin chưa gắn tx chung.
-- **Jitter** retry, **dead-letter** `failed_permanent`, **idempotent consumer** có kiểm thử — chưa.
-- Worker chỉ đăng ký `notification.dispatch`; **không** có consumer cập nhật projection.
+- Bảng `idempotency_keys` — **chưa** gắn confirm/submit/approve/disclosure theo plan.
 
-### E. P1 nghiệp vụ (độ sâu so với mô tả plan)
+### 5. Projection P2.1 / 0003
 
-- **Disclosure**: chưa có `disclosure_histories`, state machine/audit theo Sec 16 đầy đủ.
-- **Workflow**: chưa có **definition** / **optimistic locking** / bảng `tasks` như matrix Sec 14 (đang dùng `workflow_tasks` đơn giản trong 0004).
-- **Notification**: `ResolveRecipients` **stub** (trả về membership hiện tại); chưa role/department/title/workflow như plan P1.3.
+- Resolver **đọc** `membership_effective_responsibilities` khi dùng MySQL repo; **không có** pipeline **ghi/recompute** từ outbox events (worker không cập nhật projection). Dữ liệu projection phụ thuộc migration/seed hoặc công cụ ngoài.
 
-### F. Admin P1.4
+### 6. Outbox & worker (P0.7 / Sec 15)
 
-- Route skeleton + audit hook cơ bản có; **persist MySQL** cho membership/role/rule **vẫn in-memory** (`cainmem.AdminRepository`).
+- Transactional outbox **toàn diện**: mới **notification enqueue**; disclosure/workflow **chưa** cùng transaction với outbox.
+- **Jitter** retry, **dead-letter** `failed_permanent`, test idempotent consumer **nâng cao** — chưa đủ so Sec 15.
+- Worker chỉ xử lý `notification.dispatch` (log); **không** consumer cập nhật projection / domain side-effect thật (email, v.v.).
 
-### G. Test & deliverables (Sec 6–7, 18–19)
+### 7. P1 độ sâu nghiệp vụ
 
-- Thiếu: integration **với MySQL** (auth + tenant), **migration smoke** tự động, suite authorize regression đủ dòng Sec 18.1, worker poison/dead-letter.
-- **TODO.md** (Sec 19 deliverables) **chưa có**.
+- **Disclosure**: chưa dùng `disclosure_histories` / state machine + audit theo matrix đầy đủ.
+- **Workflow**: schema 0004 đơn giản (`workflow_tasks`…), **chưa** đủ definition/optimistic locking như Sec 14 mô tả dài hạn.
+- **Notification**: `ResolveRecipients` **stub** (trả membership hiện tại); chưa role/department/title/workflow như P1.3.
 
-### H. Lệch tài liệu nội bộ
+### 8. Test & deliverables (Sec 6–7, 19)
 
-- Sec 14 ghi nhãn migration `0002_business_modules` / `0003_projection_opt`; repo thực tế: **0003** projection + **0004** P1 tables — nên đồng bộ lại doc để tránh nhầm thứ tự.
+- Thiếu: integration **có MySQL** (auth + tenant), migration smoke tự động trong CI, suite regression authorize theo Sec 18.
+- **`TODO.md`** (Sec 19) **chưa có** trong repo.
 
-## Gợi ý thứ tự xử lý
+### 9. Tài liệu
 
-1. Refresh rotation + (tuỳ ưu tiên) IAM session trên MySQL.
-2. Đồng bộ projection: hoặc wire đọc 0003 hoặc đơn giản hoá doc nếu chỉ dùng cache resolver.
-3. Outbox: jitter + dead-letter + test idempotent.
-4. P1 sâu: admin MySQL, resolver MySQL, recipient thật cho notification.
+- Sec 14 entity matrix vẫn có thể lệch tên bảng thực tế (0004 dùng tên cụ thể khác một phần so “target tree”) — khi chỉnh plan nên đối chiếu `migrations/*.sql`.
+
+## Gợi ý thứ tự xử lý tiếp
+
+1. **Admin MySQL** (P1.4) nếu cần quản trị access thật trên DB.
+2. **Checker** đồng bộ với model permission trong DB hoặc test matrix chống drift.
+3. **Idempotency** cho API nhạy cảm; **login_attempts** nếu cần security baseline.
+4. Outbox: jitter + dead-letter + mở rộng transactional cho luồng cần consistency.
+5. Projection writer / consumer hoặc đơn giản hóa plan nếu chỉ maintain SQL batch.
+6. P1 sâu: disclosure history, notification recipients, workflow definition.

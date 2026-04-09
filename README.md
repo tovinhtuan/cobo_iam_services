@@ -5,9 +5,10 @@ Dịch vụ IAM / phân quyền / company context cho nền tảng Cobo (Go). Ha
 ## Kiến trúc tóm tắt
 
 - **Transport HTTP**: `/api/v1` (client), `/internal/v1` (authorize nội bộ).
-- **IAM**: login, refresh, logout, select/switch company, JWT/opaque token (in-memory bootstrap).
-- **Authorization**: resolver + checker, effective access, projection cache (in-memory / Redis tùy cấu hình).
-- **Audit + Outbox**: audit in-memory; outbox **MySQL** khi có `MYSQL_DSN`, không thì in-memory (chỉ dev).
+- **IAM**: login, refresh, logout, select/switch company, JWT/opaque token. Khi có **`MYSQL_DSN`**: credential + session (refresh hash SHA-256) lưu MySQL; không DSN thì in-memory (dev).
+- **Company context**: membership/company/role khi có **`MYSQL_DSN`** đọc MySQL; không DSN thì fixture in-memory.
+- **Authorization**: resolver + checker + effective access. Khi có **`MYSQL_DSN`**: permissions/assignments/departments join runtime + responsibilities từ `membership_effective_responsibilities`; cache Redis/TTL tùy cấu hình. Không DSN: fixture in-memory.
+- **Audit + Outbox**: khi có **`MYSQL_DSN`** ghi **`audit_logs`** (MySQL); không DSN thì audit in-memory. Outbox **MySQL** khi có DSN, không thì in-memory (chỉ dev).
 - **Module nghiệp vụ**: disclosure, workflow, notification, company access admin — chủ yếu skeleton + in-memory.
 
 ## Ranh giới module (gói chính)
@@ -46,7 +47,8 @@ Chưa tích hợp CLI migrate trong repo; áp file SQL theo thứ tự:
 
 1. `migrations/0001_init_core.up.sql`
 2. `migrations/0003_effective_access_projection.up.sql`
-3. `migrations/0004_p1_business_tables.up.sql` (disclosure / workflow / notification)
+3. `migrations/0004_p1_business_tables.up.sql` (disclosure / workflow / notification; FK tới `companies` — cần có company hợp lệ trước khi seed/ghi nghiệp vụ)
+4. `migrations/0005_sessions_refresh_hash_unique.up.sql` (unique `sessions.refresh_token_hash` — lookup refresh an toàn)
 
 Ví dụ:
 
@@ -54,9 +56,20 @@ Ví dụ:
 mysql -u user -p cobo_iam < migrations/0001_init_core.up.sql
 mysql -u user -p cobo_iam < migrations/0003_effective_access_projection.up.sql
 mysql -u user -p cobo_iam < migrations/0004_p1_business_tables.up.sql
+mysql -u user -p cobo_iam < migrations/0005_sessions_refresh_hash_unique.up.sql
 ```
 
 Rollback: chạy tương ứng file `*.down.sql` (theo thứ tự ngược).
+
+### Seed dev (IAM + authorization khớp fixture in-memory cũ)
+
+Sau khi chạy các migration trên, có thể nạp dữ liệu dev (`user@example.com` / `single@example.com`, mật khẩu `secret`, bcrypt cố định trong file):
+
+```bash
+mysql -u user -p cobo_iam < migrations/seed_dev_identity_authorization.sql
+```
+
+File seed dùng `ON DUPLICATE KEY UPDATE`; nên chạy sau **0001**, **0003**, khuyến nghị sau **0004** (nếu cần FK đầy đủ) và **0005**. Chi tiết xem comment đầu file seed.
 
 ## Biến môi trường
 
@@ -64,7 +77,7 @@ Xem `configs/config.example.env`. Các biến thường dùng:
 
 | Biến | Ý nghĩa |
 |------|---------|
-| `MYSQL_DSN` | Kết nối MySQL; bật outbox durable + `/readyz` ready khi ping OK |
+| `MYSQL_DSN` | Kết nối MySQL: outbox durable, IAM session/credential, membership query, authorization từ DB, **audit_logs**, disclosure/workflow/notification MySQL; `/readyz` ready khi ping OK |
 | `HTTP_ADDR` | API bind, mặc định `:8080` |
 | `REDIS_ADDR` | Tùy chọn — cache effective-access projection |
 | `EFFECTIVE_ACCESS_CACHE_TTL` | TTL cache projection |
@@ -103,12 +116,14 @@ Integration smoke (không cần MySQL): package `internal/httpserver` — `healt
 
 ## Hạn chế đã biết (bootstrap)
 
-- IAM session/credential/audit: in-memory, mất khi restart.
+- **Không `MYSQL_DSN`**: IAM session/credential, membership query, authorization resolver vẫn in-memory (mất session khi restart; fixture cố định).
+- **Audit** không DSN: in-memory (không persist); có DSN: insert `audit_logs`.
 - **Notification enqueue** khi có MySQL + outbox MySQL: `notification_jobs` + `outbox_events` trong **một transaction** (`notificationapp.WithTransactionalEnqueue`). Các module khác vẫn autocommit từng lệnh.
-- Resolver/checker authorization: in-memory fixture, chưa đọc full từ DB production.
+- **Admin / access model APIs** vẫn chủ yếu in-memory skeleton (chưa đồng bộ full CRUD lên MySQL như runtime authz).
 - MySQL outbox cần **8.0+** (`FOR UPDATE SKIP LOCKED`).
 
 ## Tài liệu thêm
 
-- `docs/implementation-step-by-step.md` — lộ trình và DoD.
+- `docs/implementation-step-by-step.md` — lộ trình và DoD (Step **P0.8** — IAM + authz MySQL).
 - `docs/api-contracts-json.md` — ví dụ JSON API.
+- `docs/ai-cache/cobo-iam-services-iam-authz-mysql-summary.md` — tóm tắt wire MySQL cho IAM / membership / authorization.

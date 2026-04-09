@@ -193,6 +193,27 @@ Moi buoc duoc coi la hoan thanh khi dap ung du:
 **Rollback**
 - Worker co the stop rieng; ghi outbox van ton tai de xu ly lai.
 
+---
+
+### Step P0.8 - MySQL persistence cho IAM session/credential, membership query, authorization runtime
+**Muc tieu**
+- Khi `MYSQL_DSN` set: login/refresh/logout/select/switch dung session + credential tu DB; `/me` + company list tu membership MySQL; internal authorize + effective access doc permissions/assignments/departments + bang projection responsibilities.
+
+**Cong viec**
+- Migration `0005_sessions_refresh_hash_unique`: UNIQUE tren `sessions.refresh_token_hash` (lookup refresh theo hash SHA-256 hex, khong luu plaintext refresh).
+- `internal/iam/infra/mysql`: `SessionRepository` (create, find-by-refresh-hash, revoke, update context, rotate refresh), `CredentialVerifier` (bcrypt `users`+`credentials`) + `GetByUserID` cho `/me`.
+- `internal/companyaccess/infra/mysql`: `MembershipQueryService` (memberships, companies, roles, departments, titles).
+- `internal/authorization/infra/mysql`: repository list permission codes, department scopes, assignments; responsibilities tu `membership_effective_responsibilities` (migration 0003).
+- `internal/httpserver`: neu `pool != nil` wire cac repo MySQL tren; `NewMeHandler` nhan `IdentityQueryService` (cung implementation voi verifier MySQL hoac static in-memory).
+- Seed dev: `migrations/seed_dev_identity_authorization.sql` (chay sau 0001, 0003, khuyen nghi 0004 + 0005).
+
+**Acceptance checks**
+- `go build ./...` va `go test ./...` pass.
+- Voi DB da migrate + seed: login `user@example.com`/`secret`, refresh rotation, authorize batch khop fixture.
+
+**Rollback**
+- Tat `MYSQL_DSN` => fallback in-memory nhu bootstrap; down migration 0005 neu can go unique index (tru khi da phu thuoc logic refresh).
+
 ## 4) P1 - Business Modules
 
 ### Step P1.1 - Disclosure module
@@ -241,6 +262,10 @@ Moi buoc duoc coi la hoan thanh khi dap ung du:
 - Migration `0004_p1_business_tables` + repo MySQL cho disclosure/workflow/notification; API dung khi `MYSQL_DSN` set.
 - `internal/httpserver` tap trung wire HTTP; notification enqueue transactional voi outbox MySQL (`WithTransactionalEnqueue`).
 
+### Tien do (P0.8 IAM + authz MySQL)
+- Migration `0005` + seed `seed_dev_identity_authorization.sql`.
+- IAM session/credential + companyaccess query + authorization infra/mysql khi co DSN (xem Step P0.8).
+
 ### P0 tests
 - Unit:
   - login rules (1/nhieu/0 company)
@@ -276,11 +301,12 @@ Moi buoc duoc coi la hoan thanh khi dap ung du:
 5. `P0.5` Internal authorize core
 6. `P0.6` Me/effective access APIs
 7. `P0.7` Audit + outbox worker skeleton
-8. `P1.1` Disclosure
-9. `P1.2` Workflow
-10. `P1.3` Notification
-11. `P1.4` Admin APIs hoan thien
-12. `P2.*` Optimization/features mo rong
+8. `P0.8` MySQL IAM sessions/credentials + membership query + authorization runtime (+ migration 0005 + seed dev)
+9. `P1.1` Disclosure
+10. `P1.2` Workflow
+11. `P1.3` Notification
+12. `P1.4` Admin APIs hoan thien
+13. `P2.*` Optimization/features mo rong
 
 ## 9) Anti-patterns can tranh
 
@@ -304,12 +330,13 @@ Bang nay map yeu cau prompt -> tai lieu -> implementation step de tranh bo sot.
 | External auth/authz APIs | Sec 3, Sec 12 | P0.4, P0.6 |
 | Internal authorize APIs | Sec 3, Sec 12, Sec 13 | P0.5 |
 | Admin access APIs + audit | Sec 4, Sec 12 | P1.4 |
-| MySQL schema + indexes | Sec 3, Sec 14 | P0.2, P1.1, P1.2, P1.3, P2.1 |
+| MySQL schema + indexes | Sec 3, Sec 14 | P0.2, P0.8, P1.1, P1.2, P1.3, P2.1 |
+| IAM session/credential + authz runtime tu DB | Sec 3, Sec 14 | P0.8 |
 | Outbox + async worker | Sec 3, Sec 15 | P0.7, P1.3, P2.1 |
 | Audit requirements | Sec 3, Sec 16 | P0.7, P1.4 |
 | Reliability/production patterns | Sec 2, Sec 17 | P0-P2 (all) |
 | Test and verification strategy | Sec 6, Sec 7, Sec 18 | P0-P2 (all) |
-| README/TODO/local run deliverables | Sec 19 | P0.1 + P0.2 + P0.7 |
+| README/TODO/local run deliverables | Sec 19 | P0.1 + P0.2 + P0.7 + P0.8 (migration 0005 + seed) |
 
 ## 11) Module Package Blueprint (final target tree)
 
@@ -451,8 +478,9 @@ Mandatory guard order for every authorize path:
 ### 14.1 Table batches by migration
 
 - `0001_init_core`: IAM + CompanyAccess + Authorization core + Audit + Outbox + Idempotency
-- `0002_business_modules`: Workflow + Disclosure + Notification
-- `0003_projection_opt`: effective access projections/snapshots + optimization indexes
+- `0003_effective_access_projection`: projection `membership_effective_responsibilities` (+ indexes lien quan)
+- `0004_p1_business_tables`: Disclosure + Workflow + Notification (runtime P1)
+- `0005_sessions_refresh_hash_unique`: unique index `sessions.refresh_token_hash`
 
 ### 14.2 Entity -> table mapping
 
@@ -634,9 +662,10 @@ README sections to include:
 5. P0.5 internal authorize and resolver
 6. P0.6 me/effective-access/capabilities/membership endpoints
 7. P0.7 audit + outbox worker skeleton
-8. P1 disclosure
-9. P1 workflow
-10. P1 notification
-11. P1 admin APIs
-12. P2 projection/cache/SSO-MFA hooks
+8. P0.8 MySQL IAM sessions/credentials + membership query + authorization runtime (0005 + seed dev)
+9. P1 disclosure
+10. P1 workflow
+11. P1 notification
+12. P1 admin APIs
+13. P2 projection/cache/SSO-MFA hooks
 
