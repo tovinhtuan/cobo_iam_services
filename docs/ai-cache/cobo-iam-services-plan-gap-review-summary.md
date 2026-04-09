@@ -9,14 +9,16 @@ Tham chiếu: `docs/implementation-step-by-step.md` + wire `internal/httpserver/
 - **Audit**: khi có DSN ghi **`audit_logs`** (`internal/audit/infra/mysql`); không DSN vẫn in-memory.
 - **P1 HTTP + MySQL**: disclosure / workflow / notification repos 0004; **notification enqueue** transactional với outbox MySQL.
 - **P2.2** Redis cache projection; **P2.3** SSO/MFA hooks (interfaces).
-- **Outbox MySQL** + worker poll + **backoff** retry cơ bản (`internal/platform/outbox`).
+- **Outbox MySQL** + worker poll + **backoff** + **jitter** + **`failed_permanent`** sau 10 retry (`MarkFailedPermanent`).
+- **Admin P1.4 MySQL** khi có DSN: `companyaccess/infra/mysql` + migration **0006** (workflow/notification rule tables); `ListRoles` theo company (global + company-scoped **role_id**).
+- **`TODO.md`** root: backlog còn lại (idempotency, projection writer, P1 sâu, …).
 - Integration smoke `internal/httpserver` (không DB).
 
 ## Khoảng trống còn lại (ưu tiên theo rủi ro / plan)
 
-### 1. Admin P1.4 — persist
+### 1. Admin P1.4 — đã có MySQL khi DSN
 
-- `adminRepo := cainmem.NewAdminRepository()` — **chưa** có `AdminRepository` MySQL; thay đổi access model **không** sống qua restart khi chỉ có DB cho runtime khác.
+- (Hoàn thành phần persist chính.) Lưu ý: `GET /admin/permissions` trả **permission_id** (UUID) khi MySQL; in-memory dev vẫn trả mã ngắn — client cần khớp môi trường.
 
 ### 2. Authorization — checker vs DB
 
@@ -38,8 +40,8 @@ Tham chiếu: `docs/implementation-step-by-step.md` + wire `internal/httpserver/
 ### 6. Outbox & worker (P0.7 / Sec 15)
 
 - Transactional outbox **toàn diện**: mới **notification enqueue**; disclosure/workflow **chưa** cùng transaction với outbox.
-- **Jitter** retry, **dead-letter** `failed_permanent`, test idempotent consumer **nâng cao** — chưa đủ so Sec 15.
-- Worker chỉ xử lý `notification.dispatch` (log); **không** consumer cập nhật projection / domain side-effect thật (email, v.v.).
+- **Jitter** + **failed_permanent** (10 lần) + unit test cơ bản **đã có**; còn thiếu: reclaim event kẹt `processing`, idempotent consumer nâng cao, side-effect thật (email).
+- Worker chỉ xử lý `notification.dispatch` (log); **không** consumer cập nhật projection.
 
 ### 7. P1 độ sâu nghiệp vụ
 
@@ -50,7 +52,7 @@ Tham chiếu: `docs/implementation-step-by-step.md` + wire `internal/httpserver/
 ### 8. Test & deliverables (Sec 6–7, 19)
 
 - Thiếu: integration **có MySQL** (auth + tenant), migration smoke tự động trong CI, suite regression authorize theo Sec 18.
-- **`TODO.md`** (Sec 19) **chưa có** trong repo.
+- **`TODO.md`**: đã thêm; cần thực thi các mục trong file.
 
 ### 9. Tài liệu
 
@@ -58,9 +60,8 @@ Tham chiếu: `docs/implementation-step-by-step.md` + wire `internal/httpserver/
 
 ## Gợi ý thứ tự xử lý tiếp
 
-1. **Admin MySQL** (P1.4) nếu cần quản trị access thật trên DB.
-2. **Checker** đồng bộ với model permission trong DB hoặc test matrix chống drift.
-3. **Idempotency** cho API nhạy cảm; **login_attempts** nếu cần security baseline.
-4. Outbox: jitter + dead-letter + mở rộng transactional cho luồng cần consistency.
-5. Projection writer / consumer hoặc đơn giản hóa plan nếu chỉ maintain SQL batch.
-6. P1 sâu: disclosure history, notification recipients, workflow definition.
+1. **Checker** đồng bộ với model permission trong DB hoặc test matrix chống drift.
+2. **Idempotency** cho API nhạy cảm; **login_attempts** nếu cần security baseline.
+3. Outbox: transactional cho disclosure/workflow khi cần; reclaim `processing`; consumer thật.
+4. Projection writer / consumer hoặc đơn giản hóa plan nếu chỉ maintain SQL batch.
+5. P1 sâu: disclosure history, notification recipients, workflow definition.

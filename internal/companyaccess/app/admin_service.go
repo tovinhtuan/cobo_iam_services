@@ -94,7 +94,7 @@ func (s *adminService) ListRoles(ctx context.Context, req AdminSubjectRequest) (
 	if err := s.authorize(ctx, req.Subject, "admin.roles.list", ""); err != nil {
 		return nil, err
 	}
-	return s.repo.ListRoles(ctx)
+	return s.repo.ListRoles(ctx, req.Subject.CompanyID)
 }
 func (s *adminService) AssignRolePermission(ctx context.Context, req AssignRolePermissionRequest) error {
 	if err := s.authorize(ctx, req.Subject, "admin.role.permission.assign", req.RoleID); err != nil {

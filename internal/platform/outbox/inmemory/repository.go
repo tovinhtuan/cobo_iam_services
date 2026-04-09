@@ -79,3 +79,14 @@ func (r *Repository) MarkRetry(_ context.Context, eventID string, retryCount int
 	}
 	return nil
 }
+
+func (r *Repository) MarkFailedPermanent(_ context.Context, eventID string, at time.Time, lastErr string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if it, ok := r.events[eventID]; ok {
+		it.Status = "failed_permanent"
+		it.LastError = lastErr
+		it.ProcessedAt = &at
+	}
+	return nil
+}

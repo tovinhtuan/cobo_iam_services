@@ -39,7 +39,8 @@ type AdminRepository interface {
 	RemoveTitle(ctx context.Context, membershipID, titleID string) error
 
 	ListPermissions(ctx context.Context) ([]string, error)
-	ListRoles(ctx context.Context) ([]string, error)
+	// ListRoles returns role_id values for the given company: global roles (company_id NULL) plus roles scoped to that company.
+	ListRoles(ctx context.Context, companyID string) ([]string, error)
 	AddRolePermission(ctx context.Context, roleID, permissionID string) error
 	RemoveRolePermission(ctx context.Context, roleID, permissionID string) error
 

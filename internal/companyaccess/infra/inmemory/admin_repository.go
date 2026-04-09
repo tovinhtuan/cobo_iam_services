@@ -132,7 +132,7 @@ func (r *AdminRepository) ListPermissions(_ context.Context) ([]string, error) {
 	}
 	return out, nil
 }
-func (r *AdminRepository) ListRoles(_ context.Context) ([]string, error) {
+func (r *AdminRepository) ListRoles(_ context.Context, _ string) ([]string, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	out := []string{}

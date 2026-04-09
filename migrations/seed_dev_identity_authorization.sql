@@ -1,5 +1,5 @@
 -- Dev seed: aligns with former in-memory IAM + authorization fixtures.
--- Apply after: 0001, 0003 (projection responsibilities), 0004 (optional for disclosure FK), 0005 (unique refresh hash).
+-- Apply after: 0001, 0003 (projection responsibilities), 0004 (optional for disclosure FK), 0005 (unique refresh hash), 0006 (admin rule tables; optional if you use workflow/notification rule APIs).
 -- Password for both users: secret (bcrypt cost 10, generated at seed authoring time).
 
 SET NAMES utf8mb4;

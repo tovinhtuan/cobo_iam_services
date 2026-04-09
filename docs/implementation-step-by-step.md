@@ -205,7 +205,8 @@ Moi buoc duoc coi la hoan thanh khi dap ung du:
 - `internal/companyaccess/infra/mysql`: `MembershipQueryService` (memberships, companies, roles, departments, titles).
 - `internal/authorization/infra/mysql`: repository list permission codes, department scopes, assignments; responsibilities tu `membership_effective_responsibilities` (migration 0003).
 - `internal/httpserver`: neu `pool != nil` wire cac repo MySQL tren; `NewMeHandler` nhan `IdentityQueryService` (cung implementation voi verifier MySQL hoac static in-memory).
-- Seed dev: `migrations/seed_dev_identity_authorization.sql` (chay sau 0001, 0003, khuyen nghi 0004 + 0005).
+- Admin P1.4 MySQL: `companyaccess/infra/mysql` **AdminRepository** (membership, role/department/title links, role_permissions, resource_scope_rules, rule tables **0006**).
+- Seed dev: `migrations/seed_dev_identity_authorization.sql` (chay sau 0001, 0003, khuyen nghi 0004 + 0005 + 0006 neu dung rule APIs).
 
 **Acceptance checks**
 - `go build ./...` va `go test ./...` pass.
@@ -481,6 +482,7 @@ Mandatory guard order for every authorize path:
 - `0003_effective_access_projection`: projection `membership_effective_responsibilities` (+ indexes lien quan)
 - `0004_p1_business_tables`: Disclosure + Workflow + Notification (runtime P1)
 - `0005_sessions_refresh_hash_unique`: unique index `sessions.refresh_token_hash`
+- `0006_admin_rules_tables`: `workflow_assignee_rules`, `notification_rules` (admin API persistence)
 
 ### 14.2 Entity -> table mapping
 

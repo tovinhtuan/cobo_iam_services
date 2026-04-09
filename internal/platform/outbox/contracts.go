@@ -18,6 +18,8 @@ type Repository interface {
 	LockPendingBatch(ctx context.Context, batchSize int, now time.Time) ([]QueuedEvent, error)
 	MarkProcessed(ctx context.Context, eventID string, processedAt time.Time) error
 	MarkRetry(ctx context.Context, eventID string, retryCount int, nextAt time.Time, lastErr string) error
+	// MarkFailedPermanent stops retries (status failed_permanent); used after max retry budget.
+	MarkFailedPermanent(ctx context.Context, eventID string, at time.Time, lastErr string) error
 }
 
 type InsertParams struct {

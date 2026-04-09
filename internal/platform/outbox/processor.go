@@ -3,6 +3,7 @@ package outbox
 import (
 	"context"
 	"fmt"
+	"math/rand/v2"
 	"time"
 )
 
@@ -42,6 +43,7 @@ func (p *Processor) Tick(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("lock pending batch: %w", err)
 	}
+	const maxOutboxRetries = 10
 	for _, e := range events {
 		h, ok := p.handlers[e.EventType]
 		if !ok {
@@ -49,8 +51,13 @@ func (p *Processor) Tick(ctx context.Context) error {
 			continue
 		}
 		if err := h.Handle(ctx, e); err != nil {
-			next := p.now().Add(backoff(e.RetryCount + 1))
-			_ = p.repo.MarkRetry(ctx, e.EventID, e.RetryCount+1, next, err.Error())
+			nextCount := e.RetryCount + 1
+			if nextCount >= maxOutboxRetries {
+				_ = p.repo.MarkFailedPermanent(ctx, e.EventID, p.now(), err.Error())
+				continue
+			}
+			next := p.now().Add(backoffWithJitter(nextCount))
+			_ = p.repo.MarkRetry(ctx, e.EventID, nextCount, next, err.Error())
 			continue
 		}
 		_ = p.repo.MarkProcessed(ctx, e.EventID, p.now())
@@ -66,4 +73,21 @@ func backoff(retry int) time.Duration {
 		retry = 6
 	}
 	return time.Duration(1<<uint(retry-1)) * time.Second
+}
+
+func backoffWithJitter(retry int) time.Duration {
+	base := backoff(retry)
+	if base <= 0 {
+		return time.Second
+	}
+	// Up to ~25% extra delay to spread retries.
+	maxJitter := max(int64(base/4), 1)
+	return base + time.Duration(rand.Int64N(maxJitter+1))
+}
+
+func max(a, b int64) int64 {
+	if a > b {
+		return a
+	}
+	return b
 }

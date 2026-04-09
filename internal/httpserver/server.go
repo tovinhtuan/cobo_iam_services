@@ -50,7 +50,7 @@ import (
 type Deps struct {
 	Log    *slog.Logger
 	Config config.Config
-	DB     *sql.DB // optional; when set: IAM sessions + credentials + membership query + authz repo + audit_logs + P1 repos + MySQL outbox
+	DB     *sql.DB // optional; when set: IAM + membership + authz + audit + admin + P1 repos + MySQL outbox
 }
 
 // New builds the full API http.Handler and an optional cleanup (e.g. close Redis).
@@ -165,7 +165,11 @@ func register(mux *http.ServeMux, log *slog.Logger, sqlDB pingDB, projectionStor
 	workflowHandler := workflowhttp.NewHandler(workflowSvc, tokenManager)
 	notificationSvc := notificationapp.NewService(notificationRepo, authSvc, id, outboxPublisher, notifOpts...)
 	notificationHandler := notificationhttp.NewHandler(notificationSvc, tokenManager)
-	adminRepo := cainmem.NewAdminRepository()
+	var adminRepo companyaccessapp.AdminRepository = cainmem.NewAdminRepository()
+	if pool != nil {
+		adminRepo = camysql.NewAdminRepository(pool)
+		log.Info("admin access APIs using MySQL")
+	}
 	adminSvc := companyaccessapp.NewAdminService(adminRepo, authSvc, id)
 	adminHandler := companyaccesshttp.NewAdminHandler(adminSvc, tokenManager, auditSvc)
 

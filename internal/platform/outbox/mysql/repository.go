@@ -140,6 +140,24 @@ func (r *Repository) MarkProcessed(ctx context.Context, eventID string, processe
 	return nil
 }
 
+func (r *Repository) MarkFailedPermanent(ctx context.Context, eventID string, at time.Time, lastErr string) error {
+	if r.db == nil {
+		return fmt.Errorf("outbox mysql: nil db")
+	}
+	if len(lastErr) > 1024 {
+		lastErr = lastErr[:1024]
+	}
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE outbox_events
+		SET status = 'failed_permanent', processed_at = ?, last_error = ?
+		WHERE event_id = ?
+	`, at, lastErr, eventID)
+	if err != nil {
+		return fmt.Errorf("outbox mark failed_permanent: %w", err)
+	}
+	return nil
+}
+
 func (r *Repository) MarkRetry(ctx context.Context, eventID string, retryCount int, nextAt time.Time, lastErr string) error {
 	if r.db == nil {
 		return fmt.Errorf("outbox mysql: nil db")

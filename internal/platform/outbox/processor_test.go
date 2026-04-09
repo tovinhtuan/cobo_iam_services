@@ -2,6 +2,7 @@ package outbox_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -33,6 +34,42 @@ func TestProcessor_unknownEventType_markedProcessed(t *testing.T) {
 	for _, e := range got {
 		if e.EventID == "e-unknown" {
 			t.Fatalf("expected unknown event consumed, still pending: %+v", e)
+		}
+	}
+}
+
+func TestProcessor_handlerFail_thenFailedPermanentAfterMaxRetries(t *testing.T) {
+	ctx := context.Background()
+	repo := outboxinmem.NewRepository()
+	now := time.Date(2026, 1, 2, 12, 0, 0, 0, time.UTC)
+	_ = repo.Insert(ctx, outbox.InsertParams{
+		EventID:       "e-fail",
+		AggregateType: "system",
+		AggregateID:   "a1",
+		EventType:     "notification.dispatch",
+		PayloadJSON:   []byte(`{}`),
+		AvailableAt:   now,
+	})
+
+	p := outbox.NewProcessor(repo, 10)
+	p.Register("notification.dispatch", outbox.HandlerFunc(func(context.Context, outbox.QueuedEvent) error {
+		return fmt.Errorf("always fail")
+	}))
+
+	for i := 0; i < 12; i++ {
+		if err := p.Tick(ctx); err != nil {
+			t.Fatal(err)
+		}
+		now = now.Add(time.Hour)
+	}
+
+	got, err := repo.LockPendingBatch(ctx, 10, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range got {
+		if e.EventID == "e-fail" {
+			t.Fatal("event should not stay pending after failed_permanent")
 		}
 	}
 }

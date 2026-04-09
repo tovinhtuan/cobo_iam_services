@@ -49,6 +49,7 @@ Chưa tích hợp CLI migrate trong repo; áp file SQL theo thứ tự:
 2. `migrations/0003_effective_access_projection.up.sql`
 3. `migrations/0004_p1_business_tables.up.sql` (disclosure / workflow / notification; FK tới `companies` — cần có company hợp lệ trước khi seed/ghi nghiệp vụ)
 4. `migrations/0005_sessions_refresh_hash_unique.up.sql` (unique `sessions.refresh_token_hash` — lookup refresh an toàn)
+5. `migrations/0006_admin_rules_tables.up.sql` (bảng lưu rule admin: workflow assignee + notification; cần nếu dùng các API POST rule tương ứng)
 
 Ví dụ:
 
@@ -57,6 +58,7 @@ mysql -u user -p cobo_iam < migrations/0001_init_core.up.sql
 mysql -u user -p cobo_iam < migrations/0003_effective_access_projection.up.sql
 mysql -u user -p cobo_iam < migrations/0004_p1_business_tables.up.sql
 mysql -u user -p cobo_iam < migrations/0005_sessions_refresh_hash_unique.up.sql
+mysql -u user -p cobo_iam < migrations/0006_admin_rules_tables.up.sql
 ```
 
 Rollback: chạy tương ứng file `*.down.sql` (theo thứ tự ngược).
@@ -69,7 +71,7 @@ Sau khi chạy các migration trên, có thể nạp dữ liệu dev (`user@exam
 mysql -u user -p cobo_iam < migrations/seed_dev_identity_authorization.sql
 ```
 
-File seed dùng `ON DUPLICATE KEY UPDATE`; nên chạy sau **0001**, **0003**, khuyến nghị sau **0004** (nếu cần FK đầy đủ) và **0005**. Chi tiết xem comment đầu file seed.
+File seed dùng `ON DUPLICATE KEY UPDATE`; nên chạy sau **0001**, **0003**, khuyến nghị sau **0004** (nếu cần FK đầy đủ), **0005**, và **0006** nếu sau này dùng admin rule APIs. Chi tiết xem comment đầu file seed.
 
 ## Biến môi trường
 
@@ -77,7 +79,7 @@ Xem `configs/config.example.env`. Các biến thường dùng:
 
 | Biến | Ý nghĩa |
 |------|---------|
-| `MYSQL_DSN` | Kết nối MySQL: outbox durable, IAM session/credential, membership query, authorization từ DB, **audit_logs**, disclosure/workflow/notification MySQL; `/readyz` ready khi ping OK |
+| `MYSQL_DSN` | Kết nối MySQL: outbox durable (retry + `failed_permanent` sau 10 lần), IAM session/credential, membership query, authorization, **audit_logs**, **admin access APIs**, disclosure/workflow/notification MySQL; `/readyz` ready khi ping OK |
 | `HTTP_ADDR` | API bind, mặc định `:8080` |
 | `REDIS_ADDR` | Tùy chọn — cache effective-access projection |
 | `EFFECTIVE_ACCESS_CACHE_TTL` | TTL cache projection |
@@ -119,11 +121,12 @@ Integration smoke (không cần MySQL): package `internal/httpserver` — `healt
 - **Không `MYSQL_DSN`**: IAM session/credential, membership query, authorization resolver vẫn in-memory (mất session khi restart; fixture cố định).
 - **Audit** không DSN: in-memory (không persist); có DSN: insert `audit_logs`.
 - **Notification enqueue** khi có MySQL + outbox MySQL: `notification_jobs` + `outbox_events` trong **một transaction** (`notificationapp.WithTransactionalEnqueue`). Các module khác vẫn autocommit từng lệnh.
-- **Admin / access model APIs** vẫn chủ yếu in-memory skeleton (chưa đồng bộ full CRUD lên MySQL như runtime authz).
+- **Admin / access model APIs** khi có DSN: CRUD membership / role assignment / role-permission / `resource_scope_rules` + bảng rule 0006; khi không DSN vẫn in-memory fixture.
 - MySQL outbox cần **8.0+** (`FOR UPDATE SKIP LOCKED`).
 
 ## Tài liệu thêm
 
+- `TODO.md` — hạng mục còn lệch plan (idempotency, projection writer, P1 sâu, …).
 - `docs/implementation-step-by-step.md` — lộ trình và DoD (Step **P0.8** — IAM + authz MySQL).
 - `docs/api-contracts-json.md` — ví dụ JSON API.
 - `docs/ai-cache/cobo-iam-services-iam-authz-mysql-summary.md` — tóm tắt wire MySQL cho IAM / membership / authorization.
