@@ -129,6 +129,7 @@ type RefreshRequest struct {
 
 type RefreshResponse struct {
 	AccessToken    string       `json:"access_token"`
+	RefreshToken   string       `json:"refresh_token"`
 	ExpiresIn      int64        `json:"expires_in"`
 	CurrentContext TokenContext `json:"current_context"`
 }

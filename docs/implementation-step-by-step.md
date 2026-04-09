@@ -115,7 +115,7 @@ Moi buoc duoc coi la hoan thanh khi dap ung du:
 **Acceptance checks**
 - API:
   - `POST /api/v1/auth/login`
-  - `POST /api/v1/auth/refresh`
+  - `POST /api/v1/auth/refresh` (tra `access_token` + `refresh_token` moi; rotation — token cu het hieu luc)
   - `POST /api/v1/auth/logout`
   - `POST /api/v1/auth/select-company`
   - `POST /api/v1/auth/switch-company`
@@ -188,6 +188,7 @@ Moi buoc duoc coi la hoan thanh khi dap ung du:
 **Acceptance checks**
 - Co ban ghi audit cho action nhay cam.
 - Worker consume outbox event skeleton duoc.
+- Khi `MYSQL_DSN` set: API + worker dung `internal/platform/outbox/mysql` tren bang `outbox_events` (MySQL 8+ `SKIP LOCKED`); khong DSN thi in-memory (dev).
 
 **Rollback**
 - Worker co the stop rieng; ghi outbox van ton tai de xu ly lai.
@@ -234,6 +235,11 @@ Moi buoc duoc coi la hoan thanh khi dap ung du:
 ### Tien do (bootstrap unit tests)
 - `internal/iam/app/service_test.go`: login (sai mat khau, 1 company, nhieu company, khong membership active, account khong active), refresh khi chua co company context, MFA hook, SSO bridge.
 - `internal/authorization/app/service_test.go`: thieu company context, allow scope department, deny permission, authorize batch.
+- `internal/httpserver/server_test.go`: integration smoke `healthz`, `readyz` (khong DB), login mot company.
+
+### Tien do (P1 MySQL + transactional notification)
+- Migration `0004_p1_business_tables` + repo MySQL cho disclosure/workflow/notification; API dung khi `MYSQL_DSN` set.
+- `internal/httpserver` tap trung wire HTTP; notification enqueue transactional voi outbox MySQL (`WithTransactionalEnqueue`).
 
 ### P0 tests
 - Unit:
@@ -605,6 +611,8 @@ P2 adds:
 - projection optimization, caching, SSO/MFA hooks
 
 ## 20) Local Run and README Plan (must include in implementation)
+
+**Tien do:** `README.md` tai root module + test `internal/platform/outbox/processor_test.go` (unknown event type + handler success).
 
 README sections to include:
 1. architecture overview

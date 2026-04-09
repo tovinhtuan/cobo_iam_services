@@ -141,7 +141,19 @@ func (s *service) Refresh(ctx context.Context, req RefreshRequest) (*RefreshResp
 	if err != nil {
 		return nil, fmt.Errorf("issue access token: %w", err)
 	}
-	return &RefreshResponse{AccessToken: access, ExpiresIn: exp, CurrentContext: TokenContext{CompanyID: ss.CompanyID, MembershipID: ss.MembershipID}}, nil
+	newRefresh, err := s.tokens.IssueRefreshToken(ctx, ss.SessionID, ss.UserID)
+	if err != nil {
+		return nil, fmt.Errorf("issue refresh token: %w", err)
+	}
+	if err := s.sessions.RotateRefreshToken(ctx, ss.SessionID, newRefresh); err != nil {
+		return nil, fmt.Errorf("rotate refresh token: %w", err)
+	}
+	return &RefreshResponse{
+		AccessToken:    access,
+		RefreshToken:   newRefresh,
+		ExpiresIn:      exp,
+		CurrentContext: TokenContext{CompanyID: ss.CompanyID, MembershipID: ss.MembershipID},
+	}, nil
 }
 
 func (s *service) Logout(ctx context.Context, req LogoutRequest) (*LogoutResponse, error) {

@@ -146,6 +146,50 @@ func TestRefresh_requiresCompanyContext(t *testing.T) {
 	}
 }
 
+func TestRefresh_rotatesRefreshToken(t *testing.T) {
+	ctx := context.Background()
+	sessions := iaminmem.NewSessionRepository()
+	id := &testSeqID{}
+	tokens := iaminmem.NewTokenManager(id)
+	members := &cainmem.MembershipQueryService{ByUser: map[string][]caapp.MembershipView{
+		"u_single": {{MembershipID: "m_010", UserID: "u_single", CompanyID: "c_010", CompanyName: "Solo", Status: "active"}},
+	}}
+	svc := iamapp.NewService(testCred(), sessions, tokens, members, id)
+
+	login, err := svc.Login(ctx, iamapp.LoginRequest{LoginID: "single@example.com", Password: "secret"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r1 := login.Session.RefreshToken
+	if r1 == "" {
+		t.Fatal("missing refresh from login")
+	}
+
+	ref1, err := svc.Refresh(ctx, iamapp.RefreshRequest{RefreshToken: r1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ref1.RefreshToken == "" || ref1.RefreshToken == r1 {
+		t.Fatalf("expected new refresh token, got %q", ref1.RefreshToken)
+	}
+	if ref1.AccessToken == "" {
+		t.Fatal("missing access token")
+	}
+
+	_, err = svc.Refresh(ctx, iamapp.RefreshRequest{RefreshToken: r1})
+	if err == nil {
+		t.Fatal("old refresh token should be invalid after rotation")
+	}
+
+	ref2, err := svc.Refresh(ctx, iamapp.RefreshRequest{RefreshToken: ref1.RefreshToken})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ref2.RefreshToken == "" || ref2.RefreshToken == ref1.RefreshToken {
+		t.Fatalf("expected second rotation to issue new refresh, got %q", ref2.RefreshToken)
+	}
+}
+
 func TestMFACheck_blocksBeforeMemberships(t *testing.T) {
 	ctx := context.Background()
 	mfaErr := perr.NewHTTPError(403, perr.CodeMFARequired, "need mfa", nil)

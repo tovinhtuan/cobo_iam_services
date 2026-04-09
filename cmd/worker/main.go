@@ -16,6 +16,7 @@ import (
 	"github.com/cobo/cobo_iam_services/internal/platform/logger"
 	platformoutbox "github.com/cobo/cobo_iam_services/internal/platform/outbox"
 	outboxinmem "github.com/cobo/cobo_iam_services/internal/platform/outbox/inmemory"
+	outboxmysql "github.com/cobo/cobo_iam_services/internal/platform/outbox/mysql"
 )
 
 func main() {
@@ -39,11 +40,19 @@ func main() {
 		}
 		defer sqlDB.Close()
 	} else {
-		log.Warn("MYSQL_DSN empty; worker runs with in-memory outbox skeleton")
+		log.Warn("MYSQL_DSN empty; worker uses in-memory outbox (not shared with API)")
 	}
 
-	outboxRepo := outboxinmem.NewRepository()
-	_ = outboxinmem.SeedBootstrapEvents(ctx, outboxRepo)
+	var outboxRepo platformoutbox.Repository
+	if sqlDB != nil {
+		outboxRepo = outboxmysql.NewRepository(sqlDB)
+		log.Info("outbox using MySQL")
+	} else {
+		outboxRepo = outboxinmem.NewRepository()
+		if err := outboxinmem.SeedBootstrapEvents(ctx, outboxRepo); err != nil {
+			log.Warn("outbox seed skipped", slog.String("err", err.Error()))
+		}
+	}
 	processor := platformoutbox.NewProcessor(outboxRepo, 50)
 	processor.Register("notification.dispatch", platformoutbox.HandlerFunc(func(ctx context.Context, event platformoutbox.QueuedEvent) error {
 		payload := map[string]any{}

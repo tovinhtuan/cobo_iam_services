@@ -1,6 +1,9 @@
 package app
 
-import "context"
+import (
+	"context"
+	"database/sql"
+)
 
 type Service interface {
 	ResolveRecipients(ctx context.Context, req ResolveRecipientsRequest) (*ResolveRecipientsResponse, error)
@@ -13,6 +16,12 @@ type Repository interface {
 	ListPendingJobs(ctx context.Context, companyID string, limit int) ([]NotificationJobDTO, error)
 	UpdateJobStatus(ctx context.Context, companyID, jobID, status string) error
 	CreateDelivery(ctx context.Context, d NotificationDeliveryDTO) (*NotificationDeliveryDTO, error)
+}
+
+// TxJobRepository is implemented by MySQL storage to enqueue a job and outbox row in one transaction.
+type TxJobRepository interface {
+	Repository
+	CreateJobTx(ctx context.Context, tx *sql.Tx, job NotificationJobDTO) (*NotificationJobDTO, error)
 }
 
 type Subject struct {

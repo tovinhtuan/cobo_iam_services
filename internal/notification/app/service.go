@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"net/http"
 	"strings"
@@ -12,17 +13,37 @@ import (
 	"github.com/cobo/cobo_iam_services/internal/platform/events"
 	"github.com/cobo/cobo_iam_services/internal/platform/idgen"
 	"github.com/cobo/cobo_iam_services/internal/platform/outbox"
+	outboxmysql "github.com/cobo/cobo_iam_services/internal/platform/outbox/mysql"
 )
 
 type service struct {
-	repo   Repository
-	auth   authapp.Service
-	idg    idgen.Generator
-	outbox outbox.Publisher
+	repo      Repository
+	auth      authapp.Service
+	idg       idgen.Generator
+	outbox    outbox.Publisher
+	sqlDB     *sql.DB
+	outboxSQL *outboxmysql.Repository
 }
 
-func NewService(repo Repository, auth authapp.Service, idg idgen.Generator, outbox outbox.Publisher) Service {
-	return &service{repo: repo, auth: auth, idg: idg, outbox: outbox}
+// ServiceOption configures notification.service (e.g. transactional enqueue with MySQL outbox).
+type ServiceOption func(*service)
+
+// WithTransactionalEnqueue commits notification_jobs + outbox_events in one DB transaction when repo implements TxJobRepository.
+func WithTransactionalEnqueue(db *sql.DB, ob *outboxmysql.Repository) ServiceOption {
+	return func(s *service) {
+		s.sqlDB = db
+		s.outboxSQL = ob
+	}
+}
+
+func NewService(repo Repository, auth authapp.Service, idg idgen.Generator, pub outbox.Publisher, opts ...ServiceOption) Service {
+	s := &service{repo: repo, auth: auth, idg: idg, outbox: pub}
+	for _, o := range opts {
+		if o != nil {
+			o(s)
+		}
+	}
+	return s
 }
 
 func (s *service) ResolveRecipients(ctx context.Context, req ResolveRecipientsRequest) (*ResolveRecipientsResponse, error) {
@@ -41,6 +62,28 @@ func (s *service) EnqueueNotification(ctx context.Context, req EnqueueNotificati
 		return nil, err
 	}
 	job := NotificationJobDTO{NotificationJobID: s.idg.NewUUID(), CompanyID: req.Subject.CompanyID, EventType: req.EventType, ResourceType: req.ResourceType, ResourceID: req.ResourceID, Payload: req.Payload, Status: "pending"}
+
+	if s.sqlDB != nil && s.outboxSQL != nil {
+		if tjr, ok := s.repo.(TxJobRepository); ok {
+			tx, err := s.sqlDB.BeginTx(ctx, nil)
+			if err != nil {
+				return nil, fmt.Errorf("begin notification tx: %w", err)
+			}
+			defer func() { _ = tx.Rollback() }()
+			created, err := tjr.CreateJobTx(ctx, tx, job)
+			if err != nil {
+				return nil, err
+			}
+			if err := s.outboxSQL.PublishEventTx(ctx, tx, toOutboxEvent(*created, s.idg.NewUUID())); err != nil {
+				return nil, err
+			}
+			if err := tx.Commit(); err != nil {
+				return nil, fmt.Errorf("commit notification tx: %w", err)
+			}
+			return created, nil
+		}
+	}
+
 	created, err := s.repo.CreateJob(ctx, job)
 	if err != nil {
 		return nil, err

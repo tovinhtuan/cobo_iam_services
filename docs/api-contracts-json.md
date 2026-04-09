@@ -128,6 +128,7 @@ HTTP `403` (hoac `422` tuy policy)
 ```json
 {
   "access_token": "new-access-token",
+  "refresh_token": "new-refresh-token",
   "expires_in": 900,
   "current_context": {
     "company_id": "c_001",
@@ -135,6 +136,8 @@ HTTP `403` (hoac `422` tuy policy)
   }
 }
 ```
+
+Sau moi lan refresh thanh cong, client **phai** luu `refresh_token` moi; token cu khong con hop le (rotation).
 
 ---
 
