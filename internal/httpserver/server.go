@@ -92,7 +92,7 @@ func New(ctx context.Context, d Deps) (http.Handler, func(), error) {
 	}
 
 	mux := http.NewServeMux()
-	register(mux, d.Log, sqlPing, projectionStore, outboxRepo, d.DB, outboxSQL)
+	register(mux, d.Log, d.Config, sqlPing, projectionStore, outboxRepo, d.DB, outboxSQL)
 
 	return requestIDMiddleware(d.Log, mux), cleanup, nil
 }
@@ -101,9 +101,9 @@ type pingDB interface {
 	PingContext(context.Context) error
 }
 
-func register(mux *http.ServeMux, log *slog.Logger, sqlDB pingDB, projectionStore authprojection.SnapshotStore, outboxRepo platformoutbox.Repository, pool *sql.DB, outboxSQL *outboxmysql.Repository) {
+func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, sqlDB pingDB, projectionStore authprojection.SnapshotStore, outboxRepo platformoutbox.Repository, pool *sql.DB, outboxSQL *outboxmysql.Repository) {
 	id := idgen.UUIDv7Generator{}
-	tokenManager := iaminmem.NewTokenManager(id)
+	tokenManager := buildTokenManager(log, cfg, id)
 	var auditRepo auditapp.Repository = auditinmem.NewRepository()
 	if pool != nil {
 		auditRepo = auditmysql.NewRepository(pool)

@@ -13,10 +13,10 @@ type Config struct {
 	Env         string
 
 	// API
-	HTTPAddr        string
-	HTTPReadTimeout time.Duration
+	HTTPAddr         string
+	HTTPReadTimeout  time.Duration
 	HTTPWriteTimeout time.Duration
-	HTTPIdleTimeout time.Duration
+	HTTPIdleTimeout  time.Duration
 
 	// Worker
 	WorkerTickInterval time.Duration
@@ -34,27 +34,52 @@ type Config struct {
 
 	// Observability
 	LogLevel string
+
+	// Access token migration (opaque -> jwt).
+	AccessTokenMode string
+	AccessTokenTTL  time.Duration
+
+	// JWT settings (used when ACCESS_TOKEN_MODE=jwt|dual).
+	JWTIssuer            string
+	JWTAudience          string
+	JWTAlg               string
+	JWTSigningPrivateKey string
+	JWTVerifyPublicKeys  string
+	JWTClockSkewSec      int
 }
 
 // Load reads configuration from the environment with safe defaults for local dev.
 func Load() (Config, error) {
 	cfg := Config{
-		ServiceName:      getenv("SERVICE_NAME", "cobo_iam_services"),
-		Env:              getenv("ENV", "development"),
-		HTTPAddr:         getenv("HTTP_ADDR", ":8080"),
-		HTTPReadTimeout:  durationEnv("HTTP_READ_TIMEOUT", 15*time.Second),
-		HTTPWriteTimeout: durationEnv("HTTP_WRITE_TIMEOUT", 15*time.Second),
-		HTTPIdleTimeout:  durationEnv("HTTP_IDLE_TIMEOUT", 60*time.Second),
-		WorkerTickInterval: durationEnv("WORKER_TICK_INTERVAL", 5*time.Second),
-		MySQLDSN:         os.Getenv("MYSQL_DSN"),
-		RedisAddr:        os.Getenv("REDIS_ADDR"),
-		RedisPassword:    os.Getenv("REDIS_PASSWORD"),
-		RedisDB:          intEnv("REDIS_DB", 0),
+		ServiceName:             getenv("SERVICE_NAME", "cobo_iam_services"),
+		Env:                     getenv("ENV", "development"),
+		HTTPAddr:                getenv("HTTP_ADDR", ":8080"),
+		HTTPReadTimeout:         durationEnv("HTTP_READ_TIMEOUT", 15*time.Second),
+		HTTPWriteTimeout:        durationEnv("HTTP_WRITE_TIMEOUT", 15*time.Second),
+		HTTPIdleTimeout:         durationEnv("HTTP_IDLE_TIMEOUT", 60*time.Second),
+		WorkerTickInterval:      durationEnv("WORKER_TICK_INTERVAL", 5*time.Second),
+		MySQLDSN:                os.Getenv("MYSQL_DSN"),
+		RedisAddr:               os.Getenv("REDIS_ADDR"),
+		RedisPassword:           os.Getenv("REDIS_PASSWORD"),
+		RedisDB:                 intEnv("REDIS_DB", 0),
 		EffectiveAccessCacheTTL: durationEnv("EFFECTIVE_ACCESS_CACHE_TTL", 5*time.Minute),
-		LogLevel:         getenv("LOG_LEVEL", "info"),
+		LogLevel:                getenv("LOG_LEVEL", "info"),
+		AccessTokenMode:         getenv("ACCESS_TOKEN_MODE", "opaque"),
+		AccessTokenTTL:          durationEnv("ACCESS_TOKEN_TTL", 15*time.Minute),
+		JWTIssuer:               getenv("JWT_ISSUER", "cobo_iam_services"),
+		JWTAudience:             getenv("JWT_AUDIENCE", "cobo_clients"),
+		JWTAlg:                  getenv("JWT_ALG", "EdDSA"),
+		JWTSigningPrivateKey:    os.Getenv("JWT_SIGNING_PRIVATE_KEY_PEM"),
+		JWTVerifyPublicKeys:     os.Getenv("JWT_VERIFY_PUBLIC_KEYS_JSON"),
+		JWTClockSkewSec:         intEnv("JWT_CLOCK_SKEW_SEC", 60),
 	}
 	if cfg.WorkerTickInterval < time.Second {
 		return Config{}, fmt.Errorf("WORKER_TICK_INTERVAL too small")
+	}
+	switch cfg.AccessTokenMode {
+	case "opaque", "jwt", "dual":
+	default:
+		return Config{}, fmt.Errorf("ACCESS_TOKEN_MODE invalid: %s", cfg.AccessTokenMode)
 	}
 	return cfg, nil
 }
