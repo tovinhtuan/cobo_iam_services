@@ -36,6 +36,16 @@
 - Log metric tách bạch:
   - `%jwt_verify_success`, `%opaque_verify_success`, `%verify_error_by_reason`.
 
+### Status hiện tại
+
+- Da implement xong:
+  - `internal/iam/infra/token/jwt/manager.go`: Issue/Inspect access token JWT ký số.
+  - `internal/iam/infra/token/dual/manager.go`: verify JWT trước, fallback opaque.
+  - `internal/httpserver/token_builder.go`: chọn `opaque|jwt|dual` theo config.
+  - `internal/iam/infra/token/opaque/manager.go`: tách riêng legacy manager.
+- Pre-company và refresh token vẫn đi opaque path (đúng scope PR1).
+- Unit tests đã có cho JWT happy path, expired, invalid audience, dual fallback.
+
 ### P2 - Rollout canary
 
 - Bật `dual` cho staging -> canary prod.

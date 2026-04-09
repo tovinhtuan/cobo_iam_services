@@ -16,6 +16,9 @@ type tokenManager interface {
 	iamapp.TokenInspector
 }
 
+// TokenManager is exported for optional dependency injection in tests.
+type TokenManager = tokenManager
+
 func buildTokenManager(log *slog.Logger, cfg config.Config, id idgen.Generator) tokenManager {
 	opaque := iamtokenopaque.NewManager(id)
 	mode := cfg.AccessTokenMode
@@ -25,10 +28,10 @@ func buildTokenManager(log *slog.Logger, cfg config.Config, id idgen.Generator) 
 	switch mode {
 	case "jwt":
 		log.Info("access token mode: jwt")
-		return iamtokenjwt.NewManager(cfg, id)
+		return iamtokenjwt.NewManager(cfg, id, opaque)
 	case "dual":
 		log.Info("access token mode: dual (issue jwt, inspect jwt then opaque)")
-		j := iamtokenjwt.NewManager(cfg, id)
+		j := iamtokenjwt.NewManager(cfg, id, opaque)
 		return iamtokendual.NewManager(j, opaque, j)
 	default:
 		log.Info("access token mode: opaque")

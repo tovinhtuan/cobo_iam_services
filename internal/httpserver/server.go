@@ -53,6 +53,8 @@ type Deps struct {
 	Log    *slog.Logger
 	Config config.Config
 	DB     *sql.DB // optional; when set: IAM + membership + authz + audit + admin + P1 repos + MySQL outbox
+	// Optional token manager override (useful for integration tests).
+	TokenManager TokenManager
 }
 
 // New builds the full API http.Handler and an optional cleanup (e.g. close Redis).
@@ -92,7 +94,7 @@ func New(ctx context.Context, d Deps) (http.Handler, func(), error) {
 	}
 
 	mux := http.NewServeMux()
-	register(mux, d.Log, d.Config, sqlPing, projectionStore, outboxRepo, d.DB, outboxSQL)
+	register(mux, d.Log, d.Config, d.TokenManager, sqlPing, projectionStore, outboxRepo, d.DB, outboxSQL)
 
 	return requestIDMiddleware(d.Log, mux), cleanup, nil
 }
@@ -101,9 +103,12 @@ type pingDB interface {
 	PingContext(context.Context) error
 }
 
-func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, sqlDB pingDB, projectionStore authprojection.SnapshotStore, outboxRepo platformoutbox.Repository, pool *sql.DB, outboxSQL *outboxmysql.Repository) {
+func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr TokenManager, sqlDB pingDB, projectionStore authprojection.SnapshotStore, outboxRepo platformoutbox.Repository, pool *sql.DB, outboxSQL *outboxmysql.Repository) {
 	id := idgen.UUIDv7Generator{}
-	tokenManager := buildTokenManager(log, cfg, id)
+	tokenManager := tokenMgr
+	if tokenManager == nil {
+		tokenManager = buildTokenManager(log, cfg, id)
+	}
 	var auditRepo auditapp.Repository = auditinmem.NewRepository()
 	if pool != nil {
 		auditRepo = auditmysql.NewRepository(pool)

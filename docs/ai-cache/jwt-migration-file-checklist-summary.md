@@ -10,3 +10,10 @@
   - Security checklist, QA checklist, rollout plan
 
 - Muc tieu: team co the chia task implement song song ma khong mat context.
+
+## Update trạng thái
+
+- Đã thêm integration E2E cho mode `dual` tại `internal/httpserver/server_test.go`:
+  - login trả JWT access token
+  - gọi endpoint protected (`/api/v1/me/effective-access`) bằng JWT thành công
+  - fallback verify opaque cũ thành công trên cùng server dual-mode
