@@ -17,3 +17,9 @@
   - login trả JWT access token
   - gọi endpoint protected (`/api/v1/me/effective-access`) bằng JWT thành công
   - fallback verify opaque cũ thành công trên cùng server dual-mode
+  - negative cases: JWT sai audience -> 401, opaque invalid -> 401
+- Đã thêm integration E2E cho mode `jwt`:
+  - login trả JWT
+  - protected endpoint chấp nhận JWT
+  - opaque token cũ bị từ chối 401 (không fallback)
+  - token JWT hết hạn bị từ chối 401 ở HTTP layer (E2E)

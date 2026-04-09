@@ -208,3 +208,188 @@ func TestIntegration_dualMode_loginJwt_andProtectedEndpointAcceptsLegacyOpaque(t
 		t.Fatalf("opaque fallback call status=%d body=%s", resOpaque.StatusCode, b)
 	}
 }
+
+func TestIntegration_dualMode_rejectsInvalidJWTAndInvalidOpaque(t *testing.T) {
+	id := &staticID{}
+	opaque := iamtokenopaque.NewManager(id)
+	cfg := testAPIConfig()
+	cfg.AccessTokenMode = "dual"
+	cfg.JWTAlg = "HS256"
+	cfg.JWTSigningPrivateKey = "dual-mode-secret"
+	cfg.JWTIssuer = "test-issuer"
+	cfg.JWTAudience = "test-aud"
+	cfg.AccessTokenTTL = 5 * time.Minute
+
+	j := iamtokenjwt.NewManager(cfg, id, opaque)
+	dual := iamtokendual.NewManager(j, opaque, j)
+	srv := httptest.NewServer(newTestHandlerWithDeps(t, nil, cfg, dual))
+	defer srv.Close()
+
+	// Mint JWT with wrong audience (same key, different audience) -> must be rejected.
+	wrongAudCfg := cfg
+	wrongAudCfg.JWTAudience = "wrong-aud"
+	wrongAudIssuer := iamtokenjwt.NewManager(wrongAudCfg, id, opaque)
+	badJWT, _, err := wrongAudIssuer.IssueAccessToken(context.Background(), iamapp.AccessTokenClaims{
+		Sub:          "u_single",
+		SessionID:    "bad-jwt-session",
+		MembershipID: "m_010",
+		CompanyID:    "c_010",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reqBadJWT, _ := http.NewRequest(http.MethodGet, srv.URL+"/api/v1/me/effective-access", nil)
+	reqBadJWT.Header.Set("Authorization", "Bearer "+badJWT)
+	resBadJWT, err := http.DefaultClient.Do(reqBadJWT)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resBadJWT.Body.Close()
+	if resBadJWT.StatusCode != http.StatusUnauthorized {
+		b, _ := io.ReadAll(resBadJWT.Body)
+		t.Fatalf("bad jwt status=%d body=%s", resBadJWT.StatusCode, b)
+	}
+
+	// Opaque token not found in fallback store -> must be rejected.
+	reqBadOpaque, _ := http.NewRequest(http.MethodGet, srv.URL+"/api/v1/me/effective-access", nil)
+	reqBadOpaque.Header.Set("Authorization", "Bearer atk_invalid_opaque")
+	resBadOpaque, err := http.DefaultClient.Do(reqBadOpaque)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resBadOpaque.Body.Close()
+	if resBadOpaque.StatusCode != http.StatusUnauthorized {
+		b, _ := io.ReadAll(resBadOpaque.Body)
+		t.Fatalf("bad opaque status=%d body=%s", resBadOpaque.StatusCode, b)
+	}
+}
+
+func TestIntegration_jwtMode_acceptsJWT_andRejectsOpaque(t *testing.T) {
+	id := &staticID{}
+	opaque := iamtokenopaque.NewManager(id)
+	cfg := testAPIConfig()
+	cfg.AccessTokenMode = "jwt"
+	cfg.JWTAlg = "HS256"
+	cfg.JWTSigningPrivateKey = "jwt-only-secret"
+	cfg.JWTIssuer = "test-issuer"
+	cfg.JWTAudience = "test-aud"
+	cfg.AccessTokenTTL = 5 * time.Minute
+
+	j := iamtokenjwt.NewManager(cfg, id, opaque)
+	srv := httptest.NewServer(newTestHandlerWithDeps(t, nil, cfg, j))
+	defer srv.Close()
+
+	// 1) login returns JWT access token in jwt-only mode
+	loginBody := bytes.NewBufferString(`{"login_id":"single@example.com","password":"secret"}`)
+	loginRes, err := http.Post(srv.URL+"/api/v1/auth/login", "application/json", loginBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer loginRes.Body.Close()
+	if loginRes.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(loginRes.Body)
+		t.Fatalf("login status=%d body=%s", loginRes.StatusCode, b)
+	}
+	var loginOut struct {
+		Session struct {
+			AccessToken string `json:"access_token"`
+		} `json:"session"`
+	}
+	if err := json.NewDecoder(loginRes.Body).Decode(&loginOut); err != nil {
+		t.Fatal(err)
+	}
+	if loginOut.Session.AccessToken == "" {
+		t.Fatal("missing access token")
+	}
+	if bytes.Count([]byte(loginOut.Session.AccessToken), []byte(".")) != 2 {
+		t.Fatalf("expected JWT token, got: %q", loginOut.Session.AccessToken)
+	}
+
+	// 2) protected endpoint with JWT succeeds
+	reqJWT, _ := http.NewRequest(http.MethodGet, srv.URL+"/api/v1/me/effective-access", nil)
+	reqJWT.Header.Set("Authorization", "Bearer "+loginOut.Session.AccessToken)
+	resJWT, err := http.DefaultClient.Do(reqJWT)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resJWT.Body.Close()
+	if resJWT.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resJWT.Body)
+		t.Fatalf("jwt call status=%d body=%s", resJWT.StatusCode, b)
+	}
+
+	// 3) opaque legacy token must be rejected in jwt-only mode
+	legacyOpaque, _, err := opaque.IssueAccessToken(context.Background(), iamapp.AccessTokenClaims{
+		Sub:          "u_single",
+		SessionID:    "legacy-session",
+		MembershipID: "m_010",
+		CompanyID:    "c_010",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reqOpaque, _ := http.NewRequest(http.MethodGet, srv.URL+"/api/v1/me/effective-access", nil)
+	reqOpaque.Header.Set("Authorization", "Bearer "+legacyOpaque)
+	resOpaque, err := http.DefaultClient.Do(reqOpaque)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resOpaque.Body.Close()
+	if resOpaque.StatusCode != http.StatusUnauthorized {
+		b, _ := io.ReadAll(resOpaque.Body)
+		t.Fatalf("opaque in jwt-only status=%d body=%s", resOpaque.StatusCode, b)
+	}
+}
+
+func TestIntegration_jwtMode_expiredTokenRejectedAtHTTPLayer(t *testing.T) {
+	id := &staticID{}
+	opaque := iamtokenopaque.NewManager(id)
+	cfg := testAPIConfig()
+	cfg.AccessTokenMode = "jwt"
+	cfg.JWTAlg = "HS256"
+	cfg.JWTSigningPrivateKey = "jwt-expired-secret"
+	cfg.JWTIssuer = "test-issuer"
+	cfg.JWTAudience = "test-aud"
+	cfg.AccessTokenTTL = 1 * time.Second
+	cfg.JWTClockSkewSec = 0
+
+	j := iamtokenjwt.NewManager(cfg, id, opaque)
+	srv := httptest.NewServer(newTestHandlerWithDeps(t, nil, cfg, j))
+	defer srv.Close()
+
+	loginBody := bytes.NewBufferString(`{"login_id":"single@example.com","password":"secret"}`)
+	loginRes, err := http.Post(srv.URL+"/api/v1/auth/login", "application/json", loginBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer loginRes.Body.Close()
+	if loginRes.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(loginRes.Body)
+		t.Fatalf("login status=%d body=%s", loginRes.StatusCode, b)
+	}
+	var loginOut struct {
+		Session struct {
+			AccessToken string `json:"access_token"`
+		} `json:"session"`
+	}
+	if err := json.NewDecoder(loginRes.Body).Decode(&loginOut); err != nil {
+		t.Fatal(err)
+	}
+	if loginOut.Session.AccessToken == "" {
+		t.Fatal("missing access token")
+	}
+
+	// Wait token expiry and assert HTTP layer rejects it.
+	time.Sleep(2 * time.Second)
+	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/api/v1/me/effective-access", nil)
+	req.Header.Set("Authorization", "Bearer "+loginOut.Session.AccessToken)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusUnauthorized {
+		b, _ := io.ReadAll(res.Body)
+		t.Fatalf("expired token status=%d body=%s", res.StatusCode, b)
+	}
+}
