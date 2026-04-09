@@ -135,6 +135,7 @@ Integration smoke (không cần MySQL): package `internal/httpserver` — `healt
 
 ## Tài liệu thêm
 
+- `docs/build-run.md` — hướng dẫn build/run chi tiết (local nhanh + MySQL đầy đủ + token mode).
 - `TODO.md` — hạng mục còn lệch plan (idempotency, projection writer, P1 sâu, …).
 - `docs/implementation-step-by-step.md` — lộ trình và DoD (Step **P0.8** — IAM + authz MySQL).
 - `docs/api-contracts-json.md` — ví dụ JSON API.
