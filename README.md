@@ -79,7 +79,7 @@ Xem `configs/config.example.env`. Các biến thường dùng:
 
 | Biến | Ý nghĩa |
 |------|---------|
-| `MYSQL_DSN` | Kết nối MySQL: outbox durable (retry + `failed_permanent` sau 10 lần), IAM session/credential, membership query, authorization, **audit_logs**, **admin access APIs**, disclosure/workflow/notification MySQL; `/readyz` ready khi ping OK |
+| `MYSQL_DSN` | Kết nối MySQL: outbox durable (retry + `failed_permanent` sau 10 lần), IAM session/credential, **`login_attempts`** trên login, membership query, authorization, **audit_logs**, **admin access APIs**, disclosure/workflow/notification MySQL, **idempotency** (disclosure submit/confirm); `/readyz` ready khi ping OK |
 | `HTTP_ADDR` | API bind, mặc định `:8080` |
 | `REDIS_ADDR` | Tùy chọn — cache effective-access projection |
 | `EFFECTIVE_ACCESS_CACHE_TTL` | TTL cache projection |
@@ -106,6 +106,15 @@ go run ./cmd/worker
 ```
 
 Không có DSN: worker dùng outbox in-memory và seed demo (không chia sẻ với API).
+
+## Idempotency (disclosure)
+
+Khi có MySQL, gửi header **`Idempotency-Key`** (chuỗi do client chọn, tối đa 191 ký tự) trên:
+
+- `POST /api/v1/disclosures/{record_id}/submit`
+- `POST /api/v1/disclosures/{record_id}/confirm`
+
+Trùng key + cùng nội dung (hash theo company + record + user + thao tác) → trả lại response đã lưu. Key trùng nhưng request khác → `409` (`IDEMPOTENCY_CONFLICT`). Hàng `in_progress` (server chưa Complete) → `409` (client có thể retry sau).
 
 ## Test
 

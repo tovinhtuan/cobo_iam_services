@@ -4,8 +4,8 @@
 
 ## Ưu tiên cao
 
-- **Idempotency**: wire bảng `idempotency_keys` cho API submit/confirm/approve (và các mutation nhạy cảm).
-- **login_attempts**: ghi attempt success/failure từ IAM login (rate limit / audit).
+- **Idempotency**: đã wire cho **disclosure** `POST .../submit` và `POST .../confirm` khi có `MYSQL_DSN` (header `Idempotency-Key`, scope `disclosure.submit` / `disclosure.confirm`). Mở rộng: workflow, notification, admin mutations.
+- **login_attempts**: đã ghi từ **IAM Login** khi có `MYSQL_DSN` (success + failure + mã lỗi). Tiếp: rate limit / dashboard từ bảng này.
 - **Projection writer**: job hoặc consumer outbox cập nhật `membership_effective_*` thay vì chỉ seed/SQL thủ công.
 - **Outbox**: transactional publish cho disclosure/workflow khi cần consistency; xử lý event stuck `processing` (timeout reclaim).
 

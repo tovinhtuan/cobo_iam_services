@@ -21,6 +21,21 @@ type IdentityQueryService interface {
 	GetByUserID(ctx context.Context, userID string) (*AuthenticatedUser, error)
 }
 
+// LoginAttemptRecorder persists login success/failure for audit and rate-limit groundwork.
+type LoginAttemptRecorder interface {
+	Record(ctx context.Context, rec LoginAttemptRecord) error
+}
+
+// LoginAttemptRecord maps to table login_attempts (0001).
+type LoginAttemptRecord struct {
+	LoginID     string
+	UserID      string
+	Success     bool
+	FailureCode string
+	IP          string
+	UserAgent   string
+}
+
 // SessionRepository persists and rotates sessions/refresh tokens.
 type SessionRepository interface {
 	Create(ctx context.Context, p CreateSessionParams) error

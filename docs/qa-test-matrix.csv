@@ -1,0 +1,63 @@
+Endpoint,Case,Input,Expected status,Expected error code
+GET /healthz,Health check always ok,"No auth",200,
+GET /readyz,Ready when DB configured and reachable,"MYSQL_DSN set + DB up",200,
+GET /readyz,Not ready when DB not configured,"MYSQL_DSN empty",503,
+POST /api/v1/auth/login,Login success single company,"{""login_id"":""single@example.com"",""password"":""secret""}",200,
+POST /api/v1/auth/login,Login success multi company pre-company token,"{""login_id"":""user@example.com"",""password"":""secret""}",200,
+POST /api/v1/auth/login,Login fail invalid credentials,"{""login_id"":""user@example.com"",""password"":""wrong""}",401,INVALID_CREDENTIALS
+POST /api/v1/auth/login,Login fail missing fields,"{""login_id"":"""",""password"":""""}",400,INVALID_REQUEST
+POST /api/v1/auth/select-company,Select company success,"Authorization: Bearer <pre_company_token>, {""company_id"":""c_001""}",200,
+POST /api/v1/auth/select-company,Select company membership not found,"Authorization: Bearer <pre_company_token>, {""company_id"":""c_999""}",403,MEMBERSHIP_NOT_FOUND
+POST /api/v1/auth/switch-company,Switch company success,"Authorization: Bearer <access_token>, {""company_id"":""c_002""}",200,
+POST /api/v1/auth/switch-company,Switch company membership not found,"Authorization: Bearer <access_token>, {""company_id"":""c_999""}",403,MEMBERSHIP_NOT_FOUND
+POST /api/v1/auth/refresh,Refresh success and rotate,"{""refresh_token"":""<valid_refresh_token>""}",200,
+POST /api/v1/auth/refresh,Refresh fail missing token,"{""refresh_token"":""""}",400,INVALID_REQUEST
+POST /api/v1/auth/refresh,Refresh fail revoked or invalid token,"{""refresh_token"":""<revoked_or_invalid>""}",401,SESSION_EXPIRED
+POST /api/v1/auth/logout,Logout success,"{""refresh_token"":""<valid_refresh_token>""}",200,
+POST /api/v1/auth/logout,Logout fail missing token,"{""refresh_token"":""""}",400,INVALID_REQUEST
+GET /api/v1/me,Get profile success,"Authorization: Bearer <access_token>",200,
+GET /api/v1/me,Get profile fail token invalid,"Authorization: Bearer <invalid_token>",401,
+GET /api/v1/me/companies,List companies success,"Authorization: Bearer <access_token>",200,
+GET /api/v1/me/effective-access,Get effective access success,"Authorization: Bearer <access_token>",200,
+GET /api/v1/me/capabilities,Get capabilities success,"Authorization: Bearer <access_token>",200,
+GET /api/v1/me/membership,Get membership details success,"Authorization: Bearer <access_token>",200,
+POST /internal/v1/authorize,Authorize allow case,"Authorization: Bearer <access_token>, {""subject"":{""membership_id"":""m_001"",""company_id"":""c_001""},""action"":""disclosure.view"",""resource"":{""type"":""disclosure_record"",""id"":""r1"",""attributes"":{""department_id"":""d_legal""}}}",200,
+POST /internal/v1/authorize,Authorize deny permission,"Authorization: Bearer <access_token>, action without permission",200,PERMISSION_DENIED
+POST /internal/v1/authorize,Authorize fail missing company context,"Authorization: Bearer <access_token>, missing membership/company in body",422,COMPANY_CONTEXT_REQUIRED
+POST /internal/v1/authorize/batch,Batch authorize mixed results,"Authorization: Bearer <access_token>, checks with allow+deny",200,
+POST /api/v1/disclosures,Create disclosure success,"Authorization: Bearer <access_token>, valid payload",201,
+POST /api/v1/disclosures,Create disclosure deny permission,"Authorization: Bearer <access_token without permission>",403,PERMISSION_DENIED
+GET /api/v1/disclosures,List disclosures success,"Authorization: Bearer <access_token>",200,
+GET /api/v1/disclosures/{record_id},Get disclosure success,"Authorization: Bearer <access_token>, existing record_id",200,
+PATCH /api/v1/disclosures/{record_id},Update disclosure success,"Authorization: Bearer <access_token>, valid payload",200,
+POST /api/v1/disclosures/{record_id}/submit,Submit disclosure success,"Authorization: Bearer <access_token>, optional Idempotency-Key",200,
+POST /api/v1/disclosures/{record_id}/submit,Submit disclosure idempotent replay,"Same Idempotency-Key + same caller/company/record/op",200,
+POST /api/v1/disclosures/{record_id}/submit,Submit disclosure idempotency conflict,"Same Idempotency-Key but different request hash",409,IDEMPOTENCY_CONFLICT
+POST /api/v1/disclosures/{record_id}/confirm,Confirm disclosure success,"Authorization: Bearer <access_token>, record in submitted state, optional Idempotency-Key",200,
+POST /api/v1/disclosures/{record_id}/confirm,Confirm disclosure state conflict,"Authorization: Bearer <access_token>, record not in submitted state",409,STATE_CONFLICT
+POST /api/v1/workflows/instances,Create workflow instance success,"Authorization: Bearer <access_token>, {""record_id"":""<existing_record>""}",201,
+POST /api/v1/workflows/tasks/{task_id}/review,Review task success,"Authorization: Bearer <assignee_access_token>",200,
+POST /api/v1/workflows/tasks/{task_id}/approve,Approve task assignee mismatch,"Authorization: Bearer <non_assignee_access_token>",403,RESPONSIBILITY_REQUIRED
+POST /api/v1/workflows/tasks/{task_id}/confirm,Confirm task state conflict,"Authorization: Bearer <access_token>, task not pending",409,STATE_CONFLICT
+POST /api/v1/workflows/resolve-assignees,Resolve assignees success,"Authorization: Bearer <access_token>, {""workflow_instance_id"":""wi1"",""step_code"":""review""}",200,
+POST /api/v1/notifications/resolve-recipients,Resolve recipients success,"Authorization: Bearer <access_token>, valid payload",200,
+POST /api/v1/notifications/enqueue,Enqueue notification success,"Authorization: Bearer <access_token>, {""event_type"":""notification.dispatch"",""resource_type"":""disclosure_record"",""resource_id"":""r1"",""payload"":{}}",201,
+POST /api/v1/notifications/enqueue,Enqueue fail missing event_type,"Authorization: Bearer <access_token>, {""event_type"":""""}",400,INVALID_REQUEST
+POST /api/v1/notifications/dispatch,Dispatch pending success,"Authorization: Bearer <access_token>, optional {""limit"":50}",200,
+POST /api/v1/admin/memberships,Create membership success,"Authorization: Bearer <admin_access_token>, {""user_id"":""u_123"",""company_id"":""c_001"",""status"":""active""}",201,
+PATCH /api/v1/admin/memberships/{membership_id},Update membership status success,"Authorization: Bearer <admin_access_token>, {""status"":""inactive""}",200,
+DELETE /api/v1/admin/memberships/{membership_id},Delete membership success,"Authorization: Bearer <admin_access_token>",200,
+GET /api/v1/admin/companies/{company_id}/memberships,List memberships success,"Authorization: Bearer <admin_access_token>",200,
+POST /api/v1/admin/memberships/{membership_id}/roles,Assign role success,"Authorization: Bearer <admin_access_token>, {""role_id"":""<role_uuid>""}",200,
+DELETE /api/v1/admin/memberships/{membership_id}/roles/{role_id},Remove role success,"Authorization: Bearer <admin_access_token>",200,
+POST /api/v1/admin/memberships/{membership_id}/departments,Assign department success,"Authorization: Bearer <admin_access_token>, {""department_id"":""<department_uuid>""}",200,
+DELETE /api/v1/admin/memberships/{membership_id}/departments/{department_id},Remove department success,"Authorization: Bearer <admin_access_token>",200,
+POST /api/v1/admin/memberships/{membership_id}/titles,Assign title success,"Authorization: Bearer <admin_access_token>, {""title_id"":""<title_uuid>""}",200,
+DELETE /api/v1/admin/memberships/{membership_id}/titles/{title_id},Remove title success,"Authorization: Bearer <admin_access_token>",200,
+GET /api/v1/admin/permissions,List permissions success,"Authorization: Bearer <admin_access_token>",200,
+GET /api/v1/admin/roles,List roles success,"Authorization: Bearer <admin_access_token>",200,
+POST /api/v1/admin/roles/{role_id}/permissions,Assign role permission success,"Authorization: Bearer <admin_access_token>, {""permission_id"":""<permission_uuid>""}",200,
+DELETE /api/v1/admin/roles/{role_id}/permissions/{permission_id},Remove role permission success,"Authorization: Bearer <admin_access_token>",200,
+POST /api/v1/admin/resource-scope-rules,Create resource scope rule success,"Authorization: Bearer <admin_access_token>, payload includes company_id/rule_code/resource_type/scope_type/subject_type/subject_ref_id",201,
+POST /api/v1/admin/workflow-assignee-rules,Create workflow assignee rule success,"Authorization: Bearer <admin_access_token>, payload includes company_id",201,
+POST /api/v1/admin/notification-rules,Create notification rule success,"Authorization: Bearer <admin_access_token>, payload includes company_id",201,

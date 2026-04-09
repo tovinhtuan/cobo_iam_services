@@ -35,6 +35,8 @@ import (
 	platformclock "github.com/cobo/cobo_iam_services/internal/platform/clock"
 	"github.com/cobo/cobo_iam_services/internal/platform/config"
 	"github.com/cobo/cobo_iam_services/internal/platform/httpx"
+	"github.com/cobo/cobo_iam_services/internal/platform/idempotency"
+	idempotencymysql "github.com/cobo/cobo_iam_services/internal/platform/idempotency/mysql"
 	"github.com/cobo/cobo_iam_services/internal/platform/idgen"
 	platformoutbox "github.com/cobo/cobo_iam_services/internal/platform/outbox"
 	outboxinmem "github.com/cobo/cobo_iam_services/internal/platform/outbox/inmemory"
@@ -133,7 +135,12 @@ func register(mux *http.ServeMux, log *slog.Logger, sqlDB pingDB, projectionStor
 		credVerifier = static
 		identity = static
 	}
-	iamSvc := iamapp.NewService(credVerifier, sessionRepo, tokenManager, memberQuery, id)
+	var iamOpts []iamapp.ServiceOption
+	if pool != nil {
+		iamOpts = append(iamOpts, iamapp.WithLoginAttemptRecorder(iammysql.NewLoginAttemptRecorder(pool)))
+		log.Info("login_attempts writes enabled (MySQL)")
+	}
+	iamSvc := iamapp.NewService(credVerifier, sessionRepo, tokenManager, memberQuery, id, iamOpts...)
 	iamHandler := iamhttp.NewHandler(log, iamSvc, tokenManager, auditSvc, outboxPublisher, id)
 	var authRepo authapp.Repository = authinmem.NewRepository()
 	if pool != nil {
@@ -160,7 +167,12 @@ func register(mux *http.ServeMux, log *slog.Logger, sqlDB pingDB, projectionStor
 		}
 	}
 	disclosureSvc := disclosureapp.NewService(disclosureRepo, authSvc, id)
-	disclosureHandler := disclosurehttp.NewHandler(disclosureSvc, tokenManager)
+	var idemStore idempotency.Store
+	if pool != nil {
+		idemStore = idempotencymysql.NewStore(pool)
+		log.Info("disclosure submit/confirm idempotency enabled (Idempotency-Key header)")
+	}
+	disclosureHandler := disclosurehttp.NewHandler(disclosureSvc, tokenManager, idemStore)
 	workflowSvc := workflowapp.NewService(workflowRepo, authSvc, id)
 	workflowHandler := workflowhttp.NewHandler(workflowSvc, tokenManager)
 	notificationSvc := notificationapp.NewService(notificationRepo, authSvc, id, outboxPublisher, notifOpts...)

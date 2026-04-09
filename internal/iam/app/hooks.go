@@ -19,6 +19,13 @@ func WithSSOLoginBridge(b SSOLoginBridge) ServiceOption {
 	}
 }
 
+// WithLoginAttemptRecorder records each login outcome (e.g. MySQL login_attempts). Nil ignored.
+func WithLoginAttemptRecorder(r LoginAttemptRecorder) ServiceOption {
+	return func(s *service) {
+		s.attempts = r
+	}
+}
+
 // MFACheck verifies second factor (TOTP, WebAuthn callback, etc.) before membership enumeration and session issuance.
 // Return nil to allow login to continue; return *perr.HTTPError (or wrapped) to block with a stable code.
 type MFACheck interface {

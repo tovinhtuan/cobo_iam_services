@@ -19,6 +19,7 @@ type service struct {
 	idgen       idgen.Generator
 	mfa         MFACheck
 	sso         SSOLoginBridge
+	attempts    LoginAttemptRecorder
 }
 
 func NewService(cred CredentialVerifier, sessions SessionRepository, tokens TokenIssuer, memberships ca.MembershipQueryService, idgen idgen.Generator, opts ...ServiceOption) Service {
@@ -36,37 +37,47 @@ func (s *service) Login(ctx context.Context, req LoginRequest) (*LoginResponse, 
 	if s.sso != nil {
 		u, handled, err := s.sso.TryExternalPrimaryAuth(ctx, req)
 		if err != nil {
+			s.recordLoginAttempt(ctx, req, nil, false, err)
 			return nil, err
 		}
 		if handled {
 			if u == nil {
-				return nil, perr.NewHTTPError(http.StatusInternalServerError, perr.CodeInternal, "sso bridge returned no user", nil)
+				e := perr.NewHTTPError(http.StatusInternalServerError, perr.CodeInternal, "sso bridge returned no user", nil)
+				s.recordLoginAttempt(ctx, req, nil, false, e)
+				return nil, e
 			}
 			user = u
 		}
 	}
 	if user == nil {
 		if strings.TrimSpace(req.LoginID) == "" || strings.TrimSpace(req.Password) == "" {
-			return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "login_id and password are required", nil)
+			e := perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "login_id and password are required", nil)
+			s.recordLoginAttempt(ctx, req, nil, false, e)
+			return nil, e
 		}
 		var err error
 		user, err = s.cred.Verify(ctx, req.LoginID, req.Password)
 		if err != nil {
+			s.recordLoginAttempt(ctx, req, nil, false, err)
 			return nil, err
 		}
 	}
 	if strings.ToLower(user.Status) != "active" {
-		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodeAccountLocked, "account is not active", nil)
+		e := perr.NewHTTPError(http.StatusForbidden, perr.CodeAccountLocked, "account is not active", nil)
+		s.recordLoginAttempt(ctx, req, user, false, e)
+		return nil, e
 	}
 
 	if s.mfa != nil {
 		if err := s.mfa.VerifyAfterPrimaryAuth(ctx, user, req); err != nil {
+			s.recordLoginAttempt(ctx, req, user, false, err)
 			return nil, err
 		}
 	}
 
 	memberships, err := s.memberships.GetMembershipsByUser(ctx, user.UserID)
 	if err != nil {
+		s.recordLoginAttempt(ctx, req, user, false, err)
 		return nil, fmt.Errorf("list memberships: %w", err)
 	}
 	active := make([]ca.MembershipView, 0, len(memberships))
@@ -76,12 +87,15 @@ func (s *service) Login(ctx context.Context, req LoginRequest) (*LoginResponse, 
 		}
 	}
 	if len(active) == 0 {
-		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodeNoActiveCompanyAccess, "User does not have any active company membership.", nil)
+		e := perr.NewHTTPError(http.StatusForbidden, perr.CodeNoActiveCompanyAccess, "User does not have any active company membership.", nil)
+		s.recordLoginAttempt(ctx, req, user, false, e)
+		return nil, e
 	}
 
 	sid := s.idgen.NewUUID()
 	refresh, err := s.tokens.IssueRefreshToken(ctx, sid, user.UserID)
 	if err != nil {
+		s.recordLoginAttempt(ctx, req, user, false, err)
 		return nil, fmt.Errorf("issue refresh token: %w", err)
 	}
 
@@ -94,6 +108,7 @@ func (s *service) Login(ctx context.Context, req LoginRequest) (*LoginResponse, 
 		m := active[0]
 		access, exp, err := s.tokens.IssueAccessToken(ctx, AccessTokenClaims{Sub: user.UserID, SessionID: sid, MembershipID: m.MembershipID, CompanyID: m.CompanyID})
 		if err != nil {
+			s.recordLoginAttempt(ctx, req, user, false, err)
 			return nil, fmt.Errorf("issue access token: %w", err)
 		}
 		resp.Session.AccessToken = access
@@ -101,13 +116,16 @@ func (s *service) Login(ctx context.Context, req LoginRequest) (*LoginResponse, 
 		resp.CurrentContext = &LoginCurrentContext{CompanyID: m.CompanyID, MembershipID: m.MembershipID, AutoSelected: true}
 		resp.NextAction = "load_effective_access"
 		if err := s.sessions.Create(ctx, CreateSessionParams{SessionID: sid, UserID: user.UserID, MembershipID: m.MembershipID, CompanyID: m.CompanyID, RefreshToken: refresh, IP: req.IP, UserAgent: req.UserAgent}); err != nil {
+			s.recordLoginAttempt(ctx, req, user, false, err)
 			return nil, fmt.Errorf("create session: %w", err)
 		}
+		s.recordLoginAttempt(ctx, req, user, true, nil)
 		return resp, nil
 	}
 
 	pre, exp, err := s.tokens.IssuePreCompanyToken(ctx, user.UserID, sid)
 	if err != nil {
+		s.recordLoginAttempt(ctx, req, user, false, err)
 		return nil, fmt.Errorf("issue pre-company token: %w", err)
 	}
 	resp.Session.PreCompanyToken = pre
@@ -118,9 +136,40 @@ func (s *service) Login(ctx context.Context, req LoginRequest) (*LoginResponse, 
 		resp.Memberships = append(resp.Memberships, LoginMembershipSummary{CompanyID: m.CompanyID, CompanyName: m.CompanyName, MembershipID: m.MembershipID})
 	}
 	if err := s.sessions.Create(ctx, CreateSessionParams{SessionID: sid, UserID: user.UserID, RefreshToken: refresh, IP: req.IP, UserAgent: req.UserAgent}); err != nil {
+		s.recordLoginAttempt(ctx, req, user, false, err)
 		return nil, fmt.Errorf("create session: %w", err)
 	}
+	s.recordLoginAttempt(ctx, req, user, true, nil)
 	return resp, nil
+}
+
+func (s *service) recordLoginAttempt(ctx context.Context, req LoginRequest, user *AuthenticatedUser, success bool, errVal error) {
+	if s.attempts == nil {
+		return
+	}
+	loginID := strings.TrimSpace(strings.ToLower(req.LoginID))
+	if user != nil && strings.TrimSpace(user.LoginID) != "" {
+		loginID = strings.TrimSpace(strings.ToLower(user.LoginID))
+	}
+	if loginID == "" {
+		return
+	}
+	var uid string
+	if user != nil {
+		uid = user.UserID
+	}
+	fc := ""
+	if !success && errVal != nil {
+		if he, ok := perr.AsHTTPError(errVal); ok && he != nil {
+			fc = string(he.Code)
+		} else {
+			fc = "UNKNOWN"
+		}
+	}
+	_ = s.attempts.Record(ctx, LoginAttemptRecord{
+		LoginID: loginID, UserID: uid, Success: success, FailureCode: fc,
+		IP: req.IP, UserAgent: req.UserAgent,
+	})
 }
 
 func (s *service) Refresh(ctx context.Context, req RefreshRequest) (*RefreshResponse, error) {

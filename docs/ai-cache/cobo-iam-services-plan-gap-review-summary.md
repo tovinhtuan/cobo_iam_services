@@ -27,11 +27,11 @@ Tham chiếu: `docs/implementation-step-by-step.md` + wire `internal/httpserver/
 ### 3. Audit đầy đủ (Sec 16)
 
 - Cột `effective_permissions_snapshot` / `effective_scope_snapshot` có trong schema; **IAM/admin hooks hiện ít khi gửi** (metadata có, snapshot thường trống).
-- **login_attempts** (0001): schema có thể có — **chưa** ghi rate/audit login attempt từ app.
+- **login_attempts** (0001): **đã ghi** từ `Login` khi có DSN (mã lỗi từ `HTTPError` khi có). Snapshot audit / rate limit — tùy bước sau.
 
 ### 4. Idempotency (0001)
 
-- Bảng `idempotency_keys` — **chưa** gắn confirm/submit/approve/disclosure theo plan.
+- **Disclosure** submit/confirm: đã dùng `idempotency_keys` khi có `MYSQL_DSN` + header `Idempotency-Key`. Các API khác — chưa.
 
 ### 5. Projection P2.1 / 0003
 

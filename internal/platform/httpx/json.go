@@ -18,6 +18,15 @@ type ErrorBody struct {
 	} `json:"error"`
 }
 
+// WriteJSONRaw writes already-encoded JSON bytes (Content-Type application/json).
+func WriteJSONRaw(w http.ResponseWriter, status int, rawJSON []byte) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(status)
+	if len(rawJSON) > 0 {
+		_, _ = w.Write(rawJSON)
+	}
+}
+
 // WriteJSON writes a JSON response with the given status.
 func WriteJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
