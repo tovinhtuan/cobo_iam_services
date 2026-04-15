@@ -23,7 +23,11 @@ func NewMeHandler(base *Handler, identities iamapp.IdentityQueryService, members
 
 func (m *MeHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/me", m.me)
+	// Alias for frontend contract compatibility.
+	mux.HandleFunc("GET /api/v1/me/profile", m.me)
 	mux.HandleFunc("GET /api/v1/me/companies", m.companies)
+	// Alias for frontend contract compatibility.
+	mux.HandleFunc("GET /api/v1/me/authorized-companies", m.companies)
 	mux.HandleFunc("GET /api/v1/me/effective-access", m.effectiveAccess)
 	mux.HandleFunc("GET /api/v1/me/capabilities", m.capabilities)
 	mux.HandleFunc("GET /api/v1/me/membership", m.membership)
@@ -103,12 +107,41 @@ func (m *MeHandler) capabilities(w http.ResponseWriter, r *http.Request) {
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"modules": map[string]bool{
-			"dashboard":             hasPermission(eff.Permissions, "view_dashboard"),
-			"user_management":       hasPermission(eff.Permissions, "manage_users"),
-			"department_management": hasPermission(eff.Permissions, "manage_departments"),
-			"disclosure":            hasPermission(eff.Permissions, "view_disclosure"),
-			"workflow_approval":     hasPermission(eff.Permissions, "approve_disclosure"),
-			"notification_config":   hasPermission(eff.Permissions, "manage_notification_rules"),
+			// Keep backward-compatible checks while aligning with cobo_web_design permission catalog.
+			"dashboard": hasAnyPermission(eff.Permissions,
+				"view_dashboard",
+				"company.view",
+				"deadline.view",
+				"disclosure.view",
+			),
+			"user_management": hasAnyPermission(eff.Permissions,
+				"manage_users",
+				"user.edit",
+				"rbac.manage",
+				"system.settings",
+			),
+			"department_management": hasAnyPermission(eff.Permissions,
+				"manage_departments",
+				"recipient.manage",
+				"user.edit",
+				"rbac.manage",
+			),
+			"disclosure": hasAnyPermission(eff.Permissions,
+				"view_disclosure",
+				"disclosure.view",
+				"disclosure.create",
+				"disclosure.edit",
+			),
+			"workflow_approval": hasAnyPermission(eff.Permissions,
+				"approve_disclosure",
+				"disclosure.approve",
+				"workflow.step.confirm",
+				"workflow.step.override",
+			),
+			"notification_config": hasAnyPermission(eff.Permissions,
+				"manage_notification_rules",
+				"alert.channels.manage",
+			),
 		},
 	})
 }
@@ -151,6 +184,15 @@ func (m *MeHandler) membership(w http.ResponseWriter, r *http.Request) {
 func hasPermission(items []string, target string) bool {
 	for _, it := range items {
 		if it == target {
+			return true
+		}
+	}
+	return false
+}
+
+func hasAnyPermission(items []string, targets ...string) bool {
+	for _, t := range targets {
+		if hasPermission(items, t) {
 			return true
 		}
 	}

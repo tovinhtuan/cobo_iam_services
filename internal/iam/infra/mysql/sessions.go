@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"net/http"
 	"time"
 
 	iamapp "github.com/cobo/cobo_iam_services/internal/iam/app"
@@ -130,6 +131,51 @@ func (r *SessionRepository) RotateRefreshToken(ctx context.Context, sessionID, n
 	n, _ := res.RowsAffected()
 	if n == 0 {
 		return perr.NewHTTPError(401, perr.CodeSessionExpired, "session expired", nil)
+	}
+	return nil
+}
+
+func (r *SessionRepository) ListByUser(ctx context.Context, userID string) ([]iamapp.SessionState, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT session_id, IFNULL(current_membership_id, ''), IFNULL(current_company_id, ''),
+		       IFNULL(ip, ''), IFNULL(user_agent, ''), IFNULL(revoked_at, NULL)
+		FROM sessions
+		WHERE user_id = ?
+		ORDER BY created_at DESC
+	`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("session list by user: %w", err)
+	}
+	defer rows.Close()
+	out := make([]iamapp.SessionState, 0)
+	for rows.Next() {
+		var sid, mid, cid, ip, ua string
+		var revoked sql.NullTime
+		if err := rows.Scan(&sid, &mid, &cid, &ip, &ua, &revoked); err != nil {
+			return nil, fmt.Errorf("session scan by user: %w", err)
+		}
+		out = append(out, iamapp.SessionState{
+			SessionID: sid, UserID: userID, MembershipID: mid, CompanyID: cid,
+			IP: ip, UserAgent: ua, Revoked: revoked.Valid,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("session iter by user: %w", err)
+	}
+	return out, nil
+}
+
+func (r *SessionRepository) RevokeBySessionID(ctx context.Context, userID, sessionID string) error {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE sessions SET revoked_at = ?, revoked_reason = 'manual_revoke'
+		WHERE session_id = ? AND user_id = ? AND revoked_at IS NULL
+	`, r.now(), sessionID, userID)
+	if err != nil {
+		return fmt.Errorf("session revoke by id: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return perr.NewHTTPError(http.StatusNotFound, perr.CodeMembershipNotFound, "session not found", nil)
 	}
 	return nil
 }

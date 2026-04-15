@@ -32,8 +32,15 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/auth/login", h.login)
 	mux.HandleFunc("POST /api/v1/auth/refresh", h.refresh)
 	mux.HandleFunc("POST /api/v1/auth/logout", h.logout)
+	mux.HandleFunc("POST /api/v1/auth/forgot-password", h.forgotPassword)
+	mux.HandleFunc("POST /api/v1/auth/reset-password", h.resetPassword)
+	mux.HandleFunc("POST /api/v1/auth/verify-email", h.verifyEmail)
 	mux.HandleFunc("POST /api/v1/auth/select-company", h.selectCompany)
 	mux.HandleFunc("POST /api/v1/auth/switch-company", h.switchCompany)
+	// Alias for frontend contract compatibility: /api/v1/me/active-company
+	mux.HandleFunc("POST /api/v1/me/active-company", h.activeCompany)
+	mux.HandleFunc("GET /api/v1/sessions", h.listSessions)
+	mux.HandleFunc("POST /api/v1/sessions/{session_id}/revoke", h.revokeSession)
 }
 
 func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
@@ -62,6 +69,48 @@ func (h *Handler) refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp, err := h.svc.Refresh(r.Context(), req)
+	if err != nil {
+		httpx.WriteError(w, h.log, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) forgotPassword(w http.ResponseWriter, r *http.Request) {
+	var req iamapp.ForgotPasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, h.log, err)
+		return
+	}
+	resp, err := h.svc.ForgotPassword(r.Context(), req)
+	if err != nil {
+		httpx.WriteError(w, h.log, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) resetPassword(w http.ResponseWriter, r *http.Request) {
+	var req iamapp.ResetPasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, h.log, err)
+		return
+	}
+	resp, err := h.svc.ResetPassword(r.Context(), req)
+	if err != nil {
+		httpx.WriteError(w, h.log, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) verifyEmail(w http.ResponseWriter, r *http.Request) {
+	var req iamapp.VerifyEmailRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, h.log, err)
+		return
+	}
+	resp, err := h.svc.VerifyEmail(r.Context(), req)
 	if err != nil {
 		httpx.WriteError(w, h.log, err)
 		return
@@ -132,6 +181,46 @@ func (h *Handler) switchCompany(w http.ResponseWriter, r *http.Request) {
 	}
 	h.auditEvent(r, "switch_company", "allow", claims.Sub, resp.CurrentContext.MembershipID, map[string]any{"from_company_id": claims.CompanyID, "to_company_id": resp.CurrentContext.CompanyID})
 	h.publishEvent(r, "iam.company.switched", claims.Sub, map[string]any{"from_company_id": claims.CompanyID, "to_company_id": resp.CurrentContext.CompanyID, "membership_id": resp.CurrentContext.MembershipID})
+	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) activeCompany(w http.ResponseWriter, r *http.Request) {
+	// Same behavior as switch-company; mounted as /me/active-company for FE compatibility.
+	h.switchCompany(w, r)
+}
+
+func (h *Handler) listSessions(w http.ResponseWriter, r *http.Request) {
+	bearer := bearerToken(r.Header.Get("Authorization"))
+	claims, err := h.inspector.InspectAccessToken(r.Context(), bearer)
+	if err != nil {
+		httpx.WriteError(w, h.log, err)
+		return
+	}
+	resp, err := h.svc.ListSessions(r.Context(), iamapp.ListSessionsRequest{
+		UserID: claims.Sub, CurrentSessionID: claims.SessionID,
+	})
+	if err != nil {
+		httpx.WriteError(w, h.log, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) revokeSession(w http.ResponseWriter, r *http.Request) {
+	bearer := bearerToken(r.Header.Get("Authorization"))
+	claims, err := h.inspector.InspectAccessToken(r.Context(), bearer)
+	if err != nil {
+		httpx.WriteError(w, h.log, err)
+		return
+	}
+	sid := r.PathValue("session_id")
+	resp, err := h.svc.RevokeSession(r.Context(), iamapp.RevokeSessionRequest{
+		UserID: claims.Sub, SessionID: sid,
+	})
+	if err != nil {
+		httpx.WriteError(w, h.log, err)
+		return
+	}
 	httpx.WriteJSON(w, http.StatusOK, resp)
 }
 

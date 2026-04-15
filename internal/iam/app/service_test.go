@@ -229,6 +229,40 @@ func TestSSOBridge_skipsPassword(t *testing.T) {
 	}
 }
 
+func TestResetPassword_invalidToken_usesDedicatedCode(t *testing.T) {
+	ctx := context.Background()
+	svc := newTestIAMService(t, testIAMDeps{
+		cred:    testCred(),
+		members: cainmem.NewMembershipQueryService(),
+	})
+	_, err := svc.ResetPassword(ctx, iamapp.ResetPasswordRequest{
+		Token: "bad-token", NewPassword: "new-password-123",
+	})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	he, ok := perr.AsHTTPError(err)
+	if !ok || he.Code != perr.CodePasswordResetTokenInvalid {
+		t.Fatalf("got %#v", err)
+	}
+}
+
+func TestVerifyEmail_invalidToken_usesDedicatedCode(t *testing.T) {
+	ctx := context.Background()
+	svc := newTestIAMService(t, testIAMDeps{
+		cred:    testCred(),
+		members: cainmem.NewMembershipQueryService(),
+	})
+	_, err := svc.VerifyEmail(ctx, iamapp.VerifyEmailRequest{Token: "bad-token"})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	he, ok := perr.AsHTTPError(err)
+	if !ok || he.Code != perr.CodeEmailVerificationTokenInvalid {
+		t.Fatalf("got %#v", err)
+	}
+}
+
 // --- test harness
 
 type testIAMDeps struct {

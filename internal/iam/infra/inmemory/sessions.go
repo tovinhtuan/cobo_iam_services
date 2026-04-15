@@ -22,7 +22,10 @@ func NewSessionRepository() *SessionRepository {
 func (r *SessionRepository) Create(_ context.Context, p iamapp.CreateSessionParams) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	ss := &iamapp.SessionState{SessionID: p.SessionID, UserID: p.UserID, MembershipID: p.MembershipID, CompanyID: p.CompanyID, RefreshToken: p.RefreshToken}
+	ss := &iamapp.SessionState{
+		SessionID: p.SessionID, UserID: p.UserID, MembershipID: p.MembershipID, CompanyID: p.CompanyID,
+		RefreshToken: p.RefreshToken, IP: p.IP, UserAgent: p.UserAgent,
+	}
 	r.byRefreshToken[p.RefreshToken] = ss
 	r.bySessionID[p.SessionID] = ss
 	return nil
@@ -72,5 +75,29 @@ func (r *SessionRepository) RotateRefreshToken(_ context.Context, sessionID, new
 	delete(r.byRefreshToken, ss.RefreshToken)
 	ss.RefreshToken = newRefreshToken
 	r.byRefreshToken[newRefreshToken] = ss
+	return nil
+}
+
+func (r *SessionRepository) ListByUser(_ context.Context, userID string) ([]iamapp.SessionState, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]iamapp.SessionState, 0)
+	for _, ss := range r.bySessionID {
+		if ss.UserID != userID {
+			continue
+		}
+		out = append(out, *ss)
+	}
+	return out, nil
+}
+
+func (r *SessionRepository) RevokeBySessionID(_ context.Context, userID, sessionID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	ss, ok := r.bySessionID[sessionID]
+	if !ok || ss.UserID != userID {
+		return perr.NewHTTPError(http.StatusNotFound, perr.CodeMembershipNotFound, "session not found", nil)
+	}
+	ss.Revoked = true
 	return nil
 }

@@ -33,6 +33,10 @@ func NewService(cred CredentialVerifier, sessions SessionRepository, tokens Toke
 }
 
 func (s *service) Login(ctx context.Context, req LoginRequest) (*LoginResponse, error) {
+	loginID := strings.TrimSpace(req.LoginID)
+	if loginID == "" {
+		loginID = strings.TrimSpace(req.Email)
+	}
 	var user *AuthenticatedUser
 	if s.sso != nil {
 		u, handled, err := s.sso.TryExternalPrimaryAuth(ctx, req)
@@ -50,13 +54,13 @@ func (s *service) Login(ctx context.Context, req LoginRequest) (*LoginResponse, 
 		}
 	}
 	if user == nil {
-		if strings.TrimSpace(req.LoginID) == "" || strings.TrimSpace(req.Password) == "" {
+		if loginID == "" || strings.TrimSpace(req.Password) == "" {
 			e := perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "login_id and password are required", nil)
 			s.recordLoginAttempt(ctx, req, nil, false, e)
 			return nil, e
 		}
 		var err error
-		user, err = s.cred.Verify(ctx, req.LoginID, req.Password)
+		user, err = s.cred.Verify(ctx, loginID, req.Password)
 		if err != nil {
 			s.recordLoginAttempt(ctx, req, nil, false, err)
 			return nil, err
@@ -213,6 +217,69 @@ func (s *service) Logout(ctx context.Context, req LogoutRequest) (*LogoutRespons
 		return nil, err
 	}
 	return &LogoutResponse{Success: true}, nil
+}
+
+func (s *service) ForgotPassword(_ context.Context, req ForgotPasswordRequest) (*ForgotPasswordResponse, error) {
+	if strings.TrimSpace(req.Email) == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "email is required", nil)
+	}
+	// Mock behavior: always return success to avoid account enumeration.
+	return &ForgotPasswordResponse{Success: true}, nil
+}
+
+func (s *service) ResetPassword(_ context.Context, req ResetPasswordRequest) (*ResetPasswordResponse, error) {
+	if strings.TrimSpace(req.Token) == "" || strings.TrimSpace(req.NewPassword) == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "token and new_password are required", nil)
+	}
+	// Mock contract: accept token prefix to emulate valid reset links.
+	if !strings.HasPrefix(strings.TrimSpace(req.Token), "mock-reset-") {
+		return nil, perr.NewHTTPError(http.StatusUnauthorized, perr.CodePasswordResetTokenInvalid, "reset token invalid or expired", nil)
+	}
+	return &ResetPasswordResponse{Success: true}, nil
+}
+
+func (s *service) VerifyEmail(_ context.Context, req VerifyEmailRequest) (*VerifyEmailResponse, error) {
+	if strings.TrimSpace(req.Token) == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "token is required", nil)
+	}
+	// Mock contract: accept token prefix to emulate valid verification links.
+	if !strings.HasPrefix(strings.TrimSpace(req.Token), "mock-verify-") {
+		return nil, perr.NewHTTPError(http.StatusUnauthorized, perr.CodeEmailVerificationTokenInvalid, "verification token invalid or expired", nil)
+	}
+	return &VerifyEmailResponse{Success: true}, nil
+}
+
+func (s *service) ListSessions(ctx context.Context, req ListSessionsRequest) (*ListSessionsResponse, error) {
+	if strings.TrimSpace(req.UserID) == "" {
+		return nil, perr.NewHTTPError(http.StatusUnauthorized, perr.CodeSessionExpired, "invalid session token", nil)
+	}
+	sessions, err := s.sessions.ListByUser(ctx, req.UserID)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]SessionView, 0, len(sessions))
+	for _, ss := range sessions {
+		items = append(items, SessionView{
+			SessionID:            ss.SessionID,
+			CurrentCompanyID:     ss.CompanyID,
+			CurrentMembershipID:  ss.MembershipID,
+			IP:                   ss.IP,
+			UserAgent:            ss.UserAgent,
+			Current:              ss.SessionID == req.CurrentSessionID,
+			Revoked:              ss.Revoked,
+		})
+	}
+	return &ListSessionsResponse{Items: items}, nil
+}
+
+func (s *service) RevokeSession(ctx context.Context, req RevokeSessionRequest) (*RevokeSessionResponse, error) {
+	if strings.TrimSpace(req.UserID) == "" || strings.TrimSpace(req.SessionID) == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "user_id and session_id are required", nil)
+	}
+	if err := s.sessions.RevokeBySessionID(ctx, req.UserID, req.SessionID); err != nil {
+		return nil, err
+	}
+	return &RevokeSessionResponse{Success: true}, nil
 }
 
 func (s *service) SelectCompany(ctx context.Context, req SelectCompanyRequest) (*SelectCompanyResponse, error) {

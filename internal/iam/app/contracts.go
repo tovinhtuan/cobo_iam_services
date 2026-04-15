@@ -9,6 +9,11 @@ type Service interface {
 	Logout(ctx context.Context, req LogoutRequest) (*LogoutResponse, error)
 	SelectCompany(ctx context.Context, req SelectCompanyRequest) (*SelectCompanyResponse, error)
 	SwitchCompany(ctx context.Context, req SwitchCompanyRequest) (*SwitchCompanyResponse, error)
+	ForgotPassword(ctx context.Context, req ForgotPasswordRequest) (*ForgotPasswordResponse, error)
+	ResetPassword(ctx context.Context, req ResetPasswordRequest) (*ResetPasswordResponse, error)
+	VerifyEmail(ctx context.Context, req VerifyEmailRequest) (*VerifyEmailResponse, error)
+	ListSessions(ctx context.Context, req ListSessionsRequest) (*ListSessionsResponse, error)
+	RevokeSession(ctx context.Context, req RevokeSessionRequest) (*RevokeSessionResponse, error)
 }
 
 // CredentialVerifier verifies login credentials.
@@ -43,6 +48,8 @@ type SessionRepository interface {
 	RevokeByRefreshToken(ctx context.Context, refreshToken string) error
 	UpdateContext(ctx context.Context, sessionID, membershipID, companyID string) error
 	RotateRefreshToken(ctx context.Context, sessionID, newRefreshToken string) error
+	ListByUser(ctx context.Context, userID string) ([]SessionState, error)
+	RevokeBySessionID(ctx context.Context, userID, sessionID string) error
 }
 
 type TokenIssuer interface {
@@ -93,11 +100,17 @@ type SessionState struct {
 	CompanyID    string
 	RefreshToken string
 	Revoked      bool
+	IP           string
+	UserAgent    string
 }
 
 type LoginRequest struct {
 	LoginID   string `json:"login_id"`
+	// Email alias for frontend compatibility (cobo_web_design login form).
+	Email     string `json:"email,omitempty"`
 	Password  string `json:"password"`
+	// RememberMe is optional and can be used by session policy (TTL) in later phases.
+	RememberMe bool `json:"remember_me,omitempty"`
 	IP        string `json:"-"`
 	UserAgent string `json:"-"`
 	// MFAOTP optional second factor (TOTP etc.); consumed by MFACheck when wired.
@@ -154,6 +167,59 @@ type LogoutRequest struct {
 }
 
 type LogoutResponse struct {
+	Success bool `json:"success"`
+}
+
+type ForgotPasswordRequest struct {
+	Email string `json:"email"`
+}
+
+type ForgotPasswordResponse struct {
+	Success bool `json:"success"`
+}
+
+type ResetPasswordRequest struct {
+	Token       string `json:"token"`
+	NewPassword string `json:"new_password"`
+}
+
+type ResetPasswordResponse struct {
+	Success bool `json:"success"`
+}
+
+type VerifyEmailRequest struct {
+	Token string `json:"token"`
+}
+
+type VerifyEmailResponse struct {
+	Success bool `json:"success"`
+}
+
+type ListSessionsRequest struct {
+	UserID           string
+	CurrentSessionID string
+}
+
+type SessionView struct {
+	SessionID       string `json:"session_id"`
+	CurrentCompanyID string `json:"current_company_id,omitempty"`
+	CurrentMembershipID string `json:"current_membership_id,omitempty"`
+	IP              string `json:"ip,omitempty"`
+	UserAgent       string `json:"user_agent,omitempty"`
+	Current         bool   `json:"current"`
+	Revoked         bool   `json:"revoked"`
+}
+
+type ListSessionsResponse struct {
+	Items []SessionView `json:"items"`
+}
+
+type RevokeSessionRequest struct {
+	UserID    string
+	SessionID string
+}
+
+type RevokeSessionResponse struct {
 	Success bool `json:"success"`
 }
 
