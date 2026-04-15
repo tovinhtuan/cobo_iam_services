@@ -101,3 +101,14 @@ func (r *SessionRepository) RevokeBySessionID(_ context.Context, userID, session
 	ss.Revoked = true
 	return nil
 }
+
+func (r *SessionRepository) RevokeAllByUser(_ context.Context, userID, _ string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, ss := range r.bySessionID {
+		if ss.UserID == userID {
+			ss.Revoked = true
+		}
+	}
+	return nil
+}

@@ -263,6 +263,22 @@ func TestVerifyEmail_invalidToken_usesDedicatedCode(t *testing.T) {
 	}
 }
 
+func TestResendVerificationEmail_requiresEmail(t *testing.T) {
+	ctx := context.Background()
+	svc := newTestIAMService(t, testIAMDeps{
+		cred:    testCred(),
+		members: cainmem.NewMembershipQueryService(),
+	})
+	_, err := svc.ResendVerificationEmail(ctx, iamapp.ResendVerificationEmailRequest{Email: ""})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	he, ok := perr.AsHTTPError(err)
+	if !ok || he.Code != perr.CodeInvalidRequest {
+		t.Fatalf("got %#v", err)
+	}
+}
+
 // --- test harness
 
 type testIAMDeps struct {

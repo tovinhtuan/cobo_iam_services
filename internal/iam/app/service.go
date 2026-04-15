@@ -2,13 +2,21 @@ package app
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
+	"time"
 
 	ca "github.com/cobo/cobo_iam_services/internal/companyaccess/app"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
+	"github.com/cobo/cobo_iam_services/internal/platform/events"
 	"github.com/cobo/cobo_iam_services/internal/platform/idgen"
+	"github.com/cobo/cobo_iam_services/internal/platform/outbox"
+	"github.com/cobo/cobo_iam_services/internal/platform/refreshtoken"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type service struct {
@@ -20,10 +28,18 @@ type service struct {
 	mfa         MFACheck
 	sso         SSOLoginBridge
 	attempts    LoginAttemptRecorder
+	recovery    AuthRecoveryRepository
+	outbox      outbox.Publisher
+	webBaseURL  string
+	passwordResetTTL time.Duration
+	emailVerifyTTL time.Duration
 }
 
 func NewService(cred CredentialVerifier, sessions SessionRepository, tokens TokenIssuer, memberships ca.MembershipQueryService, idgen idgen.Generator, opts ...ServiceOption) Service {
-	s := &service{cred: cred, sessions: sessions, tokens: tokens, memberships: memberships, idgen: idgen}
+	s := &service{
+		cred: cred, sessions: sessions, tokens: tokens, memberships: memberships, idgen: idgen,
+		webBaseURL: "http://localhost:5173", passwordResetTTL: 30 * time.Minute, emailVerifyTTL: 24 * time.Hour,
+	}
 	for _, opt := range opts {
 		if opt != nil {
 			opt(s)
@@ -219,32 +235,119 @@ func (s *service) Logout(ctx context.Context, req LogoutRequest) (*LogoutRespons
 	return &LogoutResponse{Success: true}, nil
 }
 
-func (s *service) ForgotPassword(_ context.Context, req ForgotPasswordRequest) (*ForgotPasswordResponse, error) {
-	if strings.TrimSpace(req.Email) == "" {
+func (s *service) ForgotPassword(ctx context.Context, req ForgotPasswordRequest) (*ForgotPasswordResponse, error) {
+	email := strings.TrimSpace(strings.ToLower(req.Email))
+	if email == "" {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "email is required", nil)
 	}
-	// Mock behavior: always return success to avoid account enumeration.
+	// Fallback mode without persistent repo: keep generic success.
+	if s.recovery == nil {
+		return &ForgotPasswordResponse{Success: true}, nil
+	}
+	user, err := s.recovery.FindUserByEmail(ctx, email)
+	if err != nil || user == nil {
+		// Keep generic response to prevent account enumeration.
+		return &ForgotPasswordResponse{Success: true}, nil
+	}
+	rawToken, tokenHash, err := s.generateRawTokenAndHash()
+	if err != nil {
+		return nil, fmt.Errorf("generate reset token: %w", err)
+	}
+	if err := s.recovery.StorePasswordResetToken(ctx, RecoveryTokenRecord{
+		TokenID: s.idgen.NewUUID(), UserID: user.UserID, TokenHash: tokenHash, ExpiresAt: time.Now().UTC().Add(s.passwordResetTTL),
+	}); err != nil {
+		return nil, fmt.Errorf("store password reset token: %w", err)
+	}
+	s.publishEmail(ctx, "auth.password_reset_requested", user.UserID, map[string]any{
+		"to": user.Email,
+		"subject": "Reset your password",
+		"body": fmt.Sprintf("Xin chao %s,\n\nVui long dat lai mat khau qua link sau:\n%s\n\nLink het han sau %d phut.",
+			coalesce(user.FullName, user.LoginID), s.buildActionLink("/reset-password", rawToken), int(s.passwordResetTTL.Minutes())),
+	})
 	return &ForgotPasswordResponse{Success: true}, nil
 }
 
-func (s *service) ResetPassword(_ context.Context, req ResetPasswordRequest) (*ResetPasswordResponse, error) {
+func (s *service) ResendVerificationEmail(ctx context.Context, req ResendVerificationEmailRequest) (*ResendVerificationEmailResponse, error) {
+	email := strings.TrimSpace(strings.ToLower(req.Email))
+	if email == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "email is required", nil)
+	}
+	// Fallback mode without persistent repo: keep generic success.
+	if s.recovery == nil {
+		return &ResendVerificationEmailResponse{Success: true}, nil
+	}
+	user, err := s.recovery.FindUserByEmail(ctx, email)
+	if err != nil || user == nil {
+		// Keep generic response to prevent account enumeration.
+		return &ResendVerificationEmailResponse{Success: true}, nil
+	}
+	rawToken, tokenHash, err := s.generateRawTokenAndHash()
+	if err != nil {
+		return nil, fmt.Errorf("generate verification token: %w", err)
+	}
+	if err := s.recovery.StoreEmailVerificationToken(ctx, RecoveryTokenRecord{
+		TokenID: s.idgen.NewUUID(), UserID: user.UserID, TokenHash: tokenHash, ExpiresAt: time.Now().UTC().Add(s.emailVerifyTTL),
+	}); err != nil {
+		return nil, fmt.Errorf("store email verification token: %w", err)
+	}
+	s.publishEmail(ctx, "auth.email_verification_requested", user.UserID, map[string]any{
+		"to": user.Email,
+		"subject": "Verify your email",
+		"body": fmt.Sprintf("Xin chao %s,\n\nVui long xac thuc email qua link sau:\n%s\n\nLink het han trong %d gio.",
+			coalesce(user.FullName, user.LoginID), s.buildActionLink("/verify-email", rawToken), int(s.emailVerifyTTL.Hours())),
+	})
+	return &ResendVerificationEmailResponse{Success: true}, nil
+}
+
+func (s *service) ResetPassword(ctx context.Context, req ResetPasswordRequest) (*ResetPasswordResponse, error) {
 	if strings.TrimSpace(req.Token) == "" || strings.TrimSpace(req.NewPassword) == "" {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "token and new_password are required", nil)
 	}
-	// Mock contract: accept token prefix to emulate valid reset links.
-	if !strings.HasPrefix(strings.TrimSpace(req.Token), "mock-reset-") {
+	if s.recovery == nil {
+		// Non-DB fallback for local bootstrap mode.
+		if !strings.HasPrefix(strings.TrimSpace(req.Token), "mock-reset-") {
+			return nil, perr.NewHTTPError(http.StatusUnauthorized, perr.CodePasswordResetTokenInvalid, "reset token invalid or expired", nil)
+		}
+		return &ResetPasswordResponse{Success: true}, nil
+	}
+	tokenHash := refreshtoken.Hash(strings.TrimSpace(req.Token))
+	userID, err := s.recovery.ConsumePasswordResetToken(ctx, tokenHash, time.Now().UTC())
+	if err != nil || strings.TrimSpace(userID) == "" {
 		return nil, perr.NewHTTPError(http.StatusUnauthorized, perr.CodePasswordResetTokenInvalid, "reset token invalid or expired", nil)
 	}
+	if len(strings.TrimSpace(req.NewPassword)) < 12 {
+		return nil, perr.NewHTTPError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, "new_password must be at least 12 characters", nil)
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, fmt.Errorf("hash password: %w", err)
+	}
+	now := time.Now().UTC()
+	if err := s.recovery.UpdatePasswordHash(ctx, userID, string(hash), now); err != nil {
+		return nil, fmt.Errorf("update password hash: %w", err)
+	}
+	_ = s.sessions.RevokeAllByUser(ctx, userID, "password_reset")
 	return &ResetPasswordResponse{Success: true}, nil
 }
 
-func (s *service) VerifyEmail(_ context.Context, req VerifyEmailRequest) (*VerifyEmailResponse, error) {
+func (s *service) VerifyEmail(ctx context.Context, req VerifyEmailRequest) (*VerifyEmailResponse, error) {
 	if strings.TrimSpace(req.Token) == "" {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "token is required", nil)
 	}
-	// Mock contract: accept token prefix to emulate valid verification links.
-	if !strings.HasPrefix(strings.TrimSpace(req.Token), "mock-verify-") {
+	if s.recovery == nil {
+		// Non-DB fallback for local bootstrap mode.
+		if !strings.HasPrefix(strings.TrimSpace(req.Token), "mock-verify-") {
+			return nil, perr.NewHTTPError(http.StatusUnauthorized, perr.CodeEmailVerificationTokenInvalid, "verification token invalid or expired", nil)
+		}
+		return &VerifyEmailResponse{Success: true}, nil
+	}
+	tokenHash := refreshtoken.Hash(strings.TrimSpace(req.Token))
+	userID, err := s.recovery.ConsumeEmailVerificationToken(ctx, tokenHash, time.Now().UTC())
+	if err != nil || strings.TrimSpace(userID) == "" {
 		return nil, perr.NewHTTPError(http.StatusUnauthorized, perr.CodeEmailVerificationTokenInvalid, "verification token invalid or expired", nil)
+	}
+	if err := s.recovery.MarkEmailVerified(ctx, userID, time.Now().UTC()); err != nil {
+		return nil, fmt.Errorf("mark email verified: %w", err)
 	}
 	return &VerifyEmailResponse{Success: true}, nil
 }
@@ -280,6 +383,40 @@ func (s *service) RevokeSession(ctx context.Context, req RevokeSessionRequest) (
 		return nil, err
 	}
 	return &RevokeSessionResponse{Success: true}, nil
+}
+
+func (s *service) generateRawTokenAndHash() (string, string, error) {
+	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		return "", "", err
+	}
+	raw := base64.RawURLEncoding.EncodeToString(buf)
+	return raw, refreshtoken.Hash(raw), nil
+}
+
+func (s *service) buildActionLink(path, token string) string {
+	base := strings.TrimRight(s.webBaseURL, "/")
+	u := base + path
+	v := url.Values{}
+	v.Set("token", token)
+	return u + "?" + v.Encode()
+}
+
+func (s *service) publishEmail(ctx context.Context, eventType, userID string, payload map[string]any) {
+	if s.outbox == nil {
+		return
+	}
+	_ = s.outbox.Publish(ctx, events.Event{
+		EventID: s.idgen.NewUUID(), AggregateType: "user", AggregateID: userID,
+		EventType: eventType, Payload: payload, OccurredAt: time.Now().UTC(),
+	})
+}
+
+func coalesce(a, b string) string {
+	if strings.TrimSpace(a) != "" {
+		return a
+	}
+	return b
 }
 
 func (s *service) SelectCompany(ctx context.Context, req SelectCompanyRequest) (*SelectCompanyResponse, error) {

@@ -33,6 +33,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/auth/refresh", h.refresh)
 	mux.HandleFunc("POST /api/v1/auth/logout", h.logout)
 	mux.HandleFunc("POST /api/v1/auth/forgot-password", h.forgotPassword)
+	mux.HandleFunc("POST /api/v1/auth/resend-verification-email", h.resendVerificationEmail)
 	mux.HandleFunc("POST /api/v1/auth/reset-password", h.resetPassword)
 	mux.HandleFunc("POST /api/v1/auth/verify-email", h.verifyEmail)
 	mux.HandleFunc("POST /api/v1/auth/select-company", h.selectCompany)
@@ -83,6 +84,20 @@ func (h *Handler) forgotPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp, err := h.svc.ForgotPassword(r.Context(), req)
+	if err != nil {
+		httpx.WriteError(w, h.log, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) resendVerificationEmail(w http.ResponseWriter, r *http.Request) {
+	var req iamapp.ResendVerificationEmailRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, h.log, err)
+		return
+	}
+	resp, err := h.svc.ResendVerificationEmail(r.Context(), req)
 	if err != nil {
 		httpx.WriteError(w, h.log, err)
 		return

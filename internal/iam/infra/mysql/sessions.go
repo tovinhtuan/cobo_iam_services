@@ -179,3 +179,17 @@ func (r *SessionRepository) RevokeBySessionID(ctx context.Context, userID, sessi
 	}
 	return nil
 }
+
+func (r *SessionRepository) RevokeAllByUser(ctx context.Context, userID, reason string) error {
+	if reason == "" {
+		reason = "manual_revoke_all"
+	}
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE sessions SET revoked_at = ?, revoked_reason = ?
+		WHERE user_id = ? AND revoked_at IS NULL
+	`, r.now(), reason, userID)
+	if err != nil {
+		return fmt.Errorf("session revoke all by user: %w", err)
+	}
+	return nil
+}

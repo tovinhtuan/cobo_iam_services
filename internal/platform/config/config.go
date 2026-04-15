@@ -46,6 +46,16 @@ type Config struct {
 	JWTSigningPrivateKey string
 	JWTVerifyPublicKeys  string
 	JWTClockSkewSec      int
+
+	// Public web app base URL used in email action links.
+	PublicWebBaseURL string
+
+	// SMTP (worker side-effect for auth email events).
+	SMTPHost     string
+	SMTPPort     int
+	SMTPUser     string
+	SMTPPassword string
+	SMTPFrom     string
 }
 
 // Load reads configuration from the environment with safe defaults for local dev.
@@ -72,6 +82,12 @@ func Load() (Config, error) {
 		JWTSigningPrivateKey:    os.Getenv("JWT_SIGNING_PRIVATE_KEY_PEM"),
 		JWTVerifyPublicKeys:     os.Getenv("JWT_VERIFY_PUBLIC_KEYS_JSON"),
 		JWTClockSkewSec:         intEnv("JWT_CLOCK_SKEW_SEC", 60),
+		PublicWebBaseURL:        getenv("PUBLIC_WEB_BASE_URL", "http://localhost:5173"),
+		SMTPHost:                os.Getenv("SMTP_HOST"),
+		SMTPPort:                intEnv("SMTP_PORT", 587),
+		SMTPUser:                os.Getenv("SMTP_USER"),
+		SMTPPassword:            os.Getenv("SMTP_PASSWORD"),
+		SMTPFrom:                getenv("SMTP_FROM", "no-reply@cobo.local"),
 	}
 	if cfg.WorkerTickInterval < time.Second {
 		return Config{}, fmt.Errorf("WORKER_TICK_INTERVAL too small")

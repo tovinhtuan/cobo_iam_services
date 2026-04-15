@@ -1,6 +1,11 @@
 package app
 
-import "context"
+import (
+	"context"
+	"time"
+
+	"github.com/cobo/cobo_iam_services/internal/platform/outbox"
+)
 
 // ServiceOption configures iam.service (P2.3 extension points). Nil hooks are ignored.
 type ServiceOption func(*service)
@@ -23,6 +28,41 @@ func WithSSOLoginBridge(b SSOLoginBridge) ServiceOption {
 func WithLoginAttemptRecorder(r LoginAttemptRecorder) ServiceOption {
 	return func(s *service) {
 		s.attempts = r
+	}
+}
+
+// WithAuthRecoveryRepository enables forgot/reset/verify flows with persisted tokens and password/email updates.
+func WithAuthRecoveryRepository(r AuthRecoveryRepository) ServiceOption {
+	return func(s *service) {
+		s.recovery = r
+	}
+}
+
+// WithOutboxPublisher enables asynchronous email dispatch via outbox worker.
+func WithOutboxPublisher(p outbox.Publisher) ServiceOption {
+	return func(s *service) {
+		s.outbox = p
+	}
+}
+
+type AuthFlowConfig struct {
+	WebBaseURL               string
+	PasswordResetTokenTTL    time.Duration
+	EmailVerificationTokenTTL time.Duration
+}
+
+// WithAuthFlowConfig overrides token TTLs and link base URL for email actions.
+func WithAuthFlowConfig(cfg AuthFlowConfig) ServiceOption {
+	return func(s *service) {
+		if cfg.WebBaseURL != "" {
+			s.webBaseURL = cfg.WebBaseURL
+		}
+		if cfg.PasswordResetTokenTTL > 0 {
+			s.passwordResetTTL = cfg.PasswordResetTokenTTL
+		}
+		if cfg.EmailVerificationTokenTTL > 0 {
+			s.emailVerifyTTL = cfg.EmailVerificationTokenTTL
+		}
 	}
 }
 

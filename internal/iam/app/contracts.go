@@ -1,6 +1,9 @@
 package app
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // Service defines IAM use-cases used by transport layer.
 type Service interface {
@@ -10,6 +13,7 @@ type Service interface {
 	SelectCompany(ctx context.Context, req SelectCompanyRequest) (*SelectCompanyResponse, error)
 	SwitchCompany(ctx context.Context, req SwitchCompanyRequest) (*SwitchCompanyResponse, error)
 	ForgotPassword(ctx context.Context, req ForgotPasswordRequest) (*ForgotPasswordResponse, error)
+	ResendVerificationEmail(ctx context.Context, req ResendVerificationEmailRequest) (*ResendVerificationEmailResponse, error)
 	ResetPassword(ctx context.Context, req ResetPasswordRequest) (*ResetPasswordResponse, error)
 	VerifyEmail(ctx context.Context, req VerifyEmailRequest) (*VerifyEmailResponse, error)
 	ListSessions(ctx context.Context, req ListSessionsRequest) (*ListSessionsResponse, error)
@@ -50,6 +54,17 @@ type SessionRepository interface {
 	RotateRefreshToken(ctx context.Context, sessionID, newRefreshToken string) error
 	ListByUser(ctx context.Context, userID string) ([]SessionState, error)
 	RevokeBySessionID(ctx context.Context, userID, sessionID string) error
+	RevokeAllByUser(ctx context.Context, userID, reason string) error
+}
+
+type AuthRecoveryRepository interface {
+	FindUserByEmail(ctx context.Context, email string) (*RecoveryUser, error)
+	StorePasswordResetToken(ctx context.Context, token RecoveryTokenRecord) error
+	ConsumePasswordResetToken(ctx context.Context, tokenHash string, now time.Time) (string, error)
+	StoreEmailVerificationToken(ctx context.Context, token RecoveryTokenRecord) error
+	ConsumeEmailVerificationToken(ctx context.Context, tokenHash string, now time.Time) (string, error)
+	UpdatePasswordHash(ctx context.Context, userID string, passwordHash string, changedAt time.Time) error
+	MarkEmailVerified(ctx context.Context, userID string, verifiedAt time.Time) error
 }
 
 type TokenIssuer interface {
@@ -102,6 +117,20 @@ type SessionState struct {
 	Revoked      bool
 	IP           string
 	UserAgent    string
+}
+
+type RecoveryUser struct {
+	UserID   string
+	Email    string
+	FullName string
+	LoginID  string
+}
+
+type RecoveryTokenRecord struct {
+	TokenID   string
+	UserID    string
+	TokenHash string
+	ExpiresAt time.Time
 }
 
 type LoginRequest struct {
@@ -175,6 +204,14 @@ type ForgotPasswordRequest struct {
 }
 
 type ForgotPasswordResponse struct {
+	Success bool `json:"success"`
+}
+
+type ResendVerificationEmailRequest struct {
+	Email string `json:"email"`
+}
+
+type ResendVerificationEmailResponse struct {
 	Success bool `json:"success"`
 }
 

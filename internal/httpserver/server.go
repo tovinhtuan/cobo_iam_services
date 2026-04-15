@@ -121,12 +121,14 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 	var sessionRepo iamapp.SessionRepository
 	var credVerifier iamapp.CredentialVerifier
 	var identity iamapp.IdentityQueryService
+	var recoveryRepo iamapp.AuthRecoveryRepository
 	if pool != nil {
 		memberQuery = camysql.NewMembershipQueryService(pool)
 		sessionRepo = iammysql.NewSessionRepository(pool, 720*time.Hour)
 		cv := iammysql.NewCredentialVerifier(pool)
 		credVerifier = cv
 		identity = cv
+		recoveryRepo = iammysql.NewAuthRecoveryRepository(pool)
 		log.Info("iam using MySQL sessions + credentials; membership query from DB")
 	} else {
 		memberQuery = cainmem.NewMembershipQueryService()
@@ -144,6 +146,15 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 	if pool != nil {
 		iamOpts = append(iamOpts, iamapp.WithLoginAttemptRecorder(iammysql.NewLoginAttemptRecorder(pool)))
 		log.Info("login_attempts writes enabled (MySQL)")
+	}
+	if recoveryRepo != nil {
+		iamOpts = append(iamOpts,
+			iamapp.WithAuthRecoveryRepository(recoveryRepo),
+			iamapp.WithOutboxPublisher(outboxPublisher),
+			iamapp.WithAuthFlowConfig(iamapp.AuthFlowConfig{
+				WebBaseURL: cfg.PublicWebBaseURL,
+			}),
+		)
 	}
 	iamSvc := iamapp.NewService(credVerifier, sessionRepo, tokenManager, memberQuery, id, iamOpts...)
 	iamHandler := iamhttp.NewHandler(log, iamSvc, tokenManager, auditSvc, outboxPublisher, id)
