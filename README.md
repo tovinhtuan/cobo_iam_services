@@ -63,7 +63,9 @@ mysql -u user -p cobo_iam < migrations/0006_admin_rules_tables.up.sql
 
 Rollback: chạy tương ứng file `*.down.sql` (theo thứ tự ngược).
 
-### Seed dev (IAM + authorization khớp fixture in-memory cũ)
+### Data Setup
+
+#### Seed dev (IAM + authorization khớp fixture in-memory cũ)
 
 Sau khi chạy các migration trên, có thể nạp dữ liệu dev (`user@example.com` / `single@example.com`, mật khẩu `secret`, bcrypt cố định trong file):
 
@@ -72,6 +74,56 @@ mysql -u user -p cobo_iam < migrations/seed_dev_identity_authorization.sql
 ```
 
 File seed dùng `ON DUPLICATE KEY UPDATE`; nên chạy sau **0001**, **0003**, khuyến nghị sau **0004** (nếu cần FK đầy đủ), **0005**, và **0006** nếu sau này dùng admin rule APIs. Chi tiết xem comment đầu file seed.
+
+#### Demo Data Workflow
+
+Các file sử dụng:
+
+- `migrations/seed_demo_reset.sql`: xóa đúng bộ dữ liệu demo để nạp lại sạch
+- `migrations/seed_demo_package_1.sql`: auth flow, company selection, `/me`, permission shell
+- `migrations/seed_demo_package_2.sql`: disclosure, workflow, notification history
+- `migrations/seed_demo_smoke_checks.sql`: kiểm tra chi tiết từng nhóm dữ liệu seed
+- `migrations/seed_demo_smoke_checks_min.sql`: kiểm tra nhanh 4-5 query pass/fail cho QA/frontend
+
+Tài khoản demo:
+
+- `demo.admin@example.com` / `secret`
+- `demo.reviewer@example.com` / `secret` (được tạo trong package 2)
+
+Lần đầu trên database trống: chạy migration trước, rồi nạp bộ demo.
+
+```bash
+mysql -u user -p cobo_iam < migrations/0001_init_core.up.sql
+mysql -u user -p cobo_iam < migrations/0003_effective_access_projection.up.sql
+mysql -u user -p cobo_iam < migrations/0004_p1_business_tables.up.sql
+mysql -u user -p cobo_iam < migrations/0005_sessions_refresh_hash_unique.up.sql
+mysql -u user -p cobo_iam < migrations/0006_admin_rules_tables.up.sql
+```
+
+Sau đó, hoặc mỗi khi cần làm mới dữ liệu demo:
+
+```bash
+mysql -u user -p cobo_iam < migrations/seed_demo_reset.sql
+mysql -u user -p cobo_iam < migrations/seed_demo_package_1.sql
+mysql -u user -p cobo_iam < migrations/seed_demo_package_2.sql
+mysql -u user -p cobo_iam < migrations/seed_demo_smoke_checks_min.sql
+```
+
+Lưu ý:
+
+- `seed_demo_package_1.sql` cần sau `0001_init_core.up.sql` và `0003_effective_access_projection.up.sql`
+- `seed_demo_package_2.sql` cần sau `0004_p1_business_tables.up.sql` và sau `seed_demo_package_1.sql`
+
+Khi cần kiểm tra chi tiết hơn, chạy thêm:
+
+```bash
+mysql -u user -p cobo_iam < migrations/seed_demo_smoke_checks.sql
+```
+
+Chọn loại smoke check:
+
+- Dùng `migrations/seed_demo_smoke_checks_min.sql` khi QA hoặc frontend chỉ cần xác nhận nhanh môi trường demo đã sẵn sàng.
+- Dùng `migrations/seed_demo_smoke_checks.sql` khi cần rà chi tiết từng nhóm dữ liệu: user, membership, permission, disclosure, workflow, notification.
 
 ## Biến môi trường
 

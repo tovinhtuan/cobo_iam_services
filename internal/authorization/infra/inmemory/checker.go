@@ -18,8 +18,8 @@ func (c *Checker) Check(_ context.Context, req authapp.AuthorizeRequest, effecti
 		return &authapp.AuthorizeDecision{Decision: authapp.DecisionDeny, MatchedPermissions: []string{}, ScopeReasons: []string{}, ResponsibilityReasons: []string{}, DenyReasonCode: &code}, nil
 	}
 
-	mapped := mapActionToPermission(req.Action)
-	if mapped == "" || !contains(effective.Permissions, mapped) {
+	mapped := mapActionToPermissions(req.Action)
+	if len(mapped) == 0 || !containsAny(effective.Permissions, mapped) {
 		code := perr.CodePermissionDenied
 		return &authapp.AuthorizeDecision{Decision: authapp.DecisionDeny, MatchedPermissions: []string{}, ScopeReasons: []string{}, ResponsibilityReasons: []string{}, DenyReasonCode: &code}, nil
 	}
@@ -39,7 +39,7 @@ func (c *Checker) Check(_ context.Context, req authapp.AuthorizeRequest, effecti
 	}
 	if len(scopeReasons) == 0 {
 		code := perr.CodeDataScopeDenied
-		return &authapp.AuthorizeDecision{Decision: authapp.DecisionDeny, MatchedPermissions: []string{mapped}, ScopeReasons: []string{}, ResponsibilityReasons: []string{}, DenyReasonCode: &code}, nil
+		return &authapp.AuthorizeDecision{Decision: authapp.DecisionDeny, MatchedPermissions: mapped, ScopeReasons: []string{}, ResponsibilityReasons: []string{}, DenyReasonCode: &code}, nil
 	}
 
 	respReasons := []string{}
@@ -48,47 +48,49 @@ func (c *Checker) Check(_ context.Context, req authapp.AuthorizeRequest, effecti
 			respReasons = append(respReasons, "workflow_assignee_rule:legal_approval")
 		} else {
 			code := perr.CodeResponsibilityRequired
-			return &authapp.AuthorizeDecision{Decision: authapp.DecisionDeny, MatchedPermissions: []string{mapped}, ScopeReasons: scopeReasons, ResponsibilityReasons: []string{}, DenyReasonCode: &code}, nil
+			return &authapp.AuthorizeDecision{Decision: authapp.DecisionDeny, MatchedPermissions: mapped, ScopeReasons: scopeReasons, ResponsibilityReasons: []string{}, DenyReasonCode: &code}, nil
 		}
 	}
 
 	return &authapp.AuthorizeDecision{
 		Decision:              authapp.DecisionAllow,
-		MatchedPermissions:    []string{mapped},
+		MatchedPermissions:    matchedPermissions(effective.Permissions, mapped),
 		ScopeReasons:          scopeReasons,
 		ResponsibilityReasons: respReasons,
 		DenyReasonCode:        nil,
 	}, nil
 }
 
-func mapActionToPermission(action string) string {
+func mapActionToPermissions(action string) []string {
 	switch strings.TrimSpace(action) {
 	case "disclosure.approve":
-		return "approve_disclosure"
+		return []string{"disclosure.approve", "approve_disclosure"}
 	case "disclosure.view":
-		return "view_disclosure"
+		return []string{"disclosure.view", "view_disclosure"}
 	case "disclosure.create":
-		return "create_disclosure"
-	case "disclosure.update":
-		return "update_disclosure"
+		return []string{"disclosure.create", "create_disclosure"}
+	case "disclosure.update", "disclosure.edit":
+		return []string{"disclosure.edit", "update_disclosure"}
 	case "disclosure.submit":
-		return "submit_disclosure"
+		return []string{"submit_disclosure"}
 	case "workflow.create":
-		return "create_workflow"
+		return []string{"create_workflow"}
 	case "workflow.review":
-		return "review_workflow_task"
+		return []string{"review_workflow_task"}
 	case "workflow.confirm":
-		return "confirm_workflow_task"
+		return []string{"workflow.step.confirm", "confirm_workflow_task"}
+	case "workflow.override":
+		return []string{"workflow.step.override"}
 	case "workflow.resolve_assignees":
-		return "create_workflow"
+		return []string{"create_workflow"}
 	case "notification.enqueue":
-		return "enqueue_notification"
+		return []string{"enqueue_notification"}
 	case "notification.dispatch":
-		return "dispatch_notification"
+		return []string{"dispatch_notification"}
 	case "notification.resolve_recipients":
-		return "enqueue_notification"
+		return []string{"enqueue_notification"}
 	case "dashboard.view":
-		return "view_dashboard"
+		return []string{"view_dashboard"}
 	case "admin.membership.create",
 		"admin.membership.update",
 		"admin.membership.delete",
@@ -106,9 +108,9 @@ func mapActionToPermission(action string) string {
 		"admin.resource_scope_rule.create",
 		"admin.workflow_assignee_rule.create",
 		"admin.notification_rule.create":
-		return "admin_manage_access"
+		return []string{"admin_manage_access", "system.settings", "rbac.manage"}
 	default:
-		return ""
+		return nil
 	}
 }
 
@@ -119,6 +121,25 @@ func contains(items []string, target string) bool {
 		}
 	}
 	return false
+}
+
+func containsAny(items, targets []string) bool {
+	for _, target := range targets {
+		if contains(items, target) {
+			return true
+		}
+	}
+	return false
+}
+
+func matchedPermissions(items, targets []string) []string {
+	out := make([]string, 0, len(targets))
+	for _, target := range targets {
+		if contains(items, target) {
+			out = append(out, target)
+		}
+	}
+	return out
 }
 
 func containsDepartment(items []authapp.DepartmentScope, depID string) bool {

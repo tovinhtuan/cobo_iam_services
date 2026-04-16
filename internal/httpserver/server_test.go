@@ -124,6 +124,140 @@ func TestIntegration_login_singleCompany(t *testing.T) {
 	}
 }
 
+func TestIntegration_loginSwitchCompany_effectiveAccess_andAdminGuard(t *testing.T) {
+	srv := httptest.NewServer(newTestHandler(t, nil))
+	defer srv.Close()
+
+	// 1) Login multi-company account -> requires company selection.
+	loginBody := bytes.NewBufferString(`{"login_id":"user@example.com","password":"secret"}`)
+	loginRes, err := http.Post(srv.URL+"/api/v1/auth/login", "application/json", loginBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer loginRes.Body.Close()
+	if loginRes.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(loginRes.Body)
+		t.Fatalf("login status=%d body=%s", loginRes.StatusCode, b)
+	}
+	var loginOut struct {
+		NextAction  string `json:"next_action"`
+		Memberships []struct {
+			CompanyID string `json:"company_id"`
+		} `json:"memberships"`
+		Session struct {
+			PreCompanyToken string `json:"pre_company_token"`
+		} `json:"session"`
+	}
+	if err := json.NewDecoder(loginRes.Body).Decode(&loginOut); err != nil {
+		t.Fatal(err)
+	}
+	if loginOut.NextAction != "select_company" {
+		t.Fatalf("next_action=%q want select_company", loginOut.NextAction)
+	}
+	if loginOut.Session.PreCompanyToken == "" {
+		t.Fatal("missing pre_company_token")
+	}
+
+	// 2) Select company c_001 -> receives full access token.
+	selectReqBody := bytes.NewBufferString(`{"company_id":"c_001"}`)
+	selectReq, _ := http.NewRequest(http.MethodPost, srv.URL+"/api/v1/auth/select-company", selectReqBody)
+	selectReq.Header.Set("Content-Type", "application/json")
+	selectReq.Header.Set("Authorization", "Bearer "+loginOut.Session.PreCompanyToken)
+	selectRes, err := http.DefaultClient.Do(selectReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer selectRes.Body.Close()
+	if selectRes.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(selectRes.Body)
+		t.Fatalf("select company status=%d body=%s", selectRes.StatusCode, b)
+	}
+	var selectOut struct {
+		AccessToken string `json:"access_token"`
+	}
+	if err := json.NewDecoder(selectRes.Body).Decode(&selectOut); err != nil {
+		t.Fatal(err)
+	}
+	if selectOut.AccessToken == "" {
+		t.Fatal("missing selected company access_token")
+	}
+
+	// 3) Effective-access for c_001 should work.
+	effReqC1, _ := http.NewRequest(http.MethodGet, srv.URL+"/api/v1/me/effective-access", nil)
+	effReqC1.Header.Set("Authorization", "Bearer "+selectOut.AccessToken)
+	effResC1, err := http.DefaultClient.Do(effReqC1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer effResC1.Body.Close()
+	if effResC1.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(effResC1.Body)
+		t.Fatalf("effective-access c_001 status=%d body=%s", effResC1.StatusCode, b)
+	}
+
+	// 4) Admin endpoint must remain authz-guarded (no auth bypass).
+	adminReqC1, _ := http.NewRequest(http.MethodGet, srv.URL+"/api/v1/admin/permissions", nil)
+	adminReqC1.Header.Set("Authorization", "Bearer "+selectOut.AccessToken)
+	adminResC1, err := http.DefaultClient.Do(adminReqC1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer adminResC1.Body.Close()
+	if adminResC1.StatusCode != http.StatusForbidden {
+		b, _ := io.ReadAll(adminResC1.Body)
+		t.Fatalf("admin permissions c_001 status=%d body=%s", adminResC1.StatusCode, b)
+	}
+
+	// 5) Switch to c_002 then re-check effective-access.
+	switchReqBody := bytes.NewBufferString(`{"company_id":"c_002"}`)
+	switchReq, _ := http.NewRequest(http.MethodPost, srv.URL+"/api/v1/auth/switch-company", switchReqBody)
+	switchReq.Header.Set("Content-Type", "application/json")
+	switchReq.Header.Set("Authorization", "Bearer "+selectOut.AccessToken)
+	switchRes, err := http.DefaultClient.Do(switchReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer switchRes.Body.Close()
+	if switchRes.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(switchRes.Body)
+		t.Fatalf("switch company status=%d body=%s", switchRes.StatusCode, b)
+	}
+	var switchOut struct {
+		AccessToken string `json:"access_token"`
+	}
+	if err := json.NewDecoder(switchRes.Body).Decode(&switchOut); err != nil {
+		t.Fatal(err)
+	}
+	if switchOut.AccessToken == "" {
+		t.Fatal("missing switched access_token")
+	}
+
+	effReqC2, _ := http.NewRequest(http.MethodGet, srv.URL+"/api/v1/me/effective-access", nil)
+	effReqC2.Header.Set("Authorization", "Bearer "+switchOut.AccessToken)
+	effResC2, err := http.DefaultClient.Do(effReqC2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer effResC2.Body.Close()
+	if effResC2.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(effResC2.Body)
+		t.Fatalf("effective-access c_002 status=%d body=%s", effResC2.StatusCode, b)
+	}
+
+	// 6) Admin guard should deny in c_002 (viewer role).
+	adminReqC2, _ := http.NewRequest(http.MethodGet, srv.URL+"/api/v1/admin/permissions", nil)
+	adminReqC2.Header.Set("Authorization", "Bearer "+switchOut.AccessToken)
+	adminResC2, err := http.DefaultClient.Do(adminReqC2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer adminResC2.Body.Close()
+	if adminResC2.StatusCode != http.StatusForbidden {
+		b, _ := io.ReadAll(adminResC2.Body)
+		t.Fatalf("admin permissions c_002 status=%d body=%s", adminResC2.StatusCode, b)
+	}
+}
+
 type staticID struct{ n int }
 
 func (s *staticID) NewUUID() string {
