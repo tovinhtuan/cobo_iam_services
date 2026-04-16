@@ -27,18 +27,26 @@ func NewMembershipQueryService() *MembershipQueryService {
 			"u_single": {
 				{MembershipID: "m_010", UserID: "u_single", CompanyID: "c_010", CompanyName: "Solo Company", Status: "active"},
 			},
+			"u_admin": {
+				{MembershipID: "m_admin_001", UserID: "u_admin", CompanyID: "c_001", CompanyName: "Company X", Status: "active"},
+			},
 		},
 		Roles: map[string][]string{
 			"m_001": {"department_staff", "disclosure_approver"},
+			"m_admin_001": {"company_admin", "disclosure_approver"},
 		},
 		Deps: map[string][]caapp.DepartmentView{
 			"m_001": {
 				{DepartmentID: "d_legal", DepartmentName: "Legal"},
 				{DepartmentID: "d_ir", DepartmentName: "IR"},
 			},
+			"m_admin_001": {
+				{DepartmentID: "d_legal", DepartmentName: "Legal"},
+			},
 		},
 		Titles: map[string][]string{
 			"m_001": {"Dau moi CBTT"},
+			"m_admin_001": {"Enterprise Admin"},
 		},
 	}
 }
