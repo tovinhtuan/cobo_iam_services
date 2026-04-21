@@ -14,6 +14,7 @@ MIGRATIONS="
 0006_admin_rules_tables.up.sql
 0007_auth_recovery_tokens.up.sql
 0008_org_units_scope.up.sql
+0009_seed_authz_test_accounts.up.sql
 seed_dev_identity_authorization.sql
 "
 
@@ -27,6 +28,13 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
   file_name VARCHAR(255) PRIMARY KEY,
   executed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+SQL
+
+echo "Ensuring auth plugin is caching_sha2_password..."
+mysql_exec <<'SQL'
+ALTER USER IF EXISTS 'root'@'localhost' IDENTIFIED WITH caching_sha2_password BY 'root';
+ALTER USER IF EXISTS 'root'@'%' IDENTIFIED WITH caching_sha2_password BY 'root';
+ALTER USER IF EXISTS 'cobo'@'%' IDENTIFIED WITH caching_sha2_password BY 'cobo';
 SQL
 
 existing_count="$(mysql_exec -Nse "SELECT COUNT(1) FROM information_schema.tables WHERE table_schema='${DB_NAME}' AND table_name='users'")"
