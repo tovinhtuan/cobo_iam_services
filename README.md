@@ -148,6 +148,48 @@ go run ./cmd/api
 - `GET /healthz` — luôn OK nếu process sống.
 - `GET /readyz` — ready khi có MySQL và ping thành công.
 
+## Chạy BE bằng Docker (local dev)
+
+Repository đã có sẵn `Dockerfile` và `docker-compose.dev.yml` để chạy nhanh:
+
+- MySQL 8
+- Redis
+- Migrator (chạy migration + seed dev)
+- API (`cmd/api`)
+- Worker (`cmd/worker`, profile tùy chọn)
+
+### Start API stack (không worker)
+
+```bash
+docker compose -f docker-compose.dev.yml up --build
+```
+
+Endpoints:
+
+- API: `http://localhost:8080`
+- Health: `http://localhost:8080/healthz`
+- Readiness: `http://localhost:8080/readyz`
+- MySQL host port: `localhost:3306`
+- Redis host port: `localhost:6379`
+
+### Start cả worker
+
+```bash
+docker compose -f docker-compose.dev.yml --profile worker up --build
+```
+
+### Stop & cleanup
+
+```bash
+docker compose -f docker-compose.dev.yml down
+```
+
+Xóa luôn volume MySQL (reset data):
+
+```bash
+docker compose -f docker-compose.dev.yml down -v
+```
+
 ## Chạy Worker
 
 Worker và API nên dùng **cùng** `MYSQL_DSN` để consumer đọc outbox API đã ghi.

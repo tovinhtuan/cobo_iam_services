@@ -12,10 +12,11 @@ import (
 type service struct {
 	resolver Resolver
 	checker  Checker
+	repo     Repository
 }
 
-func NewService(resolver Resolver, checker Checker) Service {
-	return &service{resolver: resolver, checker: checker}
+func NewService(resolver Resolver, checker Checker, repo Repository) Service {
+	return &service{resolver: resolver, checker: checker, repo: repo}
 }
 
 func (s *service) Authorize(ctx context.Context, req AuthorizeRequest) (*AuthorizeDecision, error) {
@@ -26,7 +27,11 @@ func (s *service) Authorize(ctx context.Context, req AuthorizeRequest) (*Authori
 	if err != nil {
 		return nil, fmt.Errorf("resolve effective access: %w", err)
 	}
-	decision, err := s.checker.Check(ctx, req, eff)
+	policy, err := s.repo.GetActionPolicy(ctx, req.Subject.CompanyID, req.Action)
+	if err != nil {
+		return nil, fmt.Errorf("get action policy: %w", err)
+	}
+	decision, err := s.checker.Check(ctx, req, eff, policy)
 	if err != nil {
 		return nil, fmt.Errorf("check authorization: %w", err)
 	}
@@ -43,7 +48,11 @@ func (s *service) AuthorizeBatch(ctx context.Context, req AuthorizeBatchRequest)
 	}
 	out := &AuthorizeBatchResponse{Results: make([]AuthorizeDecision, 0, len(req.Checks))}
 	for _, c := range req.Checks {
-		d, err := s.checker.Check(ctx, AuthorizeRequest{Subject: req.Subject, Action: c.Action, Resource: c.Resource}, eff)
+		policy, err := s.repo.GetActionPolicy(ctx, req.Subject.CompanyID, c.Action)
+		if err != nil {
+			return nil, fmt.Errorf("get action policy (batch): %w", err)
+		}
+		d, err := s.checker.Check(ctx, AuthorizeRequest{Subject: req.Subject, Action: c.Action, Resource: c.Resource}, eff, policy)
 		if err != nil {
 			return nil, fmt.Errorf("batch check: %w", err)
 		}

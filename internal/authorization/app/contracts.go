@@ -31,11 +31,15 @@ type Repository interface {
 	ListDepartmentScopes(ctx context.Context, membershipID, companyID string) ([]DepartmentScope, error)
 	ListAssignments(ctx context.Context, membershipID, companyID string) ([]ResourceAssignment, error)
 	ListResponsibilities(ctx context.Context, membershipID, companyID string) ([]string, error)
+	ListPositionCodes(ctx context.Context, membershipID, companyID string) ([]string, error)
+	ListOrgUnitIDs(ctx context.Context, membershipID, companyID string) ([]string, error)
+	ListOrgSubtreeUnitIDs(ctx context.Context, membershipID, companyID string) ([]string, error)
+	GetActionPolicy(ctx context.Context, companyID, action string) (*ActionPolicy, error)
 }
 
 // Checker applies decision policy based on effective access and request.
 type Checker interface {
-	Check(ctx context.Context, req AuthorizeRequest, effective *EffectiveAccessSummary) (*AuthorizeDecision, error)
+	Check(ctx context.Context, req AuthorizeRequest, effective *EffectiveAccessSummary, policy *ActionPolicy) (*AuthorizeDecision, error)
 }
 
 type AuthorizeRequest struct {
@@ -92,6 +96,9 @@ type EffectiveDataScope struct {
 	Departments          []DepartmentScope    `json:"departments,omitempty"`
 	RecordAssignments    []ResourceAssignment `json:"record_assignments,omitempty"`
 	HasCompanyWideAccess bool                 `json:"has_company_wide_access"`
+	OrgUnitIDs           []string             `json:"org_unit_ids,omitempty"`
+	OrgSubtreeUnitIDs    []string             `json:"org_subtree_unit_ids,omitempty"`
+	PositionCodes        []string             `json:"position_codes,omitempty"`
 }
 
 type DepartmentScope struct {
@@ -102,4 +109,14 @@ type DepartmentScope struct {
 type ResourceAssignment struct {
 	ResourceType string `json:"resource_type"`
 	ResourceID   string `json:"resource_id"`
+}
+
+type ActionPolicy struct {
+	ActionCode          string    `json:"action_code"`
+	RequiredPermission  string    `json:"required_permission"`
+	ScopeType           string    `json:"scope_type"`
+	WorkflowState       string    `json:"workflow_state"`
+	EligibleActor       string    `json:"eligible_actor"`
+	EffectType          string    `json:"effect_type"`
+	DenyReasonCode      perr.Code `json:"deny_reason_code"`
 }

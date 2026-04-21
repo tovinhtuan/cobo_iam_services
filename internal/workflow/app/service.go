@@ -25,7 +25,13 @@ func (s *service) CreateWorkflowInstance(ctx context.Context, req CreateWorkflow
 	if strings.TrimSpace(req.RecordID) == "" {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "record_id is required", nil)
 	}
-	if err := s.authorize(ctx, req.Subject, "workflow.create", req.RecordID); err != nil {
+	if err := s.authorize(ctx, req.Subject, "workflow.create", authapp.ResourceRef{
+		Type: "workflow_instance",
+		ID:   req.RecordID,
+		Attributes: map[string]any{
+			"workflow_state": "draft",
+		},
+	}); err != nil {
 		return nil, err
 	}
 	inst := WorkflowInstanceDTO{WorkflowInstanceID: s.idg.NewUUID(), CompanyID: req.Subject.CompanyID, RecordID: req.RecordID, Status: "in_progress", CurrentStepCode: "review", CreatedBy: req.Subject.UserID}
@@ -53,7 +59,13 @@ func (s *service) ResolveAssignees(ctx context.Context, req ResolveAssigneesRequ
 	if strings.TrimSpace(req.WorkflowInstanceID) == "" {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "workflow_instance_id is required", nil)
 	}
-	if err := s.authorize(ctx, req.Subject, "workflow.resolve_assignees", req.WorkflowInstanceID); err != nil {
+	if err := s.authorize(ctx, req.Subject, "workflow.resolve_assignees", authapp.ResourceRef{
+		Type: "workflow_instance",
+		ID:   req.WorkflowInstanceID,
+		Attributes: map[string]any{
+			"workflow_state": "*",
+		},
+	}); err != nil {
 		return nil, err
 	}
 	// Skeleton resolver: return current membership as default assignee candidate.
@@ -64,11 +76,18 @@ func (s *service) transitionTask(ctx context.Context, req TaskActionRequest, act
 	if strings.TrimSpace(req.TaskID) == "" {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "task_id is required", nil)
 	}
-	if err := s.authorize(ctx, req.Subject, action, req.TaskID); err != nil {
-		return nil, err
-	}
 	task, err := s.repo.FindTask(ctx, req.Subject.CompanyID, req.TaskID)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.authorize(ctx, req.Subject, action, authapp.ResourceRef{
+		Type: "workflow_task",
+		ID:   req.TaskID,
+		Attributes: map[string]any{
+			"assignee_membership_id": task.AssigneeMembershipID,
+			"workflow_state":         task.Status,
+		},
+	}); err != nil {
 		return nil, err
 	}
 	if task.AssigneeMembershipID != req.Subject.MembershipID {
@@ -85,8 +104,7 @@ func (s *service) transitionTask(ctx context.Context, req TaskActionRequest, act
 	return upd, nil
 }
 
-func (s *service) authorize(ctx context.Context, sub Subject, action, resourceID string) error {
-	resource := authapp.ResourceRef{Type: "workflow_task", ID: resourceID, Attributes: map[string]any{}}
+func (s *service) authorize(ctx context.Context, sub Subject, action string, resource authapp.ResourceRef) error {
 	decision, err := s.auth.Authorize(ctx, authapp.AuthorizeRequest{Subject: authapp.SubjectRef{UserID: sub.UserID, MembershipID: sub.MembershipID, CompanyID: sub.CompanyID}, Action: action, Resource: resource})
 	if err != nil {
 		return fmt.Errorf("authorize workflow action: %w", err)

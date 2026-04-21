@@ -167,7 +167,7 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 	baseAuthResolver := authinmem.NewResolver(authRepo)
 	authResolver := authprojection.NewCachedResolver(baseAuthResolver, projectionStore)
 	authChecker := authinmem.NewChecker()
-	authSvc := authapp.NewService(authResolver, authChecker)
+	authSvc := authapp.NewService(authResolver, authChecker, authRepo)
 	authHandler := authhttp.NewHandler(authSvc, tokenManager)
 	meHandler := iamhttp.NewMeHandler(iamHandler, identity, memberQuery, authSvc)
 

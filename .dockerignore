@@ -1,0 +1,12 @@
+.git
+.github
+dist
+tmp
+bin
+*.log
+coverage.*
+node_modules
+.DS_Store
+.idea
+.vscode
+docs/ai-cache

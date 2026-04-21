@@ -82,5 +82,5 @@ func newAuthService(t *testing.T) authapp.Service {
 	repo := authinmem.NewRepository()
 	resolver := authinmem.NewResolver(repo)
 	checker := authinmem.NewChecker()
-	return authapp.NewService(resolver, checker)
+	return authapp.NewService(resolver, checker, repo)
 }

@@ -32,6 +32,18 @@ func (r *Resolver) Resolve(ctx context.Context, membershipID, companyID string) 
 	if err != nil {
 		return nil, err
 	}
+	positions, err := r.repo.ListPositionCodes(ctx, membershipID, companyID)
+	if err != nil {
+		return nil, err
+	}
+	orgUnitIDs, err := r.repo.ListOrgUnitIDs(ctx, membershipID, companyID)
+	if err != nil {
+		return nil, err
+	}
+	orgSubtreeIDs, err := r.repo.ListOrgSubtreeUnitIDs(ctx, membershipID, companyID)
+	if err != nil {
+		return nil, err
+	}
 	scopeType := "none"
 	hasCompanyWide := has(permissions, "company_wide_access")
 	if hasCompanyWide {
@@ -48,6 +60,9 @@ func (r *Resolver) Resolve(ctx context.Context, membershipID, companyID string) 
 			Departments:          deps,
 			RecordAssignments:    assigns,
 			HasCompanyWideAccess: hasCompanyWide,
+			OrgUnitIDs:           orgUnitIDs,
+			OrgSubtreeUnitIDs:    orgSubtreeIDs,
+			PositionCodes:        positions,
 		},
 		Responsibilities: resp,
 	}, nil

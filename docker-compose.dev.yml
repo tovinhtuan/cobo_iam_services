@@ -1,0 +1,106 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: cobo-iam-mysql
+    command: --default-authentication-plugin=mysql_native_password
+    environment:
+      MYSQL_DATABASE: cobo_iam
+      MYSQL_USER: cobo
+      MYSQL_PASSWORD: cobo
+      MYSQL_ROOT_PASSWORD: root
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -proot --silent"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    container_name: cobo-iam-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    image: mysql:8.0
+    container_name: cobo-iam-migrate
+    depends_on:
+      mysql:
+        condition: service_healthy
+    working_dir: /workspace
+    volumes:
+      - ./:/workspace
+    command: ["sh", "-c", "tr -d '\\r' < /workspace/migrations/run_dev_migrations.sh | sh"]
+    restart: "no"
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cobo-iam-api
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    working_dir: /app
+    command: go run ./cmd/api
+    environment:
+      SERVICE_NAME: cobo_iam_services
+      ENV: development
+      LOG_LEVEL: debug
+      HTTP_ADDR: :8080
+      MYSQL_DSN: cobo:cobo@tcp(mysql:3306)/cobo_iam?parseTime=true&loc=UTC&tls=false
+      REDIS_ADDR: redis:6379
+      REDIS_DB: "0"
+      EFFECTIVE_ACCESS_CACHE_TTL: 5m
+      ACCESS_TOKEN_MODE: opaque
+      ACCESS_TOKEN_TTL: 15m
+      JWT_ISSUER: cobo_iam_services
+      JWT_AUDIENCE: cobo_clients
+      JWT_ALG: EdDSA
+      JWT_CLOCK_SKEW_SEC: "60"
+      PUBLIC_WEB_BASE_URL: http://localhost:3000
+      WORKER_TICK_INTERVAL: 5s
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./:/app
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cobo-iam-worker
+    depends_on:
+      mysql:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    working_dir: /app
+    command: go run ./cmd/worker
+    environment:
+      SERVICE_NAME: cobo_iam_services
+      ENV: development
+      LOG_LEVEL: info
+      MYSQL_DSN: cobo:cobo@tcp(mysql:3306)/cobo_iam?parseTime=true&loc=UTC&tls=false
+      WORKER_TICK_INTERVAL: 5s
+      ACCESS_TOKEN_MODE: opaque
+      ACCESS_TOKEN_TTL: 15m
+      PUBLIC_WEB_BASE_URL: http://localhost:3000
+    volumes:
+      - ./:/app
+    profiles: ["worker"]
+
+volumes:
+  mysql_data:
