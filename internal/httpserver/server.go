@@ -3,6 +3,7 @@ package httpserver
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -27,6 +28,7 @@ import (
 	iamapp "github.com/cobo/cobo_iam_services/internal/iam/app"
 	iaminmem "github.com/cobo/cobo_iam_services/internal/iam/infra/inmemory"
 	iammysql "github.com/cobo/cobo_iam_services/internal/iam/infra/mysql"
+	"github.com/cobo/cobo_iam_services/internal/iam/loginpassword"
 	iamhttp "github.com/cobo/cobo_iam_services/internal/iam/transport/http"
 	notificationapp "github.com/cobo/cobo_iam_services/internal/notification/app"
 	notificationinmem "github.com/cobo/cobo_iam_services/internal/notification/infra/inmemory"
@@ -94,7 +96,9 @@ func New(ctx context.Context, d Deps) (http.Handler, func(), error) {
 	}
 
 	mux := http.NewServeMux()
-	register(mux, d.Log, d.Config, d.TokenManager, sqlPing, projectionStore, outboxRepo, d.DB, outboxSQL)
+	if err := register(mux, d.Log, d.Config, d.TokenManager, sqlPing, projectionStore, outboxRepo, d.DB, outboxSQL); err != nil {
+		return nil, nil, err
+	}
 
 	return corsMiddleware(d.Config, requestIDMiddleware(d.Log, mux)), cleanup, nil
 }
@@ -103,7 +107,7 @@ type pingDB interface {
 	PingContext(context.Context) error
 }
 
-func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr TokenManager, sqlDB pingDB, projectionStore authprojection.SnapshotStore, outboxRepo platformoutbox.Repository, pool *sql.DB, outboxSQL *outboxmysql.Repository) {
+func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr TokenManager, sqlDB pingDB, projectionStore authprojection.SnapshotStore, outboxRepo platformoutbox.Repository, pool *sql.DB, outboxSQL *outboxmysql.Repository) error {
 	id := idgen.UUIDv7Generator{}
 	tokenManager := tokenMgr
 	if tokenManager == nil {
@@ -159,8 +163,18 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 			}),
 		)
 	}
+	var loginPWD *loginpassword.Service
+	if cfg.LoginPasswordRSAPrivateKeyPEM != "" {
+		lp, err := loginpassword.NewFromPEM(cfg.LoginPasswordRSAPrivateKeyPEM, cfg.LoginPasswordRSAKeyID)
+		if err != nil {
+			return fmt.Errorf("LOGIN_PASSWORD_RSA_PRIVATE_KEY_PEM: %w", err)
+		}
+		loginPWD = lp
+		log.Info("login password RSA-OAEP transport encryption enabled", slog.String("kid", loginPWD.KeyID()))
+	}
+
 	iamSvc := iamapp.NewService(credVerifier, sessionRepo, tokenManager, memberQuery, id, iamOpts...)
-	iamHandler := iamhttp.NewHandler(log, iamSvc, tokenManager, auditSvc, outboxPublisher, id)
+	iamHandler := iamhttp.NewHandler(log, iamSvc, tokenManager, auditSvc, outboxPublisher, id, loginPWD)
 	var authRepo authapp.Repository = authinmem.NewRepository()
 	if pool != nil {
 		authRepo = authmysql.NewRepository(pool)
@@ -204,6 +218,21 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 	adminSvc := companyaccessapp.NewAdminService(adminRepo, authSvc, id)
 	adminHandler := companyaccesshttp.NewAdminHandler(adminSvc, tokenManager, auditSvc)
 
+	return muxRegisterHealthAndIAM(mux, log, sqlDB, iamHandler, meHandler, authHandler, disclosureHandler, workflowHandler, notificationHandler, adminHandler)
+}
+
+func muxRegisterHealthAndIAM(
+	mux *http.ServeMux,
+	log *slog.Logger,
+	sqlDB pingDB,
+	iamHandler *iamhttp.Handler,
+	meHandler *iamhttp.MeHandler,
+	authHandler *authhttp.Handler,
+	disclosureHandler *disclosurehttp.Handler,
+	workflowHandler *workflowhttp.Handler,
+	notificationHandler *notificationhttp.Handler,
+	adminHandler *companyaccesshttp.AdminHandler,
+) error {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		httpx.WriteJSON(w, http.StatusOK, map[string]any{"status": "ok"})
 	})
@@ -229,6 +258,7 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 	workflowHandler.Register(mux)
 	notificationHandler.Register(mux)
 	adminHandler.Register(mux)
+	return nil
 }
 
 func requestIDMiddleware(_ *slog.Logger, next http.Handler) http.Handler {

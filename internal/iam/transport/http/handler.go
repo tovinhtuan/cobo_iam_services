@@ -9,6 +9,8 @@ import (
 
 	auditapp "github.com/cobo/cobo_iam_services/internal/audit/app"
 	iamapp "github.com/cobo/cobo_iam_services/internal/iam/app"
+	"github.com/cobo/cobo_iam_services/internal/iam/loginpassword"
+	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 	"github.com/cobo/cobo_iam_services/internal/platform/events"
 	"github.com/cobo/cobo_iam_services/internal/platform/httpx"
 	"github.com/cobo/cobo_iam_services/internal/platform/idgen"
@@ -22,13 +24,15 @@ type Handler struct {
 	audit     auditapp.Service
 	outbox    outbox.Publisher
 	idgen     idgen.Generator
+	loginPWD  *loginpassword.Service
 }
 
-func NewHandler(log *slog.Logger, svc iamapp.Service, inspector iamapp.TokenInspector, audit auditapp.Service, outbox outbox.Publisher, idgen idgen.Generator) *Handler {
-	return &Handler{log: log, svc: svc, inspector: inspector, audit: audit, outbox: outbox, idgen: idgen}
+func NewHandler(log *slog.Logger, svc iamapp.Service, inspector iamapp.TokenInspector, audit auditapp.Service, outbox outbox.Publisher, idgen idgen.Generator, loginPWD *loginpassword.Service) *Handler {
+	return &Handler{log: log, svc: svc, inspector: inspector, audit: audit, outbox: outbox, idgen: idgen, loginPWD: loginPWD}
 }
 
 func (h *Handler) Register(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/v1/auth/login-password-key", h.loginPasswordKey)
 	mux.HandleFunc("POST /api/v1/auth/login", h.login)
 	mux.HandleFunc("POST /api/v1/auth/refresh", h.refresh)
 	mux.HandleFunc("POST /api/v1/auth/logout", h.logout)
@@ -44,9 +48,30 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/sessions/{session_id}/revoke", h.revokeSession)
 }
 
+func (h *Handler) loginPasswordKey(w http.ResponseWriter, r *http.Request) {
+	if h.loginPWD == nil {
+		httpx.WriteError(w, h.log, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "login password encryption is not configured", nil))
+		return
+	}
+	spki, err := h.loginPWD.PublicKeySPKIB64()
+	if err != nil {
+		httpx.WriteError(w, h.log, perr.NewHTTPError(http.StatusInternalServerError, perr.CodeInternal, "public key export failed", err))
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]string{
+		"kid":                 h.loginPWD.KeyID(),
+		"alg":                 loginpassword.AlgRSAOAEP256,
+		"public_key_spki_b64": spki,
+	})
+}
+
 func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 	var req iamapp.LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, h.log, err)
+		return
+	}
+	if err := h.normalizeLoginPassword(&req); err != nil {
 		httpx.WriteError(w, h.log, err)
 		return
 	}
@@ -61,6 +86,30 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 	h.auditEvent(r, "login_success", "allow", resp.User.UserID, contextMembership(resp), map[string]any{"next_action": resp.NextAction})
 	h.publishEvent(r, "iam.session.login", resp.User.UserID, map[string]any{"next_action": resp.NextAction})
 	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) normalizeLoginPassword(req *iamapp.LoginRequest) error {
+	c := req.PasswordCipher
+	if c == nil || strings.TrimSpace(c.CiphertextB64) == "" {
+		return nil
+	}
+	if h.loginPWD == nil {
+		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "password_cipher is not supported", nil)
+	}
+	alg := strings.TrimSpace(c.Alg)
+	if alg != loginpassword.AlgRSAOAEP256 {
+		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "unsupported password_cipher.alg", nil)
+	}
+	if strings.TrimSpace(c.KID) != "" && c.KID != h.loginPWD.KeyID() {
+		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "unknown password_cipher.kid", nil)
+	}
+	plain, err := h.loginPWD.DecryptOAEP256(c.CiphertextB64)
+	if err != nil {
+		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "invalid password_cipher", err)
+	}
+	req.Password = plain
+	req.PasswordCipher = nil
+	return nil
 }
 
 func (h *Handler) refresh(w http.ResponseWriter, r *http.Request) {

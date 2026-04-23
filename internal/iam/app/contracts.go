@@ -133,15 +133,25 @@ type RecoveryTokenRecord struct {
 	ExpiresAt time.Time
 }
 
+// LoginPasswordCipher carries a password encrypted for transport (browser → API).
+// When present, the HTTP layer decrypts into Password before credential verification.
+type LoginPasswordCipher struct {
+	Alg           string `json:"alg"`
+	KID           string `json:"kid,omitempty"`
+	CiphertextB64 string `json:"ciphertext_b64"`
+}
+
 type LoginRequest struct {
-	LoginID   string `json:"login_id"`
+	LoginID string `json:"login_id"`
 	// Email alias for frontend compatibility (cobo_web_design login form).
-	Email     string `json:"email,omitempty"`
-	Password  string `json:"password"`
+	Email    string `json:"email,omitempty"`
+	Password string `json:"password,omitempty"`
+	// PasswordCipher optional RSA-OAEP-256 ciphertext (base64) when LOGIN_PASSWORD_RSA_PRIVATE_KEY_PEM is configured.
+	PasswordCipher *LoginPasswordCipher `json:"password_cipher,omitempty"`
 	// RememberMe is optional and can be used by session policy (TTL) in later phases.
-	RememberMe bool `json:"remember_me,omitempty"`
-	IP        string `json:"-"`
-	UserAgent string `json:"-"`
+	RememberMe bool   `json:"remember_me,omitempty"`
+	IP         string `json:"-"`
+	UserAgent  string `json:"-"`
 	// MFAOTP optional second factor (TOTP etc.); consumed by MFACheck when wired.
 	MFAOTP string `json:"mfa_otp,omitempty"`
 	// Extensions carries forward-compatible fields (OIDC state, device id, etc.) for SSOLoginBridge / MFACheck.
@@ -238,13 +248,13 @@ type ListSessionsRequest struct {
 }
 
 type SessionView struct {
-	SessionID       string `json:"session_id"`
-	CurrentCompanyID string `json:"current_company_id,omitempty"`
+	SessionID           string `json:"session_id"`
+	CurrentCompanyID    string `json:"current_company_id,omitempty"`
 	CurrentMembershipID string `json:"current_membership_id,omitempty"`
-	IP              string `json:"ip,omitempty"`
-	UserAgent       string `json:"user_agent,omitempty"`
-	Current         bool   `json:"current"`
-	Revoked         bool   `json:"revoked"`
+	IP                  string `json:"ip,omitempty"`
+	UserAgent           string `json:"user_agent,omitempty"`
+	Current             bool   `json:"current"`
+	Revoked             bool   `json:"revoked"`
 }
 
 type ListSessionsResponse struct {

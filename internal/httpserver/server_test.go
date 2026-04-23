@@ -3,8 +3,14 @@ package httpserver_test
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha256"
+	"crypto/x509"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -90,6 +96,99 @@ func TestIntegration_readyz_noDatabase(t *testing.T) {
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusServiceUnavailable {
 		t.Fatalf("status=%d want 503", res.StatusCode)
+	}
+}
+
+func TestIntegration_loginPasswordKey_notConfigured(t *testing.T) {
+	srv := httptest.NewServer(newTestHandler(t, nil))
+	defer srv.Close()
+
+	res, err := http.Get(srv.URL + "/api/v1/auth/login-password-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusNotFound {
+		t.Fatalf("status=%d want 404", res.StatusCode)
+	}
+}
+
+func TestIntegration_login_encryptedPassword_RSAOAEP(t *testing.T) {
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pemStr := string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(priv)}))
+	cfg := testAPIConfig()
+	cfg.LoginPasswordRSAPrivateKeyPEM = pemStr
+	cfg.LoginPasswordRSAKeyID = "test-kid"
+
+	log := logger.New("error")
+	h, cleanup, err := httpserver.New(context.Background(), httpserver.Deps{Log: log, Config: cfg, DB: nil})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(cleanup)
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	keyRes, err := http.Get(srv.URL + "/api/v1/auth/login-password-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer keyRes.Body.Close()
+	if keyRes.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(keyRes.Body)
+		t.Fatalf("key status=%d body=%s", keyRes.StatusCode, b)
+	}
+	var keyOut struct {
+		KID              string `json:"kid"`
+		Alg              string `json:"alg"`
+		PublicKeySPKIB64 string `json:"public_key_spki_b64"`
+	}
+	if err := json.NewDecoder(keyRes.Body).Decode(&keyOut); err != nil {
+		t.Fatal(err)
+	}
+	if keyOut.KID != "test-kid" || keyOut.Alg != "RSA-OAEP-256" || keyOut.PublicKeySPKIB64 == "" {
+		t.Fatalf("unexpected key payload: %+v", keyOut)
+	}
+	spki, err := base64.StdEncoding.DecodeString(keyOut.PublicKeySPKIB64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pubAny, err := x509.ParsePKIXPublicKey(spki)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pub, ok := pubAny.(*rsa.PublicKey)
+	if !ok {
+		t.Fatal("not RSA public key")
+	}
+	ct, err := rsa.EncryptOAEP(sha256.New(), rand.Reader, pub, []byte("secret"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctB64 := base64.StdEncoding.EncodeToString(ct)
+
+	loginBody, err := json.Marshal(map[string]any{
+		"login_id": "single@example.com",
+		"password_cipher": map[string]string{
+			"alg":             "RSA-OAEP-256",
+			"kid":             keyOut.KID,
+			"ciphertext_b64": ctB64,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := http.Post(srv.URL+"/api/v1/auth/login", "application/json", bytes.NewReader(loginBody))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(res.Body)
+		t.Fatalf("login status=%d body=%s", res.StatusCode, b)
 	}
 }
 
