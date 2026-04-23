@@ -2,6 +2,8 @@
 
 Tai lieu mo ta body JSON (mau request/response) cho REST API cua `cobo_iam_services`. Chi tiet giai doan trien khai xem `implementation-step-by-step.md`.
 
+**Kem theo (machine-readable):** `api-v1-implemented-contracts.json` — danh sach path/method va schema mau cac endpoint da wiring trong `httpserver` (cong voi `/internal/v1/authorize*`, health).
+
 ## Quy uoc
 
 - Base path: `/api/v1` (client), `/internal/v1` (noi bo).
@@ -34,18 +36,63 @@ Ma loi goi y: `INVALID_CREDENTIALS`, `ACCOUNT_LOCKED`, `SESSION_EXPIRED`, `NO_AC
 
 ## A. Authentication APIs
 
+### GET /api/v1/auth/login-password-key
+
+Khi cau hinh `LOGIN_PASSWORD_RSA_PRIVATE_KEY_PEM` (PEM khoa RSA 2048+; env `LOGIN_PASSWORD_RSA_KEY_ID` tuy chon, mac dinh `default`), public key duoc dung voi thuat toan `RSA-OAEP-256` (SHA-256) de ma hoa truoc khi login. Goi endpoint nay **truoc** `POST /api/v1/auth/login` de lay khoa public (Web Crypto `spki`).
+
+- **Khoa chua cau hinh:** HTTP `404` + `error` JSON, code `INVALID_REQUEST` (tinh nang ma hoa tren duong thong bao chua bat).
+
+**Response 200**
+
+```json
+{
+  "kid": "dev-local",
+  "alg": "RSA-OAEP-256",
+  "public_key_spki_b64": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA…"
+}
+```
+
+`public_key_spki_b64` la PKIX subjectPublicKeyInfo (DER) encode base64 — import Web Crypto: `importKey("spki", ...)` voi `RSA-OAEP` + `SHA-256`. Be mat khau UTF-8 toi da ~**190 byte** (RSA-2048 OAEP-SHA256).
+
+---
+
 ### POST /api/v1/auth/login
 
-**Request**
+Dang nhap co the gui **mật khẩu dạng plaintext** hoặc (khi may chu cau hinh khoa RSA) **`password_cipher`**; khong gui dong thoi `password` va `password_cipher` tren cung mot body voi cung nghia uu tien — client front-end chi nen gửi `password_cipher` khi da nhan public key 200.
+
+**Request (plaintext — tuong thich nguoc va script)**
 
 ```json
 {
   "login_id": "user@example.com",
-  "password": "secret"
+  "password": "secret",
+  "remember_me": true
 }
 ```
 
+Gia tri tuy chon: `email` cung nghia voi `login_id` (FE `cobo_web_design` dung `email`).
+
 Tuy chon (P2.3 hooks): `mfa_otp`, `extensions` (map tuy y cho OIDC/assertion phu).
+
+**Request (mật khẩu mã hóa RSA-OAEP-256, kid khớp may chủ)**
+
+```json
+{
+  "email": "user@example.com",
+  "remember_me": true,
+  "password_cipher": {
+    "alg": "RSA-OAEP-256",
+    "kid": "dev-local",
+    "ciphertext_b64": "K7gNU3sdo+OL0wNhqoVWhr3g6QUMw2gWv3s+…"
+  }
+}
+```
+
+- Khi dung `password_cipher`: truong `password` (plaintext) **khong** can gui.
+- Neu client gui `password_cipher` nhung may chu chua cau hinh khoa: `400` + `password_cipher is not supported`.
+- Sai mã / sai kid (khac `LOGIN_PASSWORD_RSA_KEY_ID`): `400` + `invalid password_cipher` hoac `unknown password_cipher.kid`.
+
+**Response** — cau truc nhu cac mau phia duoi (khong doi khi dung `password_cipher`).
 
 **Response — 1 company active (auto select)**
 
@@ -161,6 +208,27 @@ Sau moi lan refresh thanh cong, client **phai** luu `refresh_token` moi; token c
 
 ---
 
+### Hệ thống: GET /healthz, GET /readyz
+
+Public, **khong** can Bearer. Tra JSON `status` (xem `internal/httpserver`).
+
+---
+
+### Thiet bi phien nguoi dung (user sessions)
+
+- **GET /api/v1/sessions** — can Bearer. Danh sach phien cua user.
+- **POST /api/v1/sessions/{session_id}/revoke** — can Bearer, thu hoi phien theo `session_id`.
+
+(Chi tiet truong JSON: dung cung mau hoa `snake_case` theo `iam/transport/http`.)
+
+---
+
+### POST /api/v1/me/active-company
+
+**Alias cung hanh vi** nhu `POST /api/v1/auth/switch-company` (doi context cong ty khi dang dang nhap, Bearer access token theo cong ty cu). Dung cung `Authorization` + `{"company_id":"..."}`.
+
+---
+
 ## B. Session / identity APIs
 
 ### GET /api/v1/me
@@ -180,6 +248,8 @@ Sau moi lan refresh thanh cong, client **phai** luu `refresh_token` moi; token c
   }
 }
 ```
+
+**Alias:** `GET /api/v1/me/profile` cung phan hoi nhu tren.
 
 ---
 

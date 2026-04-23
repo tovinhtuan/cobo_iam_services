@@ -1,0 +1,142 @@
+{
+  "info": {
+    "title": "cobo_iam_services — public & internal API snapshot",
+    "version": "1.0.0",
+    "description": "Danh sach endpoint dang dang ky trong `internal/httpserver` (handler modules). Mau JSON chi tiet: `api-contracts-json.md`. Bao gom: health, auth (login-password-key, login, refresh, logout, recovery, select/switch), me/*, sessions, admin, disclosure, workflow, notification, noi bo authorize.",
+    "source": "internal/iam/transport/http/handler.go, me_handler.go; authorization, disclosure, workflow, notification, companyaccess/transport/http/admin_handler.go; internal/httpserver/server.go"
+  },
+  "conventions": {
+    "content_type": "application/json; charset=utf-8",
+    "error_envelope": {
+      "error": {
+        "code": "string (machine code, vi du INVALID_REQUEST)",
+        "message": "string",
+        "details": "object, optional"
+      }
+    }
+  },
+  "optional_config": {
+    "LOGIN_PASSWORD_RSA_PRIVATE_KEY_PEM": "Khi set, GET /api/v1/auth/login-password-key tra 200; POST /api/v1/auth/login nhan `password_cipher` (RSA-OAEP-256). RSA >= 2048 bit.",
+    "LOGIN_PASSWORD_RSA_KEY_ID": "Key id; mac dinh `default`. Client gui trong `password_cipher.kid`."
+  },
+  "schemas": {
+    "LoginRequestPlain": {
+      "login_id": "string, optional if email",
+      "email": "string, optional alias cua login_id (FE su dung)",
+      "password": "string, optional neu dung password_cipher",
+      "remember_me": "boolean, optional"
+    },
+    "LoginRequestCipher": {
+      "login_id": "string, optional if email",
+      "email": "string, optional",
+      "password_cipher": {
+        "alg": "RSA-OAEP-256",
+        "kid": "string, optional; neu co thi phai trung LOGIN_PASSWORD_RSA_KEY_ID tren may chu",
+        "ciphertext_b64": "string, base64 ciphertext RSA-OAEP voi SHA-256"
+      },
+      "remember_me": "boolean, optional"
+    },
+    "LoginPasswordKeyResponse200": {
+      "kid": "string",
+      "alg": "RSA-OAEP-256",
+      "public_key_spki_b64": "string, PKIX subjectPublicKeyInfo (DER) base64"
+    },
+    "LoginPasswordKeyResponse404": {
+      "error": {
+        "code": "INVALID_REQUEST",
+        "message": "login password encryption is not configured"
+      }
+    },
+    "EffectiveAccessSummary": {
+      "company_id": "string",
+      "membership_id": "string",
+      "permissions": "string[] (ma quyen effective)",
+      "data_scope": "object: scope_type, departments|record_assignments|has_company_wide_access|...",
+      "responsibilities": "string[]"
+    },
+    "MeResponse200": {
+      "user": { "user_id": "string", "login_id": "string", "full_name": "string" },
+      "current_context": { "company_id": "string", "membership_id": "string" }
+    },
+    "MembershipResponse200": {
+      "company_id": "string",
+      "membership_id": "string",
+      "roles": "string[] (role_id / code, vi du company_admin)",
+      "departments": "string[] (ten phong/ban, sorted)",
+      "titles": "string[]"
+    },
+    "CapabilitiesResponse200": {
+      "modules": {
+        "dashboard": "boolean",
+        "user_management": "boolean",
+        "department_management": "boolean",
+        "disclosure": "boolean",
+        "workflow_approval": "boolean",
+        "notification_config": "boolean"
+      }
+    }
+  },
+  "paths": {
+    "/healthz": { "get": { "summary": "Health", "auth": "none" } },
+    "/readyz": { "get": { "summary": "Readiness (DB ping when MYSQL_DSN set)", "auth": "none" } },
+    "/api/v1/auth/login-password-key": { "get": { "summary": "Public key cho ma hoa mat khau dang nhap (RSA spki b64)", "auth": "none" } },
+    "/api/v1/auth/login": { "post": { "summary": "Dang nhap; body plain password hoac password_cipher", "auth": "none" } },
+    "/api/v1/auth/refresh": { "post": { "summary": "Lam moi access/refresh", "auth": "none" } },
+    "/api/v1/auth/logout": { "post": { "summary": "Thu hoi refresh session", "auth": "none" } },
+    "/api/v1/auth/forgot-password": { "post": { "summary": "Quen mat khau", "auth": "none" } },
+    "/api/v1/auth/resend-verification-email": { "post": { "summary": "Gui lai email xac thuc", "auth": "none" } },
+    "/api/v1/auth/reset-password": { "post": { "summary": "Doi mat khau bang token", "auth": "none" } },
+    "/api/v1/auth/verify-email": { "post": { "summary": "Xac thuc email bang token", "auth": "none" } },
+    "/api/v1/auth/select-company": { "post": { "summary": "Sau login nhieu cty: bind context (pre-company token)", "auth": "bearer_pre_company" } },
+    "/api/v1/auth/switch-company": { "post": { "summary": "Doi company khi dang dang nhap (access day du)", "auth": "bearer" } },
+    "/api/v1/me/active-company": { "post": { "summary": "Alias switch-company", "auth": "bearer" } },
+    "/api/v1/sessions": { "get": { "summary": "Liet ke phien nguoi dung", "auth": "bearer" } },
+    "/api/v1/sessions/{session_id}/revoke": { "post": { "summary": "Thu hoi mot phien", "auth": "bearer" } },
+    "/api/v1/me": { "get": { "summary": "Profile + current_context", "auth": "bearer" } },
+    "/api/v1/me/profile": { "get": { "summary": "Alias GET /me", "auth": "bearer" } },
+    "/api/v1/me/companies": { "get": { "summary": "Danh sach company/membership cua user", "auth": "bearer" } },
+    "/api/v1/me/authorized-companies": { "get": { "summary": "Alias companies", "auth": "bearer" } },
+    "/api/v1/me/effective-access": { "get": { "summary": "Effective access: permissions, data_scope, responsibilities", "auth": "bearer" } },
+    "/api/v1/me/capabilities": { "get": { "summary": "Cac module boolean tu effective permissions", "auth": "bearer" } },
+    "/api/v1/me/membership": { "get": { "summary": "Roles, departments, titles cua membership hien tai", "auth": "bearer" } },
+    "/internal/v1/authorize": { "post": { "summary": "Kiem tra policy; subject tu Bearer", "auth": "bearer" } },
+    "/internal/v1/authorize/batch": { "post": { "summary": "Batch authorize", "auth": "bearer" } },
+    "/api/v1/admin/memberships": { "post": { "summary": "Tao membership (admin)", "auth": "bearer" } },
+    "/api/v1/admin/memberships/{membership_id}": {
+      "patch": { "summary": "Cap nhat membership", "auth": "bearer" },
+      "delete": { "summary": "Xoa membership", "auth": "bearer" }
+    },
+    "/api/v1/admin/companies/{company_id}/memberships": { "get": { "summary": "Liet ke member trong company", "auth": "bearer" } },
+    "/api/v1/admin/memberships/{membership_id}/roles": { "post": { "summary": "Gan role", "auth": "bearer" } },
+    "/api/v1/admin/memberships/{membership_id}/roles/{role_id}": { "delete": { "summary": "Go role", "auth": "bearer" } },
+    "/api/v1/admin/memberships/{membership_id}/departments": { "post": { "summary": "Gan department", "auth": "bearer" } },
+    "/api/v1/admin/memberships/{membership_id}/departments/{department_id}": { "delete": { "summary": "Go department", "auth": "bearer" } },
+    "/api/v1/admin/memberships/{membership_id}/titles": { "post": { "summary": "Gan title", "auth": "bearer" } },
+    "/api/v1/admin/memberships/{membership_id}/titles/{title_id}": { "delete": { "summary": "Go title", "auth": "bearer" } },
+    "/api/v1/admin/permissions": { "get": { "summary": "Liet ke permission (catalog)", "auth": "bearer" } },
+    "/api/v1/admin/roles": { "get": { "summary": "Liet ke role theo company (policy)", "auth": "bearer" } },
+    "/api/v1/admin/roles/{role_id}/permissions": { "post": { "summary": "Gan quyen vao role", "auth": "bearer" } },
+    "/api/v1/admin/roles/{role_id}/permissions/{permission_id}": { "delete": { "summary": "Go quyen khoi role", "auth": "bearer" } },
+    "/api/v1/admin/resource-scope-rules": { "post": { "summary": "Tao quy tac scope tai nguyen", "auth": "bearer" } },
+    "/api/v1/admin/workflow-assignee-rules": { "post": { "summary": "Tao quy tac nguoi duoc giao buoc workflow", "auth": "bearer" } },
+    "/api/v1/admin/notification-rules": { "post": { "summary": "Tao quy tac thong bao", "auth": "bearer" } },
+    "/api/v1/disclosures": {
+      "get": { "summary": "Liet ke disclosure (query params theo handler)", "auth": "bearer" },
+      "post": { "summary": "Tao disclosure", "auth": "bearer" }
+    },
+    "/api/v1/disclosures/{record_id}": {
+      "get": { "summary": "Chi tiet", "auth": "bearer" },
+      "patch": { "summary": "Cap nhat", "auth": "bearer" }
+    },
+    "/api/v1/disclosures/{record_id}/submit": { "post": { "summary": "Gui duyet", "auth": "bearer" } },
+    "/api/v1/disclosures/{record_id}/confirm": { "post": { "summary": "Xac nhan", "auth": "bearer" } },
+    "/api/v1/workflows/instances": { "post": { "summary": "Tao instance workflow", "auth": "bearer" } },
+    "/api/v1/workflows/tasks/{task_id}/review": { "post": { "summary": "Review task", "auth": "bearer" } },
+    "/api/v1/workflows/tasks/{task_id}/approve": { "post": { "summary": "Phe duyet task", "auth": "bearer" } },
+    "/api/v1/workflows/tasks/{task_id}/confirm": { "post": { "summary": "Xac nhan task", "auth": "bearer" } },
+    "/api/v1/workflows/resolve-assignees": { "post": { "summary": "Giai quyet nguoi giao (assignees)", "auth": "bearer" } },
+    "/api/v1/notifications/resolve-recipients": { "post": { "summary": "Giai quyet nguoi nhan thong bao", "auth": "bearer" } },
+    "/api/v1/notifications/enqueue": { "post": { "summary": "Dua vao hang cho outbox (co side-effect)", "auth": "bearer" } },
+    "/api/v1/notifications/dispatch": { "post": { "summary": "Kich xu ly phan phoi thong bao (can policy)", "auth": "bearer" } }
+  }
+}
