@@ -4,6 +4,8 @@ Tai lieu mo ta body JSON (mau request/response) cho REST API cua `cobo_iam_servi
 
 **Kem theo (machine-readable):** `api-v1-implemented-contracts.json` — danh sach path/method va schema mau cac endpoint da wiring trong `httpserver` (cong voi `/internal/v1/authorize*`, health).
 
+**OpenAPI / Postman (B1):** `openapi/v1-iam-snapshot.yaml` (build tu JSON bang `docs/scripts/build-openapi-snapshot.mjs`) + `openapi/README.md`.
+
 ## Quy uoc
 
 - Base path: `/api/v1` (client), `/internal/v1` (noi bo).

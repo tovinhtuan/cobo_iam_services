@@ -1,0 +1,683 @@
+openapi: 3.0.3
+info:
+  title: "cobo_iam_services — public & internal API snapshot"
+  version: "1.0.0"
+  description: |
+    Danh sach endpoint dang dang ky trong `internal/httpserver` (handler modules). Mau JSON chi tiet: `api-contracts-json.md`. Bao gom: health, auth (login-password-key, login, refresh, logout, recovery, select/switch), me/*, sessions, admin, disclosure, workflow, notification, noi bo authorize.
+  x-oas-source: api-v1-implemented-contracts.json
+servers:
+  - url: /
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    ErrorBody:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code: { type: string }
+            message: { type: string }
+            details: { type: object, additionalProperties: true }
+paths:
+  "/api/v1/admin/companies/{company_id}/memberships":
+    get:
+      summary: "Liet ke member trong company"
+      operationId: "get_api_v1_admin_companies__company_id__memberships"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: [ { bearerAuth: [] } ]
+  "/api/v1/admin/memberships":
+    post:
+      summary: "Tao membership (admin)"
+      operationId: "post_api_v1_admin_memberships"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: [ { bearerAuth: [] } ]
+  "/api/v1/admin/memberships/{membership_id}":
+    patch:
+      summary: "Cap nhat membership"
+      operationId: "patch_api_v1_admin_memberships__membership_id_"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: [ { bearerAuth: [] } ]
+    delete:
+      summary: "Xoa membership"
+      operationId: "delete_api_v1_admin_memberships__membership_id_"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: [ { bearerAuth: [] } ]
+  "/api/v1/admin/memberships/{membership_id}/departments":
+    post:
+      summary: "Gan department"
+      operationId: "post_api_v1_admin_memberships__membership_id__departments"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: [ { bearerAuth: [] } ]
+  "/api/v1/admin/memberships/{membership_id}/departments/{department_id}":
+    delete:
+      summary: "Go department"
+      operationId: "delete_api_v1_admin_memberships__membership_id__departments__department_id_"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: [ { bearerAuth: [] } ]
+  "/api/v1/admin/memberships/{membership_id}/roles":
+    post:
+      summary: "Gan role"
+      operationId: "post_api_v1_admin_memberships__membership_id__roles"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: [ { bearerAuth: [] } ]
+  "/api/v1/admin/memberships/{membership_id}/roles/{role_id}":
+    delete:
+      summary: "Go role"
+      operationId: "delete_api_v1_admin_memberships__membership_id__roles__role_id_"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: [ { bearerAuth: [] } ]
+  "/api/v1/admin/memberships/{membership_id}/titles":
+    post:
+      summary: "Gan title"
+      operationId: "post_api_v1_admin_memberships__membership_id__titles"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: [ { bearerAuth: [] } ]
+  "/api/v1/admin/memberships/{membership_id}/titles/{title_id}":
+    delete:
+      summary: "Go title"
+      operationId: "delete_api_v1_admin_memberships__membership_id__titles__title_id_"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: [ { bearerAuth: [] } ]
+  "/api/v1/admin/notification-rules":
+    post:
+      summary: "Tao quy tac thong bao"
+      operationId: "post_api_v1_admin_notification_rules"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: [ { bearerAuth: [] } ]
+  "/api/v1/admin/permissions":
+    get:
+      summary: "Liet ke permission (catalog)"
+      operationId: "get_api_v1_admin_permissions"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: [ { bearerAuth: [] } ]
+  "/api/v1/admin/resource-scope-rules":
+    post:
+      summary: "Tao quy tac scope tai nguyen"
+      operationId: "post_api_v1_admin_resource_scope_rules"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: [ { bearerAuth: [] } ]
+  "/api/v1/admin/roles":
+    get:
+      summary: "Liet ke role theo company (policy)"
+      operationId: "get_api_v1_admin_roles"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: [ { bearerAuth: [] } ]
+  "/api/v1/admin/roles/{role_id}/permissions":
+    post:
+      summary: "Gan quyen vao role"
+      operationId: "post_api_v1_admin_roles__role_id__permissions"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: [ { bearerAuth: [] } ]
+  "/api/v1/admin/roles/{role_id}/permissions/{permission_id}":
+    delete:
+      summary: "Go quyen khoi role"
+      operationId: "delete_api_v1_admin_roles__role_id__permissions__permission_id_"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: [ { bearerAuth: [] } ]
+  "/api/v1/admin/workflow-assignee-rules":
+    post:
+      summary: "Tao quy tac nguoi duoc giao buoc workflow"
+      operationId: "post_api_v1_admin_workflow_assignee_rules"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: [ { bearerAuth: [] } ]
+  "/api/v1/auth/forgot-password":
+    post:
+      summary: "Quen mat khau"
+      operationId: "post_api_v1_auth_forgot_password"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: []
+  "/api/v1/auth/login":
+    post:
+      summary: "Dang nhap; body plain password hoac password_cipher"
+      operationId: "post_api_v1_auth_login"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: []
+  "/api/v1/auth/login-password-key":
+    get:
+      summary: "Public key cho ma hoa mat khau dang nhap (RSA spki b64)"
+      operationId: "get_api_v1_auth_login_password_key"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: []
+  "/api/v1/auth/logout":
+    post:
+      summary: "Thu hoi refresh session"
+      operationId: "post_api_v1_auth_logout"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: []
+  "/api/v1/auth/refresh":
+    post:
+      summary: "Lam moi access/refresh"
+      operationId: "post_api_v1_auth_refresh"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: []
+  "/api/v1/auth/resend-verification-email":
+    post:
+      summary: "Gui lai email xac thuc"
+      operationId: "post_api_v1_auth_resend_verification_email"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: []
+  "/api/v1/auth/reset-password":
+    post:
+      summary: "Doi mat khau bang token"
+      operationId: "post_api_v1_auth_reset_password"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: []
+  "/api/v1/auth/select-company":
+    post:
+      summary: "Sau login nhieu cty: bind context (pre-company token)"
+      operationId: "post_api_v1_auth_select_company"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: [ { bearerAuth: [] } ]
+  "/api/v1/auth/switch-company":
+    post:
+      summary: "Doi company khi dang dang nhap (access day du)"
+      operationId: "post_api_v1_auth_switch_company"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: [ { bearerAuth: [] } ]
+  "/api/v1/auth/verify-email":
+    post:
+      summary: "Xac thuc email bang token"
+      operationId: "post_api_v1_auth_verify_email"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: []
+  "/api/v1/disclosures":
+    get:
+      summary: "Liet ke disclosure (query params theo handler)"
+      operationId: "get_api_v1_disclosures"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: [ { bearerAuth: [] } ]
+    post:
+      summary: "Tao disclosure"
+      operationId: "post_api_v1_disclosures"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: [ { bearerAuth: [] } ]
+  "/api/v1/disclosures/{record_id}":
+    get:
+      summary: "Chi tiet"
+      operationId: "get_api_v1_disclosures__record_id_"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: [ { bearerAuth: [] } ]
+    patch:
+      summary: "Cap nhat"
+      operationId: "patch_api_v1_disclosures__record_id_"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: [ { bearerAuth: [] } ]
+  "/api/v1/disclosures/{record_id}/confirm":
+    post:
+      summary: "Xac nhan"
+      operationId: "post_api_v1_disclosures__record_id__confirm"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: [ { bearerAuth: [] } ]
+  "/api/v1/disclosures/{record_id}/submit":
+    post:
+      summary: "Gui duyet"
+      operationId: "post_api_v1_disclosures__record_id__submit"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: [ { bearerAuth: [] } ]
+  "/api/v1/me":
+    get:
+      summary: "Profile + current_context"
+      operationId: "get_api_v1_me"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: [ { bearerAuth: [] } ]
+  "/api/v1/me/active-company":
+    post:
+      summary: "Alias switch-company"
+      operationId: "post_api_v1_me_active_company"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: [ { bearerAuth: [] } ]
+  "/api/v1/me/authorized-companies":
+    get:
+      summary: "Alias companies"
+      operationId: "get_api_v1_me_authorized_companies"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: [ { bearerAuth: [] } ]
+  "/api/v1/me/capabilities":
+    get:
+      summary: "Cac module boolean tu effective permissions"
+      operationId: "get_api_v1_me_capabilities"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: [ { bearerAuth: [] } ]
+  "/api/v1/me/companies":
+    get:
+      summary: "Danh sach company/membership cua user"
+      operationId: "get_api_v1_me_companies"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: [ { bearerAuth: [] } ]
+  "/api/v1/me/effective-access":
+    get:
+      summary: "Effective access: permissions, data_scope, responsibilities"
+      operationId: "get_api_v1_me_effective_access"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: [ { bearerAuth: [] } ]
+  "/api/v1/me/membership":
+    get:
+      summary: "Roles, departments, titles cua membership hien tai"
+      operationId: "get_api_v1_me_membership"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: [ { bearerAuth: [] } ]
+  "/api/v1/me/profile":
+    get:
+      summary: "Alias GET /me"
+      operationId: "get_api_v1_me_profile"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: [ { bearerAuth: [] } ]
+  "/api/v1/notifications/dispatch":
+    post:
+      summary: "Kich xu ly phan phoi thong bao (can policy)"
+      operationId: "post_api_v1_notifications_dispatch"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: [ { bearerAuth: [] } ]
+  "/api/v1/notifications/enqueue":
+    post:
+      summary: "Dua vao hang cho outbox (co side-effect)"
+      operationId: "post_api_v1_notifications_enqueue"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: [ { bearerAuth: [] } ]
+  "/api/v1/notifications/resolve-recipients":
+    post:
+      summary: "Giai quyet nguoi nhan thong bao"
+      operationId: "post_api_v1_notifications_resolve_recipients"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: [ { bearerAuth: [] } ]
+  "/api/v1/sessions":
+    get:
+      summary: "Liet ke phien nguoi dung"
+      operationId: "get_api_v1_sessions"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: [ { bearerAuth: [] } ]
+  "/api/v1/sessions/{session_id}/revoke":
+    post:
+      summary: "Thu hoi mot phien"
+      operationId: "post_api_v1_sessions__session_id__revoke"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: [ { bearerAuth: [] } ]
+  "/api/v1/workflows/instances":
+    post:
+      summary: "Tao instance workflow"
+      operationId: "post_api_v1_workflows_instances"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: [ { bearerAuth: [] } ]
+  "/api/v1/workflows/resolve-assignees":
+    post:
+      summary: "Giai quyet nguoi giao (assignees)"
+      operationId: "post_api_v1_workflows_resolve_assignees"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: [ { bearerAuth: [] } ]
+  "/api/v1/workflows/tasks/{task_id}/approve":
+    post:
+      summary: "Phe duyet task"
+      operationId: "post_api_v1_workflows_tasks__task_id__approve"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: [ { bearerAuth: [] } ]
+  "/api/v1/workflows/tasks/{task_id}/confirm":
+    post:
+      summary: "Xac nhan task"
+      operationId: "post_api_v1_workflows_tasks__task_id__confirm"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: [ { bearerAuth: [] } ]
+  "/api/v1/workflows/tasks/{task_id}/review":
+    post:
+      summary: "Review task"
+      operationId: "post_api_v1_workflows_tasks__task_id__review"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: [ { bearerAuth: [] } ]
+  "/healthz":
+    get:
+      summary: "Health"
+      operationId: "get_healthz"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: []
+  "/internal/v1/authorize":
+    post:
+      summary: "Kiem tra policy; subject tu Bearer"
+      operationId: "post_internal_v1_authorize"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: [ { bearerAuth: [] } ]
+  "/internal/v1/authorize/batch":
+    post:
+      summary: "Batch authorize"
+      operationId: "post_internal_v1_authorize_batch"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: [ { bearerAuth: [] } ]
+  "/readyz":
+    get:
+      summary: "Readiness (DB ping when MYSQL_DSN set)"
+      operationId: "get_readyz"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: []
