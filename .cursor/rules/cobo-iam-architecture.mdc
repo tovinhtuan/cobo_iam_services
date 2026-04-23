@@ -1,0 +1,38 @@
+---
+description: Architecture rules for cobo_iam_services
+alwaysApply: true
+---
+
+# cobo_iam_services Architecture Rules
+
+## Core principles
+- Mỗi thay đổi backend phải rõ boundary: handler -> service/usecase -> repository -> external systems.
+- Handler chỉ parse request, validate, gọi usecase, map response/error.
+- Business logic không nằm trong transport layer.
+- Repository không chứa business policy; chỉ lo truy cập dữ liệu.
+- Mọi thay đổi state quan trọng phải có transaction boundary hoặc lý do vì sao không cần.
+
+## API
+- Request/response structs rõ ràng, không lộ domain model nội bộ nếu không cần.
+- Validation phải explicit ở entry points.
+- Error trả về phải ổn định, phân loại được, log được.
+
+## Auth/IAM
+- Với authn/authz/session/token: mọi thay đổi phải kiểm tra expiry, revocation, race condition, replay risk, privilege escalation paths.
+- Không log secrets, token thô, password, sensitive identifiers nếu không masking.
+
+## DB/Redis
+- Schema change phải backward compatible theo ít nhất một bước triển khai.
+- Migration phải cân nhắc lock time, default values, backfill strategy.
+- Redis key phải có naming convention, TTL policy, invalidation path.
+
+## Worker
+- Job processing phải nghĩ đến idempotency, retry safety, visibility timeout tương đương, duplicate execution.
+- External side effects phải có guard chống chạy lặp gây bẩn dữ liệu.
+
+## Quality gate
+- Mọi feature backend mới phải có:
+  - request validation
+  - error mapping
+  - observability hooks cần thiết
+  - test cho happy path + permission/validation failure + data edge case

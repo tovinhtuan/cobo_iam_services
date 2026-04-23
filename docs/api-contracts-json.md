@@ -356,7 +356,9 @@ Khi da dang nhap, doi context — phat hanh access token moi; khong dung token c
 
 ### POST /internal/v1/authorize
 
-**Request**
+`subject` is **taken from the access token** (Bearer): `user_id`, `membership_id`, and `company_id` in the JSON body are **ignored** if present, so the decision always matches the caller’s JWT context. `action` and `resource` are unchanged. The authorization service (`Checker` / policy) is **not** altered—only the transport binding.
+
+**Request** (illustrative; `subject` may be omitted; values below match token for documentation only)
 
 ```json
 {
@@ -410,6 +412,8 @@ Khi da dang nhap, doi context — phat hanh access token moi; khong dung token c
 ---
 
 ### POST /internal/v1/authorize/batch
+
+Same as single authorize: top-level `subject` is **derived from the access token**; body `subject` fields are ignored. `checks[]` unchanged.
 
 **Request**
 

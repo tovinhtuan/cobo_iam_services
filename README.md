@@ -217,7 +217,7 @@ go test ./...
 go build ./...
 ```
 
-Integration smoke (không cần MySQL): package `internal/httpserver` — `healthz`, `readyz` (không DB → 503), `POST /api/v1/auth/login` user một company.
+Integration smoke (không cần MySQL): package `internal/httpserver` — `healthz`, `readyz` (không DB → 503), `POST /api/v1/auth/login` user một company. **Không `MYSQL_DSN`**, tài khoản in-memory: `user@example.com` / `single@example.com` / `admin.dn@example.com` (mật khẩu `secret`); thêm `admin@cobo.vn` / `password123` (cùng user admin qua `u_admin` trong membership fixture).
 
 ## Hạn chế đã biết (bootstrap)
 
@@ -234,3 +234,5 @@ Integration smoke (không cần MySQL): package `internal/httpserver` — `healt
 - `docs/implementation-step-by-step.md` — lộ trình và DoD (Step **P0.8** — IAM + authz MySQL).
 - `docs/api-contracts-json.md` — ví dụ JSON API.
 - `docs/ai-cache/cobo-iam-services-iam-authz-mysql-summary.md` — tóm tắt wire MySQL cho IAM / membership / authorization.
+
+Before answering or coding, read docs/ai-cache/README.md first and treat it as the highest-priority project source of truth. If anything in the repository README, old code patterns, or default assumptions conflicts with that file, follow docs/ai-cache/README.md unless I explicitly tell you otherwise. Then choose and apply the most relevant project skill.

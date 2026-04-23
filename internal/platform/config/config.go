@@ -50,6 +50,14 @@ type Config struct {
 	// Public web app base URL used in email action links.
 	PublicWebBaseURL string
 
+	// CORSAllowedOrigins is a comma-separated list of allowed browser Origins
+	// (e.g. "https://app.example.com,https://www.example.com"). If empty in
+	// development, loopback (localhost/127.0.0.1) and PublicWebBaseURL are allowed
+	// so a Vite app can call a separate API process without a proxy. Production
+	// with an empty value disables CORS—set explicit origins when the SPA is on
+	// another host than the API.
+	CORSAllowedOrigins string
+
 	// SMTP (worker side-effect for auth email events).
 	SMTPHost     string
 	SMTPPort     int
@@ -83,6 +91,7 @@ func Load() (Config, error) {
 		JWTVerifyPublicKeys:     os.Getenv("JWT_VERIFY_PUBLIC_KEYS_JSON"),
 		JWTClockSkewSec:         intEnv("JWT_CLOCK_SKEW_SEC", 60),
 		PublicWebBaseURL:        getenv("PUBLIC_WEB_BASE_URL", "http://localhost:5173"),
+		CORSAllowedOrigins:      os.Getenv("CORS_ALLOWED_ORIGINS"),
 		SMTPHost:                os.Getenv("SMTP_HOST"),
 		SMTPPort:                intEnv("SMTP_PORT", 587),
 		SMTPUser:                os.Getenv("SMTP_USER"),

@@ -7,6 +7,7 @@ import (
 
 	authapp "github.com/cobo/cobo_iam_services/internal/authorization/app"
 	iamapp "github.com/cobo/cobo_iam_services/internal/iam/app"
+	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 	"github.com/cobo/cobo_iam_services/internal/platform/httpx"
 )
 
@@ -35,8 +36,9 @@ func (h *Handler) authorize(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, nil, err)
 		return
 	}
-	if req.Subject.UserID == "" {
-		req.Subject.UserID = claims.Sub
+	if err := applyAccessTokenToSubject(claims, &req.Subject); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
 	}
 	decision, err := h.svc.Authorize(r.Context(), req)
 	if err != nil {
@@ -57,8 +59,9 @@ func (h *Handler) authorizeBatch(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, nil, err)
 		return
 	}
-	if req.Subject.UserID == "" {
-		req.Subject.UserID = claims.Sub
+	if err := applyAccessTokenToSubject(claims, &req.Subject); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
 	}
 	resp, err := h.svc.AuthorizeBatch(r.Context(), req)
 	if err != nil {
@@ -83,4 +86,20 @@ func bearerToken(h string) string {
 		return strings.TrimSpace(parts[1])
 	}
 	return h
+}
+
+// applyAccessTokenToSubject overwrites subject from the access token claims. Body
+// user_id / membership_id / company_id are ignored to align decision with the caller
+// context (see deploy gateway + security doc in `docs/`). RBAC is unchanged in the service layer.
+func applyAccessTokenToSubject(claims *iamapp.AccessTokenClaims, sub *authapp.SubjectRef) error {
+	if claims == nil {
+		return perr.NewHTTPError(http.StatusUnauthorized, perr.CodeSessionExpired, "invalid access token", nil)
+	}
+	if strings.TrimSpace(claims.MembershipID) == "" || strings.TrimSpace(claims.CompanyID) == "" {
+		return perr.NewHTTPError(http.StatusUnprocessableEntity, perr.CodeCompanyContextRequired, "access token must include company context for authorization", nil)
+	}
+	sub.UserID = claims.Sub
+	sub.MembershipID = claims.MembershipID
+	sub.CompanyID = claims.CompanyID
+	return nil
 }

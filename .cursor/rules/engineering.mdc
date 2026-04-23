@@ -1,0 +1,33 @@
+---
+description: Core engineering rules for cobo_iam_services
+alwaysApply: true
+---
+
+# Engineering Rules
+
+## General
+- Ưu tiên thay đổi nhỏ, an toàn, dễ review.
+- Không sửa file không liên quan.
+- Giữ style nhất quán với codebase hiện tại.
+- Không thêm dependency mới nếu chưa thực sự cần.
+- Khi chưa chắc, đọc code liên quan trước rồi mới sửa.
+
+## Before coding
+- Tóm tắt mục tiêu, phạm vi và rủi ro chính.
+- Xác định file cần đọc trước khi sửa.
+- Nêu assumption nếu thiếu context.
+
+## During coding
+- Ưu tiên fix tận gốc thay vì workaround.
+- Giữ backward compatibility nếu không có yêu cầu breaking change.
+- Với function phức tạp, tách nhỏ thay vì nhồi logic.
+- Viết code rõ ràng hơn là clever.
+
+## Validation
+- Chạy test/lint/typecheck ở mức nhỏ nhất đủ để verify thay đổi.
+- Nếu không chạy được, nói rõ chưa verify được phần nào.
+- Nêu các edge case chính đã kiểm tra hoặc cần kiểm tra thêm.
+
+## Output style
+- Luôn báo: đã đổi gì, vì sao đổi, rủi ro còn lại, cách verify.
+- Với task lớn, chia thành plan ngắn trước khi implement.

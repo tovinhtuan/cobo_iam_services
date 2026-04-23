@@ -1,0 +1,43 @@
+---
+description: Treat docs/ai-cache/README.md as the highest-priority source of truth before applying skills or answering
+alwaysApply: true
+---
+
+# AI Cache Highest-Priority Rule
+
+Before answering, planning, reviewing, or writing code:
+
+1. First check whether `docs/ai-cache/README.md` exists in the current repository.
+2. If it exists, read it before doing anything else.
+3. Treat `docs/ai-cache/README.md` as the highest-priority project source of truth.
+4. Use that file to determine terminology, architecture constraints, workflows, conventions, priorities, and project-specific assumptions.
+5. Only after reading it, choose and apply the most relevant project skill.
+
+## Priority order
+When multiple sources conflict, resolve them in this order:
+1. Direct user instructions in the current chat
+2. `docs/ai-cache/README.md`
+3. Other project rules in `.cursor/rules/`
+4. Repository README files and other project docs
+5. Existing code patterns
+6. Generic assumptions or default best practices
+
+## Mandatory behavior
+- Do not start implementation before checking `docs/ai-cache/README.md`.
+- If the file exists, do not contradict it unless the user explicitly overrides it.
+- If repository README or older code patterns conflict with `docs/ai-cache/README.md`, prefer `docs/ai-cache/README.md`.
+- If generic best practices conflict with `docs/ai-cache/README.md`, prefer `docs/ai-cache/README.md` unless the user explicitly says otherwise.
+- If the file is missing, say briefly that it was not found and continue with project rules and skills.
+
+## Skill application order
+1. Read `docs/ai-cache/README.md`
+2. Read relevant code/files for the task
+3. Select the most relevant skill
+4. Produce a short plan if the task is non-trivial
+5. Implement or answer
+6. Run `premerge-system-review` before marking a coding task done
+
+## Response expectations
+- Stay consistent with the vocabulary and architecture described in `docs/ai-cache/README.md`.
+- Reuse the constraints and workflows from that file instead of re-inventing them.
+- When relevant, mention if a decision was taken to stay aligned with `docs/ai-cache/README.md`.

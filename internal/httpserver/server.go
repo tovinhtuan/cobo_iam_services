@@ -96,7 +96,7 @@ func New(ctx context.Context, d Deps) (http.Handler, func(), error) {
 	mux := http.NewServeMux()
 	register(mux, d.Log, d.Config, d.TokenManager, sqlPing, projectionStore, outboxRepo, d.DB, outboxSQL)
 
-	return requestIDMiddleware(d.Log, mux), cleanup, nil
+	return corsMiddleware(d.Config, requestIDMiddleware(d.Log, mux)), cleanup, nil
 }
 
 type pingDB interface {
@@ -137,7 +137,9 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 			Users: map[string]iaminmem.StaticUser{
 				"user@example.com":   {UserID: "u_123", LoginID: "user@example.com", Password: "secret", FullName: "Nguyen Van A", Status: "active"},
 				"single@example.com": {UserID: "u_single", LoginID: "single@example.com", Password: "secret", FullName: "Single Company User", Status: "active"},
-				"admin@cobo.vn":      {UserID: "u_admin", LoginID: "admin@cobo.vn", Password: "password123", FullName: "Enterprise Admin", Status: "active"},
+				// Same membership/roles as admin@cobo.vn (u_admin) — password `secret` for local smoke tests.
+				"admin.dn@example.com": {UserID: "u_admin", LoginID: "admin.dn@example.com", Password: "secret", FullName: "Enterprise Admin (DN)", Status: "active"},
+				"admin@cobo.vn":        {UserID: "u_admin", LoginID: "admin@cobo.vn", Password: "password123", FullName: "Enterprise Admin", Status: "active"},
 			},
 		}
 		credVerifier = static
