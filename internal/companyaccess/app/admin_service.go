@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 
 	authapp "github.com/cobo/cobo_iam_services/internal/authorization/app"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 	"github.com/cobo/cobo_iam_services/internal/platform/idgen"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type adminService struct {
@@ -18,6 +20,82 @@ type adminService struct {
 
 func NewAdminService(repo AdminRepository, auth authapp.Service, idg idgen.Generator) AdminService {
 	return &adminService{repo: repo, auth: auth, idg: idg}
+}
+
+func (s *adminService) CreateUser(ctx context.Context, req CreateUserRequest) (*UserView, error) {
+	// Keep auth compatible with existing policy map in week-1 bootstrap.
+	if err := s.authorize(ctx, req.Subject, "admin.membership.create", req.Subject.CompanyID); err != nil {
+		return nil, err
+	}
+	isWebAdmin, err := s.hasPermission(ctx, req.Subject, "rbac.manage")
+	if err != nil {
+		return nil, err
+	}
+
+	req.LoginID = strings.ToLower(strings.TrimSpace(req.LoginID))
+	req.FullName = strings.TrimSpace(req.FullName)
+	req.Email = strings.TrimSpace(req.Email)
+	req.Phone = strings.TrimSpace(req.Phone)
+	req.AccountStatus = strings.TrimSpace(req.AccountStatus)
+	req.CompanyID = strings.TrimSpace(req.CompanyID)
+	req.MembershipStatus = strings.TrimSpace(req.MembershipStatus)
+	if req.AccountStatus == "" {
+		req.AccountStatus = "active"
+	}
+	// Enterprise admin can only add users into current company.
+	if !isWebAdmin {
+		if req.CompanyID != "" && req.CompanyID != req.Subject.CompanyID {
+			return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "enterprise admin can only create users for current company", nil)
+		}
+		req.CompanyID = req.Subject.CompanyID
+	}
+	if req.CompanyID != "" && req.MembershipStatus == "" {
+		req.MembershipStatus = "active"
+	}
+	if req.LoginID == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "login_id required", nil)
+	}
+	if req.FullName == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "full_name required", nil)
+	}
+	if len(req.Password) < 8 {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "password must be at least 8 characters", nil)
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, fmt.Errorf("hash password: %w", err)
+	}
+
+	u := UserView{
+		UserID:        s.idg.NewUUID(),
+		LoginID:       req.LoginID,
+		FullName:      req.FullName,
+		Email:         req.Email,
+		Phone:         req.Phone,
+		AccountStatus: req.AccountStatus,
+	}
+	opts := CreateUserOptions{
+		CompanyID:        req.CompanyID,
+		MembershipStatus: req.MembershipStatus,
+	}
+	if req.CompanyID != "" {
+		opts.MembershipID = s.idg.NewUUID()
+	}
+	return s.repo.CreateUser(ctx, u, string(hash), opts)
+}
+
+func (s *adminService) hasPermission(ctx context.Context, sub AdminSubject, permission string) (bool, error) {
+	eff, err := s.auth.GetEffectiveAccess(ctx, sub.MembershipID, sub.CompanyID)
+	if err != nil {
+		return false, fmt.Errorf("load effective access: %w", err)
+	}
+	for _, p := range eff.Permissions {
+		if p == permission {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (s *adminService) CreateMembership(ctx context.Context, req CreateMembershipRequest) (*MembershipView, error) {

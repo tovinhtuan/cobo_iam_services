@@ -21,12 +21,10 @@ func NewRepository() *Repository {
 	return &Repository{
 		Permissions: map[string][]string{
 			"m_001@c_001": {
-				"company.view", "view_disclosure", "approve_disclosure", "view_dashboard",
+				// Common user fixture: no admin/system permissions.
+				"company.view", "view_disclosure", "view_dashboard",
 				"create_disclosure", "update_disclosure", "submit_disclosure",
-				"create_workflow", "review_workflow_task", "confirm_workflow_task",
-				"enqueue_notification", "dispatch_notification",
-				"admin_manage_access",
-				"disclosure.view", "disclosure.approve", "disclosure.create", "disclosure.edit",
+				"disclosure.view", "disclosure.create", "disclosure.edit",
 			},
 			"m_002@c_002": {"view_disclosure"},
 			"m_010@c_010": {"company.view", "view_dashboard"},

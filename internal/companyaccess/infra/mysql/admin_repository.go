@@ -22,6 +22,70 @@ func NewAdminRepository(db *sql.DB) *AdminRepository {
 	return &AdminRepository{db: db}
 }
 
+func (r *AdminRepository) CreateUser(ctx context.Context, u caapp.UserView, passwordHash string, opts caapp.CreateUserOptions) (*caapp.UserView, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO users (user_id, login_id, full_name, email, phone, account_status)
+		VALUES (?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), ?)
+	`, u.UserID, u.LoginID, u.FullName, u.Email, u.Phone, u.AccountStatus)
+	if err != nil {
+		if isMySQLDuplicate(err) {
+			return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "login_id already exists", nil)
+		}
+		return nil, fmt.Errorf("create user: %w", err)
+	}
+
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO credentials (credential_id, user_id, credential_type, password_hash, password_algo, status, password_changed_at)
+		VALUES (?, ?, 'password', ?, 'bcrypt', 'active', CURRENT_TIMESTAMP)
+	`, uuid.NewString(), u.UserID, passwordHash)
+	if err != nil {
+		return nil, fmt.Errorf("create credential: %w", err)
+	}
+
+	if strings.TrimSpace(opts.CompanyID) != "" {
+		var companyName string
+		if err := tx.QueryRowContext(ctx, `SELECT company_name FROM companies WHERE company_id = ?`, opts.CompanyID).Scan(&companyName); err != nil {
+			if err == sql.ErrNoRows {
+				return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "company not found", nil)
+			}
+			return nil, err
+		}
+
+		membershipStatus := strings.TrimSpace(opts.MembershipStatus)
+		if membershipStatus == "" {
+			membershipStatus = "active"
+		}
+		_, err = tx.ExecContext(ctx, `
+			INSERT INTO memberships (membership_id, user_id, company_id, membership_status)
+			VALUES (?, ?, ?, ?)
+		`, opts.MembershipID, u.UserID, opts.CompanyID, membershipStatus)
+		if err != nil {
+			if isMySQLDuplicate(err) {
+				return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "membership already exists for user and company", nil)
+			}
+			return nil, fmt.Errorf("create membership: %w", err)
+		}
+		u.MembershipID = opts.MembershipID
+		u.MembershipStatus = membershipStatus
+		u.CompanyID = opts.CompanyID
+		u.CompanyName = companyName
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	if u.MembershipID != "" {
+		return &u, nil
+	}
+	return r.getUserView(ctx, u.UserID)
+}
+
 func (r *AdminRepository) CreateMembership(ctx context.Context, m caapp.MembershipView) (*caapp.MembershipView, error) {
 	var dummy string
 	if err := r.db.QueryRowContext(ctx, `SELECT user_id FROM users WHERE user_id = ?`, m.UserID).Scan(&dummy); err != nil {
@@ -366,6 +430,22 @@ func (r *AdminRepository) getMembershipView(ctx context.Context, membershipID st
 	if err := row.Scan(&v.MembershipID, &v.UserID, &v.CompanyID, &v.CompanyName, &v.Status); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeMembershipNotFound, "membership not found", nil)
+		}
+		return nil, err
+	}
+	return &v, nil
+}
+
+func (r *AdminRepository) getUserView(ctx context.Context, userID string) (*caapp.UserView, error) {
+	row := r.db.QueryRowContext(ctx, `
+		SELECT user_id, login_id, full_name, COALESCE(email, ''), COALESCE(phone, ''), account_status
+		FROM users
+		WHERE user_id = ?
+	`, userID)
+	var v caapp.UserView
+	if err := row.Scan(&v.UserID, &v.LoginID, &v.FullName, &v.Email, &v.Phone, &v.AccountStatus); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "user not found", nil)
 		}
 		return nil, err
 	}

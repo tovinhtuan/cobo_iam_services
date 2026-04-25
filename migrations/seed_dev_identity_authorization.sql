@@ -128,8 +128,11 @@ INSERT INTO memberships (membership_id, user_id, company_id, membership_status) 
   ('m_105', 'u_nhan_vien', 'c_001', 'active')
 ON DUPLICATE KEY UPDATE membership_status = VALUES(membership_status);
 
+-- Ensure deterministic membership->role mapping for dev accounts when reseeding.
+DELETE FROM membership_roles WHERE membership_id IN ('m_001', 'm_002');
+
 INSERT INTO membership_roles (membership_id, role_id, status) VALUES
-  ('m_001', 'r0000001-0001-4000-8000-000000000001', 'active'),
+  ('m_001', 'r0000001-0001-4000-8000-000000000015', 'active'),
   ('m_002', 'r0000001-0001-4000-8000-000000000002', 'active'),
   ('m_010', 'r0000001-0001-4000-8000-000000000003', 'active'),
   ('m_101', 'r0000001-0001-4000-8000-000000000011', 'active'),

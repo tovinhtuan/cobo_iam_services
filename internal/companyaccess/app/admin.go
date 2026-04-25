@@ -3,6 +3,7 @@ package app
 import "context"
 
 type AdminService interface {
+	CreateUser(ctx context.Context, req CreateUserRequest) (*UserView, error)
 	CreateMembership(ctx context.Context, req CreateMembershipRequest) (*MembershipView, error)
 	UpdateMembership(ctx context.Context, req UpdateMembershipRequest) (*MembershipView, error)
 	DeleteMembership(ctx context.Context, req DeleteMembershipRequest) error
@@ -26,6 +27,7 @@ type AdminService interface {
 }
 
 type AdminRepository interface {
+	CreateUser(ctx context.Context, u UserView, passwordHash string, opts CreateUserOptions) (*UserView, error)
 	CreateMembership(ctx context.Context, m MembershipView) (*MembershipView, error)
 	UpdateMembershipStatus(ctx context.Context, membershipID, status string) (*MembershipView, error)
 	DeleteMembership(ctx context.Context, membershipID string) error
@@ -56,6 +58,39 @@ type AdminSubject struct {
 }
 
 type AdminSubjectRequest struct{ Subject AdminSubject }
+
+type UserView struct {
+	UserID        string `json:"user_id"`
+	LoginID       string `json:"login_id"`
+	FullName      string `json:"full_name"`
+	Email         string `json:"email,omitempty"`
+	Phone         string `json:"phone,omitempty"`
+	AccountStatus string `json:"account_status"`
+	// Optional output when create-user also creates membership in one call.
+	MembershipID     string `json:"membership_id,omitempty"`
+	MembershipStatus string `json:"membership_status,omitempty"`
+	CompanyID        string `json:"company_id,omitempty"`
+	CompanyName      string `json:"company_name,omitempty"`
+}
+
+type CreateUserOptions struct {
+	MembershipID     string
+	CompanyID        string
+	MembershipStatus string
+}
+
+type CreateUserRequest struct {
+	Subject       AdminSubject
+	LoginID       string `json:"login_id"`
+	Password      string `json:"password"`
+	FullName      string `json:"full_name"`
+	Email         string `json:"email"`
+	Phone         string `json:"phone"`
+	AccountStatus string `json:"account_status"`
+	// Optional: if provided, user + membership are created atomically in one call.
+	CompanyID        string `json:"company_id"`
+	MembershipStatus string `json:"membership_status"`
+}
 
 type CreateMembershipRequest struct {
 	Subject   AdminSubject

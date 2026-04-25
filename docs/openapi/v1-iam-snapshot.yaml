@@ -215,6 +215,18 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorBody" }
       security: [ { bearerAuth: [] } ]
+  "/api/v1/admin/users":
+    post:
+      summary: "Tao user truc tiep (admin)"
+      operationId: "post_api_v1_admin_users"
+      responses:
+        "200": { description: OK }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+      security: [ { bearerAuth: [] } ]
   "/api/v1/admin/workflow-assignee-rules":
     post:
       summary: "Tao quy tac nguoi duoc giao buoc workflow"

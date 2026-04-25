@@ -544,6 +544,58 @@ Same as single authorize: top-level `subject` is **derived from the access token
 
 Cac API duoi day co the tra 201 Created / 200 OK tuy endpoint; y bat buoc: audit day du.
 
+### POST /api/v1/admin/users
+
+Tao tai khoan user truc tiep (admin flow). Endpoint nay tao ban ghi `users` + `credentials(password)`, va co the tao membership cung call neu gui `company_id`.
+
+**Request**
+
+```json
+{
+  "login_id": "new.user@example.com",
+  "password": "StrongPass123!",
+  "full_name": "New User",
+  "email": "new.user@example.com",
+  "phone": "0909123456",
+  "account_status": "active",
+  "company_id": "c_001",
+  "membership_status": "active"
+}
+```
+
+**Validation**
+
+- `login_id`: required, unique (trim + lowercase)
+- `password`: required, >= 8 chars
+- `full_name`: required
+- `account_status`: optional, default `active`
+- `company_id`: optional. Neu co -> tao membership atomically trong cung request.
+- `membership_status`: optional, default `active` khi co `company_id`.
+
+**Authorization boundary**
+
+- Admin doanh nghiep: chi duoc tao nhan vien thuoc company hien tai; backend se ep `company_id = current_context.company_id`.
+- Admin web (co quyen `rbac.manage`): co the tao user bat ky, bao gom cross-company hoac tao user khong gan membership ngay.
+
+**Response (201)**
+
+```json
+{
+  "user_id": "u_new",
+  "login_id": "new.user@example.com",
+  "full_name": "New User",
+  "email": "new.user@example.com",
+  "phone": "0909123456",
+  "account_status": "active",
+  "membership_id": "m_new",
+  "company_id": "c_001",
+  "company_name": "Company One",
+  "membership_status": "active"
+}
+```
+
+---
+
 ### POST /api/v1/admin/memberships
 
 **Request**

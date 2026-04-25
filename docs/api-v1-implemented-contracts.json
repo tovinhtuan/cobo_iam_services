@@ -65,6 +65,28 @@
       "departments": "string[] (ten phong/ban, sorted)",
       "titles": "string[]"
     },
+    "CreateAdminUserRequest": {
+      "login_id": "string, required, unique, email/login",
+      "password": "string, required, >= 8 chars",
+      "full_name": "string, required",
+      "email": "string, optional",
+      "phone": "string, optional",
+      "account_status": "string, optional, default active",
+      "company_id": "string, optional; neu co se tao membership cung call",
+      "membership_status": "string, optional, default active khi co company_id"
+    },
+    "CreateAdminUserResponse201": {
+      "user_id": "string",
+      "login_id": "string",
+      "full_name": "string",
+      "email": "string",
+      "phone": "string",
+      "account_status": "string",
+      "membership_id": "string, optional",
+      "company_id": "string, optional",
+      "company_name": "string, optional",
+      "membership_status": "string, optional"
+    },
     "CapabilitiesResponse200": {
       "modules": {
         "dashboard": "boolean",
@@ -101,6 +123,7 @@
     "/api/v1/me/membership": { "get": { "summary": "Roles, departments, titles cua membership hien tai", "auth": "bearer" } },
     "/internal/v1/authorize": { "post": { "summary": "Kiem tra policy; subject tu Bearer", "auth": "bearer" } },
     "/internal/v1/authorize/batch": { "post": { "summary": "Batch authorize", "auth": "bearer" } },
+    "/api/v1/admin/users": { "post": { "summary": "Tao user truc tiep (admin)", "auth": "bearer" } },
     "/api/v1/admin/memberships": { "post": { "summary": "Tao membership (admin)", "auth": "bearer" } },
     "/api/v1/admin/memberships/{membership_id}": {
       "patch": { "summary": "Cap nhat membership", "auth": "bearer" },

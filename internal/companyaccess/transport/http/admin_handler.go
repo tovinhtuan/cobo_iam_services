@@ -22,6 +22,7 @@ func NewAdminHandler(svc caapp.AdminService, inspector iamapp.TokenInspector, au
 }
 
 func (h *AdminHandler) Register(mux *http.ServeMux) {
+	mux.HandleFunc("POST /api/v1/admin/users", h.createUser)
 	mux.HandleFunc("POST /api/v1/admin/memberships", h.createMembership)
 	mux.HandleFunc("PATCH /api/v1/admin/memberships/{membership_id}", h.updateMembership)
 	mux.HandleFunc("DELETE /api/v1/admin/memberships/{membership_id}", h.deleteMembership)
@@ -39,6 +40,45 @@ func (h *AdminHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/admin/resource-scope-rules", h.createResourceScopeRule)
 	mux.HandleFunc("POST /api/v1/admin/workflow-assignee-rules", h.createWorkflowAssigneeRule)
 	mux.HandleFunc("POST /api/v1/admin/notification-rules", h.createNotificationRule)
+}
+
+func (h *AdminHandler) createUser(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	var p struct {
+		LoginID       string `json:"login_id"`
+		Password      string `json:"password"`
+		FullName      string `json:"full_name"`
+		Email         string `json:"email"`
+		Phone         string `json:"phone"`
+		AccountStatus string `json:"account_status"`
+		CompanyID        string `json:"company_id"`
+		MembershipStatus string `json:"membership_status"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&p)
+	resp, err := h.svc.CreateUser(r.Context(), caapp.CreateUserRequest{
+		Subject:       sub,
+		LoginID:       p.LoginID,
+		Password:      p.Password,
+		FullName:      p.FullName,
+		Email:         p.Email,
+		Phone:         p.Phone,
+		AccountStatus: p.AccountStatus,
+		CompanyID:        p.CompanyID,
+		MembershipStatus: p.MembershipStatus,
+	})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	h.auditLog(r, "admin.user.create", "user", resp.UserID)
+	if resp.MembershipID != "" {
+		h.auditLog(r, "admin.membership.create", "membership", resp.MembershipID)
+	}
+	httpx.WriteJSON(w, http.StatusCreated, resp)
 }
 
 func (h *AdminHandler) subject(r *http.Request) (caapp.AdminSubject, error) {

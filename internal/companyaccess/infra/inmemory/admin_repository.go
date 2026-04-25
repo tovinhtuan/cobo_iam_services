@@ -2,14 +2,19 @@ package inmemory
 
 import (
 	"context"
+	"net/http"
 	"sync"
 
 	caapp "github.com/cobo/cobo_iam_services/internal/companyaccess/app"
+	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 )
 
 type AdminRepository struct {
 	mu sync.RWMutex
 
+	users                   map[string]caapp.UserView
+	usersByLoginID          map[string]string
+	passwordHashByUserID    map[string]string
 	memberships             map[string]caapp.MembershipView
 	rolesByMembership       map[string]map[string]struct{}
 	departmentsByMembership map[string]map[string]struct{}
@@ -26,6 +31,9 @@ type AdminRepository struct {
 
 func NewAdminRepository() *AdminRepository {
 	return &AdminRepository{
+		users:                   map[string]caapp.UserView{},
+		usersByLoginID:          map[string]string{},
+		passwordHashByUserID:    map[string]string{},
 		memberships:             map[string]caapp.MembershipView{},
 		rolesByMembership:       map[string]map[string]struct{}{},
 		departmentsByMembership: map[string]map[string]struct{}{},
@@ -37,6 +45,37 @@ func NewAdminRepository() *AdminRepository {
 		workflowAssigneeRules:   []map[string]any{},
 		notificationRules:       []map[string]any{},
 	}
+}
+
+func (r *AdminRepository) CreateUser(_ context.Context, u caapp.UserView, passwordHash string, opts caapp.CreateUserOptions) (*caapp.UserView, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if existingID, ok := r.usersByLoginID[u.LoginID]; ok && existingID != "" {
+		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "login_id already exists", nil)
+	}
+	r.users[u.UserID] = u
+	r.usersByLoginID[u.LoginID] = u.UserID
+	r.passwordHashByUserID[u.UserID] = passwordHash
+	if opts.CompanyID != "" {
+		status := opts.MembershipStatus
+		if status == "" {
+			status = "active"
+		}
+		m := caapp.MembershipView{
+			MembershipID: opts.MembershipID,
+			UserID:       u.UserID,
+			CompanyID:    opts.CompanyID,
+			CompanyName:  opts.CompanyID,
+			Status:       status,
+		}
+		r.memberships[m.MembershipID] = m
+		u.MembershipID = m.MembershipID
+		u.MembershipStatus = m.Status
+		u.CompanyID = m.CompanyID
+		u.CompanyName = m.CompanyName
+	}
+	cp := u
+	return &cp, nil
 }
 
 func (r *AdminRepository) CreateMembership(_ context.Context, m caapp.MembershipView) (*caapp.MembershipView, error) {
