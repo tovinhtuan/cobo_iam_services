@@ -44,7 +44,7 @@ ON DUPLICATE KEY UPDATE
   status = VALUES(status);
 
 INSERT INTO permissions (permission_id, permission_code, permission_name, module_name, status) VALUES
-  ('perm_demo_001', 'view_dashboard', 'View dashboard', 'dashboard', 'active'),
+  ('perm_demo_001', 'dashboard.view', 'View dashboard', 'dashboard', 'active'),
   ('perm_demo_002', 'company.view', 'View company', 'company', 'active'),
   ('perm_demo_003', 'deadline.view', 'View deadlines', 'deadline', 'active'),
   ('perm_demo_004', 'disclosure.view', 'View disclosures', 'disclosure', 'active'),
@@ -53,16 +53,17 @@ INSERT INTO permissions (permission_id, permission_code, permission_name, module
   ('perm_demo_007', 'disclosure.approve', 'Approve disclosure', 'workflow', 'active'),
   ('perm_demo_008', 'workflow.step.confirm', 'Confirm workflow step', 'workflow', 'active'),
   ('perm_demo_009', 'workflow.step.override', 'Override workflow step', 'workflow', 'active'),
-  ('perm_demo_010', 'manage_users', 'Manage users', 'admin', 'active'),
+  ('perm_demo_010', 'user.view', 'Manage users', 'admin', 'active'),
   ('perm_demo_011', 'user.edit', 'Edit users', 'admin', 'active'),
   ('perm_demo_012', 'rbac.manage', 'Manage RBAC', 'admin', 'active'),
   ('perm_demo_013', 'system.settings', 'System settings', 'admin', 'active'),
-  ('perm_demo_014', 'manage_departments', 'Manage departments', 'admin', 'active'),
+  ('perm_demo_014', 'deadline.create', 'Create workflow', 'workflow', 'active'),
   ('perm_demo_015', 'recipient.manage', 'Manage recipients', 'admin', 'active'),
-  ('perm_demo_016', 'manage_notification_rules', 'Manage notification rules', 'notification', 'active'),
+  ('perm_demo_016', 'deadline.assign', 'Review workflow task', 'workflow', 'active'),
   ('perm_demo_017', 'alert.channels.manage', 'Manage alert channels', 'notification', 'active'),
-  ('perm_demo_018', 'approve_disclosure', 'Approve disclosure legacy', 'workflow', 'active')
+  ('perm_demo_018', 'disclosure.publish', 'Submit disclosure', 'disclosure', 'active')
 ON DUPLICATE KEY UPDATE
+  permission_code = VALUES(permission_code),
   permission_name = VALUES(permission_name),
   module_name = VALUES(module_name),
   status = VALUES(status);

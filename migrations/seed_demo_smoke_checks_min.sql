@@ -40,7 +40,7 @@ SELECT '03_admin_permissions_should_be_non_empty' AS check_name;
 SELECT
   m.membership_id,
   COUNT(DISTINCT p.permission_id) AS permission_count,
-  MAX(CASE WHEN p.permission_code = 'view_dashboard' THEN 1 ELSE 0 END) AS has_view_dashboard,
+  MAX(CASE WHEN p.permission_code = 'dashboard.view' THEN 1 ELSE 0 END) AS has_dashboard_view,
   MAX(CASE WHEN p.permission_code = 'disclosure.view' THEN 1 ELSE 0 END) AS has_disclosure_view,
   MAX(CASE WHEN p.permission_code = 'rbac.manage' THEN 1 ELSE 0 END) AS has_rbac_manage
 FROM memberships m

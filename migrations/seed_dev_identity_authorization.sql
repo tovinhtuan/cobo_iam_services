@@ -32,19 +32,19 @@ INSERT INTO credentials (credential_id, user_id, credential_type, password_hash,
 ON DUPLICATE KEY UPDATE password_hash = VALUES(password_hash);
 
 INSERT INTO permissions (permission_id, permission_code, permission_name, module_name, status) VALUES
-  ('10000000-0001-4000-8000-000000000001', 'view_disclosure', 'View disclosure', 'disclosure', 'active'),
-  ('10000000-0001-4000-8000-000000000002', 'approve_disclosure', 'Approve disclosure', 'disclosure', 'active'),
-  ('10000000-0001-4000-8000-000000000003', 'view_dashboard', 'View dashboard', 'dashboard', 'active'),
-  ('10000000-0001-4000-8000-000000000004', 'create_disclosure', 'Create disclosure', 'disclosure', 'active'),
-  ('10000000-0001-4000-8000-000000000005', 'update_disclosure', 'Update disclosure', 'disclosure', 'active'),
-  ('10000000-0001-4000-8000-000000000006', 'submit_disclosure', 'Submit disclosure', 'disclosure', 'active'),
-  ('10000000-0001-4000-8000-000000000007', 'create_workflow', 'Create workflow', 'workflow', 'active'),
-  ('10000000-0001-4000-8000-000000000008', 'review_workflow_task', 'Review workflow task', 'workflow', 'active'),
-  ('10000000-0001-4000-8000-000000000009', 'confirm_workflow_task', 'Confirm workflow task', 'workflow', 'active'),
-  ('10000000-0001-4000-8000-00000000000a', 'enqueue_notification', 'Enqueue notification', 'notification', 'active'),
-  ('10000000-0001-4000-8000-00000000000b', 'dispatch_notification', 'Dispatch notification', 'notification', 'active'),
-  ('10000000-0001-4000-8000-00000000000c', 'admin_manage_access', 'Admin manage access', 'admin', 'active')
-ON DUPLICATE KEY UPDATE permission_name = VALUES(permission_name);
+  ('10000000-0001-4000-8000-000000000001', 'disclosure.view', 'View disclosure', 'disclosure', 'active'),
+  ('10000000-0001-4000-8000-000000000002', 'disclosure.approve', 'Approve disclosure', 'disclosure', 'active'),
+  ('10000000-0001-4000-8000-000000000003', 'dashboard.view', 'View dashboard', 'dashboard', 'active'),
+  ('10000000-0001-4000-8000-000000000004', 'disclosure.create', 'Create disclosure', 'disclosure', 'active'),
+  ('10000000-0001-4000-8000-000000000005', 'disclosure.edit', 'Update disclosure', 'disclosure', 'active'),
+  ('10000000-0001-4000-8000-000000000006', 'disclosure.publish', 'Submit disclosure', 'disclosure', 'active'),
+  ('10000000-0001-4000-8000-000000000007', 'deadline.create', 'Create workflow', 'workflow', 'active'),
+  ('10000000-0001-4000-8000-000000000008', 'deadline.assign', 'Review workflow task', 'workflow', 'active'),
+  ('10000000-0001-4000-8000-000000000009', 'deadline.manage', 'Confirm workflow task', 'workflow', 'active'),
+  ('10000000-0001-4000-8000-00000000000a', 'alert.channels.manage', 'Enqueue notification', 'notification', 'active'),
+  ('10000000-0001-4000-8000-00000000000b', 'workflow.step.override', 'Dispatch notification', 'workflow', 'active'),
+  ('10000000-0001-4000-8000-00000000000c', 'rbac.manage', 'Admin manage access', 'admin', 'active')
+ON DUPLICATE KEY UPDATE permission_code = VALUES(permission_code), permission_name = VALUES(permission_name), module_name = VALUES(module_name), status = VALUES(status);
 
 INSERT INTO roles (role_id, company_id, role_code, role_name, status) VALUES
   ('r0000001-0001-4000-8000-000000000001', 'c_001', 'full_access', 'Full access (dev)', 'active'),

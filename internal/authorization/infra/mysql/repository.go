@@ -186,25 +186,25 @@ func legacyPolicy(action string) *authapp.ActionPolicy {
 	case "disclosure.update", "disclosure.edit":
 		required = "disclosure.edit"
 	case "disclosure.submit":
-		required = "submit_disclosure"
+		required = "disclosure.publish"
 	case "workflow.create":
-		required = "create_workflow"
+		required = "deadline.create"
 	case "workflow.review":
-		required = "review_workflow_task"
+		required = "deadline.assign"
 	case "workflow.confirm":
 		required = "workflow.step.confirm"
 	case "workflow.override":
 		required = "workflow.step.override"
 	case "workflow.resolve_assignees":
-		required = "create_workflow"
+		required = "deadline.create"
 	case "notification.enqueue":
-		required = "enqueue_notification"
+		required = "alert.channels.manage"
 	case "notification.dispatch":
-		required = "dispatch_notification"
+		required = "alert.channels.manage"
 	case "notification.resolve_recipients":
-		required = "enqueue_notification"
+		required = "alert.channels.manage"
 	case "dashboard.view":
-		required = "view_dashboard"
+		required = "dashboard.view"
 	case "admin.membership.create",
 		"admin.membership.update",
 		"admin.membership.delete",
@@ -222,7 +222,7 @@ func legacyPolicy(action string) *authapp.ActionPolicy {
 		"admin.resource_scope_rule.create",
 		"admin.workflow_assignee_rule.create",
 		"admin.notification_rule.create":
-		required = "admin_manage_access"
+		required = "rbac.manage"
 	}
 	return &authapp.ActionPolicy{
 		ActionCode:         action,

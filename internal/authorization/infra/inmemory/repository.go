@@ -22,12 +22,11 @@ func NewRepository() *Repository {
 		Permissions: map[string][]string{
 			"m_001@c_001": {
 				// Common user fixture: no admin/system permissions.
-				"company.view", "view_disclosure", "view_dashboard",
-				"create_disclosure", "update_disclosure", "submit_disclosure",
-				"disclosure.view", "disclosure.create", "disclosure.edit",
+				"company.view", "dashboard.view",
+				"disclosure.view", "disclosure.create", "disclosure.edit", "disclosure.publish",
 			},
-			"m_002@c_002": {"view_disclosure"},
-			"m_010@c_010": {"company.view", "view_dashboard"},
+			"m_002@c_002": {"disclosure.view"},
+			"m_010@c_010": {"company.view", "dashboard.view"},
 			"m_admin_001@c_001": {
 				"company.view", "company.edit",
 				"recipient.view", "recipient.manage",
@@ -38,11 +37,6 @@ func NewRepository() *Repository {
 				"workflow.step.confirm", "workflow.step.override",
 				"auth.session.manage", "audit.view",
 				"system.settings", "rbac.manage",
-				"view_disclosure", "approve_disclosure", "view_dashboard",
-				"create_disclosure", "update_disclosure", "submit_disclosure",
-				"create_workflow", "review_workflow_task", "confirm_workflow_task",
-				"enqueue_notification", "dispatch_notification",
-				"admin_manage_access",
 			},
 		},
 		Departments: map[string][]authapp.DepartmentScope{
@@ -136,8 +130,8 @@ func defaultPolicies() map[string]authapp.ActionPolicy {
 		"disclosure.view":    {ActionCode: "disclosure.view", RequiredPermission: "disclosure.view", ScopeType: "org_unit_subtree|assigned_only|owner_only|company_wide", WorkflowState: "*", EligibleActor: "*", EffectType: "allow", DenyReasonCode: "scope_denied"},
 		"disclosure.create":  {ActionCode: "disclosure.create", RequiredPermission: "disclosure.create", ScopeType: "*", WorkflowState: "*", EligibleActor: "*", EffectType: "allow", DenyReasonCode: "permission_denied"},
 		"disclosure.update":  {ActionCode: "disclosure.update", RequiredPermission: "disclosure.edit", ScopeType: "*", WorkflowState: "*", EligibleActor: "*", EffectType: "allow", DenyReasonCode: "permission_denied"},
-		"disclosure.submit":  {ActionCode: "disclosure.submit", RequiredPermission: "submit_disclosure", ScopeType: "*", WorkflowState: "*", EligibleActor: "*", EffectType: "allow", DenyReasonCode: "permission_denied"},
+		"disclosure.submit":  {ActionCode: "disclosure.submit", RequiredPermission: "disclosure.publish", ScopeType: "*", WorkflowState: "*", EligibleActor: "*", EffectType: "allow", DenyReasonCode: "permission_denied"},
 		"disclosure.approve": {ActionCode: "disclosure.approve", RequiredPermission: "disclosure.approve", ScopeType: "*", WorkflowState: "*", EligibleActor: "*", EffectType: "allow", DenyReasonCode: "responsibility_required"},
-		"workflow.review":    {ActionCode: "workflow.review", RequiredPermission: "review_workflow_task", ScopeType: "*", WorkflowState: "*", EligibleActor: "*", EffectType: "allow", DenyReasonCode: "permission_denied"},
+		"workflow.review":    {ActionCode: "workflow.review", RequiredPermission: "deadline.assign", ScopeType: "*", WorkflowState: "*", EligibleActor: "*", EffectType: "allow", DenyReasonCode: "permission_denied"},
 	}
 }

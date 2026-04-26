@@ -38,7 +38,7 @@ func NewAdminRepository() *AdminRepository {
 		rolesByMembership:       map[string]map[string]struct{}{},
 		departmentsByMembership: map[string]map[string]struct{}{},
 		titlesByMembership:      map[string]map[string]struct{}{},
-		permissions:             map[string]struct{}{"view_dashboard": {}, "view_disclosure": {}, "approve_disclosure": {}, "admin_manage_access": {}},
+		permissions:             map[string]struct{}{"dashboard.view": {}, "disclosure.view": {}, "disclosure.approve": {}, "rbac.manage": {}, "system.settings": {}},
 		roles:                   map[string]struct{}{"company_admin": {}, "disclosure_approver": {}, "department_staff": {}},
 		rolePermissions:         map[string]map[string]struct{}{},
 		resourceScopeRules:      []map[string]any{},
