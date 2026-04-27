@@ -15,6 +15,7 @@ MIGRATIONS="
 0007_auth_recovery_tokens.up.sql
 0008_org_units_scope.up.sql
 0009_seed_authz_test_accounts.up.sql
+0010_disclosure_contract_c1.up.sql
 seed_dev_identity_authorization.sql
 "
 

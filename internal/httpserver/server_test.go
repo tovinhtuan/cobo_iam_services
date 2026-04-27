@@ -173,8 +173,8 @@ func TestIntegration_login_encryptedPassword_RSAOAEP(t *testing.T) {
 	loginBody, err := json.Marshal(map[string]any{
 		"login_id": "single@example.com",
 		"password_cipher": map[string]string{
-			"alg":             "RSA-OAEP-256",
-			"kid":             keyOut.KID,
+			"alg":            "RSA-OAEP-256",
+			"kid":            keyOut.KID,
 			"ciphertext_b64": ctB64,
 		},
 	})
@@ -355,6 +355,252 @@ func TestIntegration_loginSwitchCompany_effectiveAccess_andAdminGuard(t *testing
 		b, _ := io.ReadAll(adminResC2.Body)
 		t.Fatalf("admin permissions c_002 status=%d body=%s", adminResC2.StatusCode, b)
 	}
+}
+
+func TestIntegration_disclosureC1_contractMatrix_happyPathAndErrors(t *testing.T) {
+	srv := httptest.NewServer(newTestHandler(t, nil))
+	defer srv.Close()
+
+	userToken := loginAndGetAccessToken(t, srv.URL, "user@example.com", "secret", "c_001")
+
+	createPayload := map[string]any{
+		"type_id":       "DISCLOSURE_FINANCIAL",
+		"department_id": "ou_legal",
+		"title":         "Quarterly Disclosure",
+		"summary":       "Q1 summary",
+		"content":       "Detailed disclosure content",
+		"planned_date":  "2026-05-01",
+		"attachments": []map[string]string{
+			{"id": "att-1", "name": "evidence.pdf", "type": "application/pdf", "uploaded_at": "2026-04-27T00:00:00Z"},
+		},
+		"evidence_link": "https://example.com/evidence",
+	}
+	createRes := doJSONRequest(t, http.MethodPost, srv.URL+"/api/v1/disclosures", userToken, createPayload, "")
+	if createRes.StatusCode != http.StatusCreated {
+		t.Fatalf("create status=%d body=%s", createRes.StatusCode, readBody(t, createRes.Body))
+	}
+	var created map[string]any
+	mustDecodeJSON(t, createRes.Body, &created)
+	recordID, _ := created["record_id"].(string)
+	if recordID == "" {
+		t.Fatal("missing record_id in create response")
+	}
+	if created["type_id"] != "DISCLOSURE_FINANCIAL" || created["summary"] != "Q1 summary" || created["planned_date"] != "2026-05-01" {
+		t.Fatalf("unexpected create contract fields: %+v", created)
+	}
+
+	getRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/disclosures/"+recordID, userToken, nil, "")
+	if getRes.StatusCode != http.StatusOK {
+		t.Fatalf("get status=%d body=%s", getRes.StatusCode, readBody(t, getRes.Body))
+	}
+	var got map[string]any
+	mustDecodeJSON(t, getRes.Body, &got)
+	if got["record_id"] != recordID {
+		t.Fatalf("unexpected get record_id=%v want %s", got["record_id"], recordID)
+	}
+
+	updatePayload := map[string]any{
+		"type_id":       "DISCLOSURE_FINANCIAL",
+		"department_id": "ou_legal",
+		"title":         "Quarterly Disclosure Updated",
+		"summary":       "Updated summary",
+		"content":       "Updated content",
+		"planned_date":  "2026-05-02",
+		"attachments": []map[string]string{
+			{"id": "att-2", "name": "updated.pdf", "type": "application/pdf", "uploaded_at": "2026-04-27T01:00:00Z"},
+		},
+		"evidence_link": "https://example.com/evidence-updated",
+	}
+	updateRes := doJSONRequest(t, http.MethodPatch, srv.URL+"/api/v1/disclosures/"+recordID, userToken, updatePayload, "")
+	if updateRes.StatusCode != http.StatusOK {
+		t.Fatalf("update status=%d body=%s", updateRes.StatusCode, readBody(t, updateRes.Body))
+	}
+	var updated map[string]any
+	mustDecodeJSON(t, updateRes.Body, &updated)
+	if updated["title"] != "Quarterly Disclosure Updated" || updated["status"] != "Draft" {
+		t.Fatalf("unexpected update response: %+v", updated)
+	}
+
+	listResDenied := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/disclosures", userToken, nil, "")
+	if listResDenied.StatusCode != http.StatusForbidden {
+		t.Fatalf("list by non-admin status=%d body=%s", listResDenied.StatusCode, readBody(t, listResDenied.Body))
+	}
+
+	submitRes := doJSONRequest(t, http.MethodPost, srv.URL+"/api/v1/disclosures/"+recordID+"/submit", userToken, nil, "idem-submit-c1")
+	if submitRes.StatusCode != http.StatusOK {
+		t.Fatalf("submit status=%d body=%s", submitRes.StatusCode, readBody(t, submitRes.Body))
+	}
+	var submitted map[string]any
+	mustDecodeJSON(t, submitRes.Body, &submitted)
+	if submitted["status"] != "Published" {
+		t.Fatalf("unexpected submit status: %+v", submitted)
+	}
+	if submitted["published_date"] == "" {
+		t.Fatalf("published_date should be present after submit: %+v", submitted)
+	}
+
+	confirmByNonAdminRes := doJSONRequest(t, http.MethodPost, srv.URL+"/api/v1/disclosures/"+recordID+"/confirm", userToken, nil, "idem-confirm-user")
+	if confirmByNonAdminRes.StatusCode != http.StatusForbidden {
+		t.Fatalf("confirm by non-admin status=%d body=%s", confirmByNonAdminRes.StatusCode, readBody(t, confirmByNonAdminRes.Body))
+	}
+
+	adminToken := loginAndGetAccessToken(t, srv.URL, "admin.dn@example.com", "secret", "")
+	listRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/disclosures", adminToken, nil, "")
+	if listRes.StatusCode != http.StatusForbidden {
+		t.Fatalf("list by admin status=%d body=%s", listRes.StatusCode, readBody(t, listRes.Body))
+	}
+	_ = readBody(t, listRes.Body)
+
+	confirmByAdminRes := doJSONRequest(t, http.MethodPost, srv.URL+"/api/v1/disclosures/"+recordID+"/confirm", adminToken, nil, "idem-confirm-admin")
+	if confirmByAdminRes.StatusCode != http.StatusOK {
+		t.Fatalf("confirm by admin status=%d body=%s", confirmByAdminRes.StatusCode, readBody(t, confirmByAdminRes.Body))
+	}
+	var confirmed map[string]any
+	mustDecodeJSON(t, confirmByAdminRes.Body, &confirmed)
+	if confirmed["status"] != "Completed" {
+		t.Fatalf("unexpected confirm status: %+v", confirmed)
+	}
+
+	confirmAgainRes := doJSONRequest(t, http.MethodPost, srv.URL+"/api/v1/disclosures/"+recordID+"/confirm", adminToken, nil, "idem-confirm-admin-2")
+	if confirmAgainRes.StatusCode != http.StatusConflict {
+		t.Fatalf("confirm again status=%d body=%s", confirmAgainRes.StatusCode, readBody(t, confirmAgainRes.Body))
+	}
+}
+
+func TestIntegration_disclosureC1_contractMatrix_validationAndNotFound(t *testing.T) {
+	srv := httptest.NewServer(newTestHandler(t, nil))
+	defer srv.Close()
+
+	userToken := loginAndGetAccessToken(t, srv.URL, "user@example.com", "secret", "c_001")
+
+	missingTitleRes := doJSONRequest(t, http.MethodPost, srv.URL+"/api/v1/disclosures", userToken, map[string]any{
+		"department_id": "ou_legal",
+		"content":       "has content",
+	}, "")
+	if missingTitleRes.StatusCode != http.StatusBadRequest {
+		t.Fatalf("missing title status=%d body=%s", missingTitleRes.StatusCode, readBody(t, missingTitleRes.Body))
+	}
+
+	invalidDateRes := doJSONRequest(t, http.MethodPost, srv.URL+"/api/v1/disclosures", userToken, map[string]any{
+		"title":        "Invalid Date",
+		"content":      "Body",
+		"planned_date": "2026/05/01",
+	}, "")
+	if invalidDateRes.StatusCode != http.StatusBadRequest {
+		t.Fatalf("invalid planned_date status=%d body=%s", invalidDateRes.StatusCode, readBody(t, invalidDateRes.Body))
+	}
+
+	notFoundUpdateRes := doJSONRequest(t, http.MethodPatch, srv.URL+"/api/v1/disclosures/not-found-id", userToken, map[string]any{
+		"title":   "Any",
+		"content": "Any",
+	}, "")
+	if notFoundUpdateRes.StatusCode != http.StatusNotFound {
+		t.Fatalf("update not found status=%d body=%s", notFoundUpdateRes.StatusCode, readBody(t, notFoundUpdateRes.Body))
+	}
+
+	unauthenticatedRes := doJSONRequest(t, http.MethodPost, srv.URL+"/api/v1/disclosures", "", map[string]any{
+		"title":   "No Auth",
+		"content": "No Auth",
+	}, "")
+	if unauthenticatedRes.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated status=%d body=%s", unauthenticatedRes.StatusCode, readBody(t, unauthenticatedRes.Body))
+	}
+}
+
+func loginAndGetAccessToken(t *testing.T, baseURL, loginID, password, preferredCompanyID string) string {
+	t.Helper()
+	loginRes := doJSONRequest(t, http.MethodPost, baseURL+"/api/v1/auth/login", "", map[string]any{
+		"login_id": loginID,
+		"password": password,
+	}, "")
+	if loginRes.StatusCode != http.StatusOK {
+		t.Fatalf("login status=%d body=%s", loginRes.StatusCode, readBody(t, loginRes.Body))
+	}
+	var loginOut struct {
+		NextAction  string `json:"next_action"`
+		Memberships []struct {
+			CompanyID string `json:"company_id"`
+		} `json:"memberships"`
+		Session struct {
+			AccessToken     string `json:"access_token"`
+			PreCompanyToken string `json:"pre_company_token"`
+		} `json:"session"`
+	}
+	mustDecodeJSON(t, loginRes.Body, &loginOut)
+	if loginOut.Session.AccessToken != "" {
+		return loginOut.Session.AccessToken
+	}
+	if loginOut.Session.PreCompanyToken == "" {
+		t.Fatal("missing both access_token and pre_company_token")
+	}
+
+	companyID := preferredCompanyID
+	if companyID == "" {
+		if len(loginOut.Memberships) == 0 {
+			t.Fatal("cannot select company: memberships is empty")
+		}
+		companyID = loginOut.Memberships[0].CompanyID
+	}
+
+	selectRes := doJSONRequest(t, http.MethodPost, baseURL+"/api/v1/auth/select-company", loginOut.Session.PreCompanyToken, map[string]any{
+		"company_id": companyID,
+	}, "")
+	if selectRes.StatusCode != http.StatusOK {
+		t.Fatalf("select-company status=%d body=%s", selectRes.StatusCode, readBody(t, selectRes.Body))
+	}
+	var selectOut struct {
+		AccessToken string `json:"access_token"`
+	}
+	mustDecodeJSON(t, selectRes.Body, &selectOut)
+	if selectOut.AccessToken == "" {
+		t.Fatal("missing access_token after company selection")
+	}
+	return selectOut.AccessToken
+}
+
+func doJSONRequest(t *testing.T, method, url, accessToken string, body any, idempotencyKey string) *http.Response {
+	t.Helper()
+	var reader io.Reader
+	if body != nil {
+		b, err := json.Marshal(body)
+		if err != nil {
+			t.Fatalf("marshal request: %v", err)
+		}
+		reader = bytes.NewReader(b)
+	}
+	req, err := http.NewRequest(method, url, reader)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if accessToken != "" {
+		req.Header.Set("Authorization", "Bearer "+accessToken)
+	}
+	if idempotencyKey != "" {
+		req.Header.Set("Idempotency-Key", idempotencyKey)
+	}
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	return res
+}
+
+func mustDecodeJSON(t *testing.T, body io.ReadCloser, out any) {
+	t.Helper()
+	defer body.Close()
+	if err := json.NewDecoder(body).Decode(out); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+}
+
+func readBody(t *testing.T, body io.ReadCloser) string {
+	t.Helper()
+	defer body.Close()
+	b, _ := io.ReadAll(body)
+	return string(b)
 }
 
 type staticID struct{ n int }

@@ -155,11 +155,23 @@ func (r *Repository) GetActionPolicy(ctx context.Context, companyID, action stri
 	if err == nil {
 		return &p, nil
 	}
+	if isMySQLMissingTable(err) {
+		// Compatibility fallback for environments not yet migrated with action_policy_matrix.
+		return legacyPolicy(strings.TrimSpace(action)), nil
+	}
 	if err != sql.ErrNoRows {
 		return nil, fmt.Errorf("get action policy: %w", err)
 	}
 	// Safe fallback for environments not yet seeded with action_policy_matrix.
 	return legacyPolicy(strings.TrimSpace(action)), nil
+}
+
+func isMySQLMissingTable(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "doesn't exist") || strings.Contains(msg, "error 1146")
 }
 
 func scanStringCol(rows *sql.Rows) ([]string, error) {

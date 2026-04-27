@@ -1,6 +1,9 @@
 package app
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 type Service interface {
 	CreateRecord(ctx context.Context, req CreateRecordRequest) (*RecordDTO, error)
@@ -59,18 +62,38 @@ type Subject struct {
 }
 
 type RecordPayload struct {
-	DepartmentID string `json:"department_id"`
-	Title        string `json:"title"`
-	Content      string `json:"content"`
+	TypeID       string          `json:"type_id"`
+	DepartmentID string          `json:"department_id"`
+	Title        string          `json:"title"`
+	Summary      string          `json:"summary"`
+	Content      string          `json:"content"`
+	PlannedDate  string          `json:"planned_date"`
+	Attachments  []AttachmentDTO `json:"attachments"`
+	EvidenceLink string          `json:"evidence_link"`
+}
+
+type AttachmentDTO struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	Type       string `json:"type"`
+	UploadedAt string `json:"uploaded_at"`
 }
 
 type RecordDTO struct {
-	RecordID     string `json:"record_id"`
-	CompanyID    string `json:"company_id"`
-	DepartmentID string `json:"department_id"`
-	Title        string `json:"title"`
-	Content      string `json:"content"`
-	Status       string `json:"status"`
-	CreatedBy    string `json:"created_by"`
-	UpdatedBy    string `json:"updated_by"`
+	RecordID     string          `json:"record_id"`
+	CompanyID    string          `json:"company_id"`
+	TypeID       string          `json:"type_id"`
+	DepartmentID string          `json:"department_id"`
+	Title        string          `json:"title"`
+	Summary      string          `json:"summary"`
+	Content      string          `json:"content"`
+	PlannedDate  string          `json:"planned_date,omitempty"`
+	PublishedDate string         `json:"published_date,omitempty"`
+	Status       string          `json:"status"`
+	Attachments  []AttachmentDTO `json:"attachments"`
+	EvidenceLink string          `json:"evidence_link,omitempty"`
+	CreatedBy    string          `json:"created_by"`
+	UpdatedBy    string          `json:"updated_by"`
+	CreatedAt    time.Time       `json:"created_at"`
+	UpdatedAt    time.Time       `json:"updated_at"`
 }
