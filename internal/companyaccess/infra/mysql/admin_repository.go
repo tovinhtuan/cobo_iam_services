@@ -265,10 +265,10 @@ func (r *AdminRepository) RemoveTitle(ctx context.Context, membershipID, titleID
 
 func (r *AdminRepository) ListPermissions(ctx context.Context) ([]string, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT permission_id FROM permissions WHERE status = 'active' ORDER BY permission_code
+		SELECT permission_code FROM permissions WHERE status = 'active' ORDER BY permission_code
 	`)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list permissions: %w", err)
 	}
 	defer rows.Close()
 	return scanStringRows(rows)
