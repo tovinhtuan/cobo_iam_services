@@ -107,6 +107,11 @@ func (m *MeHandler) capabilities(w http.ResponseWriter, r *http.Request) {
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"modules": map[string]bool{
+			"platform_cms": hasAnyPermission(eff.Permissions,
+				"platform.cms.view",
+				"rbac.manage",
+				"system.settings",
+			),
 			"dashboard": hasAnyPermission(eff.Permissions,
 				"dashboard.view",
 			),

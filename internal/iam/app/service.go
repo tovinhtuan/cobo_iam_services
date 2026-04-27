@@ -20,19 +20,19 @@ import (
 )
 
 type service struct {
-	cred        CredentialVerifier
-	sessions    SessionRepository
-	tokens      TokenIssuer
-	memberships ca.MembershipQueryService
-	idgen       idgen.Generator
-	mfa         MFACheck
-	sso         SSOLoginBridge
-	attempts    LoginAttemptRecorder
-	recovery    AuthRecoveryRepository
-	outbox      outbox.Publisher
-	webBaseURL  string
+	cred             CredentialVerifier
+	sessions         SessionRepository
+	tokens           TokenIssuer
+	memberships      ca.MembershipQueryService
+	idgen            idgen.Generator
+	mfa              MFACheck
+	sso              SSOLoginBridge
+	attempts         LoginAttemptRecorder
+	recovery         AuthRecoveryRepository
+	outbox           outbox.Publisher
+	webBaseURL       string
 	passwordResetTTL time.Duration
-	emailVerifyTTL time.Duration
+	emailVerifyTTL   time.Duration
 }
 
 func NewService(cred CredentialVerifier, sessions SessionRepository, tokens TokenIssuer, memberships ca.MembershipQueryService, idgen idgen.Generator, opts ...ServiceOption) Service {
@@ -123,6 +123,7 @@ func (s *service) Login(ctx context.Context, req LoginRequest) (*LoginResponse, 
 		User:    LoginUser{UserID: user.UserID, FullName: user.FullName},
 		Session: LoginSession{RefreshToken: refresh},
 	}
+	resp.PlatformAccessHint = s.hasPlatformAccessHint(ctx, active)
 
 	if len(active) == 1 {
 		m := active[0]
@@ -161,6 +162,22 @@ func (s *service) Login(ctx context.Context, req LoginRequest) (*LoginResponse, 
 	}
 	s.recordLoginAttempt(ctx, req, user, true, nil)
 	return resp, nil
+}
+
+func (s *service) hasPlatformAccessHint(ctx context.Context, memberships []ca.MembershipView) bool {
+	for _, m := range memberships {
+		roles, err := s.memberships.GetMembershipRoles(ctx, m.MembershipID)
+		if err != nil {
+			continue
+		}
+		for _, role := range roles {
+			code := strings.TrimSpace(strings.ToLower(role))
+			if code == "company_admin" || code == "super_admin" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (s *service) recordLoginAttempt(ctx context.Context, req LoginRequest, user *AuthenticatedUser, success bool, errVal error) {
@@ -259,7 +276,7 @@ func (s *service) ForgotPassword(ctx context.Context, req ForgotPasswordRequest)
 		return nil, fmt.Errorf("store password reset token: %w", err)
 	}
 	s.publishEmail(ctx, "auth.password_reset_requested", user.UserID, map[string]any{
-		"to": user.Email,
+		"to":      user.Email,
 		"subject": "Reset your password",
 		"body": fmt.Sprintf("Xin chao %s,\n\nVui long dat lai mat khau qua link sau:\n%s\n\nLink het han sau %d phut.",
 			coalesce(user.FullName, user.LoginID), s.buildActionLink("/reset-password", rawToken), int(s.passwordResetTTL.Minutes())),
@@ -291,7 +308,7 @@ func (s *service) ResendVerificationEmail(ctx context.Context, req ResendVerific
 		return nil, fmt.Errorf("store email verification token: %w", err)
 	}
 	s.publishEmail(ctx, "auth.email_verification_requested", user.UserID, map[string]any{
-		"to": user.Email,
+		"to":      user.Email,
 		"subject": "Verify your email",
 		"body": fmt.Sprintf("Xin chao %s,\n\nVui long xac thuc email qua link sau:\n%s\n\nLink het han trong %d gio.",
 			coalesce(user.FullName, user.LoginID), s.buildActionLink("/verify-email", rawToken), int(s.emailVerifyTTL.Hours())),
@@ -363,13 +380,13 @@ func (s *service) ListSessions(ctx context.Context, req ListSessionsRequest) (*L
 	items := make([]SessionView, 0, len(sessions))
 	for _, ss := range sessions {
 		items = append(items, SessionView{
-			SessionID:            ss.SessionID,
-			CurrentCompanyID:     ss.CompanyID,
-			CurrentMembershipID:  ss.MembershipID,
-			IP:                   ss.IP,
-			UserAgent:            ss.UserAgent,
-			Current:              ss.SessionID == req.CurrentSessionID,
-			Revoked:              ss.Revoked,
+			SessionID:           ss.SessionID,
+			CurrentCompanyID:    ss.CompanyID,
+			CurrentMembershipID: ss.MembershipID,
+			IP:                  ss.IP,
+			UserAgent:           ss.UserAgent,
+			Current:             ss.SessionID == req.CurrentSessionID,
+			Revoked:             ss.Revoked,
 		})
 	}
 	return &ListSessionsResponse{Items: items}, nil

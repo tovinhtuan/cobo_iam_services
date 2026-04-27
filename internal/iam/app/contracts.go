@@ -159,11 +159,12 @@ type LoginRequest struct {
 }
 
 type LoginResponse struct {
-	User           LoginUser                `json:"user"`
-	Session        LoginSession             `json:"session"`
-	CurrentContext *LoginCurrentContext     `json:"current_context,omitempty"`
-	Memberships    []LoginMembershipSummary `json:"memberships,omitempty"`
-	NextAction     string                   `json:"next_action"`
+	User               LoginUser                `json:"user"`
+	Session            LoginSession             `json:"session"`
+	CurrentContext     *LoginCurrentContext     `json:"current_context,omitempty"`
+	Memberships        []LoginMembershipSummary `json:"memberships,omitempty"`
+	PlatformAccessHint bool                     `json:"platform_access_hint,omitempty"`
+	NextAction         string                   `json:"next_action"`
 }
 
 type LoginUser struct {

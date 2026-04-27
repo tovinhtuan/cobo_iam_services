@@ -98,3 +98,32 @@ For this feature, use system-design-feature first, then use the repo-specific im
 ```text
 Before marking this done, run premerge-system-review and report missing validation, missing UI states, contract mismatches, auth risks, data consistency risks, and regression gaps.
 ```
+
+## Mandatory Prompt Requirement (2 repos)
+
+Áp dụng bắt buộc cho mọi prompt liên quan `cobo_web_design` và/hoặc `cobo_iam_services`:
+
+1. Trước mọi bước, đọc `docs/ai-cache/README.md` và toàn bộ context tái sử dụng trong `docs/ai-cache/`.
+2. Thứ tự ưu tiên khi có xung đột:
+   - `docs/ai-cache/README.md`
+   - các file còn lại trong `docs/ai-cache/`
+   - project rules
+   - docs/pattern cũ trong repo
+3. Chọn skill phù hợp; nếu task chạm cả 2 repo thì dùng `integration-cross-repo`.
+4. Với feature mới: bắt buộc contract-first trước khi code (contract + request/response/error matrix + FE mapping + BE expectations + failure modes + rollout risks + validation plan).
+5. Với task implement:
+   - diff nhỏ, dễ review
+   - kết thúc bằng `premerge-system-review`
+   - sau mỗi cycle có thay code phải rerun fresh Docker build cho services bị ảnh hưởng
+   - không coi là xong cho tới khi Docker build mới nhất đã chạy và báo kết quả
+6. Với task phân tích/review:
+   - không sửa code nếu chưa được yêu cầu explicit
+   - phân tích dựa trên code/docs thực tế, không phỏng đoán
+7. Sau mỗi task (implement hoặc understand), ghi tóm tắt tái sử dụng vào `docs/ai-cache/` theo format ngắn, nhất quán:
+   - task type
+   - objective/question
+   - implemented/discovered
+   - affected repos/files/modules
+   - contracts/behaviors/constraints/decisions
+   - build/verification result (nếu có)
+   - remaining gaps/risks/next steps

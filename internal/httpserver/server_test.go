@@ -357,6 +357,37 @@ func TestIntegration_loginSwitchCompany_effectiveAccess_andAdminGuard(t *testing
 	}
 }
 
+func TestIntegration_meCapabilities_platformCmsMatrix(t *testing.T) {
+	srv := httptest.NewServer(newTestHandler(t, nil))
+	defer srv.Close()
+
+	adminToken := loginAndGetAccessToken(t, srv.URL, "admin.dn@example.com", "secret", "")
+	adminRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/me/capabilities", adminToken, nil, "")
+	if adminRes.StatusCode != http.StatusOK {
+		t.Fatalf("admin capabilities status=%d body=%s", adminRes.StatusCode, readBody(t, adminRes.Body))
+	}
+	var adminOut struct {
+		Modules map[string]bool `json:"modules"`
+	}
+	mustDecodeJSON(t, adminRes.Body, &adminOut)
+	if !adminOut.Modules["platform_cms"] {
+		t.Fatalf("expected platform_cms=true for admin, got modules=%+v", adminOut.Modules)
+	}
+
+	userToken := loginAndGetAccessToken(t, srv.URL, "user@example.com", "secret", "c_001")
+	userRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/me/capabilities", userToken, nil, "")
+	if userRes.StatusCode != http.StatusOK {
+		t.Fatalf("user capabilities status=%d body=%s", userRes.StatusCode, readBody(t, userRes.Body))
+	}
+	var userOut struct {
+		Modules map[string]bool `json:"modules"`
+	}
+	mustDecodeJSON(t, userRes.Body, &userOut)
+	if userOut.Modules["platform_cms"] {
+		t.Fatalf("expected platform_cms=false for user, got modules=%+v", userOut.Modules)
+	}
+}
+
 func TestIntegration_disclosureC1_contractMatrix_happyPathAndErrors(t *testing.T) {
 	srv := httptest.NewServer(newTestHandler(t, nil))
 	defer srv.Close()

@@ -77,6 +77,39 @@ func TestLogin_multiCompany_preCompanyToken(t *testing.T) {
 	if len(resp.Memberships) != 2 {
 		t.Fatalf("memberships=%d", len(resp.Memberships))
 	}
+	if resp.PlatformAccessHint {
+		t.Fatalf("platform_access_hint should be false for normal multi-company user")
+	}
+}
+
+func TestLogin_multiCompany_platformAccessHintForAdminRole(t *testing.T) {
+	ctx := context.Background()
+	svc := newTestIAMService(t, testIAMDeps{
+		cred: testCred(),
+		members: &cainmem.MembershipQueryService{
+			ByUser: map[string][]caapp.MembershipView{
+				"u_123": {
+					{MembershipID: "m_a", UserID: "u_123", CompanyID: "c_001", CompanyName: "Company X", Status: "active"},
+					{MembershipID: "m_b", UserID: "u_123", CompanyID: "c_002", CompanyName: "Company Y", Status: "active"},
+				},
+			},
+			Roles: map[string][]string{
+				"m_a": {"department_staff"},
+				"m_b": {"company_admin"},
+			},
+		},
+	})
+
+	resp, err := svc.Login(ctx, iamapp.LoginRequest{LoginID: "user@example.com", Password: "secret"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !resp.PlatformAccessHint {
+		t.Fatalf("platform_access_hint should be true when any active membership has company_admin role")
+	}
+	if resp.NextAction != "select_company" {
+		t.Fatalf("next_action=%q", resp.NextAction)
+	}
 }
 
 func TestLogin_noActiveMembership(t *testing.T) {
