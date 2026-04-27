@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
+	auditapp "github.com/cobo/cobo_iam_services/internal/audit/app"
 	companyaccessapp "github.com/cobo/cobo_iam_services/internal/companyaccess/app"
 	authapp "github.com/cobo/cobo_iam_services/internal/authorization/app"
 	disclosureapp "github.com/cobo/cobo_iam_services/internal/disclosure/app"
@@ -20,15 +22,21 @@ type Handler struct {
 	inspector    iamapp.TokenInspector
 	authorizer   authapp.Service
 	adminSvc     companyaccessapp.AdminService
+	iamSvc       iamapp.Service
+	auditSvc     auditapp.Service
+	auditRepo    auditapp.Repository
 	disclosureSvc disclosureapp.Service
 	disclosures disclosureapp.Repository
 }
 
-func NewHandler(inspector iamapp.TokenInspector, authorizer authapp.Service, adminSvc companyaccessapp.AdminService, disclosureSvc disclosureapp.Service, disclosures disclosureapp.Repository) *Handler {
+func NewHandler(inspector iamapp.TokenInspector, authorizer authapp.Service, adminSvc companyaccessapp.AdminService, iamSvc iamapp.Service, auditSvc auditapp.Service, auditRepo auditapp.Repository, disclosureSvc disclosureapp.Service, disclosures disclosureapp.Repository) *Handler {
 	return &Handler{
 		inspector:     inspector,
 		authorizer:    authorizer,
 		adminSvc:      adminSvc,
+		iamSvc:        iamSvc,
+		auditSvc:      auditSvc,
+		auditRepo:     auditRepo,
 		disclosureSvc: disclosureSvc,
 		disclosures:   disclosures,
 	}
@@ -299,6 +307,19 @@ func (h *Handler) createEntry(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, nil, err)
 		return
 	}
+	_ = h.auditSvc.AppendAuditLog(r.Context(), auditapp.AppendAuditLogRequest{
+		ActorUserID:       sub.Sub,
+		ActorMembershipID: sub.MembershipID,
+		CompanyID:         sub.CompanyID,
+		Action:            "cms.entry.create",
+		ResourceType:      "disclosure_record",
+		ResourceID:        rec.RecordID,
+		Decision:          "allow",
+		Metadata: map[string]any{
+			"type_id": rec.TypeID,
+			"title":   rec.Title,
+		},
+	})
 	writeEnvelope(w, http.StatusCreated, map[string]any{
 		"entry_id":     rec.RecordID,
 		"record_id":    rec.RecordID,
@@ -342,6 +363,19 @@ func (h *Handler) updateEntry(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, nil, err)
 		return
 	}
+	_ = h.auditSvc.AppendAuditLog(r.Context(), auditapp.AppendAuditLogRequest{
+		ActorUserID:       sub.Sub,
+		ActorMembershipID: sub.MembershipID,
+		CompanyID:         sub.CompanyID,
+		Action:            "cms.entry.update",
+		ResourceType:      "disclosure_record",
+		ResourceID:        rec.RecordID,
+		Decision:          "allow",
+		Metadata: map[string]any{
+			"type_id": rec.TypeID,
+			"title":   rec.Title,
+		},
+	})
 	writeEnvelope(w, http.StatusOK, map[string]any{
 		"entry_id":     rec.RecordID,
 		"record_id":    rec.RecordID,
@@ -428,6 +462,15 @@ func (h *Handler) reviewAction(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, nil, err)
 			return
 		}
+		_ = h.auditSvc.AppendAuditLog(r.Context(), auditapp.AppendAuditLogRequest{
+			ActorUserID:       sub.Sub,
+			ActorMembershipID: sub.MembershipID,
+			CompanyID:         sub.CompanyID,
+			Action:            "cms.review.approve",
+			ResourceType:      "disclosure_record",
+			ResourceID:        rec.RecordID,
+			Decision:          "allow",
+		})
 		writeEnvelope(w, http.StatusOK, map[string]any{
 			"entry_id":  rec.RecordID,
 			"status":    rec.Status,
@@ -450,6 +493,15 @@ func (h *Handler) reviewAction(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, nil, err)
 			return
 		}
+		_ = h.auditSvc.AppendAuditLog(r.Context(), auditapp.AppendAuditLogRequest{
+			ActorUserID:       sub.Sub,
+			ActorMembershipID: sub.MembershipID,
+			CompanyID:         sub.CompanyID,
+			Action:            "cms.review.reject",
+			ResourceType:      "disclosure_record",
+			ResourceID:        next.RecordID,
+			Decision:          "allow",
+		})
 		writeEnvelope(w, http.StatusOK, map[string]any{
 			"entry_id":  next.RecordID,
 			"status":    next.Status,
@@ -539,6 +591,18 @@ func (h *Handler) createSchedule(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, nil, err)
 		return
 	}
+	_ = h.auditSvc.AppendAuditLog(r.Context(), auditapp.AppendAuditLogRequest{
+		ActorUserID:       sub.Sub,
+		ActorMembershipID: sub.MembershipID,
+		CompanyID:         sub.CompanyID,
+		Action:            "cms.schedule.create",
+		ResourceType:      "disclosure_record",
+		ResourceID:        next.RecordID,
+		Decision:          "allow",
+		Metadata: map[string]any{
+			"publish_at": next.PlannedDate,
+		},
+	})
 	writeEnvelope(w, http.StatusCreated, map[string]any{
 		"entry_id":   next.RecordID,
 		"publish_at": next.PlannedDate,
@@ -577,6 +641,15 @@ func (h *Handler) deleteSchedule(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, nil, err)
 		return
 	}
+	_ = h.auditSvc.AppendAuditLog(r.Context(), auditapp.AppendAuditLogRequest{
+		ActorUserID:       sub.Sub,
+		ActorMembershipID: sub.MembershipID,
+		CompanyID:         sub.CompanyID,
+		Action:            "cms.schedule.delete",
+		ResourceType:      "disclosure_record",
+		ResourceID:        next.RecordID,
+		Decision:          "allow",
+	})
 	writeEnvelope(w, http.StatusOK, map[string]any{
 		"entry_id":   next.RecordID,
 		"publish_at": next.PlannedDate,
@@ -747,6 +820,18 @@ func (h *Handler) validateRule(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "permissions are required", nil))
 		return
 	}
+	_ = h.auditSvc.AppendAuditLog(r.Context(), auditapp.AppendAuditLogRequest{
+		ActorUserID:       sub.Sub,
+		ActorMembershipID: sub.MembershipID,
+		CompanyID:         sub.CompanyID,
+		Action:            "cms.rule.validate",
+		ResourceType:      "cms_rule",
+		ResourceID:        name,
+		Decision:          "allow",
+		Metadata: map[string]any{
+			"permission_count": len(payload.Permissions),
+		},
+	})
 	writeEnvelope(w, http.StatusOK, map[string]any{
 		"valid":       true,
 		"name":        name,
@@ -768,14 +853,22 @@ func (h *Handler) auditLogs(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, nil, err)
 		return
 	}
-	events := []map[string]any{
-		{
-			"event_id":    "evt-cms-gate",
-			"action":      "cms.entry_gate.checked",
-			"actor":       sub.Sub,
-			"company_id":  sub.CompanyID,
-			"created_at":  time.Now().UTC().Format(timeLayout),
-		},
+	limit := parsePositiveInt(r.URL.Query().Get("limit"), 50, 200)
+	action := strings.TrimSpace(r.URL.Query().Get("action"))
+	entries, err := h.auditRepo.ListByCompany(r.Context(), sub.CompanyID, action, limit)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	events := make([]map[string]any, 0, len(entries))
+	for _, entry := range entries {
+		events = append(events, map[string]any{
+			"event_id":   entry.EventID,
+			"action":     entry.Action,
+			"actor":      entry.ActorUserID,
+			"company_id": entry.CompanyID,
+			"created_at": entry.OccurredAt,
+		})
 	}
 	writeEnvelope(w, http.StatusOK, map[string]any{"items": events}, map[string]any{"total": len(events)})
 }
@@ -794,14 +887,27 @@ func (h *Handler) sessions(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, nil, err)
 		return
 	}
-	items := []map[string]any{
-		{
-			"session_id":  sub.SessionID,
-			"user_id":     sub.Sub,
-			"company_id":  sub.CompanyID,
-			"status":      "active",
+	list, err := h.iamSvc.ListSessions(r.Context(), iamapp.ListSessionsRequest{
+		UserID:           sub.Sub,
+		CurrentSessionID: sub.SessionID,
+	})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	items := make([]map[string]any, 0, len(list.Items))
+	for _, session := range list.Items {
+		status := "active"
+		if session.Revoked {
+			status = "revoked"
+		}
+		items = append(items, map[string]any{
+			"session_id":   session.SessionID,
+			"user_id":      sub.Sub,
+			"company_id":   firstNonEmpty(session.CurrentCompanyID, sub.CompanyID),
+			"status":       status,
 			"last_seen_at": time.Now().UTC().Format(timeLayout),
-		},
+		})
 	}
 	writeEnvelope(w, http.StatusOK, map[string]any{"items": items}, map[string]any{"total": len(items)})
 }
@@ -825,10 +931,23 @@ func (h *Handler) revokeSession(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "session_id is required", nil))
 		return
 	}
-	writeEnvelope(w, http.StatusOK, map[string]any{
-		"session_id": sessionID,
-		"status":     "revoked",
-	}, nil)
+	if _, err := h.iamSvc.RevokeSession(r.Context(), iamapp.RevokeSessionRequest{
+		UserID:    sub.Sub,
+		SessionID: sessionID,
+	}); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	_ = h.auditSvc.AppendAuditLog(r.Context(), auditapp.AppendAuditLogRequest{
+		ActorUserID:       sub.Sub,
+		ActorMembershipID: sub.MembershipID,
+		CompanyID:         sub.CompanyID,
+		Action:            "cms.session.revoke",
+		ResourceType:      "session",
+		ResourceID:        sessionID,
+		Decision:          "allow",
+	})
+	writeEnvelope(w, http.StatusOK, map[string]any{"session_id": sessionID, "status": "revoked"}, nil)
 }
 
 func (h *Handler) systemHealth(w http.ResponseWriter, r *http.Request) {
@@ -845,12 +964,35 @@ func (h *Handler) systemHealth(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, nil, err)
 		return
 	}
-	items := []map[string]any{
-		{"component": "api", "status": "healthy"},
-		{"component": "db", "status": "healthy"},
-		{"component": "cache", "status": "healthy"},
+	apiStatus := "healthy"
+	dbStatus := "healthy"
+	cacheStatus := "degraded"
+	if _, err := h.authorizer.GetEffectiveAccess(r.Context(), sub.MembershipID, sub.CompanyID); err != nil {
+		apiStatus = "degraded"
 	}
+	if _, err := h.disclosures.List(r.Context(), sub.CompanyID); err != nil {
+		dbStatus = "degraded"
+	}
+	items := []map[string]any{{"component": "api", "status": apiStatus}, {"component": "db", "status": dbStatus}, {"component": "cache", "status": cacheStatus}}
 	writeEnvelope(w, http.StatusOK, map[string]any{"items": items}, map[string]any{"total": len(items)})
+}
+
+func parsePositiveInt(raw string, fallback, max int) int {
+	n, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || n <= 0 {
+		return fallback
+	}
+	if n > max {
+		return max
+	}
+	return n
+}
+
+func firstNonEmpty(primary, fallback string) string {
+	if strings.TrimSpace(primary) != "" {
+		return primary
+	}
+	return fallback
 }
 
 func (h *Handler) adminUsers(w http.ResponseWriter, r *http.Request) {

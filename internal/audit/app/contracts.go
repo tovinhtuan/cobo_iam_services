@@ -10,6 +10,7 @@ type Service interface {
 // Repository persists audit events.
 type Repository interface {
 	Append(ctx context.Context, entry Entry) error
+	ListByCompany(ctx context.Context, companyID, action string, limit int) ([]Entry, error)
 }
 
 type AppendAuditLogRequest struct {

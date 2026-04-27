@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	auditapp "github.com/cobo/cobo_iam_services/internal/audit/app"
@@ -70,6 +71,55 @@ func (r *Repository) Append(ctx context.Context, e auditapp.Entry) error {
 	return nil
 }
 
+func (r *Repository) ListByCompany(ctx context.Context, companyID, action string, limit int) ([]auditapp.Entry, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	companyID = strings.TrimSpace(companyID)
+	action = strings.TrimSpace(action)
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT event_id, occurred_at, IFNULL(actor_user_id, ''), IFNULL(actor_membership_id, ''), IFNULL(company_id, ''),
+		       IFNULL(action, ''), IFNULL(resource_type, ''), IFNULL(resource_id, ''), IFNULL(decision, ''),
+		       IFNULL(request_id, ''), IFNULL(ip, ''), IFNULL(user_agent, ''),
+		       effective_permissions_snapshot, effective_scope_snapshot, metadata_json
+		FROM audit_logs
+		WHERE (? = '' OR company_id = ?)
+		  AND (? = '' OR action = ?)
+		ORDER BY occurred_at DESC
+		LIMIT ?
+	`, companyID, companyID, action, action, limit)
+	if err != nil {
+		return nil, fmt.Errorf("audit list by company: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]auditapp.Entry, 0, limit)
+	for rows.Next() {
+		var (
+			entry                                 auditapp.Entry
+			occurredAt                            time.Time
+			permSnap, scopeSnap, meta             []byte
+		)
+		if err := rows.Scan(
+			&entry.EventID, &occurredAt, &entry.ActorUserID, &entry.ActorMembershipID, &entry.CompanyID,
+			&entry.Action, &entry.ResourceType, &entry.ResourceID, &entry.Decision,
+			&entry.RequestID, &entry.IP, &entry.UserAgent,
+			&permSnap, &scopeSnap, &meta,
+		); err != nil {
+			return nil, fmt.Errorf("audit list scan: %w", err)
+		}
+		entry.OccurredAt = occurredAt.UTC().Format(time.RFC3339)
+		entry.EffectivePermissionsSnapshot = decodeJSONMap(permSnap)
+		entry.EffectiveScopeSnapshot = decodeJSONMap(scopeSnap)
+		entry.Metadata = decodeJSONMap(meta)
+		items = append(items, entry)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("audit list rows: %w", err)
+	}
+	return items, nil
+}
+
 func nullString(s string) sql.NullString {
 	if s == "" {
 		return sql.NullString{}
@@ -94,4 +144,15 @@ func jsonColumn(m map[string]any) (interface{}, error) {
 		return nil, err
 	}
 	return b, nil
+}
+
+func decodeJSONMap(raw []byte) map[string]any {
+	if len(raw) == 0 {
+		return nil
+	}
+	out := map[string]any{}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil
+	}
+	return out
 }

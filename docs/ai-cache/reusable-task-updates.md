@@ -666,3 +666,133 @@
     - `/api/v1/platform/cms/ops/health`
 - remaining gaps/risks/next steps:
   - next cycle can replace bootstrap P2 payload generators with persistent/domain-backed read models while preserving route/error envelopes
+
+## 2026-04-27 - CMS P2 Hardening (Domain-backed audit/sessions/health)
+
+- task type: implement
+- objective: harden P2 backend payload generation to use domain data sources while preserving existing FE contracts
+- what was implemented:
+  - audit module hardened to domain-backed reads:
+    - extended audit repository contract with `ListByCompany(ctx, companyID, limit)`
+    - implemented MySQL + in-memory `ListByCompany` adapters
+    - `/api/v1/platform/cms/ops/audit` now returns rows derived from `audit_logs` instead of synthetic static events
+  - sessions module hardened to IAM domain service:
+    - `/api/v1/platform/cms/ops/sessions` now calls `iamSvc.ListSessions(...)`
+    - `/api/v1/platform/cms/ops/sessions/{session_id}/revoke` now calls `iamSvc.RevokeSession(...)`
+  - health module hardened to runtime dependency checks:
+    - `/api/v1/platform/cms/ops/health` now derives component status from real checks (`authorizer.GetEffectiveAccess`, `disclosures.List`)
+  - platform CMS handler wiring updated to inject `iamSvc` and `auditRepo`
+  - integration test updated to revoke an actual returned `session_id` from sessions list
+- affected repos/files/modules:
+  - `cobo_iam_services/internal/audit/app/contracts.go`
+  - `cobo_iam_services/internal/audit/infra/inmemory/repository.go`
+  - `cobo_iam_services/internal/audit/infra/mysql/repository.go`
+  - `cobo_iam_services/internal/platformcms/transport/http/handler.go`
+  - `cobo_iam_services/internal/httpserver/server.go`
+  - `cobo_iam_services/internal/httpserver/server_test.go`
+- important contracts/behaviors/constraints/decisions:
+  - FE contract for P2 endpoints is preserved (`data.items` + `meta.total`, same route paths)
+  - strict CMS entry policy remains unchanged (`platform.cms.view` required at entry-level)
+  - hardening is backward-compatible for FE while replacing synthetic payload generation with domain-backed sources
+- build/verification result:
+  - backend test passed: `go test ./internal/httpserver -run TestIntegration_platformCMSPrefix_dashboardCollectionsEntries`
+  - frontend regression remained green: `npm run test -- src/features/cms-core/pages.regression.test.tsx src/features/cms-core/permissionGuards.test.ts`
+  - fresh docker rebuild + restart succeeded for `api` + `web`
+  - post-rebuild smoke passed:
+    - `audit_total=0`
+    - `sessions_total=9`
+    - `health_total=3`
+    - `revoke_status=200`
+- remaining gaps/risks/next steps:
+  - audit data in non-DB/in-memory mode stays sparse unless new actions append logs; can add explicit CMS audit append points in next cycle if richer feed is needed
+
+## 2026-04-27 - CMS Ops Audit Append Points (validate/revoke)
+
+- task type: implement
+- objective: append audit records for CMS ops actions so audit screen is populated even on fresh envs
+- what was implemented:
+  - injected `auditSvc` into platform CMS handler wiring
+  - added explicit audit append calls in:
+    - `POST /api/v1/platform/cms/admin/rules/validate` with action `cms.rule.validate`
+    - `POST /api/v1/platform/cms/ops/sessions/{session_id}/revoke` with action `cms.session.revoke`
+  - kept API contract unchanged for all P2 endpoints (`data/meta` envelope and existing fields)
+  - updated integration test to verify audit list reflects post-operation entries
+- affected repos/files/modules:
+  - `cobo_iam_services/internal/platformcms/transport/http/handler.go`
+  - `cobo_iam_services/internal/httpserver/server.go`
+  - `cobo_iam_services/internal/httpserver/server_test.go`
+- important contracts/behaviors/constraints/decisions:
+  - strict CMS entry policy remains unchanged (`platform.cms.view`)
+  - audit append errors are non-blocking for business response in current implementation (best-effort logging)
+  - FE does not require changes; contract remains stable
+- build/verification result:
+  - `go test ./internal/httpserver -run TestIntegration_platformCMSPrefix_dashboardCollectionsEntries` passed
+  - `npm run test -- src/features/cms-core/pages.regression.test.tsx src/features/cms-core/permissionGuards.test.ts` passed
+  - fresh docker rebuild + restart passed for `api` + `web`
+  - smoke check confirmed audit density increase after ops:
+    - `audit_before=0`
+    - `audit_after=2`
+- remaining gaps/risks/next steps:
+  - optional: append audit for additional CMS ops actions (e.g. schedule create/delete, review decision) to further enrich timeline
+
+## 2026-04-27 - CMS Write Actions Audit Append Expansion
+
+- task type: implement
+- objective: append audit entries for remaining CMS write actions so audit timeline reflects full content workflow
+- what was implemented:
+  - added audit append calls for:
+    - entries: `cms.entry.create`, `cms.entry.update`
+    - reviews: `cms.review.approve`, `cms.review.reject`
+    - schedules: `cms.schedule.create`, `cms.schedule.delete`
+  - each append includes actor/company context and resource identifiers; schedule/create also includes publish date metadata
+  - expanded integration test to assert audit feed contains expected write-action events after full entries→reviews→schedules flow
+- affected repos/files/modules:
+  - `cobo_iam_services/internal/platformcms/transport/http/handler.go`
+  - `cobo_iam_services/internal/httpserver/server_test.go`
+- important contracts/behaviors/constraints/decisions:
+  - no FE/API contract changes; endpoints still return same envelope and payload shape
+  - strict `platform.cms.view` policy remains unchanged
+  - audit append remains best-effort (non-blocking for primary write response)
+- build/verification result:
+  - backend tests passed:
+    - `go test ./internal/httpserver -run "TestIntegration_platformCMSPrefix_entriesReviewsSchedulesContract|TestIntegration_platformCMSPrefix_dashboardCollectionsEntries"`
+  - frontend regression remained green:
+    - `npm run test -- src/features/cms-core/pages.regression.test.tsx src/features/cms-core/permissionGuards.test.ts`
+  - fresh docker rebuild + restart passed for `api` + `web`
+  - smoke verification for full write flow:
+    - `audit_before=2`
+    - `audit_after=7`
+- remaining gaps/risks/next steps:
+  - optional: add FE filter chips by audit action type if timeline volume increases
+
+## 2026-04-27 - CMS Audit Action Filter (`?action=`) API
+
+- task type: implement
+- objective: add backend filter by audit action for CMS timeline endpoint so FE can query grouped event streams
+- what was implemented:
+  - extended audit repository contract and adapters to support action filter:
+    - `ListByCompany(ctx, companyID, action, limit)`
+  - updated `/api/v1/platform/cms/ops/audit` handler to parse optional `?action=` and apply filter at repository level
+  - expanded integration test to verify filtered feed only contains requested action (`cms.entry.create`) and empty set for unmatched action
+- affected repos/files/modules:
+  - `cobo_iam_services/internal/audit/app/contracts.go`
+  - `cobo_iam_services/internal/audit/infra/inmemory/repository.go`
+  - `cobo_iam_services/internal/audit/infra/mysql/repository.go`
+  - `cobo_iam_services/internal/platformcms/transport/http/handler.go`
+  - `cobo_iam_services/internal/httpserver/server_test.go`
+- important contracts/behaviors/constraints/decisions:
+  - backward-compatible: omitting `action` keeps previous behavior
+  - API response envelope unchanged (`data.items`, `meta.total`)
+  - filter matches exact action code (case-sensitive in MySQL query path)
+- build/verification result:
+  - backend tests passed:
+    - `go test ./internal/httpserver -run "TestIntegration_platformCMSPrefix_entriesReviewsSchedulesContract|TestIntegration_platformCMSPrefix_dashboardCollectionsEntries"`
+  - frontend regression passed unchanged
+  - fresh docker rebuild + restart passed for `api` + `web`
+  - smoke verification:
+    - `audit_all=7`
+    - `audit_filtered=1` (`action=cms.entry.create`)
+    - `audit_invalid=0` (`action=non.existent.action`)
+    - `filtered_only_match=True`
+- remaining gaps/risks/next steps:
+  - FE can now add audit action filter UI/route-state sync directly against `?action=` without API changes

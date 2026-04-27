@@ -489,13 +489,47 @@ func TestIntegration_platformCMSPrefix_dashboardCollectionsEntries(t *testing.T)
 	if sessionsRes.StatusCode != http.StatusOK {
 		t.Fatalf("sessions status=%d body=%s", sessionsRes.StatusCode, readBody(t, sessionsRes.Body))
 	}
-	revokeRes := doJSONRequest(t, http.MethodPost, srv.URL+"/api/v1/platform/cms/ops/sessions/test-session/revoke", cmsToken, nil, "")
+	var sessionsOut struct {
+		Data struct {
+			Items []map[string]any `json:"items"`
+		} `json:"data"`
+	}
+	mustDecodeJSON(t, sessionsRes.Body, &sessionsOut)
+	if len(sessionsOut.Data.Items) == 0 {
+		t.Fatalf("sessions payload should not be empty: %+v", sessionsOut)
+	}
+	sessionID, _ := sessionsOut.Data.Items[0]["session_id"].(string)
+	if sessionID == "" {
+		t.Fatalf("session_id missing in sessions payload: %+v", sessionsOut)
+	}
+	revokeRes := doJSONRequest(t, http.MethodPost, srv.URL+"/api/v1/platform/cms/ops/sessions/"+sessionID+"/revoke", cmsToken, nil, "")
 	if revokeRes.StatusCode != http.StatusOK {
 		t.Fatalf("revoke session status=%d body=%s", revokeRes.StatusCode, readBody(t, revokeRes.Body))
 	}
 	healthRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/platform/cms/ops/health", cmsToken, nil, "")
 	if healthRes.StatusCode != http.StatusOK {
 		t.Fatalf("health status=%d body=%s", healthRes.StatusCode, readBody(t, healthRes.Body))
+	}
+	auditAfterOpsRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/platform/cms/ops/audit", cmsToken, nil, "")
+	if auditAfterOpsRes.StatusCode != http.StatusOK {
+		t.Fatalf("audit after ops status=%d body=%s", auditAfterOpsRes.StatusCode, readBody(t, auditAfterOpsRes.Body))
+	}
+	var auditAfterOps struct {
+		Meta map[string]any `json:"meta"`
+	}
+	mustDecodeJSON(t, auditAfterOpsRes.Body, &auditAfterOps)
+	totalAny := auditAfterOps.Meta["total"]
+	switch total := totalAny.(type) {
+	case float64:
+		if total < 1 {
+			t.Fatalf("expected audit total >= 1 after validate/revoke operations, got %v", total)
+		}
+	case int:
+		if total < 1 {
+			t.Fatalf("expected audit total >= 1 after validate/revoke operations, got %v", total)
+		}
+	default:
+		t.Fatalf("expected audit meta.total present after operations, got %T (%v)", totalAny, totalAny)
 	}
 
 	userToken := loginAndGetAccessToken(t, srv.URL, "user@example.com", "secret", "c_001")
@@ -592,6 +626,55 @@ func TestIntegration_platformCMSPrefix_entriesReviewsSchedulesContract(t *testin
 	deleteScheduleRes := doJSONRequest(t, http.MethodDelete, srv.URL+"/api/v1/platform/cms/schedules/"+entryID, cmsToken, nil, "")
 	if deleteScheduleRes.StatusCode != http.StatusOK {
 		t.Fatalf("delete schedule status=%d body=%s", deleteScheduleRes.StatusCode, readBody(t, deleteScheduleRes.Body))
+	}
+
+	auditRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/platform/cms/ops/audit", cmsToken, nil, "")
+	if auditRes.StatusCode != http.StatusOK {
+		t.Fatalf("audit status=%d body=%s", auditRes.StatusCode, readBody(t, auditRes.Body))
+	}
+	var auditOut struct {
+		Data struct {
+			Items []map[string]any `json:"items"`
+		} `json:"data"`
+	}
+	mustDecodeJSON(t, auditRes.Body, &auditOut)
+	expected := map[string]bool{
+		"cms.entry.create":    false,
+		"cms.entry.update":    false,
+		"cms.schedule.create": false,
+		"cms.review.approve":  false,
+		"cms.schedule.delete": false,
+	}
+	for _, item := range auditOut.Data.Items {
+		action, _ := item["action"].(string)
+		if _, ok := expected[action]; ok {
+			expected[action] = true
+		}
+	}
+	for action, seen := range expected {
+		if !seen {
+			t.Fatalf("expected audit action %q in audit feed, got items=%+v", action, auditOut.Data.Items)
+		}
+	}
+
+	filteredAuditRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/platform/cms/ops/audit?action=cms.entry.create", cmsToken, nil, "")
+	if filteredAuditRes.StatusCode != http.StatusOK {
+		t.Fatalf("filtered audit status=%d body=%s", filteredAuditRes.StatusCode, readBody(t, filteredAuditRes.Body))
+	}
+	var filteredAuditOut struct {
+		Data struct {
+			Items []map[string]any `json:"items"`
+		} `json:"data"`
+		Meta map[string]any `json:"meta"`
+	}
+	mustDecodeJSON(t, filteredAuditRes.Body, &filteredAuditOut)
+	if len(filteredAuditOut.Data.Items) == 0 {
+		t.Fatalf("expected filtered audit items for cms.entry.create")
+	}
+	for _, item := range filteredAuditOut.Data.Items {
+		if item["action"] != "cms.entry.create" {
+			t.Fatalf("unexpected action in filtered audit feed: %+v", item)
+		}
 	}
 }
 
