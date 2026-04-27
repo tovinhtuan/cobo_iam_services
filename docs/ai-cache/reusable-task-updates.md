@@ -796,3 +796,82 @@
     - `filtered_only_match=True`
 - remaining gaps/risks/next steps:
   - FE can now add audit action filter UI/route-state sync directly against `?action=` without API changes
+
+## 2026-04-27 - CMS Audit FE Filter Sync Confirmation
+
+- task type: implement
+- objective: sync cache after FE wired audit action filter UI/query-state to existing `?action=` API
+- what was implemented/discovered:
+  - FE now drives audit filter via URL query `action` and calls backend with optional `?action=...`
+  - backend contract unchanged; no additional BE code changes required in this step
+- affected repos/files/modules:
+  - `cobo_web_design/src/features/cms-core/pages.tsx`
+  - `cobo_web_design/src/features/cms-core/services/cmsApi.ts`
+  - `cobo_web_design/src/features/cms-core/pages.regression.test.tsx`
+- important contracts/behaviors/constraints/decisions:
+  - audit API remains source-compatible and FE now consumes action filter as intended
+- build/verification result:
+  - FE regression passed
+  - fresh docker rebuild/restart passed for `api` + `web`
+  - smoke endpoint check for filtered audit passed (`audit_filtered_total=1`)
+- remaining gaps/risks/next steps:
+  - optional future step: expose canonical action dictionary endpoint if FE/BE action set grows
+
+## 2026-04-27 - CMS Week 2 Recheck Board (Flow Clusters)
+
+- task type: understand
+- objective: provide team-ready Done/Partial/Pending board for CMS by flow cluster after Week 2 recheck
+- what was discovered:
+  - CMS Week 2 baseline is complete and now expanded with P1/P2 + hardening layers
+  - strict authz, contract-first APIs, UI-state handling, smoke checks, and audit observability are all present
+- affected repos/files/modules:
+  - no code changes
+  - primary references:
+    - `cobo_iam_services/internal/platformcms/transport/http/handler.go`
+    - `cobo_iam_services/internal/httpserver/server_test.go`
+    - `cobo_iam_services/migrations/seed_dev_identity_authorization.sql`
+    - `cobo_iam_services/migrations/0009_seed_authz_test_accounts.up.sql`
+    - `cobo_web_design/src/features/cms-core/*`
+- important contracts/behaviors/constraints/decisions:
+  - strict `platform.cms.view` entry policy is still the controlling gate for CMS module access
+  - audit timeline now supports append-rich write events and action-level filtering
+- build/verification result:
+  - no additional run in this understand-only recheck step; board is based on latest green verify/build cycles
+- remaining gaps/risks/next steps:
+  - optional: add centralized action code catalog for FE labels and BE filters
+
+## 2026-04-27 - CMS Action Catalog + Metrics/Trace Layer
+
+- task type: implement
+- objective: standardize CMS action catalog across FE/BE and add dedicated CMS metrics/traces observability
+- what was implemented:
+  - introduced canonical CMS action constants in platform CMS transport layer and reused them for audit append actions
+  - added strict action filter validation for `GET /api/v1/platform/cms/ops/audit?action=...` (reject unknown codes)
+  - added CMS route-level metrics collector (requests/errors/avg latency/last status/last request id)
+  - wrapped all CMS prefix handlers with instrumentation
+  - added new observability endpoint:
+    - `GET /api/v1/platform/cms/ops/metrics`
+  - enriched health payload with `cms_observability` component metadata
+  - extended integration tests for metrics endpoint and invalid-action rejection
+- affected repos/files/modules:
+  - `cobo_iam_services/internal/platformcms/transport/http/audit_actions.go`
+  - `cobo_iam_services/internal/platformcms/transport/http/metrics.go`
+  - `cobo_iam_services/internal/platformcms/transport/http/handler.go`
+  - `cobo_iam_services/internal/httpserver/server_test.go`
+  - synced FE side action catalog usage:
+    - `cobo_web_design/src/features/cms-core/auditActionCatalog.ts`
+    - `cobo_web_design/src/features/cms-core/pages.tsx`
+- important contracts/behaviors/constraints/decisions:
+  - existing endpoint envelopes remain unchanged (`data`, `meta`)
+  - observability endpoint is additive and protected by CMS access gate
+  - trace correlation is based on existing `X-Request-Id` header
+- build/verification result:
+  - targeted BE tests passed:
+    - `go test ./internal/platformcms/... ./internal/httpserver -run TestIntegration_platformCMSPrefix -count=1`
+  - targeted FE tests passed:
+    - `npm run test -- src/features/cms-core/pages.regression.test.tsx src/features/cms-core/permissionGuards.test.ts`
+  - full cycle + docker rebuild passed:
+    - `powershell -ExecutionPolicy Bypass -File docs/scripts/run-c1-cycle.ps1`
+    - includes `docker compose -f docker-compose.dev.yml build --no-cache api web`
+- remaining gaps/risks/next steps:
+  - optional future step: push metrics into external sink (Prometheus/OpenTelemetry) if central dashboards are required

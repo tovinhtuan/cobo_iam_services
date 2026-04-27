@@ -10,8 +10,8 @@ import (
 	"time"
 
 	auditapp "github.com/cobo/cobo_iam_services/internal/audit/app"
-	companyaccessapp "github.com/cobo/cobo_iam_services/internal/companyaccess/app"
 	authapp "github.com/cobo/cobo_iam_services/internal/authorization/app"
+	companyaccessapp "github.com/cobo/cobo_iam_services/internal/companyaccess/app"
 	disclosureapp "github.com/cobo/cobo_iam_services/internal/disclosure/app"
 	iamapp "github.com/cobo/cobo_iam_services/internal/iam/app"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
@@ -19,14 +19,15 @@ import (
 )
 
 type Handler struct {
-	inspector    iamapp.TokenInspector
-	authorizer   authapp.Service
-	adminSvc     companyaccessapp.AdminService
-	iamSvc       iamapp.Service
-	auditSvc     auditapp.Service
-	auditRepo    auditapp.Repository
+	inspector     iamapp.TokenInspector
+	authorizer    authapp.Service
+	adminSvc      companyaccessapp.AdminService
+	iamSvc        iamapp.Service
+	auditSvc      auditapp.Service
+	auditRepo     auditapp.Repository
 	disclosureSvc disclosureapp.Service
-	disclosures disclosureapp.Repository
+	disclosures   disclosureapp.Repository
+	metrics       *cmsMetrics
 }
 
 func NewHandler(inspector iamapp.TokenInspector, authorizer authapp.Service, adminSvc companyaccessapp.AdminService, iamSvc iamapp.Service, auditSvc auditapp.Service, auditRepo auditapp.Repository, disclosureSvc disclosureapp.Service, disclosures disclosureapp.Repository) *Handler {
@@ -39,32 +40,54 @@ func NewHandler(inspector iamapp.TokenInspector, authorizer authapp.Service, adm
 		auditRepo:     auditRepo,
 		disclosureSvc: disclosureSvc,
 		disclosures:   disclosures,
+		metrics:       newCMSMetrics(),
 	}
 }
 
 func (h *Handler) Register(mux *http.ServeMux) {
-	mux.HandleFunc("GET /api/v1/platform/cms/dashboard/summary", h.dashboardSummary)
-	mux.HandleFunc("GET /api/v1/platform/cms/collections", h.collections)
-	mux.HandleFunc("GET /api/v1/platform/cms/collections/{collection_id}", h.collectionDetail)
-	mux.HandleFunc("GET /api/v1/platform/cms/entries", h.entries)
-	mux.HandleFunc("GET /api/v1/platform/cms/entries/{entry_id}", h.entryDetail)
-	mux.HandleFunc("POST /api/v1/platform/cms/entries", h.createEntry)
-	mux.HandleFunc("PUT /api/v1/platform/cms/entries/{entry_id}", h.updateEntry)
-	mux.HandleFunc("GET /api/v1/platform/cms/reviews", h.reviews)
-	mux.HandleFunc("POST /api/v1/platform/cms/reviews/{entry_id}", h.reviewAction)
-	mux.HandleFunc("GET /api/v1/platform/cms/schedules", h.schedules)
-	mux.HandleFunc("POST /api/v1/platform/cms/schedules", h.createSchedule)
-	mux.HandleFunc("DELETE /api/v1/platform/cms/schedules/{entry_id}", h.deleteSchedule)
-	mux.HandleFunc("GET /api/v1/platform/cms/releases", h.releases)
-	mux.HandleFunc("GET /api/v1/platform/cms/admin/users", h.adminUsers)
-	mux.HandleFunc("POST /api/v1/platform/cms/admin/users", h.createAdminUser)
-	mux.HandleFunc("GET /api/v1/platform/cms/admin/roles", h.roles)
-	mux.HandleFunc("GET /api/v1/platform/cms/admin/rules", h.rules)
-	mux.HandleFunc("POST /api/v1/platform/cms/admin/rules/validate", h.validateRule)
-	mux.HandleFunc("GET /api/v1/platform/cms/ops/audit", h.auditLogs)
-	mux.HandleFunc("GET /api/v1/platform/cms/ops/sessions", h.sessions)
-	mux.HandleFunc("POST /api/v1/platform/cms/ops/sessions/{session_id}/revoke", h.revokeSession)
-	mux.HandleFunc("GET /api/v1/platform/cms/ops/health", h.systemHealth)
+	mux.HandleFunc("GET /api/v1/platform/cms/dashboard/summary", h.observe("cms.dashboard.summary", h.dashboardSummary))
+	mux.HandleFunc("GET /api/v1/platform/cms/collections", h.observe("cms.collections.list", h.collections))
+	mux.HandleFunc("GET /api/v1/platform/cms/collections/{collection_id}", h.observe("cms.collections.detail", h.collectionDetail))
+	mux.HandleFunc("GET /api/v1/platform/cms/entries", h.observe("cms.entries.list", h.entries))
+	mux.HandleFunc("GET /api/v1/platform/cms/entries/{entry_id}", h.observe("cms.entries.detail", h.entryDetail))
+	mux.HandleFunc("POST /api/v1/platform/cms/entries", h.observe("cms.entries.create", h.createEntry))
+	mux.HandleFunc("PUT /api/v1/platform/cms/entries/{entry_id}", h.observe("cms.entries.update", h.updateEntry))
+	mux.HandleFunc("GET /api/v1/platform/cms/reviews", h.observe("cms.reviews.list", h.reviews))
+	mux.HandleFunc("POST /api/v1/platform/cms/reviews/{entry_id}", h.observe("cms.reviews.action", h.reviewAction))
+	mux.HandleFunc("GET /api/v1/platform/cms/schedules", h.observe("cms.schedules.list", h.schedules))
+	mux.HandleFunc("POST /api/v1/platform/cms/schedules", h.observe("cms.schedules.create", h.createSchedule))
+	mux.HandleFunc("DELETE /api/v1/platform/cms/schedules/{entry_id}", h.observe("cms.schedules.delete", h.deleteSchedule))
+	mux.HandleFunc("GET /api/v1/platform/cms/releases", h.observe("cms.releases.list", h.releases))
+	mux.HandleFunc("GET /api/v1/platform/cms/admin/users", h.observe("cms.admin.users.list", h.adminUsers))
+	mux.HandleFunc("POST /api/v1/platform/cms/admin/users", h.observe("cms.admin.users.create", h.createAdminUser))
+	mux.HandleFunc("GET /api/v1/platform/cms/admin/roles", h.observe("cms.admin.roles.list", h.roles))
+	mux.HandleFunc("GET /api/v1/platform/cms/admin/rules", h.observe("cms.admin.rules.list", h.rules))
+	mux.HandleFunc("POST /api/v1/platform/cms/admin/rules/validate", h.observe("cms.admin.rules.validate", h.validateRule))
+	mux.HandleFunc("GET /api/v1/platform/cms/ops/audit", h.observe("cms.ops.audit.list", h.auditLogs))
+	mux.HandleFunc("GET /api/v1/platform/cms/ops/sessions", h.observe("cms.ops.sessions.list", h.sessions))
+	mux.HandleFunc("POST /api/v1/platform/cms/ops/sessions/{session_id}/revoke", h.observe("cms.ops.sessions.revoke", h.revokeSession))
+	mux.HandleFunc("GET /api/v1/platform/cms/ops/health", h.observe("cms.ops.health", h.systemHealth))
+	mux.HandleFunc("GET /api/v1/platform/cms/ops/metrics", h.observe("cms.ops.metrics", h.systemMetrics))
+}
+
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (r *statusRecorder) WriteHeader(code int) {
+	r.status = code
+	r.ResponseWriter.WriteHeader(code)
+}
+
+func (h *Handler) observe(route string, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		next(rec, r)
+		requestID := httpx.RequestIDFromContext(r.Context())
+		h.metrics.record(route, requestID, rec.status, time.Since(start))
+	}
 }
 
 func (h *Handler) dashboardSummary(w http.ResponseWriter, r *http.Request) {
@@ -122,9 +145,9 @@ func (h *Handler) collections(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	type collection struct {
-		CollectionID   string `json:"collection_id"`
-		Name           string `json:"name"`
-		EntryCount     int    `json:"entry_count"`
+		CollectionID    string `json:"collection_id"`
+		Name            string `json:"name"`
+		EntryCount      int    `json:"entry_count"`
 		LatestUpdatedAt string `json:"latest_updated_at,omitempty"`
 	}
 	agg := map[string]*collection{}
@@ -191,11 +214,11 @@ func (h *Handler) collectionDetail(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		filtered = append(filtered, map[string]any{
-			"entry_id":    item.RecordID,
-			"title":       item.Title,
-			"status":      item.Status,
-			"type_id":     typeID,
-			"updated_at":  item.UpdatedAt.UTC().Format(timeLayout),
+			"entry_id":   item.RecordID,
+			"title":      item.Title,
+			"status":     item.Status,
+			"type_id":    typeID,
+			"updated_at": item.UpdatedAt.UTC().Format(timeLayout),
 		})
 	}
 	writeEnvelope(w, http.StatusOK, map[string]any{
@@ -231,13 +254,13 @@ func (h *Handler) entries(w http.ResponseWriter, r *http.Request) {
 			typeID = "general"
 		}
 		out = append(out, map[string]any{
-			"entry_id":    item.RecordID,
-			"title":       item.Title,
-			"status":      item.Status,
-			"type_id":     typeID,
-			"updated_at":  item.UpdatedAt.UTC().Format(timeLayout),
-			"company_id":  item.CompanyID,
-			"record_id":   item.RecordID,
+			"entry_id":   item.RecordID,
+			"title":      item.Title,
+			"status":     item.Status,
+			"type_id":    typeID,
+			"updated_at": item.UpdatedAt.UTC().Format(timeLayout),
+			"company_id": item.CompanyID,
+			"record_id":  item.RecordID,
 		})
 	}
 	writeEnvelope(w, http.StatusOK, map[string]any{"items": out}, map[string]any{"total": len(out)})
@@ -268,15 +291,15 @@ func (h *Handler) entryDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeEnvelope(w, http.StatusOK, map[string]any{
-		"entry_id":      rec.RecordID,
-		"title":         rec.Title,
-		"summary":       rec.Summary,
-		"content":       rec.Content,
-		"status":        rec.Status,
-		"type_id":       rec.TypeID,
-		"planned_date":  rec.PlannedDate,
+		"entry_id":       rec.RecordID,
+		"title":          rec.Title,
+		"summary":        rec.Summary,
+		"content":        rec.Content,
+		"status":         rec.Status,
+		"type_id":        rec.TypeID,
+		"planned_date":   rec.PlannedDate,
 		"published_date": rec.PublishedDate,
-		"updated_at":    rec.UpdatedAt.UTC().Format(timeLayout),
+		"updated_at":     rec.UpdatedAt.UTC().Format(timeLayout),
 	}, nil)
 }
 
@@ -311,7 +334,7 @@ func (h *Handler) createEntry(w http.ResponseWriter, r *http.Request) {
 		ActorUserID:       sub.Sub,
 		ActorMembershipID: sub.MembershipID,
 		CompanyID:         sub.CompanyID,
-		Action:            "cms.entry.create",
+		Action:            cmsActionEntryCreate,
 		ResourceType:      "disclosure_record",
 		ResourceID:        rec.RecordID,
 		Decision:          "allow",
@@ -321,12 +344,12 @@ func (h *Handler) createEntry(w http.ResponseWriter, r *http.Request) {
 		},
 	})
 	writeEnvelope(w, http.StatusCreated, map[string]any{
-		"entry_id":     rec.RecordID,
-		"record_id":    rec.RecordID,
-		"title":        rec.Title,
-		"status":       rec.Status,
-		"type_id":      rec.TypeID,
-		"updated_at":   rec.UpdatedAt.UTC().Format(timeLayout),
+		"entry_id":   rec.RecordID,
+		"record_id":  rec.RecordID,
+		"title":      rec.Title,
+		"status":     rec.Status,
+		"type_id":    rec.TypeID,
+		"updated_at": rec.UpdatedAt.UTC().Format(timeLayout),
 	}, nil)
 }
 
@@ -367,7 +390,7 @@ func (h *Handler) updateEntry(w http.ResponseWriter, r *http.Request) {
 		ActorUserID:       sub.Sub,
 		ActorMembershipID: sub.MembershipID,
 		CompanyID:         sub.CompanyID,
-		Action:            "cms.entry.update",
+		Action:            cmsActionEntryUpdate,
 		ResourceType:      "disclosure_record",
 		ResourceID:        rec.RecordID,
 		Decision:          "allow",
@@ -377,12 +400,12 @@ func (h *Handler) updateEntry(w http.ResponseWriter, r *http.Request) {
 		},
 	})
 	writeEnvelope(w, http.StatusOK, map[string]any{
-		"entry_id":     rec.RecordID,
-		"record_id":    rec.RecordID,
-		"title":        rec.Title,
-		"status":       rec.Status,
-		"type_id":      rec.TypeID,
-		"updated_at":   rec.UpdatedAt.UTC().Format(timeLayout),
+		"entry_id":   rec.RecordID,
+		"record_id":  rec.RecordID,
+		"title":      rec.Title,
+		"status":     rec.Status,
+		"type_id":    rec.TypeID,
+		"updated_at": rec.UpdatedAt.UTC().Format(timeLayout),
 	}, nil)
 }
 
@@ -412,11 +435,11 @@ func (h *Handler) reviews(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		out = append(out, map[string]any{
-			"entry_id":    item.RecordID,
-			"title":       item.Title,
-			"status":      item.Status,
-			"type_id":     item.TypeID,
-			"updated_at":  item.UpdatedAt.UTC().Format(timeLayout),
+			"entry_id":   item.RecordID,
+			"title":      item.Title,
+			"status":     item.Status,
+			"type_id":    item.TypeID,
+			"updated_at": item.UpdatedAt.UTC().Format(timeLayout),
 		})
 	}
 	writeEnvelope(w, http.StatusOK, map[string]any{"items": out}, map[string]any{"total": len(out)})
@@ -466,15 +489,15 @@ func (h *Handler) reviewAction(w http.ResponseWriter, r *http.Request) {
 			ActorUserID:       sub.Sub,
 			ActorMembershipID: sub.MembershipID,
 			CompanyID:         sub.CompanyID,
-			Action:            "cms.review.approve",
+			Action:            cmsActionReviewApprove,
 			ResourceType:      "disclosure_record",
 			ResourceID:        rec.RecordID,
 			Decision:          "allow",
 		})
 		writeEnvelope(w, http.StatusOK, map[string]any{
-			"entry_id":  rec.RecordID,
-			"status":    rec.Status,
-			"decision":  "approve",
+			"entry_id": rec.RecordID,
+			"status":   rec.Status,
+			"decision": "approve",
 		}, nil)
 	case "reject":
 		rec, err := h.disclosures.FindByID(r.Context(), sub.CompanyID, entryID)
@@ -497,15 +520,15 @@ func (h *Handler) reviewAction(w http.ResponseWriter, r *http.Request) {
 			ActorUserID:       sub.Sub,
 			ActorMembershipID: sub.MembershipID,
 			CompanyID:         sub.CompanyID,
-			Action:            "cms.review.reject",
+			Action:            cmsActionReviewReject,
 			ResourceType:      "disclosure_record",
 			ResourceID:        next.RecordID,
 			Decision:          "allow",
 		})
 		writeEnvelope(w, http.StatusOK, map[string]any{
-			"entry_id":  next.RecordID,
-			"status":    next.Status,
-			"decision":  "reject",
+			"entry_id": next.RecordID,
+			"status":   next.Status,
+			"decision": "reject",
 		}, nil)
 	default:
 		httpx.WriteError(w, nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "decision must be approve or reject", nil))
@@ -537,11 +560,11 @@ func (h *Handler) schedules(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		out = append(out, map[string]any{
-			"entry_id":    item.RecordID,
-			"publish_at":  item.PlannedDate,
-			"status":      item.Status,
-			"title":       item.Title,
-			"updated_at":  item.UpdatedAt.UTC().Format(timeLayout),
+			"entry_id":   item.RecordID,
+			"publish_at": item.PlannedDate,
+			"status":     item.Status,
+			"title":      item.Title,
+			"updated_at": item.UpdatedAt.UTC().Format(timeLayout),
 		})
 	}
 	writeEnvelope(w, http.StatusOK, map[string]any{"items": out}, map[string]any{"total": len(out)})
@@ -595,7 +618,7 @@ func (h *Handler) createSchedule(w http.ResponseWriter, r *http.Request) {
 		ActorUserID:       sub.Sub,
 		ActorMembershipID: sub.MembershipID,
 		CompanyID:         sub.CompanyID,
-		Action:            "cms.schedule.create",
+		Action:            cmsActionScheduleCreate,
 		ResourceType:      "disclosure_record",
 		ResourceID:        next.RecordID,
 		Decision:          "allow",
@@ -645,7 +668,7 @@ func (h *Handler) deleteSchedule(w http.ResponseWriter, r *http.Request) {
 		ActorUserID:       sub.Sub,
 		ActorMembershipID: sub.MembershipID,
 		CompanyID:         sub.CompanyID,
-		Action:            "cms.schedule.delete",
+		Action:            cmsActionScheduleDelete,
 		ResourceType:      "disclosure_record",
 		ResourceID:        next.RecordID,
 		Decision:          "allow",
@@ -824,7 +847,7 @@ func (h *Handler) validateRule(w http.ResponseWriter, r *http.Request) {
 		ActorUserID:       sub.Sub,
 		ActorMembershipID: sub.MembershipID,
 		CompanyID:         sub.CompanyID,
-		Action:            "cms.rule.validate",
+		Action:            cmsActionRuleValidate,
 		ResourceType:      "cms_rule",
 		ResourceID:        name,
 		Decision:          "allow",
@@ -855,6 +878,12 @@ func (h *Handler) auditLogs(w http.ResponseWriter, r *http.Request) {
 	}
 	limit := parsePositiveInt(r.URL.Query().Get("limit"), 50, 200)
 	action := strings.TrimSpace(r.URL.Query().Get("action"))
+	if action != "" {
+		if _, ok := cmsKnownActions[action]; !ok {
+			httpx.WriteError(w, nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "unsupported action filter", nil))
+			return
+		}
+	}
 	entries, err := h.auditRepo.ListByCompany(r.Context(), sub.CompanyID, action, limit)
 	if err != nil {
 		httpx.WriteError(w, nil, err)
@@ -871,6 +900,27 @@ func (h *Handler) auditLogs(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	writeEnvelope(w, http.StatusOK, map[string]any{"items": events}, map[string]any{"total": len(events)})
+}
+
+func (h *Handler) systemMetrics(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	if _, err := h.requireCMSAccess(r.Context(), sub.MembershipID, sub.CompanyID); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	if _, err := h.requireAnyPermission(r.Context(), sub.MembershipID, sub.CompanyID, "system.settings", "platform.cms.view"); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	writeEnvelope(w, http.StatusOK, map[string]any{
+		"routes":       h.metrics.snapshot(),
+		"action_codes": mapsKeysSorted(cmsKnownActions),
+		"trace_header": httpx.RequestIDHeader,
+	}, nil)
 }
 
 func (h *Handler) sessions(w http.ResponseWriter, r *http.Request) {
@@ -942,7 +992,7 @@ func (h *Handler) revokeSession(w http.ResponseWriter, r *http.Request) {
 		ActorUserID:       sub.Sub,
 		ActorMembershipID: sub.MembershipID,
 		CompanyID:         sub.CompanyID,
-		Action:            "cms.session.revoke",
+		Action:            cmsActionSessionRevoke,
 		ResourceType:      "session",
 		ResourceID:        sessionID,
 		Decision:          "allow",
@@ -974,6 +1024,14 @@ func (h *Handler) systemHealth(w http.ResponseWriter, r *http.Request) {
 		dbStatus = "degraded"
 	}
 	items := []map[string]any{{"component": "api", "status": apiStatus}, {"component": "db", "status": dbStatus}, {"component": "cache", "status": cacheStatus}}
+	items = append(items, map[string]any{
+		"component": "cms_observability",
+		"status":    "healthy",
+		"meta": map[string]any{
+			"trace_header": httpx.RequestIDHeader,
+			"route_count":  len(h.metrics.snapshot()),
+		},
+	})
 	writeEnvelope(w, http.StatusOK, map[string]any{"items": items}, map[string]any{"total": len(items)})
 }
 
@@ -993,6 +1051,15 @@ func firstNonEmpty(primary, fallback string) string {
 		return primary
 	}
 	return fallback
+}
+
+func mapsKeysSorted(items map[string]struct{}) []string {
+	out := make([]string, 0, len(items))
+	for key := range items {
+		out = append(out, key)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func (h *Handler) adminUsers(w http.ResponseWriter, r *http.Request) {

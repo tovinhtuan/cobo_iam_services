@@ -510,6 +510,19 @@ func TestIntegration_platformCMSPrefix_dashboardCollectionsEntries(t *testing.T)
 	if healthRes.StatusCode != http.StatusOK {
 		t.Fatalf("health status=%d body=%s", healthRes.StatusCode, readBody(t, healthRes.Body))
 	}
+	metricsRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/platform/cms/ops/metrics", cmsToken, nil, "")
+	if metricsRes.StatusCode != http.StatusOK {
+		t.Fatalf("metrics status=%d body=%s", metricsRes.StatusCode, readBody(t, metricsRes.Body))
+	}
+	var metricsOut struct {
+		Data struct {
+			Routes map[string]map[string]any `json:"routes"`
+		} `json:"data"`
+	}
+	mustDecodeJSON(t, metricsRes.Body, &metricsOut)
+	if len(metricsOut.Data.Routes) == 0 {
+		t.Fatalf("expected cms metrics routes to be populated")
+	}
 	auditAfterOpsRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/platform/cms/ops/audit", cmsToken, nil, "")
 	if auditAfterOpsRes.StatusCode != http.StatusOK {
 		t.Fatalf("audit after ops status=%d body=%s", auditAfterOpsRes.StatusCode, readBody(t, auditAfterOpsRes.Body))
@@ -675,6 +688,10 @@ func TestIntegration_platformCMSPrefix_entriesReviewsSchedulesContract(t *testin
 		if item["action"] != "cms.entry.create" {
 			t.Fatalf("unexpected action in filtered audit feed: %+v", item)
 		}
+	}
+	invalidFilterRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/platform/cms/ops/audit?action=unknown.cms.action", cmsToken, nil, "")
+	if invalidFilterRes.StatusCode != http.StatusBadRequest {
+		t.Fatalf("invalid action filter status=%d body=%s", invalidFilterRes.StatusCode, readBody(t, invalidFilterRes.Body))
 	}
 }
 
