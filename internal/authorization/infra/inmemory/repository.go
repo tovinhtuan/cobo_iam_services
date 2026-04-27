@@ -38,6 +38,18 @@ func NewRepository() *Repository {
 				"auth.session.manage", "audit.view",
 				"system.settings", "rbac.manage",
 			},
+			"m_cms_001@c_001": {
+				"platform.cms.view",
+				"company.view", "company.edit",
+				"recipient.view", "recipient.manage",
+				"deadline.view", "deadline.manage", "deadline.create", "deadline.assign",
+				"alert.channels.manage",
+				"disclosure.view", "disclosure.create", "disclosure.edit", "disclosure.publish", "disclosure.delete", "disclosure.approve",
+				"user.view", "user.edit",
+				"workflow.step.confirm", "workflow.step.override",
+				"auth.session.manage", "audit.view",
+				"system.settings", "rbac.manage",
+			},
 		},
 		Departments: map[string][]authapp.DepartmentScope{
 			"m_001@c_001": {
@@ -47,26 +59,34 @@ func NewRepository() *Repository {
 			"m_admin_001@c_001": {
 				{DepartmentID: "d_legal", DepartmentName: "Legal"},
 			},
+			"m_cms_001@c_001": {
+				{DepartmentID: "d_legal", DepartmentName: "Legal"},
+			},
 		},
 		Assignments: map[string][]authapp.ResourceAssignment{
 			"m_001@c_001": {{ResourceType: "disclosure_record", ResourceID: "r_1001"}},
 			"m_admin_001@c_001": {{ResourceType: "disclosure_record", ResourceID: "r_1001"}},
+			"m_cms_001@c_001": {{ResourceType: "disclosure_record", ResourceID: "r_1001"}},
 		},
 		Responsibilities: map[string][]string{
 			"m_001@c_001": {"workflow_approver:disclosure", "notification_recipient:disclosure"},
 			"m_admin_001@c_001": {"workflow_approver:disclosure", "notification_recipient:disclosure"},
+			"m_cms_001@c_001": {"workflow_approver:disclosure", "notification_recipient:disclosure"},
 		},
 		PositionCodes: map[string][]string{
 			"m_001@c_001":       {"truong_phong"},
 			"m_admin_001@c_001": {"admin_dn"},
+			"m_cms_001@c_001":   {"cms_operator"},
 		},
 		OrgUnitIDs: map[string][]string{
 			"m_001@c_001":       {"ou_legal"},
 			"m_admin_001@c_001": {"ou_root"},
+			"m_cms_001@c_001":   {"ou_root"},
 		},
 		OrgSubtreeUnitIDs: map[string][]string{
 			"m_001@c_001":       {"ou_legal", "ou_legal_team_a", "ou_legal_team_b"},
 			"m_admin_001@c_001": {"ou_root", "ou_legal", "ou_legal_team_a", "ou_legal_team_b", "ou_ir"},
+			"m_cms_001@c_001":   {"ou_root", "ou_legal", "ou_legal_team_a", "ou_legal_team_b", "ou_ir"},
 		},
 		Policies: defaultPolicies(),
 	}

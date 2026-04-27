@@ -2,8 +2,8 @@ param(
   [string]$BaseUrl = "http://localhost:8080",
   [string]$UserLogin = "user@example.com",
   [string]$UserPassword = "secret",
-  [string]$AdminLogin = "admin.dn@example.com",
-  [string]$AdminPassword = "secret",
+  [string]$CmsLogin = "cms.operator@example.com",
+  [string]$CmsPassword = "secret",
   [string]$UserCompanyId = "c_001"
 )
 
@@ -122,13 +122,13 @@ function Login-And-GetAccessToken {
 Wait-ApiReady
 
 Write-Host "[1/9] Acquire tokens..."
-$userToken = Login-And-GetAccessToken -LoginId $UserLogin -Password $UserPassword -PreferredCompanyId $UserCompanyId
-$adminToken = Login-And-GetAccessToken -LoginId $AdminLogin -Password $AdminPassword
+$null = Login-And-GetAccessToken -LoginId $UserLogin -Password $UserPassword -PreferredCompanyId $UserCompanyId
+$cmsToken = Login-And-GetAccessToken -LoginId $CmsLogin -Password $CmsPassword
 
 Write-Host "[2/9] Create entry via CMS prefix..."
 $title = "CMS Prefix Smoke $(Get-Date -Format 'yyyyMMdd-HHmmss')"
 $createEntryRes = Invoke-JsonApi -Method "POST" -Url "$BaseUrl/api/v1/platform/cms/entries" -Headers @{
-  Authorization = "Bearer $userToken"
+  Authorization = "Bearer $cmsToken"
 } -Body @{
   type_id      = "DISCLOSURE_FINANCIAL"
   title        = $title
@@ -142,14 +142,14 @@ Assert-True (-not [string]::IsNullOrWhiteSpace($entryId)) "missing data.entry_id
 
 Write-Host "[3/9] Get entry detail..."
 $entryDetailRes = Invoke-JsonApi -Method "GET" -Url "$BaseUrl/api/v1/platform/cms/entries/$entryId" -Headers @{
-  Authorization = "Bearer $userToken"
+  Authorization = "Bearer $cmsToken"
 }
 Assert-True ($entryDetailRes.status -eq 200) "entry detail failed status=$($entryDetailRes.status) body=$($entryDetailRes.raw)"
 Assert-True ($entryDetailRes.body.data.entry_id -eq $entryId) "entry detail id mismatch"
 
 Write-Host "[4/9] Update entry via CMS prefix..."
 $updateEntryRes = Invoke-JsonApi -Method "PUT" -Url "$BaseUrl/api/v1/platform/cms/entries/$entryId" -Headers @{
-  Authorization = "Bearer $userToken"
+  Authorization = "Bearer $cmsToken"
 } -Body @{
   type_id      = "DISCLOSURE_FINANCIAL"
   title        = "$title updated"
@@ -161,14 +161,14 @@ Assert-True ($updateEntryRes.status -eq 200) "update entry failed status=$($upda
 
 Write-Host "[5/9] Read collection detail..."
 $collectionRes = Invoke-JsonApi -Method "GET" -Url "$BaseUrl/api/v1/platform/cms/collections/DISCLOSURE_FINANCIAL" -Headers @{
-  Authorization = "Bearer $userToken"
+  Authorization = "Bearer $cmsToken"
 }
 Assert-True ($collectionRes.status -eq 200) "collection detail failed status=$($collectionRes.status) body=$($collectionRes.raw)"
 Assert-True ($collectionRes.body.data.items.Count -ge 1) "collection items should not be empty"
 
 Write-Host "[6/9] Schedule create/list/delete..."
 $createScheduleRes = Invoke-JsonApi -Method "POST" -Url "$BaseUrl/api/v1/platform/cms/schedules" -Headers @{
-  Authorization = "Bearer $userToken"
+  Authorization = "Bearer $cmsToken"
 } -Body @{
   entry_id   = $entryId
   publish_at = "2026-05-22"
@@ -176,30 +176,30 @@ $createScheduleRes = Invoke-JsonApi -Method "POST" -Url "$BaseUrl/api/v1/platfor
 Assert-True ($createScheduleRes.status -eq 201) "create schedule failed status=$($createScheduleRes.status) body=$($createScheduleRes.raw)"
 
 $listScheduleRes = Invoke-JsonApi -Method "GET" -Url "$BaseUrl/api/v1/platform/cms/schedules" -Headers @{
-  Authorization = "Bearer $userToken"
+  Authorization = "Bearer $cmsToken"
 }
 Assert-True ($listScheduleRes.status -eq 200) "list schedules failed status=$($listScheduleRes.status) body=$($listScheduleRes.raw)"
 
 $deleteScheduleRes = Invoke-JsonApi -Method "DELETE" -Url "$BaseUrl/api/v1/platform/cms/schedules/$entryId" -Headers @{
-  Authorization = "Bearer $adminToken"
+  Authorization = "Bearer $cmsToken"
 }
 Assert-True ($deleteScheduleRes.status -eq 200) "delete schedule failed status=$($deleteScheduleRes.status) body=$($deleteScheduleRes.raw)"
 
 Write-Host "[7/9] Submit entry then list reviews..."
 $submitRes = Invoke-JsonApi -Method "POST" -Url "$BaseUrl/api/v1/disclosures/$entryId/submit" -Headers @{
-  Authorization     = "Bearer $userToken"
+  Authorization     = "Bearer $cmsToken"
   "Idempotency-Key" = "cms-prefix-submit-$entryId"
 }
 Assert-True ($submitRes.status -eq 200) "submit failed status=$($submitRes.status) body=$($submitRes.raw)"
 
 $reviewListRes = Invoke-JsonApi -Method "GET" -Url "$BaseUrl/api/v1/platform/cms/reviews" -Headers @{
-  Authorization = "Bearer $adminToken"
+  Authorization = "Bearer $cmsToken"
 }
 Assert-True ($reviewListRes.status -eq 200) "list reviews failed status=$($reviewListRes.status) body=$($reviewListRes.raw)"
 
 Write-Host "[8/9] Approve review action via prefix..."
 $approveRes = Invoke-JsonApi -Method "POST" -Url "$BaseUrl/api/v1/platform/cms/reviews/$entryId" -Headers @{
-  Authorization = "Bearer $adminToken"
+  Authorization = "Bearer $cmsToken"
 } -Body @{
   decision = "approve"
 }

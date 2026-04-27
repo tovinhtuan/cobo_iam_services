@@ -378,3 +378,216 @@
   - fresh docker rebuild succeeded for `api` + `web`; compose healthy
 - remaining gaps/risks/next steps:
   - optional next step: expose role assignment shortcut in same CMS admin page after create-user for one-click bootstrap
+
+## 2026-04-27 - Week 2 Plan Recheck Sync
+
+- task type: understand
+- objective: sync cross-repo Week 2 recheck status (`B2/B3/C1`) against implementation plan
+- discovered:
+  - Week 2 target remains `B2 + B3 + C1`
+  - `C1` is closed by existing disclosure contract/migration/test cycles
+  - `B2` and `B3` are still pending/partial from plan acceptance perspective
+  - recent CMS admin/platform expansions are additive and do not automatically close `B2/B3`
+- affected repos/files/modules:
+  - `cobo_web_design/docs/cross_repo_step_by_step_implementation_plan.md`
+  - cross-repo `docs/ai-cache/reusable-task-updates.md`
+- important contracts/behaviors/constraints/decisions:
+  - keep Week 2 closure criteria tied to original plan deliverables, not only CMS side progress
+- build/verification result:
+  - analysis-only task; no runtime code changes
+- remaining gaps/risks/next steps:
+  - complete and verify `B2` then `B3` to mark Week 2 done end-to-end
+
+## 2026-04-27 - Week 2 B2 Entitlement Hardcode Removal Sync (FE-focused)
+
+- task type: implement
+- objective: sync cross-repo status after closing Week 2 B2 entitlement hardcode removal in frontend
+- what was implemented/discovered:
+  - no backend code changes were required for this cycle
+  - FE now uses backend `subscription_tier` as entitlement source and fails safe to `Free` when missing
+  - role-label-based premium check (`Premium`/`Enterprise` role names) was removed from portal gating logic
+- affected repos/files/modules:
+  - `cobo_web_design/src/pages/portal/DisclosureTypeDetail.tsx`
+  - `cobo_web_design/src/services/normalizers.ts`
+  - `cobo_web_design/src/services/normalizers.me.test.ts`
+- important contracts/behaviors/constraints/decisions:
+  - backend field `subscription_tier` remains contract source; FE should not infer entitlement from role strings
+  - fail-closed behavior preserved for missing entitlement data
+- build/verification result:
+  - frontend lint/tests passed for B2 changes
+  - fresh docker rebuild succeeded for affected service `web`
+- remaining gaps/risks/next steps:
+  - proceed to Week 2 `B3` payload hardening work
+
+## 2026-04-27 - Week 2 B3 Company Payload Hardening Sync (FE-focused)
+
+- task type: implement
+- objective: sync cross-repo status after completing Week 2 B3 company list payload hardening in frontend
+- what was implemented/discovered:
+  - no backend code changes required for this cycle
+  - FE company normalizers now handle sparse/minimal payloads safely with stable fallback ids/names/codes
+  - FE pre-company membership mapping is hardened to avoid empty company selectors in `/select-company` flow
+  - regression tests added for minimal companies payload and login membership fallback mapping
+- affected repos/files/modules:
+  - `cobo_web_design/src/services/normalizers.ts`
+  - `cobo_web_design/src/App.tsx`
+  - `cobo_web_design/src/services/normalizers.companies.test.ts`
+- important contracts/behaviors/constraints/decisions:
+  - optional company fields (`region`, `last_accessed`) remain optional and UI-safe
+  - FE preserves fail-safe rendering when required identity fields are partially missing
+- build/verification result:
+  - frontend lint/tests passed for B3 scope
+  - fresh docker rebuild succeeded for affected service `web`
+- remaining gaps/risks/next steps:
+  - Week 2 FE stabilization track (`B2/B3`) is now complete; proceed with next planned priority
+
+## 2026-04-27 - Login Redirect Recheck Sync (Enterprise User -> CMS)
+
+- task type: implement
+- objective: sync cross-repo status after fixing enterprise user post-login redirect unexpectedly landing on CMS
+- what was implemented/discovered:
+  - no backend code changes required
+  - FE redirect logic now uses strict `platform.cms.view` check for landing to `/cms`
+  - regression tests confirm non-cms enterprise/admin user with `system.settings` no longer auto-redirects to `/cms`
+- affected repos/files/modules:
+  - `cobo_web_design/src/App.tsx`
+  - `cobo_web_design/src/App.cms-landing.test.tsx`
+- important contracts/behaviors/constraints/decisions:
+  - this cycle changes landing behavior only; `/cms` guard policy remains unchanged
+- build/verification result:
+  - frontend lint/tests passed for redirect fix
+  - fresh docker rebuild succeeded for affected service `web`
+- remaining gaps/risks/next steps:
+  - optional: align `/cms` route guard strictness with new landing rule if product policy requires explicit CMS permission everywhere
+
+## 2026-04-27 - CMS Guard Strict Mode Sync (platform.cms.view only)
+
+- task type: implement
+- objective: sync cross-repo status after tightening `/cms` guard to strict explicit CMS permission
+- what was implemented/discovered:
+  - no backend code changes required in this cycle
+  - FE `/cms` route guard now requires `platform.cms.view` only (no `system.settings`/`rbac.manage` alias)
+  - regression tests confirm strict allow/deny behavior for CMS route access
+- affected repos/files/modules:
+  - `cobo_web_design/src/App.tsx`
+  - `cobo_web_design/src/App.cms-landing.test.tsx`
+- important contracts/behaviors/constraints/decisions:
+  - CMS access policy is now consistent across landing + route guard and tied to explicit platform permission
+- build/verification result:
+  - frontend lint/tests passed for strict guard update
+  - fresh docker rebuild succeeded for affected service `web`
+- remaining gaps/risks/next steps:
+  - optional next step: audit other CMS gate call sites to ensure they do not rely on legacy alias semantics
+
+## 2026-04-27 - CMS Strict Policy Hardening Sync (Matrix + Alias Guards)
+
+- task type: implement
+- objective: sync cross-repo status after FE hardened CMS strict policy beyond route landing guard
+- what was implemented/discovered:
+  - no backend code changes in this cycle
+  - FE removed legacy alias acceptance for CMS entry capability in both route matrix and CMS permission guard aliases
+  - new permission-guard unit tests lock strict behavior and prevent regressions
+  - runtime check confirms `admin.dn@example.com` effective-access currently lacks `platform.cms.view`; capability endpoint still marks platform_cms true due backend alias logic
+- affected repos/files/modules:
+  - `cobo_web_design/src/config/menuPermissionMatrix.ts`
+  - `cobo_web_design/src/features/cms-core/permissionGuards.ts`
+  - `cobo_web_design/src/features/cms-core/permissionGuards.test.ts`
+- important contracts/behaviors/constraints/decisions:
+  - FE CMS entry now consistently requires explicit `platform.cms.view`
+  - backend capability semantics are not yet strict and may need follow-up alignment
+- build/verification result:
+  - frontend lint/tests passed for hardening changes
+  - fresh docker rebuild succeeded for affected service `web`
+- remaining gaps/risks/next steps:
+  - optional next: align IAM `/me/capabilities.modules.platform_cms` and platform CMS backend permission checks to strict `platform.cms.view` if policy should be end-to-end strict
+
+## 2026-04-27 - Backend CMS Strict Policy (End-to-End)
+
+- task type: implement
+- objective: enforce strict backend policy so CMS capability and `/api/v1/platform/cms/*` entry-level access require explicit `platform.cms.view`
+- what was implemented:
+  - updated `GET /api/v1/me/capabilities`:
+    - `modules.platform_cms` now checks only `platform.cms.view` (removed `rbac.manage/system.settings` alias)
+  - hardened platform CMS handler with strict entry-level gate:
+    - added `requireCMSAccess(... platform.cms.view ...)`
+    - applied to all `/api/v1/platform/cms/*` handlers before action-level permission checks
+    - dashboard summary now returns `platform_cms: true` only after strict gate passes
+  - updated in-memory fixtures for integration tests:
+    - added dedicated CMS operator account `cms.operator@example.com` -> `u_cms` / `m_cms_001`
+    - granted explicit `platform.cms.view` (+ existing CMS action permissions) in in-memory auth repository
+  - updated integration tests to use CMS operator for CMS success paths and verify strict deny for `admin.dn@example.com` on CMS dashboard
+- affected repos/files/modules:
+  - `cobo_iam_services/internal/iam/transport/http/me_handler.go`
+  - `cobo_iam_services/internal/platformcms/transport/http/handler.go`
+  - `cobo_iam_services/internal/httpserver/server.go`
+  - `cobo_iam_services/internal/companyaccess/infra/inmemory/membership_query.go`
+  - `cobo_iam_services/internal/authorization/infra/inmemory/repository.go`
+  - `cobo_iam_services/internal/httpserver/server_test.go`
+- important contracts/behaviors/constraints/decisions:
+  - CMS access policy is now strict server-side: admin aliases (`rbac.manage`, `system.settings`) are insufficient without `platform.cms.view`
+  - action-level permission checks remain in place after strict entry gate (defense in depth)
+  - in-memory test fixture adds explicit CMS actor to preserve positive integration coverage under strict policy
+- build/verification result:
+  - `go test ./internal/httpserver -run "TestIntegration_meCapabilities_platformCmsMatrix|TestIntegration_platformCMSPrefix_dashboardCollectionsEntries|TestIntegration_platformCMSPrefix_entriesReviewsSchedulesContract|TestIntegration_platformCMSPrefix_adminUsersCreateAndList" -count=1` passed
+  - fresh docker rebuild succeeded for affected services `api` + `web`; both containers running
+- remaining gaps/risks/next steps:
+  - DB-mode seed currently may not include an explicit CMS account with `platform.cms.view`; add canonical seed/role mapping if required for compose DB smoke using real account credentials
+
+## 2026-04-27 - DB Canonical CMS Account Seed (cms.operator)
+
+- task type: implement
+- objective: add canonical DB-mode CMS account so strict CMS smoke can run without in-memory-only fixtures
+- what was implemented:
+  - added canonical CMS operator identity in both seed paths:
+    - user: `cms.operator@example.com` (`u_cms_operator`)
+    - credential: password `secret` hash
+    - membership: `m_106` in `c_001`
+    - role: `cms_operator` (`r...016`)
+  - added explicit CMS permission seed:
+    - permission `platform.cms.view` (`10000000-0001-4000-8000-00000000000d`)
+    - role-permission mapping grants CMS operator both `platform.cms.view` and existing CMS action permissions
+  - wired related org/dept/responsibility seed records for the new membership (`department_memberships`, `membership_effective_responsibilities`, `org_unit_memberships`)
+  - updated DB smoke script `cms-core-prefix-smoke.ps1`:
+    - switched CMS actor defaults from `admin.dn@example.com` to `cms.operator@example.com`
+    - changed CMS prefix API calls to use CMS token consistently under strict entry-level policy
+- affected repos/files/modules:
+  - `cobo_iam_services/migrations/seed_dev_identity_authorization.sql`
+  - `cobo_iam_services/migrations/0009_seed_authz_test_accounts.up.sql`
+  - `cobo_iam_services/docs/scripts/cms-core-prefix-smoke.ps1`
+- important contracts/behaviors/constraints/decisions:
+  - strict CMS policy is preserved: enterprise admin account without `platform.cms.view` is not used as CMS smoke actor
+  - DB-mode smoke now validates canonical explicit CMS entitlement, not alias permissions
+- build/verification result:
+  - `go test ./internal/httpserver -run "TestIntegration_meCapabilities_platformCmsMatrix|TestIntegration_platformCMSPrefix_dashboardCollectionsEntries|TestIntegration_platformCMSPrefix_entriesReviewsSchedulesContract|TestIntegration_platformCMSPrefix_adminUsersCreateAndList" -count=1` passed
+  - `powershell -ExecutionPolicy Bypass -File docs/scripts/cms-core-prefix-smoke.ps1 ...` passed after applying updated dev seed
+  - fresh docker rebuild succeeded for affected services `api` + `web`; both containers running
+- remaining gaps/risks/next steps:
+  - optional: thread new `-CmsLogin/-CmsPassword` params through wrapper scripts if team wants one-command DB smoke from a single entrypoint
+
+## 2026-04-27 - Wrapper C1 Cycle Threaded CMS Params
+
+- task type: implement
+- objective: extend one-command wrapper so it can run strict CMS DB smoke end-to-end using canonical CMS account credentials
+- what was implemented:
+  - updated `docs/scripts/run-c1-cycle.ps1` params:
+    - added `-CmsLogin` (default `cms.operator@example.com`)
+    - added `-CmsPassword` (default `secret`)
+  - inserted CMS smoke into wrapper execution flow:
+    - new step calls `docs/scripts/cms-core-prefix-smoke.ps1` with `-CmsLogin/-CmsPassword`
+    - kept disclosure DB smoke and fresh docker rebuild steps intact
+  - adjusted step numbering to reflect added CMS smoke stage
+- affected repos/files/modules:
+  - `cobo_iam_services/docs/scripts/run-c1-cycle.ps1`
+- important contracts/behaviors/constraints/decisions:
+  - wrapper now validates both disclosure C1 and strict CMS prefix contract in one run
+  - CMS smoke explicitly uses CMS operator account to stay aligned with strict `platform.cms.view` policy
+- build/verification result:
+  - executed wrapper command end-to-end successfully:
+    - backend tests passed
+    - frontend contract tests passed
+    - disclosure DB smoke passed
+    - CMS DB smoke passed
+    - fresh no-cache docker rebuild passed for `api` + `web`
+    - services recovered healthy after restart (`api`, `web`, `mysql`, `redis`)
+- remaining gaps/risks/next steps:
+  - none critical; wrapper is now ready for QA/dev one-command strict cycle in DB mode

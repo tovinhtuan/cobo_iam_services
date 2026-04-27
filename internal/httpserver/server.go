@@ -145,6 +145,7 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 				// Same membership/roles as admin@cobo.vn (u_admin) — password `secret` for local smoke tests.
 				"admin.dn@example.com": {UserID: "u_admin", LoginID: "admin.dn@example.com", Password: "secret", FullName: "Enterprise Admin (DN)", Status: "active"},
 				"admin@cobo.vn":        {UserID: "u_admin", LoginID: "admin@cobo.vn", Password: "password123", FullName: "Enterprise Admin", Status: "active"},
+				"cms.operator@example.com": {UserID: "u_cms", LoginID: "cms.operator@example.com", Password: "secret", FullName: "CMS Operator", Status: "active"},
 			},
 		}
 		credVerifier = static

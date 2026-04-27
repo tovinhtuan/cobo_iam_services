@@ -57,8 +57,7 @@ func (h *Handler) dashboardSummary(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, nil, err)
 		return
 	}
-	perms, err := h.requireAnyPermission(r.Context(), sub.MembershipID, sub.CompanyID, "platform.cms.view", "rbac.manage", "system.settings")
-	if err != nil {
+	if _, err := h.requireCMSAccess(r.Context(), sub.MembershipID, sub.CompanyID); err != nil {
 		httpx.WriteError(w, nil, err)
 		return
 	}
@@ -83,13 +82,17 @@ func (h *Handler) dashboardSummary(w http.ResponseWriter, r *http.Request) {
 		"draft":        draft,
 		"published":    published,
 		"completed":    completed,
-		"platform_cms": hasAnyPermission(perms, "platform.cms.view", "rbac.manage", "system.settings"),
+		"platform_cms": true,
 	}, nil)
 }
 
 func (h *Handler) collections(w http.ResponseWriter, r *http.Request) {
 	sub, err := h.subject(r)
 	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	if _, err := h.requireCMSAccess(r.Context(), sub.MembershipID, sub.CompanyID); err != nil {
 		httpx.WriteError(w, nil, err)
 		return
 	}
@@ -144,6 +147,10 @@ func (h *Handler) collectionDetail(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, nil, err)
 		return
 	}
+	if _, err := h.requireCMSAccess(r.Context(), sub.MembershipID, sub.CompanyID); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
 	if _, err := h.requireAnyPermission(r.Context(), sub.MembershipID, sub.CompanyID, "disclosure.view", "disclosure.create", "disclosure.edit", "rbac.manage", "system.settings"); err != nil {
 		httpx.WriteError(w, nil, err)
 		return
@@ -188,6 +195,10 @@ func (h *Handler) entries(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, nil, err)
 		return
 	}
+	if _, err := h.requireCMSAccess(r.Context(), sub.MembershipID, sub.CompanyID); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
 	if _, err := h.requireAnyPermission(r.Context(), sub.MembershipID, sub.CompanyID, "disclosure.view", "disclosure.create", "disclosure.edit", "rbac.manage", "system.settings"); err != nil {
 		httpx.WriteError(w, nil, err)
 		return
@@ -219,6 +230,10 @@ func (h *Handler) entries(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) entryDetail(w http.ResponseWriter, r *http.Request) {
 	sub, err := h.subject(r)
 	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	if _, err := h.requireCMSAccess(r.Context(), sub.MembershipID, sub.CompanyID); err != nil {
 		httpx.WriteError(w, nil, err)
 		return
 	}
@@ -255,6 +270,10 @@ func (h *Handler) createEntry(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, nil, err)
 		return
 	}
+	if _, err := h.requireCMSAccess(r.Context(), sub.MembershipID, sub.CompanyID); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
 	var payload disclosureapp.RecordPayload
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		httpx.WriteError(w, nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "invalid JSON payload", err))
@@ -285,6 +304,10 @@ func (h *Handler) createEntry(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) updateEntry(w http.ResponseWriter, r *http.Request) {
 	sub, err := h.subject(r)
 	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	if _, err := h.requireCMSAccess(r.Context(), sub.MembershipID, sub.CompanyID); err != nil {
 		httpx.WriteError(w, nil, err)
 		return
 	}
@@ -327,6 +350,10 @@ func (h *Handler) reviews(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, nil, err)
 		return
 	}
+	if _, err := h.requireCMSAccess(r.Context(), sub.MembershipID, sub.CompanyID); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
 	if _, err := h.requireAnyPermission(r.Context(), sub.MembershipID, sub.CompanyID, "disclosure.approve", "workflow.step.confirm", "rbac.manage", "system.settings"); err != nil {
 		httpx.WriteError(w, nil, err)
 		return
@@ -356,6 +383,10 @@ func (h *Handler) reviews(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) reviewAction(w http.ResponseWriter, r *http.Request) {
 	sub, err := h.subject(r)
 	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	if _, err := h.requireCMSAccess(r.Context(), sub.MembershipID, sub.CompanyID); err != nil {
 		httpx.WriteError(w, nil, err)
 		return
 	}
@@ -427,6 +458,10 @@ func (h *Handler) schedules(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, nil, err)
 		return
 	}
+	if _, err := h.requireCMSAccess(r.Context(), sub.MembershipID, sub.CompanyID); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
 	if _, err := h.requireAnyPermission(r.Context(), sub.MembershipID, sub.CompanyID, "disclosure.publish", "rbac.manage", "system.settings"); err != nil {
 		httpx.WriteError(w, nil, err)
 		return
@@ -455,6 +490,10 @@ func (h *Handler) schedules(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) createSchedule(w http.ResponseWriter, r *http.Request) {
 	sub, err := h.subject(r)
 	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	if _, err := h.requireCMSAccess(r.Context(), sub.MembershipID, sub.CompanyID); err != nil {
 		httpx.WriteError(w, nil, err)
 		return
 	}
@@ -505,6 +544,10 @@ func (h *Handler) deleteSchedule(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, nil, err)
 		return
 	}
+	if _, err := h.requireCMSAccess(r.Context(), sub.MembershipID, sub.CompanyID); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
 	if _, err := h.requireAnyPermission(r.Context(), sub.MembershipID, sub.CompanyID, "disclosure.publish", "rbac.manage", "system.settings"); err != nil {
 		httpx.WriteError(w, nil, err)
 		return
@@ -539,6 +582,10 @@ func (h *Handler) adminUsers(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, nil, err)
 		return
 	}
+	if _, err := h.requireCMSAccess(r.Context(), sub.MembershipID, sub.CompanyID); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
 	if _, err := h.requireAnyPermission(r.Context(), sub.MembershipID, sub.CompanyID, "rbac.manage", "system.settings"); err != nil {
 		httpx.WriteError(w, nil, err)
 		return
@@ -565,6 +612,10 @@ func (h *Handler) adminUsers(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) createAdminUser(w http.ResponseWriter, r *http.Request) {
 	sub, err := h.subject(r)
 	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	if _, err := h.requireCMSAccess(r.Context(), sub.MembershipID, sub.CompanyID); err != nil {
 		httpx.WriteError(w, nil, err)
 		return
 	}
@@ -628,6 +679,10 @@ func (h *Handler) requireAnyPermission(ctx context.Context, membershipID, compan
 		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "access denied", nil)
 	}
 	return eff.Permissions, nil
+}
+
+func (h *Handler) requireCMSAccess(ctx context.Context, membershipID, companyID string) ([]string, error) {
+	return h.requireAnyPermission(ctx, membershipID, companyID, "platform.cms.view")
 }
 
 func hasAnyPermission(items []string, expected ...string) bool {

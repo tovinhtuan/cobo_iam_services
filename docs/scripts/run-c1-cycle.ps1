@@ -5,6 +5,8 @@ param(
   [string]$UserPassword = "secret",
   [string]$AdminLogin = "admin.dn@example.com",
   [string]$AdminPassword = "secret",
+  [string]$CmsLogin = "cms.operator@example.com",
+  [string]$CmsPassword = "secret",
   [string]$UserCompanyId = "c_001"
 )
 
@@ -93,7 +95,7 @@ Run-Step "3/6 Restart compose services before DB smoke" {
   }
 }
 
-Run-Step "4/6 DB-mode disclosure C1 smoke" {
+Run-Step "4/7 DB-mode disclosure C1 smoke" {
   Push-Location $iamRoot
   try {
     $smokeScript = Join-Path $scriptDir "disclosure-c1-db-smoke.ps1"
@@ -104,7 +106,18 @@ Run-Step "4/6 DB-mode disclosure C1 smoke" {
   }
 }
 
-Run-Step "5/6 Fresh no-cache Docker rebuild" {
+Run-Step "5/7 DB-mode CMS prefix smoke" {
+  Push-Location $iamRoot
+  try {
+    $cmsSmokeScript = Join-Path $scriptDir "cms-core-prefix-smoke.ps1"
+    Invoke-Checked "powershell -ExecutionPolicy Bypass -File `"$cmsSmokeScript`" -BaseUrl `"$BaseUrl`" -UserLogin `"$UserLogin`" -UserPassword `"$UserPassword`" -CmsLogin `"$CmsLogin`" -CmsPassword `"$CmsPassword`" -UserCompanyId `"$UserCompanyId`""
+  }
+  finally {
+    Pop-Location
+  }
+}
+
+Run-Step "6/7 Fresh no-cache Docker rebuild" {
   Push-Location $iamRoot
   try {
     Invoke-Checked "docker compose -f $ComposeFile build --no-cache api web"
@@ -114,7 +127,7 @@ Run-Step "5/6 Fresh no-cache Docker rebuild" {
   }
 }
 
-Run-Step "6/6 Bring up rebuilt services and verify status" {
+Run-Step "7/7 Bring up rebuilt services and verify status" {
   Push-Location $iamRoot
   try {
     Invoke-Checked "docker compose -f $ComposeFile up -d api web"

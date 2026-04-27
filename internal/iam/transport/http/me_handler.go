@@ -109,8 +109,6 @@ func (m *MeHandler) capabilities(w http.ResponseWriter, r *http.Request) {
 		"modules": map[string]bool{
 			"platform_cms": hasAnyPermission(eff.Permissions,
 				"platform.cms.view",
-				"rbac.manage",
-				"system.settings",
 			),
 			"dashboard": hasAnyPermission(eff.Permissions,
 				"dashboard.view",

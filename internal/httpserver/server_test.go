@@ -363,8 +363,20 @@ func TestIntegration_meCapabilities_platformCmsMatrix(t *testing.T) {
 	srv := httptest.NewServer(newTestHandler(t, nil))
 	defer srv.Close()
 
-	adminToken := loginAndGetAccessToken(t, srv.URL, "admin.dn@example.com", "secret", "")
-	adminRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/me/capabilities", adminToken, nil, "")
+	cmsToken := loginAndGetAccessToken(t, srv.URL, "cms.operator@example.com", "secret", "")
+	cmsRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/me/capabilities", cmsToken, nil, "")
+	if cmsRes.StatusCode != http.StatusOK {
+		t.Fatalf("cms capabilities status=%d body=%s", cmsRes.StatusCode, readBody(t, cmsRes.Body))
+	}
+	var cmsOut struct {
+		Modules map[string]bool `json:"modules"`
+	}
+	mustDecodeJSON(t, cmsRes.Body, &cmsOut)
+	if !cmsOut.Modules["platform_cms"] {
+		t.Fatalf("expected platform_cms=true for cms operator, got modules=%+v", cmsOut.Modules)
+	}
+
+	adminRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/me/capabilities", loginAndGetAccessToken(t, srv.URL, "admin.dn@example.com", "secret", ""), nil, "")
 	if adminRes.StatusCode != http.StatusOK {
 		t.Fatalf("admin capabilities status=%d body=%s", adminRes.StatusCode, readBody(t, adminRes.Body))
 	}
@@ -372,8 +384,8 @@ func TestIntegration_meCapabilities_platformCmsMatrix(t *testing.T) {
 		Modules map[string]bool `json:"modules"`
 	}
 	mustDecodeJSON(t, adminRes.Body, &adminOut)
-	if !adminOut.Modules["platform_cms"] {
-		t.Fatalf("expected platform_cms=true for admin, got modules=%+v", adminOut.Modules)
+	if adminOut.Modules["platform_cms"] {
+		t.Fatalf("expected platform_cms=false for admin.dn without explicit permission, got modules=%+v", adminOut.Modules)
 	}
 
 	userToken := loginAndGetAccessToken(t, srv.URL, "user@example.com", "secret", "c_001")
@@ -394,8 +406,8 @@ func TestIntegration_platformCMSPrefix_dashboardCollectionsEntries(t *testing.T)
 	srv := httptest.NewServer(newTestHandler(t, nil))
 	defer srv.Close()
 
-	adminToken := loginAndGetAccessToken(t, srv.URL, "admin.dn@example.com", "secret", "")
-	dashboardRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/platform/cms/dashboard/summary", adminToken, nil, "")
+	cmsToken := loginAndGetAccessToken(t, srv.URL, "cms.operator@example.com", "secret", "")
+	dashboardRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/platform/cms/dashboard/summary", cmsToken, nil, "")
 	if dashboardRes.StatusCode != http.StatusOK {
 		t.Fatalf("dashboard summary status=%d body=%s", dashboardRes.StatusCode, readBody(t, dashboardRes.Body))
 	}
@@ -409,7 +421,7 @@ func TestIntegration_platformCMSPrefix_dashboardCollectionsEntries(t *testing.T)
 		t.Fatalf("dashboard payload should contain platform_cms=true: %+v", dashboardOut)
 	}
 
-	collectionsRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/platform/cms/collections", adminToken, nil, "")
+	collectionsRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/platform/cms/collections", cmsToken, nil, "")
 	if collectionsRes.StatusCode != http.StatusOK {
 		t.Fatalf("collections status=%d body=%s", collectionsRes.StatusCode, readBody(t, collectionsRes.Body))
 	}
@@ -424,7 +436,7 @@ func TestIntegration_platformCMSPrefix_dashboardCollectionsEntries(t *testing.T)
 		t.Fatalf("collections payload missing items: %+v", collectionsOut)
 	}
 
-	entriesRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/platform/cms/entries", adminToken, nil, "")
+	entriesRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/platform/cms/entries", cmsToken, nil, "")
 	if entriesRes.StatusCode != http.StatusOK {
 		t.Fatalf("entries status=%d body=%s", entriesRes.StatusCode, readBody(t, entriesRes.Body))
 	}
@@ -444,14 +456,20 @@ func TestIntegration_platformCMSPrefix_dashboardCollectionsEntries(t *testing.T)
 	if forbiddenRes.StatusCode != http.StatusForbidden {
 		t.Fatalf("dashboard forbidden status=%d body=%s", forbiddenRes.StatusCode, readBody(t, forbiddenRes.Body))
 	}
+
+	adminDnToken := loginAndGetAccessToken(t, srv.URL, "admin.dn@example.com", "secret", "")
+	adminDnRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/platform/cms/dashboard/summary", adminDnToken, nil, "")
+	if adminDnRes.StatusCode != http.StatusForbidden {
+		t.Fatalf("dashboard admin.dn strict-forbidden status=%d body=%s", adminDnRes.StatusCode, readBody(t, adminDnRes.Body))
+	}
 }
 
 func TestIntegration_platformCMSPrefix_entriesReviewsSchedulesContract(t *testing.T) {
 	srv := httptest.NewServer(newTestHandler(t, nil))
 	defer srv.Close()
 
-	userToken := loginAndGetAccessToken(t, srv.URL, "user@example.com", "secret", "c_001")
-	createRes := doJSONRequest(t, http.MethodPost, srv.URL+"/api/v1/platform/cms/entries", userToken, map[string]any{
+	cmsToken := loginAndGetAccessToken(t, srv.URL, "cms.operator@example.com", "secret", "")
+	createRes := doJSONRequest(t, http.MethodPost, srv.URL+"/api/v1/platform/cms/entries", cmsToken, map[string]any{
 		"type_id":      "DISCLOSURE_FINANCIAL",
 		"title":        "CMS entry",
 		"summary":      "CMS summary",
@@ -470,12 +488,12 @@ func TestIntegration_platformCMSPrefix_entriesReviewsSchedulesContract(t *testin
 		t.Fatalf("missing entry_id in create response: %+v", createOut)
 	}
 
-	detailRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/platform/cms/entries/"+entryID, userToken, nil, "")
+	detailRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/platform/cms/entries/"+entryID, cmsToken, nil, "")
 	if detailRes.StatusCode != http.StatusOK {
 		t.Fatalf("entry detail status=%d body=%s", detailRes.StatusCode, readBody(t, detailRes.Body))
 	}
 
-	updateRes := doJSONRequest(t, http.MethodPut, srv.URL+"/api/v1/platform/cms/entries/"+entryID, userToken, map[string]any{
+	updateRes := doJSONRequest(t, http.MethodPut, srv.URL+"/api/v1/platform/cms/entries/"+entryID, cmsToken, map[string]any{
 		"type_id":      "DISCLOSURE_FINANCIAL",
 		"title":        "CMS entry updated",
 		"summary":      "CMS summary updated",
@@ -486,7 +504,7 @@ func TestIntegration_platformCMSPrefix_entriesReviewsSchedulesContract(t *testin
 		t.Fatalf("update entry status=%d body=%s", updateRes.StatusCode, readBody(t, updateRes.Body))
 	}
 
-	scheduleCreateRes := doJSONRequest(t, http.MethodPost, srv.URL+"/api/v1/platform/cms/schedules", userToken, map[string]any{
+	scheduleCreateRes := doJSONRequest(t, http.MethodPost, srv.URL+"/api/v1/platform/cms/schedules", cmsToken, map[string]any{
 		"entry_id":   entryID,
 		"publish_at": "2026-05-20",
 	}, "")
@@ -494,30 +512,29 @@ func TestIntegration_platformCMSPrefix_entriesReviewsSchedulesContract(t *testin
 		t.Fatalf("create schedule status=%d body=%s", scheduleCreateRes.StatusCode, readBody(t, scheduleCreateRes.Body))
 	}
 
-	scheduleListRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/platform/cms/schedules", userToken, nil, "")
+	scheduleListRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/platform/cms/schedules", cmsToken, nil, "")
 	if scheduleListRes.StatusCode != http.StatusOK {
 		t.Fatalf("list schedules status=%d body=%s", scheduleListRes.StatusCode, readBody(t, scheduleListRes.Body))
 	}
 
-	submitRes := doJSONRequest(t, http.MethodPost, srv.URL+"/api/v1/disclosures/"+entryID+"/submit", userToken, nil, "idem-platform-submit")
+	submitRes := doJSONRequest(t, http.MethodPost, srv.URL+"/api/v1/disclosures/"+entryID+"/submit", cmsToken, nil, "idem-platform-submit")
 	if submitRes.StatusCode != http.StatusOK {
 		t.Fatalf("submit status=%d body=%s", submitRes.StatusCode, readBody(t, submitRes.Body))
 	}
 
-	adminToken := loginAndGetAccessToken(t, srv.URL, "admin.dn@example.com", "secret", "")
-	reviewsRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/platform/cms/reviews", adminToken, nil, "")
+	reviewsRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/platform/cms/reviews", cmsToken, nil, "")
 	if reviewsRes.StatusCode != http.StatusOK {
 		t.Fatalf("list reviews status=%d body=%s", reviewsRes.StatusCode, readBody(t, reviewsRes.Body))
 	}
 
-	approveRes := doJSONRequest(t, http.MethodPost, srv.URL+"/api/v1/platform/cms/reviews/"+entryID, adminToken, map[string]any{
+	approveRes := doJSONRequest(t, http.MethodPost, srv.URL+"/api/v1/platform/cms/reviews/"+entryID, cmsToken, map[string]any{
 		"decision": "approve",
 	}, "")
 	if approveRes.StatusCode != http.StatusOK {
 		t.Fatalf("approve review status=%d body=%s", approveRes.StatusCode, readBody(t, approveRes.Body))
 	}
 
-	deleteScheduleRes := doJSONRequest(t, http.MethodDelete, srv.URL+"/api/v1/platform/cms/schedules/"+entryID, adminToken, nil, "")
+	deleteScheduleRes := doJSONRequest(t, http.MethodDelete, srv.URL+"/api/v1/platform/cms/schedules/"+entryID, cmsToken, nil, "")
 	if deleteScheduleRes.StatusCode != http.StatusOK {
 		t.Fatalf("delete schedule status=%d body=%s", deleteScheduleRes.StatusCode, readBody(t, deleteScheduleRes.Body))
 	}
@@ -527,7 +544,7 @@ func TestIntegration_platformCMSPrefix_adminUsersCreateAndList(t *testing.T) {
 	srv := httptest.NewServer(newTestHandler(t, nil))
 	defer srv.Close()
 
-	adminToken := loginAndGetAccessToken(t, srv.URL, "admin.dn@example.com", "secret", "")
+	adminToken := loginAndGetAccessToken(t, srv.URL, "cms.operator@example.com", "secret", "")
 	createdLogin := "cms-admin-" + strings.ToLower(strings.ReplaceAll(uuid.NewString(), "-", ""))[0:12] + "@example.com"
 
 	createRes := doJSONRequest(t, http.MethodPost, srv.URL+"/api/v1/platform/cms/admin/users", adminToken, map[string]any{
