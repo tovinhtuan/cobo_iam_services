@@ -451,6 +451,53 @@ func TestIntegration_platformCMSPrefix_dashboardCollectionsEntries(t *testing.T)
 		t.Fatalf("entries payload missing items: %+v", entriesOut)
 	}
 
+	releasesRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/platform/cms/releases", cmsToken, nil, "")
+	if releasesRes.StatusCode != http.StatusOK {
+		t.Fatalf("releases status=%d body=%s", releasesRes.StatusCode, readBody(t, releasesRes.Body))
+	}
+	var releasesOut struct {
+		Data struct {
+			Items []map[string]any `json:"items"`
+		} `json:"data"`
+		Meta map[string]any `json:"meta"`
+	}
+	mustDecodeJSON(t, releasesRes.Body, &releasesOut)
+	if releasesOut.Data.Items == nil {
+		t.Fatalf("releases payload missing items: %+v", releasesOut)
+	}
+
+	rolesRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/platform/cms/admin/roles", cmsToken, nil, "")
+	if rolesRes.StatusCode != http.StatusOK {
+		t.Fatalf("roles status=%d body=%s", rolesRes.StatusCode, readBody(t, rolesRes.Body))
+	}
+	rulesRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/platform/cms/admin/rules", cmsToken, nil, "")
+	if rulesRes.StatusCode != http.StatusOK {
+		t.Fatalf("rules status=%d body=%s", rulesRes.StatusCode, readBody(t, rulesRes.Body))
+	}
+	validateRuleRes := doJSONRequest(t, http.MethodPost, srv.URL+"/api/v1/platform/cms/admin/rules/validate", cmsToken, map[string]any{
+		"name":        "strict gate",
+		"permissions": []string{"platform.cms.view"},
+	}, "")
+	if validateRuleRes.StatusCode != http.StatusOK {
+		t.Fatalf("validate rule status=%d body=%s", validateRuleRes.StatusCode, readBody(t, validateRuleRes.Body))
+	}
+	auditRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/platform/cms/ops/audit", cmsToken, nil, "")
+	if auditRes.StatusCode != http.StatusOK {
+		t.Fatalf("audit status=%d body=%s", auditRes.StatusCode, readBody(t, auditRes.Body))
+	}
+	sessionsRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/platform/cms/ops/sessions", cmsToken, nil, "")
+	if sessionsRes.StatusCode != http.StatusOK {
+		t.Fatalf("sessions status=%d body=%s", sessionsRes.StatusCode, readBody(t, sessionsRes.Body))
+	}
+	revokeRes := doJSONRequest(t, http.MethodPost, srv.URL+"/api/v1/platform/cms/ops/sessions/test-session/revoke", cmsToken, nil, "")
+	if revokeRes.StatusCode != http.StatusOK {
+		t.Fatalf("revoke session status=%d body=%s", revokeRes.StatusCode, readBody(t, revokeRes.Body))
+	}
+	healthRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/platform/cms/ops/health", cmsToken, nil, "")
+	if healthRes.StatusCode != http.StatusOK {
+		t.Fatalf("health status=%d body=%s", healthRes.StatusCode, readBody(t, healthRes.Body))
+	}
+
 	userToken := loginAndGetAccessToken(t, srv.URL, "user@example.com", "secret", "c_001")
 	forbiddenRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/platform/cms/dashboard/summary", userToken, nil, "")
 	if forbiddenRes.StatusCode != http.StatusForbidden {
@@ -461,6 +508,14 @@ func TestIntegration_platformCMSPrefix_dashboardCollectionsEntries(t *testing.T)
 	adminDnRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/platform/cms/dashboard/summary", adminDnToken, nil, "")
 	if adminDnRes.StatusCode != http.StatusForbidden {
 		t.Fatalf("dashboard admin.dn strict-forbidden status=%d body=%s", adminDnRes.StatusCode, readBody(t, adminDnRes.Body))
+	}
+	adminDnReleasesRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/platform/cms/releases", adminDnToken, nil, "")
+	if adminDnReleasesRes.StatusCode != http.StatusForbidden {
+		t.Fatalf("releases admin.dn strict-forbidden status=%d body=%s", adminDnReleasesRes.StatusCode, readBody(t, adminDnReleasesRes.Body))
+	}
+	adminDnRolesRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/platform/cms/admin/roles", adminDnToken, nil, "")
+	if adminDnRolesRes.StatusCode != http.StatusForbidden {
+		t.Fatalf("roles admin.dn strict-forbidden status=%d body=%s", adminDnRolesRes.StatusCode, readBody(t, adminDnRolesRes.Body))
 	}
 }
 

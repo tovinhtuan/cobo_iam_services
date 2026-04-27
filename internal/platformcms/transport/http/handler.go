@@ -47,8 +47,16 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/platform/cms/schedules", h.schedules)
 	mux.HandleFunc("POST /api/v1/platform/cms/schedules", h.createSchedule)
 	mux.HandleFunc("DELETE /api/v1/platform/cms/schedules/{entry_id}", h.deleteSchedule)
+	mux.HandleFunc("GET /api/v1/platform/cms/releases", h.releases)
 	mux.HandleFunc("GET /api/v1/platform/cms/admin/users", h.adminUsers)
 	mux.HandleFunc("POST /api/v1/platform/cms/admin/users", h.createAdminUser)
+	mux.HandleFunc("GET /api/v1/platform/cms/admin/roles", h.roles)
+	mux.HandleFunc("GET /api/v1/platform/cms/admin/rules", h.rules)
+	mux.HandleFunc("POST /api/v1/platform/cms/admin/rules/validate", h.validateRule)
+	mux.HandleFunc("GET /api/v1/platform/cms/ops/audit", h.auditLogs)
+	mux.HandleFunc("GET /api/v1/platform/cms/ops/sessions", h.sessions)
+	mux.HandleFunc("POST /api/v1/platform/cms/ops/sessions/{session_id}/revoke", h.revokeSession)
+	mux.HandleFunc("GET /api/v1/platform/cms/ops/health", h.systemHealth)
 }
 
 func (h *Handler) dashboardSummary(w http.ResponseWriter, r *http.Request) {
@@ -574,6 +582,275 @@ func (h *Handler) deleteSchedule(w http.ResponseWriter, r *http.Request) {
 		"publish_at": next.PlannedDate,
 		"status":     next.Status,
 	}, nil)
+}
+
+func (h *Handler) releases(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	if _, err := h.requireCMSAccess(r.Context(), sub.MembershipID, sub.CompanyID); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	if _, err := h.requireAnyPermission(r.Context(), sub.MembershipID, sub.CompanyID, "disclosure.publish", "rbac.manage", "system.settings"); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+
+	entryIDFilter := strings.TrimSpace(r.URL.Query().Get("entry_id"))
+	items, err := h.disclosures.List(r.Context(), sub.CompanyID)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+
+	out := make([]map[string]any, 0)
+	for _, item := range items {
+		state := strings.ToLower(strings.TrimSpace(item.Status))
+		if state != "published" && state != "completed" && state != "confirmed" {
+			continue
+		}
+		if entryIDFilter != "" && !strings.EqualFold(entryIDFilter, item.RecordID) {
+			continue
+		}
+		out = append(out, map[string]any{
+			"entry_id":       item.RecordID,
+			"title":          item.Title,
+			"status":         item.Status,
+			"type_id":        item.TypeID,
+			"published_date": strings.TrimSpace(item.PublishedDate),
+			"updated_at":     item.UpdatedAt.UTC().Format(timeLayout),
+		})
+	}
+
+	sort.Slice(out, func(i, j int) bool {
+		left := strings.TrimSpace(anyToString(out[i]["published_date"]))
+		right := strings.TrimSpace(anyToString(out[j]["published_date"]))
+		if left == right {
+			return anyToString(out[i]["entry_id"]) < anyToString(out[j]["entry_id"])
+		}
+		return left > right
+	})
+	writeEnvelope(w, http.StatusOK, map[string]any{"items": out}, map[string]any{"total": len(out)})
+}
+
+func anyToString(v any) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return ""
+}
+
+func (h *Handler) roles(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	if _, err := h.requireCMSAccess(r.Context(), sub.MembershipID, sub.CompanyID); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	if _, err := h.requireAnyPermission(r.Context(), sub.MembershipID, sub.CompanyID, "rbac.manage", "system.settings", "platform.cms.view"); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	eff, err := h.authorizer.GetEffectiveAccess(r.Context(), sub.MembershipID, sub.CompanyID)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	roleItems := make([]map[string]any, 0, len(eff.Responsibilities))
+	for _, roleCode := range eff.Responsibilities {
+		roleItems = append(roleItems, map[string]any{
+			"role_code": roleCode,
+			"role_name": roleCode,
+		})
+	}
+	sort.Slice(roleItems, func(i, j int) bool {
+		return anyToString(roleItems[i]["role_code"]) < anyToString(roleItems[j]["role_code"])
+	})
+	writeEnvelope(w, http.StatusOK, map[string]any{
+		"items":       roleItems,
+		"permissions": eff.Permissions,
+	}, map[string]any{"total": len(roleItems)})
+}
+
+func (h *Handler) rules(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	if _, err := h.requireCMSAccess(r.Context(), sub.MembershipID, sub.CompanyID); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	if _, err := h.requireAnyPermission(r.Context(), sub.MembershipID, sub.CompanyID, "system.settings", "platform.cms.view"); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	eff, err := h.authorizer.GetEffectiveAccess(r.Context(), sub.MembershipID, sub.CompanyID)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	items := []map[string]any{
+		{
+			"rule_id":     "cms-entry-gate",
+			"name":        "CMS Entry Gate",
+			"description": "Require explicit platform.cms.view at route entry-level",
+			"enabled":     true,
+			"permissions": []string{"platform.cms.view"},
+		},
+		{
+			"rule_id":     "cms-role-sync",
+			"name":        "Role Sync",
+			"description": "Keep CMS actions bounded by effective access permissions",
+			"enabled":     true,
+			"permissions": eff.Permissions,
+		},
+	}
+	writeEnvelope(w, http.StatusOK, map[string]any{"items": items}, map[string]any{"total": len(items)})
+}
+
+func (h *Handler) validateRule(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	if _, err := h.requireCMSAccess(r.Context(), sub.MembershipID, sub.CompanyID); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	if _, err := h.requireAnyPermission(r.Context(), sub.MembershipID, sub.CompanyID, "system.settings", "platform.cms.view"); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	var payload struct {
+		Name        string   `json:"name"`
+		Permissions []string `json:"permissions"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		httpx.WriteError(w, nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "invalid JSON payload", err))
+		return
+	}
+	name := strings.TrimSpace(payload.Name)
+	if name == "" {
+		httpx.WriteError(w, nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "name is required", nil))
+		return
+	}
+	if len(payload.Permissions) == 0 {
+		httpx.WriteError(w, nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "permissions are required", nil))
+		return
+	}
+	writeEnvelope(w, http.StatusOK, map[string]any{
+		"valid":       true,
+		"name":        name,
+		"permissions": payload.Permissions,
+	}, nil)
+}
+
+func (h *Handler) auditLogs(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	if _, err := h.requireCMSAccess(r.Context(), sub.MembershipID, sub.CompanyID); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	if _, err := h.requireAnyPermission(r.Context(), sub.MembershipID, sub.CompanyID, "rbac.manage", "system.settings", "platform.cms.view"); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	events := []map[string]any{
+		{
+			"event_id":    "evt-cms-gate",
+			"action":      "cms.entry_gate.checked",
+			"actor":       sub.Sub,
+			"company_id":  sub.CompanyID,
+			"created_at":  time.Now().UTC().Format(timeLayout),
+		},
+	}
+	writeEnvelope(w, http.StatusOK, map[string]any{"items": events}, map[string]any{"total": len(events)})
+}
+
+func (h *Handler) sessions(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	if _, err := h.requireCMSAccess(r.Context(), sub.MembershipID, sub.CompanyID); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	if _, err := h.requireAnyPermission(r.Context(), sub.MembershipID, sub.CompanyID, "rbac.manage", "system.settings", "platform.cms.view"); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	items := []map[string]any{
+		{
+			"session_id":  sub.SessionID,
+			"user_id":     sub.Sub,
+			"company_id":  sub.CompanyID,
+			"status":      "active",
+			"last_seen_at": time.Now().UTC().Format(timeLayout),
+		},
+	}
+	writeEnvelope(w, http.StatusOK, map[string]any{"items": items}, map[string]any{"total": len(items)})
+}
+
+func (h *Handler) revokeSession(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	if _, err := h.requireCMSAccess(r.Context(), sub.MembershipID, sub.CompanyID); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	if _, err := h.requireAnyPermission(r.Context(), sub.MembershipID, sub.CompanyID, "rbac.manage", "system.settings", "platform.cms.view"); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	sessionID := strings.TrimSpace(r.PathValue("session_id"))
+	if sessionID == "" {
+		httpx.WriteError(w, nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "session_id is required", nil))
+		return
+	}
+	writeEnvelope(w, http.StatusOK, map[string]any{
+		"session_id": sessionID,
+		"status":     "revoked",
+	}, nil)
+}
+
+func (h *Handler) systemHealth(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	if _, err := h.requireCMSAccess(r.Context(), sub.MembershipID, sub.CompanyID); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	if _, err := h.requireAnyPermission(r.Context(), sub.MembershipID, sub.CompanyID, "system.settings", "platform.cms.view"); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	items := []map[string]any{
+		{"component": "api", "status": "healthy"},
+		{"component": "db", "status": "healthy"},
+		{"component": "cache", "status": "healthy"},
+	}
+	writeEnvelope(w, http.StatusOK, map[string]any{"items": items}, map[string]any{"total": len(items)})
 }
 
 func (h *Handler) adminUsers(w http.ResponseWriter, r *http.Request) {

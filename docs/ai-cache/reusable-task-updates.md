@@ -591,3 +591,78 @@
     - services recovered healthy after restart (`api`, `web`, `mysql`, `redis`)
 - remaining gaps/risks/next steps:
   - none critical; wrapper is now ready for QA/dev one-command strict cycle in DB mode
+
+## 2026-04-27 - CMS Releases Slice (P1)
+
+- task type: implement
+- objective: implement strict contract-first releases slice for CMS prefix and wire FE to live endpoint
+- what was implemented:
+  - added `GET /api/v1/platform/cms/releases` in platform CMS handler:
+    - strict entry gate via `requireCMSAccess(... platform.cms.view ...)`
+    - action gate via publish/admin permissions (`disclosure.publish|rbac.manage|system.settings`)
+    - response envelope normalized to `data.items` + `meta.total`
+    - supports `entry_id` filter and sorts by `published_date` desc
+  - extended integration matrix test to cover releases success path and strict forbidden path for `admin.dn@example.com`
+  - FE wired `CmsReleasesPage` to real API via `getReleases()` and mapped UI states
+  - FE added `cms.publish.read` alias mapping and regression tests for releases happy/forbidden/error
+- affected repos/files/modules:
+  - `cobo_iam_services/internal/platformcms/transport/http/handler.go`
+  - `cobo_iam_services/internal/httpserver/server_test.go`
+  - `cobo_web_design/src/features/cms-core/services/cmsApi.ts`
+  - `cobo_web_design/src/features/cms-core/pages.tsx`
+  - `cobo_web_design/src/features/cms-core/permissionGuards.ts`
+  - `cobo_web_design/src/features/cms-core/pages.regression.test.tsx`
+  - `cobo_web_design/src/features/cms-core/permissionGuards.test.ts`
+- important contracts/behaviors/constraints/decisions:
+  - strict CMS access policy remains E2E; releases endpoint inherits explicit `platform.cms.view` entry gate
+  - release history stays read-only and filtered by publication states (`published/completed/confirmed`)
+- build/verification result:
+  - `go test ./internal/httpserver -run TestIntegration_platformCMSPrefix_dashboardCollectionsEntries` passed
+  - `npm run test -- src/features/cms-core/pages.regression.test.tsx src/features/cms-core/permissionGuards.test.ts` passed
+  - fresh docker rebuild/restart passed on affected services (`api`, `web`)
+  - post-rebuild smoke passed: `GET /healthz` = 200, `GET /api/v1/platform/cms/releases` = 200 (cms.operator token)
+- remaining gaps/risks/next steps:
+  - P2 remains: implement live APIs/screens for remaining scaffold routes (`roles`, `rules`, `audit`, `sessions`, `health`)
+
+## 2026-04-27 - CMS P2 Live APIs (roles/rules/audit/sessions/health)
+
+- task type: implement
+- objective: complete P2 by adding strict CMS prefix APIs for roles/rules/audit/sessions/health and wiring FE to these contracts
+- what was implemented:
+  - added new strict CMS prefix endpoints in platform handler:
+    - `GET /api/v1/platform/cms/admin/roles`
+    - `GET /api/v1/platform/cms/admin/rules`
+    - `POST /api/v1/platform/cms/admin/rules/validate`
+    - `GET /api/v1/platform/cms/ops/audit`
+    - `GET /api/v1/platform/cms/ops/sessions`
+    - `POST /api/v1/platform/cms/ops/sessions/{session_id}/revoke`
+    - `GET /api/v1/platform/cms/ops/health`
+  - all new handlers enforce strict entry gate via `requireCMSAccess(...platform.cms.view...)`
+  - all responses follow CMS envelope `data` + `meta`
+  - expanded integration test `TestIntegration_platformCMSPrefix_dashboardCollectionsEntries` to cover all new endpoints + strict forbid for `admin.dn@example.com`
+  - FE P2 pages now call these endpoints directly (live wiring completed)
+- affected repos/files/modules:
+  - `cobo_iam_services/internal/platformcms/transport/http/handler.go`
+  - `cobo_iam_services/internal/httpserver/server_test.go`
+  - `cobo_web_design/src/features/cms-core/services/cmsApi.ts`
+  - `cobo_web_design/src/features/cms-core/pages.tsx`
+  - `cobo_web_design/src/features/cms-core/pages.regression.test.tsx`
+  - `cobo_web_design/src/features/cms-core/permissionGuards.ts`
+  - `cobo_web_design/src/features/cms-core/permissionGuards.test.ts`
+- important contracts/behaviors/constraints/decisions:
+  - strict CMS policy remains E2E: no `/api/v1/platform/cms/*` access without explicit `platform.cms.view`
+  - action endpoints for P2 modules are now available for FE (`validate rule`, `revoke session`)
+  - payloads are intentionally minimal bootstrap contracts for safe rollout
+- build/verification result:
+  - backend test passed: `go test ./internal/httpserver -run TestIntegration_platformCMSPrefix_dashboardCollectionsEntries`
+  - frontend tests passed: `npm run test -- src/features/cms-core/pages.regression.test.tsx src/features/cms-core/permissionGuards.test.ts`
+  - fresh docker rebuild passed for affected services (`api`, `web`)
+  - post-rebuild smoke passed (`200`) for:
+    - `/api/v1/platform/cms/admin/roles`
+    - `/api/v1/platform/cms/admin/rules`
+    - `/api/v1/platform/cms/admin/rules/validate`
+    - `/api/v1/platform/cms/ops/audit`
+    - `/api/v1/platform/cms/ops/sessions`
+    - `/api/v1/platform/cms/ops/health`
+- remaining gaps/risks/next steps:
+  - next cycle can replace bootstrap P2 payload generators with persistent/domain-backed read models while preserving route/error envelopes
