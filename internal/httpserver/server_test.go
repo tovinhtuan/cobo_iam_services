@@ -388,6 +388,55 @@ func TestIntegration_meCapabilities_platformCmsMatrix(t *testing.T) {
 	}
 }
 
+func TestIntegration_platformCMSPrefix_dashboardCollectionsEntries(t *testing.T) {
+	srv := httptest.NewServer(newTestHandler(t, nil))
+	defer srv.Close()
+
+	adminToken := loginAndGetAccessToken(t, srv.URL, "admin.dn@example.com", "secret", "")
+	dashboardRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/platform/cms/dashboard/summary", adminToken, nil, "")
+	if dashboardRes.StatusCode != http.StatusOK {
+		t.Fatalf("dashboard summary status=%d body=%s", dashboardRes.StatusCode, readBody(t, dashboardRes.Body))
+	}
+	var dashboardOut map[string]any
+	mustDecodeJSON(t, dashboardRes.Body, &dashboardOut)
+	if _, ok := dashboardOut["total"]; !ok {
+		t.Fatalf("dashboard payload missing total: %+v", dashboardOut)
+	}
+	if dashboardOut["platform_cms"] != true {
+		t.Fatalf("dashboard payload should contain platform_cms=true: %+v", dashboardOut)
+	}
+
+	collectionsRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/platform/cms/collections", adminToken, nil, "")
+	if collectionsRes.StatusCode != http.StatusOK {
+		t.Fatalf("collections status=%d body=%s", collectionsRes.StatusCode, readBody(t, collectionsRes.Body))
+	}
+	var collectionsOut struct {
+		Items []map[string]any `json:"items"`
+	}
+	mustDecodeJSON(t, collectionsRes.Body, &collectionsOut)
+	if collectionsOut.Items == nil {
+		t.Fatalf("collections payload missing items: %+v", collectionsOut)
+	}
+
+	entriesRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/platform/cms/entries", adminToken, nil, "")
+	if entriesRes.StatusCode != http.StatusOK {
+		t.Fatalf("entries status=%d body=%s", entriesRes.StatusCode, readBody(t, entriesRes.Body))
+	}
+	var entriesOut struct {
+		Items []map[string]any `json:"items"`
+	}
+	mustDecodeJSON(t, entriesRes.Body, &entriesOut)
+	if entriesOut.Items == nil {
+		t.Fatalf("entries payload missing items: %+v", entriesOut)
+	}
+
+	userToken := loginAndGetAccessToken(t, srv.URL, "user@example.com", "secret", "c_001")
+	forbiddenRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/platform/cms/dashboard/summary", userToken, nil, "")
+	if forbiddenRes.StatusCode != http.StatusForbidden {
+		t.Fatalf("dashboard forbidden status=%d body=%s", forbiddenRes.StatusCode, readBody(t, forbiddenRes.Body))
+	}
+}
+
 func TestIntegration_disclosureC1_contractMatrix_happyPathAndErrors(t *testing.T) {
 	srv := httptest.NewServer(newTestHandler(t, nil))
 	defer srv.Close()

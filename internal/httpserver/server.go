@@ -48,6 +48,7 @@ import (
 	workflowinmem "github.com/cobo/cobo_iam_services/internal/workflow/infra/inmemory"
 	workflowmysql "github.com/cobo/cobo_iam_services/internal/workflow/infra/mysql"
 	workflowhttp "github.com/cobo/cobo_iam_services/internal/workflow/transport/http"
+	platformcmshttp "github.com/cobo/cobo_iam_services/internal/platformcms/transport/http"
 )
 
 // Deps wires HTTP API dependencies.
@@ -217,8 +218,9 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 	}
 	adminSvc := companyaccessapp.NewAdminService(adminRepo, authSvc, id)
 	adminHandler := companyaccesshttp.NewAdminHandler(adminSvc, tokenManager, auditSvc)
+	platformCMSHandler := platformcmshttp.NewHandler(tokenManager, authSvc, disclosureRepo)
 
-	return muxRegisterHealthAndIAM(mux, log, sqlDB, iamHandler, meHandler, authHandler, disclosureHandler, workflowHandler, notificationHandler, adminHandler)
+	return muxRegisterHealthAndIAM(mux, log, sqlDB, iamHandler, meHandler, authHandler, disclosureHandler, workflowHandler, notificationHandler, adminHandler, platformCMSHandler)
 }
 
 func muxRegisterHealthAndIAM(
@@ -232,6 +234,7 @@ func muxRegisterHealthAndIAM(
 	workflowHandler *workflowhttp.Handler,
 	notificationHandler *notificationhttp.Handler,
 	adminHandler *companyaccesshttp.AdminHandler,
+	platformCMSHandler *platformcmshttp.Handler,
 ) error {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		httpx.WriteJSON(w, http.StatusOK, map[string]any{"status": "ok"})
@@ -258,6 +261,7 @@ func muxRegisterHealthAndIAM(
 	workflowHandler.Register(mux)
 	notificationHandler.Register(mux)
 	adminHandler.Register(mux)
+	platformCMSHandler.Register(mux)
 	return nil
 }
 
