@@ -31,6 +31,30 @@ function Invoke-Checked {
   }
 }
 
+function Wait-ApiReady {
+  param(
+    [string]$ApiBaseUrl,
+    [int]$MaxAttempts = 30,
+    [int]$SleepSeconds = 2
+  )
+  Write-Host ">> waiting for API readiness at $ApiBaseUrl"
+  for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+    try {
+      $health = Invoke-WebRequest -Method GET -Uri "$ApiBaseUrl/healthz" -TimeoutSec 5
+      $ready = Invoke-WebRequest -Method GET -Uri "$ApiBaseUrl/readyz" -TimeoutSec 5
+      if ($health.StatusCode -eq 200 -and $ready.StatusCode -eq 200) {
+        Write-Host ">> API ready (attempt $attempt/$MaxAttempts)"
+        return
+      }
+    }
+    catch {
+      Write-Host ">> API not ready yet (attempt $attempt/$MaxAttempts): $($_.Exception.Message)"
+    }
+    Start-Sleep -Seconds $SleepSeconds
+  }
+  throw "API readiness timeout after $MaxAttempts attempts: $ApiBaseUrl"
+}
+
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $iamRoot = Resolve-Path (Join-Path $scriptDir "..\..")
 $webRoot = Resolve-Path (Join-Path $iamRoot "..\cobo_web_design")
@@ -61,6 +85,7 @@ Run-Step "3/6 Restart compose services before DB smoke" {
   Push-Location $iamRoot
   try {
     Invoke-Checked "docker compose -f $ComposeFile up -d api web"
+    Wait-ApiReady -ApiBaseUrl $BaseUrl
     Invoke-Checked "docker compose -f $ComposeFile ps"
   }
   finally {
@@ -93,6 +118,7 @@ Run-Step "6/6 Bring up rebuilt services and verify status" {
   Push-Location $iamRoot
   try {
     Invoke-Checked "docker compose -f $ComposeFile up -d api web"
+    Wait-ApiReady -ApiBaseUrl $BaseUrl
     Invoke-Checked "docker compose -f $ComposeFile ps"
   }
   finally {

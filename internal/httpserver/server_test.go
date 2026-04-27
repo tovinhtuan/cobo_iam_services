@@ -14,6 +14,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -24,6 +25,7 @@ import (
 	iamtokenopaque "github.com/cobo/cobo_iam_services/internal/iam/infra/token/opaque"
 	"github.com/cobo/cobo_iam_services/internal/platform/config"
 	"github.com/cobo/cobo_iam_services/internal/platform/logger"
+	"github.com/google/uuid"
 )
 
 func testAPIConfig() config.Config {
@@ -399,10 +401,11 @@ func TestIntegration_platformCMSPrefix_dashboardCollectionsEntries(t *testing.T)
 	}
 	var dashboardOut map[string]any
 	mustDecodeJSON(t, dashboardRes.Body, &dashboardOut)
-	if _, ok := dashboardOut["total"]; !ok {
+	data, _ := dashboardOut["data"].(map[string]any)
+	if _, ok := data["total"]; !ok {
 		t.Fatalf("dashboard payload missing total: %+v", dashboardOut)
 	}
-	if dashboardOut["platform_cms"] != true {
+	if data["platform_cms"] != true {
 		t.Fatalf("dashboard payload should contain platform_cms=true: %+v", dashboardOut)
 	}
 
@@ -411,10 +414,13 @@ func TestIntegration_platformCMSPrefix_dashboardCollectionsEntries(t *testing.T)
 		t.Fatalf("collections status=%d body=%s", collectionsRes.StatusCode, readBody(t, collectionsRes.Body))
 	}
 	var collectionsOut struct {
-		Items []map[string]any `json:"items"`
+		Data struct {
+			Items []map[string]any `json:"items"`
+		} `json:"data"`
+		Meta map[string]any `json:"meta"`
 	}
 	mustDecodeJSON(t, collectionsRes.Body, &collectionsOut)
-	if collectionsOut.Items == nil {
+	if collectionsOut.Data.Items == nil {
 		t.Fatalf("collections payload missing items: %+v", collectionsOut)
 	}
 
@@ -423,10 +429,13 @@ func TestIntegration_platformCMSPrefix_dashboardCollectionsEntries(t *testing.T)
 		t.Fatalf("entries status=%d body=%s", entriesRes.StatusCode, readBody(t, entriesRes.Body))
 	}
 	var entriesOut struct {
-		Items []map[string]any `json:"items"`
+		Data struct {
+			Items []map[string]any `json:"items"`
+		} `json:"data"`
+		Meta map[string]any `json:"meta"`
 	}
 	mustDecodeJSON(t, entriesRes.Body, &entriesOut)
-	if entriesOut.Items == nil {
+	if entriesOut.Data.Items == nil {
 		t.Fatalf("entries payload missing items: %+v", entriesOut)
 	}
 
@@ -434,6 +443,136 @@ func TestIntegration_platformCMSPrefix_dashboardCollectionsEntries(t *testing.T)
 	forbiddenRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/platform/cms/dashboard/summary", userToken, nil, "")
 	if forbiddenRes.StatusCode != http.StatusForbidden {
 		t.Fatalf("dashboard forbidden status=%d body=%s", forbiddenRes.StatusCode, readBody(t, forbiddenRes.Body))
+	}
+}
+
+func TestIntegration_platformCMSPrefix_entriesReviewsSchedulesContract(t *testing.T) {
+	srv := httptest.NewServer(newTestHandler(t, nil))
+	defer srv.Close()
+
+	userToken := loginAndGetAccessToken(t, srv.URL, "user@example.com", "secret", "c_001")
+	createRes := doJSONRequest(t, http.MethodPost, srv.URL+"/api/v1/platform/cms/entries", userToken, map[string]any{
+		"type_id":      "DISCLOSURE_FINANCIAL",
+		"title":        "CMS entry",
+		"summary":      "CMS summary",
+		"content":      "CMS content",
+		"planned_date": "2026-05-12",
+	}, "")
+	if createRes.StatusCode != http.StatusCreated {
+		t.Fatalf("create entry status=%d body=%s", createRes.StatusCode, readBody(t, createRes.Body))
+	}
+	var createOut struct {
+		Data map[string]any `json:"data"`
+	}
+	mustDecodeJSON(t, createRes.Body, &createOut)
+	entryID, _ := createOut.Data["entry_id"].(string)
+	if entryID == "" {
+		t.Fatalf("missing entry_id in create response: %+v", createOut)
+	}
+
+	detailRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/platform/cms/entries/"+entryID, userToken, nil, "")
+	if detailRes.StatusCode != http.StatusOK {
+		t.Fatalf("entry detail status=%d body=%s", detailRes.StatusCode, readBody(t, detailRes.Body))
+	}
+
+	updateRes := doJSONRequest(t, http.MethodPut, srv.URL+"/api/v1/platform/cms/entries/"+entryID, userToken, map[string]any{
+		"type_id":      "DISCLOSURE_FINANCIAL",
+		"title":        "CMS entry updated",
+		"summary":      "CMS summary updated",
+		"content":      "CMS content updated",
+		"planned_date": "2026-05-15",
+	}, "")
+	if updateRes.StatusCode != http.StatusOK {
+		t.Fatalf("update entry status=%d body=%s", updateRes.StatusCode, readBody(t, updateRes.Body))
+	}
+
+	scheduleCreateRes := doJSONRequest(t, http.MethodPost, srv.URL+"/api/v1/platform/cms/schedules", userToken, map[string]any{
+		"entry_id":   entryID,
+		"publish_at": "2026-05-20",
+	}, "")
+	if scheduleCreateRes.StatusCode != http.StatusCreated {
+		t.Fatalf("create schedule status=%d body=%s", scheduleCreateRes.StatusCode, readBody(t, scheduleCreateRes.Body))
+	}
+
+	scheduleListRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/platform/cms/schedules", userToken, nil, "")
+	if scheduleListRes.StatusCode != http.StatusOK {
+		t.Fatalf("list schedules status=%d body=%s", scheduleListRes.StatusCode, readBody(t, scheduleListRes.Body))
+	}
+
+	submitRes := doJSONRequest(t, http.MethodPost, srv.URL+"/api/v1/disclosures/"+entryID+"/submit", userToken, nil, "idem-platform-submit")
+	if submitRes.StatusCode != http.StatusOK {
+		t.Fatalf("submit status=%d body=%s", submitRes.StatusCode, readBody(t, submitRes.Body))
+	}
+
+	adminToken := loginAndGetAccessToken(t, srv.URL, "admin.dn@example.com", "secret", "")
+	reviewsRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/platform/cms/reviews", adminToken, nil, "")
+	if reviewsRes.StatusCode != http.StatusOK {
+		t.Fatalf("list reviews status=%d body=%s", reviewsRes.StatusCode, readBody(t, reviewsRes.Body))
+	}
+
+	approveRes := doJSONRequest(t, http.MethodPost, srv.URL+"/api/v1/platform/cms/reviews/"+entryID, adminToken, map[string]any{
+		"decision": "approve",
+	}, "")
+	if approveRes.StatusCode != http.StatusOK {
+		t.Fatalf("approve review status=%d body=%s", approveRes.StatusCode, readBody(t, approveRes.Body))
+	}
+
+	deleteScheduleRes := doJSONRequest(t, http.MethodDelete, srv.URL+"/api/v1/platform/cms/schedules/"+entryID, adminToken, nil, "")
+	if deleteScheduleRes.StatusCode != http.StatusOK {
+		t.Fatalf("delete schedule status=%d body=%s", deleteScheduleRes.StatusCode, readBody(t, deleteScheduleRes.Body))
+	}
+}
+
+func TestIntegration_platformCMSPrefix_adminUsersCreateAndList(t *testing.T) {
+	srv := httptest.NewServer(newTestHandler(t, nil))
+	defer srv.Close()
+
+	adminToken := loginAndGetAccessToken(t, srv.URL, "admin.dn@example.com", "secret", "")
+	createdLogin := "cms-admin-" + strings.ToLower(strings.ReplaceAll(uuid.NewString(), "-", ""))[0:12] + "@example.com"
+
+	createRes := doJSONRequest(t, http.MethodPost, srv.URL+"/api/v1/platform/cms/admin/users", adminToken, map[string]any{
+		"login_id":          createdLogin,
+		"password":          "secret123",
+		"full_name":         "CMS Company User",
+		"account_status":    "active",
+		"company_id":        "c_001",
+		"membership_status": "active",
+	}, "")
+	if createRes.StatusCode != http.StatusCreated {
+		t.Fatalf("create admin user status=%d body=%s", createRes.StatusCode, readBody(t, createRes.Body))
+	}
+	var createOut struct {
+		Data map[string]any `json:"data"`
+	}
+	mustDecodeJSON(t, createRes.Body, &createOut)
+	createdUserID, _ := createOut.Data["user_id"].(string)
+	if createdUserID == "" {
+		t.Fatalf("missing user_id in create response: %+v", createOut)
+	}
+	if createOut.Data["membership_id"] == "" {
+		t.Fatalf("expected membership_id in create response: %+v", createOut)
+	}
+
+	listRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/platform/cms/admin/users?company_id=c_001", adminToken, nil, "")
+	if listRes.StatusCode != http.StatusOK {
+		t.Fatalf("list admin users status=%d body=%s", listRes.StatusCode, readBody(t, listRes.Body))
+	}
+	var listOut struct {
+		Data struct {
+			Items []map[string]any `json:"items"`
+		} `json:"data"`
+		Meta map[string]any `json:"meta"`
+	}
+	mustDecodeJSON(t, listRes.Body, &listOut)
+	found := false
+	for _, item := range listOut.Data.Items {
+		if item["user_id"] == createdUserID || item["UserID"] == createdUserID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("created user not found in list response, user_id=%s items=%+v", createdUserID, listOut.Data.Items)
 	}
 }
 
