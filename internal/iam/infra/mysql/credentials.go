@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"net/http"
 	"strings"
+	"time"
 
 	iamapp "github.com/cobo/cobo_iam_services/internal/iam/app"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
@@ -43,7 +44,13 @@ func (v *CredentialVerifier) Verify(ctx context.Context, loginID, plainPassword 
 	if err := bcrypt.CompareHashAndPassword(hash, []byte(plainPassword)); err != nil {
 		return nil, perr.NewHTTPError(http.StatusUnauthorized, perr.CodeInvalidCredentials, "invalid credentials", nil)
 	}
-	return &iamapp.AuthenticatedUser{UserID: userID, LoginID: lid, FullName: fullName, Status: status}, nil
+	return &iamapp.AuthenticatedUser{
+		UserID:           userID,
+		LoginID:          lid,
+		FullName:         fullName,
+		Status:           status,
+		SubscriptionTier: loadUserSubscriptionTier(ctx, v.db, userID, time.Now().UTC()),
+	}, nil
 }
 
 func (v *CredentialVerifier) GetByUserID(ctx context.Context, userID string) (*iamapp.AuthenticatedUser, error) {
@@ -57,5 +64,27 @@ func (v *CredentialVerifier) GetByUserID(ctx context.Context, userID string) (*i
 		}
 		return nil, err
 	}
+	u.SubscriptionTier = loadUserSubscriptionTier(ctx, v.db, u.UserID, time.Now().UTC())
 	return &u, nil
+}
+
+func loadUserSubscriptionTier(ctx context.Context, db *sql.DB, userID string, now time.Time) string {
+	row := db.QueryRowContext(ctx, `
+		SELECT subscription_tier
+		FROM user_subscription_tiers
+		WHERE user_id = ?
+			AND (effective_from IS NULL OR effective_from <= ?)
+			AND (effective_to IS NULL OR effective_to > ?)
+		LIMIT 1
+	`, userID, now, now)
+
+	var tier string
+	if err := row.Scan(&tier); err != nil {
+		return "Free"
+	}
+	tier = strings.TrimSpace(tier)
+	if tier == "" {
+		return "Free"
+	}
+	return tier
 }

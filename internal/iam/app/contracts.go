@@ -80,10 +80,11 @@ type TokenInspector interface {
 }
 
 type AuthenticatedUser struct {
-	UserID   string
-	LoginID  string
-	FullName string
-	Status   string
+	UserID           string
+	LoginID          string
+	FullName         string
+	Status           string
+	SubscriptionTier string
 }
 
 type AccessTokenClaims struct {

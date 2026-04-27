@@ -875,3 +875,110 @@
     - includes `docker compose -f docker-compose.dev.yml build --no-cache api web`
 - remaining gaps/risks/next steps:
   - optional future step: push metrics into external sink (Prometheus/OpenTelemetry) if central dashboards are required
+
+## 2026-04-27 - Week1/Week2 Plan Recheck (Cross-repo)
+
+- task type: understand
+- objective: re-audit Week 1 and Week 2 plan completeness after latest CMS expansion cycles
+- what was discovered:
+  - Week 1 baseline status is mostly complete (auth/session/company switch/forbidden flows + openapi snapshot)
+  - remaining Week 1 contract gap: `/api/v1/me` still omits `user.subscription_tier`
+  - Week 2 CMS-related execution is effectively complete and expanded beyond original baseline (strict entry policy, prefix contracts, domain-backed P2 flows, audit enrichment, action filter, metrics endpoint)
+  - minor documentation update debt remains to align “stub/partial” notes with current live CMS state
+- affected repos/files/modules:
+  - `cobo_iam_services/internal/iam/transport/http/me_handler.go`
+  - `cobo_iam_services/docs/PLATFORM_CMS_PREFIX_AND_TENANT.md`
+  - `cobo_web_design/src/services/normalizers.ts`
+  - `cobo_web_design/docs/week-1-foundation-status-and-plan.md`
+  - `cobo_web_design/docs/cross_repo_step_by_step_implementation_plan.md`
+- important contracts/behaviors/constraints/decisions:
+  - strict CMS gate remains `platform.cms.view` at FE and BE layers
+  - additive observability path exists via `/api/v1/platform/cms/ops/metrics` with `X-Request-Id` correlation
+  - no identified regression requiring rollback from latest Week 2 CMS slices
+- build/verification result:
+  - understand-only step; no new build run
+  - latest verified cycle remains green via `docs/scripts/run-c1-cycle.ps1` (from previous implementation turn)
+- remaining gaps/risks/next steps:
+  - implement Week 1 B3 contract closure (`subscription_tier`) + related tests
+  - refresh week status docs/checklists to avoid stale planning signals
+
+## 2026-04-27 - Close Week1 B3 + Week Docs Sync
+
+- task type: implement
+- objective: close Week 1 B3 by returning `subscription_tier` in `/api/v1/me` and sync Week1/Week2 docs status
+- what was implemented:
+  - extended IAM identity contract with `SubscriptionTier`
+  - populated identity query paths (in-memory + mysql) with safe default `Free`
+  - `/api/v1/me` now returns:
+    - `user.subscription_tier`
+  - added integration test:
+    - `TestIntegration_meProfileIncludesSubscriptionTier`
+  - updated planning docs in web repo to mark B3 done and clarify Week2 status note
+- affected repos/files/modules:
+  - `cobo_iam_services/internal/iam/app/contracts.go`
+  - `cobo_iam_services/internal/iam/infra/mysql/credentials.go`
+  - `cobo_iam_services/internal/iam/infra/inmemory/credentials.go`
+  - `cobo_iam_services/internal/iam/transport/http/me_handler.go`
+  - `cobo_iam_services/internal/httpserver/server_test.go`
+  - `cobo_web_design/docs/week-1-foundation-status-and-plan.md`
+  - `cobo_web_design/docs/cross_repo_step_by_step_implementation_plan.md`
+- important contracts/behaviors/constraints/decisions:
+  - contract change is additive (non-breaking for FE clients)
+  - backend now owns baseline subscription tier field instead of FE-only fallback inference
+  - current default source is `Free`; can be replaced by entitlement-backed source in later phase
+- build/verification result:
+  - targeted tests passed:
+    - `go test ./internal/httpserver -run "TestIntegration_meProfileIncludesSubscriptionTier|TestIntegration_platformCMSPrefix_dashboardCollectionsEntries" -count=1`
+    - `npm run test -- src/services/normalizers.me.test.ts src/App.cms-landing.test.tsx`
+  - full wrapper + docker rebuild passed:
+    - `powershell -ExecutionPolicy Bypass -File docs/scripts/run-c1-cycle.ps1`
+    - includes `docker compose -f docker-compose.dev.yml build --no-cache api web`
+- remaining gaps/risks/next steps:
+  - optional: connect `subscription_tier` to a dedicated entitlement source for non-default tiers
+
+## 2026-04-27 - Subscription Tier from Entitlement Source (DB-backed)
+
+- task type: implement
+- objective: replace `/api/v1/me` hardcoded/default-only `subscription_tier` with real entitlement source from dedicated table/config
+- what was implemented:
+  - introduced entitlement table:
+    - `migrations/0011_user_subscription_tiers.up.sql`
+    - `migrations/0011_user_subscription_tiers.down.sql`
+  - migration includes safe backfill strategy:
+    - default `Free` for existing users
+    - deterministic overrides for seeded privileged accounts (`Premium`/`Enterprise`)
+  - wired MySQL identity query to load active tier from `user_subscription_tiers` with effective window support
+  - in-memory identity path now supports `SubscriptionTier` on static users (for local non-DB parity)
+  - updated dev migration runner order to ensure table exists before seed scripts that write tier data:
+    - `migrations/run_dev_migrations.sh`
+  - updated seed scripts to write explicit tier rows:
+    - `migrations/seed_dev_identity_authorization.sql`
+    - `migrations/0009_seed_authz_test_accounts.up.sql`
+  - strengthened integration assertion:
+    - `/api/v1/me` returns `Free` for `user@example.com`
+    - `/api/v1/me` returns `Enterprise` for `cms.operator@example.com`
+- affected repos/files/modules:
+  - `cobo_iam_services/migrations/0011_user_subscription_tiers.up.sql`
+  - `cobo_iam_services/migrations/0011_user_subscription_tiers.down.sql`
+  - `cobo_iam_services/migrations/run_dev_migrations.sh`
+  - `cobo_iam_services/migrations/seed_dev_identity_authorization.sql`
+  - `cobo_iam_services/migrations/0009_seed_authz_test_accounts.up.sql`
+  - `cobo_iam_services/internal/iam/infra/mysql/credentials.go`
+  - `cobo_iam_services/internal/iam/infra/inmemory/credentials.go`
+  - `cobo_iam_services/internal/httpserver/server.go`
+  - `cobo_iam_services/internal/httpserver/server_test.go`
+- important contracts/behaviors/constraints/decisions:
+  - contract remains `user.subscription_tier` in `/api/v1/me` (backward-compatible field already introduced)
+  - behavior is now source-of-truth DB-backed in MySQL mode, with fallback to `Free` only when entitlement row is absent
+  - migration strategy is expand + backfill (safe for mixed existing DB states)
+- build/verification result:
+  - targeted integration test passed:
+    - `go test ./internal/httpserver -run "TestIntegration_meProfileIncludesSubscriptionTier|TestIntegration_platformCMSPrefix_dashboardCollectionsEntries" -count=1`
+  - full cycle + fresh docker rebuild passed:
+    - `powershell -ExecutionPolicy Bypass -File docs/scripts/run-c1-cycle.ps1`
+    - includes `docker compose -f docker-compose.dev.yml build --no-cache api web`
+  - live DB smoke check:
+    - `admin.web@example.com` => `Premium`
+    - `cms.operator@example.com` => `Enterprise`
+- remaining gaps/risks/next steps:
+  - optional next step: expose admin API to manage tier lifecycle (`effective_from/effective_to`) instead of seed-only control

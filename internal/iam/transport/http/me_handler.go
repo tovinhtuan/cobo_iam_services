@@ -46,9 +46,10 @@ func (m *MeHandler) me(w http.ResponseWriter, r *http.Request) {
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"user": map[string]any{
-			"user_id":   user.UserID,
-			"login_id":  user.LoginID,
-			"full_name": user.FullName,
+			"user_id":           user.UserID,
+			"login_id":          user.LoginID,
+			"full_name":         user.FullName,
+			"subscription_tier": user.SubscriptionTier,
 		},
 		"current_context": map[string]any{
 			"company_id":    claims.CompanyID,

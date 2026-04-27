@@ -566,6 +566,38 @@ func TestIntegration_platformCMSPrefix_dashboardCollectionsEntries(t *testing.T)
 	}
 }
 
+func TestIntegration_meProfileIncludesSubscriptionTier(t *testing.T) {
+	srv := httptest.NewServer(newTestHandler(t, nil))
+	defer srv.Close()
+
+	freeUserToken := loginAndGetAccessToken(t, srv.URL, "user@example.com", "secret", "c_001")
+	freeRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/me", freeUserToken, nil, "")
+	if freeRes.StatusCode != http.StatusOK {
+		t.Fatalf("me status=%d body=%s", freeRes.StatusCode, readBody(t, freeRes.Body))
+	}
+
+	var freeOut struct {
+		User map[string]any `json:"user"`
+	}
+	mustDecodeJSON(t, freeRes.Body, &freeOut)
+	if tier, _ := freeOut.User["subscription_tier"].(string); tier != "Free" {
+		t.Fatalf("expected Free subscription tier for user@example.com, got=%v payload=%+v", tier, freeOut.User)
+	}
+
+	cmsToken := loginAndGetAccessToken(t, srv.URL, "cms.operator@example.com", "secret", "")
+	cmsRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/me", cmsToken, nil, "")
+	if cmsRes.StatusCode != http.StatusOK {
+		t.Fatalf("cms me status=%d body=%s", cmsRes.StatusCode, readBody(t, cmsRes.Body))
+	}
+	var cmsOut struct {
+		User map[string]any `json:"user"`
+	}
+	mustDecodeJSON(t, cmsRes.Body, &cmsOut)
+	if tier, _ := cmsOut.User["subscription_tier"].(string); tier != "Enterprise" {
+		t.Fatalf("expected Enterprise subscription tier for cms.operator@example.com, got=%v payload=%+v", tier, cmsOut.User)
+	}
+}
+
 func TestIntegration_platformCMSPrefix_entriesReviewsSchedulesContract(t *testing.T) {
 	srv := httptest.NewServer(newTestHandler(t, nil))
 	defer srv.Close()

@@ -12,6 +12,19 @@ INSERT INTO users (user_id, login_id, full_name, account_status) VALUES
   ('u_nhan_vien', 'nhanvien@example.com', 'Nhan Vien Thuong', 'active')
 ON DUPLICATE KEY UPDATE full_name = VALUES(full_name), account_status = VALUES(account_status);
 
+INSERT INTO user_subscription_tiers (user_id, subscription_tier, source, effective_from, effective_to) VALUES
+  ('u_admin_web', 'Premium', 'seed', NULL, NULL),
+  ('u_cms_operator', 'Enterprise', 'seed', NULL, NULL),
+  ('u_admin_dn', 'Enterprise', 'seed', NULL, NULL),
+  ('u_truong_phong', 'Premium', 'seed', NULL, NULL),
+  ('u_truong_nhom', 'Premium', 'seed', NULL, NULL),
+  ('u_nhan_vien', 'Free', 'seed', NULL, NULL)
+ON DUPLICATE KEY UPDATE
+  subscription_tier = VALUES(subscription_tier),
+  source = VALUES(source),
+  effective_from = VALUES(effective_from),
+  effective_to = VALUES(effective_to);
+
 INSERT INTO credentials (credential_id, user_id, credential_type, password_hash, password_algo, status) VALUES
   ('cred0001-0001-4000-8000-000000000003', 'u_admin_web', 'password', @PWD_HASH, 'bcrypt', 'active'),
   ('cred0001-0001-4000-8000-000000000008', 'u_cms_operator', 'password', @PWD_HASH, 'bcrypt', 'active'),

@@ -44,11 +44,11 @@ import (
 	outboxinmem "github.com/cobo/cobo_iam_services/internal/platform/outbox/inmemory"
 	outboxmysql "github.com/cobo/cobo_iam_services/internal/platform/outbox/mysql"
 	redispkg "github.com/cobo/cobo_iam_services/internal/platform/redis"
+	platformcmshttp "github.com/cobo/cobo_iam_services/internal/platformcms/transport/http"
 	workflowapp "github.com/cobo/cobo_iam_services/internal/workflow/app"
 	workflowinmem "github.com/cobo/cobo_iam_services/internal/workflow/infra/inmemory"
 	workflowmysql "github.com/cobo/cobo_iam_services/internal/workflow/infra/mysql"
 	workflowhttp "github.com/cobo/cobo_iam_services/internal/workflow/transport/http"
-	platformcmshttp "github.com/cobo/cobo_iam_services/internal/platformcms/transport/http"
 )
 
 // Deps wires HTTP API dependencies.
@@ -140,12 +140,12 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 		sessionRepo = iaminmem.NewSessionRepository()
 		static := &iaminmem.StaticCredentialVerifier{
 			Users: map[string]iaminmem.StaticUser{
-				"user@example.com":   {UserID: "u_123", LoginID: "user@example.com", Password: "secret", FullName: "Nguyen Van A", Status: "active"},
-				"single@example.com": {UserID: "u_single", LoginID: "single@example.com", Password: "secret", FullName: "Single Company User", Status: "active"},
+				"user@example.com":   {UserID: "u_123", LoginID: "user@example.com", Password: "secret", FullName: "Nguyen Van A", Status: "active", SubscriptionTier: "Free"},
+				"single@example.com": {UserID: "u_single", LoginID: "single@example.com", Password: "secret", FullName: "Single Company User", Status: "active", SubscriptionTier: "Free"},
 				// Same membership/roles as admin@cobo.vn (u_admin) — password `secret` for local smoke tests.
-				"admin.dn@example.com": {UserID: "u_admin", LoginID: "admin.dn@example.com", Password: "secret", FullName: "Enterprise Admin (DN)", Status: "active"},
-				"admin@cobo.vn":        {UserID: "u_admin", LoginID: "admin@cobo.vn", Password: "password123", FullName: "Enterprise Admin", Status: "active"},
-				"cms.operator@example.com": {UserID: "u_cms", LoginID: "cms.operator@example.com", Password: "secret", FullName: "CMS Operator", Status: "active"},
+				"admin.dn@example.com":     {UserID: "u_admin", LoginID: "admin.dn@example.com", Password: "secret", FullName: "Enterprise Admin (DN)", Status: "active", SubscriptionTier: "Enterprise"},
+				"admin@cobo.vn":            {UserID: "u_admin", LoginID: "admin@cobo.vn", Password: "password123", FullName: "Enterprise Admin", Status: "active", SubscriptionTier: "Enterprise"},
+				"cms.operator@example.com": {UserID: "u_cms", LoginID: "cms.operator@example.com", Password: "secret", FullName: "CMS Operator", Status: "active", SubscriptionTier: "Enterprise"},
 			},
 		}
 		credVerifier = static
