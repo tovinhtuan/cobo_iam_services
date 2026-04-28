@@ -71,12 +71,17 @@ func (r *Repository) Append(ctx context.Context, e auditapp.Entry) error {
 	return nil
 }
 
-func (r *Repository) ListByCompany(ctx context.Context, companyID, action string, limit int) ([]auditapp.Entry, error) {
+func (r *Repository) ListByCompany(ctx context.Context, companyID, action, resourceType, resourceID, fromOccurredAt, toOccurredAt, cursor string, limit int) ([]auditapp.Entry, error) {
 	if limit <= 0 {
 		limit = 50
 	}
 	companyID = strings.TrimSpace(companyID)
 	action = strings.TrimSpace(action)
+	resourceType = strings.TrimSpace(resourceType)
+	resourceID = strings.TrimSpace(resourceID)
+	fromOccurredAt = strings.TrimSpace(fromOccurredAt)
+	toOccurredAt = strings.TrimSpace(toOccurredAt)
+	cursor = strings.TrimSpace(cursor)
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT event_id, occurred_at, IFNULL(actor_user_id, ''), IFNULL(actor_membership_id, ''), IFNULL(company_id, ''),
 		       IFNULL(action, ''), IFNULL(resource_type, ''), IFNULL(resource_id, ''), IFNULL(decision, ''),
@@ -85,9 +90,14 @@ func (r *Repository) ListByCompany(ctx context.Context, companyID, action string
 		FROM audit_logs
 		WHERE (? = '' OR company_id = ?)
 		  AND (? = '' OR action = ?)
+		  AND (? = '' OR resource_type = ?)
+		  AND (? = '' OR resource_id = ?)
+		  AND (? = '' OR occurred_at >= ?)
+		  AND (? = '' OR occurred_at <= ?)
+		  AND (? = '' OR occurred_at < ?)
 		ORDER BY occurred_at DESC
 		LIMIT ?
-	`, companyID, companyID, action, action, limit)
+	`, companyID, companyID, action, action, resourceType, resourceType, resourceID, resourceID, fromOccurredAt, fromOccurredAt, toOccurredAt, toOccurredAt, cursor, cursor, limit)
 	if err != nil {
 		return nil, fmt.Errorf("audit list by company: %w", err)
 	}
@@ -96,9 +106,9 @@ func (r *Repository) ListByCompany(ctx context.Context, companyID, action string
 	items := make([]auditapp.Entry, 0, limit)
 	for rows.Next() {
 		var (
-			entry                                 auditapp.Entry
-			occurredAt                            time.Time
-			permSnap, scopeSnap, meta             []byte
+			entry                     auditapp.Entry
+			occurredAt                time.Time
+			permSnap, scopeSnap, meta []byte
 		)
 		if err := rows.Scan(
 			&entry.EventID, &occurredAt, &entry.ActorUserID, &entry.ActorMembershipID, &entry.CompanyID,

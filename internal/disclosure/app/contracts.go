@@ -12,6 +12,12 @@ type Service interface {
 	ConfirmRecord(ctx context.Context, req ConfirmRecordRequest) (*RecordDTO, error)
 	ListRecords(ctx context.Context, req ListRecordsRequest) (*ListRecordsResponse, error)
 	GetRecord(ctx context.Context, req GetRecordRequest) (*RecordDTO, error)
+	ListTypeGroups(ctx context.Context, req ListTypeGroupsRequest) (*ListTypeGroupsResponse, error)
+	ListTypes(ctx context.Context, req ListTypesRequest) (*ListTypesResponse, error)
+	GetTypeDetail(ctx context.Context, req GetTypeDetailRequest) (*DisclosureTypeDTO, error)
+	UpsertTypeVersion(ctx context.Context, req UpsertTypeVersionRequest) (*UpsertTypeVersionResponse, error)
+	ListTypeVersions(ctx context.Context, req ListTypeVersionsRequest) (*ListTypeVersionsResponse, error)
+	ActivateTypeVersion(ctx context.Context, req ActivateTypeVersionRequest) (*ActivateTypeVersionResponse, error)
 }
 
 type Repository interface {
@@ -19,6 +25,12 @@ type Repository interface {
 	Update(ctx context.Context, rec RecordDTO) (*RecordDTO, error)
 	FindByID(ctx context.Context, companyID, recordID string) (*RecordDTO, error)
 	List(ctx context.Context, companyID string) ([]RecordDTO, error)
+	ListTypeGroups(ctx context.Context, companyID string) ([]DisclosureGroupDTO, error)
+	ListTypes(ctx context.Context, companyID, groupID, query string) ([]DisclosureTypeSummaryDTO, error)
+	GetTypeDetail(ctx context.Context, companyID, typeID string) (*DisclosureTypeDTO, error)
+	UpsertTypeVersion(ctx context.Context, req UpsertTypeVersionRequest) (*UpsertTypeVersionResponse, error)
+	ListTypeVersions(ctx context.Context, companyID, typeID string) ([]DisclosureTypeVersionDTO, error)
+	ActivateTypeVersion(ctx context.Context, req ActivateTypeVersionRequest) (*ActivateTypeVersionResponse, error)
 }
 
 type CreateRecordRequest struct {
@@ -55,6 +67,88 @@ type ListRecordsResponse struct {
 	Items []RecordDTO `json:"items"`
 }
 
+type ListTypeGroupsRequest struct {
+	Subject Subject
+}
+
+type ListTypeGroupsResponse struct {
+	Items []DisclosureGroupDTO `json:"items"`
+}
+
+type ListTypesRequest struct {
+	Subject Subject
+	GroupID string
+	Query   string
+}
+
+type ListTypesResponse struct {
+	Items []DisclosureTypeSummaryDTO `json:"items"`
+}
+
+type GetTypeDetailRequest struct {
+	Subject Subject
+	TypeID  string
+}
+
+type UpsertTypeVersionRequest struct {
+	Subject               Subject
+	TypeID                string   `json:"type_id"`
+	GroupID               string   `json:"group_id"`
+	Name                  string   `json:"name"`
+	Category              string   `json:"category"`
+	TemplateCategory      string   `json:"template_category"`
+	Description           string   `json:"description"`
+	LegalBasis            string   `json:"legal_basis"`
+	Applicability         string   `json:"applicability"`
+	ImplementationContent string   `json:"implementation_content"`
+	ImplementationNotes   string   `json:"implementation_notes"`
+	SpecialCases          string   `json:"special_cases"`
+	ReportContent         string   `json:"report_content"`
+	RequiredDocs          string   `json:"required_docs"`
+	DeadlineRule          string   `json:"deadline_rule"`
+	Periodicity           string   `json:"periodicity"`
+	ChannelsText          string   `json:"channels_text"`
+	Beneficiaries         string   `json:"beneficiaries"`
+	ReceivingAuthorities  string   `json:"receiving_authorities"`
+	Format                string   `json:"format"`
+	LegalRisksText        string   `json:"legal_risks_text"`
+	GeneralInfo           string   `json:"general_info"`
+	Tags                  []string `json:"tags"`
+	ChangeNote            string   `json:"change_note"`
+}
+
+type UpsertTypeVersionResponse struct {
+	TypeID      string    `json:"type_id"`
+	VersionNo   int       `json:"version_no"`
+	IsActive    bool      `json:"is_active"`
+	UpdatedBy   string    `json:"updated_by"`
+	ActivatedAt time.Time `json:"activated_at"`
+}
+
+type ListTypeVersionsRequest struct {
+	Subject Subject
+	TypeID  string
+}
+
+type ListTypeVersionsResponse struct {
+	Items []DisclosureTypeVersionDTO `json:"items"`
+}
+
+type ActivateTypeVersionRequest struct {
+	Subject   Subject
+	TypeID    string `json:"type_id"`
+	VersionNo int    `json:"version_no"`
+	Reason    string `json:"reason"`
+}
+
+type ActivateTypeVersionResponse struct {
+	TypeID      string    `json:"type_id"`
+	VersionNo   int       `json:"version_no"`
+	IsActive    bool      `json:"is_active"`
+	UpdatedBy   string    `json:"updated_by"`
+	ActivatedAt time.Time `json:"activated_at"`
+}
+
 type Subject struct {
 	UserID       string
 	MembershipID string
@@ -79,21 +173,75 @@ type AttachmentDTO struct {
 	UploadedAt string `json:"uploaded_at"`
 }
 
+type DisclosureGroupDTO struct {
+	GroupID      string `json:"group_id"`
+	Name         string `json:"name"`
+	Description  string `json:"description"`
+	Icon         string `json:"icon"`
+	DisplayOrder int    `json:"display_order"`
+}
+
+type DisclosureTypeSummaryDTO struct {
+	TypeID           string   `json:"type_id"`
+	GroupID          string   `json:"group_id"`
+	Name             string   `json:"name"`
+	Category         string   `json:"category"`
+	TemplateCategory string   `json:"template_category"`
+	Description      string   `json:"description"`
+	DeadlineRule     string   `json:"deadline_rule"`
+	Tags             []string `json:"tags"`
+}
+
+type DisclosureTypeDTO struct {
+	VersionNo             int      `json:"version_no"`
+	TypeID                string   `json:"type_id"`
+	GroupID               string   `json:"group_id"`
+	Name                  string   `json:"name"`
+	Category              string   `json:"category"`
+	TemplateCategory      string   `json:"template_category"`
+	Description           string   `json:"description"`
+	LegalBasis            string   `json:"legal_basis"`
+	Applicability         string   `json:"applicability"`
+	ImplementationContent string   `json:"implementation_content"`
+	ImplementationNotes   string   `json:"implementation_notes"`
+	SpecialCases          string   `json:"special_cases"`
+	ReportContent         string   `json:"report_content"`
+	RequiredDocs          string   `json:"required_docs"`
+	DeadlineRule          string   `json:"deadline_rule"`
+	Periodicity           string   `json:"periodicity"`
+	ChannelsText          string   `json:"channels_text"`
+	Beneficiaries         string   `json:"beneficiaries"`
+	ReceivingAuthorities  string   `json:"receiving_authorities"`
+	Format                string   `json:"format"`
+	LegalRisksText        string   `json:"legal_risks_text"`
+	GeneralInfo           string   `json:"general_info"`
+	Tags                  []string `json:"tags"`
+}
+
+type DisclosureTypeVersionDTO struct {
+	TypeID      string    `json:"type_id"`
+	VersionNo   int       `json:"version_no"`
+	IsActive    bool      `json:"is_active"`
+	ChangeNote  string    `json:"change_note"`
+	UpdatedBy   string    `json:"updated_by"`
+	ActivatedAt time.Time `json:"activated_at"`
+}
+
 type RecordDTO struct {
-	RecordID     string          `json:"record_id"`
-	CompanyID    string          `json:"company_id"`
-	TypeID       string          `json:"type_id"`
-	DepartmentID string          `json:"department_id"`
-	Title        string          `json:"title"`
-	Summary      string          `json:"summary"`
-	Content      string          `json:"content"`
-	PlannedDate  string          `json:"planned_date,omitempty"`
-	PublishedDate string         `json:"published_date,omitempty"`
-	Status       string          `json:"status"`
-	Attachments  []AttachmentDTO `json:"attachments"`
-	EvidenceLink string          `json:"evidence_link,omitempty"`
-	CreatedBy    string          `json:"created_by"`
-	UpdatedBy    string          `json:"updated_by"`
-	CreatedAt    time.Time       `json:"created_at"`
-	UpdatedAt    time.Time       `json:"updated_at"`
+	RecordID      string          `json:"record_id"`
+	CompanyID     string          `json:"company_id"`
+	TypeID        string          `json:"type_id"`
+	DepartmentID  string          `json:"department_id"`
+	Title         string          `json:"title"`
+	Summary       string          `json:"summary"`
+	Content       string          `json:"content"`
+	PlannedDate   string          `json:"planned_date,omitempty"`
+	PublishedDate string          `json:"published_date,omitempty"`
+	Status        string          `json:"status"`
+	Attachments   []AttachmentDTO `json:"attachments"`
+	EvidenceLink  string          `json:"evidence_link,omitempty"`
+	CreatedBy     string          `json:"created_by"`
+	UpdatedBy     string          `json:"updated_by"`
+	CreatedAt     time.Time       `json:"created_at"`
+	UpdatedAt     time.Time       `json:"updated_at"`
 }

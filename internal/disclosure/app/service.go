@@ -49,19 +49,19 @@ func (s *service) CreateRecord(ctx context.Context, req CreateRecordRequest) (*R
 		return nil, err
 	}
 	rec := RecordDTO{
-		RecordID:      s.idg.NewUUID(),
-		CompanyID:     req.Subject.CompanyID,
-		TypeID:        strings.TrimSpace(req.Payload.TypeID),
-		DepartmentID:  departmentID,
-		Title:         strings.TrimSpace(req.Payload.Title),
-		Summary:       strings.TrimSpace(req.Payload.Summary),
-		Content:       strings.TrimSpace(req.Payload.Content),
-		PlannedDate:   plannedDate,
-		Status:        "Draft",
-		Attachments:   sanitizeAttachments(req.Payload.Attachments),
-		EvidenceLink:  strings.TrimSpace(req.Payload.EvidenceLink),
-		CreatedBy:     req.Subject.UserID,
-		UpdatedBy:     req.Subject.UserID,
+		RecordID:     s.idg.NewUUID(),
+		CompanyID:    req.Subject.CompanyID,
+		TypeID:       strings.TrimSpace(req.Payload.TypeID),
+		DepartmentID: departmentID,
+		Title:        strings.TrimSpace(req.Payload.Title),
+		Summary:      strings.TrimSpace(req.Payload.Summary),
+		Content:      strings.TrimSpace(req.Payload.Content),
+		PlannedDate:  plannedDate,
+		Status:       "Draft",
+		Attachments:  sanitizeAttachments(req.Payload.Attachments),
+		EvidenceLink: strings.TrimSpace(req.Payload.EvidenceLink),
+		CreatedBy:    req.Subject.UserID,
+		UpdatedBy:    req.Subject.UserID,
 	}
 	return s.repo.Create(ctx, rec)
 }
@@ -194,6 +194,115 @@ func (s *service) GetRecord(ctx context.Context, req GetRecordRequest) (*RecordD
 		return nil, err
 	}
 	return cur, nil
+}
+
+func (s *service) ListTypeGroups(ctx context.Context, req ListTypeGroupsRequest) (*ListTypeGroupsResponse, error) {
+	if err := s.requireDisclosureCatalogRead(ctx, req.Subject); err != nil {
+		return nil, err
+	}
+	out, err := s.repo.ListTypeGroups(ctx, req.Subject.CompanyID)
+	if err != nil {
+		return nil, err
+	}
+	return &ListTypeGroupsResponse{Items: out}, nil
+}
+
+func (s *service) ListTypes(ctx context.Context, req ListTypesRequest) (*ListTypesResponse, error) {
+	if err := s.requireDisclosureCatalogRead(ctx, req.Subject); err != nil {
+		return nil, err
+	}
+	out, err := s.repo.ListTypes(ctx, req.Subject.CompanyID, req.GroupID, req.Query)
+	if err != nil {
+		return nil, err
+	}
+	return &ListTypesResponse{Items: out}, nil
+}
+
+func (s *service) GetTypeDetail(ctx context.Context, req GetTypeDetailRequest) (*DisclosureTypeDTO, error) {
+	if strings.TrimSpace(req.TypeID) == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "type_id is required", nil)
+	}
+	if err := s.requireDisclosureCatalogRead(ctx, req.Subject); err != nil {
+		return nil, err
+	}
+	return s.repo.GetTypeDetail(ctx, req.Subject.CompanyID, req.TypeID)
+}
+
+func (s *service) UpsertTypeVersion(ctx context.Context, req UpsertTypeVersionRequest) (*UpsertTypeVersionResponse, error) {
+	if !s.hasPermission(ctx, req.Subject, "rbac.manage") {
+		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "access denied", nil)
+	}
+	req.TypeID = strings.TrimSpace(req.TypeID)
+	req.GroupID = strings.TrimSpace(req.GroupID)
+	req.Name = strings.TrimSpace(req.Name)
+	if req.TypeID == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "type_id is required", nil)
+	}
+	if req.GroupID == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "group_id is required", nil)
+	}
+	if req.Name == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "name is required", nil)
+	}
+	return s.repo.UpsertTypeVersion(ctx, req)
+}
+
+func (s *service) ListTypeVersions(ctx context.Context, req ListTypeVersionsRequest) (*ListTypeVersionsResponse, error) {
+	if !s.hasPermission(ctx, req.Subject, "rbac.manage") {
+		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "access denied", nil)
+	}
+	req.TypeID = strings.TrimSpace(req.TypeID)
+	if req.TypeID == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "type_id is required", nil)
+	}
+	items, err := s.repo.ListTypeVersions(ctx, req.Subject.CompanyID, req.TypeID)
+	if err != nil {
+		return nil, err
+	}
+	return &ListTypeVersionsResponse{Items: items}, nil
+}
+
+func (s *service) ActivateTypeVersion(ctx context.Context, req ActivateTypeVersionRequest) (*ActivateTypeVersionResponse, error) {
+	if !s.hasPermission(ctx, req.Subject, "rbac.manage") {
+		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "access denied", nil)
+	}
+	req.TypeID = strings.TrimSpace(req.TypeID)
+	req.Reason = strings.TrimSpace(req.Reason)
+	if req.TypeID == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "type_id is required", nil)
+	}
+	if req.VersionNo <= 0 {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "version_no must be > 0", nil)
+	}
+	return s.repo.ActivateTypeVersion(ctx, req)
+}
+
+func (s *service) requireDisclosureCatalogRead(ctx context.Context, sub Subject) error {
+	if err := s.authorize(ctx, sub, "disclosure.create", authapp.ResourceRef{
+		Type: "disclosure_record",
+		ID:   "",
+		Attributes: map[string]any{
+			"department_id":       "general",
+			"owner_membership_id": sub.MembershipID,
+			"workflow_state":      "draft",
+		},
+	}); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *service) hasPermission(ctx context.Context, sub Subject, permission string) bool {
+	eff, err := s.auth.GetEffectiveAccess(ctx, sub.MembershipID, sub.CompanyID)
+	if err != nil {
+		return false
+	}
+	for _, p := range eff.Permissions {
+		if p == permission {
+			return true
+		}
+	}
+	return false
 }
 
 func normalizeDate(raw string) (string, error) {

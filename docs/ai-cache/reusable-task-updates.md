@@ -982,3 +982,297 @@
     - `cms.operator@example.com` => `Enterprise`
 - remaining gaps/risks/next steps:
   - optional next step: expose admin API to manage tier lifecycle (`effective_from/effective_to`) instead of seed-only control
+
+## 2026-04-28 - Week1/Week2 Review Sync
+
+- task type: understand
+- objective: verify whether Week 1 and Week 2 still have missing items after entitlement-source rollout
+- what was discovered:
+  - Week 1 code-level items are materially complete, including B3 contract and DB-backed tier source
+  - remaining Week 1 items are mostly governance/process:
+    - Q1 sign-off evidence execution
+    - fuller B4 narrative doc for tenant-boundary explanation
+  - Week 2 CMS scope is complete and expanded beyond baseline; no blocking code gap identified
+  - remaining enhancements are optional operational maturity items (external metrics sink, tier admin lifecycle API)
+- affected repos/files/modules:
+  - `cobo_web_design/docs/week-1-foundation-status-and-plan.md`
+  - `cobo_web_design/docs/cross_repo_step_by_step_implementation_plan.md`
+  - `cobo_web_design/docs/ai-cache/reusable-task-updates.md`
+  - `cobo_iam_services/docs/ai-cache/reusable-task-updates.md`
+- important contracts/behaviors/constraints/decisions:
+  - `subscription_tier` now resolves from `user_subscription_tiers` in MySQL path
+  - strict CMS entry policy (`platform.cms.view`) remains unchanged
+- build/verification result:
+  - understand-only recheck; no new build/test command in this turn
+  - latest green baseline remains full wrapper cycle + docker rebuild from previous turn
+- remaining gaps/risks/next steps:
+  - attach formal Q1 sign-off artifacts if week closure requires auditable acceptance
+  - decide whether to include operational enhancements in Week 2 closure criteria
+
+## 2026-04-28 - Week 3 Task Board Planning Sync
+
+- task type: understand
+- objective: align Week 3 execution board (C2/C3/start D1) with file/module-level tasks and dependency order
+- what was discovered:
+  - Week 3 delivery should follow dependency-first chain:
+    - C2 BE disclosure-type/template contracts -> C2 FE wiring/tests
+    - C3 BE history model -> C3 FE timeline wiring/tests
+    - D1 BE deadline baseline -> D1 FE replacement for deadline list/detail
+  - risk-managed order favors backward-compatible API additions before FE cutover
+- affected repos/files/modules:
+  - `cobo_web_design/docs/cross_repo_step_by_step_implementation_plan.md`
+  - `cobo_web_design/docs/ai-cache/reusable-task-updates.md`
+  - `cobo_iam_services/docs/ai-cache/reusable-task-updates.md`
+- important contracts/behaviors/constraints/decisions:
+  - keep current response envelope and strict permission model consistent across new Week 3 endpoints
+  - require smoke + docker rebuild at end of each implementation slice
+- build/verification result:
+  - planning-only step; no new build/test run
+- remaining gaps/risks/next steps:
+  - optional next step: split the Week 3 board into assignable PR-sized batches (1-2 days each)
+
+## 2026-04-28 - W3-C2-BE-01 + W3-C2-BE-04 Disclosure Catalog Read APIs
+
+- task type: implement
+- objective: implement contract-first backend read APIs for disclosure type groups/type details and add integration matrix coverage
+- what was implemented/discovered:
+  - added new disclosure catalog read endpoints:
+    - `GET /api/v1/disclosure-groups`
+    - `GET /api/v1/disclosure-types` (`group_id`, `q` filters)
+    - `GET /api/v1/disclosure-types/{type_id}`
+  - introduced typed catalog contracts (`DisclosureGroupDTO`, `DisclosureTypeSummaryDTO`, `DisclosureTypeDTO`) and read methods in disclosure service
+  - seeded in-service baseline catalog dataset for periodic/event/custom type flows to unblock FE API cutover
+  - added integration test:
+    - `TestIntegration_disclosureTypeCatalog_contractAndAuth`
+    - asserts success contract, filtered list, detail not-found (`404`), and forbidden access (`403`)
+- affected repos/files/modules:
+  - `cobo_iam_services/internal/disclosure/app/contracts.go`
+  - `cobo_iam_services/internal/disclosure/app/catalog.go`
+  - `cobo_iam_services/internal/disclosure/app/service.go`
+  - `cobo_iam_services/internal/disclosure/transport/http/handler.go`
+  - `cobo_iam_services/internal/httpserver/server_test.go`
+- important contracts/behaviors/constraints/decisions:
+  - contract-first shape is additive and backward-compatible with existing disclosure CRUD APIs
+  - catalog endpoints currently authorize via `disclosure.create` policy path (same subject gate used by record creation) to avoid exposing catalog to users without disclosure workflow access
+  - detail endpoint returns `404 invalid_request` with message `disclosure type not found` for unknown type id
+- build/verification result:
+  - targeted test passed:
+    - `go test ./internal/disclosure/... ./internal/httpserver -run TestIntegration_disclosureTypeCatalog_contractAndAuth -count=1`
+  - full cycle + fresh docker rebuild passed:
+    - `powershell -ExecutionPolicy Bypass -File docs/scripts/run-c1-cycle.ps1`
+    - includes `go test ./...`, FE lint/tests, DB smoke scripts, and `docker compose -f docker-compose.dev.yml build --no-cache api web`
+- remaining gaps/risks/next steps:
+  - current catalog source is static in-service seed data; next C2 steps should move to persistent store + admin upsert/versioning flow for template lifecycle
+
+## 2026-04-28 - W3-C2 BE Persistent Catalog + Admin Version Lifecycle
+
+- task type: implement
+- objective: move disclosure type catalog from static in-service data to persistent MySQL store and add admin lifecycle APIs for upsert/versioning
+- what was implemented/discovered:
+  - added persistent schema + seed migration:
+    - `disclosure_type_groups`
+    - `disclosure_types` (active version pointer)
+    - `disclosure_type_versions` (versioned payload + metadata)
+  - wired disclosure catalog read APIs to repository-backed storage (in-memory + MySQL implementations)
+  - added admin lifecycle endpoints:
+    - `PUT /api/v1/admin/disclosure-types/{type_id}` (create new version and activate)
+    - `GET /api/v1/admin/disclosure-types/{type_id}/versions` (version history, active flag)
+  - added integration regression:
+    - `TestIntegration_disclosureTypeCatalog_adminUpsertAndVersioning`
+    - covers admin upsert success, active version bump, detail reflects active version, version listing, non-admin forbidden
+- affected repos/files/modules:
+  - `cobo_iam_services/migrations/0012_disclosure_catalog_versions.up.sql`
+  - `cobo_iam_services/migrations/0012_disclosure_catalog_versions.down.sql`
+  - `cobo_iam_services/migrations/run_dev_migrations.sh`
+  - `cobo_iam_services/internal/disclosure/app/contracts.go`
+  - `cobo_iam_services/internal/disclosure/app/catalog.go`
+  - `cobo_iam_services/internal/disclosure/app/service.go`
+  - `cobo_iam_services/internal/disclosure/transport/http/handler.go`
+  - `cobo_iam_services/internal/disclosure/infra/inmemory/repository.go`
+  - `cobo_iam_services/internal/disclosure/infra/mysql/repository.go`
+  - `cobo_iam_services/internal/httpserver/server_test.go`
+- important contracts/behaviors/constraints/decisions:
+  - read contract remains backward-compatible; detail now includes `version_no`
+  - admin version lifecycle is gated by `rbac.manage` permission check
+  - upsert always creates a new immutable version row and moves `active_version_no` to latest
+  - tenant scope enforced on company-owned types (`company_id`) while allowing global (`NULL`) catalog types
+- build/verification result:
+  - targeted tests passed:
+    - `go test ./internal/disclosure/... ./internal/httpserver -run "TestIntegration_disclosureTypeCatalog_contractAndAuth|TestIntegration_disclosureTypeCatalog_adminUpsertAndVersioning" -count=1`
+  - full cycle + fresh docker rebuild passed:
+    - `powershell -ExecutionPolicy Bypass -File docs/scripts/run-c1-cycle.ps1`
+    - includes `go test ./...`, FE lint/tests, DB smokes, and `docker compose -f docker-compose.dev.yml build --no-cache api web`
+- remaining gaps/risks/next steps:
+  - add explicit admin API to roll back/activate a previous version (current flow only appends new active version)
+  - consider audit enrichments for version diff payload to improve compliance traceability
+
+## 2026-04-28 - W3-C2 Admin Rollback/Activate Version Endpoint
+
+- task type: implement
+- objective: add explicit admin endpoint to activate an older disclosure type version (rollback) and extend integration test matrix
+- what was implemented/discovered:
+  - added admin lifecycle endpoint:
+    - `POST /api/v1/admin/disclosure-types/{type_id}/activate`
+  - activation flow now supports selecting existing `version_no` and updating active pointer
+  - added full regression assertions in existing admin lifecycle test:
+    - activate version 1 success
+    - detail endpoint reflects rolled-back active version
+    - invalid payload (`version_no <= 0`) returns `400`
+    - unknown version returns `404`
+    - non-admin activation returns `403`
+  - both in-memory and MySQL disclosure repositories now implement activation behavior
+- affected repos/files/modules:
+  - `cobo_iam_services/internal/disclosure/app/contracts.go`
+  - `cobo_iam_services/internal/disclosure/app/service.go`
+  - `cobo_iam_services/internal/disclosure/transport/http/handler.go`
+  - `cobo_iam_services/internal/disclosure/infra/inmemory/repository.go`
+  - `cobo_iam_services/internal/disclosure/infra/mysql/repository.go`
+  - `cobo_iam_services/internal/httpserver/server_test.go`
+- important contracts/behaviors/constraints/decisions:
+  - endpoint requires `rbac.manage` (same admin boundary as upsert)
+  - activation switches `active_version_no` without mutating historical version payload
+  - response returns active version metadata (`type_id`, `version_no`, `is_active`, `updated_by`, `activated_at`)
+- build/verification result:
+  - targeted tests passed:
+    - `go test ./internal/disclosure/... ./internal/httpserver -run "TestIntegration_disclosureTypeCatalog_adminUpsertAndVersioning|TestIntegration_disclosureTypeCatalog_contractAndAuth" -count=1`
+  - full cycle + fresh docker rebuild passed:
+    - `powershell -ExecutionPolicy Bypass -File docs/scripts/run-c1-cycle.ps1`
+    - includes `go test ./...`, FE lint/tests, DB smokes, and `docker compose -f docker-compose.dev.yml build --no-cache api web`
+- remaining gaps/risks/next steps:
+  - optional next step: add dedicated audit event payload for version activation reason and old/new version pair for compliance reporting
+
+## 2026-04-28 - Disclosure Version Lifecycle Audit Enrichment
+
+- task type: implement
+- objective: add compliance-grade audit trail for disclosure type version upsert/activate operations with old/new version context
+- what was implemented/discovered:
+  - disclosure handler now appends audit events for admin lifecycle operations:
+    - `disclosure.type.version.upsert`
+    - `disclosure.type.version.activate`
+  - audit metadata includes version transition context:
+    - `old_version_no`
+    - `new_version_no`
+    - `change_note` (upsert) / `reason` (activate)
+  - integration test now verifies both lifecycle actions are present in audit feed via `/api/v1/platform/cms/ops/audit`
+- affected repos/files/modules:
+  - `cobo_iam_services/internal/disclosure/transport/http/handler.go`
+  - `cobo_iam_services/internal/httpserver/server.go`
+  - `cobo_iam_services/internal/httpserver/server_test.go`
+  - `cobo_iam_services/docs/ai-cache/reusable-task-updates.md`
+- important contracts/behaviors/constraints/decisions:
+  - no breaking change to disclosure API response contracts
+  - audit emission is best-effort (`AppendAuditLog` non-blocking for response path)
+  - lifecycle actions remain under `rbac.manage` boundary; audit acts as observability/compliance supplement
+- build/verification result:
+  - targeted test passed:
+    - `go test ./internal/httpserver -run TestIntegration_disclosureTypeCatalog_adminUpsertAndVersioning -count=1`
+  - full cycle + fresh docker rebuild passed:
+    - `powershell -ExecutionPolicy Bypass -File docs/scripts/run-c1-cycle.ps1`
+    - includes `go test ./...`, FE lint/tests, DB smokes, and `docker compose -f docker-compose.dev.yml build --no-cache api web`
+- remaining gaps/risks/next steps:
+  - optional next step: expose audit metadata fields in `/api/v1/platform/cms/ops/audit` response for richer forensic/debug UX
+
+## 2026-04-28 - CMS Ops Audit Feed Metadata Exposure
+
+- task type: implement
+- objective: expose richer audit fields (including metadata) in `/api/v1/platform/cms/ops/audit` to support forensic/debug UX for disclosure version lifecycle
+- what was implemented/discovered:
+  - expanded audit feed item shape to include:
+    - `resource_type`
+    - `resource_id`
+    - `decision`
+    - `request_id`
+    - `metadata`
+  - kept existing fields unchanged (`event_id`, `action`, `actor`, `company_id`, `created_at`) for compatibility
+  - extended integration test for disclosure version lifecycle to assert metadata payload presence and expected values:
+    - upsert includes `old_version_no`/`new_version_no`
+    - activate includes `reason = rollback to baseline`
+- affected repos/files/modules:
+  - `cobo_iam_services/internal/platformcms/transport/http/handler.go`
+  - `cobo_iam_services/internal/httpserver/server_test.go`
+  - `cobo_iam_services/docs/ai-cache/reusable-task-updates.md`
+- important contracts/behaviors/constraints/decisions:
+  - audit feed change is additive; existing consumers of prior keys remain valid
+  - metadata exposure intentionally follows existing audit repository payload (no new schema write required)
+- build/verification result:
+  - targeted tests passed:
+    - `go test ./internal/httpserver -run "TestIntegration_disclosureTypeCatalog_adminUpsertAndVersioning|TestIntegration_platformCMSPrefix_metricsAndAuditActionCatalog" -count=1`
+  - full cycle + fresh docker rebuild passed:
+    - `powershell -ExecutionPolicy Bypass -File docs/scripts/run-c1-cycle.ps1`
+    - includes `go test ./...`, FE lint/tests, DB smokes, and `docker compose -f docker-compose.dev.yml build --no-cache api web`
+- remaining gaps/risks/next steps:
+  - optional next step: add API-level filter by `resource_type/resource_id` for faster audit investigation in large datasets
+
+## 2026-04-28 - CMS Ops Audit Resource Filters
+
+- task type: implement
+- objective: support audit query filtering by `resource_type` and `resource_id` to improve investigation speed on large audit datasets
+- what was implemented/discovered:
+  - extended audit repository query contract to accept:
+    - `resource_type`
+    - `resource_id`
+  - implemented filter behavior in both backends:
+    - in-memory audit repository
+    - MySQL audit repository SQL predicates
+  - wired new query params in `/api/v1/platform/cms/ops/audit`
+  - extended integration test to validate combined filter:
+    - `action=disclosure.type.version.activate`
+    - `resource_type=disclosure_type`
+    - `resource_id=dt-custom-obligation`
+  - updated known action allow-list so disclosure lifecycle actions remain valid for `action` filter
+- affected repos/files/modules:
+  - `cobo_iam_services/internal/audit/app/contracts.go`
+  - `cobo_iam_services/internal/audit/infra/inmemory/repository.go`
+  - `cobo_iam_services/internal/audit/infra/mysql/repository.go`
+  - `cobo_iam_services/internal/platformcms/transport/http/handler.go`
+  - `cobo_iam_services/internal/platformcms/transport/http/audit_actions.go`
+  - `cobo_iam_services/internal/httpserver/server_test.go`
+  - `cobo_iam_services/docs/ai-cache/reusable-task-updates.md`
+- important contracts/behaviors/constraints/decisions:
+  - change is additive; existing `action`/`limit` behavior remains unchanged
+  - `action` still validated against known action catalog; resource filters are free-form exact match filters
+  - MySQL query predicates keep empty-string bypass semantics for backward compatibility
+- build/verification result:
+  - targeted tests passed:
+    - `go test ./internal/httpserver -run "TestIntegration_disclosureTypeCatalog_adminUpsertAndVersioning|TestIntegration_platformCMSPrefix_metricsAndAuditActionCatalog" -count=1`
+  - full cycle + fresh docker rebuild passed:
+    - `powershell -ExecutionPolicy Bypass -File docs/scripts/run-c1-cycle.ps1`
+    - includes `go test ./...`, FE lint/tests, DB smokes, and `docker compose -f docker-compose.dev.yml build --no-cache api web`
+- remaining gaps/risks/next steps:
+  - optional next step: add time-range pagination (`from/to`, cursor) for long-horizon audit export/reporting
+
+## 2026-04-28 - CMS Ops Audit Time Range + Cursor Pagination
+
+- task type: implement
+- objective: add long-horizon audit querying support via `from/to` time filters and cursor-style pagination for `/api/v1/platform/cms/ops/audit`
+- what was implemented/discovered:
+  - extended audit query contract to accept:
+    - `from` (inclusive RFC3339)
+    - `to` (inclusive RFC3339)
+    - `cursor` (exclusive upper bound on `created_at` / `occurred_at`)
+  - wired handler query parsing and forwarding to audit repositories
+  - updated MySQL repository predicates for optional time window + cursor filters while preserving old empty-filter behavior
+  - updated in-memory repository parity with RFC3339 parsing and equivalent filtering
+  - response `meta` now includes pagination shape:
+    - `total`
+    - `limit`
+    - `next_cursor` (derived from last returned item's `created_at` when page is full)
+  - expanded integration test coverage under disclosure lifecycle flow to assert time-filter query success and `next_cursor` presence
+- affected repos/files/modules:
+  - `cobo_iam_services/internal/audit/app/contracts.go`
+  - `cobo_iam_services/internal/audit/infra/inmemory/repository.go`
+  - `cobo_iam_services/internal/audit/infra/mysql/repository.go`
+  - `cobo_iam_services/internal/platformcms/transport/http/handler.go`
+  - `cobo_iam_services/internal/httpserver/server_test.go`
+- important contracts/behaviors/constraints/decisions:
+  - change is additive and backward-compatible for clients not sending `from/to/cursor`
+  - cursor semantics are descending-feed friendly: request next page with `cursor=<previous meta.next_cursor>`
+  - invalid/missing timestamp values are treated as empty filters in repository layer (non-breaking)
+- build/verification result:
+  - targeted tests passed:
+    - `go test ./internal/httpserver -run "TestIntegration_disclosureTypeCatalog_adminUpsertAndVersioning|TestIntegration_platformCMSPrefix_metricsAndAuditActionCatalog" -count=1`
+  - full cycle + fresh docker rebuild passed:
+    - `powershell -ExecutionPolicy Bypass -File docs/scripts/run-c1-cycle.ps1`
+    - includes `go test ./...`, FE lint/tests, DB smokes, and `docker compose -f docker-compose.dev.yml build --no-cache api web`
+- remaining gaps/risks/next steps:
+  - optional next step: validate/normalize RFC3339 query params at handler layer and return explicit `400 invalid_request` for malformed values

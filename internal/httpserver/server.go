@@ -207,7 +207,7 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 		idemStore = idempotencymysql.NewStore(pool)
 		log.Info("disclosure submit/confirm idempotency enabled (Idempotency-Key header)")
 	}
-	disclosureHandler := disclosurehttp.NewHandler(disclosureSvc, tokenManager, idemStore)
+	disclosureHandler := disclosurehttp.NewHandler(disclosureSvc, tokenManager, idemStore, auditSvc)
 	workflowSvc := workflowapp.NewService(workflowRepo, authSvc, id)
 	workflowHandler := workflowhttp.NewHandler(workflowSvc, tokenManager)
 	notificationSvc := notificationapp.NewService(notificationRepo, authSvc, id, outboxPublisher, notifOpts...)

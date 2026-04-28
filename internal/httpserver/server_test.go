@@ -1295,3 +1295,330 @@ func TestIntegration_jwtMode_expiredTokenRejectedAtHTTPLayer(t *testing.T) {
 		t.Fatalf("expired token status=%d body=%s", res.StatusCode, b)
 	}
 }
+
+func TestIntegration_disclosureTypeCatalog_contractAndAuth(t *testing.T) {
+	srv := httptest.NewServer(newTestHandler(t, nil))
+	defer srv.Close()
+
+	token := loginAndGetAccessToken(t, srv.URL, "cms.operator@example.com", "secret", "c_001")
+
+	reqGroups, _ := http.NewRequest(http.MethodGet, srv.URL+"/api/v1/disclosure-groups", nil)
+	reqGroups.Header.Set("Authorization", "Bearer "+token)
+	resGroups, err := http.DefaultClient.Do(reqGroups)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resGroups.Body.Close()
+	if resGroups.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resGroups.Body)
+		t.Fatalf("groups status=%d body=%s", resGroups.StatusCode, b)
+	}
+	var groupsOut struct {
+		Items []struct {
+			GroupID string `json:"group_id"`
+			Name    string `json:"name"`
+		} `json:"items"`
+	}
+	if err := json.NewDecoder(resGroups.Body).Decode(&groupsOut); err != nil {
+		t.Fatal(err)
+	}
+	if len(groupsOut.Items) == 0 {
+		t.Fatal("expected at least one disclosure group")
+	}
+
+	reqTypes, _ := http.NewRequest(http.MethodGet, srv.URL+"/api/v1/disclosure-types?group_id=group-002", nil)
+	reqTypes.Header.Set("Authorization", "Bearer "+token)
+	resTypes, err := http.DefaultClient.Do(reqTypes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resTypes.Body.Close()
+	if resTypes.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resTypes.Body)
+		t.Fatalf("types status=%d body=%s", resTypes.StatusCode, b)
+	}
+	var typesOut struct {
+		Items []struct {
+			TypeID string `json:"type_id"`
+		} `json:"items"`
+	}
+	if err := json.NewDecoder(resTypes.Body).Decode(&typesOut); err != nil {
+		t.Fatal(err)
+	}
+	if len(typesOut.Items) == 0 {
+		t.Fatal("expected filtered disclosure types")
+	}
+
+	reqDetail, _ := http.NewRequest(http.MethodGet, srv.URL+"/api/v1/disclosure-types/dt-event-major-change", nil)
+	reqDetail.Header.Set("Authorization", "Bearer "+token)
+	resDetail, err := http.DefaultClient.Do(reqDetail)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resDetail.Body.Close()
+	if resDetail.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resDetail.Body)
+		t.Fatalf("detail status=%d body=%s", resDetail.StatusCode, b)
+	}
+	var detailOut struct {
+		TypeID string `json:"type_id"`
+	}
+	if err := json.NewDecoder(resDetail.Body).Decode(&detailOut); err != nil {
+		t.Fatal(err)
+	}
+	if detailOut.TypeID != "dt-event-major-change" {
+		t.Fatalf("unexpected type detail id=%s", detailOut.TypeID)
+	}
+
+	reqMissing, _ := http.NewRequest(http.MethodGet, srv.URL+"/api/v1/disclosure-types/type-not-found", nil)
+	reqMissing.Header.Set("Authorization", "Bearer "+token)
+	resMissing, err := http.DefaultClient.Do(reqMissing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resMissing.Body.Close()
+	if resMissing.StatusCode != http.StatusNotFound {
+		b, _ := io.ReadAll(resMissing.Body)
+		t.Fatalf("missing detail status=%d body=%s", resMissing.StatusCode, b)
+	}
+
+	forbiddenToken := loginAndGetAccessToken(t, srv.URL, "single@example.com", "secret", "c_010")
+	reqForbidden, _ := http.NewRequest(http.MethodGet, srv.URL+"/api/v1/disclosure-groups", nil)
+	reqForbidden.Header.Set("Authorization", "Bearer "+forbiddenToken)
+	resForbidden, err := http.DefaultClient.Do(reqForbidden)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resForbidden.Body.Close()
+	if resForbidden.StatusCode != http.StatusForbidden {
+		b, _ := io.ReadAll(resForbidden.Body)
+		t.Fatalf("forbidden groups status=%d body=%s", resForbidden.StatusCode, b)
+	}
+}
+
+func TestIntegration_disclosureTypeCatalog_adminUpsertAndVersioning(t *testing.T) {
+	srv := httptest.NewServer(newTestHandler(t, nil))
+	defer srv.Close()
+
+	adminToken := loginAndGetAccessToken(t, srv.URL, "cms.operator@example.com", "secret", "c_001")
+	userToken := loginAndGetAccessToken(t, srv.URL, "single@example.com", "secret", "c_010")
+
+	upsertRes := doJSONRequest(t, http.MethodPut, srv.URL+"/api/v1/admin/disclosure-types/dt-custom-obligation", adminToken, map[string]any{
+		"group_id":               "group-006",
+		"name":                   "Template nghĩa vụ tùy chỉnh V2",
+		"category":               "Tùy chỉnh",
+		"template_category":      "Định kỳ",
+		"description":            "Updated template description",
+		"deadline_rule":          "Theo cấu hình admin phiên bản 2",
+		"periodicity":            "Hàng tháng",
+		"channels_text":          "Nội bộ",
+		"format":                 "PDF",
+		"tags":                   []string{"Tùy chỉnh", "V2"},
+		"change_note":            "update deadline semantics",
+		"implementation_content": "Updated implementation content",
+		"implementation_notes":   "Updated implementation notes",
+		"required_docs":          "Updated required docs",
+		"legal_risks_text":       "Updated legal risks",
+		"general_info":           "Updated general info",
+		"receiving_authorities":  "Nội bộ",
+		"beneficiaries":          "Ban điều hành",
+		"special_cases":          "Updated special cases",
+		"report_content":         "Updated report content",
+		"applicability":          "Theo phân quyền nội bộ",
+		"legal_basis":            "Quy chế nội bộ doanh nghiệp",
+	}, "")
+	if upsertRes.StatusCode != http.StatusOK {
+		t.Fatalf("admin upsert status=%d body=%s", upsertRes.StatusCode, readBody(t, upsertRes.Body))
+	}
+	var upsertOut struct {
+		TypeID    string `json:"type_id"`
+		VersionNo int    `json:"version_no"`
+	}
+	mustDecodeJSON(t, upsertRes.Body, &upsertOut)
+	if upsertOut.TypeID != "dt-custom-obligation" || upsertOut.VersionNo < 2 {
+		t.Fatalf("unexpected upsert response: %+v", upsertOut)
+	}
+
+	detailRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/disclosure-types/dt-custom-obligation", adminToken, nil, "")
+	if detailRes.StatusCode != http.StatusOK {
+		t.Fatalf("detail status=%d body=%s", detailRes.StatusCode, readBody(t, detailRes.Body))
+	}
+	var detailOut struct {
+		VersionNo int      `json:"version_no"`
+		Name      string   `json:"name"`
+		Tags      []string `json:"tags"`
+	}
+	mustDecodeJSON(t, detailRes.Body, &detailOut)
+	if detailOut.VersionNo != upsertOut.VersionNo || detailOut.Name != "Template nghĩa vụ tùy chỉnh V2" {
+		t.Fatalf("unexpected detail after upsert: %+v", detailOut)
+	}
+
+	versionsRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/admin/disclosure-types/dt-custom-obligation/versions", adminToken, nil, "")
+	if versionsRes.StatusCode != http.StatusOK {
+		t.Fatalf("admin versions status=%d body=%s", versionsRes.StatusCode, readBody(t, versionsRes.Body))
+	}
+	var versionsOut struct {
+		Items []struct {
+			VersionNo int  `json:"version_no"`
+			IsActive  bool `json:"is_active"`
+		} `json:"items"`
+	}
+	mustDecodeJSON(t, versionsRes.Body, &versionsOut)
+	if len(versionsOut.Items) < 2 {
+		t.Fatalf("expected at least two versions, got=%d", len(versionsOut.Items))
+	}
+	if versionsOut.Items[0].VersionNo != upsertOut.VersionNo || !versionsOut.Items[0].IsActive {
+		t.Fatalf("unexpected latest version metadata: %+v", versionsOut.Items[0])
+	}
+
+	forbiddenRes := doJSONRequest(t, http.MethodPut, srv.URL+"/api/v1/admin/disclosure-types/dt-custom-obligation", userToken, map[string]any{
+		"group_id": "group-006",
+		"name":     "Should Fail",
+	}, "")
+	if forbiddenRes.StatusCode != http.StatusForbidden {
+		t.Fatalf("non-admin upsert status=%d body=%s", forbiddenRes.StatusCode, readBody(t, forbiddenRes.Body))
+	}
+
+	activateRes := doJSONRequest(t, http.MethodPost, srv.URL+"/api/v1/admin/disclosure-types/dt-custom-obligation/activate", adminToken, map[string]any{
+		"version_no": 1,
+		"reason":     "rollback to baseline",
+	}, "")
+	if activateRes.StatusCode != http.StatusOK {
+		t.Fatalf("activate old version status=%d body=%s", activateRes.StatusCode, readBody(t, activateRes.Body))
+	}
+	var activateOut struct {
+		VersionNo int `json:"version_no"`
+	}
+	mustDecodeJSON(t, activateRes.Body, &activateOut)
+	if activateOut.VersionNo != 1 {
+		t.Fatalf("unexpected activated version: %+v", activateOut)
+	}
+
+	detailAfterActivateRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/disclosure-types/dt-custom-obligation", adminToken, nil, "")
+	if detailAfterActivateRes.StatusCode != http.StatusOK {
+		t.Fatalf("detail after activate status=%d body=%s", detailAfterActivateRes.StatusCode, readBody(t, detailAfterActivateRes.Body))
+	}
+	var detailAfterActivate struct {
+		VersionNo int    `json:"version_no"`
+		Name      string `json:"name"`
+	}
+	mustDecodeJSON(t, detailAfterActivateRes.Body, &detailAfterActivate)
+	if detailAfterActivate.VersionNo != 1 {
+		t.Fatalf("expected active version 1 after rollback, got=%+v", detailAfterActivate)
+	}
+
+	badActivateRes := doJSONRequest(t, http.MethodPost, srv.URL+"/api/v1/admin/disclosure-types/dt-custom-obligation/activate", adminToken, map[string]any{
+		"version_no": 0,
+	}, "")
+	if badActivateRes.StatusCode != http.StatusBadRequest {
+		t.Fatalf("invalid activate payload status=%d body=%s", badActivateRes.StatusCode, readBody(t, badActivateRes.Body))
+	}
+
+	notFoundActivateRes := doJSONRequest(t, http.MethodPost, srv.URL+"/api/v1/admin/disclosure-types/dt-custom-obligation/activate", adminToken, map[string]any{
+		"version_no": 999,
+	}, "")
+	if notFoundActivateRes.StatusCode != http.StatusNotFound {
+		t.Fatalf("activate unknown version status=%d body=%s", notFoundActivateRes.StatusCode, readBody(t, notFoundActivateRes.Body))
+	}
+
+	forbiddenActivateRes := doJSONRequest(t, http.MethodPost, srv.URL+"/api/v1/admin/disclosure-types/dt-custom-obligation/activate", userToken, map[string]any{
+		"version_no": 1,
+	}, "")
+	if forbiddenActivateRes.StatusCode != http.StatusForbidden {
+		t.Fatalf("non-admin activate status=%d body=%s", forbiddenActivateRes.StatusCode, readBody(t, forbiddenActivateRes.Body))
+	}
+
+	auditRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/platform/cms/ops/audit", adminToken, nil, "")
+	if auditRes.StatusCode != http.StatusOK {
+		t.Fatalf("audit status=%d body=%s", auditRes.StatusCode, readBody(t, auditRes.Body))
+	}
+	var auditOut struct {
+		Data struct {
+			Items []map[string]any `json:"items"`
+		} `json:"data"`
+	}
+	mustDecodeJSON(t, auditRes.Body, &auditOut)
+	expected := map[string]bool{
+		"disclosure.type.version.upsert":   false,
+		"disclosure.type.version.activate": false,
+	}
+	for _, item := range auditOut.Data.Items {
+		action, _ := item["action"].(string)
+		if _, ok := expected[action]; ok {
+			expected[action] = true
+		}
+	}
+	for action, seen := range expected {
+		if !seen {
+			t.Fatalf("expected audit action %q in audit feed, got items=%+v", action, auditOut.Data.Items)
+		}
+	}
+	var upsertMeta map[string]any
+	var activateMeta map[string]any
+	for _, item := range auditOut.Data.Items {
+		action, _ := item["action"].(string)
+		if action == "disclosure.type.version.upsert" {
+			meta, _ := item["metadata"].(map[string]any)
+			upsertMeta = meta
+		}
+		if action == "disclosure.type.version.activate" {
+			meta, _ := item["metadata"].(map[string]any)
+			activateMeta = meta
+		}
+	}
+	if upsertMeta == nil {
+		t.Fatalf("expected upsert metadata in audit response, got items=%+v", auditOut.Data.Items)
+	}
+	if _, ok := upsertMeta["old_version_no"]; !ok {
+		t.Fatalf("expected old_version_no in upsert metadata, got=%+v", upsertMeta)
+	}
+	if _, ok := upsertMeta["new_version_no"]; !ok {
+		t.Fatalf("expected new_version_no in upsert metadata, got=%+v", upsertMeta)
+	}
+	if activateMeta == nil {
+		t.Fatalf("expected activate metadata in audit response, got items=%+v", auditOut.Data.Items)
+	}
+	if activateMeta["reason"] != "rollback to baseline" {
+		t.Fatalf("expected activate reason metadata, got=%+v", activateMeta)
+	}
+
+	filteredByResourceRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/platform/cms/ops/audit?action=disclosure.type.version.activate&resource_type=disclosure_type&resource_id=dt-custom-obligation", adminToken, nil, "")
+	if filteredByResourceRes.StatusCode != http.StatusOK {
+		t.Fatalf("resource filtered audit status=%d body=%s", filteredByResourceRes.StatusCode, readBody(t, filteredByResourceRes.Body))
+	}
+	var filteredByResourceOut struct {
+		Data struct {
+			Items []map[string]any `json:"items"`
+		} `json:"data"`
+	}
+	mustDecodeJSON(t, filteredByResourceRes.Body, &filteredByResourceOut)
+	if len(filteredByResourceOut.Data.Items) == 0 {
+		t.Fatalf("expected resource filtered audit items")
+	}
+	for _, item := range filteredByResourceOut.Data.Items {
+		if item["action"] != "disclosure.type.version.activate" {
+			t.Fatalf("unexpected action in resource filtered result: %+v", item)
+		}
+		if item["resource_type"] != "disclosure_type" || item["resource_id"] != "dt-custom-obligation" {
+			t.Fatalf("unexpected resource filter match: %+v", item)
+		}
+	}
+
+	timeFilteredRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/platform/cms/ops/audit?action=disclosure.type.version.activate&from=2000-01-01T00:00:00Z&to=2100-01-01T00:00:00Z&limit=1", adminToken, nil, "")
+	if timeFilteredRes.StatusCode != http.StatusOK {
+		t.Fatalf("time filtered audit status=%d body=%s", timeFilteredRes.StatusCode, readBody(t, timeFilteredRes.Body))
+	}
+	var timeFilteredOut struct {
+		Data struct {
+			Items []map[string]any `json:"items"`
+		} `json:"data"`
+		Meta map[string]any `json:"meta"`
+	}
+	mustDecodeJSON(t, timeFilteredRes.Body, &timeFilteredOut)
+	if len(timeFilteredOut.Data.Items) == 0 {
+		t.Fatalf("expected time filtered items")
+	}
+	if _, ok := timeFilteredOut.Meta["next_cursor"]; !ok {
+		t.Fatalf("expected next_cursor in meta, got=%+v", timeFilteredOut.Meta)
+	}
+}

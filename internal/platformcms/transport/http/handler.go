@@ -878,13 +878,18 @@ func (h *Handler) auditLogs(w http.ResponseWriter, r *http.Request) {
 	}
 	limit := parsePositiveInt(r.URL.Query().Get("limit"), 50, 200)
 	action := strings.TrimSpace(r.URL.Query().Get("action"))
+	resourceType := strings.TrimSpace(r.URL.Query().Get("resource_type"))
+	resourceID := strings.TrimSpace(r.URL.Query().Get("resource_id"))
+	fromOccurredAt := strings.TrimSpace(r.URL.Query().Get("from"))
+	toOccurredAt := strings.TrimSpace(r.URL.Query().Get("to"))
+	cursor := strings.TrimSpace(r.URL.Query().Get("cursor"))
 	if action != "" {
 		if _, ok := cmsKnownActions[action]; !ok {
 			httpx.WriteError(w, nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "unsupported action filter", nil))
 			return
 		}
 	}
-	entries, err := h.auditRepo.ListByCompany(r.Context(), sub.CompanyID, action, limit)
+	entries, err := h.auditRepo.ListByCompany(r.Context(), sub.CompanyID, action, resourceType, resourceID, fromOccurredAt, toOccurredAt, cursor, limit)
 	if err != nil {
 		httpx.WriteError(w, nil, err)
 		return
@@ -892,14 +897,29 @@ func (h *Handler) auditLogs(w http.ResponseWriter, r *http.Request) {
 	events := make([]map[string]any, 0, len(entries))
 	for _, entry := range entries {
 		events = append(events, map[string]any{
-			"event_id":   entry.EventID,
-			"action":     entry.Action,
-			"actor":      entry.ActorUserID,
-			"company_id": entry.CompanyID,
-			"created_at": entry.OccurredAt,
+			"event_id":      entry.EventID,
+			"action":        entry.Action,
+			"actor":         entry.ActorUserID,
+			"company_id":    entry.CompanyID,
+			"resource_type": entry.ResourceType,
+			"resource_id":   entry.ResourceID,
+			"decision":      entry.Decision,
+			"request_id":    entry.RequestID,
+			"created_at":    entry.OccurredAt,
+			"metadata":      entry.Metadata,
 		})
 	}
-	writeEnvelope(w, http.StatusOK, map[string]any{"items": events}, map[string]any{"total": len(events)})
+	var nextCursor any
+	if len(events) == limit {
+		if last, ok := events[len(events)-1]["created_at"].(string); ok && strings.TrimSpace(last) != "" {
+			nextCursor = last
+		}
+	}
+	writeEnvelope(w, http.StatusOK, map[string]any{"items": events}, map[string]any{
+		"total":       len(events),
+		"limit":       limit,
+		"next_cursor": nextCursor,
+	})
 }
 
 func (h *Handler) systemMetrics(w http.ResponseWriter, r *http.Request) {
