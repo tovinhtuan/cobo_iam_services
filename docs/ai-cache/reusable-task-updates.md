@@ -1439,3 +1439,152 @@
     - `docker compose -f docker-compose.dev.yml build --no-cache api`
 - remaining gaps/risks/next steps:
   - staging/prod must set `PUBLIC_API_BASE_URL` to ingress domain (e.g. `https://iam.<env-domain>`) to avoid mixed host issues
+
+## 2026-05-01 - Disclosure Template Type Analysis Baseline (Periodic/Irregular/Custom)
+
+- task type: understand
+- objective: analyze backend-supported disclosure template creation/lifecycle and extract type-specific standardization requirements for CMS operations
+- what was discovered:
+  - disclosure type model already supports versioned, persistent template lifecycle with activation rollback
+  - schema fields are broad enough for compliance-grade templates (`legal_basis`, `applicability`, `implementation_*`, `report_content`, `required_docs`, `deadline_rule`, `periodicity`, channels/authorities/beneficiaries, risks, tags)
+  - service-level validation for upsert is currently minimal (`type_id`, `group_id`, `name`) and does not yet enforce type-specific rules for periodic/irregular/custom
+  - activation flow is robust for rollback (`active_version_no` pointer swap), but not tied to semantic validation of template consistency by type
+- affected repos/files/modules:
+  - `cobo_iam_services/internal/disclosure/app/contracts.go`
+  - `cobo_iam_services/internal/disclosure/app/service.go`
+  - `cobo_iam_services/internal/disclosure/infra/mysql/repository.go`
+  - `cobo_iam_services/internal/disclosure/transport/http/handler.go`
+  - `cobo_iam_services/migrations/0012_disclosure_catalog_versions.up.sql`
+- important contracts/behaviors/constraints/decisions:
+  - current contract allows flexible free-text content; this is good for adoption speed but increases template drift risk across operators
+  - recommended backend rule baseline for “template chuẩn”:
+    - periodic: require non-empty `periodicity` and normative `deadline_rule`
+    - irregular: require event-based deadline semantics and trigger-condition content
+    - custom: require governance/change-note context and explicit applicability scope
+  - preserve backward compatibility by adding validation as additive constraints (with clear `400 invalid_request` details), not by contract-breaking field removals
+- build/verification result:
+  - analysis-only task; no code changes and no build/test run required
+- remaining gaps/risks/next steps:
+  - implement type-aware validation matrix in service layer and cover with HTTP integration tests
+  - optionally introduce structured enums for `template_category`/`periodicity` to reduce free-text ambiguity
+  - align CMS FE form constraints with backend validation to avoid user-facing mismatch/retry loops
+
+## 2026-05-01 - Add 3 Disclosure Template Types (Obligation/AGM/Transaction)
+
+- task type: implement
+- objective: bổ sung thêm 3 loại template báo cáo trong disclosure catalog để CMS có thể tạo/chọn ngay: nghĩa vụ, tổ chức đại hội cổ đông, công bố thông tin về giao dịch
+- what was implemented/discovered:
+  - added new migration `0014_disclosure_catalog_extra_types.up.sql` to insert/upsert:
+    - `dt-obligation-report` (group `group-001`)
+    - `dt-shareholder-meeting` (group `group-001`)
+    - `dt-disclosure-transaction` (group `group-002`)
+  - added rollback migration `0014_disclosure_catalog_extra_types.down.sql`
+  - updated migration runner order in `run_dev_migrations.sh` to include `0014_disclosure_catalog_extra_types.up.sql`
+  - synced in-memory catalog seed (`internal/disclosure/app/catalog.go`) with the same 3 new types for DB/non-DB parity in tests/dev
+- affected repos/files/modules:
+  - `cobo_iam_services/migrations/0014_disclosure_catalog_extra_types.up.sql`
+  - `cobo_iam_services/migrations/0014_disclosure_catalog_extra_types.down.sql`
+  - `cobo_iam_services/migrations/run_dev_migrations.sh`
+  - `cobo_iam_services/internal/disclosure/app/catalog.go`
+- important contracts/behaviors/constraints/decisions:
+  - rollout-safe approach: add new migration instead of modifying historical migration to avoid drift on already-migrated environments
+  - category/group mapping:
+    - nghĩa vụ: `Định kỳ` / `group-001`
+    - tổ chức đại hội cổ đông: `Định kỳ` / `group-001`
+    - công bố thông tin về giao dịch: `Bất thường` / `group-002`
+  - seed is idempotent via `ON DUPLICATE KEY UPDATE`
+- build/verification result:
+  - targeted integration tests passed:
+    - `go test ./internal/disclosure/... ./internal/httpserver -run "TestIntegration_disclosureTypeCatalog_contractAndAuth|TestIntegration_disclosureTypeCatalog_adminUpsertAndVersioning" -count=1`
+  - lints/diagnostics: no issues on changed files
+- remaining gaps/risks/next steps:
+  - run compose migration on active environment (`run_dev_migrations.sh` via stack startup) to materialize new types in DB
+  - optional next step: prefill FE `CmsTemplatesPage` quick-select presets for these 3 new types to speed operator setup
+
+## 2026-05-01 - Template Standardization: Type-aware Validation + Enum Contract
+
+- task type: implement
+- objective: chuẩn hóa lifecycle template disclosure bằng matrix validation theo loại (periodic/irregular/custom), enum hóa field reference và bổ sung test matrix integration
+- what was implemented/discovered:
+  - applied running-stack migrations and verified catalog data:
+    - `0014_disclosure_catalog_extra_types.up.sql` (3 loại mới)
+    - `0015_disclosure_template_enums.up.sql` (chuẩn hóa enum + thêm `deadline_strategy`)
+  - added backend template enum/validation module:
+    - new `internal/disclosure/app/template_validation.go`
+    - validates matrix by `template_category` and returns `400 INVALID_REQUEST` with `details.field_errors`
+  - extended disclosure contracts with `deadline_strategy`
+  - wired service validation in `UpsertTypeVersion` before repository persistence
+  - updated MySQL + in-memory repositories to store/read `deadline_strategy`
+  - synced seed catalog constants to canonical enums (`periodic/irregular/custom`, `monthly/...`, strategy values)
+  - expanded integration test matrix in `TestIntegration_disclosureTypeCatalog_adminUpsertAndVersioning`:
+    - happy path upsert + version list + rollback activate
+    - invalid-by-type matrix for periodic/irregular/custom expecting `400`
+    - forbidden/non-admin checks remain covered
+- affected repos/files/modules:
+  - `cobo_iam_services/internal/disclosure/app/contracts.go`
+  - `cobo_iam_services/internal/disclosure/app/service.go`
+  - `cobo_iam_services/internal/disclosure/app/template_validation.go`
+  - `cobo_iam_services/internal/disclosure/app/catalog.go`
+  - `cobo_iam_services/internal/disclosure/infra/mysql/repository.go`
+  - `cobo_iam_services/internal/disclosure/infra/inmemory/repository.go`
+  - `cobo_iam_services/internal/httpserver/server_test.go`
+  - `cobo_iam_services/migrations/0014_disclosure_catalog_extra_types.*.sql`
+  - `cobo_iam_services/migrations/0015_disclosure_template_enums.*.sql`
+  - `cobo_iam_services/migrations/run_dev_migrations.sh`
+- important contracts/behaviors/constraints/decisions:
+  - canonical enum contract:
+    - `template_category`: `periodic | irregular | custom`
+    - `periodicity`: `monthly | quarterly | yearly | event_based | ad_hoc`
+    - `deadline_strategy`: `fixed_cycle_days | event_relative_hours | configurable`
+  - matrix rules:
+    - periodic -> periodicity in `[monthly, quarterly, yearly]` + strategy `fixed_cycle_days`
+    - irregular -> periodicity `event_based` + strategy `event_relative_hours`
+    - custom -> periodicity in `[monthly, quarterly, yearly, ad_hoc]` + strategy `configurable`
+  - legacy VN values are normalized to canonical enums via alias mapping + migration rewrite
+- build/verification result:
+  - migration apply on running stack passed:
+    - `docker compose -f docker-compose.dev.yml run --rm migrate`
+  - targeted integration matrix passed:
+    - `go test ./internal/disclosure/... ./internal/httpserver -run "TestIntegration_disclosureTypeCatalog_contractAndAuth|TestIntegration_disclosureTypeCatalog_adminUpsertAndVersioning" -count=1`
+  - fresh docker rebuild passed:
+    - `docker compose -f docker-compose.dev.yml build --no-cache api`
+    - `docker compose -f docker-compose.dev.yml up -d api`
+  - API smoke confirms invalid-by-type returns field-specific details:
+    - `INVALID_REQUEST` + `details.field_errors.periodicity/deadline_strategy`
+- remaining gaps/risks/next steps:
+  - optional: expose enum/reference-data endpoint from BE instead of FE hardcode to avoid future drift
+  - optional: add stricter DB constraints/checks when enum set is fully stabilized across environments
+
+## 2026-05-01 - Disclosure Template Reference-Data Endpoint
+
+- task type: implement
+- objective: add backend reference-data endpoint for disclosure template enums/rules to prevent FE hardcoded drift over time
+- what was implemented/discovered:
+  - added admin endpoint:
+    - `GET /api/v1/admin/disclosure-types/reference-data`
+  - endpoint returns canonical template enum catalog + validation rule hints:
+    - `template_categories`
+    - `periodicities`
+    - `deadline_strategies`
+    - `matrix_rules`
+  - service method added to disclosure app layer with `rbac.manage` permission boundary
+  - integration test matrix expanded to cover:
+    - admin success response shape
+    - non-admin forbidden (`403`)
+- affected repos/files/modules:
+  - `cobo_iam_services/internal/disclosure/app/contracts.go`
+  - `cobo_iam_services/internal/disclosure/app/service.go`
+  - `cobo_iam_services/internal/disclosure/transport/http/handler.go`
+  - `cobo_iam_services/internal/httpserver/server_test.go`
+- important contracts/behaviors/constraints/decisions:
+  - response is additive and backward-compatible with existing admin lifecycle APIs
+  - enum values are sourced from backend canonical constants used by validation matrix to keep FE/BE consistent
+  - endpoint keeps admin-only boundary (`rbac.manage`) similar to other template lifecycle admin APIs
+- build/verification result:
+  - targeted backend integration test passed:
+    - `go test ./internal/httpserver -run TestIntegration_disclosureTypeCatalog_adminUpsertAndVersioning -count=1`
+  - fresh docker rebuild/restart passed for affected services:
+    - `docker compose -f docker-compose.dev.yml build --no-cache api web`
+    - `docker compose -f docker-compose.dev.yml up -d api web`
+- remaining gaps/risks/next steps:
+  - optional next step: expose localized labels per enum from backend when FE needs backend-driven display text (not only canonical codes)

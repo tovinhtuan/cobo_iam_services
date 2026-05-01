@@ -178,7 +178,7 @@ func (r *Repository) GetTypeDetail(ctx context.Context, companyID, typeID string
 	row := r.db.QueryRowContext(ctx, `
 		SELECT
 			t.type_id, t.group_id, t.active_version_no,
-			v.name, v.category, v.template_category, v.description,
+			v.name, v.category, v.template_category, COALESCE(v.deadline_strategy, ''), v.description,
 			COALESCE(v.legal_basis, ''), COALESCE(v.applicability, ''), COALESCE(v.implementation_content, ''), COALESCE(v.implementation_notes, ''),
 			COALESCE(v.special_cases, ''), COALESCE(v.report_content, ''), COALESCE(v.required_docs, ''),
 			COALESCE(v.deadline_rule, ''), COALESCE(v.periodicity, ''), COALESCE(v.channels_text, ''), COALESCE(v.beneficiaries, ''),
@@ -192,7 +192,7 @@ func (r *Repository) GetTypeDetail(ctx context.Context, companyID, typeID string
 	var tagsRaw []byte
 	if err := row.Scan(
 		&item.TypeID, &item.GroupID, &item.VersionNo,
-		&item.Name, &item.Category, &item.TemplateCategory, &item.Description,
+		&item.Name, &item.Category, &item.TemplateCategory, &item.DeadlineStrategy, &item.Description,
 		&item.LegalBasis, &item.Applicability, &item.ImplementationContent, &item.ImplementationNotes,
 		&item.SpecialCases, &item.ReportContent, &item.RequiredDocs,
 		&item.DeadlineRule, &item.Periodicity, &item.ChannelsText, &item.Beneficiaries,
@@ -207,6 +207,52 @@ func (r *Repository) GetTypeDetail(ctx context.Context, companyID, typeID string
 	if err := decodeTags(tagsRaw, &item.Tags); err != nil {
 		return nil, err
 	}
+	blocks, err := r.listTemplateBlocks(ctx, typeID, item.VersionNo)
+	if err != nil {
+		return nil, err
+	}
+	item.Blocks = blocks
+	return &item, nil
+}
+
+func (r *Repository) GetTypeVersionDetail(ctx context.Context, companyID, typeID string, versionNo int) (*disclosureapp.DisclosureTypeDTO, error) {
+	row := r.db.QueryRowContext(ctx, `
+		SELECT
+			t.type_id, t.group_id, v.version_no,
+			v.name, v.category, v.template_category, COALESCE(v.deadline_strategy, ''), v.description,
+			COALESCE(v.legal_basis, ''), COALESCE(v.applicability, ''), COALESCE(v.implementation_content, ''), COALESCE(v.implementation_notes, ''),
+			COALESCE(v.special_cases, ''), COALESCE(v.report_content, ''), COALESCE(v.required_docs, ''),
+			COALESCE(v.deadline_rule, ''), COALESCE(v.periodicity, ''), COALESCE(v.channels_text, ''), COALESCE(v.beneficiaries, ''),
+			COALESCE(v.receiving_authorities, ''), COALESCE(v.format, ''), COALESCE(v.legal_risks_text, ''), COALESCE(v.general_info, ''),
+			v.tags_json
+		FROM disclosure_type_versions v
+		INNER JOIN disclosure_types t ON t.type_id = v.type_id
+		WHERE v.type_id = ? AND v.version_no = ? AND (t.company_id IS NULL OR t.company_id = ?)
+	`, typeID, versionNo, companyID)
+	var item disclosureapp.DisclosureTypeDTO
+	var tagsRaw []byte
+	if err := row.Scan(
+		&item.TypeID, &item.GroupID, &item.VersionNo,
+		&item.Name, &item.Category, &item.TemplateCategory, &item.DeadlineStrategy, &item.Description,
+		&item.LegalBasis, &item.Applicability, &item.ImplementationContent, &item.ImplementationNotes,
+		&item.SpecialCases, &item.ReportContent, &item.RequiredDocs,
+		&item.DeadlineRule, &item.Periodicity, &item.ChannelsText, &item.Beneficiaries,
+		&item.ReceivingAuthorities, &item.Format, &item.LegalRisksText, &item.GeneralInfo,
+		&tagsRaw,
+	); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "disclosure type version not found", nil)
+		}
+		return nil, err
+	}
+	if err := decodeTags(tagsRaw, &item.Tags); err != nil {
+		return nil, err
+	}
+	blocks, err := r.listTemplateBlocks(ctx, typeID, versionNo)
+	if err != nil {
+		return nil, err
+	}
+	item.Blocks = blocks
 	return &item, nil
 }
 
@@ -246,21 +292,42 @@ func (r *Repository) UpsertTypeVersion(ctx context.Context, req disclosureapp.Up
 	if err != nil {
 		return nil, fmt.Errorf("marshal tags: %w", err)
 	}
+	blocks, err := normalizeTemplateBlocks(req.Blocks)
+	if err != nil {
+		return nil, err
+	}
 	now := time.Now().UTC()
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO disclosure_type_versions (
-			type_id, version_no, name, category, template_category, description, legal_basis, applicability, implementation_content,
+			type_id, version_no, name, category, template_category, deadline_strategy, description, legal_basis, applicability, implementation_content,
 			implementation_notes, special_cases, report_content, required_docs, deadline_rule, periodicity, channels_text,
 			beneficiaries, receiving_authorities, format, legal_risks_text, general_info, tags_json, change_note, updated_by, activated_at
-		) VALUES (?, ?, ?, ?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
+		) VALUES (?, ?, ?, ?, ?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
 		          NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
 		          NULLIF(?, ''), NULLIF(?, ''), CAST(? AS JSON), NULLIF(?, ''), ?, ?)
-	`, req.TypeID, nextVersion, req.Name, req.Category, req.TemplateCategory, req.Description,
+	`, req.TypeID, nextVersion, req.Name, req.Category, req.TemplateCategory, req.DeadlineStrategy, req.Description,
 		req.LegalBasis, req.Applicability, req.ImplementationContent, req.ImplementationNotes, req.SpecialCases, req.ReportContent,
 		req.RequiredDocs, req.DeadlineRule, req.Periodicity, req.ChannelsText, req.Beneficiaries, req.ReceivingAuthorities,
 		req.Format, req.LegalRisksText, req.GeneralInfo, string(tagsJSON), changeNote, req.Subject.UserID, now)
 	if err != nil {
 		return nil, err
+	}
+	for _, block := range blocks {
+		configJSON, err := json.Marshal(block.Config)
+		if err != nil {
+			return nil, fmt.Errorf("marshal block config: %w", err)
+		}
+		validationJSON, err := json.Marshal(block.Validation)
+		if err != nil {
+			return nil, fmt.Errorf("marshal block validation: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO disclosure_template_blocks (
+				type_id, version_no, block_id, block_key, block_type, title, description, config_json, validation_json, display_order, enabled
+			) VALUES (?, ?, ?, ?, ?, ?, NULLIF(?, ''), CAST(? AS JSON), CAST(? AS JSON), ?, ?)
+		`, req.TypeID, nextVersion, block.BlockID, block.BlockKey, block.BlockType, block.Title, block.Description, string(configJSON), string(validationJSON), block.DisplayOrder, block.Enabled); err != nil {
+			return nil, err
+		}
 	}
 	_, err = tx.ExecContext(ctx, `
 		UPDATE disclosure_types
@@ -372,6 +439,79 @@ func decodeTags(raw []byte, target *[]string) error {
 	var parsed []string
 	if err := json.Unmarshal(raw, &parsed); err != nil {
 		return err
+	}
+	*target = parsed
+	return nil
+}
+
+func normalizeTemplateBlocks(blocks []disclosureapp.TemplateBlockDTO) ([]disclosureapp.TemplateBlockDTO, error) {
+	if len(blocks) == 0 {
+		return []disclosureapp.TemplateBlockDTO{}, nil
+	}
+	out := make([]disclosureapp.TemplateBlockDTO, 0, len(blocks))
+	for _, block := range blocks {
+		if block.Config == nil {
+			block.Config = map[string]any{}
+		}
+		if block.Validation == nil {
+			block.Validation = map[string]any{}
+		}
+		out = append(out, block)
+	}
+	return out, nil
+}
+
+func (r *Repository) listTemplateBlocks(ctx context.Context, typeID string, versionNo int) ([]disclosureapp.TemplateBlockDTO, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT block_id, block_key, block_type, title, COALESCE(description, ''), config_json, validation_json, display_order, enabled
+		FROM disclosure_template_blocks
+		WHERE type_id = ? AND version_no = ?
+		ORDER BY display_order ASC, block_id ASC
+	`, typeID, versionNo)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]disclosureapp.TemplateBlockDTO, 0)
+	for rows.Next() {
+		var item disclosureapp.TemplateBlockDTO
+		var configRaw []byte
+		var validationRaw []byte
+		if err := rows.Scan(
+			&item.BlockID,
+			&item.BlockKey,
+			&item.BlockType,
+			&item.Title,
+			&item.Description,
+			&configRaw,
+			&validationRaw,
+			&item.DisplayOrder,
+			&item.Enabled,
+		); err != nil {
+			return nil, err
+		}
+		if err := decodeJSONMap(configRaw, &item.Config); err != nil {
+			return nil, fmt.Errorf("decode block config: %w", err)
+		}
+		if err := decodeJSONMap(validationRaw, &item.Validation); err != nil {
+			return nil, fmt.Errorf("decode block validation: %w", err)
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
+
+func decodeJSONMap(raw []byte, target *map[string]any) error {
+	if len(raw) == 0 {
+		*target = map[string]any{}
+		return nil
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		return err
+	}
+	if parsed == nil {
+		parsed = map[string]any{}
 	}
 	*target = parsed
 	return nil

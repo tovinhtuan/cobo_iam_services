@@ -14,6 +14,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1538,10 +1539,11 @@ func TestIntegration_disclosureTypeCatalog_adminUpsertAndVersioning(t *testing.T
 		"group_id":               "group-006",
 		"name":                   "Template nghĩa vụ tùy chỉnh V2",
 		"category":               "Tùy chỉnh",
-		"template_category":      "Định kỳ",
+		"template_category":      "custom",
+		"deadline_strategy":      "configurable",
 		"description":            "Updated template description",
 		"deadline_rule":          "Theo cấu hình admin phiên bản 2",
-		"periodicity":            "Hàng tháng",
+		"periodicity":            "monthly",
 		"channels_text":          "Nội bộ",
 		"format":                 "PDF",
 		"tags":                   []string{"Tùy chỉnh", "V2"},
@@ -1557,6 +1559,30 @@ func TestIntegration_disclosureTypeCatalog_adminUpsertAndVersioning(t *testing.T
 		"report_content":         "Updated report content",
 		"applicability":          "Theo phân quyền nội bộ",
 		"legal_basis":            "Quy chế nội bộ doanh nghiệp",
+		"blocks": []map[string]any{
+			{
+				"block_id":      "block-general-info",
+				"block_key":     "general_info",
+				"block_type":    "text",
+				"title":         "Thông tin chung",
+				"description":   "Mô tả khối thông tin chung",
+				"config":        map[string]any{"max_length": 5000},
+				"validation":    map[string]any{"required": true},
+				"display_order": 1,
+				"enabled":       true,
+			},
+			{
+				"block_id":      "block-required-docs",
+				"block_key":     "required_docs",
+				"block_type":    "checklist",
+				"title":         "Hồ sơ bắt buộc",
+				"description":   "Checklist hồ sơ",
+				"config":        map[string]any{"allow_custom_items": false},
+				"validation":    map[string]any{"required": true},
+				"display_order": 2,
+				"enabled":       true,
+			},
+		},
 	}, "")
 	if upsertRes.StatusCode != http.StatusOK {
 		t.Fatalf("admin upsert status=%d body=%s", upsertRes.StatusCode, readBody(t, upsertRes.Body))
@@ -1578,10 +1604,18 @@ func TestIntegration_disclosureTypeCatalog_adminUpsertAndVersioning(t *testing.T
 		VersionNo int      `json:"version_no"`
 		Name      string   `json:"name"`
 		Tags      []string `json:"tags"`
+		Blocks    []struct {
+			BlockID      string `json:"block_id"`
+			BlockKey     string `json:"block_key"`
+			DisplayOrder int    `json:"display_order"`
+		} `json:"blocks"`
 	}
 	mustDecodeJSON(t, detailRes.Body, &detailOut)
 	if detailOut.VersionNo != upsertOut.VersionNo || detailOut.Name != "Template nghĩa vụ tùy chỉnh V2" {
 		t.Fatalf("unexpected detail after upsert: %+v", detailOut)
+	}
+	if len(detailOut.Blocks) != 2 || detailOut.Blocks[0].BlockKey != "general_info" || detailOut.Blocks[1].DisplayOrder != 2 {
+		t.Fatalf("unexpected blocks after upsert: %+v", detailOut.Blocks)
 	}
 
 	versionsRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/admin/disclosure-types/dt-custom-obligation/versions", adminToken, nil, "")
@@ -1601,6 +1635,59 @@ func TestIntegration_disclosureTypeCatalog_adminUpsertAndVersioning(t *testing.T
 	if versionsOut.Items[0].VersionNo != upsertOut.VersionNo || !versionsOut.Items[0].IsActive {
 		t.Fatalf("unexpected latest version metadata: %+v", versionsOut.Items[0])
 	}
+	versionDetailRes := doJSONRequest(
+		t,
+		http.MethodGet,
+		srv.URL+"/api/v1/admin/disclosure-types/dt-custom-obligation/versions/"+strconv.Itoa(upsertOut.VersionNo),
+		adminToken,
+		nil,
+		"",
+	)
+	if versionDetailRes.StatusCode != http.StatusOK {
+		t.Fatalf("admin version detail status=%d body=%s", versionDetailRes.StatusCode, readBody(t, versionDetailRes.Body))
+	}
+	var versionDetailOut struct {
+		VersionNo int    `json:"version_no"`
+		Name      string `json:"name"`
+		Blocks    []struct {
+			BlockKey string `json:"block_key"`
+		} `json:"blocks"`
+	}
+	mustDecodeJSON(t, versionDetailRes.Body, &versionDetailOut)
+	if versionDetailOut.VersionNo != upsertOut.VersionNo || len(versionDetailOut.Blocks) != 2 {
+		t.Fatalf("unexpected admin version detail: %+v", versionDetailOut)
+	}
+	forbiddenVersionDetailRes := doJSONRequest(
+		t,
+		http.MethodGet,
+		srv.URL+"/api/v1/admin/disclosure-types/dt-custom-obligation/versions/1",
+		userToken,
+		nil,
+		"",
+	)
+	if forbiddenVersionDetailRes.StatusCode != http.StatusForbidden {
+		t.Fatalf("non-admin version detail status=%d body=%s", forbiddenVersionDetailRes.StatusCode, readBody(t, forbiddenVersionDetailRes.Body))
+	}
+
+	refDataRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/admin/disclosure-types/reference-data", adminToken, nil, "")
+	if refDataRes.StatusCode != http.StatusOK {
+		t.Fatalf("reference-data status=%d body=%s", refDataRes.StatusCode, readBody(t, refDataRes.Body))
+	}
+	var refDataOut struct {
+		Data struct {
+			TemplateCategories []string            `json:"template_categories"`
+			Periodicities      []string            `json:"periodicities"`
+			DeadlineStrategies []string            `json:"deadline_strategies"`
+			MatrixRules        map[string][]string `json:"matrix_rules"`
+		} `json:"data"`
+	}
+	mustDecodeJSON(t, refDataRes.Body, &refDataOut)
+	if len(refDataOut.Data.TemplateCategories) == 0 || len(refDataOut.Data.Periodicities) == 0 || len(refDataOut.Data.DeadlineStrategies) == 0 {
+		t.Fatalf("unexpected reference-data payload: %+v", refDataOut)
+	}
+	if len(refDataOut.Data.MatrixRules["periodic"]) == 0 {
+		t.Fatalf("expected periodic matrix rules in reference-data: %+v", refDataOut.Data.MatrixRules)
+	}
 
 	forbiddenRes := doJSONRequest(t, http.MethodPut, srv.URL+"/api/v1/admin/disclosure-types/dt-custom-obligation", userToken, map[string]any{
 		"group_id": "group-006",
@@ -1608,6 +1695,87 @@ func TestIntegration_disclosureTypeCatalog_adminUpsertAndVersioning(t *testing.T
 	}, "")
 	if forbiddenRes.StatusCode != http.StatusForbidden {
 		t.Fatalf("non-admin upsert status=%d body=%s", forbiddenRes.StatusCode, readBody(t, forbiddenRes.Body))
+	}
+	forbiddenRefDataRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/admin/disclosure-types/reference-data", userToken, nil, "")
+	if forbiddenRefDataRes.StatusCode != http.StatusForbidden {
+		t.Fatalf("non-admin reference-data status=%d body=%s", forbiddenRefDataRes.StatusCode, readBody(t, forbiddenRefDataRes.Body))
+	}
+
+	invalidPeriodicRes := doJSONRequest(t, http.MethodPut, srv.URL+"/api/v1/admin/disclosure-types/dt-periodic-financial", adminToken, map[string]any{
+		"group_id":          "group-001",
+		"name":              "Invalid periodic",
+		"template_category": "periodic",
+		"deadline_strategy": "event_relative_hours",
+		"deadline_rule":     "T+24h",
+		"periodicity":       "event_based",
+	}, "")
+	if invalidPeriodicRes.StatusCode != http.StatusBadRequest {
+		t.Fatalf("invalid periodic matrix status=%d body=%s", invalidPeriodicRes.StatusCode, readBody(t, invalidPeriodicRes.Body))
+	}
+	if !strings.Contains(readBody(t, invalidPeriodicRes.Body), "deadline_strategy") {
+		t.Fatalf("expected field_errors.deadline_strategy in periodic invalid response")
+	}
+
+	invalidIrregularRes := doJSONRequest(t, http.MethodPut, srv.URL+"/api/v1/admin/disclosure-types/dt-event-major-change", adminToken, map[string]any{
+		"group_id":          "group-002",
+		"name":              "Invalid irregular",
+		"template_category": "irregular",
+		"deadline_strategy": "fixed_cycle_days",
+		"deadline_rule":     "T+2 ngày",
+		"periodicity":       "monthly",
+	}, "")
+	if invalidIrregularRes.StatusCode != http.StatusBadRequest {
+		t.Fatalf("invalid irregular matrix status=%d body=%s", invalidIrregularRes.StatusCode, readBody(t, invalidIrregularRes.Body))
+	}
+	if !strings.Contains(readBody(t, invalidIrregularRes.Body), "periodicity") {
+		t.Fatalf("expected field_errors.periodicity in irregular invalid response")
+	}
+
+	invalidCustomRes := doJSONRequest(t, http.MethodPut, srv.URL+"/api/v1/admin/disclosure-types/dt-custom-obligation", adminToken, map[string]any{
+		"group_id":          "group-006",
+		"name":              "Invalid custom",
+		"template_category": "custom",
+		"deadline_strategy": "configurable",
+		"deadline_rule":     "theo nhu cầu",
+		"periodicity":       "event_based",
+	}, "")
+	if invalidCustomRes.StatusCode != http.StatusBadRequest {
+		t.Fatalf("invalid custom matrix status=%d body=%s", invalidCustomRes.StatusCode, readBody(t, invalidCustomRes.Body))
+	}
+	if !strings.Contains(readBody(t, invalidCustomRes.Body), "field_errors") {
+		t.Fatalf("expected field_errors in custom invalid response")
+	}
+	invalidBlocksRes := doJSONRequest(t, http.MethodPut, srv.URL+"/api/v1/admin/disclosure-types/dt-custom-obligation", adminToken, map[string]any{
+		"group_id":          "group-006",
+		"name":              "Invalid blocks",
+		"template_category": "custom",
+		"deadline_strategy": "configurable",
+		"deadline_rule":     "theo nhu cầu",
+		"periodicity":       "monthly",
+		"blocks": []map[string]any{
+			{
+				"block_id":      "a",
+				"block_key":     "dup_key",
+				"block_type":    "text",
+				"title":         "Block A",
+				"display_order": 1,
+				"enabled":       true,
+			},
+			{
+				"block_id":      "b",
+				"block_key":     "dup_key",
+				"block_type":    "text",
+				"title":         "Block B",
+				"display_order": 1,
+				"enabled":       true,
+			},
+		},
+	}, "")
+	if invalidBlocksRes.StatusCode != http.StatusBadRequest {
+		t.Fatalf("invalid blocks status=%d body=%s", invalidBlocksRes.StatusCode, readBody(t, invalidBlocksRes.Body))
+	}
+	if !strings.Contains(readBody(t, invalidBlocksRes.Body), "blocks.0.block_key") {
+		t.Fatalf("expected duplicate block_key field error in invalid blocks response")
 	}
 
 	activateRes := doJSONRequest(t, http.MethodPost, srv.URL+"/api/v1/admin/disclosure-types/dt-custom-obligation/activate", adminToken, map[string]any{

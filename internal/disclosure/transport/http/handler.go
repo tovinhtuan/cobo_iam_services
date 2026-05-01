@@ -6,11 +6,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	auditapp "github.com/cobo/cobo_iam_services/internal/audit/app"
 	disclosureapp "github.com/cobo/cobo_iam_services/internal/disclosure/app"
 	iamapp "github.com/cobo/cobo_iam_services/internal/iam/app"
+	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 	"github.com/cobo/cobo_iam_services/internal/platform/httpx"
 	"github.com/cobo/cobo_iam_services/internal/platform/idempotency"
 )
@@ -36,9 +38,27 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/disclosure-groups", h.listTypeGroups)
 	mux.HandleFunc("GET /api/v1/disclosure-types", h.listTypes)
 	mux.HandleFunc("GET /api/v1/disclosure-types/{type_id}", h.getTypeDetail)
+	mux.HandleFunc("GET /api/v1/admin/disclosure-types/reference-data", h.getTemplateReferenceData)
 	mux.HandleFunc("PUT /api/v1/admin/disclosure-types/{type_id}", h.upsertTypeVersion)
 	mux.HandleFunc("GET /api/v1/admin/disclosure-types/{type_id}/versions", h.listTypeVersions)
+	mux.HandleFunc("GET /api/v1/admin/disclosure-types/{type_id}/versions/{version_no}", h.getTypeVersionDetail)
 	mux.HandleFunc("POST /api/v1/admin/disclosure-types/{type_id}/activate", h.activateTypeVersion)
+}
+
+func (h *Handler) getTemplateReferenceData(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subjectFromToken(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	resp, err := h.svc.GetTemplateReferenceData(r.Context(), disclosureapp.GetTemplateReferenceDataRequest{
+		Subject: sub,
+	})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, resp)
 }
 
 func (h *Handler) createRecord(w http.ResponseWriter, r *http.Request) {
@@ -288,6 +308,29 @@ func (h *Handler) listTypeVersions(w http.ResponseWriter, r *http.Request) {
 	resp, err := h.svc.ListTypeVersions(r.Context(), disclosureapp.ListTypeVersionsRequest{
 		Subject: sub,
 		TypeID:  strings.TrimSpace(r.PathValue("type_id")),
+	})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) getTypeVersionDetail(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subjectFromToken(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	versionNo, err := strconv.Atoi(strings.TrimSpace(r.PathValue("version_no")))
+	if err != nil {
+		httpx.WriteError(w, nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "version_no must be integer", nil))
+		return
+	}
+	resp, err := h.svc.GetTypeVersionDetail(r.Context(), disclosureapp.GetTypeVersionDetailRequest{
+		Subject:   sub,
+		TypeID:    strings.TrimSpace(r.PathValue("type_id")),
+		VersionNo: versionNo,
 	})
 	if err != nil {
 		httpx.WriteError(w, nil, err)

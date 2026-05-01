@@ -228,6 +228,61 @@ func (s *service) GetTypeDetail(ctx context.Context, req GetTypeDetailRequest) (
 	return s.repo.GetTypeDetail(ctx, req.Subject.CompanyID, req.TypeID)
 }
 
+func (s *service) GetTypeVersionDetail(ctx context.Context, req GetTypeVersionDetailRequest) (*DisclosureTypeDTO, error) {
+	if !s.hasPermission(ctx, req.Subject, "rbac.manage") {
+		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "access denied", nil)
+	}
+	req.TypeID = strings.TrimSpace(req.TypeID)
+	if req.TypeID == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "type_id is required", nil)
+	}
+	if req.VersionNo <= 0 {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "version_no must be > 0", nil)
+	}
+	return s.repo.GetTypeVersionDetail(ctx, req.Subject.CompanyID, req.TypeID, req.VersionNo)
+}
+
+func (s *service) GetTemplateReferenceData(ctx context.Context, req GetTemplateReferenceDataRequest) (*GetTemplateReferenceDataResponse, error) {
+	if !s.hasPermission(ctx, req.Subject, "rbac.manage") {
+		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "access denied", nil)
+	}
+	return &GetTemplateReferenceDataResponse{
+		Data: TemplateReferenceDataDTO{
+			TemplateCategories: []string{
+				TemplateCategoryPeriodic,
+				TemplateCategoryIrregular,
+				TemplateCategoryCustom,
+			},
+			Periodicities: []string{
+				PeriodicityMonthly,
+				PeriodicityQuarterly,
+				PeriodicityYearly,
+				PeriodicityEventBased,
+				PeriodicityAdHoc,
+			},
+			DeadlineStrategies: []string{
+				DeadlineStrategyFixedCycleDays,
+				DeadlineStrategyEventHours,
+				DeadlineStrategyConfigurable,
+			},
+			MatrixRules: map[string][]string{
+				TemplateCategoryPeriodic: {
+					"periodicity in [monthly, quarterly, yearly]",
+					"deadline_strategy must be fixed_cycle_days",
+				},
+				TemplateCategoryIrregular: {
+					"periodicity must be event_based",
+					"deadline_strategy must be event_relative_hours",
+				},
+				TemplateCategoryCustom: {
+					"periodicity in [monthly, quarterly, yearly, ad_hoc]",
+					"deadline_strategy must be configurable",
+				},
+			},
+		},
+	}, nil
+}
+
 func (s *service) UpsertTypeVersion(ctx context.Context, req UpsertTypeVersionRequest) (*UpsertTypeVersionResponse, error) {
 	if !s.hasPermission(ctx, req.Subject, "rbac.manage") {
 		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "access denied", nil)
@@ -235,6 +290,11 @@ func (s *service) UpsertTypeVersion(ctx context.Context, req UpsertTypeVersionRe
 	req.TypeID = strings.TrimSpace(req.TypeID)
 	req.GroupID = strings.TrimSpace(req.GroupID)
 	req.Name = strings.TrimSpace(req.Name)
+	req.Category = strings.TrimSpace(req.Category)
+	req.TemplateCategory = strings.TrimSpace(req.TemplateCategory)
+	req.DeadlineStrategy = strings.TrimSpace(req.DeadlineStrategy)
+	req.DeadlineRule = strings.TrimSpace(req.DeadlineRule)
+	req.Periodicity = strings.TrimSpace(req.Periodicity)
 	if req.TypeID == "" {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "type_id is required", nil)
 	}
@@ -243,6 +303,9 @@ func (s *service) UpsertTypeVersion(ctx context.Context, req UpsertTypeVersionRe
 	}
 	if req.Name == "" {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "name is required", nil)
+	}
+	if err := validateTemplateMatrix(&req); err != nil {
+		return nil, err
 	}
 	return s.repo.UpsertTypeVersion(ctx, req)
 }

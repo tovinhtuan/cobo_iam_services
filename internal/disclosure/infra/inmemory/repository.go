@@ -17,6 +17,7 @@ type Repository struct {
 	items        map[string]disclosureapp.RecordDTO
 	groups       []disclosureapp.DisclosureGroupDTO
 	catalog      map[string]disclosureapp.DisclosureTypeDTO
+	catalogByVer map[string]map[int]disclosureapp.DisclosureTypeDTO
 	versions     map[string][]disclosureapp.DisclosureTypeVersionDTO
 	catalogScope map[string]string
 }
@@ -26,12 +27,14 @@ func NewRepository() *Repository {
 		items:        map[string]disclosureapp.RecordDTO{},
 		groups:       disclosureapp.SeedDisclosureTypeGroups(),
 		catalog:      map[string]disclosureapp.DisclosureTypeDTO{},
+		catalogByVer: map[string]map[int]disclosureapp.DisclosureTypeDTO{},
 		versions:     map[string][]disclosureapp.DisclosureTypeVersionDTO{},
 		catalogScope: map[string]string{},
 	}
 	for _, item := range disclosureapp.SeedDisclosureTypeCatalog() {
 		item.VersionNo = 1
 		repo.catalog[item.TypeID] = item
+		repo.catalogByVer[item.TypeID] = map[int]disclosureapp.DisclosureTypeDTO{1: item}
 		repo.catalogScope[item.TypeID] = "global"
 		repo.versions[item.TypeID] = []disclosureapp.DisclosureTypeVersionDTO{
 			{
@@ -142,6 +145,27 @@ func (r *Repository) GetTypeDetail(_ context.Context, companyID, typeID string) 
 	}
 	cp := item
 	cp.Tags = slices.Clone(item.Tags)
+	cp.Blocks = cloneTemplateBlocks(item.Blocks)
+	return &cp, nil
+}
+
+func (r *Repository) GetTypeVersionDetail(_ context.Context, companyID, typeID string, versionNo int) (*disclosureapp.DisclosureTypeDTO, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if scope := r.catalogScope[typeID]; scope != "global" && scope != companyID {
+		return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "disclosure type version not found", nil)
+	}
+	byVersion, ok := r.catalogByVer[typeID]
+	if !ok {
+		return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "disclosure type version not found", nil)
+	}
+	item, ok := byVersion[versionNo]
+	if !ok {
+		return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "disclosure type version not found", nil)
+	}
+	cp := item
+	cp.Tags = slices.Clone(item.Tags)
+	cp.Blocks = cloneTemplateBlocks(item.Blocks)
 	return &cp, nil
 }
 
@@ -161,6 +185,7 @@ func (r *Repository) UpsertTypeVersion(_ context.Context, req disclosureapp.Upse
 		Name:                  req.Name,
 		Category:              req.Category,
 		TemplateCategory:      req.TemplateCategory,
+		DeadlineStrategy:      req.DeadlineStrategy,
 		Description:           req.Description,
 		LegalBasis:            req.LegalBasis,
 		Applicability:         req.Applicability,
@@ -178,8 +203,13 @@ func (r *Repository) UpsertTypeVersion(_ context.Context, req disclosureapp.Upse
 		LegalRisksText:        req.LegalRisksText,
 		GeneralInfo:           req.GeneralInfo,
 		Tags:                  slices.Clone(req.Tags),
+		Blocks:                cloneTemplateBlocks(req.Blocks),
 	}
 	r.catalog[req.TypeID] = next
+	if _, ok := r.catalogByVer[req.TypeID]; !ok {
+		r.catalogByVer[req.TypeID] = map[int]disclosureapp.DisclosureTypeDTO{}
+	}
+	r.catalogByVer[req.TypeID][versionNo] = next
 	r.catalogScope[req.TypeID] = req.Subject.CompanyID
 
 	vs := r.versions[req.TypeID]
@@ -251,7 +281,15 @@ func (r *Repository) ActivateTypeVersion(_ context.Context, req disclosureapp.Ac
 	vs[target].ActivatedAt = now
 	r.versions[req.TypeID] = vs
 	current.VersionNo = req.VersionNo
-	r.catalog[req.TypeID] = current
+	if byVersion, ok := r.catalogByVer[req.TypeID]; ok {
+		if snapshot, found := byVersion[req.VersionNo]; found {
+			r.catalog[req.TypeID] = snapshot
+		} else {
+			r.catalog[req.TypeID] = current
+		}
+	} else {
+		r.catalog[req.TypeID] = current
+	}
 	return &disclosureapp.ActivateTypeVersionResponse{
 		TypeID:      req.TypeID,
 		VersionNo:   req.VersionNo,
@@ -259,4 +297,29 @@ func (r *Repository) ActivateTypeVersion(_ context.Context, req disclosureapp.Ac
 		UpdatedBy:   req.Subject.UserID,
 		ActivatedAt: now,
 	}, nil
+}
+
+func cloneTemplateBlocks(blocks []disclosureapp.TemplateBlockDTO) []disclosureapp.TemplateBlockDTO {
+	if len(blocks) == 0 {
+		return []disclosureapp.TemplateBlockDTO{}
+	}
+	out := make([]disclosureapp.TemplateBlockDTO, 0, len(blocks))
+	for _, block := range blocks {
+		next := block
+		next.Config = cloneAnyMap(block.Config)
+		next.Validation = cloneAnyMap(block.Validation)
+		out = append(out, next)
+	}
+	return out
+}
+
+func cloneAnyMap(src map[string]any) map[string]any {
+	if len(src) == 0 {
+		return map[string]any{}
+	}
+	out := make(map[string]any, len(src))
+	for key, value := range src {
+		out[key] = value
+	}
+	return out
 }

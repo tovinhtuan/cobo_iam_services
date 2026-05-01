@@ -15,6 +15,8 @@ type Service interface {
 	ListTypeGroups(ctx context.Context, req ListTypeGroupsRequest) (*ListTypeGroupsResponse, error)
 	ListTypes(ctx context.Context, req ListTypesRequest) (*ListTypesResponse, error)
 	GetTypeDetail(ctx context.Context, req GetTypeDetailRequest) (*DisclosureTypeDTO, error)
+	GetTypeVersionDetail(ctx context.Context, req GetTypeVersionDetailRequest) (*DisclosureTypeDTO, error)
+	GetTemplateReferenceData(ctx context.Context, req GetTemplateReferenceDataRequest) (*GetTemplateReferenceDataResponse, error)
 	UpsertTypeVersion(ctx context.Context, req UpsertTypeVersionRequest) (*UpsertTypeVersionResponse, error)
 	ListTypeVersions(ctx context.Context, req ListTypeVersionsRequest) (*ListTypeVersionsResponse, error)
 	ActivateTypeVersion(ctx context.Context, req ActivateTypeVersionRequest) (*ActivateTypeVersionResponse, error)
@@ -28,6 +30,7 @@ type Repository interface {
 	ListTypeGroups(ctx context.Context, companyID string) ([]DisclosureGroupDTO, error)
 	ListTypes(ctx context.Context, companyID, groupID, query string) ([]DisclosureTypeSummaryDTO, error)
 	GetTypeDetail(ctx context.Context, companyID, typeID string) (*DisclosureTypeDTO, error)
+	GetTypeVersionDetail(ctx context.Context, companyID, typeID string, versionNo int) (*DisclosureTypeDTO, error)
 	UpsertTypeVersion(ctx context.Context, req UpsertTypeVersionRequest) (*UpsertTypeVersionResponse, error)
 	ListTypeVersions(ctx context.Context, companyID, typeID string) ([]DisclosureTypeVersionDTO, error)
 	ActivateTypeVersion(ctx context.Context, req ActivateTypeVersionRequest) (*ActivateTypeVersionResponse, error)
@@ -90,31 +93,54 @@ type GetTypeDetailRequest struct {
 	TypeID  string
 }
 
+type GetTypeVersionDetailRequest struct {
+	Subject   Subject
+	TypeID    string
+	VersionNo int
+}
+
+type GetTemplateReferenceDataRequest struct {
+	Subject Subject
+}
+
+type TemplateReferenceDataDTO struct {
+	TemplateCategories []string            `json:"template_categories"`
+	Periodicities      []string            `json:"periodicities"`
+	DeadlineStrategies []string            `json:"deadline_strategies"`
+	MatrixRules        map[string][]string `json:"matrix_rules"`
+}
+
+type GetTemplateReferenceDataResponse struct {
+	Data TemplateReferenceDataDTO `json:"data"`
+}
+
 type UpsertTypeVersionRequest struct {
 	Subject               Subject
-	TypeID                string   `json:"type_id"`
-	GroupID               string   `json:"group_id"`
-	Name                  string   `json:"name"`
-	Category              string   `json:"category"`
-	TemplateCategory      string   `json:"template_category"`
-	Description           string   `json:"description"`
-	LegalBasis            string   `json:"legal_basis"`
-	Applicability         string   `json:"applicability"`
-	ImplementationContent string   `json:"implementation_content"`
-	ImplementationNotes   string   `json:"implementation_notes"`
-	SpecialCases          string   `json:"special_cases"`
-	ReportContent         string   `json:"report_content"`
-	RequiredDocs          string   `json:"required_docs"`
-	DeadlineRule          string   `json:"deadline_rule"`
-	Periodicity           string   `json:"periodicity"`
-	ChannelsText          string   `json:"channels_text"`
-	Beneficiaries         string   `json:"beneficiaries"`
-	ReceivingAuthorities  string   `json:"receiving_authorities"`
-	Format                string   `json:"format"`
-	LegalRisksText        string   `json:"legal_risks_text"`
-	GeneralInfo           string   `json:"general_info"`
-	Tags                  []string `json:"tags"`
-	ChangeNote            string   `json:"change_note"`
+	TypeID                string             `json:"type_id"`
+	GroupID               string             `json:"group_id"`
+	Name                  string             `json:"name"`
+	Category              string             `json:"category"`
+	TemplateCategory      string             `json:"template_category"`
+	DeadlineStrategy      string             `json:"deadline_strategy"`
+	Description           string             `json:"description"`
+	LegalBasis            string             `json:"legal_basis"`
+	Applicability         string             `json:"applicability"`
+	ImplementationContent string             `json:"implementation_content"`
+	ImplementationNotes   string             `json:"implementation_notes"`
+	SpecialCases          string             `json:"special_cases"`
+	ReportContent         string             `json:"report_content"`
+	RequiredDocs          string             `json:"required_docs"`
+	DeadlineRule          string             `json:"deadline_rule"`
+	Periodicity           string             `json:"periodicity"`
+	ChannelsText          string             `json:"channels_text"`
+	Beneficiaries         string             `json:"beneficiaries"`
+	ReceivingAuthorities  string             `json:"receiving_authorities"`
+	Format                string             `json:"format"`
+	LegalRisksText        string             `json:"legal_risks_text"`
+	GeneralInfo           string             `json:"general_info"`
+	Tags                  []string           `json:"tags"`
+	Blocks                []TemplateBlockDTO `json:"blocks"`
+	ChangeNote            string             `json:"change_note"`
 }
 
 type UpsertTypeVersionResponse struct {
@@ -193,29 +219,43 @@ type DisclosureTypeSummaryDTO struct {
 }
 
 type DisclosureTypeDTO struct {
-	VersionNo             int      `json:"version_no"`
-	TypeID                string   `json:"type_id"`
-	GroupID               string   `json:"group_id"`
-	Name                  string   `json:"name"`
-	Category              string   `json:"category"`
-	TemplateCategory      string   `json:"template_category"`
-	Description           string   `json:"description"`
-	LegalBasis            string   `json:"legal_basis"`
-	Applicability         string   `json:"applicability"`
-	ImplementationContent string   `json:"implementation_content"`
-	ImplementationNotes   string   `json:"implementation_notes"`
-	SpecialCases          string   `json:"special_cases"`
-	ReportContent         string   `json:"report_content"`
-	RequiredDocs          string   `json:"required_docs"`
-	DeadlineRule          string   `json:"deadline_rule"`
-	Periodicity           string   `json:"periodicity"`
-	ChannelsText          string   `json:"channels_text"`
-	Beneficiaries         string   `json:"beneficiaries"`
-	ReceivingAuthorities  string   `json:"receiving_authorities"`
-	Format                string   `json:"format"`
-	LegalRisksText        string   `json:"legal_risks_text"`
-	GeneralInfo           string   `json:"general_info"`
-	Tags                  []string `json:"tags"`
+	VersionNo             int                `json:"version_no"`
+	TypeID                string             `json:"type_id"`
+	GroupID               string             `json:"group_id"`
+	Name                  string             `json:"name"`
+	Category              string             `json:"category"`
+	TemplateCategory      string             `json:"template_category"`
+	DeadlineStrategy      string             `json:"deadline_strategy"`
+	Description           string             `json:"description"`
+	LegalBasis            string             `json:"legal_basis"`
+	Applicability         string             `json:"applicability"`
+	ImplementationContent string             `json:"implementation_content"`
+	ImplementationNotes   string             `json:"implementation_notes"`
+	SpecialCases          string             `json:"special_cases"`
+	ReportContent         string             `json:"report_content"`
+	RequiredDocs          string             `json:"required_docs"`
+	DeadlineRule          string             `json:"deadline_rule"`
+	Periodicity           string             `json:"periodicity"`
+	ChannelsText          string             `json:"channels_text"`
+	Beneficiaries         string             `json:"beneficiaries"`
+	ReceivingAuthorities  string             `json:"receiving_authorities"`
+	Format                string             `json:"format"`
+	LegalRisksText        string             `json:"legal_risks_text"`
+	GeneralInfo           string             `json:"general_info"`
+	Tags                  []string           `json:"tags"`
+	Blocks                []TemplateBlockDTO `json:"blocks"`
+}
+
+type TemplateBlockDTO struct {
+	BlockID      string         `json:"block_id"`
+	BlockKey     string         `json:"block_key"`
+	BlockType    string         `json:"block_type"`
+	Title        string         `json:"title"`
+	Description  string         `json:"description"`
+	Config       map[string]any `json:"config"`
+	Validation   map[string]any `json:"validation"`
+	DisplayOrder int            `json:"display_order"`
+	Enabled      bool           `json:"enabled"`
 }
 
 type DisclosureTypeVersionDTO struct {
