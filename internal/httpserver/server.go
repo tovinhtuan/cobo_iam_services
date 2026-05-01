@@ -219,7 +219,13 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 	}
 	adminSvc := companyaccessapp.NewAdminService(adminRepo, authSvc, id)
 	adminHandler := companyaccesshttp.NewAdminHandler(adminSvc, tokenManager, auditSvc)
-	platformCMSHandler := platformcmshttp.NewHandler(tokenManager, authSvc, adminSvc, iamSvc, auditSvc, auditRepo, disclosureSvc, disclosureRepo)
+	platformCMSHandler := platformcmshttp.NewHandler(tokenManager, authSvc, adminSvc, iamSvc, auditSvc, auditRepo, disclosureSvc, disclosureRepo, platformcmshttp.MediaOptions{
+		DB:                  pool,
+		UploadSigningSecret: cfg.CMSMediaUploadSigningSecret,
+		UploadURLTTL:        cfg.CMSMediaUploadURLTTL,
+		StorageDir:          cfg.CMSMediaStorageDir,
+		PublicAPIBaseURL:    cfg.PublicAPIBaseURL,
+	})
 
 	return muxRegisterHealthAndIAM(mux, log, sqlDB, iamHandler, meHandler, authHandler, disclosureHandler, workflowHandler, notificationHandler, adminHandler, platformCMSHandler)
 }

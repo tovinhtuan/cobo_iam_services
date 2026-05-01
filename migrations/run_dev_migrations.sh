@@ -16,6 +16,7 @@ MIGRATIONS="
 0008_org_units_scope.up.sql
 0011_user_subscription_tiers.up.sql
 0012_disclosure_catalog_versions.up.sql
+0013_cms_media_assets.up.sql
 0009_seed_authz_test_accounts.up.sql
 0010_disclosure_contract_c1.up.sql
 seed_dev_identity_authorization.sql

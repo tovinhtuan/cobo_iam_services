@@ -9,6 +9,9 @@ const (
 	cmsActionScheduleDelete                = "cms.schedule.delete"
 	cmsActionRuleValidate                  = "cms.rule.validate"
 	cmsActionSessionRevoke                 = "cms.session.revoke"
+	cmsActionMediaUploadIntent             = "cms.media.upload.intent"
+	cmsActionMediaUploadComplete           = "cms.media.upload.complete"
+	cmsActionMediaDelete                   = "cms.media.delete"
 	cmsActionDisclosureTypeVersionUpsert   = "disclosure.type.version.upsert"
 	cmsActionDisclosureTypeVersionActivate = "disclosure.type.version.activate"
 )
@@ -22,6 +25,9 @@ var cmsKnownActions = map[string]struct{}{
 	cmsActionScheduleDelete:                {},
 	cmsActionRuleValidate:                  {},
 	cmsActionSessionRevoke:                 {},
+	cmsActionMediaUploadIntent:             {},
+	cmsActionMediaUploadComplete:           {},
+	cmsActionMediaDelete:                   {},
 	cmsActionDisclosureTypeVersionUpsert:   {},
 	cmsActionDisclosureTypeVersionActivate: {},
 }

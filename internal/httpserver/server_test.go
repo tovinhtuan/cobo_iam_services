@@ -727,6 +727,137 @@ func TestIntegration_platformCMSPrefix_entriesReviewsSchedulesContract(t *testin
 	}
 }
 
+func TestIntegration_platformCMSPrefix_mediaUploadContract(t *testing.T) {
+	srv := httptest.NewServer(newTestHandler(t, nil))
+	defer srv.Close()
+
+	adminToken := loginAndGetAccessToken(t, srv.URL, "cms.operator@example.com", "secret", "")
+
+	createIntentRes := doJSONRequest(t, http.MethodPost, srv.URL+"/api/v1/platform/cms/media/upload", adminToken, map[string]any{
+		"file_name":    "banner-home.png",
+		"content_type": "image/png",
+		"size_bytes":   2048,
+		"context":      "template",
+	}, "")
+	if createIntentRes.StatusCode != http.StatusCreated {
+		t.Fatalf("create media upload intent status=%d body=%s", createIntentRes.StatusCode, readBody(t, createIntentRes.Body))
+	}
+	var createIntentOut struct {
+		Data map[string]any `json:"data"`
+	}
+	mustDecodeJSON(t, createIntentRes.Body, &createIntentOut)
+	assetID, _ := createIntentOut.Data["asset_id"].(string)
+	if assetID == "" {
+		t.Fatalf("missing asset_id in intent response: %+v", createIntentOut)
+	}
+	uploadInfo, _ := createIntentOut.Data["upload"].(map[string]any)
+	if uploadInfo == nil || uploadInfo["url"] == "" {
+		t.Fatalf("missing upload payload in intent response: %+v", createIntentOut)
+	}
+	uploadURL, _ := uploadInfo["url"].(string)
+	if uploadURL == "" {
+		t.Fatalf("missing upload url in intent response: %+v", createIntentOut)
+	}
+	req, err := http.NewRequest(http.MethodPut, uploadURL, strings.NewReader(strings.Repeat("x", 2048)))
+	if err != nil {
+		t.Fatalf("build upload request: %v", err)
+	}
+	req.Header.Set("Content-Type", "image/png")
+	uploadRes, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("execute upload request: %v", err)
+	}
+	if uploadRes.StatusCode != http.StatusOK {
+		t.Fatalf("signed binary upload status=%d body=%s", uploadRes.StatusCode, readBody(t, uploadRes.Body))
+	}
+
+	completeRes := doJSONRequest(t, http.MethodPost, srv.URL+"/api/v1/platform/cms/media/"+assetID+"/complete", adminToken, map[string]any{
+		"etag":       "etag-value",
+		"checksum":   "sha256-value",
+		"size_bytes": 2048,
+	}, "")
+	if completeRes.StatusCode != http.StatusOK {
+		t.Fatalf("complete media upload status=%d body=%s", completeRes.StatusCode, readBody(t, completeRes.Body))
+	}
+
+	listRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/platform/cms/media?type=image/png&q=banner", adminToken, nil, "")
+	if listRes.StatusCode != http.StatusOK {
+		t.Fatalf("list media status=%d body=%s", listRes.StatusCode, readBody(t, listRes.Body))
+	}
+	var listOut struct {
+		Data struct {
+			Items []map[string]any `json:"items"`
+		} `json:"data"`
+	}
+	mustDecodeJSON(t, listRes.Body, &listOut)
+	if len(listOut.Data.Items) == 0 {
+		t.Fatalf("expected listed media assets, got empty list")
+	}
+	if state, _ := listOut.Data.Items[0]["state"].(string); state != "ready" {
+		t.Fatalf("expected ready state after complete, got=%v items=%+v", state, listOut.Data.Items)
+	}
+
+	invalidTypeRes := doJSONRequest(t, http.MethodPost, srv.URL+"/api/v1/platform/cms/media/upload", adminToken, map[string]any{
+		"file_name":    "malware.exe",
+		"content_type": "application/octet-stream",
+		"size_bytes":   1024,
+	}, "")
+	if invalidTypeRes.StatusCode != http.StatusBadRequest {
+		t.Fatalf("invalid content_type status=%d body=%s", invalidTypeRes.StatusCode, readBody(t, invalidTypeRes.Body))
+	}
+
+	oversizeRes := doJSONRequest(t, http.MethodPost, srv.URL+"/api/v1/platform/cms/media/upload", adminToken, map[string]any{
+		"file_name":    "big.pdf",
+		"content_type": "application/pdf",
+		"size_bytes":   50 * 1024 * 1024,
+	}, "")
+	if oversizeRes.StatusCode != http.StatusRequestEntityTooLarge {
+		t.Fatalf("oversize media status=%d body=%s", oversizeRes.StatusCode, readBody(t, oversizeRes.Body))
+	}
+
+	forbiddenToken := loginAndGetAccessToken(t, srv.URL, "user@example.com", "secret", "c_001")
+	forbiddenRes := doJSONRequest(t, http.MethodPost, srv.URL+"/api/v1/platform/cms/media/upload", forbiddenToken, map[string]any{
+		"file_name":    "forbidden.png",
+		"content_type": "image/png",
+		"size_bytes":   1024,
+	}, "")
+	if forbiddenRes.StatusCode != http.StatusForbidden {
+		t.Fatalf("forbidden media upload status=%d body=%s", forbiddenRes.StatusCode, readBody(t, forbiddenRes.Body))
+	}
+
+	deleteRes := doJSONRequest(t, http.MethodDelete, srv.URL+"/api/v1/platform/cms/media/"+assetID, adminToken, nil, "")
+	if deleteRes.StatusCode != http.StatusOK {
+		t.Fatalf("delete media status=%d body=%s", deleteRes.StatusCode, readBody(t, deleteRes.Body))
+	}
+
+	auditRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/platform/cms/ops/audit", adminToken, nil, "")
+	if auditRes.StatusCode != http.StatusOK {
+		t.Fatalf("media audit status=%d body=%s", auditRes.StatusCode, readBody(t, auditRes.Body))
+	}
+	var auditOut struct {
+		Data struct {
+			Items []map[string]any `json:"items"`
+		} `json:"data"`
+	}
+	mustDecodeJSON(t, auditRes.Body, &auditOut)
+	expected := map[string]bool{
+		"cms.media.upload.intent":   false,
+		"cms.media.upload.complete": false,
+		"cms.media.delete":          false,
+	}
+	for _, item := range auditOut.Data.Items {
+		action, _ := item["action"].(string)
+		if _, ok := expected[action]; ok {
+			expected[action] = true
+		}
+	}
+	for action, seen := range expected {
+		if !seen {
+			t.Fatalf("expected media audit action %q in audit feed, got items=%+v", action, auditOut.Data.Items)
+		}
+	}
+}
+
 func TestIntegration_platformCMSPrefix_adminUsersCreateAndList(t *testing.T) {
 	srv := httptest.NewServer(newTestHandler(t, nil))
 	defer srv.Close()

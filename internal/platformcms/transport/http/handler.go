@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"sort"
@@ -27,10 +28,26 @@ type Handler struct {
 	auditRepo     auditapp.Repository
 	disclosureSvc disclosureapp.Service
 	disclosures   disclosureapp.Repository
+	mediaRepo     cmsMediaRepository
+	mediaSigner   *cmsMediaSigner
+	mediaStorage  *cmsMediaDiskStorage
+	mediaPublicBaseURL string
 	metrics       *cmsMetrics
 }
 
-func NewHandler(inspector iamapp.TokenInspector, authorizer authapp.Service, adminSvc companyaccessapp.AdminService, iamSvc iamapp.Service, auditSvc auditapp.Service, auditRepo auditapp.Repository, disclosureSvc disclosureapp.Service, disclosures disclosureapp.Repository) *Handler {
+type MediaOptions struct {
+	DB                 *sql.DB
+	UploadSigningSecret string
+	UploadURLTTL        time.Duration
+	StorageDir          string
+	PublicAPIBaseURL    string
+}
+
+func NewHandler(inspector iamapp.TokenInspector, authorizer authapp.Service, adminSvc companyaccessapp.AdminService, iamSvc iamapp.Service, auditSvc auditapp.Service, auditRepo auditapp.Repository, disclosureSvc disclosureapp.Service, disclosures disclosureapp.Repository, mediaOpts MediaOptions) *Handler {
+	mediaStorage, err := newCMSMediaDiskStorage(mediaOpts.StorageDir)
+	if err != nil {
+		panic(err)
+	}
 	return &Handler{
 		inspector:     inspector,
 		authorizer:    authorizer,
@@ -40,6 +57,10 @@ func NewHandler(inspector iamapp.TokenInspector, authorizer authapp.Service, adm
 		auditRepo:     auditRepo,
 		disclosureSvc: disclosureSvc,
 		disclosures:   disclosures,
+		mediaRepo:     newCMSMediaRepository(mediaOpts.DB),
+		mediaSigner:   newCMSMediaSigner(mediaOpts.UploadSigningSecret, mediaOpts.UploadURLTTL),
+		mediaStorage:  mediaStorage,
+		mediaPublicBaseURL: strings.TrimSpace(mediaOpts.PublicAPIBaseURL),
 		metrics:       newCMSMetrics(),
 	}
 }
@@ -52,6 +73,11 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/platform/cms/entries/{entry_id}", h.observe("cms.entries.detail", h.entryDetail))
 	mux.HandleFunc("POST /api/v1/platform/cms/entries", h.observe("cms.entries.create", h.createEntry))
 	mux.HandleFunc("PUT /api/v1/platform/cms/entries/{entry_id}", h.observe("cms.entries.update", h.updateEntry))
+	mux.HandleFunc("POST /api/v1/platform/cms/media/upload", h.observe("cms.media.upload.intent", h.createMediaUploadIntent))
+	mux.HandleFunc("PUT /api/v1/platform/cms/media/upload/{asset_id}", h.observe("cms.media.upload.binary", h.uploadMediaBinary))
+	mux.HandleFunc("POST /api/v1/platform/cms/media/{asset_id}/complete", h.observe("cms.media.upload.complete", h.completeMediaUpload))
+	mux.HandleFunc("GET /api/v1/platform/cms/media", h.observe("cms.media.list", h.listMedia))
+	mux.HandleFunc("DELETE /api/v1/platform/cms/media/{asset_id}", h.observe("cms.media.delete", h.deleteMedia))
 	mux.HandleFunc("GET /api/v1/platform/cms/reviews", h.observe("cms.reviews.list", h.reviews))
 	mux.HandleFunc("POST /api/v1/platform/cms/reviews/{entry_id}", h.observe("cms.reviews.action", h.reviewAction))
 	mux.HandleFunc("GET /api/v1/platform/cms/schedules", h.observe("cms.schedules.list", h.schedules))

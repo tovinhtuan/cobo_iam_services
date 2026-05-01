@@ -50,6 +50,9 @@ type Config struct {
 	// Public web app base URL used in email action links.
 	PublicWebBaseURL string
 
+	// Public API base URL used when backend emits externally callable URLs.
+	PublicAPIBaseURL string
+
 	// LoginPasswordRSAPrivateKeyPEM optional PEM (PKCS#1 or PKCS#8) RSA private key.
 	// When set, GET /api/v1/auth/login-password-key exposes the public half and login accepts password_cipher.
 	LoginPasswordRSAPrivateKeyPEM string
@@ -69,6 +72,11 @@ type Config struct {
 	SMTPUser     string
 	SMTPPassword string
 	SMTPFrom     string
+
+	// CMS media signed-upload/storage settings.
+	CMSMediaUploadSigningSecret string
+	CMSMediaUploadURLTTL        time.Duration
+	CMSMediaStorageDir          string
 }
 
 // Load reads configuration from the environment with safe defaults for local dev.
@@ -96,6 +104,7 @@ func Load() (Config, error) {
 		JWTVerifyPublicKeys:           os.Getenv("JWT_VERIFY_PUBLIC_KEYS_JSON"),
 		JWTClockSkewSec:               intEnv("JWT_CLOCK_SKEW_SEC", 60),
 		PublicWebBaseURL:              getenv("PUBLIC_WEB_BASE_URL", "http://localhost:5173"),
+		PublicAPIBaseURL:              getenv("PUBLIC_API_BASE_URL", "http://localhost:8080"),
 		LoginPasswordRSAPrivateKeyPEM: os.Getenv("LOGIN_PASSWORD_RSA_PRIVATE_KEY_PEM"),
 		LoginPasswordRSAKeyID:         getenv("LOGIN_PASSWORD_RSA_KEY_ID", "default"),
 		CORSAllowedOrigins:            os.Getenv("CORS_ALLOWED_ORIGINS"),
@@ -104,9 +113,15 @@ func Load() (Config, error) {
 		SMTPUser:                      os.Getenv("SMTP_USER"),
 		SMTPPassword:                  os.Getenv("SMTP_PASSWORD"),
 		SMTPFrom:                      getenv("SMTP_FROM", "no-reply@cobo.local"),
+		CMSMediaUploadSigningSecret:   getenv("CMS_MEDIA_UPLOAD_SIGNING_SECRET", "dev-cms-media-secret"),
+		CMSMediaUploadURLTTL:          durationEnv("CMS_MEDIA_UPLOAD_URL_TTL", 10*time.Minute),
+		CMSMediaStorageDir:            getenv("CMS_MEDIA_STORAGE_DIR", "./var/cms-media"),
 	}
 	if cfg.WorkerTickInterval < time.Second {
 		return Config{}, fmt.Errorf("WORKER_TICK_INTERVAL too small")
+	}
+	if cfg.CMSMediaUploadURLTTL < time.Minute {
+		return Config{}, fmt.Errorf("CMS_MEDIA_UPLOAD_URL_TTL too small")
 	}
 	switch cfg.AccessTokenMode {
 	case "opaque", "jwt", "dual":

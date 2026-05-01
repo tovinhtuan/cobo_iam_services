@@ -95,7 +95,7 @@ Run-Step "3/6 Restart compose services before DB smoke" {
   }
 }
 
-Run-Step "4/7 DB-mode disclosure C1 smoke" {
+Run-Step "4/8 DB-mode disclosure C1 smoke" {
   Push-Location $iamRoot
   try {
     $smokeScript = Join-Path $scriptDir "disclosure-c1-db-smoke.ps1"
@@ -106,7 +106,7 @@ Run-Step "4/7 DB-mode disclosure C1 smoke" {
   }
 }
 
-Run-Step "5/7 DB-mode CMS prefix smoke" {
+Run-Step "5/8 DB-mode CMS prefix smoke" {
   Push-Location $iamRoot
   try {
     $cmsSmokeScript = Join-Path $scriptDir "cms-core-prefix-smoke.ps1"
@@ -117,7 +117,18 @@ Run-Step "5/7 DB-mode CMS prefix smoke" {
   }
 }
 
-Run-Step "6/7 Fresh no-cache Docker rebuild" {
+Run-Step "6/8 DB-mode CMS media smoke" {
+  Push-Location $iamRoot
+  try {
+    $cmsMediaSmokeScript = Join-Path $scriptDir "cms-media-db-smoke.ps1"
+    Invoke-Checked "powershell -ExecutionPolicy Bypass -File `"$cmsMediaSmokeScript`" -BaseUrl `"$BaseUrl`" -CmsLogin `"$CmsLogin`" -CmsPassword `"$CmsPassword`""
+  }
+  finally {
+    Pop-Location
+  }
+}
+
+Run-Step "7/8 Fresh no-cache Docker rebuild" {
   Push-Location $iamRoot
   try {
     Invoke-Checked "docker compose -f $ComposeFile build --no-cache api web"
@@ -127,7 +138,7 @@ Run-Step "6/7 Fresh no-cache Docker rebuild" {
   }
 }
 
-Run-Step "7/7 Bring up rebuilt services and verify status" {
+Run-Step "8/8 Bring up rebuilt services and verify status" {
   Push-Location $iamRoot
   try {
     Invoke-Checked "docker compose -f $ComposeFile up -d api web"

@@ -1276,3 +1276,166 @@
     - includes `go test ./...`, FE lint/tests, DB smokes, and `docker compose -f docker-compose.dev.yml build --no-cache api web`
 - remaining gaps/risks/next steps:
   - optional next step: validate/normalize RFC3339 query params at handler layer and return explicit `400 invalid_request` for malformed values
+
+## 2026-05-01 - P0-1 PR-A CMS Media Signed Upload Contract + Endpoints
+
+- task type: implement
+- objective: implement PR-A backend slice for Week 3 P0-1 with contract-first CMS media signed-upload flow and integration test matrix
+- what was implemented/discovered:
+  - added CMS media endpoints under platform prefix:
+    - `POST /api/v1/platform/cms/media/upload` (issue upload intent)
+    - `POST /api/v1/platform/cms/media/{asset_id}/complete` (finalize upload)
+    - `GET /api/v1/platform/cms/media` (list/filter by `type`, `q`, `cursor`, `limit`)
+    - `DELETE /api/v1/platform/cms/media/{asset_id}` (mark deleted)
+  - implemented in-memory media asset store for PR-A contract validation:
+    - state flow: `pending_upload` -> `ready` -> `deleted`
+    - tenant/company scoping, MIME allow-list, size limit, cursor-based listing
+  - added new CMS audit actions:
+    - `cms.media.upload.intent`
+    - `cms.media.upload.complete`
+    - `cms.media.delete`
+  - added integration test matrix:
+    - happy path intent -> complete -> list -> delete
+    - invalid content type (`400`)
+    - oversize payload (`413`)
+    - forbidden non-CMS user (`403`)
+    - audit feed contains all media actions
+- affected repos/files/modules:
+  - `cobo_iam_services/internal/platformcms/transport/http/handler.go`
+  - `cobo_iam_services/internal/platformcms/transport/http/media_handler.go`
+  - `cobo_iam_services/internal/platformcms/transport/http/media_store.go`
+  - `cobo_iam_services/internal/platformcms/transport/http/audit_actions.go`
+  - `cobo_iam_services/internal/httpserver/server_test.go`
+  - `cobo_iam_services/docs/ai-cache/reusable-task-updates.md`
+- important contracts/behaviors/constraints/decisions:
+  - PR-A uses signed-upload intent contract with stub signed URL (`upload.local`) to lock FE/BE contract before real object storage integration
+  - permission boundary remains strict:
+    - require `platform.cms.view`
+    - plus operational manage permission (`rbac.manage` or `system.settings`)
+  - contract is additive and does not break existing CMS prefix APIs
+- build/verification result:
+  - targeted test passed:
+    - `go test ./internal/httpserver -run TestIntegration_platformCMSPrefix_mediaUploadContract -count=1`
+  - full backend suite passed:
+    - `go test ./...`
+  - fresh no-cache docker rebuild passed:
+    - `docker compose -f docker-compose.dev.yml build --no-cache api web`
+  - note:
+    - one `run-c1-cycle.ps1` attempt was interrupted/hung at docker fetch stage; required steps were rerun directly and passed
+- remaining gaps/risks/next steps:
+  - PR-B should wire real FE `CmsMediaPage` to these endpoints (intent/upload/complete/list/delete)
+  - PR-C should replace stub signed URL generation with real object storage signer + persistent MySQL media repository
+
+## 2026-05-01 - P0-1 PR-C Real Signed Upload + MySQL Media Repository
+
+- task type: implement
+- objective: complete production-ready signed upload middleware by replacing `upload.local` stub with real HMAC signed upload URLs, real binary storage, and persistent MySQL media repository
+- what was implemented/discovered:
+  - added real signed upload flow:
+    - `POST /api/v1/platform/cms/media/upload` now returns signed URL pointing to API upload endpoint
+    - new endpoint `PUT /api/v1/platform/cms/media/upload/{asset_id}` accepts binary payload with signature verification
+    - `POST /api/v1/platform/cms/media/{asset_id}/complete` now requires binary presence before marking `ready`
+  - implemented HMAC signer + expiry validation for upload URLs
+  - implemented disk-backed media storage (write/exists/delete) under configurable storage directory
+  - replaced in-memory-only media persistence with repository abstraction:
+    - in-memory repo kept for no-DB mode/tests
+    - MySQL repo added for durable metadata in DB mode
+  - added migration for persistent media table:
+    - `0013_cms_media_assets.up.sql`
+    - `0013_cms_media_assets.down.sql`
+    - wired into `migrations/run_dev_migrations.sh`
+  - wired platform CMS handler with media options from process config (DB/signing secret/url ttl/storage dir)
+  - updated integration media contract test to execute real signed binary `PUT` before `complete`
+- affected repos/files/modules:
+  - `cobo_iam_services/internal/platform/config/config.go`
+  - `cobo_iam_services/internal/httpserver/server.go`
+  - `cobo_iam_services/internal/platformcms/transport/http/handler.go`
+  - `cobo_iam_services/internal/platformcms/transport/http/media_handler.go`
+  - `cobo_iam_services/internal/platformcms/transport/http/media_store.go`
+  - `cobo_iam_services/internal/platformcms/transport/http/media_security.go`
+  - `cobo_iam_services/internal/httpserver/server_test.go`
+  - `cobo_iam_services/migrations/0013_cms_media_assets.up.sql`
+  - `cobo_iam_services/migrations/0013_cms_media_assets.down.sql`
+  - `cobo_iam_services/migrations/run_dev_migrations.sh`
+  - `cobo_iam_services/docs/ai-cache/reusable-task-updates.md`
+- important contracts/behaviors/constraints/decisions:
+  - upload signature binds `asset_id`, `company_id`, `method`, `content_type`, `size_bytes`, and `exp` to prevent replay/tampering
+  - completion is blocked until binary file exists in storage path (`media binary not uploaded yet`)
+  - DB mode uses persistent `cms_media_assets`; no-DB mode keeps in-memory parity for local tests
+  - media config introduced:
+    - `CMS_MEDIA_UPLOAD_SIGNING_SECRET`
+    - `CMS_MEDIA_UPLOAD_URL_TTL`
+    - `CMS_MEDIA_STORAGE_DIR`
+- build/verification result:
+  - targeted integration test passed:
+    - `go test ./internal/httpserver -run TestIntegration_platformCMSPrefix_mediaUploadContract -count=1`
+  - full backend tests passed:
+    - `go test ./...`
+  - fresh no-cache docker rebuild passed:
+    - `docker compose -f docker-compose.dev.yml build --no-cache api web`
+  - containerized migration run verified by compose startup:
+    - `docker compose -f docker-compose.dev.yml up -d api web` (`migrate` exited `0`)
+- remaining gaps/risks/next steps:
+  - optional next step: add dedicated DB-mode media smoke script covering full intent/upload/complete/list/delete against running compose stack
+  - optional hardening: switch disk storage to external object store adapter (S3/GCS) using same signer/repository contract
+
+## 2026-05-01 - P0-1 PR-C Follow-up: Media DB Smoke Script + Plan Sync Support
+
+- task type: implement
+- objective: add explicit DB smoke evidence for CMS media flow and support QA closure workflow for signed upload middleware
+- what was implemented/discovered:
+  - added new smoke script:
+    - `docs/scripts/cms-media-db-smoke.ps1`
+    - validates end-to-end flow: intent -> signed binary PUT -> complete -> list/filter -> delete -> audit check
+  - integrated smoke script into full cycle runner:
+    - `docs/scripts/run-c1-cycle.ps1`
+    - new step `6/8 DB-mode CMS media smoke`
+  - executed smoke directly against running API and observed pass:
+    - `CMS MEDIA DB-MODE SMOKE PASSED`
+- affected repos/files/modules:
+  - `cobo_iam_services/docs/scripts/cms-media-db-smoke.ps1`
+  - `cobo_iam_services/docs/scripts/run-c1-cycle.ps1`
+  - `cobo_iam_services/docs/ai-cache/reusable-task-updates.md`
+- important contracts/behaviors/constraints/decisions:
+  - smoke verifies signed-upload contract exactly as FE/BE flow uses it, including binary upload with signed query params
+  - audit evidence check is included for `cms.media.upload.complete` on uploaded asset resource
+- build/verification result:
+  - media smoke passed:
+    - `powershell -ExecutionPolicy Bypass -File docs/scripts/cms-media-db-smoke.ps1 ...`
+  - backend tests passed:
+    - `go test ./...`
+  - fresh no-cache docker rebuild passed:
+    - `docker compose -f docker-compose.dev.yml build --no-cache api web`
+- remaining gaps/risks/next steps:
+  - optional next step: wire this new smoke script into CI pipeline stage for automated PR evidence
+
+## 2026-05-01 - Media Signed URL Public Host Override
+
+- task type: implement
+- objective: prevent CMS media signed upload intent from returning internal docker host (`api:8080`) by using configurable public API base URL
+- what was implemented/discovered:
+  - added `PUBLIC_API_BASE_URL` config and wired it into platform CMS media handler options
+  - updated signed upload URL generation to prefer configured public base URL, with fallback to request-derived host only when config is empty
+  - updated dev compose API env to set `PUBLIC_API_BASE_URL=http://localhost:8080`
+- affected repos/files/modules:
+  - `cobo_iam_services/internal/platform/config/config.go`
+  - `cobo_iam_services/internal/httpserver/server.go`
+  - `cobo_iam_services/internal/platformcms/transport/http/handler.go`
+  - `cobo_iam_services/internal/platformcms/transport/http/media_handler.go`
+  - `cobo_iam_services/docker-compose.dev.yml`
+  - `cobo_iam_services/docs/ai-cache/reusable-task-updates.md`
+- important contracts/behaviors/constraints/decisions:
+  - upload intent URL host is now environment-controlled for dev/staging/public ingress compatibility
+  - explicit config wins over `X-Forwarded-*` and request `Host` to avoid proxy/network topology leakage into client URLs
+  - backward-safe fallback remains when `PUBLIC_API_BASE_URL` is intentionally unset
+- build/verification result:
+  - integration test passed:
+    - `go test ./internal/httpserver -run TestIntegration_platformCMSPrefix_mediaUploadContract -count=1`
+  - DB smoke passed:
+    - `powershell -ExecutionPolicy Bypass -File docs/scripts/cms-media-db-smoke.ps1 ...`
+  - full backend tests passed:
+    - `go test ./...`
+  - fresh no-cache docker rebuild passed for affected service:
+    - `docker compose -f docker-compose.dev.yml build --no-cache api`
+- remaining gaps/risks/next steps:
+  - staging/prod must set `PUBLIC_API_BASE_URL` to ingress domain (e.g. `https://iam.<env-domain>`) to avoid mixed host issues

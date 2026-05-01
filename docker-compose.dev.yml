@@ -70,6 +70,7 @@ services:
       JWT_ALG: EdDSA
       JWT_CLOCK_SKEW_SEC: "60"
       PUBLIC_WEB_BASE_URL: http://localhost:3000
+      PUBLIC_API_BASE_URL: http://localhost:8080
       WORKER_TICK_INTERVAL: 5s
     ports:
       - "8080:8080"
