@@ -19,6 +19,8 @@ MIGRATIONS="
 0013_cms_media_assets.up.sql
 0014_disclosure_catalog_extra_types.up.sql
 0015_disclosure_template_enums.up.sql
+0016_disclosure_template_blocks.up.sql
+0017_disclosure_template_mandatory_backfill.up.sql
 0009_seed_authz_test_accounts.up.sql
 0010_disclosure_contract_c1.up.sql
 seed_dev_identity_authorization.sql

@@ -1528,6 +1528,47 @@ func TestIntegration_disclosureTypeCatalog_contractAndAuth(t *testing.T) {
 	}
 }
 
+func integrationMandatoryDisclosureBlocksMaps() []map[string]any {
+	return []map[string]any{
+		{
+			"block_id": "int-m1", "block_key": "legal_basis", "block_type": "rich_text",
+			"title": "LB", "description": "",
+			"config": map[string]any{"max_length": 8000, "allow_html": false}, "validation": map[string]any{},
+			"display_order": 1, "enabled": true,
+		},
+		{
+			"block_id": "int-m2", "block_key": "disclosure_content", "block_type": "rich_text",
+			"title": "DC", "description": "",
+			"config": map[string]any{"max_length": 10000, "allow_html": true}, "validation": map[string]any{},
+			"display_order": 2, "enabled": true,
+		},
+		{
+			"block_id": "int-m3", "block_key": "deadline", "block_type": "text",
+			"title": "DL", "description": "",
+			"config": map[string]any{"max_length": 4000}, "validation": map[string]any{},
+			"display_order": 3, "enabled": true,
+		},
+		{
+			"block_id": "int-m4", "block_key": "channels_and_format", "block_type": "rich_text",
+			"title": "CF", "description": "",
+			"config": map[string]any{"max_length": 12000, "allow_html": false}, "validation": map[string]any{},
+			"display_order": 4, "enabled": true,
+		},
+		{
+			"block_id": "int-m5", "block_key": "legal_risks", "block_type": "rich_text",
+			"title": "LR", "description": "",
+			"config": map[string]any{"max_length": 8000, "allow_html": false}, "validation": map[string]any{},
+			"display_order": 5, "enabled": true,
+		},
+		{
+			"block_id": "int-m6", "block_key": "enterprise_workflow", "block_type": "rich_text",
+			"title": "EW", "description": "",
+			"config": map[string]any{"max_length": 12000, "allow_html": true}, "validation": map[string]any{},
+			"display_order": 6, "enabled": true,
+		},
+	}
+}
+
 func TestIntegration_disclosureTypeCatalog_adminUpsertAndVersioning(t *testing.T) {
 	srv := httptest.NewServer(newTestHandler(t, nil))
 	defer srv.Close()
@@ -1559,8 +1600,8 @@ func TestIntegration_disclosureTypeCatalog_adminUpsertAndVersioning(t *testing.T
 		"report_content":         "Updated report content",
 		"applicability":          "Theo phân quyền nội bộ",
 		"legal_basis":            "Quy chế nội bộ doanh nghiệp",
-		"blocks": []map[string]any{
-			{
+		"blocks": append(integrationMandatoryDisclosureBlocksMaps(),
+			map[string]any{
 				"block_id":      "block-general-info",
 				"block_key":     "general_info",
 				"block_type":    "text",
@@ -1568,21 +1609,27 @@ func TestIntegration_disclosureTypeCatalog_adminUpsertAndVersioning(t *testing.T
 				"description":   "Mô tả khối thông tin chung",
 				"config":        map[string]any{"max_length": 5000},
 				"validation":    map[string]any{"required": true},
-				"display_order": 1,
+				"display_order": 7,
 				"enabled":       true,
 			},
-			{
-				"block_id":      "block-required-docs",
-				"block_key":     "required_docs",
-				"block_type":    "checklist",
-				"title":         "Hồ sơ bắt buộc",
-				"description":   "Checklist hồ sơ",
-				"config":        map[string]any{"allow_custom_items": false},
+			map[string]any{
+				"block_id":    "block-required-docs",
+				"block_key":   "required_docs",
+				"block_type":  "checklist",
+				"title":       "Hồ sơ bắt buộc",
+				"description": "Checklist hồ sơ",
+				"config": map[string]any{
+					"allow_custom_items": false,
+					"options": []map[string]any{
+						{"id": "opt-audit", "label": "Audit report"},
+						{"id": "opt-board", "label": "Board minutes"},
+					},
+				},
 				"validation":    map[string]any{"required": true},
-				"display_order": 2,
+				"display_order": 8,
 				"enabled":       true,
 			},
-		},
+		),
 	}, "")
 	if upsertRes.StatusCode != http.StatusOK {
 		t.Fatalf("admin upsert status=%d body=%s", upsertRes.StatusCode, readBody(t, upsertRes.Body))
@@ -1614,8 +1661,11 @@ func TestIntegration_disclosureTypeCatalog_adminUpsertAndVersioning(t *testing.T
 	if detailOut.VersionNo != upsertOut.VersionNo || detailOut.Name != "Template nghĩa vụ tùy chỉnh V2" {
 		t.Fatalf("unexpected detail after upsert: %+v", detailOut)
 	}
-	if len(detailOut.Blocks) != 2 || detailOut.Blocks[0].BlockKey != "general_info" || detailOut.Blocks[1].DisplayOrder != 2 {
-		t.Fatalf("unexpected blocks after upsert: %+v", detailOut.Blocks)
+	if len(detailOut.Blocks) != 8 {
+		t.Fatalf("unexpected blocks length after upsert: %+v", detailOut.Blocks)
+	}
+	if detailOut.Blocks[0].BlockKey != "legal_basis" || detailOut.Blocks[7].DisplayOrder != 8 {
+		t.Fatalf("unexpected blocks order after upsert: %+v", detailOut.Blocks)
 	}
 
 	versionsRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/admin/disclosure-types/dt-custom-obligation/versions", adminToken, nil, "")
@@ -1654,7 +1704,7 @@ func TestIntegration_disclosureTypeCatalog_adminUpsertAndVersioning(t *testing.T
 		} `json:"blocks"`
 	}
 	mustDecodeJSON(t, versionDetailRes.Body, &versionDetailOut)
-	if versionDetailOut.VersionNo != upsertOut.VersionNo || len(versionDetailOut.Blocks) != 2 {
+	if versionDetailOut.VersionNo != upsertOut.VersionNo || len(versionDetailOut.Blocks) != 8 {
 		t.Fatalf("unexpected admin version detail: %+v", versionDetailOut)
 	}
 	forbiddenVersionDetailRes := doJSONRequest(
@@ -1774,8 +1824,37 @@ func TestIntegration_disclosureTypeCatalog_adminUpsertAndVersioning(t *testing.T
 	if invalidBlocksRes.StatusCode != http.StatusBadRequest {
 		t.Fatalf("invalid blocks status=%d body=%s", invalidBlocksRes.StatusCode, readBody(t, invalidBlocksRes.Body))
 	}
-	if !strings.Contains(readBody(t, invalidBlocksRes.Body), "blocks.0.block_key") {
+	invalidBlocksBody := readBody(t, invalidBlocksRes.Body)
+	if !strings.Contains(invalidBlocksBody, "blocks.0.block_key") {
 		t.Fatalf("expected duplicate block_key field error in invalid blocks response")
+	}
+	if !strings.Contains(invalidBlocksBody, "blocks.missing_") {
+		t.Fatalf("expected blocks.missing_* field_errors when mandatory keys are absent (duplicate-key path skips flat/block sync rebuild): %s", invalidBlocksBody)
+	}
+
+	invalidChecklistSchemaRes := doJSONRequest(t, http.MethodPut, srv.URL+"/api/v1/admin/disclosure-types/dt-custom-obligation", adminToken, map[string]any{
+		"group_id":          "group-006",
+		"name":              "Invalid checklist schema",
+		"template_category": "custom",
+		"deadline_strategy": "configurable",
+		"deadline_rule":     "theo nhu cầu",
+		"periodicity":       "monthly",
+		"blocks": append(integrationMandatoryDisclosureBlocksMaps(), map[string]any{
+			"block_id":      "chk1",
+			"block_key":     "solo_checklist",
+			"block_type":    "checklist",
+			"title":         "Extra checklist",
+			"config":        map[string]any{"allow_custom_items": false},
+			"validation":    map[string]any{},
+			"display_order": 7,
+			"enabled":       true,
+		}),
+	}, "")
+	if invalidChecklistSchemaRes.StatusCode != http.StatusBadRequest {
+		t.Fatalf("invalid checklist schema status=%d body=%s", invalidChecklistSchemaRes.StatusCode, readBody(t, invalidChecklistSchemaRes.Body))
+	}
+	if !strings.Contains(readBody(t, invalidChecklistSchemaRes.Body), "config.options") {
+		t.Fatalf("expected checklist config.options field error in invalid checklist schema response")
 	}
 
 	activateRes := doJSONRequest(t, http.MethodPost, srv.URL+"/api/v1/admin/disclosure-types/dt-custom-obligation/activate", adminToken, map[string]any{

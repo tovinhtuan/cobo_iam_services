@@ -186,5 +186,24 @@ func validateTemplateBlocks(req *UpsertTypeVersionRequest, fieldErrors map[strin
 				seenOrders[block.DisplayOrder] = idx
 			}
 		}
+		validateBlockTypeSchema(prefix, block.BlockType, block.Config, block.Validation, fieldErrors)
+	}
+	if len(req.Blocks) > 0 {
+		validateMandatoryTemplateBlockKeys(seenKeys, fieldErrors)
+	}
+}
+
+func validateMandatoryTemplateBlockKeys(seenKeys map[string]int, fieldErrors map[string]string) {
+	var missing []string
+	for _, mk := range MandatoryTemplateBlockKeys {
+		if _, ok := seenKeys[mk]; !ok {
+			missing = append(missing, mk)
+		}
+	}
+	if len(missing) == 0 {
+		return
+	}
+	for _, mk := range missing {
+		fieldErrors["blocks.missing_"+mk] = "required mandatory block_key; additional non-mandatory blocks are allowed"
 	}
 }

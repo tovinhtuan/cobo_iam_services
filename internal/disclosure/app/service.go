@@ -304,6 +304,7 @@ func (s *service) UpsertTypeVersion(ctx context.Context, req UpsertTypeVersionRe
 	if req.Name == "" {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "name is required", nil)
 	}
+	ApplyTemplateFlatBlockSync(&req, s.idg)
 	if err := validateTemplateMatrix(&req); err != nil {
 		return nil, err
 	}

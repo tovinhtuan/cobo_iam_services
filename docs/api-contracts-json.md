@@ -914,6 +914,110 @@ Tao tai khoan user truc tiep (admin flow). Endpoint nay tao ban ghi `users` + `c
 
 ---
 
+### PUT /api/v1/admin/disclosure-types/{type_id} — matrix `blocks` (six mandatory keys)
+
+Khi body co mang `blocks` (it nhat mot phan tu), backend yeu cau **du 6 `block_key`** sau, **khong trung key**, `display_order` > 0 va **duy nhat** trong phien ban:
+
+| `block_key` | Goi y noi dung (map cot phang legacy) |
+|---|---|
+| `legal_basis` | `legal_basis` |
+| `disclosure_content` | `report_content` |
+| `deadline` | `deadline_rule` |
+| `channels_and_format` | `channels_text` + dong `Format: {format}` khi co `format` |
+| `legal_risks` | `legal_risks_text` |
+| `enterprise_workflow` | `implementation_content` |
+
+Neu thieu bat ky key bat buoc, HTTP `400` + `error.details.field_errors` co khoa dang `blocks.missing_<block_key>`.
+
+**Vi du payload toi thieu (custom + du 6 khoi):**
+
+```json
+{
+  "group_id": "group-006",
+  "name": "Mau noi bo",
+  "template_category": "custom",
+  "deadline_strategy": "configurable",
+  "deadline_rule": "Theo quy dinh noi bo",
+  "periodicity": "monthly",
+  "legal_basis": "Quy che cong ty",
+  "report_content": "Noi dung cong bo",
+  "channels_text": "Website cong ty",
+  "format": "PDF",
+  "legal_risks_text": "Rui ro neu khong thuc hien",
+  "implementation_content": "Quy trinh noi bo",
+  "blocks": [
+    {
+      "block_id": "b1",
+      "block_key": "legal_basis",
+      "block_type": "rich_text",
+      "title": "Co so phap ly",
+      "description": "",
+      "config": { "max_length": 8000, "allow_html": false },
+      "validation": {},
+      "display_order": 1,
+      "enabled": true
+    },
+    {
+      "block_id": "b2",
+      "block_key": "disclosure_content",
+      "block_type": "rich_text",
+      "title": "Noi dung cong bo",
+      "description": "",
+      "config": { "max_length": 50000, "allow_html": true },
+      "validation": {},
+      "display_order": 2,
+      "enabled": true
+    },
+    {
+      "block_id": "b3",
+      "block_key": "deadline",
+      "block_type": "text",
+      "title": "Ky han",
+      "description": "",
+      "config": { "max_length": 4000 },
+      "validation": {},
+      "display_order": 3,
+      "enabled": true
+    },
+    {
+      "block_id": "b4",
+      "block_key": "channels_and_format",
+      "block_type": "rich_text",
+      "title": "Kenh va hinh thuc",
+      "description": "",
+      "config": { "max_length": 12000, "allow_html": false },
+      "validation": {},
+      "display_order": 4,
+      "enabled": true
+    },
+    {
+      "block_id": "b5",
+      "block_key": "legal_risks",
+      "block_type": "rich_text",
+      "title": "Rui ro phap ly",
+      "description": "",
+      "config": { "max_length": 8000, "allow_html": false },
+      "validation": {},
+      "display_order": 5,
+      "enabled": true
+    },
+    {
+      "block_id": "b6",
+      "block_key": "enterprise_workflow",
+      "block_type": "rich_text",
+      "title": "Workflow",
+      "description": "",
+      "config": { "max_length": 12000, "allow_html": true },
+      "validation": {},
+      "display_order": 6,
+      "enabled": true
+    }
+  ]
+}
+```
+
+---
+
 ## G. HTTP status mapping (goi y)
 
 | HTTP | Khi nao |
