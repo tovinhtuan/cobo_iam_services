@@ -295,6 +295,9 @@ func (s *service) UpsertTypeVersion(ctx context.Context, req UpsertTypeVersionRe
 	req.DeadlineStrategy = strings.TrimSpace(req.DeadlineStrategy)
 	req.DeadlineRule = strings.TrimSpace(req.DeadlineRule)
 	req.Periodicity = strings.TrimSpace(req.Periodicity)
+	req.ReminderMilestones = sanitizeStringList(req.ReminderMilestones)
+	req.LegalBases = sanitizeLegalBases(req.LegalBases)
+	req.Checklist = sanitizeChecklist(req.Checklist)
 	if req.TypeID == "" {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "type_id is required", nil)
 	}
@@ -395,6 +398,75 @@ func sanitizeAttachments(items []AttachmentDTO) []AttachmentDTO {
 			Name:       name,
 			Type:       strings.TrimSpace(it.Type),
 			UploadedAt: strings.TrimSpace(it.UploadedAt),
+		})
+	}
+	return out
+}
+
+func sanitizeStringList(items []string) []string {
+	if len(items) == 0 {
+		return []string{}
+	}
+	out := make([]string, 0, len(items))
+	seen := map[string]struct{}{}
+	for _, item := range items {
+		trimmed := strings.TrimSpace(item)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		out = append(out, trimmed)
+	}
+	return out
+}
+
+func sanitizeLegalBases(items []LegalBasisDTO) []LegalBasisDTO {
+	if len(items) == 0 {
+		return []LegalBasisDTO{}
+	}
+	out := make([]LegalBasisDTO, 0, len(items))
+	for _, item := range items {
+		title := strings.TrimSpace(item.Title)
+		summary := strings.TrimSpace(item.Summary)
+		if title == "" && summary == "" {
+			continue
+		}
+		out = append(out, LegalBasisDTO{
+			ID:        strings.TrimSpace(item.ID),
+			Title:     title,
+			Code:      strings.TrimSpace(item.Code),
+			Authority: strings.TrimSpace(item.Authority),
+			IssueDate: strings.TrimSpace(item.IssueDate),
+			Summary:   summary,
+			Link:      strings.TrimSpace(item.Link),
+		})
+	}
+	return out
+}
+
+func sanitizeChecklist(items []ChecklistItemDTO) []ChecklistItemDTO {
+	if len(items) == 0 {
+		return []ChecklistItemDTO{}
+	}
+	out := make([]ChecklistItemDTO, 0, len(items))
+	for _, item := range items {
+		title := strings.TrimSpace(item.Title)
+		if title == "" {
+			continue
+		}
+		status := strings.TrimSpace(item.Status)
+		if status == "" {
+			status = "Pending"
+		}
+		out = append(out, ChecklistItemDTO{
+			ID:      strings.TrimSpace(item.ID),
+			Title:   title,
+			Owner:   strings.TrimSpace(item.Owner),
+			DueDate: strings.TrimSpace(item.DueDate),
+			Status:  status,
 		})
 	}
 	return out

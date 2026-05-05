@@ -138,6 +138,9 @@ type UpsertTypeVersionRequest struct {
 	Format                string             `json:"format"`
 	LegalRisksText        string             `json:"legal_risks_text"`
 	GeneralInfo           string             `json:"general_info"`
+	ReminderMilestones    []string           `json:"reminder_milestones"`
+	LegalBases            []LegalBasisDTO    `json:"legal_bases"`
+	Checklist             []ChecklistItemDTO `json:"checklist"`
 	Tags                  []string           `json:"tags"`
 	Blocks                []TemplateBlockDTO `json:"blocks"`
 	ChangeNote            string             `json:"change_note"`
@@ -242,8 +245,29 @@ type DisclosureTypeDTO struct {
 	Format                string             `json:"format"`
 	LegalRisksText        string             `json:"legal_risks_text"`
 	GeneralInfo           string             `json:"general_info"`
+	ReminderMilestones    []string           `json:"reminder_milestones"`
+	LegalBases            []LegalBasisDTO    `json:"legal_bases"`
+	Checklist             []ChecklistItemDTO `json:"checklist"`
 	Tags                  []string           `json:"tags"`
 	Blocks                []TemplateBlockDTO `json:"blocks"`
+}
+
+type LegalBasisDTO struct {
+	ID        string `json:"id"`
+	Title     string `json:"title"`
+	Code      string `json:"code"`
+	Authority string `json:"authority"`
+	IssueDate string `json:"issue_date"`
+	Summary   string `json:"summary"`
+	Link      string `json:"link"`
+}
+
+type ChecklistItemDTO struct {
+	ID      string `json:"id"`
+	Title   string `json:"title"`
+	Owner   string `json:"owner"`
+	DueDate string `json:"due_date"`
+	Status  string `json:"status"`
 }
 
 type TemplateBlockDTO struct {

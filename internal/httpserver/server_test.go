@@ -1585,6 +1585,22 @@ func TestIntegration_disclosureTypeCatalog_adminUpsertAndVersioning(t *testing.T
 		"description":            "Updated template description",
 		"deadline_rule":          "Theo cấu hình admin phiên bản 2",
 		"periodicity":            "monthly",
+		"reminder_milestones":    []string{"Trước 5 ngày", "Trước 3 ngày", "Trước 1 ngày"},
+		"legal_bases": []map[string]any{
+			{
+				"id":         "lb-001",
+				"title":      "Thông tư hướng dẫn công bố thông tin",
+				"code":       "96/2020/TT-BTC",
+				"authority":  "Bộ Tài chính",
+				"issue_date": "2020-11-16",
+				"summary":    "Quy định về nghĩa vụ công bố thông tin định kỳ",
+				"link":       "#",
+			},
+		},
+		"checklist": []map[string]any{
+			{"id": "ck-001", "title": "Chốt số liệu kế toán quý", "owner": "Kế toán trưởng", "due_date": "T+5", "status": "Completed"},
+			{"id": "ck-002", "title": "Soát xét nội bộ", "owner": "Trưởng phòng Tài chính", "due_date": "T+15", "status": "Pending"},
+		},
 		"channels_text":          "Nội bộ",
 		"format":                 "PDF",
 		"tags":                   []string{"Tùy chỉnh", "V2"},
@@ -1648,10 +1664,20 @@ func TestIntegration_disclosureTypeCatalog_adminUpsertAndVersioning(t *testing.T
 		t.Fatalf("detail status=%d body=%s", detailRes.StatusCode, readBody(t, detailRes.Body))
 	}
 	var detailOut struct {
-		VersionNo int      `json:"version_no"`
-		Name      string   `json:"name"`
-		Tags      []string `json:"tags"`
-		Blocks    []struct {
+		VersionNo          int      `json:"version_no"`
+		Name               string   `json:"name"`
+		Tags               []string `json:"tags"`
+		ReminderMilestones []string `json:"reminder_milestones"`
+		LegalBases         []struct {
+			ID    string `json:"id"`
+			Title string `json:"title"`
+		} `json:"legal_bases"`
+		Checklist []struct {
+			ID     string `json:"id"`
+			Title  string `json:"title"`
+			Status string `json:"status"`
+		} `json:"checklist"`
+		Blocks             []struct {
 			BlockID      string `json:"block_id"`
 			BlockKey     string `json:"block_key"`
 			DisplayOrder int    `json:"display_order"`
@@ -1660,6 +1686,15 @@ func TestIntegration_disclosureTypeCatalog_adminUpsertAndVersioning(t *testing.T
 	mustDecodeJSON(t, detailRes.Body, &detailOut)
 	if detailOut.VersionNo != upsertOut.VersionNo || detailOut.Name != "Template nghĩa vụ tùy chỉnh V2" {
 		t.Fatalf("unexpected detail after upsert: %+v", detailOut)
+	}
+	if len(detailOut.ReminderMilestones) != 3 || detailOut.ReminderMilestones[0] != "Trước 5 ngày" {
+		t.Fatalf("unexpected reminder_milestones after upsert: %+v", detailOut.ReminderMilestones)
+	}
+	if len(detailOut.LegalBases) != 1 || detailOut.LegalBases[0].ID != "lb-001" {
+		t.Fatalf("unexpected legal_bases after upsert: %+v", detailOut.LegalBases)
+	}
+	if len(detailOut.Checklist) != 2 || detailOut.Checklist[0].Status != "Completed" {
+		t.Fatalf("unexpected checklist after upsert: %+v", detailOut.Checklist)
 	}
 	if len(detailOut.Blocks) != 8 {
 		t.Fatalf("unexpected blocks length after upsert: %+v", detailOut.Blocks)
@@ -1697,15 +1732,31 @@ func TestIntegration_disclosureTypeCatalog_adminUpsertAndVersioning(t *testing.T
 		t.Fatalf("admin version detail status=%d body=%s", versionDetailRes.StatusCode, readBody(t, versionDetailRes.Body))
 	}
 	var versionDetailOut struct {
-		VersionNo int    `json:"version_no"`
-		Name      string `json:"name"`
-		Blocks    []struct {
+		VersionNo          int      `json:"version_no"`
+		Name               string   `json:"name"`
+		ReminderMilestones []string `json:"reminder_milestones"`
+		LegalBases         []struct {
+			ID string `json:"id"`
+		} `json:"legal_bases"`
+		Checklist []struct {
+			ID string `json:"id"`
+		} `json:"checklist"`
+		Blocks             []struct {
 			BlockKey string `json:"block_key"`
 		} `json:"blocks"`
 	}
 	mustDecodeJSON(t, versionDetailRes.Body, &versionDetailOut)
 	if versionDetailOut.VersionNo != upsertOut.VersionNo || len(versionDetailOut.Blocks) != 8 {
 		t.Fatalf("unexpected admin version detail: %+v", versionDetailOut)
+	}
+	if len(versionDetailOut.ReminderMilestones) != 3 || versionDetailOut.ReminderMilestones[2] != "Trước 1 ngày" {
+		t.Fatalf("unexpected version reminder_milestones: %+v", versionDetailOut.ReminderMilestones)
+	}
+	if len(versionDetailOut.LegalBases) != 1 || versionDetailOut.LegalBases[0].ID != "lb-001" {
+		t.Fatalf("unexpected version legal_bases: %+v", versionDetailOut.LegalBases)
+	}
+	if len(versionDetailOut.Checklist) != 2 || versionDetailOut.Checklist[1].ID != "ck-002" {
+		t.Fatalf("unexpected version checklist: %+v", versionDetailOut.Checklist)
 	}
 	forbiddenVersionDetailRes := doJSONRequest(
 		t,

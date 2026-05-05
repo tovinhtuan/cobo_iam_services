@@ -5,6 +5,8 @@ alwaysApply: true
 
 # Engineering Rules
 
+Luật **`ai-cache-read-first.mdc`** và **`docs/ai-cache/README.md`** không được bỏ qua; nếu xung đột, ưu tiên theo thứ tự trong README (`docs/ai-cache/` trước rule engineering).
+
 ## General
 - Ưu tiên thay đổi nhỏ, an toàn, dễ review.
 - Không sửa file không liên quan.

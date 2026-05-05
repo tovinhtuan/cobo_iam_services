@@ -1588,3 +1588,119 @@
     - `docker compose -f docker-compose.dev.yml up -d api web`
 - remaining gaps/risks/next steps:
   - optional next step: expose localized labels per enum from backend when FE needs backend-driven display text (not only canonical codes)
+
+## 2026-05-04 - Week 3 Closure Evidence Run (`-Phase all`)
+
+- task type: implement
+- objective: execute full week-3 closure evidence in one pass using phase gate runner and capture pass/fail output across baseline, regression, and seed/account verification gates
+- what was implemented/discovered:
+  - executed:
+    - `powershell -ExecutionPolicy Bypass -File docs/scripts/run-week3-phase-gate.ps1 -Phase all`
+  - first run failed at FE lint due missing VI i18n keys in `cobo_web_design/src/features/cms-core/language.tsx`:
+    - `templates.blocks.error.mandatoryBlocksMissingPrefix`
+    - `templates.blocks.error.mandatoryBlocksExtraAllowed`
+  - added the missing VI translations in FE repo and reran the full phase gate successfully
+  - successful rerun covered:
+    - phase 1 (`run-c1-cycle.ps1`): BE tests, FE lint/tests, DB smokes (disclosure/cms/media), no-cache docker rebuild + restart
+    - phase 2: full BE regression + platform CMS integration + FE lint/test/build
+    - phase 3: seed/account verification (`verify-seed-accounts.ps1`)
+- affected repos/files/modules:
+  - `cobo_iam_services/docs/scripts/run-week3-phase-gate.ps1`
+  - `cobo_iam_services/docs/scripts/verify-seed-accounts.ps1`
+  - `cobo_web_design/src/features/cms-core/language.tsx`
+  - `cobo_iam_services/docs/ai-cache/reusable-task-updates.md`
+- important contracts/behaviors/constraints/decisions:
+  - phase gate remains contract-preserving; changes were evidence/verification oriented except FE translation completeness fix
+  - docker compose emits status lines to stderr on Windows PowerShell but run completed with exit code `0`
+- build/verification result:
+  - full phase gate passed:
+    - terminal footer: `WEEK 3 PHASE GATE PASSED`
+    - command exit: `0` (`elapsed_ms: 121875`)
+  - key checkpoints:
+    - FE targeted regression: `45 passed`
+    - FE production build: success (with non-blocking chunk-size warning)
+    - DB smokes: disclosure/CMS prefix/CMS media all passed
+    - seed/account verification: passed
+- remaining gaps/risks/next steps:
+  - optional: suppress or track Vite chunk-size warning via code-splitting/manual chunks if performance budget requires it
+  - optional: publish this `-Phase all` run output as release artifact/CI evidence for formal week-3 signoff
+
+## 2026-05-04 - Week 3 Phase Gate Scripts (Regression + Seed Verification)
+
+- task type: implement
+- objective: implement phased execution gates to close remaining Week 3 operational gaps with runnable scripts (`full regression` + `devops seed/account verification`)
+- what was implemented/discovered:
+  - added new phase orchestrator script:
+    - `docs/scripts/run-week3-phase-gate.ps1`
+    - supports `-Phase 1|2|3|all`
+    - phase 1: delegates to `run-c1-cycle.ps1` (existing C2/CMS baseline + docker parity cycle)
+    - phase 2: runs full BE+FE regression gate (`go test ./...`, platform CMS integration tests, FE lint + focused regression tests + FE build)
+    - phase 3: brings compose services up and executes seed/account verification gate
+  - added new seed/account verification script:
+    - `docs/scripts/verify-seed-accounts.ps1`
+    - validates default seeded user/admin/cms logins, membership/select-company flow, `/me` identity consistency, CMS collections access for cms operator, and baseline disclosure list for normal user
+  - fixed initial phase-3 script assumptions to match live API shape:
+    - replaced non-existing endpoint probes (`/api/v1/platform/cms/dashboard`, `/api/v1/companies`) with existing endpoints used by current stack contracts
+- affected repos/files/modules:
+  - `cobo_iam_services/docs/scripts/run-week3-phase-gate.ps1`
+  - `cobo_iam_services/docs/scripts/verify-seed-accounts.ps1`
+  - `cobo_iam_services/docs/ai-cache/reusable-task-updates.md`
+- important contracts/behaviors/constraints/decisions:
+  - phase gate design is additive and does not alter runtime API behavior; it standardizes release-readiness evidence collection
+  - phase 3 verifies seeded account operability using real auth/session/company selection contracts instead of static fixture assumptions
+  - scripts keep compatibility with current local compose defaults and existing smoke credentials
+- build/verification result:
+  - phase-3 execution passed end-to-end:
+    - `powershell -ExecutionPolicy Bypass -File docs/scripts/run-week3-phase-gate.ps1 -Phase 3`
+    - result includes successful `SEED ACCOUNT VERIFICATION PASSED` and `WEEK 3 PHASE GATE PASSED`
+  - noted runtime noise:
+    - `docker compose up` prints status lines to stderr in PowerShell, but command exited `0` and flow succeeded
+- remaining gaps/risks/next steps:
+  - run `-Phase all` on release branch to generate complete Week 3 closure evidence (phase 1 + 2 + 3)
+  - optional hardening: migrate script password params to `SecureString`/`PSCredential` if strict PSScriptAnalyzer policy is required
+
+## 2026-05-04 - Disclosure Template Contract: add `reminder_milestones` (backward-compatible)
+
+- task type: implement
+- objective: add backend support for `reminder_milestones` in disclosure template upsert/detail APIs so FE can render milestone chips from API data instead of static fallback
+- what was implemented/discovered:
+  - contract update in `internal/disclosure/app/contracts.go`:
+    - added `ReminderMilestones []string 'json:"reminder_milestones"'` to:
+      - `UpsertTypeVersionRequest`
+      - `DisclosureTypeDTO`
+  - service-layer normalization in `internal/disclosure/app/service.go`:
+    - sanitize and dedupe `reminder_milestones` entries (`trim`, remove empty, stable order)
+  - MySQL repository update in `internal/disclosure/infra/mysql/repository.go`:
+    - read/write `reminder_milestones_json` in detail/version queries and upsert insert
+    - decode JSON array safely with fallback `[]` for null/empty payloads
+  - in-memory repository parity in `internal/disclosure/infra/inmemory/repository.go`:
+    - include `ReminderMilestones` in upsert snapshot and clone on reads
+  - migration added:
+    - `migrations/0018_disclosure_reminder_milestones.up.sql`
+    - `migrations/0018_disclosure_reminder_milestones.down.sql`
+    - schema delta: add nullable JSON column `reminder_milestones_json` to `disclosure_type_versions`
+  - integration regression expanded in `internal/httpserver/server_test.go`:
+    - admin upsert payload now includes `reminder_milestones`
+    - asserts detail/version endpoints return the same milestones
+- affected repos/files/modules:
+  - `cobo_iam_services/internal/disclosure/app/contracts.go`
+  - `cobo_iam_services/internal/disclosure/app/service.go`
+  - `cobo_iam_services/internal/disclosure/infra/mysql/repository.go`
+  - `cobo_iam_services/internal/disclosure/infra/inmemory/repository.go`
+  - `cobo_iam_services/internal/httpserver/server_test.go`
+  - `cobo_iam_services/migrations/0018_disclosure_reminder_milestones.up.sql`
+  - `cobo_iam_services/migrations/0018_disclosure_reminder_milestones.down.sql`
+- important contracts/behaviors/constraints/decisions:
+  - backward-compatible expand change:
+    - new DB column is nullable
+    - old clients (without `reminder_milestones`) continue to work unchanged
+    - API response now carries milestones as `[]` when null/absent
+  - mixed-version safe:
+    - new code tolerates null column values via decode fallback
+    - old code ignores extra JSON field from clients
+- build/verification result:
+  - `go test ./internal/disclosure/...`: pass
+  - `go test ./internal/httpserver -run TestIntegration_disclosureTypeCatalog_adminUpsertAndVersioning -count=1`: pass
+  - `docker compose -f docker-compose.dev.yml build api`: pass
+- remaining gaps/risks/next steps:
+  - FE normalizer in `cobo_web_design` still needs to map `reminder_milestones` -> `type.reminderMilestones` for end-to-end visual parity

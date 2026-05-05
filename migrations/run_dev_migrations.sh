@@ -21,6 +21,8 @@ MIGRATIONS="
 0015_disclosure_template_enums.up.sql
 0016_disclosure_template_blocks.up.sql
 0017_disclosure_template_mandatory_backfill.up.sql
+0018_disclosure_reminder_milestones.up.sql
+0019_disclosure_legal_bases_checklist_json.up.sql
 0009_seed_authz_test_accounts.up.sql
 0010_disclosure_contract_c1.up.sql
 seed_dev_identity_authorization.sql

@@ -1,5 +1,13 @@
 # Cursor Skill Pack for Cobo Repos
 
+## Tín hiệu tuân thủ — phải thấy được trong Chat (bắt buộc)
+
+Giống `cobo_web_design/docs/ai-cache/README.md`: mọi câu trả lời có nội dung phải có **dòng đầu** bắt đầu **`[ai-cache]`** + README + file `docs/ai-cache/` đã dùng + skill + **`Mandatory README: đã áp dụng`**. Chi tiết: xem README trong `cobo_web_design` hoặc sao chép mục đó vào repo này nếu làm việc chỉ IAM.
+
+Snippet **“Bắt buộc: tuân thủ docs/ai-cache/README.md…”** (dán đầu prompt) và **lệnh Docker/build hoặc `BLOCKED:`** sau implement: xem **`cobo_web_design/docs/ai-cache/README.md`** và bản siết trong **`.cursor/rules/ai-cache-read-first.mdc`** của repo này.
+
+**Áp dụng tự động (Cursor):** Luật **`.cursor/rules/ai-cache-read-first.mdc`** (`alwaysApply: true`) + **`AGENTS.md`** ở root.
+
 Pack này gồm 2 bộ cấu hình:
 - `cobo_web_design/.cursor/...`
 - `cobo_iam_services/.cursor/...`

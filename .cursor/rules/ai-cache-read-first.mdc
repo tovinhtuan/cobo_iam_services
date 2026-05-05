@@ -1,43 +1,97 @@
 ---
-description: Treat docs/ai-cache/README.md as the highest-priority source of truth before applying skills or answering
+description: Mandatory — read docs/ai-cache/README.md and reusable docs/ai-cache context before any work; align with README Mandatory Prompt Requirement
 alwaysApply: true
 ---
 
-# AI Cache Highest-Priority Rule
+# AI Cache — bắt buộc (theo `docs/ai-cache/README.md`)
 
-Before answering, planning, reviewing, or writing code:
+Mọi prompt / mọi lượt agent trong repo này phải tuân thủ **“Mandatory Prompt Requirement”** trong `docs/ai-cache/README.md` (và bản tương ứng nếu workspace mở `cobo_web_design`).
 
-1. First check whether `docs/ai-cache/README.md` exists in the current repository.
-2. If it exists, read it before doing anything else.
-3. Treat `docs/ai-cache/README.md` as the highest-priority project source of truth.
-4. Use that file to determine terminology, architecture constraints, workflows, conventions, priorities, and project-specific assumptions.
-5. Only after reading it, choose and apply the most relevant project skill.
+## Snippet user ghim đầu prompt (README — *Nếu Agent quên*, dòng 20–24)
 
-## Priority order
-When multiple sources conflict, resolve them in this order:
-1. Direct user instructions in the current chat
-2. `docs/ai-cache/README.md`
-3. Other project rules in `.cursor/rules/`
-4. Repository README files and other project docs
-5. Existing code patterns
-6. Generic assumptions or default best practices
+User (hoặc rule nội bộ) có thể dán **nguyên** khối sau **đầu prompt**; Agent coi như chỉ dẫn explicit cùng cấp với user chat:
 
-## Mandatory behavior
-- Do not start implementation before checking `docs/ai-cache/README.md`.
-- If the file exists, do not contradict it unless the user explicitly overrides it.
-- If repository README or older code patterns conflict with `docs/ai-cache/README.md`, prefer `docs/ai-cache/README.md`.
-- If generic best practices conflict with `docs/ai-cache/README.md`, prefer `docs/ai-cache/README.md` unless the user explicitly says otherwise.
-- If the file is missing, say briefly that it was not found and continue with project rules and skills.
+```text
+Bắt buộc: tuân thủ docs/ai-cache/README.md — dòng đầu câu trả lời phải có [ai-cache] theo README.
+```
 
-## Skill application order
-1. Read `docs/ai-cache/README.md`
-2. Read relevant code/files for the task
-3. Select the most relevant skill
-4. Produce a short plan if the task is non-trivial
-5. Implement or answer
-6. Run `premerge-system-review` before marking a coding task done
+## Docker / build verify sau implement (cứng — lệnh cụ thể hoặc `BLOCKED:`)
 
-## Response expectations
-- Stay consistent with the vocabulary and architecture described in `docs/ai-cache/README.md`.
-- Reuse the constraints and workflows from that file instead of re-inventing them.
-- When relevant, mention if a decision was taken to stay aligned with `docs/ai-cache/README.md`.
+Sau **mỗi** cycle **đã sửa code** (implement), **trước** khi kết thúc message hoặc ghi task “xong” trong `docs/ai-cache/`:
+
+1. Chạy **đúng** các lệnh dưới đây theo repo bị diff (ghi **exit code** / tóm tắt log trong câu trả lời hoặc mục verification trong `docs/ai-cache/`), **hoặc**
+2. Ghi **`BLOCKED:`** + lý do (Docker daemon, sandbox, v.v.).
+
+### Diff trong `cobo_iam_services` (repo này)
+
+- **Bắt buộc** (cwd = root repo này):  
+  `docker compose -f docker-compose.dev.yml build api`
+- Nếu đụng **Dockerfile** / checklist nội bộ:  
+  `docker build -t cobo-iam-services:premerge-verify .`
+- Nếu đụng **worker** hoặc full stack: thêm lệnh compose/profile phù hợp.
+
+### Chỉ diff trong `cobo_web_design` (frontend sibling)
+
+- **Bắt buộc** (cwd = root `cobo_web_design`): `npm run build`
+- **Docker parity (khi có thể):** từ **root repo này** (`cobo_iam_services`), nếu `docker-compose.dev.yml` mount `../cobo_web_design` đúng layout dev:  
+  `docker compose -f docker-compose.dev.yml run --rm --no-deps web sh -c "npm ci && npm run build"`  
+  Nếu không chạy được: `BLOCKED:` sau khi đã có kết quả `npm run build` từ phía FE.
+
+### Diff **cả hai** repo
+
+- Chạy **cả** nhánh IAM và nhánh FE ở trên, hoặc `BLOCKED:` cho phần không chạy được.
+
+## 0) Tín hiệu `[ai-cache]` — phải nhìn thấy trong Chat (bắt buộc)
+
+- Với mọi câu trả lời có nội dung: **dòng đầu tiên** bắt đầu bằng **`[ai-cache]`** + README + file `docs/ai-cache/` đã dùng + skill + **`Mandatory README: đã áp dụng`** (xem mục đầu `docs/ai-cache/README.md` trong repo này).
+- Dòng đó là bằng chứng hiển thị kèm việc thực sự đã tải ngữ cảnh.
+
+## 1) Tải ngữ cảnh bắt buộc (trước mọi bước khác)
+
+1. Đọc **`docs/ai-cache/README.md`** (trong repo hiện tại).
+2. Đọc **toàn bộ tài liệu tái sử dụng** trong **`docs/ai-cache/`** cho đúng phạm vi task:
+   - Nếu task rõ ràng: đọc README + các file trong `docs/ai-cache/` liên quan trực tiếp (theo tên/chủ đề).
+   - Nếu phạm vi mơ hồ hoặc ảnh hưởng rộng: đọc README + **mọi** file `*.md` và tài liệu tóm tắt `*.json` trong `docs/ai-cache/` (bỏ qua file nhị phân / dữ liệu lớn không phải văn bản trừ khi task cần).
+3. Chỉ sau đó mới đọc code, chọn skill, hoặc trả lời.
+
+## 2) Thứ tự ưu tiên khi xung đột (khớp README)
+
+Sau **chỉ dẫn explicit** của user trong chat:
+
+1. `docs/ai-cache/README.md`
+2. Các file còn lại trong `docs/ai-cache/`
+3. Project rules (`.cursor/rules/*.mdc`)
+4. Docs / pattern cũ khác trong repo
+5. Code hiện có
+6. Giả định chung ngoài repo
+
+## 3) Skill và cross-repo
+
+- Chọn skill phù hợp sau bước (1).
+- Task chạm **cả** `cobo_web_design` **và** `cobo_iam_services`: dùng **`integration-cross-repo`** và đọc `docs/ai-cache/` ở mỗi repo liên quan.
+
+## 4) Feature mới — contract-first
+
+Theo README: contract, error matrix, FE/BE, failure modes, rollout, validation — trước khi code.
+
+## 5) Task implement
+
+- Diff nhỏ; kết thúc bằng **`premerge-system-review`**.
+- Sau cycle code: áp dụng **mục “Docker / build verify sau implement”** ở trên (lệnh cụ thể hoặc **`BLOCKED:`**); không coi xong nếu chưa báo verify.
+
+## 6) Task phân tích / review-only
+
+- Không sửa code nếu chưa được yêu cầu explicit.
+- Dựa trên code/docs thực tế.
+
+## 7) Sau task
+
+Ghi tóm tắt vào **`docs/ai-cache/`** theo format README (thường `reusable-task-updates.md` hoặc `*-summary.md`).
+
+## 8) Prompt mặc định
+
+Hành vi tương đương khối prompt mặc định trong README (skill, boundary, failure modes, diff nhỏ, pre-merge review).
+
+## 9) Nếu thiếu file
+
+Nếu không có `docs/ai-cache/README.md`: nói ngắn, tiếp tục với rules/skills.
