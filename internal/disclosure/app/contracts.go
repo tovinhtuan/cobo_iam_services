@@ -131,6 +131,7 @@ type GetTemplateReferenceDataResponse struct {
 type UpsertTypeVersionRequest struct {
 	Subject               Subject
 	TypeID                string             `json:"type_id"`
+	Scope                 string             `json:"scope"`
 	GroupID               string             `json:"group_id"`
 	Name                  string             `json:"name"`
 	Category              string             `json:"category"`
@@ -375,6 +376,8 @@ type DisclosureGroupDTO struct {
 type DisclosureTypeSummaryDTO struct {
 	TypeID           string   `json:"type_id"`
 	GroupID          string   `json:"group_id"`
+	Scope            string   `json:"scope"`
+	OwnerCompanyID   string   `json:"owner_company_id"`
 	Name             string   `json:"name"`
 	Category         string   `json:"category"`
 	TemplateCategory string   `json:"template_category"`
@@ -387,6 +390,8 @@ type DisclosureTypeDTO struct {
 	VersionNo             int                `json:"version_no"`
 	TypeID                string             `json:"type_id"`
 	GroupID               string             `json:"group_id"`
+	Scope                 string             `json:"scope"`
+	OwnerCompanyID        string             `json:"owner_company_id"`
 	Name                  string             `json:"name"`
 	Category              string             `json:"category"`
 	TemplateCategory      string             `json:"template_category"`

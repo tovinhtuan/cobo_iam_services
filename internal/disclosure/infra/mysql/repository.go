@@ -147,7 +147,7 @@ func (r *Repository) ListTypes(ctx context.Context, companyID, groupID, query st
 		args = append(args, like, like)
 	}
 	sqlText := `
-		SELECT t.type_id, t.group_id, v.name, v.category, v.template_category, v.description, v.deadline_rule, v.tags_json
+		SELECT t.type_id, t.group_id, t.company_id, v.name, v.category, v.template_category, v.description, v.deadline_rule, v.tags_json
 		FROM disclosure_types t
 		INNER JOIN disclosure_type_versions v
 			ON v.type_id = t.type_id AND v.version_no = t.active_version_no
@@ -163,8 +163,15 @@ func (r *Repository) ListTypes(ctx context.Context, companyID, groupID, query st
 	for rows.Next() {
 		var item disclosureapp.DisclosureTypeSummaryDTO
 		var tagsRaw []byte
-		if err := rows.Scan(&item.TypeID, &item.GroupID, &item.Name, &item.Category, &item.TemplateCategory, &item.Description, &item.DeadlineRule, &tagsRaw); err != nil {
+		var ownerCompanyID sql.NullString
+		if err := rows.Scan(&item.TypeID, &item.GroupID, &ownerCompanyID, &item.Name, &item.Category, &item.TemplateCategory, &item.Description, &item.DeadlineRule, &tagsRaw); err != nil {
 			return nil, err
+		}
+		item.OwnerCompanyID = ownerCompanyID.String
+		if ownerCompanyID.Valid && strings.TrimSpace(ownerCompanyID.String) != "" {
+			item.Scope = "company"
+		} else {
+			item.Scope = "global"
 		}
 		if err := decodeTags(tagsRaw, &item.Tags); err != nil {
 			return nil, err
@@ -177,7 +184,7 @@ func (r *Repository) ListTypes(ctx context.Context, companyID, groupID, query st
 func (r *Repository) GetTypeDetail(ctx context.Context, companyID, typeID string) (*disclosureapp.DisclosureTypeDTO, error) {
 	row := r.db.QueryRowContext(ctx, `
 		SELECT
-			t.type_id, t.group_id, t.active_version_no,
+			t.type_id, t.group_id, t.company_id, t.active_version_no,
 			v.name, v.category, v.template_category, COALESCE(v.deadline_strategy, ''), v.description,
 			COALESCE(v.legal_basis, ''), COALESCE(v.applicability, ''), COALESCE(v.implementation_content, ''), COALESCE(v.implementation_notes, ''),
 			COALESCE(v.special_cases, ''), COALESCE(v.report_content, ''), COALESCE(v.required_docs, ''),
@@ -192,12 +199,13 @@ func (r *Repository) GetTypeDetail(ctx context.Context, companyID, typeID string
 		WHERE t.type_id = ? AND (t.company_id IS NULL OR t.company_id = ?)
 	`, typeID, companyID)
 	var item disclosureapp.DisclosureTypeDTO
+	var ownerCompanyID sql.NullString
 	var reminderMilestonesRaw []byte
 	var legalBasesRaw []byte
 	var checklistRaw []byte
 	var tagsRaw []byte
 	if err := row.Scan(
-		&item.TypeID, &item.GroupID, &item.VersionNo,
+		&item.TypeID, &item.GroupID, &ownerCompanyID, &item.VersionNo,
 		&item.Name, &item.Category, &item.TemplateCategory, &item.DeadlineStrategy, &item.Description,
 		&item.LegalBasis, &item.Applicability, &item.ImplementationContent, &item.ImplementationNotes,
 		&item.SpecialCases, &item.ReportContent, &item.RequiredDocs,
@@ -215,6 +223,12 @@ func (r *Repository) GetTypeDetail(ctx context.Context, companyID, typeID string
 	}
 	if err := decodeTags(tagsRaw, &item.Tags); err != nil {
 		return nil, err
+	}
+	item.OwnerCompanyID = ownerCompanyID.String
+	if strings.TrimSpace(item.OwnerCompanyID) == "" {
+		item.Scope = "global"
+	} else {
+		item.Scope = "company"
 	}
 	if err := decodeStringListJSON(reminderMilestonesRaw, &item.ReminderMilestones); err != nil {
 		return nil, err
@@ -236,7 +250,7 @@ func (r *Repository) GetTypeDetail(ctx context.Context, companyID, typeID string
 func (r *Repository) GetTypeVersionDetail(ctx context.Context, companyID, typeID string, versionNo int) (*disclosureapp.DisclosureTypeDTO, error) {
 	row := r.db.QueryRowContext(ctx, `
 		SELECT
-			t.type_id, t.group_id, v.version_no,
+			t.type_id, t.group_id, t.company_id, v.version_no,
 			v.name, v.category, v.template_category, COALESCE(v.deadline_strategy, ''), v.description,
 			COALESCE(v.legal_basis, ''), COALESCE(v.applicability, ''), COALESCE(v.implementation_content, ''), COALESCE(v.implementation_notes, ''),
 			COALESCE(v.special_cases, ''), COALESCE(v.report_content, ''), COALESCE(v.required_docs, ''),
@@ -251,12 +265,13 @@ func (r *Repository) GetTypeVersionDetail(ctx context.Context, companyID, typeID
 		WHERE v.type_id = ? AND v.version_no = ? AND (t.company_id IS NULL OR t.company_id = ?)
 	`, typeID, versionNo, companyID)
 	var item disclosureapp.DisclosureTypeDTO
+	var ownerCompanyID sql.NullString
 	var reminderMilestonesRaw []byte
 	var legalBasesRaw []byte
 	var checklistRaw []byte
 	var tagsRaw []byte
 	if err := row.Scan(
-		&item.TypeID, &item.GroupID, &item.VersionNo,
+		&item.TypeID, &item.GroupID, &ownerCompanyID, &item.VersionNo,
 		&item.Name, &item.Category, &item.TemplateCategory, &item.DeadlineStrategy, &item.Description,
 		&item.LegalBasis, &item.Applicability, &item.ImplementationContent, &item.ImplementationNotes,
 		&item.SpecialCases, &item.ReportContent, &item.RequiredDocs,
@@ -274,6 +289,12 @@ func (r *Repository) GetTypeVersionDetail(ctx context.Context, companyID, typeID
 	}
 	if err := decodeTags(tagsRaw, &item.Tags); err != nil {
 		return nil, err
+	}
+	item.OwnerCompanyID = ownerCompanyID.String
+	if strings.TrimSpace(item.OwnerCompanyID) == "" {
+		item.Scope = "global"
+	} else {
+		item.Scope = "company"
 	}
 	if err := decodeStringListJSON(reminderMilestonesRaw, &item.ReminderMilestones); err != nil {
 		return nil, err
@@ -300,6 +321,10 @@ func (r *Repository) UpsertTypeVersion(ctx context.Context, req disclosureapp.Up
 	defer func() { _ = tx.Rollback() }()
 
 	companyID := strings.TrimSpace(req.Subject.CompanyID)
+	requestedScope := strings.ToLower(strings.TrimSpace(req.Scope))
+	if requestedScope == "" {
+		requestedScope = "global"
+	}
 	groupID := strings.TrimSpace(req.GroupID)
 	changeNote := strings.TrimSpace(req.ChangeNote)
 	var currentVersion sql.NullInt64
@@ -312,11 +337,21 @@ func (r *Repository) UpsertTypeVersion(ctx context.Context, req disclosureapp.Up
 	if currentCompany.Valid && currentCompany.String != "" && currentCompany.String != companyID {
 		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "cannot modify type from another company", nil)
 	}
+	if currentCompany.Valid && currentCompany.String == "" && requestedScope != "global" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "cannot change existing global type to company scope", nil)
+	}
+	if currentCompany.Valid && currentCompany.String != "" && requestedScope != "company" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "cannot change existing company type to global scope", nil)
+	}
 	if !currentCompany.Valid {
+		typeCompanyID := ""
+		if requestedScope == "company" {
+			typeCompanyID = companyID
+		}
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO disclosure_types (type_id, company_id, group_id, active_version_no, status)
 			VALUES (?, ?, ?, 0, 'active')
-		`, req.TypeID, companyID, groupID); err != nil {
+		`, req.TypeID, nullIfBlank(typeCompanyID), groupID); err != nil {
 			return nil, err
 		}
 	}
@@ -924,4 +959,12 @@ func decodeJSONMap(raw []byte, target *map[string]any) error {
 	}
 	*target = parsed
 	return nil
+}
+
+func nullIfBlank(value string) any {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return nil
+	}
+	return trimmed
 }

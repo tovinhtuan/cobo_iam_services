@@ -18,6 +18,11 @@ type service struct {
 	idg  idgen.Generator
 }
 
+const (
+	templateScopeGlobal  = "global"
+	templateScopeCompany = "company"
+)
+
 func NewService(repo Repository, auth authapp.Service, idg idgen.Generator) Service {
 	return &service{repo: repo, auth: auth, idg: idg}
 }
@@ -288,6 +293,7 @@ func (s *service) UpsertTypeVersion(ctx context.Context, req UpsertTypeVersionRe
 		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "access denied", nil)
 	}
 	req.TypeID = strings.TrimSpace(req.TypeID)
+	req.Scope = strings.ToLower(strings.TrimSpace(req.Scope))
 	req.GroupID = strings.TrimSpace(req.GroupID)
 	req.Name = strings.TrimSpace(req.Name)
 	req.Category = strings.TrimSpace(req.Category)
@@ -307,11 +313,31 @@ func (s *service) UpsertTypeVersion(ctx context.Context, req UpsertTypeVersionRe
 	if req.Name == "" {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "name is required", nil)
 	}
+	if req.Scope == "" {
+		if s.hasPermission(ctx, req.Subject, "platform.cms.view") {
+			req.Scope = templateScopeGlobal
+		} else {
+			req.Scope = templateScopeCompany
+		}
+	}
+	if req.Scope != templateScopeGlobal && req.Scope != templateScopeCompany {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "scope must be global or company", nil)
+	}
+	if req.Scope == templateScopeGlobal && !s.hasPermission(ctx, req.Subject, "platform.cms.view") {
+		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "global scope requires platform admin permission", nil)
+	}
+	if req.Scope == templateScopeCompany && !isCompanyCreatableTemplateCategory(req.TemplateCategory) {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "company scope only supports custom template category", nil)
+	}
 	ApplyTemplateFlatBlockSync(&req, s.idg)
 	if err := validateTemplateMatrix(&req); err != nil {
 		return nil, err
 	}
 	return s.repo.UpsertTypeVersion(ctx, req)
+}
+
+func isCompanyCreatableTemplateCategory(category string) bool {
+	return strings.EqualFold(strings.TrimSpace(category), TemplateCategoryCustom)
 }
 
 func (s *service) ListTypeVersions(ctx context.Context, req ListTypeVersionsRequest) (*ListTypeVersionsResponse, error) {

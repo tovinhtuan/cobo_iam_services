@@ -131,6 +131,8 @@ func (r *Repository) ListTypes(_ context.Context, companyID, groupID, query stri
 		out = append(out, disclosureapp.DisclosureTypeSummaryDTO{
 			TypeID:           item.TypeID,
 			GroupID:          item.GroupID,
+			Scope:            func() string { if r.catalogScope[item.TypeID] == "global" { return "global" }; return "company" }(),
+			OwnerCompanyID:   func() string { if r.catalogScope[item.TypeID] == "global" { return "" }; return r.catalogScope[item.TypeID] }(),
 			Name:             item.Name,
 			Category:         item.Category,
 			TemplateCategory: item.TemplateCategory,
@@ -153,6 +155,13 @@ func (r *Repository) GetTypeDetail(_ context.Context, companyID, typeID string) 
 		return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "disclosure type not found", nil)
 	}
 	cp := item
+	if r.catalogScope[typeID] == "global" {
+		cp.Scope = "global"
+		cp.OwnerCompanyID = ""
+	} else {
+		cp.Scope = "company"
+		cp.OwnerCompanyID = r.catalogScope[typeID]
+	}
 	cp.Tags = slices.Clone(item.Tags)
 	cp.ReminderMilestones = slices.Clone(item.ReminderMilestones)
 	cp.LegalBases = slices.Clone(item.LegalBases)
@@ -176,6 +185,13 @@ func (r *Repository) GetTypeVersionDetail(_ context.Context, companyID, typeID s
 		return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "disclosure type version not found", nil)
 	}
 	cp := item
+	if r.catalogScope[typeID] == "global" {
+		cp.Scope = "global"
+		cp.OwnerCompanyID = ""
+	} else {
+		cp.Scope = "company"
+		cp.OwnerCompanyID = r.catalogScope[typeID]
+	}
 	cp.Tags = slices.Clone(item.Tags)
 	cp.ReminderMilestones = slices.Clone(item.ReminderMilestones)
 	cp.LegalBases = slices.Clone(item.LegalBases)
@@ -228,7 +244,11 @@ func (r *Repository) UpsertTypeVersion(_ context.Context, req disclosureapp.Upse
 		r.catalogByVer[req.TypeID] = map[int]disclosureapp.DisclosureTypeDTO{}
 	}
 	r.catalogByVer[req.TypeID][versionNo] = next
-	r.catalogScope[req.TypeID] = req.Subject.CompanyID
+	if strings.EqualFold(strings.TrimSpace(req.Scope), "company") {
+		r.catalogScope[req.TypeID] = req.Subject.CompanyID
+	} else {
+		r.catalogScope[req.TypeID] = "global"
+	}
 
 	vs := r.versions[req.TypeID]
 	for i := range vs {
