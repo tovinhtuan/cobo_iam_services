@@ -1,0 +1,2 @@
+DROP TABLE IF EXISTS company_template_workflow_override_versions;
+DROP TABLE IF EXISTS company_template_workflow_overrides;

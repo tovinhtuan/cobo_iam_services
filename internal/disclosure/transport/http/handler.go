@@ -43,6 +43,13 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/admin/disclosure-types/{type_id}/versions", h.listTypeVersions)
 	mux.HandleFunc("GET /api/v1/admin/disclosure-types/{type_id}/versions/{version_no}", h.getTypeVersionDetail)
 	mux.HandleFunc("POST /api/v1/admin/disclosure-types/{type_id}/activate", h.activateTypeVersion)
+	mux.HandleFunc("GET /api/v1/company/disclosure-types/{type_id}/workflow-override", h.getCompanyWorkflowOverride)
+	mux.HandleFunc("PUT /api/v1/company/disclosure-types/{type_id}/workflow-override/draft", h.upsertCompanyWorkflowOverrideDraft)
+	mux.HandleFunc("POST /api/v1/company/disclosure-types/{type_id}/workflow-override/approve", h.approveCompanyWorkflowOverride)
+	mux.HandleFunc("DELETE /api/v1/company/disclosure-types/{type_id}/workflow-override/draft/{version_no}", h.deleteCompanyWorkflowOverrideDraft)
+	mux.HandleFunc("DELETE /api/v1/company/disclosure-types/{type_id}/workflow-override/active", h.resetCompanyWorkflowOverrideActive)
+	mux.HandleFunc("GET /api/v1/company/disclosure-types/{type_id}/workflow-override/versions", h.listCompanyWorkflowOverrideVersions)
+	mux.HandleFunc("GET /api/v1/disclosure-types/{type_id}/effective-workflow", h.getEffectiveWorkflow)
 }
 
 func (h *Handler) getTemplateReferenceData(w http.ResponseWriter, r *http.Request) {
@@ -377,6 +384,163 @@ func (h *Handler) activateTypeVersion(w http.ResponseWriter, r *http.Request) {
 		"new_version_no": resp.VersionNo,
 		"reason":         strings.TrimSpace(payload.Reason),
 	})
+	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) getCompanyWorkflowOverride(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subjectFromToken(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	resp, err := h.svc.GetCompanyWorkflowOverride(r.Context(), disclosureapp.GetCompanyWorkflowOverrideRequest{
+		Subject: sub,
+		TypeID:  strings.TrimSpace(r.PathValue("type_id")),
+	})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) upsertCompanyWorkflowOverrideDraft(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subjectFromToken(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	var payload disclosureapp.UpsertCompanyWorkflowOverrideDraftRequest
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	payload.Subject = sub
+	payload.TypeID = strings.TrimSpace(r.PathValue("type_id"))
+	resp, err := h.svc.UpsertCompanyWorkflowOverrideDraft(r.Context(), payload)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	h.auditLog(r, sub, "disclosure.workflow_override.draft_saved", "disclosure_type", payload.TypeID, map[string]any{
+		"draft_version_no": resp.DraftVersionNo,
+	})
+	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) approveCompanyWorkflowOverride(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subjectFromToken(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	var payload disclosureapp.ApproveCompanyWorkflowOverrideRequest
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	payload.Subject = sub
+	payload.TypeID = strings.TrimSpace(r.PathValue("type_id"))
+	resp, err := h.svc.ApproveCompanyWorkflowOverride(r.Context(), payload)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	h.auditLog(r, sub, "disclosure.workflow_override.approved", "disclosure_type", payload.TypeID, map[string]any{
+		"active_version_no": resp.ActiveVersionNo,
+		"reason":            strings.TrimSpace(payload.Reason),
+	})
+	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) deleteCompanyWorkflowOverrideDraft(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subjectFromToken(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	versionNo, err := strconv.Atoi(strings.TrimSpace(r.PathValue("version_no")))
+	if err != nil {
+		httpx.WriteError(w, nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "version_no must be integer", nil))
+		return
+	}
+	resp, err := h.svc.DeleteCompanyWorkflowOverrideDraft(r.Context(), disclosureapp.DeleteCompanyWorkflowOverrideDraftRequest{
+		Subject:   sub,
+		TypeID:    strings.TrimSpace(r.PathValue("type_id")),
+		VersionNo: versionNo,
+	})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	h.auditLog(r, sub, "disclosure.workflow_override.draft_deleted", "disclosure_type", strings.TrimSpace(r.PathValue("type_id")), map[string]any{
+		"version_no": versionNo,
+	})
+	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) resetCompanyWorkflowOverrideActive(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subjectFromToken(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	var payload struct {
+		Reason string `json:"reason"`
+	}
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&payload)
+	}
+	resp, err := h.svc.ResetCompanyWorkflowOverrideActive(r.Context(), disclosureapp.ResetCompanyWorkflowOverrideActiveRequest{
+		Subject: sub,
+		TypeID:  strings.TrimSpace(r.PathValue("type_id")),
+		Reason:  strings.TrimSpace(payload.Reason),
+	})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	h.auditLog(r, sub, "disclosure.workflow_override.reset", "disclosure_type", strings.TrimSpace(r.PathValue("type_id")), map[string]any{
+		"reason": strings.TrimSpace(payload.Reason),
+	})
+	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) listCompanyWorkflowOverrideVersions(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subjectFromToken(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	page, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("page")))
+	pageSize, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("page_size")))
+	resp, err := h.svc.ListCompanyWorkflowOverrideVersions(r.Context(), disclosureapp.ListCompanyWorkflowOverrideVersionsRequest{
+		Subject:  sub,
+		TypeID:   strings.TrimSpace(r.PathValue("type_id")),
+		Page:     page,
+		PageSize: pageSize,
+	})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) getEffectiveWorkflow(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subjectFromToken(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	resp, err := h.svc.GetEffectiveWorkflow(r.Context(), disclosureapp.GetEffectiveWorkflowRequest{
+		Subject: sub,
+		TypeID:  strings.TrimSpace(r.PathValue("type_id")),
+	})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
 	httpx.WriteJSON(w, http.StatusOK, resp)
 }
 

@@ -23,6 +23,8 @@ MIGRATIONS="
 0017_disclosure_template_mandatory_backfill.up.sql
 0018_disclosure_reminder_milestones.up.sql
 0019_disclosure_legal_bases_checklist_json.up.sql
+0020_company_template_workflow_overrides.up.sql
+0021_template_workflow_override_permissions.up.sql
 0009_seed_authz_test_accounts.up.sql
 0010_disclosure_contract_c1.up.sql
 seed_dev_identity_authorization.sql

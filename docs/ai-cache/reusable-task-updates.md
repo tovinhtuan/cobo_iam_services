@@ -1,5 +1,139 @@
 # Reusable Task Updates
 
+## 2026-05-06 - Tenant workflow override skeleton (migration + IAM contracts/service/repo + API docs)
+
+- task type: implement
+- objective: implement first sprint skeleton for enterprise-scoped workflow override on template; include DB migration 0020, backend skeleton layers, and API contract docs for team handoff
+- what was implemented:
+  - added migration:
+    - `migrations/0020_company_template_workflow_overrides.up.sql`
+    - `migrations/0020_company_template_workflow_overrides.down.sql`
+    - updated `migrations/run_dev_migrations.sh` to include `0020...up.sql`
+  - extended disclosure module contracts in `internal/disclosure/app/contracts.go`:
+    - DTOs for workflow step/document and company override header/version/view
+    - new service/repository methods for:
+      - get override view
+      - upsert draft
+      - approve
+      - delete draft version
+      - reset active override
+      - list versions
+      - get effective workflow
+  - implemented service skeleton + validation/authz gates in `internal/disclosure/app/service.go`
+  - wired in-memory repo behavior for new methods in `internal/disclosure/infra/inmemory/repository.go`
+  - wired MySQL repo skeleton SQL behavior for new methods in `internal/disclosure/infra/mysql/repository.go`
+  - exposed new HTTP endpoints in `internal/disclosure/transport/http/handler.go`:
+    - `GET /api/v1/company/disclosure-types/{type_id}/workflow-override`
+    - `PUT /api/v1/company/disclosure-types/{type_id}/workflow-override/draft`
+    - `POST /api/v1/company/disclosure-types/{type_id}/workflow-override/approve`
+    - `DELETE /api/v1/company/disclosure-types/{type_id}/workflow-override/draft/{version_no}`
+    - `DELETE /api/v1/company/disclosure-types/{type_id}/workflow-override/active`
+    - `GET /api/v1/company/disclosure-types/{type_id}/workflow-override/versions`
+    - `GET /api/v1/disclosure-types/{type_id}/effective-workflow`
+  - updated `docs/api-contracts-json.md` with detailed request/response examples + error matrix section for tenant workflow override
+- affected repos/files/modules:
+  - `cobo_iam_services/migrations/*0020*`
+  - `cobo_iam_services/internal/disclosure/app/contracts.go`
+  - `cobo_iam_services/internal/disclosure/app/service.go`
+  - `cobo_iam_services/internal/disclosure/infra/inmemory/repository.go`
+  - `cobo_iam_services/internal/disclosure/infra/mysql/repository.go`
+  - `cobo_iam_services/internal/disclosure/transport/http/handler.go`
+  - `cobo_iam_services/docs/api-contracts-json.md`
+- contracts/behaviors/constraints/decisions:
+  - tenant override data is keyed by `(company_id, type_id)` and kept separate from global template catalog rows
+  - effective source resolution returns `company_override` when active approved version exists; otherwise `global_template`
+  - service enforces `type_id`, `version_no`, and minimum workflow validation before repository call
+- build/verification result:
+  - `go test ./internal/disclosure/...` => exit 0
+  - `go test ./internal/httpserver -count=1` => exit 0
+  - `docker compose -f docker-compose.dev.yml build api` => exit 0
+- remaining gaps/risks/next steps:
+  - permission names currently reuse disclosure action gates; should align to dedicated `template.workflow.override.*` permissions in next slice
+  - MySQL skeleton stores workflow JSON but still needs stricter schema/rule validation parity with FE editor
+  - add integration tests for tenant isolation + approve/reset state transitions + conflict paths
+
+## 2026-05-06 - Implement-ready spec: tenant workflow override
+
+- task type: design / understand
+- objective: convert tenant workflow customization idea into sprint-ready package: DB schema + detailed API request/response + error matrix
+- discovered / designed:
+  - proposed new aggregate `company_template_workflow_overrides` + `company_template_workflow_override_versions` for tenant-scoped workflow without mutating global template rows.
+  - defined effective workflow resolution order: active approved company override -> global template workflow.
+  - finalized endpoint set for CRUD draft + approve + reset + versions/history under company-scoped API paths.
+  - standardized error matrix with stable `error.code` + `details.field_errors` for FE mapping.
+- affected repos/files/modules (design scope):
+  - `cobo_iam_services`: migrations + disclosure handler/service/repository contracts + authorization checks + audit log append
+  - `cobo_web_design`: template workflow customization UI + API client + route states + permission mapping
+- contracts/behaviors/constraints/decisions:
+  - admin enterprise actions are hard-scoped by token `company_id`; request payload must not carry mutable tenant selector.
+  - approve is tenant-local and side-effect free for other tenants and global template.
+  - optional maker-checker policy can be enabled as strict mode.
+- build/verification result:
+  - design-only task; no runtime code changes; docker/build verification not required
+- remaining gaps/risks/next steps:
+  - align permission naming with IAM policy table rollout plan.
+  - decide whether draft overwrite uses optimistic lock (`base_version_no`) or server auto-rebase.
+  - implement migration + API in phased rollout with regression tests for tenant isolation.
+
+## 2026-05-06 - Design tenant-level workflow customization for template
+
+- task type: design / understand
+- objective: design logic so enterprise admin can CRUD customized workflow for template, approve for own company only, without affecting global template or other companies
+- discovered / designed:
+  - keep global template immutable as shared source (`company_id IS NULL`) and introduce company-scoped workflow override as separate aggregate keyed by `(company_id, type_id)`.
+  - add draft -> approved state machine for company override, with explicit versioning and audit trail to avoid hidden overwrite.
+  - runtime read contract resolves effective workflow by priority:
+    1) approved company override
+    2) global template workflow
+  - enforce tenant isolation by token-derived `company_id` in every query/update path; reject cross-company access at service layer.
+- affected repos/files/modules (design scope):
+  - `cobo_iam_services`: disclosure app contracts/service/repository + http handlers + mysql migrations
+  - `cobo_web_design`: `src/features/cms-core/pages.tsx` + `services/cmsApi.ts` + template/workflow UI state mapping
+- contracts/behaviors/constraints/decisions:
+  - enterprise admin CRUD only edits company override draft, never writes to global template rows.
+  - approve action only activates override for current `company_id`; no side effect on other tenants.
+  - optional reset endpoint removes active override to fallback to global workflow.
+- build/verification result:
+  - design-only task; no runtime code changes; docker/build verification not required
+- remaining gaps/risks/next steps:
+  - align permission matrix for create/edit/approve/reset override.
+  - decide if 4-eyes approval is required (`maker != checker`) for regulated tenants.
+  - implement migration + API + FE route states in small phases.
+
+## 2026-05-06 - Understand CRUD template feature (cross-repo)
+
+- task type: understand
+- objective: understand current CRUD template flow across `cobo_web_design` and `cobo_iam_services`
+- discovered:
+  - FE template CRUD UI lives in `src/features/cms-core/pages.tsx` (`CmsTemplatesPage`) and calls `createCmsApi` methods in `src/features/cms-core/services/cmsApi.ts`.
+  - Current FE flow supports:
+    - read reference data: `GET /api/v1/admin/disclosure-types/reference-data`
+    - read groups: `GET /api/v1/disclosure-groups`
+    - read active template detail: `GET /api/v1/disclosure-types/{type_id}`
+    - upsert template version (create/update): `PUT /api/v1/admin/disclosure-types/{type_id}`
+    - list versions: `GET /api/v1/admin/disclosure-types/{type_id}/versions`
+    - activate version: `POST /api/v1/admin/disclosure-types/{type_id}/activate`
+    - read specific version: `GET /api/v1/admin/disclosure-types/{type_id}/versions/{version_no}`
+  - FE does not expose delete/archive template action; behavior is versioned upsert + activate.
+  - FE normalizes and validates block schema locally (`templateBlockSchema.ts`) and enforces six mandatory `block_key` values when `blocks` is non-empty.
+  - BE handler routes for template flow are in `internal/disclosure/transport/http/handler.go`; service permission gate for template mutations is `rbac.manage`.
+  - BE persistence model is versioned (`disclosure_type_versions` + `disclosure_types.active_version_no`) with transactional upsert/activate in `internal/disclosure/infra/mysql/repository.go`.
+  - BE validation in `internal/disclosure/app/service.go` + template schema validators enforces matrix compatibility (`template_category` vs `periodicity` vs `deadline_strategy`) and mandatory template blocks.
+  - Catalog read endpoints (`GET /api/v1/disclosure-types*`, `GET /api/v1/disclosure-groups`) are scoped by `company_id` plus global (`company_id IS NULL`) rows.
+- affected repos/files/modules:
+  - `cobo_web_design`: `src/features/cms-core/pages.tsx`, `src/features/cms-core/services/cmsApi.ts`, `src/features/cms-core/templateBlockSchema.ts`
+  - `cobo_iam_services`: `internal/disclosure/transport/http/handler.go`, `internal/disclosure/app/contracts.go`, `internal/disclosure/app/service.go`, `internal/disclosure/infra/mysql/repository.go`, `docs/api-contracts-json.md`
+- contracts/behaviors/constraints/decisions:
+  - "CRUD template" in current implementation = Read + Upsert (versioned create/update) + Activate version; no hard delete endpoint.
+  - Permission-denied and validation errors are expected to return stable API errors; FE maps `error.details.field_errors` into UI message text.
+  - Mandatory template blocks are canonicalized to lowercase keys and must include:
+    `legal_basis`, `disclosure_content`, `deadline`, `channels_and_format`, `legal_risks`, `enterprise_workflow`.
+- build/verification result:
+  - analysis-only task; no runtime code changes; docker/build verification not required
+- remaining gaps/risks/next steps:
+  - If true Delete/Archive is required by product semantics, add explicit backend endpoints and FE actions (with audit + compatibility policy).
+  - Tighten FE handling for `loadVersions` error to clear stale version list and prevent mismatch with current `typeId`.
+
 ## 2026-04-27 - Mandatory Prompt Policy (2 repos)
 
 - task type: understand
@@ -1704,3 +1838,45 @@
   - `docker compose -f docker-compose.dev.yml build api`: pass
 - remaining gaps/risks/next steps:
   - FE normalizer in `cobo_web_design` still needs to map `reminder_milestones` -> `type.reminderMilestones` for end-to-end visual parity
+
+## 2026-05-06 - Permission split for template workflow override (`template.workflow.override.*`)
+
+- task type: implement
+- objective: tach quyen rieng cho company-level workflow override thay vi dung chung disclosure action gate
+- what was implemented/discovered:
+  - disclosure service authorization for override endpoints now uses dedicated actions:
+    - `template.workflow.override.read`
+    - `template.workflow.override.write`
+    - `template.workflow.override.approve`
+    - `template.workflow.override.reset`
+  - updated in-memory authorization fixture/policy mapping:
+    - granted new permission codes to admin fixtures (`m_admin_001`, `m_cms_001`)
+    - added action policies for four new actions -> matching required permissions
+  - updated MySQL authorization legacy fallback policy:
+    - map the four new actions to corresponding `template.workflow.override.*` permissions when `action_policy_matrix` is unavailable/unseeded
+  - added migration for explicit permission records + default seed role grants:
+    - `migrations/0021_template_workflow_override_permissions.up.sql`
+    - `migrations/0021_template_workflow_override_permissions.down.sql`
+    - up migration inserts 4 new permissions and grants them to roles `admin_web`, `cms_operator`, `admin_doanh_nghiep` in `c_001`
+  - added migration to dev runner list:
+    - `migrations/run_dev_migrations.sh` includes `0021_template_workflow_override_permissions.up.sql`
+  - updated API contract note:
+    - `docs/api-contracts-json.md` now documents required permission split by endpoint group
+- affected repos/files/modules:
+  - `cobo_iam_services/internal/disclosure/app/service.go`
+  - `cobo_iam_services/internal/authorization/infra/inmemory/repository.go`
+  - `cobo_iam_services/internal/authorization/infra/mysql/repository.go`
+  - `cobo_iam_services/migrations/0021_template_workflow_override_permissions.up.sql`
+  - `cobo_iam_services/migrations/0021_template_workflow_override_permissions.down.sql`
+  - `cobo_iam_services/migrations/run_dev_migrations.sh`
+  - `cobo_iam_services/docs/api-contracts-json.md`
+- important contracts/behaviors/constraints/decisions:
+  - override CRUD/approve/reset permissions are now independently governable from disclosure record permissions
+  - read operations for workflow override/effective workflow require explicit `template.workflow.override.read`
+  - migration keeps behavior backward-safe for running environments by adding new permissions without changing existing permission ids/codes
+- build/verification result:
+  - `go test ./internal/disclosure/... ./internal/authorization/...`: pass
+  - `go test ./internal/httpserver -count=1`: pass
+  - `docker compose -f docker-compose.dev.yml build api`: pass
+- remaining gaps/risks/next steps:
+  - if deployment environment uses customized role sets beyond seed roles, ops must assign new `template.workflow.override.*` permissions to intended roles before rollout

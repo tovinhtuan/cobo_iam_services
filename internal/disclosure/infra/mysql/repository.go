@@ -479,6 +479,335 @@ func (r *Repository) ActivateTypeVersion(ctx context.Context, req disclosureapp.
 	}, nil
 }
 
+func (r *Repository) GetCompanyWorkflowOverride(ctx context.Context, companyID, typeID string) (*disclosureapp.CompanyWorkflowOverrideViewDTO, error) {
+	view := &disclosureapp.CompanyWorkflowOverrideViewDTO{
+		TypeID:          typeID,
+		CompanyID:       companyID,
+		EffectiveSource: "global_template",
+	}
+	row := r.db.QueryRowContext(ctx, `
+		SELECT override_id, status, active_version_no, updated_at
+		FROM company_template_workflow_overrides
+		WHERE company_id = ? AND type_id = ?
+	`, companyID, typeID)
+	var header disclosureapp.CompanyWorkflowOverrideHeaderDTO
+	if err := row.Scan(&header.OverrideID, &header.Status, &header.ActiveVersionNo, &header.UpdatedAt); err != nil {
+		if err == sql.ErrNoRows {
+			return view, nil
+		}
+		return nil, err
+	}
+	header.CompanyID = companyID
+	header.TypeID = typeID
+	view.Override = &header
+
+	if header.ActiveVersionNo > 0 {
+		active, err := r.getCompanyWorkflowOverrideVersion(ctx, header.OverrideID, header.ActiveVersionNo)
+		if err != nil {
+			return nil, err
+		}
+		view.ActiveVersion = active
+		view.EffectiveSource = "company_override"
+	}
+	draftRow := r.db.QueryRowContext(ctx, `
+		SELECT version_no, state, COALESCE(change_note, ''), workflow_json, created_by, COALESCE(approved_by, ''), approved_at, created_at
+		FROM company_template_workflow_override_versions
+		WHERE override_id = ? AND state = 'draft'
+		ORDER BY version_no DESC
+		LIMIT 1
+	`, header.OverrideID)
+	draft, err := scanCompanyOverrideVersion(draftRow)
+	if err != nil && err != sql.ErrNoRows {
+		return nil, err
+	}
+	if err == nil {
+		view.DraftVersion = draft
+	}
+	return view, nil
+}
+
+func (r *Repository) UpsertCompanyWorkflowOverrideDraft(ctx context.Context, req disclosureapp.UpsertCompanyWorkflowOverrideDraftRequest) (*disclosureapp.UpsertCompanyWorkflowOverrideDraftResponse, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	now := time.Now().UTC()
+
+	var overrideID string
+	var activeVersionNo int
+	err = tx.QueryRowContext(ctx, `
+		SELECT override_id, active_version_no
+		FROM company_template_workflow_overrides
+		WHERE company_id = ? AND type_id = ?
+		FOR UPDATE
+	`, req.Subject.CompanyID, req.TypeID).Scan(&overrideID, &activeVersionNo)
+	if err != nil {
+		if err != sql.ErrNoRows {
+			return nil, err
+		}
+		overrideID = fmt.Sprintf("ovr_%s_%s", req.Subject.CompanyID, req.TypeID)
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO company_template_workflow_overrides (
+				override_id, company_id, type_id, active_version_no, status, created_by, updated_by, created_at, updated_at
+			) VALUES (?, ?, ?, 0, 'draft', ?, ?, ?, ?)
+		`, overrideID, req.Subject.CompanyID, req.TypeID, req.Subject.UserID, req.Subject.UserID, now, now); err != nil {
+			return nil, err
+		}
+	}
+
+	var nextVersion int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COALESCE(MAX(version_no), 0) + 1
+		FROM company_template_workflow_override_versions
+		WHERE override_id = ?
+	`, overrideID).Scan(&nextVersion); err != nil {
+		return nil, err
+	}
+	workflowJSON, err := json.Marshal(req.Workflow)
+	if err != nil {
+		return nil, fmt.Errorf("marshal workflow: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO company_template_workflow_override_versions (
+			override_id, version_no, workflow_json, change_note, state, created_by, created_at, updated_at
+		) VALUES (?, ?, CAST(? AS JSON), NULLIF(?, ''), 'draft', ?, ?, ?)
+	`, overrideID, nextVersion, string(workflowJSON), req.ChangeNote, req.Subject.UserID, now, now); err != nil {
+		return nil, err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE company_template_workflow_overrides
+		SET status = 'draft', updated_by = ?, updated_at = ?
+		WHERE override_id = ?
+	`, req.Subject.UserID, now, overrideID); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return &disclosureapp.UpsertCompanyWorkflowOverrideDraftResponse{
+		OverrideID:     overrideID,
+		TypeID:         req.TypeID,
+		CompanyID:      req.Subject.CompanyID,
+		DraftVersionNo: nextVersion,
+		State:          "draft",
+		UpdatedAt:      now,
+	}, nil
+}
+
+func (r *Repository) ApproveCompanyWorkflowOverride(ctx context.Context, req disclosureapp.ApproveCompanyWorkflowOverrideRequest) (*disclosureapp.ApproveCompanyWorkflowOverrideResponse, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	now := time.Now().UTC()
+
+	var overrideID string
+	if err := tx.QueryRowContext(ctx, `
+		SELECT override_id
+		FROM company_template_workflow_overrides
+		WHERE company_id = ? AND type_id = ?
+		FOR UPDATE
+	`, req.Subject.CompanyID, req.TypeID).Scan(&overrideID); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "workflow override not found", nil)
+		}
+		return nil, err
+	}
+	var state string
+	if err := tx.QueryRowContext(ctx, `
+		SELECT state
+		FROM company_template_workflow_override_versions
+		WHERE override_id = ? AND version_no = ?
+	`, overrideID, req.VersionNo).Scan(&state); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "workflow override version not found", nil)
+		}
+		return nil, err
+	}
+	if state != "draft" {
+		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "workflow override version is not draft", nil)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE company_template_workflow_override_versions
+		SET state = CASE WHEN version_no = ? THEN 'approved' ELSE state END,
+		    approved_by = CASE WHEN version_no = ? THEN ? ELSE approved_by END,
+		    approved_at = CASE WHEN version_no = ? THEN ? ELSE approved_at END,
+		    updated_at = CASE WHEN version_no = ? THEN ? ELSE updated_at END
+		WHERE override_id = ?
+	`, req.VersionNo, req.VersionNo, req.Subject.UserID, req.VersionNo, now, req.VersionNo, now, overrideID); err != nil {
+		return nil, err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE company_template_workflow_overrides
+		SET active_version_no = ?, status = 'approved', approved_by = ?, approved_at = ?, updated_by = ?, updated_at = ?
+		WHERE override_id = ?
+	`, req.VersionNo, req.Subject.UserID, now, req.Subject.UserID, now, overrideID); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return &disclosureapp.ApproveCompanyWorkflowOverrideResponse{
+		OverrideID:      overrideID,
+		TypeID:          req.TypeID,
+		CompanyID:       req.Subject.CompanyID,
+		ActiveVersionNo: req.VersionNo,
+		State:           "approved",
+		ApprovedBy:      req.Subject.UserID,
+		ApprovedAt:      now,
+		EffectiveSource: "company_override",
+	}, nil
+}
+
+func (r *Repository) DeleteCompanyWorkflowOverrideDraft(ctx context.Context, req disclosureapp.DeleteCompanyWorkflowOverrideDraftRequest) (*disclosureapp.DeleteCompanyWorkflowOverrideDraftResponse, error) {
+	res, err := r.db.ExecContext(ctx, `
+		DELETE v FROM company_template_workflow_override_versions v
+		INNER JOIN company_template_workflow_overrides o ON o.override_id = v.override_id
+		WHERE o.company_id = ? AND o.type_id = ? AND v.version_no = ? AND v.state = 'draft'
+	`, req.Subject.CompanyID, req.TypeID, req.VersionNo)
+	if err != nil {
+		return nil, err
+	}
+	affected, _ := res.RowsAffected()
+	if affected == 0 {
+		return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "draft version not found", nil)
+	}
+	return &disclosureapp.DeleteCompanyWorkflowOverrideDraftResponse{Deleted: true, VersionNo: req.VersionNo}, nil
+}
+
+func (r *Repository) ResetCompanyWorkflowOverrideActive(ctx context.Context, req disclosureapp.ResetCompanyWorkflowOverrideActiveRequest) (*disclosureapp.ResetCompanyWorkflowOverrideActiveResponse, error) {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE company_template_workflow_overrides
+		SET active_version_no = 0, status = 'archived', updated_by = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE company_id = ? AND type_id = ?
+	`, req.Subject.UserID, req.Subject.CompanyID, req.TypeID)
+	if err != nil {
+		return nil, err
+	}
+	affected, _ := res.RowsAffected()
+	if affected == 0 {
+		return &disclosureapp.ResetCompanyWorkflowOverrideActiveResponse{
+			TypeID:          req.TypeID,
+			CompanyID:       req.Subject.CompanyID,
+			ActiveVersionNo: 0,
+			State:           "archived",
+			EffectiveSource: "global_template",
+		}, nil
+	}
+	var overrideID string
+	_ = r.db.QueryRowContext(ctx, `
+		SELECT override_id FROM company_template_workflow_overrides WHERE company_id = ? AND type_id = ?
+	`, req.Subject.CompanyID, req.TypeID).Scan(&overrideID)
+	return &disclosureapp.ResetCompanyWorkflowOverrideActiveResponse{
+		OverrideID:      overrideID,
+		TypeID:          req.TypeID,
+		CompanyID:       req.Subject.CompanyID,
+		ActiveVersionNo: 0,
+		State:           "archived",
+		EffectiveSource: "global_template",
+	}, nil
+}
+
+func (r *Repository) ListCompanyWorkflowOverrideVersions(ctx context.Context, companyID, typeID string, page, pageSize int) ([]disclosureapp.CompanyWorkflowOverrideVersionDTO, int, error) {
+	row := r.db.QueryRowContext(ctx, `
+		SELECT COUNT(1)
+		FROM company_template_workflow_override_versions v
+		INNER JOIN company_template_workflow_overrides o ON o.override_id = v.override_id
+		WHERE o.company_id = ? AND o.type_id = ?
+	`, companyID, typeID)
+	var total int
+	if err := row.Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	offset := (page - 1) * pageSize
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT v.version_no, v.state, COALESCE(v.change_note, ''), v.workflow_json, v.created_by, COALESCE(v.approved_by, ''), v.approved_at, v.created_at
+		FROM company_template_workflow_override_versions v
+		INNER JOIN company_template_workflow_overrides o ON o.override_id = v.override_id
+		WHERE o.company_id = ? AND o.type_id = ?
+		ORDER BY v.version_no DESC
+		LIMIT ? OFFSET ?
+	`, companyID, typeID, pageSize, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	out := make([]disclosureapp.CompanyWorkflowOverrideVersionDTO, 0)
+	for rows.Next() {
+		item, err := scanCompanyOverrideVersion(rows)
+		if err != nil {
+			return nil, 0, err
+		}
+		out = append(out, *item)
+	}
+	return out, total, rows.Err()
+}
+
+func (r *Repository) GetEffectiveWorkflow(ctx context.Context, companyID, typeID string) (*disclosureapp.EffectiveWorkflowDTO, error) {
+	view, err := r.GetCompanyWorkflowOverride(ctx, companyID, typeID)
+	if err != nil {
+		return nil, err
+	}
+	dto := &disclosureapp.EffectiveWorkflowDTO{
+		TypeID:    typeID,
+		CompanyID: companyID,
+		Source:    "global_template",
+		VersionNo: 0,
+		Workflow:  []disclosureapp.WorkflowStepDTO{},
+	}
+	if view.ActiveVersion != nil {
+		dto.Source = "company_override"
+		dto.VersionNo = view.ActiveVersion.VersionNo
+		dto.Workflow = view.ActiveVersion.Workflow
+	}
+	return dto, nil
+}
+
+func (r *Repository) getCompanyWorkflowOverrideVersion(ctx context.Context, overrideID string, versionNo int) (*disclosureapp.CompanyWorkflowOverrideVersionDTO, error) {
+	row := r.db.QueryRowContext(ctx, `
+		SELECT version_no, state, COALESCE(change_note, ''), workflow_json, created_by, COALESCE(approved_by, ''), approved_at, created_at
+		FROM company_template_workflow_override_versions
+		WHERE override_id = ? AND version_no = ?
+	`, overrideID, versionNo)
+	item, err := scanCompanyOverrideVersion(row)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "workflow override version not found", nil)
+		}
+		return nil, err
+	}
+	return item, nil
+}
+
+type rowScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanCompanyOverrideVersion(scanner rowScanner) (*disclosureapp.CompanyWorkflowOverrideVersionDTO, error) {
+	var item disclosureapp.CompanyWorkflowOverrideVersionDTO
+	var workflowRaw []byte
+	var approvedBy string
+	var approvedAt sql.NullTime
+	if err := scanner.Scan(&item.VersionNo, &item.State, &item.ChangeNote, &workflowRaw, &item.CreatedBy, &approvedBy, &approvedAt, &item.CreatedAt); err != nil {
+		return nil, err
+	}
+	if len(workflowRaw) > 0 {
+		if err := json.Unmarshal(workflowRaw, &item.Workflow); err != nil {
+			return nil, err
+		}
+	} else {
+		item.Workflow = []disclosureapp.WorkflowStepDTO{}
+	}
+	item.ApprovedBy = strings.TrimSpace(approvedBy)
+	if approvedAt.Valid {
+		t := approvedAt.Time
+		item.ApprovedAt = &t
+	}
+	return &item, nil
+}
+
 func decodeTags(raw []byte, target *[]string) error {
 	if len(raw) == 0 {
 		*target = []string{}

@@ -1018,6 +1018,263 @@ Neu thieu bat ky key bat buoc, HTTP `400` + `error.details.field_errors` co khoa
 
 ---
 
+### Company-level workflow override (tenant-isolated)
+
+Muc tieu: admin doanh nghiep co the tuy chinh workflow rieng cho template, approve de ap dung cho chinh doanh nghiep do, khong anh huong template chung va doanh nghiep khac.
+
+Base path: `/api/v1/company/disclosure-types/{type_id}/workflow-override`
+
+Quyen goi y:
+- `template.workflow.override.read`: GET override + GET versions + GET effective workflow
+- `template.workflow.override.write`: PUT draft + DELETE draft version
+- `template.workflow.override.approve`: POST approve
+- `template.workflow.override.reset`: DELETE active (fallback ve global)
+
+#### GET `/api/v1/company/disclosure-types/{type_id}/workflow-override`
+
+Tra ve trang thai override hien tai (header + draft version + active version) va `effective_source`.
+
+**Response 200**
+
+```json
+{
+  "data": {
+    "type_id": "dt-periodic-financial",
+    "company_id": "c_001",
+    "override": {
+      "override_id": "ovr_c_001_dt-periodic-financial",
+      "status": "approved",
+      "active_version_no": 3,
+      "updated_at": "2026-05-06T07:00:00Z"
+    },
+    "draft_version": {
+      "version_no": 4,
+      "state": "draft",
+      "change_note": "Dieu chinh SLA buoc duyet",
+      "workflow": [],
+      "created_by": "u_001",
+      "created_at": "2026-05-06T07:10:00Z"
+    },
+    "active_version": {
+      "version_no": 3,
+      "state": "approved",
+      "change_note": "Go-live v3",
+      "workflow": [],
+      "created_by": "u_001",
+      "approved_by": "u_002",
+      "approved_at": "2026-05-05T10:30:00Z",
+      "created_at": "2026-05-05T10:10:00Z"
+    },
+    "effective_source": "company_override"
+  }
+}
+```
+
+---
+
+#### PUT `/api/v1/company/disclosure-types/{type_id}/workflow-override/draft`
+
+Tao moi / cap nhat ban nhap workflow override cho company context tu token.
+
+**Request**
+
+```json
+{
+  "base_version_no": 3,
+  "change_note": "Dieu chinh SLA buoc kiem duyet",
+  "workflow": [
+    {
+      "step_id": "s1",
+      "stage": "Chuan bi",
+      "department": "Phap che",
+      "assignee_role": "compliance_officer",
+      "due_rule": "T+1",
+      "display_order": 1,
+      "documents": [
+        {
+          "doc_id": "d1",
+          "name": "Bien ban doi soat",
+          "required": true
+        }
+      ]
+    }
+  ]
+}
+```
+
+**Response 200**
+
+```json
+{
+  "override_id": "ovr_c_001_dt-periodic-financial",
+  "type_id": "dt-periodic-financial",
+  "company_id": "c_001",
+  "draft_version_no": 4,
+  "state": "draft",
+  "updated_at": "2026-05-06T07:15:00Z"
+}
+```
+
+---
+
+#### POST `/api/v1/company/disclosure-types/{type_id}/workflow-override/approve`
+
+Approve draft version de active cho doanh nghiep hien tai.
+
+**Request**
+
+```json
+{
+  "version_no": 4,
+  "reason": "Da review voi team compliance"
+}
+```
+
+**Response 200**
+
+```json
+{
+  "override_id": "ovr_c_001_dt-periodic-financial",
+  "type_id": "dt-periodic-financial",
+  "company_id": "c_001",
+  "active_version_no": 4,
+  "state": "approved",
+  "approved_by": "u_002",
+  "approved_at": "2026-05-06T07:20:00Z",
+  "effective_source": "company_override"
+}
+```
+
+---
+
+#### DELETE `/api/v1/company/disclosure-types/{type_id}/workflow-override/draft/{version_no}`
+
+Xoa draft version theo `version_no`.
+
+**Response 200**
+
+```json
+{
+  "deleted": true,
+  "version_no": 5
+}
+```
+
+---
+
+#### DELETE `/api/v1/company/disclosure-types/{type_id}/workflow-override/active`
+
+Reset active override (fallback ve global template workflow).
+
+**Request (optional)**
+
+```json
+{
+  "reason": "Rollback ve workflow chuan"
+}
+```
+
+**Response 200**
+
+```json
+{
+  "override_id": "ovr_c_001_dt-periodic-financial",
+  "type_id": "dt-periodic-financial",
+  "company_id": "c_001",
+  "active_version_no": 0,
+  "state": "archived",
+  "effective_source": "global_template"
+}
+```
+
+---
+
+#### GET `/api/v1/company/disclosure-types/{type_id}/workflow-override/versions?page=1&page_size=20`
+
+Tra ve lich su versions cua company override.
+
+**Response 200**
+
+```json
+{
+  "items": [
+    {
+      "version_no": 4,
+      "state": "approved",
+      "change_note": "Dieu chinh SLA",
+      "workflow": [],
+      "created_by": "u_001",
+      "approved_by": "u_002",
+      "approved_at": "2026-05-06T07:20:00Z",
+      "created_at": "2026-05-06T07:15:00Z"
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "page_size": 20,
+    "total": 1
+  }
+}
+```
+
+---
+
+#### GET `/api/v1/disclosure-types/{type_id}/effective-workflow`
+
+Endpoint consumer runtime de lay workflow hieu luc:
+
+- neu co active approved override cua company -> source `company_override`
+- neu khong -> source `global_template`
+
+**Response 200**
+
+```json
+{
+  "data": {
+    "type_id": "dt-periodic-financial",
+    "company_id": "c_001",
+    "source": "company_override",
+    "version_no": 4,
+    "workflow": []
+  }
+}
+```
+
+---
+
+#### Error matrix (workflow override)
+
+| HTTP | `error.code` | Khi nao |
+|---|---|---|
+| 400 | `INVALID_REQUEST` | thieu/loi field bat buoc (`type_id`, `version_no`, `workflow`...) |
+| 400 | `WORKFLOW_SCHEMA_INVALID` | schema workflow step/doc khong hop le |
+| 401 | `SESSION_EXPIRED` | token het han/khong hop le |
+| 403 | `PERMISSION_DENIED` | khong du quyen write/approve/reset |
+| 403 | `COMPANY_SCOPE_MISMATCH` | truy cap vuot company scope |
+| 404 | `TEMPLATE_NOT_FOUND` | `type_id` khong ton tai hoac khong thuoc scope |
+| 404 | `OVERRIDE_NOT_FOUND` | chua co override ma thao tac approve/delete specific version |
+| 409 | `STATE_CONFLICT` | approve nham version khong con `draft`, race condition |
+| 422 | `MAKER_CHECKER_REQUIRED` | policy bat buoc nguoi approve khac nguoi tao (neu bat) |
+
+`details.field_errors` duoc dung cho validate-level errors:
+
+```json
+{
+  "error": {
+    "code": "WORKFLOW_SCHEMA_INVALID",
+    "message": "workflow payload is invalid",
+    "details": {
+      "field_errors": {
+        "workflow[0].due_rule": "must match T+N or H+N",
+        "workflow[1].documents[0].name": "is required"
+      }
+    }
+  }
+}
+```
+
+---
+
 ## G. HTTP status mapping (goi y)
 
 | HTTP | Khi nao |

@@ -209,6 +209,14 @@ func legacyPolicy(action string) *authapp.ActionPolicy {
 		required = "workflow.step.override"
 	case "workflow.resolve_assignees":
 		required = "deadline.create"
+	case "template.workflow.override.read":
+		required = "template.workflow.override.read"
+	case "template.workflow.override.write":
+		required = "template.workflow.override.write"
+	case "template.workflow.override.approve":
+		required = "template.workflow.override.approve"
+	case "template.workflow.override.reset":
+		required = "template.workflow.override.reset"
 	case "notification.enqueue":
 		required = "alert.channels.manage"
 	case "notification.dispatch":

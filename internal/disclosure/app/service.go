@@ -344,6 +344,158 @@ func (s *service) ActivateTypeVersion(ctx context.Context, req ActivateTypeVersi
 	return s.repo.ActivateTypeVersion(ctx, req)
 }
 
+func (s *service) GetCompanyWorkflowOverride(ctx context.Context, req GetCompanyWorkflowOverrideRequest) (*GetCompanyWorkflowOverrideResponse, error) {
+	req.TypeID = strings.TrimSpace(req.TypeID)
+	if req.TypeID == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "type_id is required", nil)
+	}
+	if err := s.authorize(ctx, req.Subject, "template.workflow.override.read", authapp.ResourceRef{
+		Type: "disclosure_type",
+		ID:   req.TypeID,
+	}); err != nil {
+		return nil, err
+	}
+	view, err := s.repo.GetCompanyWorkflowOverride(ctx, req.Subject.CompanyID, req.TypeID)
+	if err != nil {
+		return nil, err
+	}
+	return &GetCompanyWorkflowOverrideResponse{Data: *view}, nil
+}
+
+func (s *service) UpsertCompanyWorkflowOverrideDraft(ctx context.Context, req UpsertCompanyWorkflowOverrideDraftRequest) (*UpsertCompanyWorkflowOverrideDraftResponse, error) {
+	req.TypeID = strings.TrimSpace(req.TypeID)
+	req.ChangeNote = strings.TrimSpace(req.ChangeNote)
+	if req.TypeID == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "type_id is required", nil)
+	}
+	if len(req.Workflow) == 0 {
+		return nil, &perr.HTTPError{
+			Code:       perr.CodeInvalidRequest,
+			Message:    "workflow is required",
+			HTTPStatus: http.StatusBadRequest,
+			Details:    map[string]any{"field_errors": map[string]string{"workflow": "must contain at least one step"}},
+		}
+	}
+	if err := s.authorize(ctx, req.Subject, "template.workflow.override.write", authapp.ResourceRef{
+		Type: "disclosure_type",
+		ID:   req.TypeID,
+	}); err != nil {
+		return nil, err
+	}
+	for i := range req.Workflow {
+		req.Workflow[i].StepID = strings.TrimSpace(req.Workflow[i].StepID)
+		req.Workflow[i].Stage = strings.TrimSpace(req.Workflow[i].Stage)
+		req.Workflow[i].Department = strings.TrimSpace(req.Workflow[i].Department)
+		req.Workflow[i].AssigneeRole = strings.TrimSpace(req.Workflow[i].AssigneeRole)
+		req.Workflow[i].DueRule = strings.TrimSpace(req.Workflow[i].DueRule)
+		if req.Workflow[i].StepID == "" || req.Workflow[i].Stage == "" {
+			return nil, &perr.HTTPError{
+				Code:       perr.CodeInvalidRequest,
+				Message:    "workflow step is invalid",
+				HTTPStatus: http.StatusBadRequest,
+				Details:    map[string]any{"field_errors": map[string]string{fmt.Sprintf("workflow[%d]", i): "step_id and stage are required"}},
+			}
+		}
+	}
+	return s.repo.UpsertCompanyWorkflowOverrideDraft(ctx, req)
+}
+
+func (s *service) ApproveCompanyWorkflowOverride(ctx context.Context, req ApproveCompanyWorkflowOverrideRequest) (*ApproveCompanyWorkflowOverrideResponse, error) {
+	req.TypeID = strings.TrimSpace(req.TypeID)
+	req.Reason = strings.TrimSpace(req.Reason)
+	if req.TypeID == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "type_id is required", nil)
+	}
+	if req.VersionNo <= 0 {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "version_no must be > 0", nil)
+	}
+	if err := s.authorize(ctx, req.Subject, "template.workflow.override.approve", authapp.ResourceRef{
+		Type: "disclosure_type",
+		ID:   req.TypeID,
+	}); err != nil {
+		return nil, err
+	}
+	return s.repo.ApproveCompanyWorkflowOverride(ctx, req)
+}
+
+func (s *service) DeleteCompanyWorkflowOverrideDraft(ctx context.Context, req DeleteCompanyWorkflowOverrideDraftRequest) (*DeleteCompanyWorkflowOverrideDraftResponse, error) {
+	req.TypeID = strings.TrimSpace(req.TypeID)
+	if req.TypeID == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "type_id is required", nil)
+	}
+	if req.VersionNo <= 0 {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "version_no must be > 0", nil)
+	}
+	if err := s.authorize(ctx, req.Subject, "template.workflow.override.write", authapp.ResourceRef{
+		Type: "disclosure_type",
+		ID:   req.TypeID,
+	}); err != nil {
+		return nil, err
+	}
+	return s.repo.DeleteCompanyWorkflowOverrideDraft(ctx, req)
+}
+
+func (s *service) ResetCompanyWorkflowOverrideActive(ctx context.Context, req ResetCompanyWorkflowOverrideActiveRequest) (*ResetCompanyWorkflowOverrideActiveResponse, error) {
+	req.TypeID = strings.TrimSpace(req.TypeID)
+	req.Reason = strings.TrimSpace(req.Reason)
+	if req.TypeID == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "type_id is required", nil)
+	}
+	if err := s.authorize(ctx, req.Subject, "template.workflow.override.reset", authapp.ResourceRef{
+		Type: "disclosure_type",
+		ID:   req.TypeID,
+	}); err != nil {
+		return nil, err
+	}
+	return s.repo.ResetCompanyWorkflowOverrideActive(ctx, req)
+}
+
+func (s *service) ListCompanyWorkflowOverrideVersions(ctx context.Context, req ListCompanyWorkflowOverrideVersionsRequest) (*ListCompanyWorkflowOverrideVersionsResponse, error) {
+	req.TypeID = strings.TrimSpace(req.TypeID)
+	if req.TypeID == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "type_id is required", nil)
+	}
+	if req.Page <= 0 {
+		req.Page = 1
+	}
+	if req.PageSize <= 0 || req.PageSize > 100 {
+		req.PageSize = 20
+	}
+	if err := s.authorize(ctx, req.Subject, "template.workflow.override.read", authapp.ResourceRef{
+		Type: "disclosure_type",
+		ID:   req.TypeID,
+	}); err != nil {
+		return nil, err
+	}
+	items, total, err := s.repo.ListCompanyWorkflowOverrideVersions(ctx, req.Subject.CompanyID, req.TypeID, req.Page, req.PageSize)
+	if err != nil {
+		return nil, err
+	}
+	resp := &ListCompanyWorkflowOverrideVersionsResponse{Items: items}
+	resp.Meta.Page = req.Page
+	resp.Meta.PageSize = req.PageSize
+	resp.Meta.Total = total
+	return resp, nil
+}
+
+func (s *service) GetEffectiveWorkflow(ctx context.Context, req GetEffectiveWorkflowRequest) (*GetEffectiveWorkflowResponse, error) {
+	req.TypeID = strings.TrimSpace(req.TypeID)
+	if req.TypeID == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "type_id is required", nil)
+	}
+	if err := s.authorize(ctx, req.Subject, "template.workflow.override.read", authapp.ResourceRef{
+		Type: "disclosure_type",
+		ID:   req.TypeID,
+	}); err != nil {
+		return nil, err
+	}
+	out, err := s.repo.GetEffectiveWorkflow(ctx, req.Subject.CompanyID, req.TypeID)
+	if err != nil {
+		return nil, err
+	}
+	return &GetEffectiveWorkflowResponse{Data: *out}, nil
+}
+
 func (s *service) requireDisclosureCatalogRead(ctx context.Context, sub Subject) error {
 	if err := s.authorize(ctx, sub, "disclosure.create", authapp.ResourceRef{
 		Type: "disclosure_record",

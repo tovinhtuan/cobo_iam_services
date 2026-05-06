@@ -20,6 +20,13 @@ type Service interface {
 	UpsertTypeVersion(ctx context.Context, req UpsertTypeVersionRequest) (*UpsertTypeVersionResponse, error)
 	ListTypeVersions(ctx context.Context, req ListTypeVersionsRequest) (*ListTypeVersionsResponse, error)
 	ActivateTypeVersion(ctx context.Context, req ActivateTypeVersionRequest) (*ActivateTypeVersionResponse, error)
+	GetCompanyWorkflowOverride(ctx context.Context, req GetCompanyWorkflowOverrideRequest) (*GetCompanyWorkflowOverrideResponse, error)
+	UpsertCompanyWorkflowOverrideDraft(ctx context.Context, req UpsertCompanyWorkflowOverrideDraftRequest) (*UpsertCompanyWorkflowOverrideDraftResponse, error)
+	ApproveCompanyWorkflowOverride(ctx context.Context, req ApproveCompanyWorkflowOverrideRequest) (*ApproveCompanyWorkflowOverrideResponse, error)
+	DeleteCompanyWorkflowOverrideDraft(ctx context.Context, req DeleteCompanyWorkflowOverrideDraftRequest) (*DeleteCompanyWorkflowOverrideDraftResponse, error)
+	ResetCompanyWorkflowOverrideActive(ctx context.Context, req ResetCompanyWorkflowOverrideActiveRequest) (*ResetCompanyWorkflowOverrideActiveResponse, error)
+	ListCompanyWorkflowOverrideVersions(ctx context.Context, req ListCompanyWorkflowOverrideVersionsRequest) (*ListCompanyWorkflowOverrideVersionsResponse, error)
+	GetEffectiveWorkflow(ctx context.Context, req GetEffectiveWorkflowRequest) (*GetEffectiveWorkflowResponse, error)
 }
 
 type Repository interface {
@@ -34,6 +41,13 @@ type Repository interface {
 	UpsertTypeVersion(ctx context.Context, req UpsertTypeVersionRequest) (*UpsertTypeVersionResponse, error)
 	ListTypeVersions(ctx context.Context, companyID, typeID string) ([]DisclosureTypeVersionDTO, error)
 	ActivateTypeVersion(ctx context.Context, req ActivateTypeVersionRequest) (*ActivateTypeVersionResponse, error)
+	GetCompanyWorkflowOverride(ctx context.Context, companyID, typeID string) (*CompanyWorkflowOverrideViewDTO, error)
+	UpsertCompanyWorkflowOverrideDraft(ctx context.Context, req UpsertCompanyWorkflowOverrideDraftRequest) (*UpsertCompanyWorkflowOverrideDraftResponse, error)
+	ApproveCompanyWorkflowOverride(ctx context.Context, req ApproveCompanyWorkflowOverrideRequest) (*ApproveCompanyWorkflowOverrideResponse, error)
+	DeleteCompanyWorkflowOverrideDraft(ctx context.Context, req DeleteCompanyWorkflowOverrideDraftRequest) (*DeleteCompanyWorkflowOverrideDraftResponse, error)
+	ResetCompanyWorkflowOverrideActive(ctx context.Context, req ResetCompanyWorkflowOverrideActiveRequest) (*ResetCompanyWorkflowOverrideActiveResponse, error)
+	ListCompanyWorkflowOverrideVersions(ctx context.Context, companyID, typeID string, page, pageSize int) ([]CompanyWorkflowOverrideVersionDTO, int, error)
+	GetEffectiveWorkflow(ctx context.Context, companyID, typeID string) (*EffectiveWorkflowDTO, error)
 }
 
 type CreateRecordRequest struct {
@@ -176,6 +190,154 @@ type ActivateTypeVersionResponse struct {
 	IsActive    bool      `json:"is_active"`
 	UpdatedBy   string    `json:"updated_by"`
 	ActivatedAt time.Time `json:"activated_at"`
+}
+
+type WorkflowDocumentDTO struct {
+	DocID    string `json:"doc_id"`
+	Name     string `json:"name"`
+	Required bool   `json:"required"`
+}
+
+type WorkflowStepDTO struct {
+	StepID       string                `json:"step_id"`
+	Stage        string                `json:"stage"`
+	Department   string                `json:"department"`
+	AssigneeRole string                `json:"assignee_role"`
+	DueRule      string                `json:"due_rule"`
+	Documents    []WorkflowDocumentDTO `json:"documents"`
+	DisplayOrder int                   `json:"display_order"`
+}
+
+type CompanyWorkflowOverrideHeaderDTO struct {
+	OverrideID      string    `json:"override_id"`
+	TypeID          string    `json:"type_id"`
+	CompanyID       string    `json:"company_id"`
+	Status          string    `json:"status"`
+	ActiveVersionNo int       `json:"active_version_no"`
+	UpdatedAt       time.Time `json:"updated_at"`
+}
+
+type CompanyWorkflowOverrideVersionDTO struct {
+	VersionNo  int               `json:"version_no"`
+	State      string            `json:"state"`
+	ChangeNote string            `json:"change_note"`
+	Workflow   []WorkflowStepDTO `json:"workflow"`
+	CreatedBy  string            `json:"created_by"`
+	ApprovedBy string            `json:"approved_by,omitempty"`
+	ApprovedAt *time.Time        `json:"approved_at,omitempty"`
+	CreatedAt  time.Time         `json:"created_at"`
+}
+
+type CompanyWorkflowOverrideViewDTO struct {
+	TypeID          string                             `json:"type_id"`
+	CompanyID       string                             `json:"company_id"`
+	Override        *CompanyWorkflowOverrideHeaderDTO  `json:"override,omitempty"`
+	DraftVersion    *CompanyWorkflowOverrideVersionDTO `json:"draft_version,omitempty"`
+	ActiveVersion   *CompanyWorkflowOverrideVersionDTO `json:"active_version,omitempty"`
+	EffectiveSource string                             `json:"effective_source"`
+}
+
+type GetCompanyWorkflowOverrideRequest struct {
+	Subject Subject
+	TypeID  string
+}
+
+type GetCompanyWorkflowOverrideResponse struct {
+	Data CompanyWorkflowOverrideViewDTO `json:"data"`
+}
+
+type UpsertCompanyWorkflowOverrideDraftRequest struct {
+	Subject       Subject
+	TypeID        string            `json:"type_id"`
+	BaseVersionNo int               `json:"base_version_no"`
+	ChangeNote    string            `json:"change_note"`
+	Workflow      []WorkflowStepDTO `json:"workflow"`
+}
+
+type UpsertCompanyWorkflowOverrideDraftResponse struct {
+	OverrideID     string    `json:"override_id"`
+	TypeID         string    `json:"type_id"`
+	CompanyID      string    `json:"company_id"`
+	DraftVersionNo int       `json:"draft_version_no"`
+	State          string    `json:"state"`
+	UpdatedAt      time.Time `json:"updated_at"`
+}
+
+type ApproveCompanyWorkflowOverrideRequest struct {
+	Subject   Subject
+	TypeID    string `json:"type_id"`
+	VersionNo int    `json:"version_no"`
+	Reason    string `json:"reason"`
+}
+
+type ApproveCompanyWorkflowOverrideResponse struct {
+	OverrideID      string    `json:"override_id"`
+	TypeID          string    `json:"type_id"`
+	CompanyID       string    `json:"company_id"`
+	ActiveVersionNo int       `json:"active_version_no"`
+	State           string    `json:"state"`
+	ApprovedBy      string    `json:"approved_by"`
+	ApprovedAt      time.Time `json:"approved_at"`
+	EffectiveSource string    `json:"effective_source"`
+}
+
+type DeleteCompanyWorkflowOverrideDraftRequest struct {
+	Subject   Subject
+	TypeID    string
+	VersionNo int
+}
+
+type DeleteCompanyWorkflowOverrideDraftResponse struct {
+	Deleted   bool `json:"deleted"`
+	VersionNo int  `json:"version_no"`
+}
+
+type ResetCompanyWorkflowOverrideActiveRequest struct {
+	Subject Subject
+	TypeID  string
+	Reason  string `json:"reason"`
+}
+
+type ResetCompanyWorkflowOverrideActiveResponse struct {
+	OverrideID      string `json:"override_id"`
+	TypeID          string `json:"type_id"`
+	CompanyID       string `json:"company_id"`
+	ActiveVersionNo int    `json:"active_version_no"`
+	State           string `json:"state"`
+	EffectiveSource string `json:"effective_source"`
+}
+
+type ListCompanyWorkflowOverrideVersionsRequest struct {
+	Subject  Subject
+	TypeID   string
+	Page     int
+	PageSize int
+}
+
+type ListCompanyWorkflowOverrideVersionsResponse struct {
+	Items []CompanyWorkflowOverrideVersionDTO `json:"items"`
+	Meta  struct {
+		Page     int `json:"page"`
+		PageSize int `json:"page_size"`
+		Total    int `json:"total"`
+	} `json:"meta"`
+}
+
+type GetEffectiveWorkflowRequest struct {
+	Subject Subject
+	TypeID  string
+}
+
+type EffectiveWorkflowDTO struct {
+	TypeID    string            `json:"type_id"`
+	CompanyID string            `json:"company_id"`
+	Source    string            `json:"source"`
+	VersionNo int               `json:"version_no"`
+	Workflow  []WorkflowStepDTO `json:"workflow"`
+}
+
+type GetEffectiveWorkflowResponse struct {
+	Data EffectiveWorkflowDTO `json:"data"`
 }
 
 type Subject struct {

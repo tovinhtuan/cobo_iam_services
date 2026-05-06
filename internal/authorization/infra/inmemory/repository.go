@@ -7,14 +7,14 @@ import (
 )
 
 type Repository struct {
-	Permissions      map[string][]string
-	Departments      map[string][]authapp.DepartmentScope
-	Assignments      map[string][]authapp.ResourceAssignment
-	Responsibilities map[string][]string
-	PositionCodes    map[string][]string
-	OrgUnitIDs       map[string][]string
+	Permissions       map[string][]string
+	Departments       map[string][]authapp.DepartmentScope
+	Assignments       map[string][]authapp.ResourceAssignment
+	Responsibilities  map[string][]string
+	PositionCodes     map[string][]string
+	OrgUnitIDs        map[string][]string
 	OrgSubtreeUnitIDs map[string][]string
-	Policies         map[string]authapp.ActionPolicy
+	Policies          map[string]authapp.ActionPolicy
 }
 
 func NewRepository() *Repository {
@@ -37,6 +37,7 @@ func NewRepository() *Repository {
 				"workflow.step.confirm", "workflow.step.override",
 				"auth.session.manage", "audit.view",
 				"system.settings", "rbac.manage",
+				"template.workflow.override.read", "template.workflow.override.write", "template.workflow.override.approve", "template.workflow.override.reset",
 			},
 			"m_cms_001@c_001": {
 				"platform.cms.view",
@@ -49,6 +50,7 @@ func NewRepository() *Repository {
 				"workflow.step.confirm", "workflow.step.override",
 				"auth.session.manage", "audit.view",
 				"system.settings", "rbac.manage",
+				"template.workflow.override.read", "template.workflow.override.write", "template.workflow.override.approve", "template.workflow.override.reset",
 			},
 		},
 		Departments: map[string][]authapp.DepartmentScope{
@@ -64,14 +66,14 @@ func NewRepository() *Repository {
 			},
 		},
 		Assignments: map[string][]authapp.ResourceAssignment{
-			"m_001@c_001": {{ResourceType: "disclosure_record", ResourceID: "r_1001"}},
+			"m_001@c_001":       {{ResourceType: "disclosure_record", ResourceID: "r_1001"}},
 			"m_admin_001@c_001": {{ResourceType: "disclosure_record", ResourceID: "r_1001"}},
-			"m_cms_001@c_001": {{ResourceType: "disclosure_record", ResourceID: "r_1001"}},
+			"m_cms_001@c_001":   {{ResourceType: "disclosure_record", ResourceID: "r_1001"}},
 		},
 		Responsibilities: map[string][]string{
-			"m_001@c_001": {"workflow_approver:disclosure", "notification_recipient:disclosure"},
+			"m_001@c_001":       {"workflow_approver:disclosure", "notification_recipient:disclosure"},
 			"m_admin_001@c_001": {"workflow_approver:disclosure", "notification_recipient:disclosure"},
-			"m_cms_001@c_001": {"workflow_approver:disclosure", "notification_recipient:disclosure"},
+			"m_cms_001@c_001":   {"workflow_approver:disclosure", "notification_recipient:disclosure"},
 		},
 		PositionCodes: map[string][]string{
 			"m_001@c_001":       {"truong_phong"},
@@ -147,11 +149,15 @@ func key(membershipID, companyID string) string { return membershipID + "@" + co
 
 func defaultPolicies() map[string]authapp.ActionPolicy {
 	return map[string]authapp.ActionPolicy{
-		"disclosure.view":    {ActionCode: "disclosure.view", RequiredPermission: "disclosure.view", ScopeType: "org_unit_subtree|assigned_only|owner_only|company_wide", WorkflowState: "*", EligibleActor: "*", EffectType: "allow", DenyReasonCode: "scope_denied"},
-		"disclosure.create":  {ActionCode: "disclosure.create", RequiredPermission: "disclosure.create", ScopeType: "*", WorkflowState: "*", EligibleActor: "*", EffectType: "allow", DenyReasonCode: "permission_denied"},
-		"disclosure.update":  {ActionCode: "disclosure.update", RequiredPermission: "disclosure.edit", ScopeType: "*", WorkflowState: "*", EligibleActor: "*", EffectType: "allow", DenyReasonCode: "permission_denied"},
-		"disclosure.submit":  {ActionCode: "disclosure.submit", RequiredPermission: "disclosure.publish", ScopeType: "*", WorkflowState: "*", EligibleActor: "*", EffectType: "allow", DenyReasonCode: "permission_denied"},
-		"disclosure.approve": {ActionCode: "disclosure.approve", RequiredPermission: "disclosure.approve", ScopeType: "*", WorkflowState: "*", EligibleActor: "*", EffectType: "allow", DenyReasonCode: "responsibility_required"},
-		"workflow.review":    {ActionCode: "workflow.review", RequiredPermission: "deadline.assign", ScopeType: "*", WorkflowState: "*", EligibleActor: "*", EffectType: "allow", DenyReasonCode: "permission_denied"},
+		"disclosure.view":                    {ActionCode: "disclosure.view", RequiredPermission: "disclosure.view", ScopeType: "org_unit_subtree|assigned_only|owner_only|company_wide", WorkflowState: "*", EligibleActor: "*", EffectType: "allow", DenyReasonCode: "scope_denied"},
+		"disclosure.create":                  {ActionCode: "disclosure.create", RequiredPermission: "disclosure.create", ScopeType: "*", WorkflowState: "*", EligibleActor: "*", EffectType: "allow", DenyReasonCode: "permission_denied"},
+		"disclosure.update":                  {ActionCode: "disclosure.update", RequiredPermission: "disclosure.edit", ScopeType: "*", WorkflowState: "*", EligibleActor: "*", EffectType: "allow", DenyReasonCode: "permission_denied"},
+		"disclosure.submit":                  {ActionCode: "disclosure.submit", RequiredPermission: "disclosure.publish", ScopeType: "*", WorkflowState: "*", EligibleActor: "*", EffectType: "allow", DenyReasonCode: "permission_denied"},
+		"disclosure.approve":                 {ActionCode: "disclosure.approve", RequiredPermission: "disclosure.approve", ScopeType: "*", WorkflowState: "*", EligibleActor: "*", EffectType: "allow", DenyReasonCode: "responsibility_required"},
+		"workflow.review":                    {ActionCode: "workflow.review", RequiredPermission: "deadline.assign", ScopeType: "*", WorkflowState: "*", EligibleActor: "*", EffectType: "allow", DenyReasonCode: "permission_denied"},
+		"template.workflow.override.read":    {ActionCode: "template.workflow.override.read", RequiredPermission: "template.workflow.override.read", ScopeType: "*", WorkflowState: "*", EligibleActor: "*", EffectType: "allow", DenyReasonCode: "permission_denied"},
+		"template.workflow.override.write":   {ActionCode: "template.workflow.override.write", RequiredPermission: "template.workflow.override.write", ScopeType: "*", WorkflowState: "*", EligibleActor: "*", EffectType: "allow", DenyReasonCode: "permission_denied"},
+		"template.workflow.override.approve": {ActionCode: "template.workflow.override.approve", RequiredPermission: "template.workflow.override.approve", ScopeType: "*", WorkflowState: "*", EligibleActor: "*", EffectType: "allow", DenyReasonCode: "permission_denied"},
+		"template.workflow.override.reset":   {ActionCode: "template.workflow.override.reset", RequiredPermission: "template.workflow.override.reset", ScopeType: "*", WorkflowState: "*", EligibleActor: "*", EffectType: "allow", DenyReasonCode: "permission_denied"},
 	}
 }
