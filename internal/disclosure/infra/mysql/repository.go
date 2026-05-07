@@ -329,21 +329,24 @@ func (r *Repository) UpsertTypeVersion(ctx context.Context, req disclosureapp.Up
 	changeNote := strings.TrimSpace(req.ChangeNote)
 	var currentVersion sql.NullInt64
 	var currentCompany sql.NullString
+	typeExists := false
 	if err := tx.QueryRowContext(ctx, `SELECT active_version_no, company_id FROM disclosure_types WHERE type_id = ? FOR UPDATE`, req.TypeID).Scan(&currentVersion, &currentCompany); err != nil {
 		if err != sql.ErrNoRows {
 			return nil, err
 		}
+	} else {
+		typeExists = true
 	}
-	if currentCompany.Valid && currentCompany.String != "" && currentCompany.String != companyID {
+	if typeExists && currentCompany.Valid && currentCompany.String != "" && currentCompany.String != companyID {
 		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "cannot modify type from another company", nil)
 	}
-	if currentCompany.Valid && currentCompany.String == "" && requestedScope != "global" {
+	if typeExists && !currentCompany.Valid && requestedScope != "global" {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "cannot change existing global type to company scope", nil)
 	}
-	if currentCompany.Valid && currentCompany.String != "" && requestedScope != "company" {
+	if typeExists && currentCompany.Valid && currentCompany.String != "" && requestedScope != "company" {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "cannot change existing company type to global scope", nil)
 	}
-	if !currentCompany.Valid {
+	if !typeExists {
 		typeCompanyID := ""
 		if requestedScope == "company" {
 			typeCompanyID = companyID

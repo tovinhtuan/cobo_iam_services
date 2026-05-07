@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -89,7 +90,7 @@ func Load() (Config, error) {
 		HTTPWriteTimeout:              durationEnv("HTTP_WRITE_TIMEOUT", 15*time.Second),
 		HTTPIdleTimeout:               durationEnv("HTTP_IDLE_TIMEOUT", 60*time.Second),
 		WorkerTickInterval:            durationEnv("WORKER_TICK_INTERVAL", 5*time.Second),
-		MySQLDSN:                      os.Getenv("MYSQL_DSN"),
+		MySQLDSN:                      normalizeMySQLDSN(os.Getenv("MYSQL_DSN")),
 		RedisAddr:                     os.Getenv("REDIS_ADDR"),
 		RedisPassword:                 os.Getenv("REDIS_PASSWORD"),
 		RedisDB:                       intEnv("REDIS_DB", 0),
@@ -163,4 +164,31 @@ func durationEnv(key string, def time.Duration) time.Duration {
 		return def
 	}
 	return d
+}
+
+func normalizeMySQLDSN(dsn string) string {
+	trimmed := strings.TrimSpace(dsn)
+	if trimmed == "" {
+		return ""
+	}
+	lower := strings.ToLower(trimmed)
+	withQuery := trimmed
+	if !strings.Contains(trimmed, "?") {
+		withQuery += "?"
+	}
+	if !strings.Contains(lower, "charset=") {
+		if strings.HasSuffix(withQuery, "?") || strings.HasSuffix(withQuery, "&") {
+			withQuery += "charset=utf8mb4"
+		} else {
+			withQuery += "&charset=utf8mb4"
+		}
+	}
+	if !strings.Contains(strings.ToLower(withQuery), "collation=") {
+		if strings.HasSuffix(withQuery, "?") || strings.HasSuffix(withQuery, "&") {
+			withQuery += "collation=utf8mb4_unicode_ci"
+		} else {
+			withQuery += "&collation=utf8mb4_unicode_ci"
+		}
+	}
+	return withQuery
 }
