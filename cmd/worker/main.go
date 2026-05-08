@@ -20,6 +20,10 @@ import (
 	platformoutbox "github.com/cobo/cobo_iam_services/internal/platform/outbox"
 	outboxinmem "github.com/cobo/cobo_iam_services/internal/platform/outbox/inmemory"
 	outboxmysql "github.com/cobo/cobo_iam_services/internal/platform/outbox/mysql"
+	reminderapp "github.com/cobo/cobo_iam_services/internal/reminder/app"
+	reminderemail "github.com/cobo/cobo_iam_services/internal/reminder/infra/email"
+	remindermysql "github.com/cobo/cobo_iam_services/internal/reminder/infra/mysql"
+	reminderobserve "github.com/cobo/cobo_iam_services/internal/reminder/infra/observe"
 )
 
 func main() {
@@ -73,6 +77,25 @@ func main() {
 	runCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	var reminderScheduler reminderapp.Service
+	if sqlDB != nil {
+		reminderRepo := remindermysql.NewRepository(sqlDB)
+		reminderScheduler = reminderapp.NewService(
+			reminderRepo,
+			reminderRepo,
+			reminderRepo,
+			reminderapp.WithEmailSender(reminderemail.NewSMTPSender(reminderemail.SMTPConfig{
+				Host: cfg.SMTPHost,
+				Port: cfg.SMTPPort,
+				User: cfg.SMTPUser,
+				Pass: cfg.SMTPPassword,
+				From: cfg.SMTPFrom,
+			})),
+			reminderapp.WithMetrics(reminderobserve.NewPromMetrics()),
+			reminderapp.WithAlertHook(reminderobserve.AlertLogger{Log: log}),
+		)
+	}
+
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
@@ -84,7 +107,7 @@ func main() {
 			case <-runCtx.Done():
 				return
 			case <-t.C:
-				tick(runCtx, log, sqlDB, processor)
+				tick(runCtx, log, sqlDB, processor, reminderScheduler)
 			}
 		}
 	}()
@@ -95,11 +118,30 @@ func main() {
 	log.Info("worker stopped")
 }
 
-func tick(ctx context.Context, log *slog.Logger, sqlDB *sql.DB, processor *platformoutbox.Processor) {
+func tick(ctx context.Context, log *slog.Logger, sqlDB *sql.DB, processor *platformoutbox.Processor, reminderScheduler reminderapp.Service) {
 	if sqlDB != nil {
 		if err := sqlDB.PingContext(ctx); err != nil {
 			log.Warn("worker tick ping failed", slog.String("err", err.Error()))
 			return
+		}
+	}
+	if reminderScheduler != nil {
+		inserted, err := reminderScheduler.MaterializeDueOccurrences(ctx, time.Now().UTC())
+		if err != nil {
+			log.Warn("reminder scheduler tick failed", slog.String("err", err.Error()))
+		} else if inserted > 0 {
+			log.Info("reminder occurrences materialized", slog.Int("inserted", inserted))
+		}
+		dispatchRes, err := reminderScheduler.DispatchDueOccurrences(ctx, time.Now().UTC(), 50)
+		if err != nil {
+			log.Warn("reminder dispatch tick failed", slog.String("err", err.Error()))
+		} else if dispatchRes != nil && dispatchRes.Processed > 0 {
+			log.Info("reminder dispatch tick summary",
+				slog.Int("processed", dispatchRes.Processed),
+				slog.Int("sent", dispatchRes.Sent),
+				slog.Int("retried", dispatchRes.Retried),
+				slog.Int("failed", dispatchRes.Failed),
+			)
 		}
 	}
 	if err := processor.Tick(ctx); err != nil {

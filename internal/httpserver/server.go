@@ -34,6 +34,8 @@ import (
 	notificationinmem "github.com/cobo/cobo_iam_services/internal/notification/infra/inmemory"
 	notificationmysql "github.com/cobo/cobo_iam_services/internal/notification/infra/mysql"
 	notificationhttp "github.com/cobo/cobo_iam_services/internal/notification/transport/http"
+	reminderemail "github.com/cobo/cobo_iam_services/internal/reminder/infra/email"
+	reminderobserve "github.com/cobo/cobo_iam_services/internal/reminder/infra/observe"
 	platformclock "github.com/cobo/cobo_iam_services/internal/platform/clock"
 	"github.com/cobo/cobo_iam_services/internal/platform/config"
 	"github.com/cobo/cobo_iam_services/internal/platform/httpx"
@@ -45,10 +47,15 @@ import (
 	outboxmysql "github.com/cobo/cobo_iam_services/internal/platform/outbox/mysql"
 	redispkg "github.com/cobo/cobo_iam_services/internal/platform/redis"
 	platformcmshttp "github.com/cobo/cobo_iam_services/internal/platformcms/transport/http"
+	reminderapp "github.com/cobo/cobo_iam_services/internal/reminder/app"
+	reminderinmem "github.com/cobo/cobo_iam_services/internal/reminder/infra/inmemory"
+	remindermysql "github.com/cobo/cobo_iam_services/internal/reminder/infra/mysql"
+	reminderhttp "github.com/cobo/cobo_iam_services/internal/reminder/transport/http"
 	workflowapp "github.com/cobo/cobo_iam_services/internal/workflow/app"
 	workflowinmem "github.com/cobo/cobo_iam_services/internal/workflow/infra/inmemory"
 	workflowmysql "github.com/cobo/cobo_iam_services/internal/workflow/infra/mysql"
 	workflowhttp "github.com/cobo/cobo_iam_services/internal/workflow/transport/http"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 // Deps wires HTTP API dependencies.
@@ -212,6 +219,33 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 	workflowHandler := workflowhttp.NewHandler(workflowSvc, tokenManager)
 	notificationSvc := notificationapp.NewService(notificationRepo, authSvc, id, outboxPublisher, notifOpts...)
 	notificationHandler := notificationhttp.NewHandler(notificationSvc, tokenManager)
+	reminderRepo := reminderinmem.NewRepository()
+	var reminderConfigRepo reminderapp.ConfigRepository = reminderRepo
+	var reminderOccurrenceRepo reminderapp.OccurrenceRepository = reminderRepo
+	var reminderAttemptRepo reminderapp.AttemptRepository = reminderRepo
+	if pool != nil {
+		reminderMySQLRepo := remindermysql.NewRepository(pool)
+		reminderConfigRepo = reminderMySQLRepo
+		reminderOccurrenceRepo = reminderMySQLRepo
+		reminderAttemptRepo = reminderMySQLRepo
+		log.Info("reminder module using MySQL repository")
+	}
+	reminderSvc := reminderapp.NewService(
+		reminderConfigRepo,
+		reminderOccurrenceRepo,
+		reminderAttemptRepo,
+		reminderapp.WithEmailSender(reminderemail.NewSMTPSender(reminderemail.SMTPConfig{
+			Host: cfg.SMTPHost,
+			Port: cfg.SMTPPort,
+			User: cfg.SMTPUser,
+			Pass: cfg.SMTPPassword,
+			From: cfg.SMTPFrom,
+		})),
+		reminderapp.WithMetrics(reminderobserve.NewPromMetrics()),
+		reminderapp.WithAuditor(reminderobserve.AuditRecorder{Svc: auditSvc, IDG: id}),
+		reminderapp.WithAlertHook(reminderobserve.AlertLogger{Log: log}),
+	)
+	reminderHandler := reminderhttp.NewHandler(reminderSvc, tokenManager, "", cfg.Env)
 	var adminRepo companyaccessapp.AdminRepository = cainmem.NewAdminRepository()
 	if pool != nil {
 		adminRepo = camysql.NewAdminRepository(pool)
@@ -227,7 +261,7 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 		PublicAPIBaseURL:    cfg.PublicAPIBaseURL,
 	})
 
-	return muxRegisterHealthAndIAM(mux, log, sqlDB, iamHandler, meHandler, authHandler, disclosureHandler, workflowHandler, notificationHandler, adminHandler, platformCMSHandler)
+	return muxRegisterHealthAndIAM(mux, log, sqlDB, iamHandler, meHandler, authHandler, disclosureHandler, workflowHandler, notificationHandler, reminderHandler, adminHandler, platformCMSHandler)
 }
 
 func muxRegisterHealthAndIAM(
@@ -240,12 +274,14 @@ func muxRegisterHealthAndIAM(
 	disclosureHandler *disclosurehttp.Handler,
 	workflowHandler *workflowhttp.Handler,
 	notificationHandler *notificationhttp.Handler,
+	reminderHandler *reminderhttp.Handler,
 	adminHandler *companyaccesshttp.AdminHandler,
 	platformCMSHandler *platformcmshttp.Handler,
 ) error {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		httpx.WriteJSON(w, http.StatusOK, map[string]any{"status": "ok"})
 	})
+	mux.Handle("/metrics", promhttp.Handler())
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
 		if sqlDB == nil {
 			httpx.WriteJSON(w, http.StatusServiceUnavailable, map[string]any{
@@ -267,6 +303,7 @@ func muxRegisterHealthAndIAM(
 	disclosureHandler.Register(mux)
 	workflowHandler.Register(mux)
 	notificationHandler.Register(mux)
+	reminderHandler.Register(mux)
 	adminHandler.Register(mux)
 	platformCMSHandler.Register(mux)
 	return nil

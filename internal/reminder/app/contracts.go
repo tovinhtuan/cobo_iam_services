@@ -1,0 +1,207 @@
+package app
+
+import (
+	"context"
+	"time"
+)
+
+type Service interface {
+	UpsertDisclosureReminderConfig(ctx context.Context, req UpsertReminderConfigRequest) (*ReminderConfigDTO, error)
+	UpsertWorkflowStepReminderConfig(ctx context.Context, req UpsertReminderConfigRequest) (*ReminderConfigDTO, error)
+	GetDisclosureReminderConfig(ctx context.Context, req GetReminderConfigRequest) (*ReminderConfigDTO, error)
+	GetWorkflowStepReminderConfig(ctx context.Context, req GetReminderConfigRequest) (*ReminderConfigDTO, error)
+	GetReminderHistory(ctx context.Context, req GetReminderHistoryRequest) (*ReminderHistoryPage, error)
+	DispatchOccurrence(ctx context.Context, req DispatchOccurrenceRequest) (*DispatchOccurrenceResponse, error)
+	SeedOccurrence(ctx context.Context, req SeedOccurrenceRequest) (*ReminderOccurrenceDTO, error)
+	MaterializeDueOccurrences(ctx context.Context, now time.Time) (int, error)
+	DispatchDueOccurrences(ctx context.Context, now time.Time, limit int) (*DispatchDueResult, error)
+}
+
+type ConfigRepository interface {
+	UpsertByScope(ctx context.Context, in ReminderConfigDTO) (*ReminderConfigDTO, error)
+	GetByScope(ctx context.Context, scopeType ScopeType, scopeID string) (*ReminderConfigDTO, error)
+}
+
+type OccurrenceRepository interface {
+	ListHistoryByDisclosure(ctx context.Context, disclosureID string, q HistoryQuery) (*ReminderHistoryPage, error)
+	ClaimForDispatch(ctx context.Context, occurrenceID string) (*ReminderOccurrenceDTO, error)
+	UpdateDispatchResult(ctx context.Context, in DispatchResultInput) error
+	SeedOccurrence(ctx context.Context, in ReminderOccurrenceDTO) (*ReminderOccurrenceDTO, error)
+	MaterializeDueOccurrences(ctx context.Context, now time.Time) (int, error)
+	ListDispatchCandidates(ctx context.Context, now time.Time, limit int) ([]DispatchCandidate, error)
+}
+
+type AttemptRepository interface {
+	InsertAttempt(ctx context.Context, in ReminderDeliveryAttemptDTO) error
+}
+
+type Subject struct {
+	UserID       string
+	MembershipID string
+	CompanyID    string
+}
+
+type ScopeType string
+
+const (
+	ScopeTypeDisclosure   ScopeType = "DISCLOSURE"
+	ScopeTypeWorkflowStep ScopeType = "WORKFLOW_STEP"
+)
+
+type ReminderMode string
+
+const (
+	ReminderModeDaysBefore   ReminderMode = "DaysBefore"
+	ReminderModeSpecificDate ReminderMode = "SpecificDate"
+)
+
+type ReminderRecipientType string
+
+const (
+	ReminderRecipientTypeDepartments ReminderRecipientType = "Departments"
+	ReminderRecipientTypeIndividuals ReminderRecipientType = "Individuals"
+	ReminderRecipientTypeBoth        ReminderRecipientType = "Both"
+)
+
+type ReminderStatus string
+
+const (
+	ReminderStatusPending        ReminderStatus = "PENDING"
+	ReminderStatusDispatching    ReminderStatus = "DISPATCHING"
+	ReminderStatusRetryScheduled ReminderStatus = "RETRY_SCHEDULED"
+	ReminderStatusSent           ReminderStatus = "SENT"
+	ReminderStatusFailed         ReminderStatus = "FAILED"
+)
+
+type UpsertReminderConfigRequest struct {
+	Subject       Subject
+	DisclosureID  string
+	WorkflowStepID string
+	Config        ReminderConfigInput `json:"config"`
+}
+
+type GetReminderConfigRequest struct {
+	Subject        Subject
+	DisclosureID   string
+	WorkflowStepID string
+}
+
+type GetReminderHistoryRequest struct {
+	Subject      Subject
+	DisclosureID string
+	Scope        string
+	Status       ReminderStatus
+	From         time.Time
+	To           time.Time
+	Page         int
+	PageSize     int
+}
+
+type DispatchOccurrenceRequest struct {
+	OccurrenceID  string         `json:"occurrence_id"`
+	IdempotencyKey string        `json:"idempotency_key"`
+	TemplateCode  string         `json:"template_code"`
+	TemplatePayload map[string]any `json:"template_payload"`
+	RecipientEmails []string     `json:"recipient_emails"`
+}
+
+type DispatchCandidate struct {
+	OccurrenceID      string
+	IdempotencyKey    string
+	TemplateCode      string
+	TemplatePayload   map[string]any
+	RecipientEmails   []string
+	CurrentAttempt    int
+	ScheduledAt       time.Time
+}
+
+type DispatchOccurrenceResponse struct {
+	Accepted bool           `json:"accepted"`
+	Status   ReminderStatus `json:"status"`
+	Message  string         `json:"message,omitempty"`
+}
+
+type DispatchDueResult struct {
+	Processed int `json:"processed"`
+	Sent      int `json:"sent"`
+	Retried   int `json:"retried"`
+	Failed    int `json:"failed"`
+}
+
+type SeedOccurrenceRequest struct {
+	DisclosureID   string         `json:"disclosure_id"`
+	ScopeType      ScopeType      `json:"scope_type"`
+	ScopeID        string         `json:"scope_id"`
+	ScheduledAt    time.Time      `json:"scheduled_at"`
+	Status         ReminderStatus `json:"status"`
+	IdempotencyKey string         `json:"idempotency_key"`
+}
+
+type ReminderConfigInput struct {
+	Enabled       bool                  `json:"enabled"`
+	Mode          ReminderMode          `json:"mode"`
+	DaysBefore    []int                 `json:"daysBefore,omitempty"`
+	SpecificDates []string              `json:"specificDates,omitempty"`
+	RecipientType ReminderRecipientType `json:"recipientType"`
+	Departments   []string              `json:"departments,omitempty"`
+	Recipients    []string              `json:"recipients,omitempty"`
+}
+
+type ReminderConfigDTO struct {
+	ScopeType ScopeType           `json:"scope_type"`
+	ScopeID   string              `json:"scope_id"`
+	Config    ReminderConfigInput `json:"config"`
+	Version   int                 `json:"version"`
+	UpdatedAt time.Time           `json:"updated_at"`
+	UpdatedBy string              `json:"updated_by"`
+}
+
+type ReminderOccurrenceDTO struct {
+	OccurrenceID      string         `json:"occurrence_id"`
+	DisclosureID      string         `json:"disclosure_id"`
+	ScopeType         ScopeType      `json:"scope_type"`
+	ScopeID           string         `json:"scope_id"`
+	ScheduledAt       time.Time      `json:"scheduled_at"`
+	Status            ReminderStatus `json:"status"`
+	AttemptCount      int            `json:"attempt_count"`
+	IdempotencyKey    string         `json:"idempotency_key"`
+	LastAttemptAt     *time.Time     `json:"last_attempt_at,omitempty"`
+	LastErrorCode     string         `json:"last_error_code,omitempty"`
+	ProviderMessageID string         `json:"provider_message_id,omitempty"`
+}
+
+type ReminderDeliveryAttemptDTO struct {
+	OccurrenceID      string
+	AttemptNo         int
+	Status            ReminderStatus
+	ProviderMessageID string
+	ErrorCode         string
+	ErrorMessage      string
+	CreatedAt         time.Time
+}
+
+type ReminderHistoryPage struct {
+	Items    []ReminderOccurrenceDTO `json:"items"`
+	Page     int                     `json:"page"`
+	PageSize int                     `json:"page_size"`
+	Total    int                     `json:"total"`
+}
+
+type HistoryQuery struct {
+	Scope    string
+	Status   ReminderStatus
+	From     *time.Time
+	To       *time.Time
+	Page     int
+	PageSize int
+}
+
+type DispatchResultInput struct {
+	OccurrenceID      string
+	Status            ReminderStatus
+	NextRetryAt       *time.Time
+	LastErrorCode     string
+	LastErrorMessage  string
+	ProviderMessageID string
+	IncrementAttempt  bool
+}
