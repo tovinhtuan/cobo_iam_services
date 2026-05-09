@@ -14,54 +14,57 @@ import (
 	authapp "github.com/cobo/cobo_iam_services/internal/authorization/app"
 	companyaccessapp "github.com/cobo/cobo_iam_services/internal/companyaccess/app"
 	disclosureapp "github.com/cobo/cobo_iam_services/internal/disclosure/app"
+	holidayapp "github.com/cobo/cobo_iam_services/internal/holiday/app"
 	iamapp "github.com/cobo/cobo_iam_services/internal/iam/app"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 	"github.com/cobo/cobo_iam_services/internal/platform/httpx"
 )
 
 type Handler struct {
-	inspector     iamapp.TokenInspector
-	authorizer    authapp.Service
-	adminSvc      companyaccessapp.AdminService
-	iamSvc        iamapp.Service
-	auditSvc      auditapp.Service
-	auditRepo     auditapp.Repository
-	disclosureSvc disclosureapp.Service
-	disclosures   disclosureapp.Repository
-	mediaRepo     cmsMediaRepository
-	mediaSigner   *cmsMediaSigner
-	mediaStorage  *cmsMediaDiskStorage
+	inspector          iamapp.TokenInspector
+	authorizer         authapp.Service
+	adminSvc           companyaccessapp.AdminService
+	iamSvc             iamapp.Service
+	auditSvc           auditapp.Service
+	auditRepo          auditapp.Repository
+	disclosureSvc      disclosureapp.Service
+	disclosures        disclosureapp.Repository
+	holidaySvc         holidayapp.Service
+	mediaRepo          cmsMediaRepository
+	mediaSigner        *cmsMediaSigner
+	mediaStorage       *cmsMediaDiskStorage
 	mediaPublicBaseURL string
-	metrics       *cmsMetrics
+	metrics            *cmsMetrics
 }
 
 type MediaOptions struct {
-	DB                 *sql.DB
+	DB                  *sql.DB
 	UploadSigningSecret string
 	UploadURLTTL        time.Duration
 	StorageDir          string
 	PublicAPIBaseURL    string
 }
 
-func NewHandler(inspector iamapp.TokenInspector, authorizer authapp.Service, adminSvc companyaccessapp.AdminService, iamSvc iamapp.Service, auditSvc auditapp.Service, auditRepo auditapp.Repository, disclosureSvc disclosureapp.Service, disclosures disclosureapp.Repository, mediaOpts MediaOptions) *Handler {
+func NewHandler(inspector iamapp.TokenInspector, authorizer authapp.Service, adminSvc companyaccessapp.AdminService, iamSvc iamapp.Service, auditSvc auditapp.Service, auditRepo auditapp.Repository, disclosureSvc disclosureapp.Service, disclosures disclosureapp.Repository, holidaySvc holidayapp.Service, mediaOpts MediaOptions) *Handler {
 	mediaStorage, err := newCMSMediaDiskStorage(mediaOpts.StorageDir)
 	if err != nil {
 		panic(err)
 	}
 	return &Handler{
-		inspector:     inspector,
-		authorizer:    authorizer,
-		adminSvc:      adminSvc,
-		iamSvc:        iamSvc,
-		auditSvc:      auditSvc,
-		auditRepo:     auditRepo,
-		disclosureSvc: disclosureSvc,
-		disclosures:   disclosures,
-		mediaRepo:     newCMSMediaRepository(mediaOpts.DB),
-		mediaSigner:   newCMSMediaSigner(mediaOpts.UploadSigningSecret, mediaOpts.UploadURLTTL),
-		mediaStorage:  mediaStorage,
+		inspector:          inspector,
+		authorizer:         authorizer,
+		adminSvc:           adminSvc,
+		iamSvc:             iamSvc,
+		auditSvc:           auditSvc,
+		auditRepo:          auditRepo,
+		disclosureSvc:      disclosureSvc,
+		disclosures:        disclosures,
+		holidaySvc:         holidaySvc,
+		mediaRepo:          newCMSMediaRepository(mediaOpts.DB),
+		mediaSigner:        newCMSMediaSigner(mediaOpts.UploadSigningSecret, mediaOpts.UploadURLTTL),
+		mediaStorage:       mediaStorage,
 		mediaPublicBaseURL: strings.TrimSpace(mediaOpts.PublicAPIBaseURL),
-		metrics:       newCMSMetrics(),
+		metrics:            newCMSMetrics(),
 	}
 }
 
@@ -94,6 +97,11 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/platform/cms/ops/sessions/{session_id}/revoke", h.observe("cms.ops.sessions.revoke", h.revokeSession))
 	mux.HandleFunc("GET /api/v1/platform/cms/ops/health", h.observe("cms.ops.health", h.systemHealth))
 	mux.HandleFunc("GET /api/v1/platform/cms/ops/metrics", h.observe("cms.ops.metrics", h.systemMetrics))
+	if h.holidaySvc != nil {
+		mux.HandleFunc("GET /api/v1/platform/cms/holiday-calendars/{year}", h.observe("cms.holiday.get", h.holidayCalendarGet))
+		mux.HandleFunc("POST /api/v1/platform/cms/holiday-calendars/{year}/preview", h.observe("cms.holiday.preview", h.holidayCalendarPreview))
+		mux.HandleFunc("PUT /api/v1/platform/cms/holiday-calendars/{year}", h.observe("cms.holiday.replace", h.holidayCalendarReplace))
+	}
 }
 
 type statusRecorder struct {

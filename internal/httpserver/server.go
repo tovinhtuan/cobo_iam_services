@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"path/filepath"
 	"time"
 
 	auditapp "github.com/cobo/cobo_iam_services/internal/audit/app"
@@ -25,6 +26,8 @@ import (
 	disclosureinmem "github.com/cobo/cobo_iam_services/internal/disclosure/infra/inmemory"
 	disclosuremysql "github.com/cobo/cobo_iam_services/internal/disclosure/infra/mysql"
 	disclosurehttp "github.com/cobo/cobo_iam_services/internal/disclosure/transport/http"
+	holidayapp "github.com/cobo/cobo_iam_services/internal/holiday/app"
+	holidaymysql "github.com/cobo/cobo_iam_services/internal/holiday/infra/mysql"
 	iamapp "github.com/cobo/cobo_iam_services/internal/iam/app"
 	iaminmem "github.com/cobo/cobo_iam_services/internal/iam/infra/inmemory"
 	iammysql "github.com/cobo/cobo_iam_services/internal/iam/infra/mysql"
@@ -34,8 +37,6 @@ import (
 	notificationinmem "github.com/cobo/cobo_iam_services/internal/notification/infra/inmemory"
 	notificationmysql "github.com/cobo/cobo_iam_services/internal/notification/infra/mysql"
 	notificationhttp "github.com/cobo/cobo_iam_services/internal/notification/transport/http"
-	reminderemail "github.com/cobo/cobo_iam_services/internal/reminder/infra/email"
-	reminderobserve "github.com/cobo/cobo_iam_services/internal/reminder/infra/observe"
 	platformclock "github.com/cobo/cobo_iam_services/internal/platform/clock"
 	"github.com/cobo/cobo_iam_services/internal/platform/config"
 	"github.com/cobo/cobo_iam_services/internal/platform/httpx"
@@ -48,8 +49,10 @@ import (
 	redispkg "github.com/cobo/cobo_iam_services/internal/platform/redis"
 	platformcmshttp "github.com/cobo/cobo_iam_services/internal/platformcms/transport/http"
 	reminderapp "github.com/cobo/cobo_iam_services/internal/reminder/app"
+	reminderemail "github.com/cobo/cobo_iam_services/internal/reminder/infra/email"
 	reminderinmem "github.com/cobo/cobo_iam_services/internal/reminder/infra/inmemory"
 	remindermysql "github.com/cobo/cobo_iam_services/internal/reminder/infra/mysql"
+	reminderobserve "github.com/cobo/cobo_iam_services/internal/reminder/infra/observe"
 	reminderhttp "github.com/cobo/cobo_iam_services/internal/reminder/transport/http"
 	workflowapp "github.com/cobo/cobo_iam_services/internal/workflow/app"
 	workflowinmem "github.com/cobo/cobo_iam_services/internal/workflow/infra/inmemory"
@@ -208,7 +211,21 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 			notifOpts = append(notifOpts, notificationapp.WithTransactionalEnqueue(pool, outboxSQL))
 		}
 	}
-	disclosureSvc := disclosureapp.NewService(disclosureRepo, authSvc, id)
+	fileHoliday := disclosureapp.NewHolidayCalendarFileProvider(filepath.Join("configs", "non_trading_days"))
+	var disclosureOpts []disclosureapp.ServiceOption
+	var holidaySvc holidayapp.Service
+	if pool != nil {
+		holidayRepo := holidaymysql.NewRepository(pool)
+		dbHoliday := holidaymysql.NewDBProvider(holidayRepo)
+		composite := &holidaymysql.CompositeProvider{
+			Repo: holidayRepo,
+			DB:   dbHoliday,
+			File: fileHoliday,
+		}
+		disclosureOpts = append(disclosureOpts, disclosureapp.WithHolidayCalendarProvider(composite))
+		holidaySvc = holidayapp.NewService(holidayRepo, dbHoliday, id)
+	}
+	disclosureSvc := disclosureapp.NewService(disclosureRepo, authSvc, id, disclosureOpts...)
 	var idemStore idempotency.Store
 	if pool != nil {
 		idemStore = idempotencymysql.NewStore(pool)
@@ -253,7 +270,7 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 	}
 	adminSvc := companyaccessapp.NewAdminService(adminRepo, authSvc, id)
 	adminHandler := companyaccesshttp.NewAdminHandler(adminSvc, tokenManager, auditSvc)
-	platformCMSHandler := platformcmshttp.NewHandler(tokenManager, authSvc, adminSvc, iamSvc, auditSvc, auditRepo, disclosureSvc, disclosureRepo, platformcmshttp.MediaOptions{
+	platformCMSHandler := platformcmshttp.NewHandler(tokenManager, authSvc, adminSvc, iamSvc, auditSvc, auditRepo, disclosureSvc, disclosureRepo, holidaySvc, platformcmshttp.MediaOptions{
 		DB:                  pool,
 		UploadSigningSecret: cfg.CMSMediaUploadSigningSecret,
 		UploadURLTTL:        cfg.CMSMediaUploadURLTTL,

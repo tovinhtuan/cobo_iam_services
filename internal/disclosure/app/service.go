@@ -20,19 +20,35 @@ type service struct {
 	calculator *DeadlineCalculator
 }
 
+// ServiceOption configures disclosure service construction.
+type ServiceOption func(*service)
+
+// WithHolidayCalendarProvider overrides the default JSON file holiday provider (e.g. DB-backed composite).
+func WithHolidayCalendarProvider(p HolidayCalendarProvider) ServiceOption {
+	return func(s *service) {
+		if p != nil {
+			s.calculator = NewDeadlineCalculator(p)
+		}
+	}
+}
+
 const (
 	templateScopeGlobal  = "global"
 	templateScopeCompany = "company"
 )
 
-func NewService(repo Repository, auth authapp.Service, idg idgen.Generator) Service {
+func NewService(repo Repository, auth authapp.Service, idg idgen.Generator, opts ...ServiceOption) Service {
 	holidayProvider := NewHolidayCalendarFileProvider(filepath.Join("configs", "non_trading_days"))
-	return &service{
+	s := &service{
 		repo:       repo,
 		auth:       auth,
 		idg:        idg,
 		calculator: NewDeadlineCalculator(holidayProvider),
 	}
+	for _, o := range opts {
+		o(s)
+	}
+	return s
 }
 
 func (s *service) CreateRecord(ctx context.Context, req CreateRecordRequest) (*RecordDTO, error) {
