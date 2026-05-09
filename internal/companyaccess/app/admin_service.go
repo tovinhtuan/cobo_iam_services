@@ -2,24 +2,45 @@ package app
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	authapp "github.com/cobo/cobo_iam_services/internal/authorization/app"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 	"github.com/cobo/cobo_iam_services/internal/platform/idgen"
+	"github.com/cobo/cobo_iam_services/internal/platform/refreshtoken"
 	"golang.org/x/crypto/bcrypt"
 )
 
 type adminService struct {
-	repo AdminRepository
-	auth authapp.Service
-	idg  idgen.Generator
+	repo       AdminRepository
+	auth       authapp.Service
+	idg        idgen.Generator
+	invMailer  InvitationMailer
+	inviteTTL  time.Duration
 }
 
-func NewAdminService(repo AdminRepository, auth authapp.Service, idg idgen.Generator) AdminService {
-	return &adminService{repo: repo, auth: auth, idg: idg}
+func NewAdminService(repo AdminRepository, auth authapp.Service, idg idgen.Generator, opts ...AdminOption) AdminService {
+	s := &adminService{repo: repo, auth: auth, idg: idg, inviteTTL: 72 * time.Hour}
+	for _, o := range opts {
+		if o != nil {
+			o(s)
+		}
+	}
+	return s
+}
+
+func inviteRawTokenAndHash() (raw string, hash string, err error) {
+	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		return "", "", err
+	}
+	raw = base64.RawURLEncoding.EncodeToString(buf)
+	return raw, refreshtoken.Hash(raw), nil
 }
 
 func (s *adminService) CreateUser(ctx context.Context, req CreateUserRequest) (*UserView, error) {
@@ -58,8 +79,8 @@ func (s *adminService) CreateUser(ctx context.Context, req CreateUserRequest) (*
 	if req.FullName == "" {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "full_name required", nil)
 	}
-	if len(req.Password) < 8 {
-		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "password must be at least 8 characters", nil)
+	if len(req.Password) < 12 {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "password must be at least 12 characters", nil)
 	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
@@ -84,6 +105,137 @@ func (s *adminService) CreateUser(ctx context.Context, req CreateUserRequest) (*
 	}
 	return s.repo.CreateUser(ctx, u, string(hash), opts)
 }
+
+func (s *adminService) InviteUser(ctx context.Context, req InviteUserRequest) (*InviteUserResponse, error) {
+	if err := s.authorize(ctx, req.Subject, "admin.membership.create", req.Subject.CompanyID); err != nil {
+		return nil, err
+	}
+	isWebAdmin, err := s.hasPermission(ctx, req.Subject, "rbac.manage")
+	if err != nil {
+		return nil, err
+	}
+	req.Email = strings.TrimSpace(strings.ToLower(req.Email))
+	req.FullName = strings.TrimSpace(req.FullName)
+	req.CompanyID = strings.TrimSpace(req.CompanyID)
+	req.MembershipStatus = strings.TrimSpace(req.MembershipStatus)
+	if req.Email == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "email is required", nil)
+	}
+	if req.FullName == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "full_name is required", nil)
+	}
+	if !isWebAdmin {
+		if req.CompanyID != "" && req.CompanyID != req.Subject.CompanyID {
+			return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "enterprise admin can only create users for current company", nil)
+		}
+		req.CompanyID = req.Subject.CompanyID
+	}
+	if req.CompanyID == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "company_id is required", nil)
+	}
+	if req.MembershipStatus == "" {
+		req.MembershipStatus = "active"
+	}
+
+	_, existingStatus, found, err := s.repo.LookupUserByLoginID(ctx, req.Email)
+	if err != nil {
+		return nil, err
+	}
+	if found && strings.EqualFold(strings.TrimSpace(existingStatus), "active") {
+		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "user with this email already exists", nil)
+	}
+	if found {
+		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "user exists; use resend invitation if account is invited", nil)
+	}
+
+	rawTok, tokHash, err := inviteRawTokenAndHash()
+	if err != nil {
+		return nil, fmt.Errorf("generate invitation token: %w", err)
+	}
+	expiresAt := time.Now().UTC().Add(s.inviteTTL)
+	userID := s.idg.NewUUID()
+	opts := CreateUserOptions{
+		CompanyID:        req.CompanyID,
+		MembershipStatus: req.MembershipStatus,
+		MembershipID:     s.idg.NewUUID(),
+	}
+	invitationID := s.idg.NewUUID()
+	u := UserView{
+		UserID:        userID,
+		LoginID:       req.Email,
+		FullName:      req.FullName,
+		Email:         req.Email,
+		AccountStatus: "invited",
+	}
+	createdBy := strings.TrimSpace(req.CreatedByUserID)
+
+	out, err := s.repo.InviteUserWithMembership(ctx, u, opts, invitationID, tokHash, createdBy, expiresAt)
+	if err != nil {
+		return nil, err
+	}
+	if s.invMailer != nil {
+		if err := s.invMailer.SendInvitationEmail(ctx, InvitationMailPayload{
+			UserID: out.UserID, ToEmail: out.Email, FullName: out.FullName, LoginID: out.LoginID, RawToken: rawTok,
+		}); err != nil {
+			return nil, err
+		}
+	}
+
+	return &InviteUserResponse{
+		UserID:              out.UserID,
+		LoginID:             out.LoginID,
+		Email:               out.Email,
+		FullName:            out.FullName,
+		AccountStatus:       out.AccountStatus,
+		MembershipID:        out.MembershipID,
+		CompanyID:           out.CompanyID,
+		InvitationExpiresAt: expiresAt.UTC().Format(time.RFC3339),
+	}, nil
+}
+
+func (s *adminService) ResendUserInvitation(ctx context.Context, req ResendUserInvitationRequest) error {
+	if err := s.authorize(ctx, req.Subject, "admin.membership.create", req.Subject.CompanyID); err != nil {
+		return err
+	}
+	userID := strings.TrimSpace(req.UserID)
+	cid := strings.TrimSpace(req.CompanyID)
+	if userID == "" || cid == "" {
+		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "user_id and company_id are required", nil)
+	}
+	ok, err := s.repo.MembershipExistsForUserCompany(ctx, userID, cid)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return perr.NewHTTPError(http.StatusNotFound, perr.CodeMembershipNotFound, "membership not found for user in company", nil)
+	}
+	loginID, email, fullName, acctStatus, err := s.repo.GetUserProfile(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if !strings.EqualFold(strings.TrimSpace(acctStatus), "invited") {
+		return perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "user is not in invited state", nil)
+	}
+	rawTok, tokHash, err := inviteRawTokenAndHash()
+	if err != nil {
+		return fmt.Errorf("generate invitation token: %w", err)
+	}
+	expiresAt := time.Now().UTC().Add(s.inviteTTL)
+	if err := s.repo.ReplaceUserInvitation(ctx, userID, s.idg.NewUUID(), tokHash, strings.TrimSpace(req.Subject.UserID), expiresAt); err != nil {
+		return err
+	}
+	if s.invMailer != nil {
+		to := strings.TrimSpace(email)
+		if to == "" {
+			to = strings.TrimSpace(loginID)
+		}
+		return s.invMailer.SendInvitationEmail(ctx, InvitationMailPayload{
+			UserID: userID, ToEmail: to, FullName: fullName, LoginID: loginID, RawToken: rawTok,
+		})
+	}
+	return nil
+}
+
 
 func (s *adminService) hasPermission(ctx context.Context, sub AdminSubject, permission string) (bool, error) {
 	eff, err := s.auth.GetEffectiveAccess(ctx, sub.MembershipID, sub.CompanyID)

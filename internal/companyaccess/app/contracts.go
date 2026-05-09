@@ -21,11 +21,14 @@ type MembershipRepository interface {
 }
 
 type MembershipView struct {
-	MembershipID string
-	UserID       string
-	CompanyID    string
-	CompanyName  string
-	Status       string
+	MembershipID  string `json:"membership_id"`
+	UserID        string `json:"user_id"`
+	CompanyID     string `json:"company_id"`
+	CompanyName   string `json:"company_name"`
+	Status        string `json:"membership_status"`
+	LoginID       string `json:"login_id,omitempty"`
+	FullName      string `json:"full_name,omitempty"`
+	AccountStatus string `json:"account_status,omitempty"`
 }
 
 type DepartmentView struct {

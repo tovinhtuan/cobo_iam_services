@@ -870,7 +870,7 @@ func TestIntegration_platformCMSPrefix_adminUsersCreateAndList(t *testing.T) {
 
 	createRes := doJSONRequest(t, http.MethodPost, srv.URL+"/api/v1/platform/cms/admin/users", adminToken, map[string]any{
 		"login_id":          createdLogin,
-		"password":          "secret123",
+		"password":          "secret1234567!",
 		"full_name":         "CMS Company User",
 		"account_status":    "active",
 		"company_id":        "c_001",

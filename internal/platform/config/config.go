@@ -51,6 +51,9 @@ type Config struct {
 	// Public web app base URL used in email action links.
 	PublicWebBaseURL string
 
+	// UserInvitationTokenTTL TTL for CMS user-invitation links (user_invitations.expires_at).
+	UserInvitationTokenTTL time.Duration
+
 	// Public API base URL used when backend emits externally callable URLs.
 	PublicAPIBaseURL string
 
@@ -106,6 +109,7 @@ func Load() (Config, error) {
 		JWTClockSkewSec:               intEnv("JWT_CLOCK_SKEW_SEC", 60),
 		PublicWebBaseURL:              getenv("PUBLIC_WEB_BASE_URL", "http://localhost:5173"),
 		PublicAPIBaseURL:              getenv("PUBLIC_API_BASE_URL", "http://localhost:8080"),
+		UserInvitationTokenTTL:        durationEnv("USER_INVITATION_TOKEN_TTL", 72*time.Hour),
 		LoginPasswordRSAPrivateKeyPEM: os.Getenv("LOGIN_PASSWORD_RSA_PRIVATE_KEY_PEM"),
 		LoginPasswordRSAKeyID:         getenv("LOGIN_PASSWORD_RSA_KEY_ID", "default"),
 		CORSAllowedOrigins:            os.Getenv("CORS_ALLOWED_ORIGINS"),

@@ -30,15 +30,18 @@ type service struct {
 	attempts         LoginAttemptRecorder
 	recovery         AuthRecoveryRepository
 	outbox           outbox.Publisher
+	invite           UserInvitationExecutor
 	webBaseURL       string
 	passwordResetTTL time.Duration
 	emailVerifyTTL   time.Duration
+	invitationTTL    time.Duration
 }
 
 func NewService(cred CredentialVerifier, sessions SessionRepository, tokens TokenIssuer, memberships ca.MembershipQueryService, idgen idgen.Generator, opts ...ServiceOption) Service {
 	s := &service{
 		cred: cred, sessions: sessions, tokens: tokens, memberships: memberships, idgen: idgen,
 		webBaseURL: "http://localhost:5173", passwordResetTTL: 30 * time.Minute, emailVerifyTTL: 24 * time.Hour,
+		invitationTTL: 72 * time.Hour,
 	}
 	for _, opt := range opts {
 		if opt != nil {
@@ -400,6 +403,113 @@ func (s *service) RevokeSession(ctx context.Context, req RevokeSessionRequest) (
 		return nil, err
 	}
 	return &RevokeSessionResponse{Success: true}, nil
+}
+
+func (s *service) ValidateUserInvitation(ctx context.Context, token string) (*ValidateUserInvitationResult, error) {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return &ValidateUserInvitationResult{Valid: false, Reason: "INVALID"}, nil
+	}
+	if s.invite == nil {
+		return &ValidateUserInvitationResult{Valid: false, Reason: "UNAVAILABLE"}, nil
+	}
+	now := time.Now().UTC()
+	valid, reason, hint, exp, err := s.invite.PeekUserInvitation(ctx, token, now)
+	if err != nil {
+		return nil, err
+	}
+	res := &ValidateUserInvitationResult{Valid: valid, Reason: reason, EmailHint: hint}
+	if !exp.IsZero() {
+		res.ExpiresAt = exp.UTC().Format(time.RFC3339)
+	}
+	return res, nil
+}
+
+func (s *service) AcceptUserInvitation(ctx context.Context, req AcceptUserInvitationRequest) (*AcceptUserInvitationResponse, error) {
+	if s.invite == nil {
+		return nil, perr.NewHTTPError(http.StatusServiceUnavailable, perr.CodeInternal, "invitation flow not configured", nil)
+	}
+	token := strings.TrimSpace(req.Token)
+	pw := strings.TrimSpace(req.Password)
+	if token == "" || pw == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "token and password are required", nil)
+	}
+	if req.ConfirmPassword != "" && pw != strings.TrimSpace(req.ConfirmPassword) {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "password confirmation does not match", nil)
+	}
+	if len(pw) < 12 {
+		return nil, perr.NewHTTPError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, "password must be at least 12 characters", nil)
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, fmt.Errorf("hash password: %w", err)
+	}
+	now := time.Now().UTC()
+	if err := s.invite.AcceptUserInvitation(ctx, token, string(hash), now); err != nil {
+		return nil, err
+	}
+	return &AcceptUserInvitationResponse{Success: true}, nil
+}
+
+func (s *service) PublishUserInvitationEmail(ctx context.Context, userID, toEmail, fullName, loginID, rawToken string) error {
+	if s.outbox == nil {
+		return perr.NewHTTPError(http.StatusServiceUnavailable, perr.CodeInternal, "email dispatch not configured", nil)
+	}
+	rawToken = strings.TrimSpace(rawToken)
+	if rawToken == "" {
+		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "invitation token required", nil)
+	}
+	to := strings.TrimSpace(toEmail)
+	if to == "" {
+		to = strings.TrimSpace(loginID)
+	}
+	if to == "" {
+		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "recipient email required", nil)
+	}
+	s.publishEmail(ctx, "auth.user_invitation_sent", userID, map[string]any{
+		"to":      to,
+		"subject": "Thiet lap mat khau tai khoan",
+		"body": fmt.Sprintf("Xin chao %s,\n\nTai khoan da duoc tao. Thiet lap mat khau qua link sau:\n%s\n\nLink het han sau khoang %d gio. Neu ban khong yeu cau, bo qua email nay.\n",
+			coalesce(fullName, loginID), s.buildActionLink("/accept-invitation", rawToken), int(s.invitationTTL.Hours())),
+	})
+	return nil
+}
+
+func (s *service) AdminRequestPasswordReset(ctx context.Context, targetUserID string) error {
+	if s.recovery == nil {
+		return perr.NewHTTPError(http.StatusServiceUnavailable, perr.CodeInternal, "recovery not configured", nil)
+	}
+	if s.outbox == nil {
+		return perr.NewHTTPError(http.StatusServiceUnavailable, perr.CodeInternal, "email dispatch not configured", nil)
+	}
+	targetUserID = strings.TrimSpace(targetUserID)
+	if targetUserID == "" {
+		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "user_id is required", nil)
+	}
+	user, err := s.recovery.FindUserByUserID(ctx, targetUserID)
+	if err != nil {
+		return err
+	}
+	if user == nil {
+		return perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "user not found", nil)
+	}
+	rawToken, tokenHash, err := s.generateRawTokenAndHash()
+	if err != nil {
+		return fmt.Errorf("generate reset token: %w", err)
+	}
+	if err := s.recovery.StorePasswordResetToken(ctx, RecoveryTokenRecord{
+		TokenID: s.idgen.NewUUID(), UserID: user.UserID, TokenHash: tokenHash, ExpiresAt: time.Now().UTC().Add(s.passwordResetTTL),
+	}); err != nil {
+		return fmt.Errorf("store password reset token: %w", err)
+	}
+	addr := coalesce(strings.TrimSpace(user.Email), strings.TrimSpace(user.LoginID))
+	s.publishEmail(ctx, "auth.admin_password_reset_requested", user.UserID, map[string]any{
+		"to":      addr,
+		"subject": "Dat lai mat khau (yeu cau tu quan tri)",
+		"body": fmt.Sprintf("Xin chao %s,\n\nQuan tri vien da yeu cau dat lai mat khau.\n%s\n\nLink het han sau %d phut.\n",
+			coalesce(user.FullName, user.LoginID), s.buildActionLink("/reset-password", rawToken), int(s.passwordResetTTL.Minutes())),
+	})
+	return nil
 }
 
 func (s *service) generateRawTokenAndHash() (string, string, error) {

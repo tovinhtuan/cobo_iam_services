@@ -13,6 +13,7 @@ const (
 	CodeAccountLocked          Code = "ACCOUNT_LOCKED"
 	CodeSessionExpired         Code = "SESSION_EXPIRED"
 	CodePasswordResetTokenInvalid Code = "PASSWORD_RESET_TOKEN_INVALID_OR_EXPIRED"
+	CodeUserInvitationTokenInvalid Code = "USER_INVITATION_TOKEN_INVALID_OR_EXPIRED"
 	CodeEmailVerificationTokenInvalid Code = "EMAIL_VERIFICATION_TOKEN_INVALID_OR_EXPIRED"
 	CodeNoActiveCompanyAccess  Code = "NO_ACTIVE_COMPANY_ACCESS"
 	CodeMembershipNotFound     Code = "MEMBERSHIP_NOT_FOUND"

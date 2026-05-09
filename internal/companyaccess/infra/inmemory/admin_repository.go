@@ -3,7 +3,9 @@ package inmemory
 import (
 	"context"
 	"net/http"
+	"strings"
 	"sync"
+	"time"
 
 	caapp "github.com/cobo/cobo_iam_services/internal/companyaccess/app"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
@@ -27,6 +29,8 @@ type AdminRepository struct {
 	resourceScopeRules    []map[string]any
 	workflowAssigneeRules []map[string]any
 	notificationRules     []map[string]any
+
+	invitationsByUser map[string][]string // stacked token hashes for in-mem sanity (minimal)
 }
 
 func NewAdminRepository() *AdminRepository {
@@ -44,6 +48,7 @@ func NewAdminRepository() *AdminRepository {
 		resourceScopeRules:      []map[string]any{},
 		workflowAssigneeRules:   []map[string]any{},
 		notificationRules:       []map[string]any{},
+		invitationsByUser:       map[string][]string{},
 	}
 }
 
@@ -78,6 +83,80 @@ func (r *AdminRepository) CreateUser(_ context.Context, u caapp.UserView, passwo
 	return &cp, nil
 }
 
+func (r *AdminRepository) LookupUserByLoginID(_ context.Context, loginID string) (string, string, bool, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	id, ok := r.usersByLoginID[strings.ToLower(strings.TrimSpace(loginID))]
+	if !ok || id == "" {
+		return "", "", false, nil
+	}
+	u := r.users[id]
+	return u.UserID, u.AccountStatus, true, nil
+}
+
+func (r *AdminRepository) GetUserProfile(_ context.Context, userID string) (loginID, email, fullName, accountStatus string, err error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	u, ok := r.users[strings.TrimSpace(userID)]
+	if !ok {
+		return "", "", "", "", perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "user not found", nil)
+	}
+	return u.LoginID, u.Email, u.FullName, u.AccountStatus, nil
+}
+
+func (r *AdminRepository) MembershipExistsForUserCompany(_ context.Context, userID, companyID string) (bool, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, m := range r.memberships {
+		if m.UserID == userID && m.CompanyID == companyID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (r *AdminRepository) InviteUserWithMembership(_ context.Context, u caapp.UserView, opts caapp.CreateUserOptions, invitationID, tokenHash, _ string, _ time.Time) (*caapp.UserView, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	key := strings.ToLower(strings.TrimSpace(u.LoginID))
+	if existingID, ok := r.usersByLoginID[key]; ok && existingID != "" {
+		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "login_id already exists", nil)
+	}
+	r.users[u.UserID] = u
+	r.usersByLoginID[key] = u.UserID
+	if opts.CompanyID != "" {
+		ms := opts.MembershipStatus
+		if ms == "" {
+			ms = "active"
+		}
+		m := caapp.MembershipView{
+			MembershipID: opts.MembershipID,
+			UserID:       u.UserID,
+			CompanyID:    opts.CompanyID,
+			CompanyName:  opts.CompanyID,
+			Status:       ms,
+		}
+		r.memberships[m.MembershipID] = m
+		u.MembershipID = m.MembershipID
+		u.MembershipStatus = m.Status
+		u.CompanyID = m.CompanyID
+		u.CompanyName = m.CompanyName
+	}
+	r.invitationsByUser[u.UserID] = append(r.invitationsByUser[u.UserID], invitationID+":"+tokenHash)
+	cp := u
+	return &cp, nil
+}
+
+func (r *AdminRepository) ReplaceUserInvitation(_ context.Context, userID, invitationID, tokenHash, _ string, _ time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.users[userID]; !ok {
+		return perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "user not found", nil)
+	}
+	r.invitationsByUser[userID] = append(r.invitationsByUser[userID], invitationID+":"+tokenHash)
+	return nil
+}
+
 func (r *AdminRepository) CreateMembership(_ context.Context, m caapp.MembershipView) (*caapp.MembershipView, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -106,7 +185,13 @@ func (r *AdminRepository) ListMembershipsByCompany(_ context.Context, companyID 
 	out := []caapp.MembershipView{}
 	for _, m := range r.memberships {
 		if m.CompanyID == companyID {
-			out = append(out, m)
+			cp := m
+			if u, ok := r.users[m.UserID]; ok {
+				cp.LoginID = u.LoginID
+				cp.FullName = u.FullName
+				cp.AccountStatus = u.AccountStatus
+			}
+			out = append(out, cp)
 		}
 	}
 	return out, nil

@@ -70,6 +70,12 @@ func main() {
 	processor.Register("auth.password_reset_requested", platformoutbox.HandlerFunc(func(ctx context.Context, event platformoutbox.QueuedEvent) error {
 		return deliverAuthEmailEvent(ctx, cfg, log, event)
 	}))
+	processor.Register("auth.admin_password_reset_requested", platformoutbox.HandlerFunc(func(ctx context.Context, event platformoutbox.QueuedEvent) error {
+		return deliverAuthEmailEvent(ctx, cfg, log, event)
+	}))
+	processor.Register("auth.user_invitation_sent", platformoutbox.HandlerFunc(func(ctx context.Context, event platformoutbox.QueuedEvent) error {
+		return deliverAuthEmailEvent(ctx, cfg, log, event)
+	}))
 	processor.Register("auth.email_verification_requested", platformoutbox.HandlerFunc(func(ctx context.Context, event platformoutbox.QueuedEvent) error {
 		return deliverAuthEmailEvent(ctx, cfg, log, event)
 	}))

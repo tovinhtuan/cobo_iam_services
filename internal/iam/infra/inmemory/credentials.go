@@ -55,6 +55,17 @@ func (v *StaticCredentialVerifier) GetByUserID(_ context.Context, userID string)
 	return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeMembershipNotFound, "user not found", nil)
 }
 
+func (v *StaticCredentialVerifier) FindUserByUserID(_ context.Context, userID string) (*iamapp.RecoveryUser, error) {
+	for _, u := range v.Users {
+		if u.UserID == userID {
+			return &iamapp.RecoveryUser{
+				UserID: u.UserID, Email: coalesce(u.Email, u.LoginID), FullName: u.FullName, LoginID: u.LoginID,
+			}, nil
+		}
+	}
+	return nil, nil
+}
+
 func (v *StaticCredentialVerifier) FindUserByEmail(_ context.Context, email string) (*iamapp.RecoveryUser, error) {
 	key := strings.TrimSpace(strings.ToLower(email))
 	for _, u := range v.Users {

@@ -89,6 +89,9 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/platform/cms/releases", h.observe("cms.releases.list", h.releases))
 	mux.HandleFunc("GET /api/v1/platform/cms/admin/users", h.observe("cms.admin.users.list", h.adminUsers))
 	mux.HandleFunc("POST /api/v1/platform/cms/admin/users", h.observe("cms.admin.users.create", h.createAdminUser))
+	mux.HandleFunc("POST /api/v1/platform/cms/admin/users/invite", h.observe("cms.admin.users.invite", h.inviteAdminUser))
+	mux.HandleFunc("POST /api/v1/platform/cms/admin/users/{user_id}/resend-invitation", h.observe("cms.admin.users.invite.resend", h.resendInvitation))
+	mux.HandleFunc("POST /api/v1/platform/cms/admin/users/{user_id}/request-password-reset", h.observe("cms.admin.users.password_reset", h.requestAdminPasswordReset))
 	mux.HandleFunc("GET /api/v1/platform/cms/admin/roles", h.observe("cms.admin.roles.list", h.roles))
 	mux.HandleFunc("GET /api/v1/platform/cms/admin/rules", h.observe("cms.admin.rules.list", h.rules))
 	mux.HandleFunc("POST /api/v1/platform/cms/admin/rules/validate", h.observe("cms.admin.rules.validate", h.validateRule))
@@ -1197,6 +1200,132 @@ func (h *Handler) createAdminUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeEnvelope(w, http.StatusCreated, resp, nil)
+}
+
+func (h *Handler) inviteAdminUser(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	if _, err := h.requireCMSAccess(r.Context(), sub.MembershipID, sub.CompanyID); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	if _, err := h.requireAnyPermission(r.Context(), sub.MembershipID, sub.CompanyID, "rbac.manage", "system.settings"); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	var p struct {
+		Email            string `json:"email"`
+		FullName         string `json:"full_name"`
+		CompanyID        string `json:"company_id"`
+		MembershipStatus string `json:"membership_status"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
+		httpx.WriteError(w, nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "invalid JSON payload", err))
+		return
+	}
+	resp, err := h.adminSvc.InviteUser(r.Context(), companyaccessapp.InviteUserRequest{
+		Subject: companyaccessapp.AdminSubject{
+			UserID:       sub.Sub,
+			MembershipID: sub.MembershipID,
+			CompanyID:    sub.CompanyID,
+		},
+		Email:            p.Email,
+		FullName:         p.FullName,
+		CompanyID:        p.CompanyID,
+		MembershipStatus: p.MembershipStatus,
+		CreatedByUserID:  sub.Sub,
+	})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	_ = h.auditSvc.AppendAuditLog(r.Context(), auditapp.AppendAuditLogRequest{
+		ActorUserID:       sub.Sub,
+		ActorMembershipID: sub.MembershipID,
+		CompanyID:         sub.CompanyID,
+		Action:            "cms.admin.users.invite",
+		ResourceType:      "user",
+		ResourceID:        resp.UserID,
+		Decision:          "allow",
+	})
+	writeEnvelope(w, http.StatusCreated, resp, nil)
+}
+
+func (h *Handler) resendInvitation(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	if _, err := h.requireCMSAccess(r.Context(), sub.MembershipID, sub.CompanyID); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	if _, err := h.requireAnyPermission(r.Context(), sub.MembershipID, sub.CompanyID, "rbac.manage", "system.settings"); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	userID := strings.TrimSpace(r.PathValue("user_id"))
+	companyID := strings.TrimSpace(r.URL.Query().Get("company_id"))
+	if companyID == "" {
+		companyID = sub.CompanyID
+	}
+	if err := h.adminSvc.ResendUserInvitation(r.Context(), companyaccessapp.ResendUserInvitationRequest{
+		Subject: companyaccessapp.AdminSubject{
+			UserID:       sub.Sub,
+			MembershipID: sub.MembershipID,
+			CompanyID:    sub.CompanyID,
+		},
+		UserID:    userID,
+		CompanyID: companyID,
+	}); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	_ = h.auditSvc.AppendAuditLog(r.Context(), auditapp.AppendAuditLogRequest{
+		ActorUserID:       sub.Sub,
+		ActorMembershipID: sub.MembershipID,
+		CompanyID:         sub.CompanyID,
+		Action:            "cms.admin.users.invite.resend",
+		ResourceType:      "user",
+		ResourceID:        userID,
+		Decision:          "allow",
+	})
+	writeEnvelope(w, http.StatusOK, map[string]any{"success": true}, nil)
+}
+
+func (h *Handler) requestAdminPasswordReset(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	if _, err := h.requireCMSAccess(r.Context(), sub.MembershipID, sub.CompanyID); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	if _, err := h.requireAnyPermission(r.Context(), sub.MembershipID, sub.CompanyID, "rbac.manage", "system.settings"); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	target := strings.TrimSpace(r.PathValue("user_id"))
+	if err := h.iamSvc.AdminRequestPasswordReset(r.Context(), target); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	_ = h.auditSvc.AppendAuditLog(r.Context(), auditapp.AppendAuditLogRequest{
+		ActorUserID:       sub.Sub,
+		ActorMembershipID: sub.MembershipID,
+		CompanyID:         sub.CompanyID,
+		Action:            "cms.admin.users.password_reset",
+		ResourceType:      "user",
+		ResourceID:        target,
+		Decision:          "allow",
+	})
+	writeEnvelope(w, http.StatusOK, map[string]any{"success": true}, nil)
 }
 
 func (h *Handler) subject(r *http.Request) (iamapp.AccessTokenClaims, error) {

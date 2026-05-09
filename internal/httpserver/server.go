@@ -162,6 +162,13 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 		identity = static
 	}
 	var iamOpts []iamapp.ServiceOption
+	iamOpts = append(iamOpts, iamapp.WithAuthFlowConfig(iamapp.AuthFlowConfig{
+		WebBaseURL:             cfg.PublicWebBaseURL,
+		UserInvitationTokenTTL: cfg.UserInvitationTokenTTL,
+	}))
+	if pool != nil {
+		iamOpts = append(iamOpts, iamapp.WithUserInvitationExecutor(&iammysql.UserInvitationStore{DB: pool}))
+	}
 	if pool != nil {
 		iamOpts = append(iamOpts, iamapp.WithLoginAttemptRecorder(iammysql.NewLoginAttemptRecorder(pool)))
 		log.Info("login_attempts writes enabled (MySQL)")
@@ -170,9 +177,6 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 		iamOpts = append(iamOpts,
 			iamapp.WithAuthRecoveryRepository(recoveryRepo),
 			iamapp.WithOutboxPublisher(outboxPublisher),
-			iamapp.WithAuthFlowConfig(iamapp.AuthFlowConfig{
-				WebBaseURL: cfg.PublicWebBaseURL,
-			}),
 		)
 	}
 	var loginPWD *loginpassword.Service
@@ -268,7 +272,14 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 		adminRepo = camysql.NewAdminRepository(pool)
 		log.Info("admin access APIs using MySQL")
 	}
-	adminSvc := companyaccessapp.NewAdminService(adminRepo, authSvc, id)
+	var adminOpts []companyaccessapp.AdminOption
+	if pool != nil {
+		adminOpts = append(adminOpts,
+			companyaccessapp.WithInvitationMailer(&iamInvitationMailer{iam: iamSvc}),
+			companyaccessapp.WithInvitationTTL(cfg.UserInvitationTokenTTL),
+		)
+	}
+	adminSvc := companyaccessapp.NewAdminService(adminRepo, authSvc, id, adminOpts...)
 	adminHandler := companyaccesshttp.NewAdminHandler(adminSvc, tokenManager, auditSvc)
 	platformCMSHandler := platformcmshttp.NewHandler(tokenManager, authSvc, adminSvc, iamSvc, auditSvc, auditRepo, disclosureSvc, disclosureRepo, holidaySvc, platformcmshttp.MediaOptions{
 		DB:                  pool,

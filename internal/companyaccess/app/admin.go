@@ -1,9 +1,14 @@
 package app
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 type AdminService interface {
 	CreateUser(ctx context.Context, req CreateUserRequest) (*UserView, error)
+	InviteUser(ctx context.Context, req InviteUserRequest) (*InviteUserResponse, error)
+	ResendUserInvitation(ctx context.Context, req ResendUserInvitationRequest) error
 	CreateMembership(ctx context.Context, req CreateMembershipRequest) (*MembershipView, error)
 	UpdateMembership(ctx context.Context, req UpdateMembershipRequest) (*MembershipView, error)
 	DeleteMembership(ctx context.Context, req DeleteMembershipRequest) error
@@ -28,6 +33,11 @@ type AdminService interface {
 
 type AdminRepository interface {
 	CreateUser(ctx context.Context, u UserView, passwordHash string, opts CreateUserOptions) (*UserView, error)
+	InviteUserWithMembership(ctx context.Context, u UserView, opts CreateUserOptions, invitationID, tokenHash, createdByUserID string, expiresAt time.Time) (*UserView, error)
+	ReplaceUserInvitation(ctx context.Context, userID, invitationID, tokenHash, createdByUserID string, expiresAt time.Time) error
+	LookupUserByLoginID(ctx context.Context, loginID string) (userID string, accountStatus string, found bool, err error)
+	GetUserProfile(ctx context.Context, userID string) (loginID, email, fullName, accountStatus string, err error)
+	MembershipExistsForUserCompany(ctx context.Context, userID, companyID string) (bool, error)
 	CreateMembership(ctx context.Context, m MembershipView) (*MembershipView, error)
 	UpdateMembershipStatus(ctx context.Context, membershipID, status string) (*MembershipView, error)
 	DeleteMembership(ctx context.Context, membershipID string) error
@@ -77,6 +87,42 @@ type CreateUserOptions struct {
 	MembershipID     string
 	CompanyID        string
 	MembershipStatus string
+}
+
+// InvitationMailPayload is dispatched via outbox (IAM) after a user invitation is persisted.
+type InvitationMailPayload struct {
+	UserID, ToEmail, FullName, LoginID, RawToken string
+}
+
+// InvitationMailer sends invitation email payloads (wired to iam.Service in production).
+type InvitationMailer interface {
+	SendInvitationEmail(ctx context.Context, p InvitationMailPayload) error
+}
+
+type InviteUserRequest struct {
+	Subject          AdminSubject
+	Email            string
+	FullName         string
+	CompanyID        string
+	MembershipStatus string
+	CreatedByUserID  string
+}
+
+type InviteUserResponse struct {
+	UserID              string `json:"user_id"`
+	LoginID             string `json:"login_id"`
+	Email               string `json:"email"`
+	FullName            string `json:"full_name"`
+	AccountStatus       string `json:"account_status"`
+	MembershipID        string `json:"membership_id,omitempty"`
+	CompanyID           string `json:"company_id,omitempty"`
+	InvitationExpiresAt string `json:"invitation_expires_at,omitempty"`
+}
+
+type ResendUserInvitationRequest struct {
+	Subject   AdminSubject
+	UserID    string
+	CompanyID string
 }
 
 type CreateUserRequest struct {

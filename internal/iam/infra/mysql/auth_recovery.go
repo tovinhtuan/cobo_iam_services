@@ -19,6 +19,30 @@ func NewAuthRecoveryRepository(db *sql.DB) *AuthRecoveryRepository {
 	return &AuthRecoveryRepository{db: db}
 }
 
+func (r *AuthRecoveryRepository) FindUserByUserID(ctx context.Context, userID string) (*iamapp.RecoveryUser, error) {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return nil, nil
+	}
+	row := r.db.QueryRowContext(ctx, `
+		SELECT user_id, IFNULL(email, ''), full_name, login_id
+		FROM users
+		WHERE user_id = ?
+		LIMIT 1
+	`, userID)
+	var u iamapp.RecoveryUser
+	if err := row.Scan(&u.UserID, &u.Email, &u.FullName, &u.LoginID); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("find user by id: %w", err)
+	}
+	if strings.TrimSpace(u.Email) == "" {
+		u.Email = u.LoginID
+	}
+	return &u, nil
+}
+
 func (r *AuthRecoveryRepository) FindUserByEmail(ctx context.Context, email string) (*iamapp.RecoveryUser, error) {
 	email = strings.TrimSpace(strings.ToLower(email))
 	row := r.db.QueryRowContext(ctx, `

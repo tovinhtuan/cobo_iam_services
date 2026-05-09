@@ -28,6 +28,15 @@ services:
       timeout: 3s
       retries: 20
 
+  # Dev-only: captures outbound SMTP from the worker (invite / password reset / verification).
+  # Web UI: http://localhost:8025
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: cobo-iam-mailpit
+    ports:
+      - "8025:8025"
+      - "1025:1025"
+
   migrate:
     image: mysql:8.0
     container_name: cobo-iam-migrate
@@ -104,6 +113,8 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+      mailpit:
+        condition: service_started
     working_dir: /app
     command: go run ./cmd/worker
     environment:
@@ -115,9 +126,15 @@ services:
       ACCESS_TOKEN_MODE: opaque
       ACCESS_TOKEN_TTL: 15m
       PUBLIC_WEB_BASE_URL: http://localhost:3000
+      # SMTP: set in `.env` next to this file for real mail (see `.env.example`).
+      # Defaults = Mailpit (http://localhost:8025).
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-no-reply@cobo.local}
     volumes:
       - ./:/app
-    profiles: ["worker"]
 
 volumes:
   mysql_data:

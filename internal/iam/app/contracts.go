@@ -18,6 +18,11 @@ type Service interface {
 	VerifyEmail(ctx context.Context, req VerifyEmailRequest) (*VerifyEmailResponse, error)
 	ListSessions(ctx context.Context, req ListSessionsRequest) (*ListSessionsResponse, error)
 	RevokeSession(ctx context.Context, req RevokeSessionRequest) (*RevokeSessionResponse, error)
+
+	ValidateUserInvitation(ctx context.Context, token string) (*ValidateUserInvitationResult, error)
+	AcceptUserInvitation(ctx context.Context, req AcceptUserInvitationRequest) (*AcceptUserInvitationResponse, error)
+	PublishUserInvitationEmail(ctx context.Context, userID, toEmail, fullName, loginID, rawToken string) error
+	AdminRequestPasswordReset(ctx context.Context, targetUserID string) error
 }
 
 // CredentialVerifier verifies login credentials.
@@ -28,6 +33,12 @@ type CredentialVerifier interface {
 // IdentityQueryService returns authenticated identity profile data.
 type IdentityQueryService interface {
 	GetByUserID(ctx context.Context, userID string) (*AuthenticatedUser, error)
+}
+
+// UserInvitationExecutor loads/consumes user_invitations rows (MySQL implementation in iam/infra/mysql).
+type UserInvitationExecutor interface {
+	PeekUserInvitation(ctx context.Context, rawToken string, now time.Time) (valid bool, reason string, emailHint string, expiresAtUTC time.Time, err error)
+	AcceptUserInvitation(ctx context.Context, rawToken string, bcryptPasswordHash string, now time.Time) error
 }
 
 // LoginAttemptRecorder persists login success/failure for audit and rate-limit groundwork.
@@ -59,6 +70,7 @@ type SessionRepository interface {
 
 type AuthRecoveryRepository interface {
 	FindUserByEmail(ctx context.Context, email string) (*RecoveryUser, error)
+	FindUserByUserID(ctx context.Context, userID string) (*RecoveryUser, error)
 	StorePasswordResetToken(ctx context.Context, token RecoveryTokenRecord) error
 	ConsumePasswordResetToken(ctx context.Context, tokenHash string, now time.Time) (string, error)
 	StoreEmailVerificationToken(ctx context.Context, token RecoveryTokenRecord) error
@@ -269,6 +281,23 @@ type RevokeSessionRequest struct {
 }
 
 type RevokeSessionResponse struct {
+	Success bool `json:"success"`
+}
+
+type ValidateUserInvitationResult struct {
+	Valid     bool   `json:"valid"`
+	Reason    string `json:"reason,omitempty"`
+	EmailHint string `json:"email_hint,omitempty"`
+	ExpiresAt string `json:"expires_at,omitempty"`
+}
+
+type AcceptUserInvitationRequest struct {
+	Token           string `json:"token"`
+	Password        string `json:"password"`
+	ConfirmPassword string `json:"confirm_password,omitempty"`
+}
+
+type AcceptUserInvitationResponse struct {
 	Success bool `json:"success"`
 }
 

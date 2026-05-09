@@ -156,9 +156,10 @@ Repository đã có sẵn `Dockerfile` và `docker-compose.dev.yml` để chạy
 - Redis
 - Migrator (chạy migration + seed dev)
 - API (`cmd/api`)
-- Worker (`cmd/worker`, profile tùy chọn)
+- Worker (`cmd/worker`, xử lý outbox; gửi mail auth qua Mailpit trong dev)
+- Mailpit (SMTP dev + hộp thư xem tại trình duyệt)
 
-### Start API stack (không worker)
+### Start stack (API + web + worker + Mailpit)
 
 ```bash
 docker compose -f docker-compose.dev.yml up --build
@@ -171,12 +172,11 @@ Endpoints:
 - Readiness: `http://localhost:8080/readyz`
 - MySQL host port: `localhost:3306`
 - Redis host port: `localhost:6379`
+- Mailpit (xem mail mời / reset mật khẩu): `http://localhost:8025`
 
-### Start cả worker
+**Gửi mail thật (Gmail SMTP) trong dev:** tạo file `.env` cạnh `docker-compose.dev.yml` (xem `.env.example`) với `SMTP_HOST=smtp.gmail.com`, `SMTP_PORT=587`, `SMTP_USER` / `SMTP_PASSWORD` (mật khẩu ứng dụng Google 16 ký tự **không** khoảng trắng), `SMTP_FROM` trùng user hoặc alias hợp lệ — rồi `docker compose -f docker-compose.dev.yml up -d worker`. Không commit `.env`.
 
-```bash
-docker compose -f docker-compose.dev.yml --profile worker up --build
-```
+**Lưu ý:** mật khẩu ứng dụng đã lộ không còn an toàn; nên vào Google Account và **tạo lại App Password** mới, cập nhật `.env`, xóa giá trị cũ.
 
 ### Stop & cleanup
 

@@ -49,6 +49,7 @@ type AuthFlowConfig struct {
 	WebBaseURL               string
 	PasswordResetTokenTTL    time.Duration
 	EmailVerificationTokenTTL time.Duration
+	UserInvitationTokenTTL   time.Duration
 }
 
 // WithAuthFlowConfig overrides token TTLs and link base URL for email actions.
@@ -63,6 +64,16 @@ func WithAuthFlowConfig(cfg AuthFlowConfig) ServiceOption {
 		if cfg.EmailVerificationTokenTTL > 0 {
 			s.emailVerifyTTL = cfg.EmailVerificationTokenTTL
 		}
+		if cfg.UserInvitationTokenTTL > 0 {
+			s.invitationTTL = cfg.UserInvitationTokenTTL
+		}
+	}
+}
+
+// WithUserInvitationExecutor enables invitation peek/accept against persistent storage.
+func WithUserInvitationExecutor(e UserInvitationExecutor) ServiceOption {
+	return func(s *service) {
+		s.invite = e
 	}
 }
 

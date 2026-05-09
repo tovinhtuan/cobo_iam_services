@@ -155,9 +155,11 @@ func (r *AdminRepository) DeleteMembership(ctx context.Context, membershipID str
 
 func (r *AdminRepository) ListMembershipsByCompany(ctx context.Context, companyID string) ([]caapp.MembershipView, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT m.membership_id, m.user_id, m.company_id, c.company_name, m.membership_status
+		SELECT m.membership_id, m.user_id, m.company_id, c.company_name, m.membership_status,
+		       u.login_id, u.full_name, u.account_status
 		FROM memberships m
 		INNER JOIN companies c ON c.company_id = m.company_id
+		INNER JOIN users u ON u.user_id = m.user_id
 		WHERE m.company_id = ?
 		ORDER BY m.created_at DESC
 	`, companyID)
@@ -168,7 +170,8 @@ func (r *AdminRepository) ListMembershipsByCompany(ctx context.Context, companyI
 	var out []caapp.MembershipView
 	for rows.Next() {
 		var v caapp.MembershipView
-		if err := rows.Scan(&v.MembershipID, &v.UserID, &v.CompanyID, &v.CompanyName, &v.Status); err != nil {
+		if err := rows.Scan(&v.MembershipID, &v.UserID, &v.CompanyID, &v.CompanyName, &v.Status,
+			&v.LoginID, &v.FullName, &v.AccountStatus); err != nil {
 			return nil, err
 		}
 		out = append(out, v)
@@ -421,13 +424,16 @@ func (r *AdminRepository) AddNotificationRule(ctx context.Context, rule map[stri
 
 func (r *AdminRepository) getMembershipView(ctx context.Context, membershipID string) (*caapp.MembershipView, error) {
 	row := r.db.QueryRowContext(ctx, `
-		SELECT m.membership_id, m.user_id, m.company_id, c.company_name, m.membership_status
+		SELECT m.membership_id, m.user_id, m.company_id, c.company_name, m.membership_status,
+		       u.login_id, u.full_name, u.account_status
 		FROM memberships m
 		INNER JOIN companies c ON c.company_id = m.company_id
+		INNER JOIN users u ON u.user_id = m.user_id
 		WHERE m.membership_id = ?
 	`, membershipID)
 	var v caapp.MembershipView
-	if err := row.Scan(&v.MembershipID, &v.UserID, &v.CompanyID, &v.CompanyName, &v.Status); err != nil {
+	if err := row.Scan(&v.MembershipID, &v.UserID, &v.CompanyID, &v.CompanyName, &v.Status,
+		&v.LoginID, &v.FullName, &v.AccountStatus); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeMembershipNotFound, "membership not found", nil)
 		}

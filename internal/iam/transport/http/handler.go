@@ -39,6 +39,8 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/auth/forgot-password", h.forgotPassword)
 	mux.HandleFunc("POST /api/v1/auth/resend-verification-email", h.resendVerificationEmail)
 	mux.HandleFunc("POST /api/v1/auth/reset-password", h.resetPassword)
+	mux.HandleFunc("GET /api/v1/auth/invitations/validate", h.validateUserInvitation)
+	mux.HandleFunc("POST /api/v1/auth/invitations/accept", h.acceptUserInvitation)
 	mux.HandleFunc("POST /api/v1/auth/verify-email", h.verifyEmail)
 	mux.HandleFunc("POST /api/v1/auth/select-company", h.selectCompany)
 	mux.HandleFunc("POST /api/v1/auth/switch-company", h.switchCompany)
@@ -161,6 +163,30 @@ func (h *Handler) resetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp, err := h.svc.ResetPassword(r.Context(), req)
+	if err != nil {
+		httpx.WriteError(w, h.log, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) validateUserInvitation(w http.ResponseWriter, r *http.Request) {
+	token := strings.TrimSpace(r.URL.Query().Get("token"))
+	resp, err := h.svc.ValidateUserInvitation(r.Context(), token)
+	if err != nil {
+		httpx.WriteError(w, h.log, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) acceptUserInvitation(w http.ResponseWriter, r *http.Request) {
+	var req iamapp.AcceptUserInvitationRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, h.log, err)
+		return
+	}
+	resp, err := h.svc.AcceptUserInvitation(r.Context(), req)
 	if err != nil {
 		httpx.WriteError(w, h.log, err)
 		return
