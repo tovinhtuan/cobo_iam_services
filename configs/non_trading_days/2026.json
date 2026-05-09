@@ -1,0 +1,11 @@
+{
+  "year": 2026,
+  "holidays": [
+    {
+      "date": "2026-01-01",
+      "name": "Tet Duong Lich",
+      "type": "PUBLIC_HOLIDAY",
+      "description": "Ngay nghi le chinh thuc"
+    }
+  ]
+}

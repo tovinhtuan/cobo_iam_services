@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -13,9 +14,10 @@ import (
 )
 
 type service struct {
-	repo Repository
-	auth authapp.Service
-	idg  idgen.Generator
+	repo       Repository
+	auth       authapp.Service
+	idg        idgen.Generator
+	calculator *DeadlineCalculator
 }
 
 const (
@@ -24,7 +26,13 @@ const (
 )
 
 func NewService(repo Repository, auth authapp.Service, idg idgen.Generator) Service {
-	return &service{repo: repo, auth: auth, idg: idg}
+	holidayProvider := NewHolidayCalendarFileProvider(filepath.Join("configs", "non_trading_days"))
+	return &service{
+		repo:       repo,
+		auth:       auth,
+		idg:        idg,
+		calculator: NewDeadlineCalculator(holidayProvider),
+	}
 }
 
 func (s *service) CreateRecord(ctx context.Context, req CreateRecordRequest) (*RecordDTO, error) {
@@ -230,7 +238,35 @@ func (s *service) GetTypeDetail(ctx context.Context, req GetTypeDetailRequest) (
 	if err := s.requireDisclosureCatalogRead(ctx, req.Subject); err != nil {
 		return nil, err
 	}
-	return s.repo.GetTypeDetail(ctx, req.Subject.CompanyID, req.TypeID)
+	item, err := s.repo.GetTypeDetail(ctx, req.Subject.CompanyID, req.TypeID)
+	if err != nil {
+		return nil, err
+	}
+	if item.DeadlineConfig == nil {
+		return item, nil
+	}
+	companyCtx, err := s.repo.GetCompanyDeadlineContext(ctx, req.Subject.CompanyID)
+	if err != nil {
+		item.DeadlineSummary = &DeadlineSummaryDTO{
+			DeadlineMode:    item.DeadlineConfig.DeadlineMode,
+			Status:          "UNKNOWN",
+			RuleDescription: ptrString("Không lấy được ngữ cảnh doanh nghiệp để tính deadline."),
+			Timezone:        ptrString("Asia/Ho_Chi_Minh"),
+		}
+		return item, nil
+	}
+	summary, err := s.calculator.CalculateDeadlineSummary(ctx, item.DeadlineConfig, companyCtx, time.Now())
+	if err != nil {
+		item.DeadlineSummary = &DeadlineSummaryDTO{
+			DeadlineMode:    item.DeadlineConfig.DeadlineMode,
+			Status:          "UNKNOWN",
+			RuleDescription: ptrString("Không thể tính deadline từ cấu hình hiện tại."),
+			Timezone:        ptrString("Asia/Ho_Chi_Minh"),
+		}
+		return item, nil
+	}
+	item.DeadlineSummary = summary
+	return item, nil
 }
 
 func (s *service) GetTypeVersionDetail(ctx context.Context, req GetTypeVersionDetailRequest) (*DisclosureTypeDTO, error) {

@@ -48,6 +48,7 @@ type Repository interface {
 	ResetCompanyWorkflowOverrideActive(ctx context.Context, req ResetCompanyWorkflowOverrideActiveRequest) (*ResetCompanyWorkflowOverrideActiveResponse, error)
 	ListCompanyWorkflowOverrideVersions(ctx context.Context, companyID, typeID string, page, pageSize int) ([]CompanyWorkflowOverrideVersionDTO, int, error)
 	GetEffectiveWorkflow(ctx context.Context, companyID, typeID string) (*EffectiveWorkflowDTO, error)
+	GetCompanyDeadlineContext(ctx context.Context, companyID string) (CompanyDeadlineContext, error)
 }
 
 type CreateRecordRequest struct {
@@ -130,35 +131,36 @@ type GetTemplateReferenceDataResponse struct {
 
 type UpsertTypeVersionRequest struct {
 	Subject               Subject
-	TypeID                string             `json:"type_id"`
-	Scope                 string             `json:"scope"`
-	GroupID               string             `json:"group_id"`
-	Name                  string             `json:"name"`
-	Category              string             `json:"category"`
-	TemplateCategory      string             `json:"template_category"`
-	DeadlineStrategy      string             `json:"deadline_strategy"`
-	Description           string             `json:"description"`
-	LegalBasis            string             `json:"legal_basis"`
-	Applicability         string             `json:"applicability"`
-	ImplementationContent string             `json:"implementation_content"`
-	ImplementationNotes   string             `json:"implementation_notes"`
-	SpecialCases          string             `json:"special_cases"`
-	ReportContent         string             `json:"report_content"`
-	RequiredDocs          string             `json:"required_docs"`
-	DeadlineRule          string             `json:"deadline_rule"`
-	Periodicity           string             `json:"periodicity"`
-	ChannelsText          string             `json:"channels_text"`
-	Beneficiaries         string             `json:"beneficiaries"`
-	ReceivingAuthorities  string             `json:"receiving_authorities"`
-	Format                string             `json:"format"`
-	LegalRisksText        string             `json:"legal_risks_text"`
-	GeneralInfo           string             `json:"general_info"`
-	ReminderMilestones    []string           `json:"reminder_milestones"`
-	LegalBases            []LegalBasisDTO    `json:"legal_bases"`
-	Checklist             []ChecklistItemDTO `json:"checklist"`
-	Tags                  []string           `json:"tags"`
-	Blocks                []TemplateBlockDTO `json:"blocks"`
-	ChangeNote            string             `json:"change_note"`
+	TypeID                string                  `json:"type_id"`
+	Scope                 string                  `json:"scope"`
+	GroupID               string                  `json:"group_id"`
+	Name                  string                  `json:"name"`
+	Category              string                  `json:"category"`
+	TemplateCategory      string                  `json:"template_category"`
+	DeadlineStrategy      string                  `json:"deadline_strategy"`
+	Description           string                  `json:"description"`
+	LegalBasis            string                  `json:"legal_basis"`
+	Applicability         string                  `json:"applicability"`
+	ImplementationContent string                  `json:"implementation_content"`
+	ImplementationNotes   string                  `json:"implementation_notes"`
+	SpecialCases          string                  `json:"special_cases"`
+	ReportContent         string                  `json:"report_content"`
+	RequiredDocs          string                  `json:"required_docs"`
+	DeadlineRule          string                  `json:"deadline_rule"`
+	Periodicity           string                  `json:"periodicity"`
+	ChannelsText          string                  `json:"channels_text"`
+	Beneficiaries         string                  `json:"beneficiaries"`
+	ReceivingAuthorities  string                  `json:"receiving_authorities"`
+	Format                string                  `json:"format"`
+	LegalRisksText        string                  `json:"legal_risks_text"`
+	GeneralInfo           string                  `json:"general_info"`
+	ReminderMilestones    []string                `json:"reminder_milestones"`
+	LegalBases            []LegalBasisDTO         `json:"legal_bases"`
+	Checklist             []ChecklistItemDTO      `json:"checklist"`
+	Tags                  []string                `json:"tags"`
+	DeadlineConfig        *TemplateDeadlineConfig `json:"deadline_config,omitempty"`
+	Blocks                []TemplateBlockDTO      `json:"blocks"`
+	ChangeNote            string                  `json:"change_note"`
 }
 
 type UpsertTypeVersionResponse struct {
@@ -387,36 +389,81 @@ type DisclosureTypeSummaryDTO struct {
 }
 
 type DisclosureTypeDTO struct {
-	VersionNo             int                `json:"version_no"`
-	TypeID                string             `json:"type_id"`
-	GroupID               string             `json:"group_id"`
-	Scope                 string             `json:"scope"`
-	OwnerCompanyID        string             `json:"owner_company_id"`
-	Name                  string             `json:"name"`
-	Category              string             `json:"category"`
-	TemplateCategory      string             `json:"template_category"`
-	DeadlineStrategy      string             `json:"deadline_strategy"`
-	Description           string             `json:"description"`
-	LegalBasis            string             `json:"legal_basis"`
-	Applicability         string             `json:"applicability"`
-	ImplementationContent string             `json:"implementation_content"`
-	ImplementationNotes   string             `json:"implementation_notes"`
-	SpecialCases          string             `json:"special_cases"`
-	ReportContent         string             `json:"report_content"`
-	RequiredDocs          string             `json:"required_docs"`
-	DeadlineRule          string             `json:"deadline_rule"`
-	Periodicity           string             `json:"periodicity"`
-	ChannelsText          string             `json:"channels_text"`
-	Beneficiaries         string             `json:"beneficiaries"`
-	ReceivingAuthorities  string             `json:"receiving_authorities"`
-	Format                string             `json:"format"`
-	LegalRisksText        string             `json:"legal_risks_text"`
-	GeneralInfo           string             `json:"general_info"`
-	ReminderMilestones    []string           `json:"reminder_milestones"`
-	LegalBases            []LegalBasisDTO    `json:"legal_bases"`
-	Checklist             []ChecklistItemDTO `json:"checklist"`
-	Tags                  []string           `json:"tags"`
-	Blocks                []TemplateBlockDTO `json:"blocks"`
+	VersionNo             int                     `json:"version_no"`
+	TypeID                string                  `json:"type_id"`
+	GroupID               string                  `json:"group_id"`
+	Scope                 string                  `json:"scope"`
+	OwnerCompanyID        string                  `json:"owner_company_id"`
+	Name                  string                  `json:"name"`
+	Category              string                  `json:"category"`
+	TemplateCategory      string                  `json:"template_category"`
+	DeadlineStrategy      string                  `json:"deadline_strategy"`
+	Description           string                  `json:"description"`
+	LegalBasis            string                  `json:"legal_basis"`
+	Applicability         string                  `json:"applicability"`
+	ImplementationContent string                  `json:"implementation_content"`
+	ImplementationNotes   string                  `json:"implementation_notes"`
+	SpecialCases          string                  `json:"special_cases"`
+	ReportContent         string                  `json:"report_content"`
+	RequiredDocs          string                  `json:"required_docs"`
+	DeadlineRule          string                  `json:"deadline_rule"`
+	Periodicity           string                  `json:"periodicity"`
+	ChannelsText          string                  `json:"channels_text"`
+	Beneficiaries         string                  `json:"beneficiaries"`
+	ReceivingAuthorities  string                  `json:"receiving_authorities"`
+	Format                string                  `json:"format"`
+	LegalRisksText        string                  `json:"legal_risks_text"`
+	GeneralInfo           string                  `json:"general_info"`
+	ReminderMilestones    []string                `json:"reminder_milestones"`
+	DeadlineConfig        *TemplateDeadlineConfig `json:"deadline_config,omitempty"`
+	DeadlineSummary       *DeadlineSummaryDTO     `json:"deadline_summary,omitempty"`
+	LegalBases            []LegalBasisDTO         `json:"legal_bases"`
+	Checklist             []ChecklistItemDTO      `json:"checklist"`
+	Tags                  []string                `json:"tags"`
+	Blocks                []TemplateBlockDTO      `json:"blocks"`
+}
+
+type DeadlineSummaryDTO struct {
+	DeadlineMode                 string  `json:"deadline_mode,omitempty"`
+	FixedDeadlineDate            *string `json:"fixed_deadline_date,omitempty"`
+	StartDate                    *string `json:"start_date,omitempty"`
+	BaseDateSource               *string `json:"base_date_source,omitempty"`
+	TentativeDeadline            *string `json:"tentative_deadline,omitempty"`
+	ActualDeadline               *string `json:"actual_deadline,omitempty"`
+	Duration                     *int    `json:"duration,omitempty"`
+	DurationType                 *string `json:"duration_type,omitempty"`
+	InclusiveStart               *bool   `json:"inclusive_start,omitempty"`
+	AdjustedBecauseNonTradingDay *bool   `json:"adjusted_because_non_trading_day,omitempty"`
+	NonTradingDayReason          *string `json:"non_trading_day_reason,omitempty"`
+	SourceDate                   *string `json:"source_date,omitempty"`
+	DeadlineDate                 *string `json:"deadline_date,omitempty"`
+	RemainingDays                *int    `json:"remaining_days,omitempty"`
+	Status                       string  `json:"status,omitempty"`
+	RuleCode                     *string `json:"rule_code,omitempty"`
+	RuleDescription              *string `json:"rule_description,omitempty"`
+	Timezone                     *string `json:"timezone,omitempty"`
+}
+
+type TemplateDeadlineConfig struct {
+	DeadlineMode  string               `json:"deadline_mode"`
+	FixedDeadline *FixedDeadlineConfig `json:"fixed_deadline,omitempty"`
+	DynamicRule   *DynamicDeadlineRule `json:"dynamic_rule,omitempty"`
+}
+
+type FixedDeadlineConfig struct {
+	Date             string `json:"date"`
+	NonTradingPolicy string `json:"non_trading_policy,omitempty"`
+}
+
+type DynamicDeadlineRule struct {
+	RuleType              string `json:"rule_type"`
+	BaseDateSource        string `json:"base_date_source"`
+	Duration              int    `json:"duration"`
+	DurationType          string `json:"duration_type"`
+	InclusiveStart        bool   `json:"inclusive_start"`
+	AdjustIfNonTradingDay bool   `json:"adjust_if_non_trading_day"`
+	HolidayCalendarSource string `json:"holiday_calendar_source"`
+	Description           string `json:"description,omitempty"`
 }
 
 type LegalBasisDTO struct {

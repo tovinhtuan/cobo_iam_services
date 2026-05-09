@@ -14,6 +14,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -1551,7 +1553,18 @@ func integrationMandatoryDisclosureBlocksMaps() []map[string]any {
 		{
 			"block_id": "int-m4", "block_key": "channels_and_format", "block_type": "rich_text",
 			"title": "CF", "description": "",
-			"config": map[string]any{"max_length": 12000, "allow_html": false}, "validation": map[string]any{},
+			"config": map[string]any{
+				"max_length": 12000,
+				"allow_html": false,
+				"channels": []any{
+					map[string]any{
+						"id":         "ch-001",
+						"name":       "Website công ty",
+						"file_types": []any{"PDF"},
+					},
+				},
+				"file_types": []any{"PDF"},
+			}, "validation": map[string]any{},
 			"display_order": 4, "enabled": true,
 		},
 		{
@@ -2049,5 +2062,139 @@ func TestIntegration_disclosureTypeCatalog_adminUpsertAndVersioning(t *testing.T
 	}
 	if _, ok := timeFilteredOut.Meta["next_cursor"]; !ok {
 		t.Fatalf("expected next_cursor in meta, got=%+v", timeFilteredOut.Meta)
+	}
+}
+
+func TestIntegration_disclosureTypeDetail_deadlineSummaryFixedDateWarnOnlyTimezone(t *testing.T) {
+	srv := httptest.NewServer(newTestHandler(t, nil))
+	defer srv.Close()
+
+	adminToken := loginAndGetAccessToken(t, srv.URL, "cms.operator@example.com", "secret", "c_001")
+
+	upsertRes := doJSONRequest(t, http.MethodPut, srv.URL+"/api/v1/admin/disclosure-types/dt-deadline-summary-integration", adminToken, map[string]any{
+		"group_id":          "group-006",
+		"name":              "Template deadline summary integration",
+		"category":          "Tùy chỉnh",
+		"template_category": "custom",
+		"deadline_strategy": "configurable",
+		"description":       "deadline summary integration test",
+		"deadline_rule":     "Theo cấu hình",
+		"periodicity":       "ad_hoc",
+		"channels_text":     "Website công ty",
+		"format":            "PDF",
+		"deadline_config": map[string]any{
+			"deadline_mode": "FIXED_DATE",
+			"fixed_deadline": map[string]any{
+				"date":               "2026-01-03",
+				"non_trading_policy": "WARN_ONLY_KEEP_DATE",
+			},
+		},
+		"blocks": integrationMandatoryDisclosureBlocksMaps(),
+	}, "")
+	if upsertRes.StatusCode != http.StatusOK {
+		t.Fatalf("upsert status=%d body=%s", upsertRes.StatusCode, readBody(t, upsertRes.Body))
+	}
+
+	detailRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/disclosure-types/dt-deadline-summary-integration", adminToken, nil, "")
+	if detailRes.StatusCode != http.StatusOK {
+		t.Fatalf("detail status=%d body=%s", detailRes.StatusCode, readBody(t, detailRes.Body))
+	}
+	var detailOut struct {
+		DeadlineSummary struct {
+			Timezone                     string `json:"timezone"`
+			ActualDeadline               string `json:"actual_deadline"`
+			NonTradingDayReason          string `json:"non_trading_day_reason"`
+			AdjustedBecauseNonTradingDay *bool  `json:"adjusted_because_non_trading_day"`
+		} `json:"deadline_summary"`
+	}
+	mustDecodeJSON(t, detailRes.Body, &detailOut)
+
+	if detailOut.DeadlineSummary.Timezone != "Asia/Ho_Chi_Minh" {
+		t.Fatalf("expected timezone Asia/Ho_Chi_Minh, got=%q", detailOut.DeadlineSummary.Timezone)
+	}
+	if detailOut.DeadlineSummary.ActualDeadline != "2026-01-03" {
+		t.Fatalf("expected warn-only policy keeps fixed date 2026-01-03, got=%q", detailOut.DeadlineSummary.ActualDeadline)
+	}
+	if detailOut.DeadlineSummary.AdjustedBecauseNonTradingDay == nil {
+		t.Fatalf("expected adjusted_because_non_trading_day to be present")
+	}
+	if *detailOut.DeadlineSummary.AdjustedBecauseNonTradingDay {
+		t.Fatalf("expected adjusted_because_non_trading_day=false for warn-only policy")
+	}
+	if strings.TrimSpace(detailOut.DeadlineSummary.NonTradingDayReason) == "" {
+		t.Fatalf("expected non_trading_day_reason for holiday fixed date")
+	}
+}
+
+func TestIntegration_disclosureTypeDetail_deadlineSummaryFixedDateMoveNextWorkingDay(t *testing.T) {
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd failed: %v", err)
+	}
+	repoRoot := filepath.Clean(filepath.Join(wd, "..", ".."))
+	if err := os.Chdir(repoRoot); err != nil {
+		t.Fatalf("chdir repo root failed: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(wd)
+	})
+
+	srv := httptest.NewServer(newTestHandler(t, nil))
+	defer srv.Close()
+
+	adminToken := loginAndGetAccessToken(t, srv.URL, "cms.operator@example.com", "secret", "c_001")
+
+	upsertRes := doJSONRequest(t, http.MethodPut, srv.URL+"/api/v1/admin/disclosure-types/dt-deadline-summary-move-next-working", adminToken, map[string]any{
+		"group_id":          "group-006",
+		"name":              "Template deadline summary move next working",
+		"category":          "Tùy chỉnh",
+		"template_category": "custom",
+		"deadline_strategy": "configurable",
+		"description":       "deadline summary integration test - move next working day",
+		"deadline_rule":     "Theo cấu hình",
+		"periodicity":       "ad_hoc",
+		"channels_text":     "Website công ty",
+		"format":            "PDF",
+		"deadline_config": map[string]any{
+			"deadline_mode": "FIXED_DATE",
+			"fixed_deadline": map[string]any{
+				"date":               "2026-01-03", // Saturday
+				"non_trading_policy": "MOVE_TO_NEXT_WORKING_DAY",
+			},
+		},
+		"blocks": integrationMandatoryDisclosureBlocksMaps(),
+	}, "")
+	if upsertRes.StatusCode != http.StatusOK {
+		t.Fatalf("upsert status=%d body=%s", upsertRes.StatusCode, readBody(t, upsertRes.Body))
+	}
+
+	detailRes := doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/disclosure-types/dt-deadline-summary-move-next-working", adminToken, nil, "")
+	if detailRes.StatusCode != http.StatusOK {
+		t.Fatalf("detail status=%d body=%s", detailRes.StatusCode, readBody(t, detailRes.Body))
+	}
+	var detailOut struct {
+		DeadlineSummary struct {
+			Timezone                     string `json:"timezone"`
+			ActualDeadline               string `json:"actual_deadline"`
+			NonTradingDayReason          string `json:"non_trading_day_reason"`
+			AdjustedBecauseNonTradingDay *bool  `json:"adjusted_because_non_trading_day"`
+		} `json:"deadline_summary"`
+	}
+	mustDecodeJSON(t, detailRes.Body, &detailOut)
+
+	if detailOut.DeadlineSummary.Timezone != "Asia/Ho_Chi_Minh" {
+		t.Fatalf("expected timezone Asia/Ho_Chi_Minh, got=%q", detailOut.DeadlineSummary.Timezone)
+	}
+	if detailOut.DeadlineSummary.ActualDeadline != "2026-01-05" {
+		t.Fatalf("expected MOVE_TO_NEXT_WORKING_DAY adjusts to Monday 2026-01-05, got=%q", detailOut.DeadlineSummary.ActualDeadline)
+	}
+	if detailOut.DeadlineSummary.AdjustedBecauseNonTradingDay == nil {
+		t.Fatalf("expected adjusted_because_non_trading_day to be present")
+	}
+	if !*detailOut.DeadlineSummary.AdjustedBecauseNonTradingDay {
+		t.Fatalf("expected adjusted_because_non_trading_day=true for move-next-working policy")
+	}
+	if strings.TrimSpace(detailOut.DeadlineSummary.NonTradingDayReason) == "" {
+		t.Fatalf("expected non_trading_day_reason for weekend fixed date")
 	}
 }

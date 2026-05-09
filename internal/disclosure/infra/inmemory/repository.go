@@ -233,6 +233,7 @@ func (r *Repository) UpsertTypeVersion(_ context.Context, req disclosureapp.Upse
 		Format:                req.Format,
 		LegalRisksText:        req.LegalRisksText,
 		GeneralInfo:           req.GeneralInfo,
+		DeadlineConfig:        req.DeadlineConfig,
 		ReminderMilestones:    slices.Clone(req.ReminderMilestones),
 		LegalBases:            slices.Clone(req.LegalBases),
 		Checklist:             slices.Clone(req.Checklist),
@@ -271,6 +272,16 @@ func (r *Repository) UpsertTypeVersion(_ context.Context, req disclosureapp.Upse
 		IsActive:    true,
 		UpdatedBy:   req.Subject.UserID,
 		ActivatedAt: now,
+	}, nil
+}
+
+func (r *Repository) GetCompanyDeadlineContext(_ context.Context, companyID string) (disclosureapp.CompanyDeadlineContext, error) {
+	return disclosureapp.CompanyDeadlineContext{
+		CompanyID:         companyID,
+		CurrentYear:       time.Now().In(time.FixedZone("ICT", 7*60*60)).Year(),
+		EstablishedDate:   nil,
+		EstablishedMonth:  1,
+		EstablishedDay:    1,
 	}, nil
 }
 

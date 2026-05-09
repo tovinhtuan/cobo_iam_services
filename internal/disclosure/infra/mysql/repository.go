@@ -191,6 +191,7 @@ func (r *Repository) GetTypeDetail(ctx context.Context, companyID, typeID string
 			COALESCE(v.deadline_rule, ''), COALESCE(v.periodicity, ''), COALESCE(v.channels_text, ''), COALESCE(v.beneficiaries, ''),
 			COALESCE(v.receiving_authorities, ''), COALESCE(v.format, ''), COALESCE(v.legal_risks_text, ''), COALESCE(v.general_info, ''),
 			COALESCE(v.reminder_milestones_json, JSON_ARRAY()),
+			COALESCE(v.deadline_config_json, JSON_OBJECT()),
 			COALESCE(v.legal_bases_json, JSON_ARRAY()),
 			COALESCE(v.checklist_json, JSON_ARRAY()),
 			v.tags_json
@@ -201,6 +202,7 @@ func (r *Repository) GetTypeDetail(ctx context.Context, companyID, typeID string
 	var item disclosureapp.DisclosureTypeDTO
 	var ownerCompanyID sql.NullString
 	var reminderMilestonesRaw []byte
+	var deadlineConfigRaw []byte
 	var legalBasesRaw []byte
 	var checklistRaw []byte
 	var tagsRaw []byte
@@ -212,6 +214,7 @@ func (r *Repository) GetTypeDetail(ctx context.Context, companyID, typeID string
 		&item.DeadlineRule, &item.Periodicity, &item.ChannelsText, &item.Beneficiaries,
 		&item.ReceivingAuthorities, &item.Format, &item.LegalRisksText, &item.GeneralInfo,
 		&reminderMilestonesRaw,
+		&deadlineConfigRaw,
 		&legalBasesRaw,
 		&checklistRaw,
 		&tagsRaw,
@@ -231,6 +234,9 @@ func (r *Repository) GetTypeDetail(ctx context.Context, companyID, typeID string
 		item.Scope = "company"
 	}
 	if err := decodeStringListJSON(reminderMilestonesRaw, &item.ReminderMilestones); err != nil {
+		return nil, err
+	}
+	if err := decodeDeadlineConfigJSON(deadlineConfigRaw, &item.DeadlineConfig); err != nil {
 		return nil, err
 	}
 	if err := decodeJSONList(legalBasesRaw, &item.LegalBases); err != nil {
@@ -257,6 +263,7 @@ func (r *Repository) GetTypeVersionDetail(ctx context.Context, companyID, typeID
 			COALESCE(v.deadline_rule, ''), COALESCE(v.periodicity, ''), COALESCE(v.channels_text, ''), COALESCE(v.beneficiaries, ''),
 			COALESCE(v.receiving_authorities, ''), COALESCE(v.format, ''), COALESCE(v.legal_risks_text, ''), COALESCE(v.general_info, ''),
 			COALESCE(v.reminder_milestones_json, JSON_ARRAY()),
+			COALESCE(v.deadline_config_json, JSON_OBJECT()),
 			COALESCE(v.legal_bases_json, JSON_ARRAY()),
 			COALESCE(v.checklist_json, JSON_ARRAY()),
 			v.tags_json
@@ -267,6 +274,7 @@ func (r *Repository) GetTypeVersionDetail(ctx context.Context, companyID, typeID
 	var item disclosureapp.DisclosureTypeDTO
 	var ownerCompanyID sql.NullString
 	var reminderMilestonesRaw []byte
+	var deadlineConfigRaw []byte
 	var legalBasesRaw []byte
 	var checklistRaw []byte
 	var tagsRaw []byte
@@ -278,6 +286,7 @@ func (r *Repository) GetTypeVersionDetail(ctx context.Context, companyID, typeID
 		&item.DeadlineRule, &item.Periodicity, &item.ChannelsText, &item.Beneficiaries,
 		&item.ReceivingAuthorities, &item.Format, &item.LegalRisksText, &item.GeneralInfo,
 		&reminderMilestonesRaw,
+		&deadlineConfigRaw,
 		&legalBasesRaw,
 		&checklistRaw,
 		&tagsRaw,
@@ -297,6 +306,9 @@ func (r *Repository) GetTypeVersionDetail(ctx context.Context, companyID, typeID
 		item.Scope = "company"
 	}
 	if err := decodeStringListJSON(reminderMilestonesRaw, &item.ReminderMilestones); err != nil {
+		return nil, err
+	}
+	if err := decodeDeadlineConfigJSON(deadlineConfigRaw, &item.DeadlineConfig); err != nil {
 		return nil, err
 	}
 	if err := decodeJSONList(legalBasesRaw, &item.LegalBases); err != nil {
@@ -378,6 +390,10 @@ func (r *Repository) UpsertTypeVersion(ctx context.Context, req disclosureapp.Up
 	if err != nil {
 		return nil, fmt.Errorf("marshal checklist: %w", err)
 	}
+	deadlineConfigJSON, err := json.Marshal(req.DeadlineConfig)
+	if err != nil {
+		return nil, fmt.Errorf("marshal deadline config: %w", err)
+	}
 	blocks, err := normalizeTemplateBlocks(req.Blocks)
 	if err != nil {
 		return nil, err
@@ -387,14 +403,14 @@ func (r *Repository) UpsertTypeVersion(ctx context.Context, req disclosureapp.Up
 		INSERT INTO disclosure_type_versions (
 			type_id, version_no, name, category, template_category, deadline_strategy, description, legal_basis, applicability, implementation_content,
 			implementation_notes, special_cases, report_content, required_docs, deadline_rule, periodicity, channels_text,
-			beneficiaries, receiving_authorities, format, legal_risks_text, general_info, reminder_milestones_json, legal_bases_json, checklist_json, tags_json, change_note, updated_by, activated_at
+			beneficiaries, receiving_authorities, format, legal_risks_text, general_info, reminder_milestones_json, deadline_config_json, legal_bases_json, checklist_json, tags_json, change_note, updated_by, activated_at
 		) VALUES (?, ?, ?, ?, ?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
 		          NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
-		          NULLIF(?, ''), NULLIF(?, ''), CAST(? AS JSON), CAST(? AS JSON), CAST(? AS JSON), CAST(? AS JSON), NULLIF(?, ''), ?, ?)
+		          NULLIF(?, ''), NULLIF(?, ''), CAST(? AS JSON), CAST(? AS JSON), CAST(? AS JSON), CAST(? AS JSON), CAST(? AS JSON), NULLIF(?, ''), ?, ?)
 	`, req.TypeID, nextVersion, req.Name, req.Category, req.TemplateCategory, req.DeadlineStrategy, req.Description,
 		req.LegalBasis, req.Applicability, req.ImplementationContent, req.ImplementationNotes, req.SpecialCases, req.ReportContent,
 		req.RequiredDocs, req.DeadlineRule, req.Periodicity, req.ChannelsText, req.Beneficiaries, req.ReceivingAuthorities,
-		req.Format, req.LegalRisksText, req.GeneralInfo, string(reminderMilestonesJSON), string(legalBasesJSON), string(checklistJSON), string(tagsJSON), changeNote, req.Subject.UserID, now)
+		req.Format, req.LegalRisksText, req.GeneralInfo, string(reminderMilestonesJSON), string(deadlineConfigJSON), string(legalBasesJSON), string(checklistJSON), string(tagsJSON), changeNote, req.Subject.UserID, now)
 	if err != nil {
 		return nil, err
 	}
@@ -889,6 +905,51 @@ func decodeJSONList[T any](raw []byte, target *[]T) error {
 	}
 	*target = parsed
 	return nil
+}
+
+func decodeDeadlineConfigJSON(raw []byte, target **disclosureapp.TemplateDeadlineConfig) error {
+	if len(raw) == 0 {
+		*target = nil
+		return nil
+	}
+	var parsed disclosureapp.TemplateDeadlineConfig
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		return err
+	}
+	if strings.TrimSpace(parsed.DeadlineMode) == "" {
+		*target = nil
+		return nil
+	}
+	*target = &parsed
+	return nil
+}
+
+func (r *Repository) GetCompanyDeadlineContext(ctx context.Context, companyID string) (disclosureapp.CompanyDeadlineContext, error) {
+	row := r.db.QueryRowContext(ctx, `
+		SELECT established_date, established_month, established_day
+		FROM companies
+		WHERE company_id = ?
+	`, companyID)
+	var establishedDate sql.NullTime
+	var establishedMonth int
+	var establishedDay int
+	if err := row.Scan(&establishedDate, &establishedMonth, &establishedDay); err != nil {
+		if err == sql.ErrNoRows {
+			return disclosureapp.CompanyDeadlineContext{}, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "company not found", nil)
+		}
+		return disclosureapp.CompanyDeadlineContext{}, err
+	}
+	ctxOut := disclosureapp.CompanyDeadlineContext{
+		CompanyID:        companyID,
+		CurrentYear:      time.Now().UTC().Year(),
+		EstablishedMonth: establishedMonth,
+		EstablishedDay:   establishedDay,
+	}
+	if establishedDate.Valid {
+		t := establishedDate.Time
+		ctxOut.EstablishedDate = &t
+	}
+	return ctxOut, nil
 }
 
 func normalizeTemplateBlocks(blocks []disclosureapp.TemplateBlockDTO) ([]disclosureapp.TemplateBlockDTO, error) {
