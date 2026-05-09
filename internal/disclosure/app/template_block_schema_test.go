@@ -32,7 +32,12 @@ func validSixMandatoryTemplateBlocksForTests() []TemplateBlockDTO {
 		},
 		{
 			BlockID: "tid-m4", BlockKey: "channels_and_format", BlockType: "rich_text", Title: "CF",
-			Config: map[string]any{"max_length": 12000, "allow_html": false}, Validation: map[string]any{},
+			Config: map[string]any{
+				"max_length": 12000,
+				"allow_html": false,
+				"channels":   []any{map[string]any{"id": "ch-001", "name": "Website", "file_types": []any{"PDF"}}},
+				"file_types": []any{"PDF", "XML"},
+			}, Validation: map[string]any{},
 			DisplayOrder: 4, Enabled: true,
 		},
 		{

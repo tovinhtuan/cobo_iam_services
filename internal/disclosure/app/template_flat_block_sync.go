@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/cobo/cobo_iam_services/internal/platform/idgen"
@@ -226,11 +227,46 @@ func mirrorMandatoryBlockDescriptionsToFlatFields(req *UpsertTypeVersionRequest)
 		case "deadline":
 			req.DeadlineRule = d
 		case "channels_and_format":
-			req.ChannelsText = d
+			channelLines, formatCSV := channelsAndFormatFromConfig(b.Config)
+			if strings.TrimSpace(channelLines) != "" {
+				req.ChannelsText = channelLines
+			} else {
+				req.ChannelsText = d
+			}
+			if strings.TrimSpace(formatCSV) != "" {
+				req.Format = formatCSV
+			}
 		case "legal_risks":
 			req.LegalRisksText = d
 		case "enterprise_workflow":
 			req.ImplementationContent = d
 		}
 	}
+}
+
+func channelsAndFormatFromConfig(config map[string]any) (string, string) {
+	if config == nil {
+		return "", ""
+	}
+	var channels []string
+	if rawChannels, ok := config["channels"].([]any); ok {
+		for _, item := range rawChannels {
+			if row, ok := item.(map[string]any); ok {
+				if name := strings.TrimSpace(fmt.Sprint(row["name"])); name != "" && name != "<nil>" {
+					channels = append(channels, name)
+				}
+			}
+		}
+	}
+	var fileTypes []string
+	if rawFileTypes, ok := config["file_types"].([]any); ok {
+		for _, item := range rawFileTypes {
+			value := strings.ToUpper(strings.TrimSpace(fmt.Sprint(item)))
+			if value == "" || value == "<nil>" {
+				continue
+			}
+			fileTypes = append(fileTypes, value)
+		}
+	}
+	return strings.Join(channels, "\n"), strings.Join(fileTypes, ",")
 }

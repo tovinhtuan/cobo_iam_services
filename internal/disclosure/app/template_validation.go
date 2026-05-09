@@ -58,6 +58,11 @@ var (
 		DeadlineStrategyEventHours:     DeadlineStrategyEventHours,
 		DeadlineStrategyConfigurable:   DeadlineStrategyConfigurable,
 	}
+	allowedChannelFileTypes = map[string]struct{}{
+		"PDF":  {},
+		"DOCS": {},
+		"XML":  {},
+	}
 )
 
 func normalizeAlias(raw string, aliases map[string]string) string {
@@ -187,10 +192,75 @@ func validateTemplateBlocks(req *UpsertTypeVersionRequest, fieldErrors map[strin
 			}
 		}
 		validateBlockTypeSchema(prefix, block.BlockType, block.Config, block.Validation, fieldErrors)
+		if block.BlockKey == "channels_and_format" {
+			validateChannelsAndFormatBusinessRules(prefix, block.Config, fieldErrors)
+		}
 	}
 	if len(req.Blocks) > 0 {
 		validateMandatoryTemplateBlockKeys(seenKeys, fieldErrors)
 	}
+}
+
+func validateChannelsAndFormatBusinessRules(prefix string, config map[string]any, fieldErrors map[string]string) {
+	channels, ok := config["channels"].([]any)
+	if !ok || len(channels) == 0 {
+		fieldErrors[prefix+".config.channels"] = "channels must be a non-empty array"
+	} else {
+		for idx := range channels {
+			row, ok := channels[idx].(map[string]any)
+			if !ok {
+				fieldErrors[prefix+".config.channels"] = "channels values must be objects"
+				return
+			}
+			name := strings.TrimSpace(asString(row["name"]))
+			if name == "" {
+				fieldErrors[prefix+".config.channels."+strconv.Itoa(idx)+".name"] = "channel name is required"
+			}
+			rowFileTypes, ok := row["file_types"].([]any)
+			if !ok || len(rowFileTypes) == 0 {
+				fieldErrors[prefix+".config.channels."+strconv.Itoa(idx)+".file_types"] = "channel file_types must be a non-empty array"
+				continue
+			}
+			for i := range rowFileTypes {
+				ft, ok := rowFileTypes[i].(string)
+				if !ok {
+					fieldErrors[prefix+".config.channels."+strconv.Itoa(idx)+".file_types"] = "channel file_types values must be strings in [PDF, DOCS, XML]"
+					break
+				}
+				if _, allowed := allowedChannelFileTypes[strings.ToUpper(strings.TrimSpace(ft))]; !allowed {
+					fieldErrors[prefix+".config.channels."+strconv.Itoa(idx)+".file_types"] = "channel file_types values must be strings in [PDF, DOCS, XML]"
+					break
+				}
+			}
+		}
+	}
+	rawFileTypes, ok := config["file_types"].([]any)
+	if !ok || len(rawFileTypes) == 0 {
+		fieldErrors[prefix+".config.file_types"] = "file_types must be a non-empty array"
+		return
+	}
+	for i := range rawFileTypes {
+		ft, ok := rawFileTypes[i].(string)
+		if !ok {
+			fieldErrors[prefix+".config.file_types"] = "file_types values must be strings in [PDF, DOCS, XML]"
+			return
+		}
+		if _, allowed := allowedChannelFileTypes[strings.ToUpper(strings.TrimSpace(ft))]; !allowed {
+			fieldErrors[prefix+".config.file_types"] = "file_types values must be strings in [PDF, DOCS, XML]"
+			return
+		}
+	}
+}
+
+func asString(value any) string {
+	if value == nil {
+		return ""
+	}
+	s, ok := value.(string)
+	if !ok {
+		return ""
+	}
+	return s
 }
 
 func validateMandatoryTemplateBlockKeys(seenKeys map[string]int, fieldErrors map[string]string) {
