@@ -9,6 +9,10 @@ type AdminService interface {
 	CreateUser(ctx context.Context, req CreateUserRequest) (*UserView, error)
 	// CreateCompany provisions an empty tenant (companies row + default member roles); platform rbac.manage only.
 	CreateCompany(ctx context.Context, req CreateCompanyRequest) (*CreateCompanyResult, error)
+	ListPlatformCompanies(ctx context.Context, req ListPlatformCompaniesRequest) (*ListPlatformCompaniesResult, error)
+	GetPlatformCompany(ctx context.Context, req GetPlatformCompanyRequest) (*PlatformCompanyDetail, error)
+	UpdatePlatformCompany(ctx context.Context, req UpdatePlatformCompanyRequest) error
+	SetPlatformCompanyStatus(ctx context.Context, req SetPlatformCompanyStatusRequest) error
 	InviteUser(ctx context.Context, req InviteUserRequest) (*InviteUserResponse, error)
 	// ListInviteRoles returns assignable roles for a target company (global + company-scoped), same resolution as invite.
 	ListInviteRoles(ctx context.Context, req ListInviteRolesRequest) ([]InviteRoleOption, error)
@@ -45,7 +49,12 @@ type AdminRepository interface {
 	// GetCompanyName returns companies.company_name for a valid company_id.
 	GetCompanyName(ctx context.Context, companyID string) (string, error)
 	// CreateStandaloneCompany inserts companies + seeded tenant roles (no users).
-	CreateStandaloneCompany(ctx context.Context, displayName string) (companyID, companyCode string, err error)
+	CreateStandaloneCompany(ctx context.Context, displayName string, bootstrap CreateCompanyBootstrap) (companyID, companyCode string, err error)
+	// CMS platform company directory (MySQL; no-ops / empty in in-memory repository).
+	ListCompaniesPlatform(ctx context.Context, req ListPlatformCompaniesRequest) (*ListPlatformCompaniesResult, error)
+	GetCompanyPlatform(ctx context.Context, companyID string) (*PlatformCompanyDetail, error)
+	UpdateCompanyPlatform(ctx context.Context, req UpdatePlatformCompanyRequest) error
+	SetCompanyStatusPlatform(ctx context.Context, companyID, status string) error
 	CreateMembership(ctx context.Context, m MembershipView) (*MembershipView, error)
 	UpdateMembershipStatus(ctx context.Context, membershipID, status string) (*MembershipView, error)
 	DeleteMembership(ctx context.Context, membershipID string) error
@@ -162,6 +171,12 @@ type ResendUserInvitationRequest struct {
 type CreateCompanyRequest struct {
 	Subject     AdminSubject
 	CompanyName string `json:"company_name"`
+	TaxCode              string `json:"tax_code,omitempty"`
+	RegistrationNumber   string `json:"registration_number,omitempty"`
+	Address              string `json:"address,omitempty"`
+	Phone                string `json:"phone,omitempty"`
+	ContactEmail         string `json:"contact_email,omitempty"`
+	RepresentativeName   string `json:"representative_name,omitempty"`
 }
 
 type CreateCompanyResult struct {

@@ -4,13 +4,14 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 
 	caapp "github.com/cobo/cobo_iam_services/internal/companyaccess/app"
-	iamregmysql "github.com/cobo/cobo_iam_services/internal/iam/registrationmysql"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
+	"github.com/go-sql-driver/mysql"
 	"github.com/google/uuid"
 )
 
@@ -636,10 +637,6 @@ func scanStringRows(rows *sql.Rows) ([]string, error) {
 	return out, rows.Err()
 }
 
-func (r *AdminRepository) CreateStandaloneCompany(ctx context.Context, displayName string) (companyID string, companyCode string, err error) {
-	return iamregmysql.CreateStandaloneCompany(ctx, r.db, displayName)
-}
-
 func strFromMap(m map[string]any, key string) (string, bool) {
 	v, ok := m[key]
 	if !ok || v == nil {
@@ -661,4 +658,28 @@ func isMySQLDuplicate(err error) bool {
 	}
 	// go-sql-driver/mysql: Error 1062
 	return strings.Contains(strings.ToLower(err.Error()), "duplicate")
+}
+
+// mapMySQLSchemaErr turns schema drift (missing migration) into a clear API error instead of a generic 500.
+func mapMySQLSchemaErr(err error) error {
+	if err == nil {
+		return nil
+	}
+	if _, ok := perr.AsHTTPError(err); ok {
+		return err
+	}
+	var me *mysql.MySQLError
+	if errors.As(err, &me) {
+		switch me.Number {
+		case 1054: // ER_BAD_FIELD_ERROR — Unknown column
+			return perr.NewHTTPError(http.StatusServiceUnavailable, perr.CodeInvalidRequest,
+				"Database schema is missing columns required for company APIs (companies.tax_code, verification_status, etc.). Apply migrations through 0029_company_profile_fields, then retry.",
+				err)
+		case 1146: // ER_NO_SUCH_TABLE
+			return perr.NewHTTPError(http.StatusServiceUnavailable, perr.CodeInvalidRequest,
+				"Database schema is missing a required table. Apply latest migrations from cobo_iam_services/migrations and retry.",
+				err)
+		}
+	}
+	return err
 }

@@ -88,6 +88,11 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/v1/platform/cms/schedules/{entry_id}", h.observe("cms.schedules.delete", h.deleteSchedule))
 	mux.HandleFunc("GET /api/v1/platform/cms/releases", h.observe("cms.releases.list", h.releases))
 	mux.HandleFunc("GET /api/v1/platform/cms/admin/users", h.observe("cms.admin.users.list", h.adminUsers))
+	mux.HandleFunc("GET /api/v1/platform/cms/admin/companies", h.observe("cms.admin.companies.list", h.listCMSCompanies))
+	mux.HandleFunc("GET /api/v1/platform/cms/admin/companies/{company_id}", h.observe("cms.admin.companies.get", h.getCMSCompany))
+	mux.HandleFunc("PATCH /api/v1/platform/cms/admin/companies/{company_id}", h.observe("cms.admin.companies.patch", h.patchCMSCompany))
+	mux.HandleFunc("POST /api/v1/platform/cms/admin/companies/{company_id}/deactivate", h.observe("cms.admin.companies.deactivate", h.postCMSCompanyDeactivate))
+	mux.HandleFunc("POST /api/v1/platform/cms/admin/companies/{company_id}/activate", h.observe("cms.admin.companies.activate", h.postCMSCompanyActivate))
 	mux.HandleFunc("POST /api/v1/platform/cms/admin/companies", h.observe("cms.admin.companies.create", h.createCMSCompany))
 	mux.HandleFunc("POST /api/v1/platform/cms/admin/users", h.observe("cms.admin.users.create", h.createAdminUser))
 	mux.HandleFunc("POST /api/v1/platform/cms/admin/users/invite", h.observe("cms.admin.users.invite", h.inviteAdminUser))
@@ -1170,7 +1175,13 @@ func (h *Handler) createCMSCompany(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var p struct {
-		CompanyName string `json:"company_name"`
+		CompanyName          string  `json:"company_name"`
+		TaxCode              string  `json:"tax_code"`
+		RegistrationNumber   string  `json:"registration_number"`
+		Address              string  `json:"address"`
+		Phone                string  `json:"phone"`
+		ContactEmail         string  `json:"contact_email"`
+		RepresentativeName   string  `json:"representative_name"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
 		httpx.WriteError(w, nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "invalid JSON payload", err))
@@ -1182,7 +1193,13 @@ func (h *Handler) createCMSCompany(w http.ResponseWriter, r *http.Request) {
 			MembershipID: sub.MembershipID,
 			CompanyID:    sub.CompanyID,
 		},
-		CompanyName: p.CompanyName,
+		CompanyName:        p.CompanyName,
+		TaxCode:              p.TaxCode,
+		RegistrationNumber:   p.RegistrationNumber,
+		Address:              p.Address,
+		Phone:                p.Phone,
+		ContactEmail:         p.ContactEmail,
+		RepresentativeName:   p.RepresentativeName,
 	})
 	if err != nil {
 		httpx.WriteError(w, nil, err)

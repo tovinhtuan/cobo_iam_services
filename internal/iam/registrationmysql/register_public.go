@@ -31,21 +31,57 @@ type rowQuerier interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
+// CompanyBootstrapProfile configures optional legal/contact fields and verification for a new company row (migration 0029).
+type CompanyBootstrapProfile struct {
+	VerificationStatus string
+	TaxCode            string
+	RegistrationNumber string
+	Address            string
+	Phone              string
+	ContactEmail       string
+	RepresentativeName string
+}
+
 // InsertCompanyWithDefaultRolesTx inserts companies + tenant default roles (admin_doanh_nghiep, user_thuong) and copies role_permissions from seed templates. Runs inside an open transaction.
-func InsertCompanyWithDefaultRolesTx(ctx context.Context, tx *sql.Tx, companyID, companyDisplayName string) (companyCode string, err error) {
+func InsertCompanyWithDefaultRolesTx(ctx context.Context, tx *sql.Tx, companyID, companyDisplayName string, profile CompanyBootstrapProfile) (companyCode string, err error) {
 	companyDisplayName = strings.TrimSpace(companyDisplayName)
 	if companyID == "" || companyDisplayName == "" {
 		return "", perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "company_id and company display name are required", nil)
+	}
+	vStatus := strings.TrimSpace(profile.VerificationStatus)
+	if vStatus == "" {
+		vStatus = "unverified"
 	}
 	companyCode, err = pickUniqueCompanyCode(ctx, tx, companyDisplayName)
 	if err != nil {
 		return "", err
 	}
 
+	tax := strings.TrimSpace(profile.TaxCode)
+	reg := strings.TrimSpace(profile.RegistrationNumber)
+	addr := strings.TrimSpace(profile.Address)
+	phone := strings.TrimSpace(profile.Phone)
+	email := strings.TrimSpace(profile.ContactEmail)
+	rep := strings.TrimSpace(profile.RepresentativeName)
+
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO companies (company_id, company_code, company_name, status, verification_status)
-		VALUES (?, ?, ?, 'active', 'unverified')
-	`, companyID, companyCode, companyDisplayName); err != nil {
+		INSERT INTO companies (
+			company_id, company_code, company_name,
+			tax_code, registration_number, address, phone, contact_email, representative_name,
+			status, verification_status
+		)
+		VALUES (
+			?, ?, ?,
+			NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
+			'active', ?
+		)
+	`, companyID, companyCode, companyDisplayName,
+		tax, reg, addr, phone, email, rep,
+		vStatus,
+	); err != nil {
+		if isMySQLDuplicateCompany(err) {
+			return "", perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "company tax code or unique field already exists", err)
+		}
 		return "", fmt.Errorf("insert company: %w", err)
 	}
 
@@ -75,7 +111,8 @@ func InsertCompanyWithDefaultRolesTx(ctx context.Context, tx *sql.Tx, companyID,
 }
 
 // CreateStandaloneCompany creates only a company row and default tenant roles (no users / memberships).
-func CreateStandaloneCompany(ctx context.Context, db *sql.DB, companyDisplayName string) (companyID, companyCode string, err error) {
+// profile.VerificationStatus should be "verified" for CMS-provisioned tenants (see admin CreateCompany).
+func CreateStandaloneCompany(ctx context.Context, db *sql.DB, companyDisplayName string, profile CompanyBootstrapProfile) (companyID, companyCode string, err error) {
 	companyDisplayName = strings.TrimSpace(companyDisplayName)
 	if companyDisplayName == "" {
 		return "", "", perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "company_name is required", nil)
@@ -88,7 +125,7 @@ func CreateStandaloneCompany(ctx context.Context, db *sql.DB, companyDisplayName
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	cc, err := InsertCompanyWithDefaultRolesTx(ctx, tx, companyID, companyDisplayName)
+	cc, err := InsertCompanyWithDefaultRolesTx(ctx, tx, companyID, companyDisplayName, profile)
 	if err != nil {
 		return "", "", err
 	}
@@ -96,6 +133,14 @@ func CreateStandaloneCompany(ctx context.Context, db *sql.DB, companyDisplayName
 		return "", "", err
 	}
 	return companyID, cc, nil
+}
+
+func isMySQLDuplicateCompany(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "duplicate") && (strings.Contains(msg, "tax_code") || strings.Contains(msg, "uk_companies"))
 }
 
 // RegisterPublicAccount creates an active user, active company, membership, and assigns the global self-reg owner role.
@@ -127,7 +172,7 @@ func RegisterPublicAccount(ctx context.Context, db *sql.DB, email, fullName, com
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	if _, err := InsertCompanyWithDefaultRolesTx(ctx, tx, companyID, companyName); err != nil {
+	if _, err := InsertCompanyWithDefaultRolesTx(ctx, tx, companyID, companyName, CompanyBootstrapProfile{VerificationStatus: "unverified"}); err != nil {
 		return "", "", "", err
 	}
 

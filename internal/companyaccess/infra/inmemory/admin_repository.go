@@ -342,10 +342,26 @@ func (r *AdminRepository) AddNotificationRule(_ context.Context, rule map[string
 	return nil
 }
 
-func (r *AdminRepository) CreateStandaloneCompany(_ context.Context, displayName string) (string, string, error) {
+func (r *AdminRepository) CreateStandaloneCompany(_ context.Context, displayName string, _ caapp.CreateCompanyBootstrap) (string, string, error) {
 	displayName = strings.TrimSpace(displayName)
 	if displayName == "" {
 		return "", "", perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "company_name is required", nil)
 	}
 	return "", "", perr.NewHTTPError(http.StatusInternalServerError, perr.CodeInternal, "CreateStandaloneCompany is not implemented for in-memory admin repository", nil)
+}
+
+func (r *AdminRepository) ListCompaniesPlatform(_ context.Context, _ caapp.ListPlatformCompaniesRequest) (*caapp.ListPlatformCompaniesResult, error) {
+	return &caapp.ListPlatformCompaniesResult{Items: []caapp.PlatformCompanySummary{}, Total: 0}, nil
+}
+
+func (r *AdminRepository) GetCompanyPlatform(_ context.Context, _ string) (*caapp.PlatformCompanyDetail, error) {
+	return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "company not found", nil)
+}
+
+func (r *AdminRepository) UpdateCompanyPlatform(_ context.Context, _ caapp.UpdatePlatformCompanyRequest) error {
+	return nil
+}
+
+func (r *AdminRepository) SetCompanyStatusPlatform(_ context.Context, _, _ string) error {
+	return nil
 }

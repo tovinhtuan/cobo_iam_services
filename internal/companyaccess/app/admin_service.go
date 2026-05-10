@@ -108,25 +108,23 @@ func (s *adminService) CreateUser(ctx context.Context, req CreateUserRequest) (*
 }
 
 func (s *adminService) CreateCompany(ctx context.Context, req CreateCompanyRequest) (*CreateCompanyResult, error) {
-	if err := s.authorize(ctx, req.Subject, "admin.membership.create", req.Subject.CompanyID); err != nil {
+	if err := s.authorizePlatformCompanyAdmin(ctx, req.Subject); err != nil {
 		return nil, err
-	}
-	canRbac, err := s.hasPermission(ctx, req.Subject, "rbac.manage")
-	if err != nil {
-		return nil, err
-	}
-	canSettings, err := s.hasPermission(ctx, req.Subject, "system.settings")
-	if err != nil {
-		return nil, err
-	}
-	if !canRbac && !canSettings {
-		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "only platform administrators can create companies", nil)
 	}
 	name := strings.TrimSpace(req.CompanyName)
 	if name == "" {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "company_name is required", nil)
 	}
-	companyID, companyCode, err := s.repo.CreateStandaloneCompany(ctx, name)
+	boot := CreateCompanyBootstrap{
+		VerificationStatus: "verified",
+		TaxCode:              strings.TrimSpace(req.TaxCode),
+		RegistrationNumber:   strings.TrimSpace(req.RegistrationNumber),
+		Address:              strings.TrimSpace(req.Address),
+		Phone:                strings.TrimSpace(req.Phone),
+		ContactEmail:         strings.TrimSpace(req.ContactEmail),
+		RepresentativeName:   strings.TrimSpace(req.RepresentativeName),
+	}
+	companyID, companyCode, err := s.repo.CreateStandaloneCompany(ctx, name, boot)
 	if err != nil {
 		return nil, err
 	}
@@ -135,6 +133,52 @@ func (s *adminService) CreateCompany(ctx context.Context, req CreateCompanyReque
 		CompanyCode: companyCode,
 		CompanyName: name,
 	}, nil
+}
+
+func (s *adminService) authorizePlatformCompanyAdmin(ctx context.Context, sub AdminSubject) error {
+	if err := s.authorize(ctx, sub, "admin.membership.create", sub.CompanyID); err != nil {
+		return err
+	}
+	canRbac, err := s.hasPermission(ctx, sub, "rbac.manage")
+	if err != nil {
+		return err
+	}
+	canSettings, err := s.hasPermission(ctx, sub, "system.settings")
+	if err != nil {
+		return err
+	}
+	if !canRbac && !canSettings {
+		return perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "only platform administrators can manage companies", nil)
+	}
+	return nil
+}
+
+func (s *adminService) ListPlatformCompanies(ctx context.Context, req ListPlatformCompaniesRequest) (*ListPlatformCompaniesResult, error) {
+	if err := s.authorizePlatformCompanyAdmin(ctx, req.Subject); err != nil {
+		return nil, err
+	}
+	return s.repo.ListCompaniesPlatform(ctx, req)
+}
+
+func (s *adminService) GetPlatformCompany(ctx context.Context, req GetPlatformCompanyRequest) (*PlatformCompanyDetail, error) {
+	if err := s.authorizePlatformCompanyAdmin(ctx, req.Subject); err != nil {
+		return nil, err
+	}
+	return s.repo.GetCompanyPlatform(ctx, strings.TrimSpace(req.CompanyID))
+}
+
+func (s *adminService) UpdatePlatformCompany(ctx context.Context, req UpdatePlatformCompanyRequest) error {
+	if err := s.authorizePlatformCompanyAdmin(ctx, req.Subject); err != nil {
+		return err
+	}
+	return s.repo.UpdateCompanyPlatform(ctx, req)
+}
+
+func (s *adminService) SetPlatformCompanyStatus(ctx context.Context, req SetPlatformCompanyStatusRequest) error {
+	if err := s.authorizePlatformCompanyAdmin(ctx, req.Subject); err != nil {
+		return err
+	}
+	return s.repo.SetCompanyStatusPlatform(ctx, strings.TrimSpace(req.CompanyID), strings.TrimSpace(req.Status))
 }
 
 func (s *adminService) InviteUser(ctx context.Context, req InviteUserRequest) (*InviteUserResponse, error) {

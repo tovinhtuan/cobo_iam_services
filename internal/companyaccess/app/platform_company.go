@@ -1,0 +1,87 @@
+package app
+
+// CreateCompanyBootstrap optional legal/contact fields when inserting a new company (migration 0029).
+// VerificationStatus defaults to "verified" for CMS in the service layer when omitted.
+type CreateCompanyBootstrap struct {
+	VerificationStatus string
+	TaxCode              string
+	RegistrationNumber string
+	Address              string
+	Phone                string
+	ContactEmail         string
+	RepresentativeName   string
+}
+
+// PlatformCompanySummary is one row for CMS company list.
+type PlatformCompanySummary struct {
+	CompanyID          string `json:"company_id"`
+	CompanyCode        string `json:"company_code"`
+	CompanyName        string `json:"company_name"`
+	Status             string `json:"status"`
+	VerificationStatus string `json:"verification_status"`
+	TaxCode            string `json:"tax_code,omitempty"`
+	RegistrationNumber string `json:"registration_number,omitempty"`
+	MemberCount        int    `json:"member_count"`
+	CreatedAtRFC3339   string `json:"created_at"`
+	UpdatedAtRFC3339   string `json:"updated_at"`
+}
+
+// PlatformCompanyDetail is used on CMS company detail (includes aggregate stats).
+type PlatformCompanyDetail struct {
+	CompanyID          string `json:"company_id"`
+	CompanyCode        string `json:"company_code"`
+	CompanyName        string `json:"company_name"`
+	Status             string `json:"status"`
+	VerificationStatus string `json:"verification_status"`
+	TaxCode            string `json:"tax_code,omitempty"`
+	RegistrationNumber string `json:"registration_number,omitempty"`
+	Address            string `json:"address,omitempty"`
+	Phone              string `json:"phone,omitempty"`
+	ContactEmail       string `json:"contact_email,omitempty"`
+	RepresentativeName string `json:"representative_name,omitempty"`
+	MemberCount        int    `json:"member_count"`
+	DisclosureCount    int    `json:"disclosure_count"`
+	TemplateCount      int    `json:"template_count"`
+	CreatedAtRFC3339   string `json:"created_at"`
+	UpdatedAtRFC3339   string `json:"updated_at"`
+}
+
+type ListPlatformCompaniesRequest struct {
+	Subject               AdminSubject
+	Q                     string
+	Status                string
+	VerificationStatus    string
+	Page                  int
+	Limit                 int
+	SortBy                string
+	SortOrder             string
+}
+
+type ListPlatformCompaniesResult struct {
+	Items []PlatformCompanySummary `json:"items"`
+	Total int                       `json:"total"`
+}
+
+type GetPlatformCompanyRequest struct {
+	Subject   AdminSubject
+	CompanyID string
+}
+
+type UpdatePlatformCompanyRequest struct {
+	Subject            AdminSubject
+	CompanyID          string
+	CompanyName        *string
+	TaxCode            *string
+	RegistrationNumber *string
+	Address            *string
+	Phone              *string
+	ContactEmail       *string
+	RepresentativeName *string
+	VerificationStatus *string
+}
+
+type SetPlatformCompanyStatusRequest struct {
+	Subject   AdminSubject
+	CompanyID string
+	Status    string // e.g. active, inactive
+}
