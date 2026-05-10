@@ -1,6 +1,9 @@
 package app
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // AdminOption configures AdminService construction.
 type AdminOption func(*adminService)
@@ -18,5 +21,12 @@ func WithInvitationTTL(d time.Duration) AdminOption {
 		if d > 0 {
 			s.inviteTTL = d
 		}
+	}
+}
+
+// WithInviteDefaultRoleCode sets the roles.role_code used when CMS invite omits role_id and role_code (e.g. user_thuong).
+func WithInviteDefaultRoleCode(roleCode string) AdminOption {
+	return func(s *adminService) {
+		s.inviteDefaultRoleCode = strings.TrimSpace(roleCode)
 	}
 }

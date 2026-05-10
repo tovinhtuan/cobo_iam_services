@@ -86,6 +86,8 @@ services:
     volumes:
       - ./:/app
 
+  # Frontend is bind-mounted from ../cobo_web_design — rebuilding the `api` image does not refresh compiled UI.
+  # After pulling FE changes: `docker compose ... up -d --force-recreate web` or `docker compose exec web rm -rf node_modules/.vite`
   web:
     image: node:20-alpine
     container_name: cobo-web-design
@@ -93,7 +95,7 @@ services:
       api:
         condition: service_started
     working_dir: /web
-    command: sh -c "npm install && npm run dev"
+    command: sh -c "npm install && npm run dev -- --force"
     environment:
       VITE_API_BASE_URL: http://localhost:8080
       API_PROXY_TARGET: http://api:8080

@@ -8,6 +8,8 @@ import (
 // Service defines IAM use-cases used by transport layer.
 type Service interface {
 	Login(ctx context.Context, req LoginRequest) (*LoginResponse, error)
+	// RegisterPublic creates an active user + active company + owner membership (MySQL) then issues the same session as Login.
+	RegisterPublic(ctx context.Context, req RegisterPublicRequest) (*LoginResponse, error)
 	Refresh(ctx context.Context, req RefreshRequest) (*RefreshResponse, error)
 	Logout(ctx context.Context, req LogoutRequest) (*LogoutResponse, error)
 	SelectCompany(ctx context.Context, req SelectCompanyRequest) (*SelectCompanyResponse, error)
@@ -21,7 +23,7 @@ type Service interface {
 
 	ValidateUserInvitation(ctx context.Context, token string) (*ValidateUserInvitationResult, error)
 	AcceptUserInvitation(ctx context.Context, req AcceptUserInvitationRequest) (*AcceptUserInvitationResponse, error)
-	PublishUserInvitationEmail(ctx context.Context, userID, toEmail, fullName, loginID, rawToken string) error
+	PublishUserInvitationEmail(ctx context.Context, userID, toEmail, fullName, loginID, rawToken, companyName string) error
 	AdminRequestPasswordReset(ctx context.Context, targetUserID string) error
 }
 
@@ -77,7 +79,32 @@ type AuthRecoveryRepository interface {
 	ConsumeEmailVerificationToken(ctx context.Context, tokenHash string, now time.Time) (string, error)
 	UpdatePasswordHash(ctx context.Context, userID string, passwordHash string, changedAt time.Time) error
 	MarkEmailVerified(ctx context.Context, userID string, verifiedAt time.Time) error
+
+	IsEmailVerified(ctx context.Context, userID string) (bool, error)
+	InvalidatePendingEmailVerificationOTPs(ctx context.Context, userID string) error
+	StoreEmailVerificationOTP(ctx context.Context, otp EmailOTPRecord) error
+	CountEmailVerificationOTPsSince(ctx context.Context, userID string, since time.Time) (int, error)
+	// TryConsumeEmailVerificationOTP verifies bcrypt(code); increments attempts on mismatch; locks OTP row when exceeded.
+	TryConsumeEmailVerificationOTP(ctx context.Context, userID, plainCode string, now time.Time) (EmailOTPConsumeOutcome, error)
 }
+
+// EmailOTPRecord stores a bcrypt hash of a numeric OTP for email verification.
+type EmailOTPRecord struct {
+	OTPID     string
+	UserID    string
+	CodeHash  string
+	ExpiresAt time.Time
+}
+
+// EmailOTPConsumeOutcome is the result of submitting an OTP code.
+type EmailOTPConsumeOutcome int
+
+const (
+	EmailOTPConsumed EmailOTPConsumeOutcome = iota
+	EmailOTPWrongCode
+	EmailOTPExhausted
+	EmailOTPNotFound
+)
 
 type TokenIssuer interface {
 	IssueAccessToken(ctx context.Context, claims AccessTokenClaims) (token string, expiresInSec int64, err error)
@@ -154,6 +181,16 @@ type LoginPasswordCipher struct {
 	CiphertextB64 string `json:"ciphertext_b64"`
 }
 
+type RegisterPublicRequest struct {
+	Email           string `json:"email"`
+	Password        string `json:"password"`
+	ConfirmPassword string `json:"confirm_password"`
+	FullName        string `json:"full_name"`
+	CompanyName     string `json:"company_name"`
+	IP              string `json:"-"`
+	UserAgent       string `json:"-"`
+}
+
 type LoginRequest struct {
 	LoginID string `json:"login_id"`
 	// Email alias for frontend compatibility (cobo_web_design login form).
@@ -178,6 +215,10 @@ type LoginResponse struct {
 	Memberships        []LoginMembershipSummary `json:"memberships,omitempty"`
 	PlatformAccessHint bool                     `json:"platform_access_hint,omitempty"`
 	NextAction         string                   `json:"next_action"`
+	// EmailVerified false when users.email_verified_at is NULL (snapshot at login).
+	EmailVerified bool `json:"email_verified,omitempty"`
+	// CompanyVerificationStatus from companies.verification_status for current context (e.g. unverified for self-reg).
+	CompanyVerificationStatus string `json:"company_verification_status,omitempty"`
 }
 
 type LoginUser struct {
@@ -232,7 +273,9 @@ type ForgotPasswordResponse struct {
 }
 
 type ResendVerificationEmailRequest struct {
-	Email string `json:"email"`
+	Email string `json:"email,omitempty"`
+	// UserID set by HTTP handler when Authorization bearer identifies the caller (email optional).
+	UserID string `json:"-"`
 }
 
 type ResendVerificationEmailResponse struct {
@@ -249,11 +292,16 @@ type ResetPasswordResponse struct {
 }
 
 type VerifyEmailRequest struct {
-	Token string `json:"token"`
+	Token string `json:"token,omitempty"`
+	// Code is a numeric OTP (preferred for web); requires UserID from authenticated session.
+	Code string `json:"code,omitempty"`
+	// UserID set by HTTP handler when verifying via OTP (Bearer access token).
+	UserID string `json:"-"`
 }
 
 type VerifyEmailResponse struct {
-	Success bool `json:"success"`
+	Success       bool `json:"success"`
+	EmailVerified bool `json:"email_verified,omitempty"`
 }
 
 type ListSessionsRequest struct {

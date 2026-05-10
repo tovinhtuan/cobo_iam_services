@@ -181,6 +181,81 @@ func TestAdminService_CreateUser_Validation(t *testing.T) {
 	}
 }
 
+func TestAdminService_InviteUser_ActiveUserNewCompanyMembership(t *testing.T) {
+	repo := cainmem.NewAdminRepository()
+	svc := caapp.NewAdminService(
+		repo,
+		fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{"system.settings", "rbac.manage"}},
+		fixedIDGen("invite-second-co"),
+	)
+
+	_, err := svc.CreateUser(context.Background(), caapp.CreateUserRequest{
+		Subject:          caapp.AdminSubject{UserID: "u_admin", MembershipID: "m_admin", CompanyID: "c_001"},
+		LoginID:          "active.two.co@example.com",
+		Password:         "StrongPass123!",
+		FullName:         "Active Two Co",
+		CompanyID:        "c_001",
+		MembershipStatus: "active",
+	})
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+
+	out, err := svc.InviteUser(context.Background(), caapp.InviteUserRequest{
+		Subject:          caapp.AdminSubject{UserID: "u_admin", MembershipID: "m_admin", CompanyID: "c_001"},
+		Email:            "active.two.co@example.com",
+		FullName:         "Active Two Co",
+		CompanyID:        "c_002",
+		MembershipStatus: "active",
+		CreatedByUserID:  "u_admin",
+	})
+	if err != nil {
+		t.Fatalf("InviteUser: %v", err)
+	}
+	if out.AccountStatus != "active" {
+		t.Fatalf("AccountStatus=%q want active", out.AccountStatus)
+	}
+	if out.CompanyID != "c_002" {
+		t.Fatalf("CompanyID=%q want c_002", out.CompanyID)
+	}
+	if out.MembershipID == "" {
+		t.Fatal("expected new membership_id")
+	}
+}
+
+func TestAdminService_InviteUser_AlreadyMemberSameCompany(t *testing.T) {
+	repo := cainmem.NewAdminRepository()
+	svc := caapp.NewAdminService(
+		repo,
+		fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{"system.settings", "rbac.manage"}},
+		fixedIDGen("invite-dup"),
+	)
+
+	_, err := svc.CreateUser(context.Background(), caapp.CreateUserRequest{
+		Subject:          caapp.AdminSubject{UserID: "u_admin", MembershipID: "m_admin", CompanyID: "c_001"},
+		LoginID:          "same.co.member@example.com",
+		Password:         "StrongPass123!",
+		FullName:         "Same Co",
+		CompanyID:        "c_001",
+		MembershipStatus: "active",
+	})
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+
+	_, err = svc.InviteUser(context.Background(), caapp.InviteUserRequest{
+		Subject:          caapp.AdminSubject{UserID: "u_admin", MembershipID: "m_admin", CompanyID: "c_001"},
+		Email:            "same.co.member@example.com",
+		FullName:         "Same Co",
+		CompanyID:        "c_001",
+		MembershipStatus: "active",
+		CreatedByUserID:  "u_admin",
+	})
+	if err == nil {
+		t.Fatal("expected conflict: already member of this company")
+	}
+}
+
 func TestAdminService_CreateUser_Denied(t *testing.T) {
 	svc := caapp.NewAdminService(
 		cainmem.NewAdminRepository(),

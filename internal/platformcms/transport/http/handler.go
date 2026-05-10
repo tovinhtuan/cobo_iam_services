@@ -88,6 +88,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/v1/platform/cms/schedules/{entry_id}", h.observe("cms.schedules.delete", h.deleteSchedule))
 	mux.HandleFunc("GET /api/v1/platform/cms/releases", h.observe("cms.releases.list", h.releases))
 	mux.HandleFunc("GET /api/v1/platform/cms/admin/users", h.observe("cms.admin.users.list", h.adminUsers))
+	mux.HandleFunc("POST /api/v1/platform/cms/admin/companies", h.observe("cms.admin.companies.create", h.createCMSCompany))
 	mux.HandleFunc("POST /api/v1/platform/cms/admin/users", h.observe("cms.admin.users.create", h.createAdminUser))
 	mux.HandleFunc("POST /api/v1/platform/cms/admin/users/invite", h.observe("cms.admin.users.invite", h.inviteAdminUser))
 	mux.HandleFunc("POST /api/v1/platform/cms/admin/users/{user_id}/resend-invitation", h.observe("cms.admin.users.invite.resend", h.resendInvitation))
@@ -786,6 +787,41 @@ func (h *Handler) roles(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, nil, err)
 		return
 	}
+
+	targetCompany := strings.TrimSpace(r.URL.Query().Get("company_id"))
+	if targetCompany != "" {
+		// Assignable roles from IAM `roles` table for invite/update-membership — must match invite permission level.
+		if _, err := h.requireAnyPermission(r.Context(), sub.MembershipID, sub.CompanyID, "rbac.manage", "system.settings"); err != nil {
+			httpx.WriteError(w, nil, err)
+			return
+		}
+		opts, err := h.adminSvc.ListInviteRoles(r.Context(), companyaccessapp.ListInviteRolesRequest{
+			Subject: companyaccessapp.AdminSubject{
+				UserID:       sub.Sub,
+				MembershipID: sub.MembershipID,
+				CompanyID:    sub.CompanyID,
+			},
+			CompanyID: targetCompany,
+		})
+		if err != nil {
+			httpx.WriteError(w, nil, err)
+			return
+		}
+		roleItems := make([]map[string]any, 0, len(opts))
+		for _, o := range opts {
+			roleItems = append(roleItems, map[string]any{
+				"role_id":   o.RoleID,
+				"role_code": o.RoleCode,
+				"role_name": o.RoleName,
+			})
+		}
+		writeEnvelope(w, http.StatusOK, map[string]any{
+			"items":       roleItems,
+			"permissions": []string{},
+		}, map[string]any{"total": len(roleItems)})
+		return
+	}
+
 	if _, err := h.requireAnyPermission(r.Context(), sub.MembershipID, sub.CompanyID, "rbac.manage", "system.settings", "platform.cms.view"); err != nil {
 		httpx.WriteError(w, nil, err)
 		return
@@ -1119,6 +1155,42 @@ func mapsKeysSorted(items map[string]struct{}) []string {
 	return out
 }
 
+func (h *Handler) createCMSCompany(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	if _, err := h.requireCMSAccess(r.Context(), sub.MembershipID, sub.CompanyID); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	if _, err := h.requireAnyPermission(r.Context(), sub.MembershipID, sub.CompanyID, "rbac.manage", "system.settings"); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	var p struct {
+		CompanyName string `json:"company_name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
+		httpx.WriteError(w, nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "invalid JSON payload", err))
+		return
+	}
+	resp, err := h.adminSvc.CreateCompany(r.Context(), companyaccessapp.CreateCompanyRequest{
+		Subject: companyaccessapp.AdminSubject{
+			UserID:       sub.Sub,
+			MembershipID: sub.MembershipID,
+			CompanyID:    sub.CompanyID,
+		},
+		CompanyName: p.CompanyName,
+	})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	writeEnvelope(w, http.StatusCreated, resp, nil)
+}
+
 func (h *Handler) adminUsers(w http.ResponseWriter, r *http.Request) {
 	sub, err := h.subject(r)
 	if err != nil {
@@ -1221,6 +1293,8 @@ func (h *Handler) inviteAdminUser(w http.ResponseWriter, r *http.Request) {
 		FullName         string `json:"full_name"`
 		CompanyID        string `json:"company_id"`
 		MembershipStatus string `json:"membership_status"`
+		RoleID           string `json:"role_id"`
+		RoleCode         string `json:"role_code"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
 		httpx.WriteError(w, nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "invalid JSON payload", err))
@@ -1237,6 +1311,8 @@ func (h *Handler) inviteAdminUser(w http.ResponseWriter, r *http.Request) {
 		CompanyID:        p.CompanyID,
 		MembershipStatus: p.MembershipStatus,
 		CreatedByUserID:  sub.Sub,
+		RoleID:           p.RoleID,
+		RoleCode:         p.RoleCode,
 	})
 	if err != nil {
 		httpx.WriteError(w, nil, err)

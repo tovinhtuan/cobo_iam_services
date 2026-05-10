@@ -3,7 +3,9 @@ package app
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/base64"
+	"encoding/binary"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -11,6 +13,7 @@ import (
 	"time"
 
 	ca "github.com/cobo/cobo_iam_services/internal/companyaccess/app"
+	iamregmysql "github.com/cobo/cobo_iam_services/internal/iam/registrationmysql"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 	"github.com/cobo/cobo_iam_services/internal/platform/events"
 	"github.com/cobo/cobo_iam_services/internal/platform/idgen"
@@ -20,27 +23,31 @@ import (
 )
 
 type service struct {
-	cred             CredentialVerifier
-	sessions         SessionRepository
-	tokens           TokenIssuer
-	memberships      ca.MembershipQueryService
-	idgen            idgen.Generator
-	mfa              MFACheck
-	sso              SSOLoginBridge
-	attempts         LoginAttemptRecorder
-	recovery         AuthRecoveryRepository
-	outbox           outbox.Publisher
-	invite           UserInvitationExecutor
-	webBaseURL       string
-	passwordResetTTL time.Duration
-	emailVerifyTTL   time.Duration
-	invitationTTL    time.Duration
+	cred                 CredentialVerifier
+	sessions             SessionRepository
+	tokens               TokenIssuer
+	memberships          ca.MembershipQueryService
+	idgen                idgen.Generator
+	mfa                  MFACheck
+	sso                  SSOLoginBridge
+	attempts             LoginAttemptRecorder
+	recovery             AuthRecoveryRepository
+	outbox               outbox.Publisher
+	invite               UserInvitationExecutor
+	regDB                *sql.DB
+	registrationDisabled bool
+	webBaseURL           string
+	passwordResetTTL     time.Duration
+	emailVerifyTTL       time.Duration
+	emailOTPTTL          time.Duration
+	invitationTTL        time.Duration
 }
 
 func NewService(cred CredentialVerifier, sessions SessionRepository, tokens TokenIssuer, memberships ca.MembershipQueryService, idgen idgen.Generator, opts ...ServiceOption) Service {
 	s := &service{
 		cred: cred, sessions: sessions, tokens: tokens, memberships: memberships, idgen: idgen,
 		webBaseURL: "http://localhost:5173", passwordResetTTL: 30 * time.Minute, emailVerifyTTL: 24 * time.Hour,
+		emailOTPTTL:   15 * time.Minute,
 		invitationTTL: 72 * time.Hour,
 	}
 	for _, opt := range opts {
@@ -144,6 +151,7 @@ func (s *service) Login(ctx context.Context, req LoginRequest) (*LoginResponse, 
 			return nil, fmt.Errorf("create session: %w", err)
 		}
 		s.recordLoginAttempt(ctx, req, user, true, nil)
+		s.enrichLoginVerification(ctx, resp)
 		return resp, nil
 	}
 
@@ -164,6 +172,121 @@ func (s *service) Login(ctx context.Context, req LoginRequest) (*LoginResponse, 
 		return nil, fmt.Errorf("create session: %w", err)
 	}
 	s.recordLoginAttempt(ctx, req, user, true, nil)
+	s.enrichLoginVerification(ctx, resp)
+	return resp, nil
+}
+
+func (s *service) enrichLoginVerification(ctx context.Context, resp *LoginResponse) {
+	if s.regDB == nil || resp == nil || resp.CurrentContext == nil {
+		return
+	}
+	ev, cs, err := iamregmysql.VerificationSnapshot(ctx, s.regDB, resp.User.UserID, resp.CurrentContext.CompanyID)
+	if err != nil {
+		return
+	}
+	resp.EmailVerified = ev
+	resp.CompanyVerificationStatus = cs
+}
+
+func randomDigits6() string {
+	var b [4]byte
+	_, _ = rand.Read(b[:])
+	n := binary.BigEndian.Uint32(b[:]) % 1000000
+	return fmt.Sprintf("%06d", n)
+}
+
+func (s *service) issueEmailVerificationOTP(ctx context.Context, userID string) error {
+	if s.recovery == nil || strings.TrimSpace(userID) == "" {
+		return nil
+	}
+	ok, err := s.recovery.IsEmailVerified(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if ok {
+		return nil
+	}
+	since := time.Now().UTC().Add(-time.Hour)
+	n, err := s.recovery.CountEmailVerificationOTPsSince(ctx, userID, since)
+	if err != nil {
+		return err
+	}
+	if n >= 5 {
+		return perr.NewHTTPError(http.StatusTooManyRequests, perr.CodeRateLimited, "too many verification emails requested", nil)
+	}
+	if err := s.recovery.InvalidatePendingEmailVerificationOTPs(ctx, userID); err != nil {
+		return err
+	}
+	code := randomDigits6()
+	hash, err := bcrypt.GenerateFromPassword([]byte(code), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("hash otp: %w", err)
+	}
+	exp := time.Now().UTC().Add(s.emailOTPTTL)
+	if err := s.recovery.StoreEmailVerificationOTP(ctx, EmailOTPRecord{
+		OTPID: s.idgen.NewUUID(), UserID: userID, CodeHash: string(hash), ExpiresAt: exp,
+	}); err != nil {
+		return err
+	}
+	u, err := s.recovery.FindUserByUserID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if u == nil {
+		return fmt.Errorf("user not found for otp email")
+	}
+	to := coalesce(strings.TrimSpace(u.Email), strings.TrimSpace(u.LoginID))
+	minutes := int(s.emailOTPTTL / time.Minute)
+	if minutes < 1 {
+		minutes = 1
+	}
+	s.publishEmail(ctx, "auth.email_verification_requested", userID, map[string]any{
+		"to":      to,
+		"subject": "Verify your email",
+		"body": fmt.Sprintf("Xin chao %s,\n\nMa xac thuc email cua ban la: %s\nMa het han sau %d phut.\n\nNeu ban khong yeu cau ma nay, hay bo qua email nay.",
+			coalesce(u.FullName, u.LoginID), code, minutes),
+	})
+	return nil
+}
+
+func (s *service) RegisterPublic(ctx context.Context, req RegisterPublicRequest) (*LoginResponse, error) {
+	if s.registrationDisabled {
+		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "public registration is disabled", nil)
+	}
+	if s.regDB == nil {
+		return nil, perr.NewHTTPError(http.StatusServiceUnavailable, perr.CodeInvalidRequest, "public registration is not configured", nil)
+	}
+	email := strings.TrimSpace(strings.ToLower(req.Email))
+	fullName := strings.TrimSpace(req.FullName)
+	companyName := strings.TrimSpace(req.CompanyName)
+	if email == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "email is required", nil)
+	}
+	if fullName == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "full_name is required", nil)
+	}
+	if companyName == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "company_name is required", nil)
+	}
+	if len(strings.TrimSpace(req.Password)) < 12 {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "password must be at least 12 characters", nil)
+	}
+	if strings.TrimSpace(req.Password) != strings.TrimSpace(req.ConfirmPassword) {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "password and confirm_password do not match", nil)
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, fmt.Errorf("hash password: %w", err)
+	}
+	if _, _, _, err := iamregmysql.RegisterPublicAccount(ctx, s.regDB, email, fullName, companyName, string(hash)); err != nil {
+		return nil, err
+	}
+	loginReq := LoginRequest{Email: email, Password: req.Password, IP: req.IP, UserAgent: req.UserAgent}
+	resp, err := s.Login(ctx, loginReq)
+	if err != nil {
+		return nil, err
+	}
+	_ = s.issueEmailVerificationOTP(ctx, resp.User.UserID)
 	return resp, nil
 }
 
@@ -175,7 +298,7 @@ func (s *service) hasPlatformAccessHint(ctx context.Context, memberships []ca.Me
 		}
 		for _, role := range roles {
 			code := strings.TrimSpace(strings.ToLower(role))
-			if code == "company_admin" || code == "super_admin" {
+			if code == "company_admin" || code == "super_admin" || code == "admin_doanh_nghiep" || code == "self_reg_company_owner" {
 				return true
 			}
 		}
@@ -289,33 +412,35 @@ func (s *service) ForgotPassword(ctx context.Context, req ForgotPasswordRequest)
 
 func (s *service) ResendVerificationEmail(ctx context.Context, req ResendVerificationEmailRequest) (*ResendVerificationEmailResponse, error) {
 	email := strings.TrimSpace(strings.ToLower(req.Email))
-	if email == "" {
-		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "email is required", nil)
+	if strings.TrimSpace(req.UserID) == "" && email == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "email or authenticated session is required", nil)
 	}
-	// Fallback mode without persistent repo: keep generic success.
 	if s.recovery == nil {
 		return &ResendVerificationEmailResponse{Success: true}, nil
 	}
-	user, err := s.recovery.FindUserByEmail(ctx, email)
-	if err != nil || user == nil {
-		// Keep generic response to prevent account enumeration.
+	var user *RecoveryUser
+	var err error
+	if strings.TrimSpace(req.UserID) != "" {
+		user, err = s.recovery.FindUserByUserID(ctx, req.UserID)
+	} else {
+		user, err = s.recovery.FindUserByEmail(ctx, email)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if user == nil {
 		return &ResendVerificationEmailResponse{Success: true}, nil
 	}
-	rawToken, tokenHash, err := s.generateRawTokenAndHash()
+	ok, err := s.recovery.IsEmailVerified(ctx, user.UserID)
 	if err != nil {
-		return nil, fmt.Errorf("generate verification token: %w", err)
+		return nil, err
 	}
-	if err := s.recovery.StoreEmailVerificationToken(ctx, RecoveryTokenRecord{
-		TokenID: s.idgen.NewUUID(), UserID: user.UserID, TokenHash: tokenHash, ExpiresAt: time.Now().UTC().Add(s.emailVerifyTTL),
-	}); err != nil {
-		return nil, fmt.Errorf("store email verification token: %w", err)
+	if ok {
+		return &ResendVerificationEmailResponse{Success: true}, nil
 	}
-	s.publishEmail(ctx, "auth.email_verification_requested", user.UserID, map[string]any{
-		"to":      user.Email,
-		"subject": "Verify your email",
-		"body": fmt.Sprintf("Xin chao %s,\n\nVui long xac thuc email qua link sau:\n%s\n\nLink het han trong %d gio.",
-			coalesce(user.FullName, user.LoginID), s.buildActionLink("/verify-email", rawToken), int(s.emailVerifyTTL.Hours())),
-	})
+	if err := s.issueEmailVerificationOTP(ctx, user.UserID); err != nil {
+		return nil, err
+	}
 	return &ResendVerificationEmailResponse{Success: true}, nil
 }
 
@@ -351,25 +476,59 @@ func (s *service) ResetPassword(ctx context.Context, req ResetPasswordRequest) (
 }
 
 func (s *service) VerifyEmail(ctx context.Context, req VerifyEmailRequest) (*VerifyEmailResponse, error) {
-	if strings.TrimSpace(req.Token) == "" {
-		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "token is required", nil)
+	code := strings.TrimSpace(req.Code)
+	token := strings.TrimSpace(req.Token)
+	userID := strings.TrimSpace(req.UserID)
+
+	if code != "" {
+		if userID == "" {
+			return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "authenticated session required for OTP verification", nil)
+		}
+		if s.recovery == nil {
+			if strings.HasPrefix(code, "mock-verify-") {
+				return &VerifyEmailResponse{Success: true, EmailVerified: true}, nil
+			}
+			return nil, perr.NewHTTPError(http.StatusServiceUnavailable, perr.CodeInternal, "recovery not configured", nil)
+		}
+		out, err := s.recovery.TryConsumeEmailVerificationOTP(ctx, userID, code, time.Now().UTC())
+		if err != nil {
+			return nil, err
+		}
+		switch out {
+		case EmailOTPConsumed:
+			if err := s.recovery.MarkEmailVerified(ctx, userID, time.Now().UTC()); err != nil {
+				return nil, fmt.Errorf("mark email verified: %w", err)
+			}
+			return &VerifyEmailResponse{Success: true, EmailVerified: true}, nil
+		case EmailOTPWrongCode:
+			return nil, perr.NewHTTPError(http.StatusUnauthorized, perr.CodeEmailVerificationTokenInvalid, "verification code invalid or expired", nil)
+		case EmailOTPExhausted:
+			return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodeEmailVerificationOTPLocked, "too many incorrect attempts; request a new code", nil)
+		case EmailOTPNotFound:
+			return nil, perr.NewHTTPError(http.StatusUnauthorized, perr.CodeEmailVerificationTokenInvalid, "verification code invalid or expired", nil)
+		default:
+			return nil, perr.NewHTTPError(http.StatusInternalServerError, perr.CodeInternal, "unexpected otp outcome", nil)
+		}
+	}
+
+	if token == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "token or code is required", nil)
 	}
 	if s.recovery == nil {
-		// Non-DB fallback for local bootstrap mode.
-		if !strings.HasPrefix(strings.TrimSpace(req.Token), "mock-verify-") {
+		if !strings.HasPrefix(token, "mock-verify-") {
 			return nil, perr.NewHTTPError(http.StatusUnauthorized, perr.CodeEmailVerificationTokenInvalid, "verification token invalid or expired", nil)
 		}
-		return &VerifyEmailResponse{Success: true}, nil
+		return &VerifyEmailResponse{Success: true, EmailVerified: true}, nil
 	}
-	tokenHash := refreshtoken.Hash(strings.TrimSpace(req.Token))
-	userID, err := s.recovery.ConsumeEmailVerificationToken(ctx, tokenHash, time.Now().UTC())
-	if err != nil || strings.TrimSpace(userID) == "" {
+	tokenHash := refreshtoken.Hash(token)
+	uid, err := s.recovery.ConsumeEmailVerificationToken(ctx, tokenHash, time.Now().UTC())
+	if err != nil || strings.TrimSpace(uid) == "" {
 		return nil, perr.NewHTTPError(http.StatusUnauthorized, perr.CodeEmailVerificationTokenInvalid, "verification token invalid or expired", nil)
 	}
-	if err := s.recovery.MarkEmailVerified(ctx, userID, time.Now().UTC()); err != nil {
+	if err := s.recovery.MarkEmailVerified(ctx, uid, time.Now().UTC()); err != nil {
 		return nil, fmt.Errorf("mark email verified: %w", err)
 	}
-	return &VerifyEmailResponse{Success: true}, nil
+	return &VerifyEmailResponse{Success: true, EmailVerified: true}, nil
 }
 
 func (s *service) ListSessions(ctx context.Context, req ListSessionsRequest) (*ListSessionsResponse, error) {
@@ -451,13 +610,9 @@ func (s *service) AcceptUserInvitation(ctx context.Context, req AcceptUserInvita
 	return &AcceptUserInvitationResponse{Success: true}, nil
 }
 
-func (s *service) PublishUserInvitationEmail(ctx context.Context, userID, toEmail, fullName, loginID, rawToken string) error {
+func (s *service) PublishUserInvitationEmail(ctx context.Context, userID, toEmail, fullName, loginID, rawToken, companyName string) error {
 	if s.outbox == nil {
 		return perr.NewHTTPError(http.StatusServiceUnavailable, perr.CodeInternal, "email dispatch not configured", nil)
-	}
-	rawToken = strings.TrimSpace(rawToken)
-	if rawToken == "" {
-		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "invitation token required", nil)
 	}
 	to := strings.TrimSpace(toEmail)
 	if to == "" {
@@ -466,11 +621,35 @@ func (s *service) PublishUserInvitationEmail(ctx context.Context, userID, toEmai
 	if to == "" {
 		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "recipient email required", nil)
 	}
+	rawToken = strings.TrimSpace(rawToken)
+	companyName = strings.TrimSpace(companyName)
+	displayName := coalesce(fullName, loginID)
+
+	if rawToken == "" {
+		// Active user gained a new membership — no password setup link.
+		body := fmt.Sprintf("Xin chao %s,\n\n", displayName)
+		if companyName != "" {
+			body += fmt.Sprintf("Cong ty: %s\n\n", companyName)
+		}
+		body += "Ban da duoc them vao tai khoan cong ty tren he thong. Vui long dang nhap bang email va mat khau hien tai cua ban.\n\nNeu ban khong cho doi thao tac nay, hay lien he quan tri vien.\n"
+		s.publishEmail(ctx, "auth.user_invitation_sent", userID, map[string]any{
+			"to":      to,
+			"subject": "Tham gia cong ty",
+			"body":    body,
+		})
+		return nil
+	}
+
+	body := fmt.Sprintf("Xin chao %s,\n\n", displayName)
+	if companyName != "" {
+		body += fmt.Sprintf("Cong ty: %s\n\n", companyName)
+	}
+	body += fmt.Sprintf("Tai khoan da duoc tao. Thiet lap mat khau qua link sau:\n%s\n\nLink het han sau khoang %d gio. Neu ban khong yeu cau, bo qua email nay.\n",
+		s.buildActionLink("/accept-invitation", rawToken), int(s.invitationTTL.Hours()))
 	s.publishEmail(ctx, "auth.user_invitation_sent", userID, map[string]any{
 		"to":      to,
 		"subject": "Thiet lap mat khau tai khoan",
-		"body": fmt.Sprintf("Xin chao %s,\n\nTai khoan da duoc tao. Thiet lap mat khau qua link sau:\n%s\n\nLink het han sau khoang %d gio. Neu ban khong yeu cau, bo qua email nay.\n",
-			coalesce(fullName, loginID), s.buildActionLink("/accept-invitation", rawToken), int(s.invitationTTL.Hours())),
+		"body":    body,
 	})
 	return nil
 }

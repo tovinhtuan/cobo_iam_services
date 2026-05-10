@@ -33,6 +33,7 @@ func NewHandler(log *slog.Logger, svc iamapp.Service, inspector iamapp.TokenInsp
 
 func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/auth/login-password-key", h.loginPasswordKey)
+	mux.HandleFunc("POST /api/v1/auth/register", h.registerPublic)
 	mux.HandleFunc("POST /api/v1/auth/login", h.login)
 	mux.HandleFunc("POST /api/v1/auth/refresh", h.refresh)
 	mux.HandleFunc("POST /api/v1/auth/logout", h.logout)
@@ -65,6 +66,40 @@ func (h *Handler) loginPasswordKey(w http.ResponseWriter, r *http.Request) {
 		"alg":                 loginpassword.AlgRSAOAEP256,
 		"public_key_spki_b64": spki,
 	})
+}
+
+func (h *Handler) registerPublic(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Email           string                      `json:"email"`
+		Password        string                      `json:"password"`
+		PasswordCipher  *iamapp.LoginPasswordCipher `json:"password_cipher,omitempty"`
+		ConfirmPassword string                      `json:"confirm_password"`
+		FullName        string                      `json:"full_name"`
+		CompanyName     string                      `json:"company_name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		httpx.WriteError(w, h.log, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "invalid JSON payload", err))
+		return
+	}
+	lr := iamapp.LoginRequest{Password: body.Password, PasswordCipher: body.PasswordCipher}
+	if err := h.normalizeLoginPassword(&lr); err != nil {
+		httpx.WriteError(w, h.log, err)
+		return
+	}
+	req := iamapp.RegisterPublicRequest{
+		Email: body.Email, Password: lr.Password, ConfirmPassword: body.ConfirmPassword,
+		FullName: body.FullName, CompanyName: body.CompanyName,
+		IP: r.RemoteAddr, UserAgent: r.UserAgent(),
+	}
+	resp, err := h.svc.RegisterPublic(r.Context(), req)
+	if err != nil {
+		h.auditEvent(r, "register_public_failure", "deny", "", "", map[string]any{"email": req.Email})
+		httpx.WriteError(w, h.log, err)
+		return
+	}
+	h.auditEvent(r, "register_public_success", "allow", resp.User.UserID, contextMembership(resp), map[string]any{"email": req.Email})
+	h.publishEvent(r, "iam.user.registered", resp.User.UserID, map[string]any{"email": req.Email})
+	httpx.WriteJSON(w, http.StatusCreated, resp)
 }
 
 func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
@@ -148,6 +183,11 @@ func (h *Handler) resendVerificationEmail(w http.ResponseWriter, r *http.Request
 		httpx.WriteError(w, h.log, err)
 		return
 	}
+	if b := bearerToken(r.Header.Get("Authorization")); b != "" {
+		if claims, err := h.inspector.InspectAccessToken(r.Context(), b); err == nil {
+			req.UserID = claims.Sub
+		}
+	}
 	resp, err := h.svc.ResendVerificationEmail(r.Context(), req)
 	if err != nil {
 		httpx.WriteError(w, h.log, err)
@@ -199,6 +239,11 @@ func (h *Handler) verifyEmail(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httpx.WriteError(w, h.log, err)
 		return
+	}
+	if b := bearerToken(r.Header.Get("Authorization")); b != "" {
+		if claims, err := h.inspector.InspectAccessToken(r.Context(), b); err == nil {
+			req.UserID = claims.Sub
+		}
 	}
 	resp, err := h.svc.VerifyEmail(r.Context(), req)
 	if err != nil {

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	caapp "github.com/cobo/cobo_iam_services/internal/companyaccess/app"
+	iamregmysql "github.com/cobo/cobo_iam_services/internal/iam/registrationmysql"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 	"github.com/google/uuid"
 )
@@ -458,6 +459,108 @@ func (r *AdminRepository) getUserView(ctx context.Context, userID string) (*caap
 	return &v, nil
 }
 
+func (r *AdminRepository) LookupRoleIDForInvite(ctx context.Context, companyID, preferRoleID, preferRoleCode, defaultRoleCode string) (string, error) {
+	companyID = strings.TrimSpace(companyID)
+	preferRoleID = strings.TrimSpace(preferRoleID)
+	preferRoleCode = strings.TrimSpace(strings.ToLower(preferRoleCode))
+	defaultRoleCode = strings.TrimSpace(strings.ToLower(defaultRoleCode))
+
+	if preferRoleID != "" {
+		var rCompany sql.NullString
+		err := r.db.QueryRowContext(ctx, `SELECT company_id FROM roles WHERE role_id = ? AND status = 'active'`, preferRoleID).Scan(&rCompany)
+		if err == sql.ErrNoRows {
+			return "", perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "role not found", nil)
+		}
+		if err != nil {
+			return "", err
+		}
+		if rCompany.Valid && rCompany.String != "" && rCompany.String != companyID {
+			return "", perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "role does not belong to target company", nil)
+		}
+		return preferRoleID, nil
+	}
+
+	if preferRoleCode != "" {
+		var rid string
+		err := r.db.QueryRowContext(ctx, `
+			SELECT role_id FROM roles
+			WHERE status = 'active' AND LOWER(TRIM(role_code)) = ?
+			  AND (company_id IS NULL OR company_id = ?)
+			ORDER BY CASE WHEN company_id = ? THEN 0 WHEN company_id IS NULL THEN 1 ELSE 2 END
+			LIMIT 1
+		`, preferRoleCode, companyID, companyID).Scan(&rid)
+		if err == sql.ErrNoRows {
+			return "", perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "role_code not found for this company", nil)
+		}
+		if err != nil {
+			return "", err
+		}
+		return rid, nil
+	}
+
+	tryCodes := []string{}
+	seen := map[string]struct{}{}
+	add := func(c string) {
+		c = strings.TrimSpace(strings.ToLower(c))
+		if c == "" {
+			return
+		}
+		if _, ok := seen[c]; ok {
+			return
+		}
+		seen[c] = struct{}{}
+		tryCodes = append(tryCodes, c)
+	}
+	add(defaultRoleCode)
+	add("user_thuong")
+	add("viewer")
+	add("dashboard_only")
+
+	for _, code := range tryCodes {
+		var rid string
+		err := r.db.QueryRowContext(ctx, `
+			SELECT role_id FROM roles
+			WHERE status = 'active' AND LOWER(TRIM(role_code)) = ?
+			  AND (company_id IS NULL OR company_id = ?)
+			ORDER BY CASE WHEN company_id = ? THEN 0 WHEN company_id IS NULL THEN 1 ELSE 2 END
+			LIMIT 1
+		`, code, companyID, companyID).Scan(&rid)
+		if err == nil {
+			return rid, nil
+		}
+		if err != sql.ErrNoRows {
+			return "", err
+		}
+	}
+	return "", perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "no default member role found for company (add roles or pass role_id/role_code)", nil)
+}
+
+func (r *AdminRepository) ListInviteRolesForCompany(ctx context.Context, companyID string) ([]caapp.InviteRoleOption, error) {
+	companyID = strings.TrimSpace(companyID)
+	if companyID == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "company_id is required", nil)
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT role_id, role_code, role_name
+		FROM roles
+		WHERE status = 'active' AND (company_id IS NULL OR company_id = ?)
+		ORDER BY role_code
+	`, companyID)
+	if err != nil {
+		return nil, fmt.Errorf("list invite roles: %w", err)
+	}
+	defer rows.Close()
+	var out []caapp.InviteRoleOption
+	for rows.Next() {
+		var o caapp.InviteRoleOption
+		if err := rows.Scan(&o.RoleID, &o.RoleCode, &o.RoleName); err != nil {
+			return nil, err
+		}
+		out = append(out, o)
+	}
+	return out, rows.Err()
+}
+
 func (r *AdminRepository) ensureMembership(ctx context.Context, membershipID string) error {
 	var x string
 	if err := r.db.QueryRowContext(ctx, `SELECT membership_id FROM memberships WHERE membership_id = ?`, membershipID).Scan(&x); err != nil {
@@ -531,6 +634,10 @@ func scanStringRows(rows *sql.Rows) ([]string, error) {
 		out = append(out, s)
 	}
 	return out, rows.Err()
+}
+
+func (r *AdminRepository) CreateStandaloneCompany(ctx context.Context, displayName string) (companyID string, companyCode string, err error) {
+	return iamregmysql.CreateStandaloneCompany(ctx, r.db, displayName)
 }
 
 func strFromMap(m map[string]any, key string) (string, bool) {

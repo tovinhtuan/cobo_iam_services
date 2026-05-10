@@ -52,6 +52,22 @@ func (r *AdminRepository) MembershipExistsForUserCompany(ctx context.Context, us
 	return true, nil
 }
 
+func (r *AdminRepository) GetCompanyName(ctx context.Context, companyID string) (string, error) {
+	companyID = strings.TrimSpace(companyID)
+	if companyID == "" {
+		return "", perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "company_id is required", nil)
+	}
+	var name string
+	err := r.db.QueryRowContext(ctx, `SELECT company_name FROM companies WHERE company_id = ?`, companyID).Scan(&name)
+	if err == sql.ErrNoRows {
+		return "", perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "company not found", nil)
+	}
+	if err != nil {
+		return "", err
+	}
+	return name, nil
+}
+
 func (r *AdminRepository) InviteUserWithMembership(ctx context.Context, u caapp.UserView, opts caapp.CreateUserOptions, invitationID, tokenHash, createdByUserID string, expiresAt time.Time) (*caapp.UserView, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -91,6 +107,12 @@ func (r *AdminRepository) InviteUserWithMembership(ctx context.Context, u caapp.
 			return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "membership already exists for user and company", nil)
 		}
 		return nil, fmt.Errorf("create membership: %w", err)
+	}
+
+	if strings.TrimSpace(opts.InitialRoleID) != "" {
+		if err := inviteAssignMembershipRoleTx(ctx, tx, opts.MembershipID, opts.InitialRoleID); err != nil {
+			return nil, err
+		}
 	}
 
 	createdBy := sql.NullString{String: strings.TrimSpace(createdByUserID), Valid: strings.TrimSpace(createdByUserID) != ""}
@@ -146,4 +168,30 @@ func (r *AdminRepository) ReplaceUserInvitation(ctx context.Context, userID, inv
 		return fmt.Errorf("insert invitation: %w", err)
 	}
 	return tx.Commit()
+}
+
+func inviteAssignMembershipRoleTx(ctx context.Context, tx *sql.Tx, membershipID, roleID string) error {
+	roleID = strings.TrimSpace(roleID)
+	if roleID == "" {
+		return nil
+	}
+	var mCompany string
+	if err := tx.QueryRowContext(ctx, `SELECT company_id FROM memberships WHERE membership_id = ?`, membershipID).Scan(&mCompany); err != nil {
+		return err
+	}
+	var rCompany sql.NullString
+	if err := tx.QueryRowContext(ctx, `SELECT company_id FROM roles WHERE role_id = ? AND status = 'active'`, roleID).Scan(&rCompany); err != nil {
+		if err == sql.ErrNoRows {
+			return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "role not found", nil)
+		}
+		return err
+	}
+	if rCompany.Valid && rCompany.String != "" && rCompany.String != mCompany {
+		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "role does not belong to membership company", nil)
+	}
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO membership_roles (membership_id, role_id, status)
+		VALUES (?, ?, 'active')
+	`, membershipID, roleID)
+	return err
 }

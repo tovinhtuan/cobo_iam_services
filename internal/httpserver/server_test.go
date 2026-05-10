@@ -914,6 +914,22 @@ func TestIntegration_platformCMSPrefix_adminUsersCreateAndList(t *testing.T) {
 	}
 }
 
+// Guards against accidentally dropping the CMS admin create-company route (would surface as FE 404 via Vite proxy).
+func TestIntegration_platformCMSPrefix_adminCompaniesRouteRegistered(t *testing.T) {
+	srv := httptest.NewServer(newTestHandler(t, nil))
+	defer srv.Close()
+
+	createRes := doJSONRequest(t, http.MethodPost, srv.URL+"/api/v1/platform/cms/admin/companies", "", map[string]any{
+		"company_name": "Smoke Co",
+	}, "")
+	if createRes.StatusCode == http.StatusNotFound {
+		t.Fatalf("POST /api/v1/platform/cms/admin/companies returned 404; route missing from mux")
+	}
+	if createRes.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401 without bearer, got status=%d body=%s", createRes.StatusCode, readBody(t, createRes.Body))
+	}
+}
+
 func TestIntegration_disclosureC1_contractMatrix_happyPathAndErrors(t *testing.T) {
 	srv := httptest.NewServer(newTestHandler(t, nil))
 	defer srv.Close()

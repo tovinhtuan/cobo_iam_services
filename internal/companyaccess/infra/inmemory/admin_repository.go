@@ -3,6 +3,7 @@ package inmemory
 import (
 	"context"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -115,6 +116,10 @@ func (r *AdminRepository) MembershipExistsForUserCompany(_ context.Context, user
 	return false, nil
 }
 
+func (r *AdminRepository) GetCompanyName(_ context.Context, companyID string) (string, error) {
+	return strings.TrimSpace(companyID), nil
+}
+
 func (r *AdminRepository) InviteUserWithMembership(_ context.Context, u caapp.UserView, opts caapp.CreateUserOptions, invitationID, tokenHash, _ string, _ time.Time) (*caapp.UserView, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -141,10 +146,48 @@ func (r *AdminRepository) InviteUserWithMembership(_ context.Context, u caapp.Us
 		u.MembershipStatus = m.Status
 		u.CompanyID = m.CompanyID
 		u.CompanyName = m.CompanyName
+		if strings.TrimSpace(opts.InitialRoleID) != "" {
+			addSet(r.rolesByMembership, m.MembershipID, strings.TrimSpace(opts.InitialRoleID))
+		}
 	}
 	r.invitationsByUser[u.UserID] = append(r.invitationsByUser[u.UserID], invitationID+":"+tokenHash)
 	cp := u
 	return &cp, nil
+}
+
+func (r *AdminRepository) LookupRoleIDForInvite(_ context.Context, companyID, preferRoleID, preferRoleCode, defaultRoleCode string) (string, error) {
+	_ = companyID
+	if strings.TrimSpace(preferRoleID) != "" {
+		return strings.TrimSpace(preferRoleID), nil
+	}
+	code := strings.TrimSpace(preferRoleCode)
+	if code == "" {
+		code = strings.TrimSpace(defaultRoleCode)
+	}
+	if code == "" {
+		return "", perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "invite role required", nil)
+	}
+	return "r_invite_" + code, nil
+}
+
+func (r *AdminRepository) ListInviteRolesForCompany(_ context.Context, companyID string) ([]caapp.InviteRoleOption, error) {
+	_ = companyID
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	codes := make([]string, 0, len(r.roles))
+	for c := range r.roles {
+		codes = append(codes, c)
+	}
+	sort.Strings(codes)
+	out := make([]caapp.InviteRoleOption, 0, len(codes))
+	for _, code := range codes {
+		out = append(out, caapp.InviteRoleOption{
+			RoleID:   "r_invite_" + code,
+			RoleCode: code,
+			RoleName: code,
+		})
+	}
+	return out, nil
 }
 
 func (r *AdminRepository) ReplaceUserInvitation(_ context.Context, userID, invitationID, tokenHash, _ string, _ time.Time) error {
@@ -297,4 +340,12 @@ func (r *AdminRepository) AddNotificationRule(_ context.Context, rule map[string
 	defer r.mu.Unlock()
 	r.notificationRules = append(r.notificationRules, rule)
 	return nil
+}
+
+func (r *AdminRepository) CreateStandaloneCompany(_ context.Context, displayName string) (string, string, error) {
+	displayName = strings.TrimSpace(displayName)
+	if displayName == "" {
+		return "", "", perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "company_name is required", nil)
+	}
+	return "", "", perr.NewHTTPError(http.StatusInternalServerError, perr.CodeInternal, "CreateStandaloneCompany is not implemented for in-memory admin repository", nil)
 }

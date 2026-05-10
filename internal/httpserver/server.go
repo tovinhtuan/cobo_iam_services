@@ -163,11 +163,18 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 	}
 	var iamOpts []iamapp.ServiceOption
 	iamOpts = append(iamOpts, iamapp.WithAuthFlowConfig(iamapp.AuthFlowConfig{
-		WebBaseURL:             cfg.PublicWebBaseURL,
-		UserInvitationTokenTTL: cfg.UserInvitationTokenTTL,
+		WebBaseURL:                cfg.PublicWebBaseURL,
+		UserInvitationTokenTTL:    cfg.UserInvitationTokenTTL,
+		EmailVerificationOTPTTL: cfg.EmailVerificationOTPTTL,
 	}))
 	if pool != nil {
-		iamOpts = append(iamOpts, iamapp.WithUserInvitationExecutor(&iammysql.UserInvitationStore{DB: pool}))
+		iamOpts = append(iamOpts,
+			iamapp.WithUserInvitationExecutor(&iammysql.UserInvitationStore{DB: pool}),
+			iamapp.WithPublicRegistration(pool),
+		)
+	}
+	if cfg.RegistrationDisabled {
+		iamOpts = append(iamOpts, iamapp.WithRegistrationDisabled(true))
 	}
 	if pool != nil {
 		iamOpts = append(iamOpts, iamapp.WithLoginAttemptRecorder(iammysql.NewLoginAttemptRecorder(pool)))
@@ -273,6 +280,7 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 		log.Info("admin access APIs using MySQL")
 	}
 	var adminOpts []companyaccessapp.AdminOption
+	adminOpts = append(adminOpts, companyaccessapp.WithInviteDefaultRoleCode(cfg.InviteDefaultRoleCode))
 	if pool != nil {
 		adminOpts = append(adminOpts,
 			companyaccessapp.WithInvitationMailer(&iamInvitationMailer{iam: iamSvc}),

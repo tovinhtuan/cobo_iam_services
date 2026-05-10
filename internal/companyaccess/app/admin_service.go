@@ -17,15 +17,16 @@ import (
 )
 
 type adminService struct {
-	repo       AdminRepository
-	auth       authapp.Service
-	idg        idgen.Generator
-	invMailer  InvitationMailer
-	inviteTTL  time.Duration
+	repo                  AdminRepository
+	auth                  authapp.Service
+	idg                   idgen.Generator
+	invMailer             InvitationMailer
+	inviteTTL             time.Duration
+	inviteDefaultRoleCode string
 }
 
 func NewAdminService(repo AdminRepository, auth authapp.Service, idg idgen.Generator, opts ...AdminOption) AdminService {
-	s := &adminService{repo: repo, auth: auth, idg: idg, inviteTTL: 72 * time.Hour}
+	s := &adminService{repo: repo, auth: auth, idg: idg, inviteTTL: 72 * time.Hour, inviteDefaultRoleCode: "user_thuong"}
 	for _, o := range opts {
 		if o != nil {
 			o(s)
@@ -106,6 +107,36 @@ func (s *adminService) CreateUser(ctx context.Context, req CreateUserRequest) (*
 	return s.repo.CreateUser(ctx, u, string(hash), opts)
 }
 
+func (s *adminService) CreateCompany(ctx context.Context, req CreateCompanyRequest) (*CreateCompanyResult, error) {
+	if err := s.authorize(ctx, req.Subject, "admin.membership.create", req.Subject.CompanyID); err != nil {
+		return nil, err
+	}
+	canRbac, err := s.hasPermission(ctx, req.Subject, "rbac.manage")
+	if err != nil {
+		return nil, err
+	}
+	canSettings, err := s.hasPermission(ctx, req.Subject, "system.settings")
+	if err != nil {
+		return nil, err
+	}
+	if !canRbac && !canSettings {
+		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "only platform administrators can create companies", nil)
+	}
+	name := strings.TrimSpace(req.CompanyName)
+	if name == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "company_name is required", nil)
+	}
+	companyID, companyCode, err := s.repo.CreateStandaloneCompany(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	return &CreateCompanyResult{
+		CompanyID:   companyID,
+		CompanyCode: companyCode,
+		CompanyName: name,
+	}, nil
+}
+
 func (s *adminService) InviteUser(ctx context.Context, req InviteUserRequest) (*InviteUserResponse, error) {
 	if err := s.authorize(ctx, req.Subject, "admin.membership.create", req.Subject.CompanyID); err != nil {
 		return nil, err
@@ -137,12 +168,69 @@ func (s *adminService) InviteUser(ctx context.Context, req InviteUserRequest) (*
 		req.MembershipStatus = "active"
 	}
 
-	_, existingStatus, found, err := s.repo.LookupUserByLoginID(ctx, req.Email)
+	existingUserID, existingStatus, found, err := s.repo.LookupUserByLoginID(ctx, req.Email)
 	if err != nil {
 		return nil, err
 	}
 	if found && strings.EqualFold(strings.TrimSpace(existingStatus), "active") {
-		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "user with this email already exists", nil)
+		already, err := s.repo.MembershipExistsForUserCompany(ctx, existingUserID, req.CompanyID)
+		if err != nil {
+			return nil, err
+		}
+		if already {
+			return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "user is already a member of this company", nil)
+		}
+		defRoleCode := strings.TrimSpace(s.inviteDefaultRoleCode)
+		if defRoleCode == "" {
+			defRoleCode = "user_thuong"
+		}
+		roleID, err := s.repo.LookupRoleIDForInvite(ctx, req.CompanyID, strings.TrimSpace(req.RoleID), strings.TrimSpace(req.RoleCode), defRoleCode)
+		if err != nil {
+			return nil, err
+		}
+		membershipID := s.idg.NewUUID()
+		m, err := s.repo.CreateMembership(ctx, MembershipView{
+			MembershipID: membershipID,
+			UserID:       existingUserID,
+			CompanyID:    req.CompanyID,
+			Status:       req.MembershipStatus,
+		})
+		if err != nil {
+			return nil, err
+		}
+		if err := s.repo.AddRole(ctx, m.MembershipID, roleID); err != nil {
+			_ = s.repo.DeleteMembership(ctx, m.MembershipID)
+			return nil, err
+		}
+		companyDisplay := ""
+		if cn, err := s.repo.GetCompanyName(ctx, req.CompanyID); err == nil {
+			companyDisplay = cn
+		}
+		loginID, emailAddr, fullName, _, err := s.repo.GetUserProfile(ctx, existingUserID)
+		if err != nil {
+			return nil, err
+		}
+		if s.invMailer != nil {
+			to := strings.TrimSpace(emailAddr)
+			if to == "" {
+				to = strings.TrimSpace(loginID)
+			}
+			if err := s.invMailer.SendInvitationEmail(ctx, InvitationMailPayload{
+				UserID: existingUserID, ToEmail: to, FullName: fullName, LoginID: loginID,
+				RawToken: "", CompanyName: companyDisplay,
+			}); err != nil {
+				return nil, err
+			}
+		}
+		return &InviteUserResponse{
+			UserID:        existingUserID,
+			LoginID:       loginID,
+			Email:         emailAddr,
+			FullName:      fullName,
+			AccountStatus: "active",
+			MembershipID:  m.MembershipID,
+			CompanyID:     req.CompanyID,
+		}, nil
 	}
 	if found {
 		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "user exists; use resend invitation if account is invited", nil)
@@ -154,10 +242,20 @@ func (s *adminService) InviteUser(ctx context.Context, req InviteUserRequest) (*
 	}
 	expiresAt := time.Now().UTC().Add(s.inviteTTL)
 	userID := s.idg.NewUUID()
+	defRoleCode := strings.TrimSpace(s.inviteDefaultRoleCode)
+	if defRoleCode == "" {
+		defRoleCode = "user_thuong"
+	}
+	roleID, err := s.repo.LookupRoleIDForInvite(ctx, req.CompanyID, strings.TrimSpace(req.RoleID), strings.TrimSpace(req.RoleCode), defRoleCode)
+	if err != nil {
+		return nil, err
+	}
+
 	opts := CreateUserOptions{
 		CompanyID:        req.CompanyID,
 		MembershipStatus: req.MembershipStatus,
 		MembershipID:     s.idg.NewUUID(),
+		InitialRoleID:    roleID,
 	}
 	invitationID := s.idg.NewUUID()
 	u := UserView{
@@ -176,6 +274,7 @@ func (s *adminService) InviteUser(ctx context.Context, req InviteUserRequest) (*
 	if s.invMailer != nil {
 		if err := s.invMailer.SendInvitationEmail(ctx, InvitationMailPayload{
 			UserID: out.UserID, ToEmail: out.Email, FullName: out.FullName, LoginID: out.LoginID, RawToken: rawTok,
+			CompanyName: out.CompanyName,
 		}); err != nil {
 			return nil, err
 		}
@@ -191,6 +290,27 @@ func (s *adminService) InviteUser(ctx context.Context, req InviteUserRequest) (*
 		CompanyID:           out.CompanyID,
 		InvitationExpiresAt: expiresAt.UTC().Format(time.RFC3339),
 	}, nil
+}
+
+func (s *adminService) ListInviteRoles(ctx context.Context, req ListInviteRolesRequest) ([]InviteRoleOption, error) {
+	if err := s.authorize(ctx, req.Subject, "admin.membership.create", req.Subject.CompanyID); err != nil {
+		return nil, err
+	}
+	isWebAdmin, err := s.hasPermission(ctx, req.Subject, "rbac.manage")
+	if err != nil {
+		return nil, err
+	}
+	target := strings.TrimSpace(req.CompanyID)
+	if !isWebAdmin {
+		if target != "" && target != req.Subject.CompanyID {
+			return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "enterprise admin can only list invite roles for current company", nil)
+		}
+		target = req.Subject.CompanyID
+	}
+	if target == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "company_id is required", nil)
+	}
+	return s.repo.ListInviteRolesForCompany(ctx, target)
 }
 
 func (s *adminService) ResendUserInvitation(ctx context.Context, req ResendUserInvitationRequest) error {
@@ -229,13 +349,17 @@ func (s *adminService) ResendUserInvitation(ctx context.Context, req ResendUserI
 		if to == "" {
 			to = strings.TrimSpace(loginID)
 		}
+		companyDisplay := ""
+		if cn, err := s.repo.GetCompanyName(ctx, cid); err == nil {
+			companyDisplay = cn
+		}
 		return s.invMailer.SendInvitationEmail(ctx, InvitationMailPayload{
 			UserID: userID, ToEmail: to, FullName: fullName, LoginID: loginID, RawToken: rawTok,
+			CompanyName: companyDisplay,
 		})
 	}
 	return nil
 }
-
 
 func (s *adminService) hasPermission(ctx context.Context, sub AdminSubject, permission string) (bool, error) {
 	eff, err := s.auth.GetEffectiveAccess(ctx, sub.MembershipID, sub.CompanyID)

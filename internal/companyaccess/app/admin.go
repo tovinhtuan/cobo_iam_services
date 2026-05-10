@@ -7,7 +7,11 @@ import (
 
 type AdminService interface {
 	CreateUser(ctx context.Context, req CreateUserRequest) (*UserView, error)
+	// CreateCompany provisions an empty tenant (companies row + default member roles); platform rbac.manage only.
+	CreateCompany(ctx context.Context, req CreateCompanyRequest) (*CreateCompanyResult, error)
 	InviteUser(ctx context.Context, req InviteUserRequest) (*InviteUserResponse, error)
+	// ListInviteRoles returns assignable roles for a target company (global + company-scoped), same resolution as invite.
+	ListInviteRoles(ctx context.Context, req ListInviteRolesRequest) ([]InviteRoleOption, error)
 	ResendUserInvitation(ctx context.Context, req ResendUserInvitationRequest) error
 	CreateMembership(ctx context.Context, req CreateMembershipRequest) (*MembershipView, error)
 	UpdateMembership(ctx context.Context, req UpdateMembershipRequest) (*MembershipView, error)
@@ -38,10 +42,20 @@ type AdminRepository interface {
 	LookupUserByLoginID(ctx context.Context, loginID string) (userID string, accountStatus string, found bool, err error)
 	GetUserProfile(ctx context.Context, userID string) (loginID, email, fullName, accountStatus string, err error)
 	MembershipExistsForUserCompany(ctx context.Context, userID, companyID string) (bool, error)
+	// GetCompanyName returns companies.company_name for a valid company_id.
+	GetCompanyName(ctx context.Context, companyID string) (string, error)
+	// CreateStandaloneCompany inserts companies + seeded tenant roles (no users).
+	CreateStandaloneCompany(ctx context.Context, displayName string) (companyID, companyCode string, err error)
 	CreateMembership(ctx context.Context, m MembershipView) (*MembershipView, error)
 	UpdateMembershipStatus(ctx context.Context, membershipID, status string) (*MembershipView, error)
 	DeleteMembership(ctx context.Context, membershipID string) error
 	ListMembershipsByCompany(ctx context.Context, companyID string) ([]MembershipView, error)
+
+	// LookupRoleIDForInvite resolves an assignable role for a new membership: explicit role_id,
+	// or role_code / defaultRoleCode against companies.roles (company-specific overrides global).
+	LookupRoleIDForInvite(ctx context.Context, companyID, preferRoleID, preferRoleCode, defaultRoleCode string) (string, error)
+	// ListInviteRolesForCompany lists active roles assignable to memberships in companyID (global roles + that company).
+	ListInviteRolesForCompany(ctx context.Context, companyID string) ([]InviteRoleOption, error)
 
 	AddRole(ctx context.Context, membershipID, roleID string) error
 	RemoveRole(ctx context.Context, membershipID, roleID string) error
@@ -87,11 +101,15 @@ type CreateUserOptions struct {
 	MembershipID     string
 	CompanyID        string
 	MembershipStatus string
+	// InitialRoleID optional: inserted into membership_roles when inviting/creating membership (invite flow).
+	InitialRoleID string
 }
 
 // InvitationMailPayload is dispatched via outbox (IAM) after a user invitation is persisted.
 type InvitationMailPayload struct {
 	UserID, ToEmail, FullName, LoginID, RawToken string
+	// CompanyName is shown in the email body (required by product). Empty skips the line.
+	CompanyName string
 }
 
 // InvitationMailer sends invitation email payloads (wired to iam.Service in production).
@@ -106,6 +124,9 @@ type InviteUserRequest struct {
 	CompanyID        string
 	MembershipStatus string
 	CreatedByUserID  string
+	// Optional role for the new membership. If both empty, InviteDefaultRoleCode (e.g. user_thuong) is used.
+	RoleID   string `json:"role_id,omitempty"`
+	RoleCode string `json:"role_code,omitempty"`
 }
 
 type InviteUserResponse struct {
@@ -119,10 +140,34 @@ type InviteUserResponse struct {
 	InvitationExpiresAt string `json:"invitation_expires_at,omitempty"`
 }
 
+// InviteRoleOption is one row from roles for invite UI (matches LookupRoleIDForInvite eligibility).
+type InviteRoleOption struct {
+	RoleID   string `json:"role_id"`
+	RoleCode string `json:"role_code"`
+	RoleName string `json:"role_name"`
+}
+
+// ListInviteRolesRequest scopes invite-role listing to a target company (same rules as InviteUser).
+type ListInviteRolesRequest struct {
+	Subject   AdminSubject
+	CompanyID string
+}
+
 type ResendUserInvitationRequest struct {
 	Subject   AdminSubject
 	UserID    string
 	CompanyID string
+}
+
+type CreateCompanyRequest struct {
+	Subject     AdminSubject
+	CompanyName string `json:"company_name"`
+}
+
+type CreateCompanyResult struct {
+	CompanyID   string `json:"company_id"`
+	CompanyCode string `json:"company_code"`
+	CompanyName string `json:"company_name"`
 }
 
 type CreateUserRequest struct {

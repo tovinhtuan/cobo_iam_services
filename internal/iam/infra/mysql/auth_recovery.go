@@ -8,6 +8,7 @@ import (
 	"time"
 
 	iamapp "github.com/cobo/cobo_iam_services/internal/iam/app"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // AuthRecoveryRepository persists password reset / email verify tokens and updates identity credentials.
@@ -168,4 +169,110 @@ func (r *AuthRecoveryRepository) MarkEmailVerified(ctx context.Context, userID s
 		return fmt.Errorf("mark email verified: %w", err)
 	}
 	return nil
+}
+
+func (r *AuthRecoveryRepository) IsEmailVerified(ctx context.Context, userID string) (bool, error) {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return false, nil
+	}
+	var ok int
+	err := r.db.QueryRowContext(ctx, `
+		SELECT email_verified_at IS NOT NULL FROM users WHERE user_id = ? LIMIT 1
+	`, userID).Scan(&ok)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("is email verified: %w", err)
+	}
+	return ok != 0, nil
+}
+
+func (r *AuthRecoveryRepository) InvalidatePendingEmailVerificationOTPs(ctx context.Context, userID string) error {
+	_, err := r.db.ExecContext(ctx, `
+		DELETE FROM email_verification_otps WHERE user_id = ? AND consumed_at IS NULL
+	`, userID)
+	if err != nil {
+		return fmt.Errorf("invalidate email otps: %w", err)
+	}
+	return nil
+}
+
+func (r *AuthRecoveryRepository) StoreEmailVerificationOTP(ctx context.Context, otp iamapp.EmailOTPRecord) error {
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO email_verification_otps (otp_id, user_id, code_hash, expires_at)
+		VALUES (?, ?, ?, ?)
+	`, otp.OTPID, otp.UserID, otp.CodeHash, otp.ExpiresAt)
+	if err != nil {
+		return fmt.Errorf("store email verification otp: %w", err)
+	}
+	return nil
+}
+
+func (r *AuthRecoveryRepository) CountEmailVerificationOTPsSince(ctx context.Context, userID string, since time.Time) (int, error) {
+	var n int
+	err := r.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM email_verification_otps WHERE user_id = ? AND created_at >= ?
+	`, userID, since).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("count email otps: %w", err)
+	}
+	return n, nil
+}
+
+func (r *AuthRecoveryRepository) TryConsumeEmailVerificationOTP(ctx context.Context, userID, plainCode string, now time.Time) (iamapp.EmailOTPConsumeOutcome, error) {
+	userID = strings.TrimSpace(userID)
+	code := strings.TrimSpace(plainCode)
+	if userID == "" || code == "" {
+		return iamapp.EmailOTPNotFound, nil
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return iamapp.EmailOTPNotFound, fmt.Errorf("begin otp consume: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	row := tx.QueryRowContext(ctx, `
+		SELECT otp_id, code_hash, attempt_count, max_attempts
+		FROM email_verification_otps
+		WHERE user_id = ? AND consumed_at IS NULL AND expires_at > ?
+		ORDER BY created_at DESC
+		LIMIT 1
+		FOR UPDATE
+	`, userID, now)
+	var otpID, codeHash string
+	var attemptCount, maxAttempts int
+	if err := row.Scan(&otpID, &codeHash, &attemptCount, &maxAttempts); err != nil {
+		if err == sql.ErrNoRows {
+			return iamapp.EmailOTPNotFound, nil
+		}
+		return iamapp.EmailOTPNotFound, fmt.Errorf("scan otp row: %w", err)
+	}
+
+	if attemptCount >= maxAttempts {
+		return iamapp.EmailOTPExhausted, nil
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(codeHash), []byte(code)); err != nil {
+		if _, uerr := tx.ExecContext(ctx, `
+			UPDATE email_verification_otps SET attempt_count = attempt_count + 1 WHERE otp_id = ?
+		`, otpID); uerr != nil {
+			return iamapp.EmailOTPWrongCode, fmt.Errorf("bump otp attempts: %w", uerr)
+		}
+		if err := tx.Commit(); err != nil {
+			return iamapp.EmailOTPWrongCode, fmt.Errorf("commit otp wrong attempt: %w", err)
+		}
+		return iamapp.EmailOTPWrongCode, nil
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE email_verification_otps SET consumed_at = ? WHERE otp_id = ? AND consumed_at IS NULL
+	`, now, otpID); err != nil {
+		return iamapp.EmailOTPNotFound, fmt.Errorf("consume otp update: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return iamapp.EmailOTPNotFound, fmt.Errorf("commit otp consume: %w", err)
+	}
+	return iamapp.EmailOTPConsumed, nil
 }

@@ -15,5 +15,5 @@ func (m *iamInvitationMailer) SendInvitationEmail(ctx context.Context, p caapp.I
 	if m == nil || m.iam == nil {
 		return nil
 	}
-	return m.iam.PublishUserInvitationEmail(ctx, p.UserID, p.ToEmail, p.FullName, p.LoginID, p.RawToken)
+	return m.iam.PublishUserInvitationEmail(ctx, p.UserID, p.ToEmail, p.FullName, p.LoginID, p.RawToken, p.CompanyName)
 }

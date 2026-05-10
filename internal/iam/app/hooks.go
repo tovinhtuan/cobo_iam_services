@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"database/sql"
 	"time"
 
 	"github.com/cobo/cobo_iam_services/internal/platform/outbox"
@@ -49,6 +50,8 @@ type AuthFlowConfig struct {
 	WebBaseURL               string
 	PasswordResetTokenTTL    time.Duration
 	EmailVerificationTokenTTL time.Duration
+	// EmailVerificationOTPTTL expiry for numeric email OTP (register/resend).
+	EmailVerificationOTPTTL time.Duration
 	UserInvitationTokenTTL   time.Duration
 }
 
@@ -64,6 +67,9 @@ func WithAuthFlowConfig(cfg AuthFlowConfig) ServiceOption {
 		if cfg.EmailVerificationTokenTTL > 0 {
 			s.emailVerifyTTL = cfg.EmailVerificationTokenTTL
 		}
+		if cfg.EmailVerificationOTPTTL > 0 {
+			s.emailOTPTTL = cfg.EmailVerificationOTPTTL
+		}
 		if cfg.UserInvitationTokenTTL > 0 {
 			s.invitationTTL = cfg.UserInvitationTokenTTL
 		}
@@ -74,6 +80,20 @@ func WithAuthFlowConfig(cfg AuthFlowConfig) ServiceOption {
 func WithUserInvitationExecutor(e UserInvitationExecutor) ServiceOption {
 	return func(s *service) {
 		s.invite = e
+	}
+}
+
+// WithPublicRegistration enables POST /api/v1/auth/register (self-service company bootstrap).
+func WithPublicRegistration(db *sql.DB) ServiceOption {
+	return func(s *service) {
+		s.regDB = db
+	}
+}
+
+// WithRegistrationDisabled disables public registration when true (e.g. REGISTRATION_DISABLED=true).
+func WithRegistrationDisabled(disabled bool) ServiceOption {
+	return func(s *service) {
+		s.registrationDisabled = disabled
 	}
 }
 

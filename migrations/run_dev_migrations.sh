@@ -32,6 +32,8 @@ MIGRATIONS="
 0009_seed_authz_test_accounts.up.sql
 0010_disclosure_contract_c1.up.sql
 seed_dev_identity_authorization.sql
+0026_self_registration_owner_role.up.sql
+0027_company_verification_email_otp.up.sql
 "
 
 mysql_exec() {

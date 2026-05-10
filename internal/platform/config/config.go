@@ -54,6 +54,15 @@ type Config struct {
 	// UserInvitationTokenTTL TTL for CMS user-invitation links (user_invitations.expires_at).
 	UserInvitationTokenTTL time.Duration
 
+	// EmailVerificationOTPTTL expiry for email verification OTP emails (register/resend).
+	EmailVerificationOTPTTL time.Duration
+
+	// InviteDefaultRoleCode is roles.role_code used when CMS invite omits role_id/role_code (e.g. user_thuong).
+	InviteDefaultRoleCode string
+
+	// RegistrationDisabled when true disables POST /api/v1/auth/register (REGISTRATION_DISABLED=true).
+	RegistrationDisabled bool
+
 	// Public API base URL used when backend emits externally callable URLs.
 	PublicAPIBaseURL string
 
@@ -110,6 +119,9 @@ func Load() (Config, error) {
 		PublicWebBaseURL:              getenv("PUBLIC_WEB_BASE_URL", "http://localhost:5173"),
 		PublicAPIBaseURL:              getenv("PUBLIC_API_BASE_URL", "http://localhost:8080"),
 		UserInvitationTokenTTL:        durationEnv("USER_INVITATION_TOKEN_TTL", 72*time.Hour),
+		EmailVerificationOTPTTL:     durationEnv("EMAIL_VERIFICATION_OTP_TTL", 15*time.Minute),
+		InviteDefaultRoleCode:         getenv("INVITE_DEFAULT_ROLE_CODE", "user_thuong"),
+		RegistrationDisabled:          strings.EqualFold(strings.TrimSpace(os.Getenv("REGISTRATION_DISABLED")), "true"),
 		LoginPasswordRSAPrivateKeyPEM: os.Getenv("LOGIN_PASSWORD_RSA_PRIVATE_KEY_PEM"),
 		LoginPasswordRSAKeyID:         getenv("LOGIN_PASSWORD_RSA_KEY_ID", "default"),
 		CORSAllowedOrigins:            os.Getenv("CORS_ALLOWED_ORIGINS"),

@@ -296,13 +296,13 @@ func TestVerifyEmail_invalidToken_usesDedicatedCode(t *testing.T) {
 	}
 }
 
-func TestResendVerificationEmail_requiresEmail(t *testing.T) {
+func TestResendVerificationEmail_requiresRecipient(t *testing.T) {
 	ctx := context.Background()
 	svc := newTestIAMService(t, testIAMDeps{
 		cred:    testCred(),
 		members: cainmem.NewMembershipQueryService(),
 	})
-	_, err := svc.ResendVerificationEmail(ctx, iamapp.ResendVerificationEmailRequest{Email: ""})
+	_, err := svc.ResendVerificationEmail(ctx, iamapp.ResendVerificationEmailRequest{})
 	if err == nil {
 		t.Fatal("expected error")
 	}
