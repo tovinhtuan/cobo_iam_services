@@ -423,11 +423,18 @@ func (r *Repository) UpsertTypeVersion(ctx context.Context, req disclosureapp.Up
 		if err != nil {
 			return nil, fmt.Errorf("marshal block validation: %w", err)
 		}
+		title := strings.TrimSpace(block.Title)
+		nameEn := strings.TrimSpace(block.NameEN)
+		nameVi := strings.TrimSpace(block.NameVI)
+		if nameVi == "" && title != "" {
+			nameVi = title
+		}
+		desc := strings.TrimSpace(block.Description)
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO disclosure_template_blocks (
-				type_id, version_no, block_id, block_key, block_type, title, description, config_json, validation_json, display_order, enabled
-			) VALUES (?, ?, ?, ?, ?, ?, NULLIF(?, ''), CAST(? AS JSON), CAST(? AS JSON), ?, ?)
-		`, req.TypeID, nextVersion, block.BlockID, block.BlockKey, block.BlockType, block.Title, block.Description, string(configJSON), string(validationJSON), block.DisplayOrder, block.Enabled); err != nil {
+				type_id, version_no, block_id, block_key, block_type, title, name_en, name_vi, description, config_json, validation_json, display_order, enabled
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS JSON), CAST(? AS JSON), ?, ?)
+		`, req.TypeID, nextVersion, block.BlockID, block.BlockKey, block.BlockType, title, nullIfBlank(nameEn), nullIfBlank(nameVi), nullIfBlank(desc), string(configJSON), string(validationJSON), block.DisplayOrder, block.Enabled); err != nil {
 			return nil, err
 		}
 	}
@@ -971,7 +978,10 @@ func normalizeTemplateBlocks(blocks []disclosureapp.TemplateBlockDTO) ([]disclos
 
 func (r *Repository) listTemplateBlocks(ctx context.Context, typeID string, versionNo int) ([]disclosureapp.TemplateBlockDTO, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT block_id, block_key, block_type, title, COALESCE(description, ''), config_json, validation_json, display_order, enabled
+		SELECT block_id, block_key, block_type, title,
+			NULLIF(TRIM(COALESCE(name_en, '')), ''),
+			NULLIF(TRIM(COALESCE(name_vi, '')), ''),
+			COALESCE(description, ''), config_json, validation_json, display_order, enabled
 		FROM disclosure_template_blocks
 		WHERE type_id = ? AND version_no = ?
 		ORDER BY display_order ASC, block_id ASC
@@ -985,11 +995,14 @@ func (r *Repository) listTemplateBlocks(ctx context.Context, typeID string, vers
 		var item disclosureapp.TemplateBlockDTO
 		var configRaw []byte
 		var validationRaw []byte
+		var nameEn, nameVi sql.NullString
 		if err := rows.Scan(
 			&item.BlockID,
 			&item.BlockKey,
 			&item.BlockType,
 			&item.Title,
+			&nameEn,
+			&nameVi,
 			&item.Description,
 			&configRaw,
 			&validationRaw,
@@ -1004,9 +1017,19 @@ func (r *Repository) listTemplateBlocks(ctx context.Context, typeID string, vers
 		if err := decodeJSONMap(validationRaw, &item.Validation); err != nil {
 			return nil, fmt.Errorf("decode block validation: %w", err)
 		}
+		if nameEn.Valid {
+			item.NameEN = strings.TrimSpace(nameEn.String)
+		}
+		if nameVi.Valid {
+			item.NameVI = strings.TrimSpace(nameVi.String)
+		}
 		out = append(out, item)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	disclosureapp.EnrichTemplateBlockDisplayNames(out)
+	return out, nil
 }
 
 func decodeJSONMap(raw []byte, target *map[string]any) error {

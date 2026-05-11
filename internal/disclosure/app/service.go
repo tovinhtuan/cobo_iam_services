@@ -382,6 +382,7 @@ func (s *service) UpsertTypeVersion(ctx context.Context, req UpsertTypeVersionRe
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "company scope only supports custom template category", nil)
 	}
 	ApplyTemplateFlatBlockSync(&req, s.idg)
+	HydrateTemplateBlocksBilingualForPersistence(req.Blocks)
 	if err := validateTemplateMatrix(&req); err != nil {
 		return nil, err
 	}

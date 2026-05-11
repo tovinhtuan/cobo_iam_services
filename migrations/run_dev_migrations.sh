@@ -35,6 +35,7 @@ seed_dev_identity_authorization.sql
 0026_self_registration_owner_role.up.sql
 0027_company_verification_email_otp.up.sql
 0029_company_profile_fields.up.sql
+0030_disclosure_template_block_display_names.up.sql
 "
 
 mysql_exec() {

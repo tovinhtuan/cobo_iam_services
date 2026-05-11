@@ -129,10 +129,20 @@ func (r *Repository) ListTypes(_ context.Context, companyID, groupID, query stri
 			continue
 		}
 		out = append(out, disclosureapp.DisclosureTypeSummaryDTO{
-			TypeID:           item.TypeID,
-			GroupID:          item.GroupID,
-			Scope:            func() string { if r.catalogScope[item.TypeID] == "global" { return "global" }; return "company" }(),
-			OwnerCompanyID:   func() string { if r.catalogScope[item.TypeID] == "global" { return "" }; return r.catalogScope[item.TypeID] }(),
+			TypeID:  item.TypeID,
+			GroupID: item.GroupID,
+			Scope: func() string {
+				if r.catalogScope[item.TypeID] == "global" {
+					return "global"
+				}
+				return "company"
+			}(),
+			OwnerCompanyID: func() string {
+				if r.catalogScope[item.TypeID] == "global" {
+					return ""
+				}
+				return r.catalogScope[item.TypeID]
+			}(),
 			Name:             item.Name,
 			Category:         item.Category,
 			TemplateCategory: item.TemplateCategory,
@@ -167,6 +177,7 @@ func (r *Repository) GetTypeDetail(_ context.Context, companyID, typeID string) 
 	cp.LegalBases = slices.Clone(item.LegalBases)
 	cp.Checklist = slices.Clone(item.Checklist)
 	cp.Blocks = cloneTemplateBlocks(item.Blocks)
+	disclosureapp.EnrichTemplateBlockDisplayNames(cp.Blocks)
 	return &cp, nil
 }
 
@@ -197,6 +208,7 @@ func (r *Repository) GetTypeVersionDetail(_ context.Context, companyID, typeID s
 	cp.LegalBases = slices.Clone(item.LegalBases)
 	cp.Checklist = slices.Clone(item.Checklist)
 	cp.Blocks = cloneTemplateBlocks(item.Blocks)
+	disclosureapp.EnrichTemplateBlockDisplayNames(cp.Blocks)
 	return &cp, nil
 }
 
@@ -277,11 +289,11 @@ func (r *Repository) UpsertTypeVersion(_ context.Context, req disclosureapp.Upse
 
 func (r *Repository) GetCompanyDeadlineContext(_ context.Context, companyID string) (disclosureapp.CompanyDeadlineContext, error) {
 	return disclosureapp.CompanyDeadlineContext{
-		CompanyID:         companyID,
-		CurrentYear:       time.Now().In(time.FixedZone("ICT", 7*60*60)).Year(),
-		EstablishedDate:   nil,
-		EstablishedMonth:  1,
-		EstablishedDay:    1,
+		CompanyID:        companyID,
+		CurrentYear:      time.Now().In(time.FixedZone("ICT", 7*60*60)).Year(),
+		EstablishedDate:  nil,
+		EstablishedMonth: 1,
+		EstablishedDay:   1,
 	}, nil
 }
 

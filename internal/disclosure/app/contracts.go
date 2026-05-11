@@ -485,10 +485,13 @@ type ChecklistItemDTO struct {
 }
 
 type TemplateBlockDTO struct {
-	BlockID      string         `json:"block_id"`
-	BlockKey     string         `json:"block_key"`
-	BlockType    string         `json:"block_type"`
-	Title        string         `json:"title"`
+	BlockID   string `json:"block_id"`
+	BlockKey  string `json:"block_key"`
+	BlockType string `json:"block_type"`
+	Title     string `json:"title"`
+	// Display labels for bilingual CMS UI; persisted title remains the canonical row label (historically VI-oriented).
+	NameEN       string         `json:"name_en,omitempty"`
+	NameVI       string         `json:"name_vi,omitempty"`
 	Description  string         `json:"description"`
 	Config       map[string]any `json:"config"`
 	Validation   map[string]any `json:"validation"`
