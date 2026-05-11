@@ -121,13 +121,16 @@ func TestLogin_noActiveMembership(t *testing.T) {
 		}},
 	})
 
-	_, err := svc.Login(ctx, iamapp.LoginRequest{LoginID: "user@example.com", Password: "secret"})
-	if err == nil {
-		t.Fatal("expected error")
+	// Users with no active membership are now allowed to login with restricted access.
+	resp, err := svc.Login(ctx, iamapp.LoginRequest{LoginID: "user@example.com", Password: "secret"})
+	if err != nil {
+		t.Fatalf("expected success for user without active membership, got error: %v", err)
 	}
-	he, ok := perr.AsHTTPError(err)
-	if !ok || he.Code != perr.CodeNoActiveCompanyAccess {
-		t.Fatalf("got %#v", err)
+	if resp.NextAction != "no_company_onboarding" {
+		t.Fatalf("expected next_action=no_company_onboarding, got %q", resp.NextAction)
+	}
+	if resp.Session.AccessToken == "" {
+		t.Fatal("expected access token to be issued")
 	}
 }
 

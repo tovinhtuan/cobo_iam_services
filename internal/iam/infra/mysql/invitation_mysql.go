@@ -69,56 +69,57 @@ func maskEmail(s string) string {
 }
 
 // AcceptUserInvitation consumes invitation token (one-time), creates password credential, activates user.
-func AcceptUserInvitation(ctx context.Context, db *sql.DB, rawToken string, bcryptPasswordHash string, now time.Time) error {
+// Returns (userID, loginID) so the caller can issue a session for auto-login.
+func AcceptUserInvitation(ctx context.Context, db *sql.DB, rawToken string, bcryptPasswordHash string, now time.Time) (userID string, loginID string, err error) {
 	rawToken = strings.TrimSpace(rawToken)
 	if rawToken == "" {
-		return perr.NewHTTPError(http.StatusUnauthorized, perr.CodeUserInvitationTokenInvalid, "invitation token invalid or expired", nil)
+		return "", "", perr.NewHTTPError(http.StatusUnauthorized, perr.CodeUserInvitationTokenInvalid, "invitation token invalid or expired", nil)
 	}
 	tokenHash := refreshtoken.Hash(rawToken)
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("begin invitation accept tx: %w", err)
+	tx, txErr := db.BeginTx(ctx, nil)
+	if txErr != nil {
+		return "", "", fmt.Errorf("begin invitation accept tx: %w", txErr)
 	}
 	defer func() { _ = tx.Rollback() }()
 
 	row := tx.QueryRowContext(ctx, `
-		SELECT i.invitation_id, i.user_id
+		SELECT i.invitation_id, i.user_id, u.login_id
 		FROM user_invitations i
 		INNER JOIN users u ON u.user_id = i.user_id
 		WHERE i.token_hash = ? AND i.used_at IS NULL AND i.revoked_at IS NULL AND i.expires_at > ? AND LOWER(u.account_status) = 'invited'
 		FOR UPDATE
 	`, tokenHash, now)
-	var invID, userID string
-	if err := row.Scan(&invID, &userID); err != nil {
-		if err == sql.ErrNoRows {
-			return perr.NewHTTPError(http.StatusUnauthorized, perr.CodeUserInvitationTokenInvalid, "invitation token invalid or expired", nil)
+	var invID string
+	if scanErr := row.Scan(&invID, &userID, &loginID); scanErr != nil {
+		if scanErr == sql.ErrNoRows {
+			return "", "", perr.NewHTTPError(http.StatusUnauthorized, perr.CodeUserInvitationTokenInvalid, "invitation token invalid or expired", nil)
 		}
-		return fmt.Errorf("scan invitation: %w", err)
+		return "", "", fmt.Errorf("scan invitation: %w", scanErr)
 	}
 
-	if _, err := tx.ExecContext(ctx, `
+	if _, execErr := tx.ExecContext(ctx, `
 		UPDATE user_invitations SET used_at = ? WHERE invitation_id = ? AND used_at IS NULL
-	`, now, invID); err != nil {
-		return fmt.Errorf("mark invitation used: %w", err)
+	`, now, invID); execErr != nil {
+		return "", "", fmt.Errorf("mark invitation used: %w", execErr)
 	}
 
 	credID := uuid.NewString()
-	if _, err := tx.ExecContext(ctx, `
+	if _, execErr := tx.ExecContext(ctx, `
 		INSERT INTO credentials (credential_id, user_id, credential_type, password_hash, password_algo, status, password_changed_at)
 		VALUES (?, ?, 'password', ?, 'bcrypt', 'active', ?)
 		ON DUPLICATE KEY UPDATE password_hash = VALUES(password_hash), status = 'active', password_changed_at = VALUES(password_changed_at), updated_at = CURRENT_TIMESTAMP
-	`, credID, userID, bcryptPasswordHash, now); err != nil {
-		return fmt.Errorf("upsert password credential: %w", err)
+	`, credID, userID, bcryptPasswordHash, now); execErr != nil {
+		return "", "", fmt.Errorf("upsert password credential: %w", execErr)
 	}
 
-	if _, err := tx.ExecContext(ctx, `
+	if _, execErr := tx.ExecContext(ctx, `
 		UPDATE users SET account_status = 'active', updated_at = CURRENT_TIMESTAMP WHERE user_id = ?
-	`, userID); err != nil {
-		return fmt.Errorf("activate user: %w", err)
+	`, userID); execErr != nil {
+		return "", "", fmt.Errorf("activate user: %w", execErr)
 	}
 
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit invitation accept: %w", err)
+	if commitErr := tx.Commit(); commitErr != nil {
+		return "", "", fmt.Errorf("commit invitation accept: %w", commitErr)
 	}
-	return nil
+	return userID, loginID, nil
 }

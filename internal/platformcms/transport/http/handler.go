@@ -97,6 +97,8 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/platform/cms/admin/users", h.observe("cms.admin.users.create", h.createAdminUser))
 	mux.HandleFunc("POST /api/v1/platform/cms/admin/users/invite", h.observe("cms.admin.users.invite", h.inviteAdminUser))
 	mux.HandleFunc("POST /api/v1/platform/cms/admin/users/{user_id}/resend-invitation", h.observe("cms.admin.users.invite.resend", h.resendInvitation))
+	mux.HandleFunc("POST /api/v1/platform/cms/admin/users/{user_id}/assign-company", h.observe("cms.admin.users.assign_company", h.assignUserToCompany))
+	mux.HandleFunc("POST /api/v1/platform/cms/admin/companies/{company_id}/members", h.observe("cms.admin.companies.members.add", h.addCompanyMember))
 	mux.HandleFunc("POST /api/v1/platform/cms/admin/users/{user_id}/request-password-reset", h.observe("cms.admin.users.password_reset", h.requestAdminPasswordReset))
 	mux.HandleFunc("GET /api/v1/platform/cms/admin/roles", h.observe("cms.admin.roles.list", h.roles))
 	mux.HandleFunc("GET /api/v1/platform/cms/admin/rules", h.observe("cms.admin.rules.list", h.rules))
@@ -1175,13 +1177,13 @@ func (h *Handler) createCMSCompany(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var p struct {
-		CompanyName          string  `json:"company_name"`
-		TaxCode              string  `json:"tax_code"`
-		RegistrationNumber   string  `json:"registration_number"`
-		Address              string  `json:"address"`
-		Phone                string  `json:"phone"`
-		ContactEmail         string  `json:"contact_email"`
-		RepresentativeName   string  `json:"representative_name"`
+		CompanyName        string `json:"company_name"`
+		TaxCode            string `json:"tax_code"`
+		RegistrationNumber string `json:"registration_number"`
+		Address            string `json:"address"`
+		Phone              string `json:"phone"`
+		ContactEmail       string `json:"contact_email"`
+		RepresentativeName string `json:"representative_name"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
 		httpx.WriteError(w, nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "invalid JSON payload", err))
@@ -1194,12 +1196,12 @@ func (h *Handler) createCMSCompany(w http.ResponseWriter, r *http.Request) {
 			CompanyID:    sub.CompanyID,
 		},
 		CompanyName:        p.CompanyName,
-		TaxCode:              p.TaxCode,
-		RegistrationNumber:   p.RegistrationNumber,
-		Address:              p.Address,
-		Phone:                p.Phone,
-		ContactEmail:         p.ContactEmail,
-		RepresentativeName:   p.RepresentativeName,
+		TaxCode:            p.TaxCode,
+		RegistrationNumber: p.RegistrationNumber,
+		Address:            p.Address,
+		Phone:              p.Phone,
+		ContactEmail:       p.ContactEmail,
+		RepresentativeName: p.RepresentativeName,
 	})
 	if err != nil {
 		httpx.WriteError(w, nil, err)
@@ -1388,6 +1390,109 @@ func (h *Handler) resendInvitation(w http.ResponseWriter, r *http.Request) {
 		Decision:          "allow",
 	})
 	writeEnvelope(w, http.StatusOK, map[string]any{"success": true}, nil)
+}
+
+// assignUserToCompany handles POST /cms/admin/users/{user_id}/assign-company
+// Assigns an existing user (active or invited) to a company.
+// For invited users it also re-issues the invitation email with company context.
+func (h *Handler) assignUserToCompany(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	if _, err := h.requireCMSAccess(r.Context(), sub.MembershipID, sub.CompanyID); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	if _, err := h.requireAnyPermission(r.Context(), sub.MembershipID, sub.CompanyID, "rbac.manage", "system.settings"); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	userID := strings.TrimSpace(r.PathValue("user_id"))
+	var p struct {
+		CompanyID        string `json:"company_id"`
+		MembershipStatus string `json:"membership_status"`
+		RoleID           string `json:"role_id"`
+		RoleCode         string `json:"role_code"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
+		httpx.WriteError(w, nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "invalid JSON payload", err))
+		return
+	}
+	resp, err := h.adminSvc.AssignUserToCompany(r.Context(), companyaccessapp.AssignUserToCompanyRequest{
+		Subject:          companyaccessapp.AdminSubject{UserID: sub.Sub, MembershipID: sub.MembershipID, CompanyID: sub.CompanyID},
+		UserID:           userID,
+		CompanyID:        strings.TrimSpace(p.CompanyID),
+		MembershipStatus: strings.TrimSpace(p.MembershipStatus),
+		RoleID:           strings.TrimSpace(p.RoleID),
+		RoleCode:         strings.TrimSpace(p.RoleCode),
+	})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	_ = h.auditSvc.AppendAuditLog(r.Context(), auditapp.AppendAuditLogRequest{
+		ActorUserID:       sub.Sub,
+		ActorMembershipID: sub.MembershipID,
+		CompanyID:         sub.CompanyID,
+		Action:            "cms.admin.users.assign_company",
+		ResourceType:      "user",
+		ResourceID:        userID,
+		Decision:          "allow",
+	})
+	writeEnvelope(w, http.StatusCreated, resp, nil)
+}
+
+// addCompanyMember handles POST /cms/admin/companies/{company_id}/members
+// Assigns an existing user to the company from the company-detail perspective.
+func (h *Handler) addCompanyMember(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	if _, err := h.requireCMSAccess(r.Context(), sub.MembershipID, sub.CompanyID); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	if _, err := h.requireAnyPermission(r.Context(), sub.MembershipID, sub.CompanyID, "rbac.manage", "system.settings"); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	companyID := strings.TrimSpace(r.PathValue("company_id"))
+	var p struct {
+		UserID           string `json:"user_id"`
+		MembershipStatus string `json:"membership_status"`
+		RoleID           string `json:"role_id"`
+		RoleCode         string `json:"role_code"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
+		httpx.WriteError(w, nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "invalid JSON payload", err))
+		return
+	}
+	resp, err := h.adminSvc.AssignUserToCompany(r.Context(), companyaccessapp.AssignUserToCompanyRequest{
+		Subject:          companyaccessapp.AdminSubject{UserID: sub.Sub, MembershipID: sub.MembershipID, CompanyID: sub.CompanyID},
+		UserID:           strings.TrimSpace(p.UserID),
+		CompanyID:        companyID,
+		MembershipStatus: strings.TrimSpace(p.MembershipStatus),
+		RoleID:           strings.TrimSpace(p.RoleID),
+		RoleCode:         strings.TrimSpace(p.RoleCode),
+	})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	_ = h.auditSvc.AppendAuditLog(r.Context(), auditapp.AppendAuditLogRequest{
+		ActorUserID:       sub.Sub,
+		ActorMembershipID: sub.MembershipID,
+		CompanyID:         sub.CompanyID,
+		Action:            "cms.admin.companies.members.add",
+		ResourceType:      "company",
+		ResourceID:        companyID,
+		Decision:          "allow",
+	})
+	writeEnvelope(w, http.StatusCreated, resp, nil)
 }
 
 func (h *Handler) requestAdminPasswordReset(w http.ResponseWriter, r *http.Request) {

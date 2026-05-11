@@ -1,6 +1,7 @@
 -- Dev seed: aligns with former in-memory IAM + authorization fixtures.
 -- Apply after: 0001, 0003 (projection responsibilities), 0004 (optional for disclosure FK), 0005 (unique refresh hash), 0006 (admin rule tables; optional if you use workflow/notification rule APIs).
 -- Password for all users: secret (bcrypt cost 10, generated at seed authoring time).
+-- no.company@example.com (u_no_company): active user with zero memberships — portal "no company" / onboarding flows.
 
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
@@ -30,7 +31,8 @@ INSERT INTO user_subscription_tiers (user_id, subscription_tier, source, effecti
   ('u_cms_operator', 'Enterprise', 'seed', NULL, NULL),
   ('u_truong_phong', 'Premium', 'seed', NULL, NULL),
   ('u_truong_nhom', 'Premium', 'seed', NULL, NULL),
-  ('u_nhan_vien', 'Free', 'seed', NULL, NULL)
+  ('u_nhan_vien', 'Free', 'seed', NULL, NULL),
+  ('u_no_company', 'Free', 'seed', NULL, NULL)
 ON DUPLICATE KEY UPDATE
   subscription_tier = VALUES(subscription_tier),
   source = VALUES(source),
@@ -45,7 +47,8 @@ INSERT INTO credentials (credential_id, user_id, credential_type, password_hash,
   ('cred0001-0001-4000-8000-000000000008', 'u_cms_operator', 'password', '$2a$10$34UTU89qY8PQrxq78GZaHuwZSvPIfI/JteqD86am.jnNe.1qcReES', 'bcrypt', 'active'),
   ('cred0001-0001-4000-8000-000000000005', 'u_truong_phong', 'password', '$2a$10$34UTU89qY8PQrxq78GZaHuwZSvPIfI/JteqD86am.jnNe.1qcReES', 'bcrypt', 'active'),
   ('cred0001-0001-4000-8000-000000000006', 'u_truong_nhom', 'password', '$2a$10$34UTU89qY8PQrxq78GZaHuwZSvPIfI/JteqD86am.jnNe.1qcReES', 'bcrypt', 'active'),
-  ('cred0001-0001-4000-8000-000000000007', 'u_nhan_vien', 'password', '$2a$10$34UTU89qY8PQrxq78GZaHuwZSvPIfI/JteqD86am.jnNe.1qcReES', 'bcrypt', 'active')
+  ('cred0001-0001-4000-8000-000000000007', 'u_nhan_vien', 'password', '$2a$10$34UTU89qY8PQrxq78GZaHuwZSvPIfI/JteqD86am.jnNe.1qcReES', 'bcrypt', 'active'),
+  ('cred0001-0001-4000-8000-000000000009', 'u_no_company', 'password', '$2a$10$34UTU89qY8PQrxq78GZaHuwZSvPIfI/JteqD86am.jnNe.1qcReES', 'bcrypt', 'active')
 ON DUPLICATE KEY UPDATE password_hash = VALUES(password_hash);
 
 INSERT INTO permissions (permission_id, permission_code, permission_name, module_name, status) VALUES

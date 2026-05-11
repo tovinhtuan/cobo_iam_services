@@ -117,12 +117,12 @@ func (s *adminService) CreateCompany(ctx context.Context, req CreateCompanyReque
 	}
 	boot := CreateCompanyBootstrap{
 		VerificationStatus: "verified",
-		TaxCode:              strings.TrimSpace(req.TaxCode),
-		RegistrationNumber:   strings.TrimSpace(req.RegistrationNumber),
-		Address:              strings.TrimSpace(req.Address),
-		Phone:                strings.TrimSpace(req.Phone),
-		ContactEmail:         strings.TrimSpace(req.ContactEmail),
-		RepresentativeName:   strings.TrimSpace(req.RepresentativeName),
+		TaxCode:            strings.TrimSpace(req.TaxCode),
+		RegistrationNumber: strings.TrimSpace(req.RegistrationNumber),
+		Address:            strings.TrimSpace(req.Address),
+		Phone:              strings.TrimSpace(req.Phone),
+		ContactEmail:       strings.TrimSpace(req.ContactEmail),
+		RepresentativeName: strings.TrimSpace(req.RepresentativeName),
 	}
 	companyID, companyCode, err := s.repo.CreateStandaloneCompany(ctx, name, boot)
 	if err != nil {
@@ -205,9 +205,91 @@ func (s *adminService) InviteUser(ctx context.Context, req InviteUserRequest) (*
 		}
 		req.CompanyID = req.Subject.CompanyID
 	}
+	// Platform web admin (rbac.manage) may invite without a company; enterprise admin is always
+	// scoped to their own company (forced above), so empty CompanyID is only possible for web admin.
 	if req.CompanyID == "" {
-		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "company_id is required", nil)
+		return s.inviteUserWithoutCompany(ctx, req)
 	}
+	return s.inviteUserWithCompany(ctx, req)
+}
+
+// inviteUserWithoutCompany creates a user + invitation with no membership.
+// Only reachable for platform web admins (rbac.manage) when CompanyID is omitted.
+func (s *adminService) inviteUserWithoutCompany(ctx context.Context, req InviteUserRequest) (*InviteUserResponse, error) {
+	existingUserID, existingStatus, found, err := s.repo.LookupUserByLoginID(ctx, req.Email)
+	if err != nil {
+		return nil, err
+	}
+	if found {
+		status := strings.ToLower(strings.TrimSpace(existingStatus))
+		if status == "active" {
+			return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "user already exists and is active", nil)
+		}
+		if status == "invited" {
+			// Resend invitation without changing company assignment
+			rawTok, tokHash, err := inviteRawTokenAndHash()
+			if err != nil {
+				return nil, fmt.Errorf("generate invitation token: %w", err)
+			}
+			expiresAt := time.Now().UTC().Add(s.inviteTTL)
+			if err := s.repo.ReplaceUserInvitation(ctx, existingUserID, s.idg.NewUUID(), tokHash, strings.TrimSpace(req.CreatedByUserID), expiresAt); err != nil {
+				return nil, err
+			}
+			loginID, emailAddr, fullName, _, err := s.repo.GetUserProfile(ctx, existingUserID)
+			if err != nil {
+				return nil, err
+			}
+			if s.invMailer != nil {
+				to := strings.TrimSpace(emailAddr)
+				if to == "" {
+					to = loginID
+				}
+				if err := s.invMailer.SendInvitationEmail(ctx, InvitationMailPayload{
+					UserID: existingUserID, ToEmail: to, FullName: fullName, LoginID: loginID, RawToken: rawTok,
+				}); err != nil {
+					return nil, err
+				}
+			}
+			return &InviteUserResponse{
+				UserID: existingUserID, LoginID: loginID, Email: emailAddr, FullName: fullName,
+				AccountStatus: "invited", InvitationExpiresAt: expiresAt.UTC().Format(time.RFC3339),
+			}, nil
+		}
+		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "user exists with unknown status", nil)
+	}
+
+	rawTok, tokHash, err := inviteRawTokenAndHash()
+	if err != nil {
+		return nil, fmt.Errorf("generate invitation token: %w", err)
+	}
+	expiresAt := time.Now().UTC().Add(s.inviteTTL)
+	userID := s.idg.NewUUID()
+	u := UserView{UserID: userID, LoginID: req.Email, FullName: req.FullName, Email: req.Email, AccountStatus: "invited"}
+	createdBy := strings.TrimSpace(req.CreatedByUserID)
+
+	out, err := s.repo.InviteUserWithoutCompany(ctx, u, s.idg.NewUUID(), tokHash, createdBy, expiresAt)
+	if err != nil {
+		return nil, err
+	}
+	if s.invMailer != nil {
+		to := strings.TrimSpace(out.Email)
+		if to == "" {
+			to = out.LoginID
+		}
+		if err := s.invMailer.SendInvitationEmail(ctx, InvitationMailPayload{
+			UserID: out.UserID, ToEmail: to, FullName: out.FullName, LoginID: out.LoginID, RawToken: rawTok,
+		}); err != nil {
+			return nil, err
+		}
+	}
+	return &InviteUserResponse{
+		UserID: out.UserID, LoginID: out.LoginID, Email: out.Email, FullName: out.FullName,
+		AccountStatus: out.AccountStatus, InvitationExpiresAt: expiresAt.UTC().Format(time.RFC3339),
+	}, nil
+}
+
+// inviteUserWithCompany is the original invite flow (with company + membership creation).
+func (s *adminService) inviteUserWithCompany(ctx context.Context, req InviteUserRequest) (*InviteUserResponse, error) {
 	if req.MembershipStatus == "" {
 		req.MembershipStatus = "active"
 	}
@@ -416,6 +498,96 @@ func (s *adminService) hasPermission(ctx context.Context, sub AdminSubject, perm
 		}
 	}
 	return false, nil
+}
+
+// AssignUserToCompany links an existing user to a company. If the user is still in "invited" state
+// it also creates membership + re-issues the invitation email with company context.
+// If the user is already active it creates the membership directly.
+func (s *adminService) AssignUserToCompany(ctx context.Context, req AssignUserToCompanyRequest) (*AssignUserToCompanyResponse, error) {
+	if err := s.authorize(ctx, req.Subject, "admin.membership.create", req.CompanyID); err != nil {
+		return nil, err
+	}
+	userID := strings.TrimSpace(req.UserID)
+	companyID := strings.TrimSpace(req.CompanyID)
+	if userID == "" || companyID == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "user_id and company_id are required", nil)
+	}
+
+	loginID, emailAddr, fullName, acctStatus, err := s.repo.GetUserProfile(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	already, err := s.repo.MembershipExistsForUserCompany(ctx, userID, companyID)
+	if err != nil {
+		return nil, err
+	}
+	if already {
+		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "user is already a member of this company", nil)
+	}
+
+	membershipStatus := strings.TrimSpace(req.MembershipStatus)
+	if membershipStatus == "" {
+		membershipStatus = "active"
+	}
+	membershipID := s.idg.NewUUID()
+	m, err := s.repo.CreateMembership(ctx, MembershipView{
+		MembershipID: membershipID, UserID: userID, CompanyID: companyID, Status: membershipStatus,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Assign role if requested.
+	if roleID := strings.TrimSpace(req.RoleID); roleID != "" {
+		if err := s.repo.AddRole(ctx, m.MembershipID, roleID); err != nil {
+			_ = s.repo.DeleteMembership(ctx, m.MembershipID)
+			return nil, err
+		}
+	} else if roleCode := strings.TrimSpace(req.RoleCode); roleCode != "" {
+		defRoleCode := strings.TrimSpace(s.inviteDefaultRoleCode)
+		if defRoleCode == "" {
+			defRoleCode = "user_thuong"
+		}
+		resolvedRoleID, err := s.repo.LookupRoleIDForInvite(ctx, companyID, "", roleCode, defRoleCode)
+		if err != nil {
+			_ = s.repo.DeleteMembership(ctx, m.MembershipID)
+			return nil, err
+		}
+		if err := s.repo.AddRole(ctx, m.MembershipID, resolvedRoleID); err != nil {
+			_ = s.repo.DeleteMembership(ctx, m.MembershipID)
+			return nil, err
+		}
+	}
+
+	resp := &AssignUserToCompanyResponse{
+		UserID: userID, CompanyID: companyID, MembershipID: m.MembershipID,
+	}
+
+	// For invited users: re-issue invitation with company context so the email includes company info.
+	if strings.EqualFold(strings.TrimSpace(acctStatus), "invited") && s.invMailer != nil {
+		rawTok, tokHash, err := inviteRawTokenAndHash()
+		if err == nil {
+			expiresAt := time.Now().UTC().Add(s.inviteTTL)
+			if replErr := s.repo.ReplaceUserInvitation(ctx, userID, s.idg.NewUUID(), tokHash, req.Subject.UserID, expiresAt); replErr == nil {
+				companyDisplay := ""
+				if cn, err := s.repo.GetCompanyName(ctx, companyID); err == nil {
+					companyDisplay = cn
+				}
+				to := strings.TrimSpace(emailAddr)
+				if to == "" {
+					to = loginID
+				}
+				_ = s.invMailer.SendInvitationEmail(ctx, InvitationMailPayload{
+					UserID: userID, ToEmail: to, FullName: fullName, LoginID: loginID,
+					RawToken: rawTok, CompanyName: companyDisplay,
+				})
+				resp.ResendInvitation = true
+			}
+		}
+	}
+
+	return resp, nil
 }
 
 func (s *adminService) CreateMembership(ctx context.Context, req CreateMembershipRequest) (*MembershipView, error) {

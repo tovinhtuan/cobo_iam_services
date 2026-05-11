@@ -190,6 +190,20 @@ func (r *AdminRepository) ListInviteRolesForCompany(_ context.Context, companyID
 	return out, nil
 }
 
+func (r *AdminRepository) InviteUserWithoutCompany(_ context.Context, u caapp.UserView, invitationID, tokenHash, _ string, _ time.Time) (*caapp.UserView, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	key := strings.ToLower(strings.TrimSpace(u.LoginID))
+	if existingID, ok := r.usersByLoginID[key]; ok && existingID != "" {
+		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "login_id already exists", nil)
+	}
+	r.users[u.UserID] = u
+	r.usersByLoginID[key] = u.UserID
+	r.invitationsByUser[u.UserID] = append(r.invitationsByUser[u.UserID], invitationID+":"+tokenHash)
+	cp := u
+	return &cp, nil
+}
+
 func (r *AdminRepository) ReplaceUserInvitation(_ context.Context, userID, invitationID, tokenHash, _ string, _ time.Time) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

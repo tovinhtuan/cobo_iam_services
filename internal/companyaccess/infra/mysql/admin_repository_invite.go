@@ -134,6 +134,40 @@ func (r *AdminRepository) InviteUserWithMembership(ctx context.Context, u caapp.
 	return &u, nil
 }
 
+// InviteUserWithoutCompany creates user + invitation without any membership row.
+func (r *AdminRepository) InviteUserWithoutCompany(ctx context.Context, u caapp.UserView, invitationID, tokenHash, createdByUserID string, expiresAt time.Time) (*caapp.UserView, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO users (user_id, login_id, full_name, email, phone, account_status)
+		VALUES (?, ?, ?, NULLIF(?, ''), NULL, ?)
+	`, u.UserID, u.LoginID, u.FullName, u.Email, u.AccountStatus)
+	if err != nil {
+		if isMySQLDuplicate(err) {
+			return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "login_id already exists", nil)
+		}
+		return nil, fmt.Errorf("create invited user: %w", err)
+	}
+
+	createdBy := sql.NullString{String: strings.TrimSpace(createdByUserID), Valid: strings.TrimSpace(createdByUserID) != ""}
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO user_invitations (invitation_id, user_id, token_hash, expires_at, created_by_user_id, send_count, last_sent_at)
+		VALUES (?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)
+	`, invitationID, u.UserID, tokenHash, expiresAt.UTC(), createdBy)
+	if err != nil {
+		return nil, fmt.Errorf("create invitation: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return &u, nil
+}
+
 func (r *AdminRepository) ReplaceUserInvitation(ctx context.Context, userID, invitationID, tokenHash, createdByUserID string, expiresAt time.Time) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {

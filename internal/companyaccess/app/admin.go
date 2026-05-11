@@ -17,6 +17,9 @@ type AdminService interface {
 	// ListInviteRoles returns assignable roles for a target company (global + company-scoped), same resolution as invite.
 	ListInviteRoles(ctx context.Context, req ListInviteRolesRequest) ([]InviteRoleOption, error)
 	ResendUserInvitation(ctx context.Context, req ResendUserInvitationRequest) error
+	// AssignUserToCompany links an existing user (active or invited) to a company.
+	// For invited users it also re-issues the invitation with company context.
+	AssignUserToCompany(ctx context.Context, req AssignUserToCompanyRequest) (*AssignUserToCompanyResponse, error)
 	CreateMembership(ctx context.Context, req CreateMembershipRequest) (*MembershipView, error)
 	UpdateMembership(ctx context.Context, req UpdateMembershipRequest) (*MembershipView, error)
 	DeleteMembership(ctx context.Context, req DeleteMembershipRequest) error
@@ -42,6 +45,8 @@ type AdminService interface {
 type AdminRepository interface {
 	CreateUser(ctx context.Context, u UserView, passwordHash string, opts CreateUserOptions) (*UserView, error)
 	InviteUserWithMembership(ctx context.Context, u UserView, opts CreateUserOptions, invitationID, tokenHash, createdByUserID string, expiresAt time.Time) (*UserView, error)
+	// InviteUserWithoutCompany creates user + invitation with no membership (company-optional invite).
+	InviteUserWithoutCompany(ctx context.Context, u UserView, invitationID, tokenHash, createdByUserID string, expiresAt time.Time) (*UserView, error)
 	ReplaceUserInvitation(ctx context.Context, userID, invitationID, tokenHash, createdByUserID string, expiresAt time.Time) error
 	LookupUserByLoginID(ctx context.Context, loginID string) (userID string, accountStatus string, found bool, err error)
 	GetUserProfile(ctx context.Context, userID string) (loginID, email, fullName, accountStatus string, err error)
@@ -168,15 +173,33 @@ type ResendUserInvitationRequest struct {
 	CompanyID string
 }
 
+// AssignUserToCompanyRequest links an existing user (by login_id/email or user_id) to a company.
+type AssignUserToCompanyRequest struct {
+	Subject          AdminSubject
+	UserID           string `json:"user_id"`
+	CompanyID        string `json:"company_id"`
+	MembershipStatus string `json:"membership_status"`
+	RoleID           string `json:"role_id"`
+	RoleCode         string `json:"role_code"`
+}
+
+type AssignUserToCompanyResponse struct {
+	UserID       string `json:"user_id"`
+	CompanyID    string `json:"company_id"`
+	MembershipID string `json:"membership_id"`
+	// ResendInvitation is true when the user was in "invited" state and a new invitation email was sent.
+	ResendInvitation bool `json:"resend_invitation"`
+}
+
 type CreateCompanyRequest struct {
-	Subject     AdminSubject
-	CompanyName string `json:"company_name"`
-	TaxCode              string `json:"tax_code,omitempty"`
-	RegistrationNumber   string `json:"registration_number,omitempty"`
-	Address              string `json:"address,omitempty"`
-	Phone                string `json:"phone,omitempty"`
-	ContactEmail         string `json:"contact_email,omitempty"`
-	RepresentativeName   string `json:"representative_name,omitempty"`
+	Subject            AdminSubject
+	CompanyName        string `json:"company_name"`
+	TaxCode            string `json:"tax_code,omitempty"`
+	RegistrationNumber string `json:"registration_number,omitempty"`
+	Address            string `json:"address,omitempty"`
+	Phone              string `json:"phone,omitempty"`
+	ContactEmail       string `json:"contact_email,omitempty"`
+	RepresentativeName string `json:"representative_name,omitempty"`
 }
 
 type CreateCompanyResult struct {

@@ -40,7 +40,8 @@ type IdentityQueryService interface {
 // UserInvitationExecutor loads/consumes user_invitations rows (MySQL implementation in iam/infra/mysql).
 type UserInvitationExecutor interface {
 	PeekUserInvitation(ctx context.Context, rawToken string, now time.Time) (valid bool, reason string, emailHint string, expiresAtUTC time.Time, err error)
-	AcceptUserInvitation(ctx context.Context, rawToken string, bcryptPasswordHash string, now time.Time) error
+	// AcceptUserInvitation consumes the token and returns (userID, loginID) to allow the caller to issue a session.
+	AcceptUserInvitation(ctx context.Context, rawToken string, bcryptPasswordHash string, now time.Time) (userID string, loginID string, err error)
 }
 
 // LoginAttemptRecorder persists login success/failure for audit and rate-limit groundwork.
@@ -347,6 +348,10 @@ type AcceptUserInvitationRequest struct {
 
 type AcceptUserInvitationResponse struct {
 	Success bool `json:"success"`
+	// Session is populated when auto-login succeeds after accepting the invitation.
+	// FE should store tokens and bootstrap the session instead of redirecting to /login.
+	Session    *LoginSession `json:"session,omitempty"`
+	NextAction string        `json:"next_action,omitempty"`
 }
 
 type SelectCompanyRequest struct {

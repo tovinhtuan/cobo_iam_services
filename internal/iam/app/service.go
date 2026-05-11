@@ -116,12 +116,6 @@ func (s *service) Login(ctx context.Context, req LoginRequest) (*LoginResponse, 
 			active = append(active, m)
 		}
 	}
-	if len(active) == 0 {
-		e := perr.NewHTTPError(http.StatusForbidden, perr.CodeNoActiveCompanyAccess, "User does not have any active company membership.", nil)
-		s.recordLoginAttempt(ctx, req, user, false, e)
-		return nil, e
-	}
-
 	sid := s.idgen.NewUUID()
 	refresh, err := s.tokens.IssueRefreshToken(ctx, sid, user.UserID)
 	if err != nil {
@@ -133,6 +127,25 @@ func (s *service) Login(ctx context.Context, req LoginRequest) (*LoginResponse, 
 		User:    LoginUser{UserID: user.UserID, FullName: user.FullName},
 		Session: LoginSession{RefreshToken: refresh},
 	}
+
+	if len(active) == 0 {
+		// User has no active membership — allowed to login but restricted to non-enterprise modules.
+		access, exp, err := s.tokens.IssueAccessToken(ctx, AccessTokenClaims{Sub: user.UserID, SessionID: sid})
+		if err != nil {
+			s.recordLoginAttempt(ctx, req, user, false, err)
+			return nil, fmt.Errorf("issue access token: %w", err)
+		}
+		resp.Session.AccessToken = access
+		resp.Session.ExpiresIn = exp
+		resp.NextAction = "no_company_onboarding"
+		if err := s.sessions.Create(ctx, CreateSessionParams{SessionID: sid, UserID: user.UserID, RefreshToken: refresh, IP: req.IP, UserAgent: req.UserAgent}); err != nil {
+			s.recordLoginAttempt(ctx, req, user, false, err)
+			return nil, fmt.Errorf("create session: %w", err)
+		}
+		s.recordLoginAttempt(ctx, req, user, true, nil)
+		return resp, nil
+	}
+
 	resp.PlatformAccessHint = s.hasPlatformAccessHint(ctx, active)
 
 	if len(active) == 1 {
@@ -604,10 +617,60 @@ func (s *service) AcceptUserInvitation(ctx context.Context, req AcceptUserInvita
 		return nil, fmt.Errorf("hash password: %w", err)
 	}
 	now := time.Now().UTC()
-	if err := s.invite.AcceptUserInvitation(ctx, token, string(hash), now); err != nil {
+	acceptedUserID, _, err := s.invite.AcceptUserInvitation(ctx, token, string(hash), now)
+	if err != nil {
 		return nil, err
 	}
-	return &AcceptUserInvitationResponse{Success: true}, nil
+
+	resp := &AcceptUserInvitationResponse{Success: true}
+
+	// Best-effort auto-login: issue a session so FE can skip the /login redirect.
+	// If token issuance fails we still return success — FE falls back to manual login.
+	if s.sessions != nil && s.tokens != nil && acceptedUserID != "" {
+		sid := s.idgen.NewUUID()
+		refreshTok, rtErr := s.tokens.IssueRefreshToken(ctx, sid, acceptedUserID)
+		if rtErr == nil {
+			allMem, memErr := s.memberships.GetMembershipsByUser(ctx, acceptedUserID)
+			if memErr != nil {
+				allMem = nil
+			}
+			active := make([]ca.MembershipView, 0, len(allMem))
+			for _, m := range allMem {
+				if strings.EqualFold(m.Status, "active") {
+					active = append(active, m)
+				}
+			}
+			var (
+				accessTok string
+				expiresIn int64
+				nextAct   string
+			)
+			if len(active) == 0 {
+				accessTok, expiresIn, _ = s.tokens.IssueAccessToken(ctx, AccessTokenClaims{Sub: acceptedUserID, SessionID: sid})
+				nextAct = "no_company_onboarding"
+			} else {
+				m := active[0]
+				accessTok, expiresIn, _ = s.tokens.IssueAccessToken(ctx, AccessTokenClaims{
+					Sub: acceptedUserID, SessionID: sid,
+					CompanyID: m.CompanyID, MembershipID: m.MembershipID,
+				})
+			}
+			if accessTok != "" {
+				_ = s.sessions.Create(ctx, CreateSessionParams{
+					SessionID: sid, UserID: acceptedUserID,
+					RefreshToken: refreshTok,
+				})
+				resp.Session = &LoginSession{
+					AccessToken:  accessTok,
+					RefreshToken: refreshTok,
+					ExpiresIn:    expiresIn,
+				}
+				resp.NextAction = nextAct
+			}
+		}
+	}
+
+	return resp, nil
 }
 
 func (s *service) PublishUserInvitationEmail(ctx context.Context, userID, toEmail, fullName, loginID, rawToken, companyName string) error {

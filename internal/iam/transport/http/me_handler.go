@@ -3,6 +3,7 @@ package http
 import (
 	"net/http"
 	"sort"
+	"strings"
 
 	authapp "github.com/cobo/cobo_iam_services/internal/authorization/app"
 	caapp "github.com/cobo/cobo_iam_services/internal/companyaccess/app"
@@ -44,6 +45,26 @@ func (m *MeHandler) me(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, m.h.log, err)
 		return
 	}
+	memberships, err := m.members.GetMembershipsByUser(r.Context(), claims.Sub)
+	if err != nil {
+		httpx.WriteError(w, m.h.log, err)
+		return
+	}
+	activeMemberships := make([]map[string]any, 0, len(memberships))
+	for _, ms := range memberships {
+		if strings.EqualFold(strings.TrimSpace(ms.Status), "active") {
+			activeMemberships = append(activeMemberships, map[string]any{
+				"company_id":    ms.CompanyID,
+				"company_name":  ms.CompanyName,
+				"membership_id": ms.MembershipID,
+			})
+		}
+	}
+	hasCompany := len(activeMemberships) > 0
+	activeCompanyID := any(nil)
+	if claims.CompanyID != "" {
+		activeCompanyID = claims.CompanyID
+	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"user": map[string]any{
 			"user_id":           user.UserID,
@@ -54,6 +75,11 @@ func (m *MeHandler) me(w http.ResponseWriter, r *http.Request) {
 		"current_context": map[string]any{
 			"company_id":    claims.CompanyID,
 			"membership_id": claims.MembershipID,
+		},
+		"company_context": map[string]any{
+			"has_company":       hasCompany,
+			"active_company_id": activeCompanyID,
+			"companies":         activeMemberships,
 		},
 	})
 }
