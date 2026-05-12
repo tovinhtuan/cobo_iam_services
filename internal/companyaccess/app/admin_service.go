@@ -444,8 +444,53 @@ func (s *adminService) ResendUserInvitation(ctx context.Context, req ResendUserI
 		return err
 	}
 	userID := strings.TrimSpace(req.UserID)
+	if userID == "" {
+		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "user_id is required", nil)
+	}
+	if req.ResendNoCompanyScope {
+		isWebAdmin, err := s.hasPermission(ctx, req.Subject, "rbac.manage")
+		if err != nil {
+			return err
+		}
+		if !isWebAdmin {
+			return perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "resend without company requires rbac.manage", nil)
+		}
+		n, err := s.repo.CountMembershipsForUser(ctx, userID)
+		if err != nil {
+			return err
+		}
+		if n > 0 {
+			return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "user has memberships; pass company_id to resend in company context", nil)
+		}
+		loginID, email, fullName, acctStatus, err := s.repo.GetUserProfile(ctx, userID)
+		if err != nil {
+			return err
+		}
+		if !strings.EqualFold(strings.TrimSpace(acctStatus), "invited") {
+			return perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "user is not in invited state", nil)
+		}
+		rawTok, tokHash, err := inviteRawTokenAndHash()
+		if err != nil {
+			return fmt.Errorf("generate invitation token: %w", err)
+		}
+		expiresAt := time.Now().UTC().Add(s.inviteTTL)
+		if err := s.repo.ReplaceUserInvitation(ctx, userID, s.idg.NewUUID(), tokHash, strings.TrimSpace(req.Subject.UserID), expiresAt); err != nil {
+			return err
+		}
+		if s.invMailer != nil {
+			to := strings.TrimSpace(email)
+			if to == "" {
+				to = strings.TrimSpace(loginID)
+			}
+			return s.invMailer.SendInvitationEmail(ctx, InvitationMailPayload{
+				UserID: userID, ToEmail: to, FullName: fullName, LoginID: loginID, RawToken: rawTok,
+			})
+		}
+		return nil
+	}
+
 	cid := strings.TrimSpace(req.CompanyID)
-	if userID == "" || cid == "" {
+	if cid == "" {
 		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "user_id and company_id are required", nil)
 	}
 	ok, err := s.repo.MembershipExistsForUserCompany(ctx, userID, cid)
@@ -613,10 +658,24 @@ func (s *adminService) DeleteMembership(ctx context.Context, req DeleteMembershi
 	return s.repo.DeleteMembership(ctx, req.MembershipID)
 }
 func (s *adminService) ListCompanyMemberships(ctx context.Context, req ListCompanyMembershipsRequest) ([]MembershipView, error) {
-	if err := s.authorize(ctx, req.Subject, "admin.membership.list", req.CompanyID); err != nil {
+	if req.ListWithoutCompany {
+		isWebAdmin, err := s.hasPermission(ctx, req.Subject, "rbac.manage")
+		if err != nil {
+			return nil, err
+		}
+		if !isWebAdmin {
+			return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "listing users without company requires rbac.manage", nil)
+		}
+		if err := s.authorize(ctx, req.Subject, "admin.membership.list", req.Subject.CompanyID); err != nil {
+			return nil, err
+		}
+		return s.repo.ListUsersWithNoMembership(ctx)
+	}
+	cid := strings.TrimSpace(req.CompanyID)
+	if err := s.authorize(ctx, req.Subject, "admin.membership.list", cid); err != nil {
 		return nil, err
 	}
-	return s.repo.ListMembershipsByCompany(ctx, req.CompanyID)
+	return s.repo.ListMembershipsByCompany(ctx, cid)
 }
 func (s *adminService) AssignRole(ctx context.Context, req AssignRoleRequest) error {
 	if err := s.authorize(ctx, req.Subject, "admin.membership.role.assign", req.MembershipID); err != nil {

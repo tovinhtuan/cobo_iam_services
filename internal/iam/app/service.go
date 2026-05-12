@@ -278,9 +278,6 @@ func (s *service) RegisterPublic(ctx context.Context, req RegisterPublicRequest)
 	if fullName == "" {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "full_name is required", nil)
 	}
-	if companyName == "" {
-		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "company_name is required", nil)
-	}
 	if len(strings.TrimSpace(req.Password)) < 12 {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "password must be at least 12 characters", nil)
 	}
@@ -291,8 +288,14 @@ func (s *service) RegisterPublic(ctx context.Context, req RegisterPublicRequest)
 	if err != nil {
 		return nil, fmt.Errorf("hash password: %w", err)
 	}
-	if _, _, _, err := iamregmysql.RegisterPublicAccount(ctx, s.regDB, email, fullName, companyName, string(hash)); err != nil {
-		return nil, err
+	if companyName != "" {
+		if _, _, _, err := iamregmysql.RegisterPublicAccount(ctx, s.regDB, email, fullName, companyName, string(hash)); err != nil {
+			return nil, err
+		}
+	} else {
+		if _, err := iamregmysql.RegisterPublicUserOnly(ctx, s.regDB, email, fullName, string(hash)); err != nil {
+			return nil, err
+		}
 	}
 	loginReq := LoginRequest{Email: email, Password: req.Password, IP: req.IP, UserAgent: req.UserAgent}
 	resp, err := s.Login(ctx, loginReq)

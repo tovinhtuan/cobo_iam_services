@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -1210,6 +1211,19 @@ func (h *Handler) createCMSCompany(w http.ResponseWriter, r *http.Request) {
 	writeEnvelope(w, http.StatusCreated, resp, nil)
 }
 
+// cmsQueryCompanyScope interprets ?company_id for CMS admin user list/resend.
+// Missing company_id → defaultCompanyID. Present but empty (?company_id=) → explicitEmpty for orphan-only flows.
+func cmsQueryCompanyScope(q url.Values, defaultCompanyID string) (companyID string, explicitEmpty bool) {
+	vals, ok := q["company_id"]
+	if !ok {
+		return strings.TrimSpace(defaultCompanyID), false
+	}
+	if len(vals) == 0 || strings.TrimSpace(vals[0]) == "" {
+		return "", true
+	}
+	return strings.TrimSpace(vals[0]), false
+}
+
 func (h *Handler) adminUsers(w http.ResponseWriter, r *http.Request) {
 	sub, err := h.subject(r)
 	if err != nil {
@@ -1224,17 +1238,15 @@ func (h *Handler) adminUsers(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, nil, err)
 		return
 	}
-	companyID := strings.TrimSpace(r.URL.Query().Get("company_id"))
-	if companyID == "" {
-		companyID = sub.CompanyID
-	}
+	companyID, listWithout := cmsQueryCompanyScope(r.URL.Query(), sub.CompanyID)
 	items, err := h.adminSvc.ListCompanyMemberships(r.Context(), companyaccessapp.ListCompanyMembershipsRequest{
 		Subject: companyaccessapp.AdminSubject{
 			UserID:       sub.Sub,
 			MembershipID: sub.MembershipID,
 			CompanyID:    sub.CompanyID,
 		},
-		CompanyID: companyID,
+		CompanyID:          companyID,
+		ListWithoutCompany: listWithout,
 	})
 	if err != nil {
 		httpx.WriteError(w, nil, err)
@@ -1264,8 +1276,8 @@ func (h *Handler) createAdminUser(w http.ResponseWriter, r *http.Request) {
 		Email            string `json:"email"`
 		Phone            string `json:"phone"`
 		AccountStatus    string `json:"account_status"`
-		CompanyID        string `json:"company_id"`
-		MembershipStatus string `json:"membership_status"`
+		CompanyID        string `json:"company_id"`        // optional: omit or empty for login-only user (no membership)
+		MembershipStatus string `json:"membership_status"` // used when company_id is set
 	}
 	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
 		httpx.WriteError(w, nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "invalid JSON payload", err))
@@ -1364,18 +1376,16 @@ func (h *Handler) resendInvitation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	userID := strings.TrimSpace(r.PathValue("user_id"))
-	companyID := strings.TrimSpace(r.URL.Query().Get("company_id"))
-	if companyID == "" {
-		companyID = sub.CompanyID
-	}
+	companyID, resendNoCompany := cmsQueryCompanyScope(r.URL.Query(), sub.CompanyID)
 	if err := h.adminSvc.ResendUserInvitation(r.Context(), companyaccessapp.ResendUserInvitationRequest{
 		Subject: companyaccessapp.AdminSubject{
 			UserID:       sub.Sub,
 			MembershipID: sub.MembershipID,
 			CompanyID:    sub.CompanyID,
 		},
-		UserID:    userID,
-		CompanyID: companyID,
+		UserID:               userID,
+		CompanyID:            companyID,
+		ResendNoCompanyScope: resendNoCompany,
 	}); err != nil {
 		httpx.WriteError(w, nil, err)
 		return

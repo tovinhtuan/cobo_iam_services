@@ -64,6 +64,10 @@ type AdminRepository interface {
 	UpdateMembershipStatus(ctx context.Context, membershipID, status string) (*MembershipView, error)
 	DeleteMembership(ctx context.Context, membershipID string) error
 	ListMembershipsByCompany(ctx context.Context, companyID string) ([]MembershipView, error)
+	// ListUsersWithNoMembership returns users that have zero rows in memberships.
+	ListUsersWithNoMembership(ctx context.Context) ([]MembershipView, error)
+	// CountMembershipsForUser counts memberships for a user (any company).
+	CountMembershipsForUser(ctx context.Context, userID string) (int, error)
 
 	// LookupRoleIDForInvite resolves an assignable role for a new membership: explicit role_id,
 	// or role_code / defaultRoleCode against companies.roles (company-specific overrides global).
@@ -171,6 +175,9 @@ type ResendUserInvitationRequest struct {
 	Subject   AdminSubject
 	UserID    string
 	CompanyID string
+	// ResendNoCompanyScope is true when the client sent an explicit empty company_id (e.g. ?company_id=):
+	// resend invitation for an invited user with no memberships (platform rbac.manage only).
+	ResendNoCompanyScope bool
 }
 
 // AssignUserToCompanyRequest links an existing user (by login_id/email or user_id) to a company.
@@ -216,7 +223,9 @@ type CreateUserRequest struct {
 	Email         string `json:"email"`
 	Phone         string `json:"phone"`
 	AccountStatus string `json:"account_status"`
-	// Optional: if provided, user + membership are created atomically in one call.
+	// CompanyID optional: empty creates user + password only (no membership), for callers with rbac.manage.
+	// Enterprise admins without rbac.manage still get CompanyID forced to their tenant in the service layer.
+	// Semantics align with optional company_id on InviteUser.
 	CompanyID        string `json:"company_id"`
 	MembershipStatus string `json:"membership_status"`
 }
@@ -241,6 +250,9 @@ type DeleteMembershipRequest struct {
 type ListCompanyMembershipsRequest struct {
 	Subject   AdminSubject
 	CompanyID string
+	// ListWithoutCompany is true when the client sent an explicit empty company_id (e.g. ?company_id=):
+	// list users that have no membership rows (platform rbac.manage only).
+	ListWithoutCompany bool
 }
 
 type AssignRoleRequest struct {

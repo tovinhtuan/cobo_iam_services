@@ -254,6 +254,45 @@ func (r *AdminRepository) ListMembershipsByCompany(_ context.Context, companyID 
 	return out, nil
 }
 
+func (r *AdminRepository) CountMembershipsForUser(_ context.Context, userID string) (int, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	n := 0
+	for _, m := range r.memberships {
+		if m.UserID == userID {
+			n++
+		}
+	}
+	return n, nil
+}
+
+func (r *AdminRepository) ListUsersWithNoMembership(_ context.Context) ([]caapp.MembershipView, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	hasMem := map[string]struct{}{}
+	for _, m := range r.memberships {
+		hasMem[m.UserID] = struct{}{}
+	}
+	ids := make([]string, 0, len(r.users))
+	for uid := range r.users {
+		if _, ok := hasMem[uid]; !ok {
+			ids = append(ids, uid)
+		}
+	}
+	sort.Strings(ids)
+	out := make([]caapp.MembershipView, 0, len(ids))
+	for _, uid := range ids {
+		u := r.users[uid]
+		out = append(out, caapp.MembershipView{
+			UserID:        uid,
+			LoginID:       u.LoginID,
+			FullName:      u.FullName,
+			AccountStatus: u.AccountStatus,
+		})
+	}
+	return out, nil
+}
+
 func addSet(m map[string]map[string]struct{}, k, v string) {
 	if m[k] == nil {
 		m[k] = map[string]struct{}{}

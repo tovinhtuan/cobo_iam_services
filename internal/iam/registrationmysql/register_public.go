@@ -217,6 +217,59 @@ func RegisterPublicAccount(ctx context.Context, db *sql.DB, email, fullName, com
 	return userID, companyID, membershipID, nil
 }
 
+// RegisterPublicUserOnly creates an active user, password credential, and Free tier — no company or membership.
+func RegisterPublicUserOnly(ctx context.Context, db *sql.DB, email, fullName, passwordHash string) (userID string, err error) {
+	email = strings.TrimSpace(strings.ToLower(email))
+	fullName = strings.TrimSpace(fullName)
+	if email == "" || fullName == "" || passwordHash == "" {
+		return "", perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "email, full_name and password are required", nil)
+	}
+
+	var exists int
+	err = db.QueryRowContext(ctx, `SELECT 1 FROM users WHERE LOWER(TRIM(login_id)) = ? LIMIT 1`, email).Scan(&exists)
+	if err == nil {
+		return "", perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "email already registered", nil)
+	}
+	if err != sql.ErrNoRows {
+		return "", err
+	}
+
+	userID = uuid.NewString()
+	credID := uuid.NewString()
+
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO users (user_id, login_id, full_name, email, phone, account_status)
+		VALUES (?, ?, ?, ?, NULL, 'active')
+	`, userID, email, fullName, email); err != nil {
+		return "", fmt.Errorf("insert user: %w", err)
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO credentials (credential_id, user_id, credential_type, password_hash, password_algo, status, password_changed_at)
+		VALUES (?, ?, 'password', ?, 'bcrypt', 'active', CURRENT_TIMESTAMP)
+	`, credID, userID, passwordHash); err != nil {
+		return "", fmt.Errorf("insert credential: %w", err)
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO user_subscription_tiers (user_id, subscription_tier, source, effective_from, effective_to)
+		VALUES (?, 'Free', 'public_registration', NULL, NULL)
+	`, userID); err != nil {
+		return "", fmt.Errorf("insert subscription tier: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return "", err
+	}
+	return userID, nil
+}
+
 func pickUniqueCompanyCode(ctx context.Context, q rowQuerier, companyName string) (string, error) {
 	base := nonCompanyCodeChars.ReplaceAllString(strings.ToLower(strings.TrimSpace(companyName)), "_")
 	base = strings.Trim(base, "_")

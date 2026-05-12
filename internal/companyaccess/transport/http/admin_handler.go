@@ -55,8 +55,8 @@ func (h *AdminHandler) createUser(w http.ResponseWriter, r *http.Request) {
 		Email         string `json:"email"`
 		Phone         string `json:"phone"`
 		AccountStatus string `json:"account_status"`
-		CompanyID        string `json:"company_id"`
-		MembershipStatus string `json:"membership_status"`
+		CompanyID        string `json:"company_id"`        // optional: empty = user without membership (when caller has rbac.manage)
+		MembershipStatus string `json:"membership_status"` // when company_id set
 	}
 	_ = json.NewDecoder(r.Body).Decode(&p)
 	resp, err := h.svc.CreateUser(r.Context(), caapp.CreateUserRequest{

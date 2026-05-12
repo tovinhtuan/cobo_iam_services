@@ -75,7 +75,7 @@ func (h *Handler) registerPublic(w http.ResponseWriter, r *http.Request) {
 		PasswordCipher  *iamapp.LoginPasswordCipher `json:"password_cipher,omitempty"`
 		ConfirmPassword string                      `json:"confirm_password"`
 		FullName        string                      `json:"full_name"`
-		CompanyName     string                      `json:"company_name"`
+		CompanyName     string                      `json:"company_name,omitempty"` // optional: omit for user-only signup
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		httpx.WriteError(w, h.log, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "invalid JSON payload", err))

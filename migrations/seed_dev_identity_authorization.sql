@@ -20,7 +20,8 @@ INSERT INTO users (user_id, login_id, full_name, account_status) VALUES
   ('u_cms_operator', 'cms.operator@example.com', 'CMS Operator', 'active'),
   ('u_truong_phong', 'truong.phong@example.com', 'Truong Phong Ban', 'active'),
   ('u_truong_nhom', 'truong.nhom@example.com', 'Truong Nhom', 'active'),
-  ('u_nhan_vien', 'nhanvien@example.com', 'Nhan Vien Thuong', 'active')
+  ('u_nhan_vien', 'nhanvien@example.com', 'Nhan Vien Thuong', 'active'),
+  ('u_no_company', 'no.company@example.com', 'No Company User', 'active')
 ON DUPLICATE KEY UPDATE full_name = VALUES(full_name), account_status = VALUES(account_status);
 
 INSERT INTO user_subscription_tiers (user_id, subscription_tier, source, effective_from, effective_to) VALUES

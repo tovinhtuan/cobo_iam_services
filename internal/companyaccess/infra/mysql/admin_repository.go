@@ -181,6 +181,41 @@ func (r *AdminRepository) ListMembershipsByCompany(ctx context.Context, companyI
 	return out, rows.Err()
 }
 
+func (r *AdminRepository) ListUsersWithNoMembership(ctx context.Context) ([]caapp.MembershipView, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT '' AS membership_id,
+		       u.user_id,
+		       '' AS company_id,
+		       '' AS company_name,
+		       '' AS membership_status,
+		       u.login_id, u.full_name, u.account_status
+		FROM users u
+		WHERE NOT EXISTS (SELECT 1 FROM memberships m WHERE m.user_id = u.user_id)
+		ORDER BY u.created_at DESC
+		LIMIT 500
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []caapp.MembershipView
+	for rows.Next() {
+		var v caapp.MembershipView
+		if err := rows.Scan(&v.MembershipID, &v.UserID, &v.CompanyID, &v.CompanyName, &v.Status,
+			&v.LoginID, &v.FullName, &v.AccountStatus); err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
+func (r *AdminRepository) CountMembershipsForUser(ctx context.Context, userID string) (int, error) {
+	var n int
+	err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM memberships WHERE user_id = ?`, userID).Scan(&n)
+	return n, err
+}
+
 func (r *AdminRepository) AddRole(ctx context.Context, membershipID, roleID string) error {
 	if err := r.ensureMembership(ctx, membershipID); err != nil {
 		return err

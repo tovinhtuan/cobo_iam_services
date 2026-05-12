@@ -8,7 +8,9 @@ import (
 // Service defines IAM use-cases used by transport layer.
 type Service interface {
 	Login(ctx context.Context, req LoginRequest) (*LoginResponse, error)
-	// RegisterPublic creates an active user + active company + owner membership (MySQL) then issues the same session as Login.
+	// RegisterPublic creates an active user then issues the same session as Login.
+	// When company_name is set: also creates company + membership + self-reg owner role (tenant onboarding).
+	// When company_name is empty: user only (no company); login follows the no-membership path.
 	RegisterPublic(ctx context.Context, req RegisterPublicRequest) (*LoginResponse, error)
 	Refresh(ctx context.Context, req RefreshRequest) (*RefreshResponse, error)
 	Logout(ctx context.Context, req LogoutRequest) (*LogoutResponse, error)
@@ -186,8 +188,8 @@ type RegisterPublicRequest struct {
 	Email           string `json:"email"`
 	Password        string `json:"password"`
 	ConfirmPassword string `json:"confirm_password"`
-	FullName        string `json:"full_name"`
-	CompanyName     string `json:"company_name"`
+	FullName    string `json:"full_name"`
+	CompanyName string `json:"company_name,omitempty"` // optional: omit or empty for account without company
 	IP              string `json:"-"`
 	UserAgent       string `json:"-"`
 }

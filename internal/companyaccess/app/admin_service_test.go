@@ -157,6 +157,113 @@ func TestAdminService_CreateUser_WebAdminCanCreateOtherCompany(t *testing.T) {
 	}
 }
 
+func TestAdminService_CreateUser_WebAdmin_NoMembershipWhenCompanyOmitted(t *testing.T) {
+	svc := caapp.NewAdminService(
+		cainmem.NewAdminRepository(),
+		fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{"system.settings", "rbac.manage"}},
+		fixedIDGen("web-user-no-co"),
+	)
+
+	out, err := svc.CreateUser(context.Background(), caapp.CreateUserRequest{
+		Subject:   caapp.AdminSubject{UserID: "u_admin", MembershipID: "m_admin", CompanyID: "c_001"},
+		LoginID:   "platform.only@example.com",
+		Password:  "StrongPass123!",
+		FullName:  "Platform Only",
+		CompanyID: "",
+	})
+	if err != nil {
+		t.Fatalf("CreateUser err=%v", err)
+	}
+	if out.UserID != "web-user-no-co" {
+		t.Fatalf("UserID=%q", out.UserID)
+	}
+	if out.MembershipID != "" {
+		t.Fatalf("expected no membership, got membership_id=%q", out.MembershipID)
+	}
+	if out.CompanyID != "" {
+		t.Fatalf("expected no company, got company_id=%q", out.CompanyID)
+	}
+}
+
+func TestAdminService_ListCompanyMemberships_ListWithoutCompany(t *testing.T) {
+	repo := cainmem.NewAdminRepository()
+	svc := caapp.NewAdminService(
+		repo,
+		fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{"system.settings", "rbac.manage"}},
+		fixedIDGen("orphan-user"),
+	)
+	_, err := svc.CreateUser(context.Background(), caapp.CreateUserRequest{
+		Subject:   caapp.AdminSubject{UserID: "adm", MembershipID: "m1", CompanyID: "c1"},
+		LoginID:   "orphan@example.com",
+		Password:  "StrongPass123!",
+		FullName:  "Orphan",
+		CompanyID: "",
+	})
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	items, err := svc.ListCompanyMemberships(context.Background(), caapp.ListCompanyMembershipsRequest{
+		Subject:            caapp.AdminSubject{UserID: "adm", MembershipID: "m1", CompanyID: "c1"},
+		CompanyID:          "",
+		ListWithoutCompany: true,
+	})
+	if err != nil {
+		t.Fatalf("ListCompanyMemberships: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("len(items)=%d want 1", len(items))
+	}
+	if items[0].UserID != "orphan-user" {
+		t.Fatalf("user_id=%q", items[0].UserID)
+	}
+}
+
+func TestAdminService_ListCompanyMemberships_ListWithoutCompanyDeniedWithoutRbac(t *testing.T) {
+	svc := caapp.NewAdminService(
+		cainmem.NewAdminRepository(),
+		fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{"system.settings"}},
+		fixedIDGen("x"),
+	)
+	_, err := svc.ListCompanyMemberships(context.Background(), caapp.ListCompanyMembershipsRequest{
+		Subject:            caapp.AdminSubject{UserID: "adm", MembershipID: "m1", CompanyID: "c1"},
+		CompanyID:          "",
+		ListWithoutCompany: true,
+	})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestAdminService_ResendUserInvitation_NoCompanyScope(t *testing.T) {
+	repo := cainmem.NewAdminRepository()
+	svc := caapp.NewAdminService(
+		repo,
+		fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{"system.settings", "rbac.manage"}},
+		fixedIDGen("inv-orphan"),
+	)
+	out, err := svc.InviteUser(context.Background(), caapp.InviteUserRequest{
+		Subject:         caapp.AdminSubject{UserID: "adm", MembershipID: "m1", CompanyID: "c1"},
+		Email:           "inv.orphan@example.com",
+		FullName:        "Inv Orphan",
+		CompanyID:       "",
+		CreatedByUserID: "adm",
+	})
+	if err != nil {
+		t.Fatalf("InviteUser: %v", err)
+	}
+	if out.MembershipID != "" {
+		t.Fatal("expected no membership")
+	}
+	if err := svc.ResendUserInvitation(context.Background(), caapp.ResendUserInvitationRequest{
+		Subject:              caapp.AdminSubject{UserID: "adm", MembershipID: "m1", CompanyID: "c1"},
+		UserID:               out.UserID,
+		CompanyID:            "",
+		ResendNoCompanyScope: true,
+	}); err != nil {
+		t.Fatalf("ResendUserInvitation: %v", err)
+	}
+}
+
 func TestAdminService_CreateUser_Validation(t *testing.T) {
 	svc := caapp.NewAdminService(
 		cainmem.NewAdminRepository(),
