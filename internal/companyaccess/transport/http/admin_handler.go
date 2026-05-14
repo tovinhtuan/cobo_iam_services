@@ -8,6 +8,7 @@ import (
 	auditapp "github.com/cobo/cobo_iam_services/internal/audit/app"
 	caapp "github.com/cobo/cobo_iam_services/internal/companyaccess/app"
 	iamapp "github.com/cobo/cobo_iam_services/internal/iam/app"
+	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 	"github.com/cobo/cobo_iam_services/internal/platform/httpx"
 )
 
@@ -40,6 +41,11 @@ func (h *AdminHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/admin/resource-scope-rules", h.createResourceScopeRule)
 	mux.HandleFunc("POST /api/v1/admin/workflow-assignee-rules", h.createWorkflowAssigneeRule)
 	mux.HandleFunc("POST /api/v1/admin/notification-rules", h.createNotificationRule)
+	mux.HandleFunc("GET /api/v1/admin/notification-rules", h.listNotificationRules)
+	mux.HandleFunc("PATCH /api/v1/admin/notification-rules/{notification_rule_id}", h.patchNotificationRule)
+	mux.HandleFunc("DELETE /api/v1/admin/notification-rules/{notification_rule_id}", h.deleteNotificationRule)
+	mux.HandleFunc("GET /api/v1/admin/account/settings", h.getAdminAccountSettings)
+	mux.HandleFunc("PATCH /api/v1/admin/account/settings", h.patchAdminAccountSettings)
 }
 
 func (h *AdminHandler) createUser(w http.ResponseWriter, r *http.Request) {
@@ -350,6 +356,107 @@ func (h *AdminHandler) createNotificationRule(w http.ResponseWriter, r *http.Req
 	h.createRule(w, r, "admin.notification_rule.create", func(sub caapp.AdminSubject, payload map[string]any) error {
 		return h.svc.CreateNotificationRule(r.Context(), caapp.CreateNotificationRuleRequest{Subject: sub, Payload: payload})
 	})
+}
+
+func (h *AdminHandler) listNotificationRules(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	items, err := h.svc.ListNotificationRules(r.Context(), caapp.ListNotificationRulesRequest{Subject: sub})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (h *AdminHandler) patchNotificationRule(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	var body struct {
+		Payload map[string]any `json:"payload"`
+		Status  *string        `json:"status"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	ruleID := strings.TrimSpace(r.PathValue("notification_rule_id"))
+	if ruleID == "" {
+		httpx.WriteError(w, nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "notification_rule_id required", nil))
+		return
+	}
+	if err := h.svc.UpdateNotificationRule(r.Context(), caapp.UpdateNotificationRuleRequest{
+		Subject:      sub,
+		RuleID:       ruleID,
+		PayloadPatch: body.Payload,
+		Status:       body.Status,
+	}); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	h.auditLog(r, "admin.notification_rule.update", "notification_rule", ruleID)
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (h *AdminHandler) deleteNotificationRule(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	ruleID := strings.TrimSpace(r.PathValue("notification_rule_id"))
+	if ruleID == "" {
+		httpx.WriteError(w, nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "notification_rule_id required", nil))
+		return
+	}
+	if err := h.svc.DeleteNotificationRule(r.Context(), caapp.DeleteNotificationRuleRequest{Subject: sub, RuleID: ruleID}); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	h.auditLog(r, "admin.notification_rule.delete", "notification_rule", ruleID)
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (h *AdminHandler) getAdminAccountSettings(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	out, err := h.svc.GetAdminAccountSettings(r.Context(), caapp.GetAdminAccountSettingsRequest{Subject: sub})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, out)
+}
+
+func (h *AdminHandler) patchAdminAccountSettings(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	var body struct {
+		FullName *string `json:"full_name"`
+		Email    *string `json:"email"`
+		Phone    *string `json:"phone"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	if err := h.svc.PatchAdminAccountSettings(r.Context(), caapp.PatchAdminAccountSettingsRequest{
+		Subject:  sub,
+		FullName: body.FullName,
+		Email:    body.Email,
+		Phone:    body.Phone,
+	}); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	h.auditLog(r, "admin.account.settings.patch", "user", sub.UserID)
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 func (h *AdminHandler) createRule(w http.ResponseWriter, r *http.Request, action string, fn func(sub caapp.AdminSubject, payload map[string]any) error) {

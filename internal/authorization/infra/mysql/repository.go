@@ -223,6 +223,8 @@ func legacyPolicy(action string) *authapp.ActionPolicy {
 		required = "alert.channels.manage"
 	case "notification.resolve_recipients":
 		required = "alert.channels.manage"
+	case "admin.account.settings.read", "admin.account.settings.update":
+		required = "system.settings"
 	case "dashboard.view":
 		required = "dashboard.view"
 	case "admin.membership.create",
@@ -241,7 +243,10 @@ func legacyPolicy(action string) *authapp.ActionPolicy {
 		"admin.role.permission.remove",
 		"admin.resource_scope_rule.create",
 		"admin.workflow_assignee_rule.create",
-		"admin.notification_rule.create":
+		"admin.notification_rule.create",
+		"admin.notification_rule.list",
+		"admin.notification_rule.update",
+		"admin.notification_rule.delete":
 		required = "rbac.manage"
 	}
 	return &authapp.ActionPolicy{

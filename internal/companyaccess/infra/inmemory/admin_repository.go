@@ -2,6 +2,7 @@ package inmemory
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"sort"
 	"strings"
@@ -391,7 +392,197 @@ func (r *AdminRepository) AddWorkflowAssigneeRule(_ context.Context, rule map[st
 func (r *AdminRepository) AddNotificationRule(_ context.Context, rule map[string]any) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if rule == nil {
+		rule = map[string]any{}
+	}
+	rule = cloneAnyMap(rule)
+	if _, ok := rule["notification_rule_id"]; !ok {
+		rule["notification_rule_id"] = fmt.Sprintf("nr_%d", len(r.notificationRules)+1)
+	}
 	r.notificationRules = append(r.notificationRules, rule)
+	return nil
+}
+
+func cloneAnyMap(m map[string]any) map[string]any {
+	out := make(map[string]any, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
+}
+
+func strFromAnyMap(m map[string]any, key string) (string, bool) {
+	v, ok := m[key]
+	if !ok || v == nil {
+		return "", false
+	}
+	s, ok := v.(string)
+	return strings.TrimSpace(s), ok && strings.TrimSpace(s) != ""
+}
+
+func (r *AdminRepository) ListNotificationRules(_ context.Context, companyID string) ([]caapp.NotificationRuleView, error) {
+	companyID = strings.TrimSpace(companyID)
+	if companyID == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "company context required", nil)
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]caapp.NotificationRuleView, 0)
+	for _, rule := range r.notificationRules {
+		cid, ok := strFromAnyMap(rule, "company_id")
+		if !ok || cid != companyID {
+			continue
+		}
+		id, _ := strFromAnyMap(rule, "notification_rule_id")
+		code, _ := strFromAnyMap(rule, "rule_code")
+		st, _ := strFromAnyMap(rule, "status")
+		if st == "" {
+			st = "active"
+		}
+		payload := map[string]any{}
+		if p, ok := rule["payload"].(map[string]any); ok {
+			payload = cloneAnyMap(p)
+		} else {
+			for k, v := range rule {
+				if k == "company_id" || k == "rule_code" || k == "status" || k == "notification_rule_id" {
+					continue
+				}
+				payload[k] = v
+			}
+		}
+		out = append(out, caapp.NotificationRuleView{
+			NotificationRuleID: id,
+			RuleCode:           code,
+			Status:             st,
+			Payload:            payload,
+			UpdatedAt:          time.Now().UTC(),
+		})
+	}
+	return out, nil
+}
+
+func (r *AdminRepository) UpdateNotificationRuleMerged(_ context.Context, companyID, ruleID string, payloadPatch map[string]any, status *string) error {
+	companyID = strings.TrimSpace(companyID)
+	ruleID = strings.TrimSpace(ruleID)
+	if companyID == "" || ruleID == "" {
+		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "company_id and notification_rule_id required", nil)
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for i, rule := range r.notificationRules {
+		cid, ok := strFromAnyMap(rule, "company_id")
+		if !ok || cid != companyID {
+			continue
+		}
+		id, _ := strFromAnyMap(rule, "notification_rule_id")
+		if id != ruleID {
+			continue
+		}
+		base := map[string]any{}
+		if p, ok := rule["payload"].(map[string]any); ok {
+			base = cloneAnyMap(p)
+		} else {
+			for k, v := range rule {
+				if k == "company_id" || k == "rule_code" || k == "status" || k == "notification_rule_id" || k == "payload" {
+					continue
+				}
+				base[k] = v
+			}
+		}
+		if len(payloadPatch) > 0 {
+			mergeJSONObjectsInMem(base, payloadPatch)
+		}
+		rule["payload"] = base
+		if status != nil && strings.TrimSpace(*status) != "" {
+			rule["status"] = strings.TrimSpace(*status)
+		}
+		r.notificationRules[i] = rule
+		return nil
+	}
+	return perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "notification rule not found", nil)
+}
+
+func mergeJSONObjectsInMem(dst map[string]any, src map[string]any) {
+	for k, v := range src {
+		dstMap, ok1 := dst[k].(map[string]any)
+		srcMap, ok2 := v.(map[string]any)
+		if ok1 && ok2 {
+			mergeJSONObjectsInMem(dstMap, srcMap)
+			continue
+		}
+		dst[k] = v
+	}
+}
+
+func (r *AdminRepository) DeleteNotificationRule(_ context.Context, companyID, ruleID string) error {
+	companyID = strings.TrimSpace(companyID)
+	ruleID = strings.TrimSpace(ruleID)
+	if companyID == "" || ruleID == "" {
+		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "company_id and notification_rule_id required", nil)
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	next := r.notificationRules[:0]
+	found := false
+	for _, rule := range r.notificationRules {
+		cid, ok := strFromAnyMap(rule, "company_id")
+		if ok && cid == companyID {
+			id, _ := strFromAnyMap(rule, "notification_rule_id")
+			if id == ruleID {
+				found = true
+				continue
+			}
+		}
+		next = append(next, rule)
+	}
+	if !found {
+		return perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "notification rule not found", nil)
+	}
+	r.notificationRules = next
+	return nil
+}
+
+func (r *AdminRepository) GetAdminAccountSettings(_ context.Context, userID string) (*caapp.AdminAccountSettingsView, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	u, ok := r.users[strings.TrimSpace(userID)]
+	if !ok {
+		return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "user not found", nil)
+	}
+	return &caapp.AdminAccountSettingsView{
+		UserID:        u.UserID,
+		LoginID:       u.LoginID,
+		FullName:      u.FullName,
+		Email:         u.Email,
+		Phone:         u.Phone,
+		AccountStatus: u.AccountStatus,
+	}, nil
+}
+
+func (r *AdminRepository) PatchAdminAccountSettings(_ context.Context, userID string, fullName, email, phone *string) error {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "user_id required", nil)
+	}
+	if fullName == nil && email == nil && phone == nil {
+		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "no fields to update", nil)
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	u, ok := r.users[userID]
+	if !ok {
+		return perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "user not found", nil)
+	}
+	if fullName != nil {
+		u.FullName = strings.TrimSpace(*fullName)
+	}
+	if email != nil {
+		u.Email = strings.TrimSpace(strings.ToLower(*email))
+	}
+	if phone != nil {
+		u.Phone = strings.TrimSpace(*phone)
+	}
+	r.users[userID] = u
 	return nil
 }
 

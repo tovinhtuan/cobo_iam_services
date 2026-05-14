@@ -40,6 +40,11 @@ type AdminService interface {
 	CreateResourceScopeRule(ctx context.Context, req CreateResourceScopeRuleRequest) error
 	CreateWorkflowAssigneeRule(ctx context.Context, req CreateWorkflowAssigneeRuleRequest) error
 	CreateNotificationRule(ctx context.Context, req CreateNotificationRuleRequest) error
+	ListNotificationRules(ctx context.Context, req ListNotificationRulesRequest) ([]NotificationRuleView, error)
+	UpdateNotificationRule(ctx context.Context, req UpdateNotificationRuleRequest) error
+	DeleteNotificationRule(ctx context.Context, req DeleteNotificationRuleRequest) error
+	GetAdminAccountSettings(ctx context.Context, req GetAdminAccountSettingsRequest) (*AdminAccountSettingsView, error)
+	PatchAdminAccountSettings(ctx context.Context, req PatchAdminAccountSettingsRequest) error
 }
 
 type AdminRepository interface {
@@ -91,6 +96,11 @@ type AdminRepository interface {
 	AddResourceScopeRule(ctx context.Context, rule map[string]any) error
 	AddWorkflowAssigneeRule(ctx context.Context, rule map[string]any) error
 	AddNotificationRule(ctx context.Context, rule map[string]any) error
+	ListNotificationRules(ctx context.Context, companyID string) ([]NotificationRuleView, error)
+	UpdateNotificationRuleMerged(ctx context.Context, companyID, ruleID string, payloadPatch map[string]any, status *string) error
+	DeleteNotificationRule(ctx context.Context, companyID, ruleID string) error
+	GetAdminAccountSettings(ctx context.Context, userID string) (*AdminAccountSettingsView, error)
+	PatchAdminAccountSettings(ctx context.Context, userID string, fullName, email, phone *string) error
 }
 
 type AdminSubject struct {
@@ -308,4 +318,49 @@ type CreateWorkflowAssigneeRuleRequest struct {
 type CreateNotificationRuleRequest struct {
 	Subject AdminSubject
 	Payload map[string]any
+}
+
+// NotificationRuleView is the list-row shape for GET /api/v1/admin/notification-rules.
+type NotificationRuleView struct {
+	NotificationRuleID string         `json:"notification_rule_id"`
+	RuleCode           string         `json:"rule_code"`
+	Status             string         `json:"status"`
+	Payload            map[string]any `json:"payload"`
+	UpdatedAt          time.Time      `json:"updated_at"`
+}
+
+type ListNotificationRulesRequest struct {
+	Subject AdminSubject
+}
+
+type UpdateNotificationRuleRequest struct {
+	Subject      AdminSubject
+	RuleID       string
+	PayloadPatch map[string]any
+	Status       *string
+}
+
+type DeleteNotificationRuleRequest struct {
+	Subject AdminSubject
+	RuleID  string
+}
+
+type AdminAccountSettingsView struct {
+	UserID        string `json:"user_id"`
+	LoginID       string `json:"login_id"`
+	FullName      string `json:"full_name"`
+	Email         string `json:"email"`
+	Phone         string `json:"phone"`
+	AccountStatus string `json:"account_status"`
+}
+
+type GetAdminAccountSettingsRequest struct {
+	Subject AdminSubject
+}
+
+type PatchAdminAccountSettingsRequest struct {
+	Subject  AdminSubject
+	FullName *string `json:"full_name"`
+	Email    *string `json:"email"`
+	Phone    *string `json:"phone"`
 }

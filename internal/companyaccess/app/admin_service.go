@@ -756,6 +756,41 @@ func (s *adminService) CreateNotificationRule(ctx context.Context, req CreateNot
 	return s.repo.AddNotificationRule(ctx, req.Payload)
 }
 
+func (s *adminService) ListNotificationRules(ctx context.Context, req ListNotificationRulesRequest) ([]NotificationRuleView, error) {
+	if err := s.authorize(ctx, req.Subject, "admin.notification_rule.list", ""); err != nil {
+		return nil, err
+	}
+	return s.repo.ListNotificationRules(ctx, req.Subject.CompanyID)
+}
+
+func (s *adminService) UpdateNotificationRule(ctx context.Context, req UpdateNotificationRuleRequest) error {
+	if err := s.authorize(ctx, req.Subject, "admin.notification_rule.update", ""); err != nil {
+		return err
+	}
+	return s.repo.UpdateNotificationRuleMerged(ctx, req.Subject.CompanyID, req.RuleID, req.PayloadPatch, req.Status)
+}
+
+func (s *adminService) DeleteNotificationRule(ctx context.Context, req DeleteNotificationRuleRequest) error {
+	if err := s.authorize(ctx, req.Subject, "admin.notification_rule.delete", ""); err != nil {
+		return err
+	}
+	return s.repo.DeleteNotificationRule(ctx, req.Subject.CompanyID, req.RuleID)
+}
+
+func (s *adminService) GetAdminAccountSettings(ctx context.Context, req GetAdminAccountSettingsRequest) (*AdminAccountSettingsView, error) {
+	if err := s.authorize(ctx, req.Subject, "admin.account.settings.read", ""); err != nil {
+		return nil, err
+	}
+	return s.repo.GetAdminAccountSettings(ctx, req.Subject.UserID)
+}
+
+func (s *adminService) PatchAdminAccountSettings(ctx context.Context, req PatchAdminAccountSettingsRequest) error {
+	if err := s.authorize(ctx, req.Subject, "admin.account.settings.update", ""); err != nil {
+		return err
+	}
+	return s.repo.PatchAdminAccountSettings(ctx, req.Subject.UserID, req.FullName, req.Email, req.Phone)
+}
+
 func (s *adminService) authorize(ctx context.Context, sub AdminSubject, action, resourceID string) error {
 	decision, err := s.auth.Authorize(ctx, authapp.AuthorizeRequest{Subject: authapp.SubjectRef{UserID: sub.UserID, MembershipID: sub.MembershipID, CompanyID: sub.CompanyID}, Action: action, Resource: authapp.ResourceRef{Type: "admin_access", ID: resourceID, Attributes: map[string]any{}}})
 	if err != nil {

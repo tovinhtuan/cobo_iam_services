@@ -387,3 +387,88 @@ func TestAdminService_CreateUser_Denied(t *testing.T) {
 	}
 }
 
+func TestAdminService_NotificationRulesListPatchDelete_and_AccountSettings(t *testing.T) {
+	repo := cainmem.NewAdminRepository()
+	svc := caapp.NewAdminService(
+		repo,
+		fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{"rbac.manage", "system.settings"}},
+		fixedIDGen("u_owner"),
+	)
+	sub := caapp.AdminSubject{UserID: "u_owner", MembershipID: "m_owner", CompanyID: "c_001"}
+
+	_, err := svc.CreateUser(context.Background(), caapp.CreateUserRequest{
+		Subject:   sub,
+		LoginID:   "owner.rules@example.com",
+		Password:  "StrongPass123!",
+		FullName:  "Owner Rules",
+		Email:     "owner.rules@example.com",
+		CompanyID: "c_001",
+	})
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+
+	if err := svc.CreateNotificationRule(context.Background(), caapp.CreateNotificationRuleRequest{
+		Subject: sub,
+		Payload: map[string]any{
+			"company_id": "c_001",
+			"rule_code":  "rule.test.001",
+			"channels":   []any{"email"},
+		},
+	}); err != nil {
+		t.Fatalf("CreateNotificationRule: %v", err)
+	}
+
+	items, err := svc.ListNotificationRules(context.Background(), caapp.ListNotificationRulesRequest{Subject: sub})
+	if err != nil {
+		t.Fatalf("ListNotificationRules: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("len(items)=%d want 1", len(items))
+	}
+	rid := items[0].NotificationRuleID
+	if rid == "" {
+		t.Fatal("empty notification_rule_id")
+	}
+
+	st := "inactive"
+	if err := svc.UpdateNotificationRule(context.Background(), caapp.UpdateNotificationRuleRequest{
+		Subject:      sub,
+		RuleID:       rid,
+		PayloadPatch: map[string]any{"channels": []any{"in_app"}},
+		Status:       &st,
+	}); err != nil {
+		t.Fatalf("UpdateNotificationRule: %v", err)
+	}
+
+	if err := svc.DeleteNotificationRule(context.Background(), caapp.DeleteNotificationRuleRequest{Subject: sub, RuleID: rid}); err != nil {
+		t.Fatalf("DeleteNotificationRule: %v", err)
+	}
+	items2, _ := svc.ListNotificationRules(context.Background(), caapp.ListNotificationRulesRequest{Subject: sub})
+	if len(items2) != 0 {
+		t.Fatalf("after delete len=%d want 0", len(items2))
+	}
+
+	acct, err := svc.GetAdminAccountSettings(context.Background(), caapp.GetAdminAccountSettingsRequest{Subject: sub})
+	if err != nil {
+		t.Fatalf("GetAdminAccountSettings: %v", err)
+	}
+	if acct.LoginID != "owner.rules@example.com" {
+		t.Fatalf("login_id=%q", acct.LoginID)
+	}
+	fn := "Owner Updated"
+	if err := svc.PatchAdminAccountSettings(context.Background(), caapp.PatchAdminAccountSettingsRequest{
+		Subject:  sub,
+		FullName: &fn,
+	}); err != nil {
+		t.Fatalf("PatchAdminAccountSettings: %v", err)
+	}
+	acct2, err := svc.GetAdminAccountSettings(context.Background(), caapp.GetAdminAccountSettingsRequest{Subject: sub})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if acct2.FullName != "Owner Updated" {
+		t.Fatalf("full_name=%q", acct2.FullName)
+	}
+}
+
