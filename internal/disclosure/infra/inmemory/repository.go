@@ -589,6 +589,14 @@ func (r *Repository) UpdateActiveVersionDeadlineConfig(_ context.Context, _ stri
 	return perr.NewHTTPError(http.StatusNotImplemented, perr.CodeInternal, "not implemented in-memory", nil)
 }
 
+func (r *Repository) ListCompanyGroups(_ context.Context, _ string, _ string, _ *bool) ([]disclosureapp.CompanyGroupDTO, error) {
+	return []disclosureapp.CompanyGroupDTO{}, nil
+}
+
+func (r *Repository) UpdateWorkflowOverrideStepGroups(_ context.Context, _ disclosureapp.UpdateWorkflowOverrideStepGroupsRequest) (*disclosureapp.UpdateWorkflowOverrideStepGroupsResponse, error) {
+	return nil, perr.NewHTTPError(http.StatusNotImplemented, perr.CodeInternal, "not implemented in-memory", nil)
+}
+
 func (r *Repository) GetEffectiveWorkflow(_ context.Context, companyID, typeID string) (*disclosureapp.EffectiveWorkflowDTO, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

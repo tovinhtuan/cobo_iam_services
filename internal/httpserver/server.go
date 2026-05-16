@@ -228,6 +228,7 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 	}
 	fileHoliday := disclosureapp.NewHolidayCalendarFileProvider(filepath.Join("configs", "non_trading_days"))
 	var disclosureOpts []disclosureapp.ServiceOption
+	disclosureOpts = append(disclosureOpts, disclosureapp.WithWorkflowGroupsEnabled(cfg.WorkflowGroupsEnabled))
 	var holidaySvc holidayapp.Service
 	if pool != nil {
 		holidayRepo := holidaymysql.NewRepository(pool)
@@ -322,7 +323,7 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 		} else {
 			adhocRepo = adhocmysql.NewRepository(nil) // will panic on use; acceptable in no-DB mode
 		}
-		recordCreator := adhocrecord.NewRecordCreatorAdapter(disclosureSvc)
+		recordCreator := adhocrecord.NewRecordCreatorAdapter(disclosureSvc, workflowSvc, true)
 		adhocSvc := adhocapp.NewService(adhocRepo, recordCreator, id, cfg.WorkflowAdhocAutoApproveEnabled)
 		adhocHandler = adhochttp.NewHandler(adhocSvc, tokenManager)
 		log.Info("ad-hoc proposal module enabled")

@@ -50,7 +50,17 @@ func (s *service) CreateWorkflowInstance(ctx context.Context, req CreateWorkflow
 	}); err != nil {
 		return nil, err
 	}
+	return s.createWorkflowInstance(ctx, req)
+}
 
+func (s *service) CreateWorkflowInstanceInternal(ctx context.Context, req CreateWorkflowInstanceRequest) (*WorkflowInstanceDTO, error) {
+	if strings.TrimSpace(req.RecordID) == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "record_id is required", nil)
+	}
+	return s.createWorkflowInstance(ctx, req)
+}
+
+func (s *service) createWorkflowInstance(ctx context.Context, req CreateWorkflowInstanceRequest) (*WorkflowInstanceDTO, error) {
 	inst := WorkflowInstanceDTO{
 		WorkflowInstanceID: s.idg.NewUUID(),
 		CompanyID:          req.Subject.CompanyID,

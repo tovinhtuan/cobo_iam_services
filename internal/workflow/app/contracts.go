@@ -7,6 +7,8 @@ import (
 
 type Service interface {
 	CreateWorkflowInstance(ctx context.Context, req CreateWorkflowInstanceRequest) (*WorkflowInstanceDTO, error)
+	// CreateWorkflowInstanceInternal skips HTTP-layer authorization for trusted in-process callers.
+	CreateWorkflowInstanceInternal(ctx context.Context, req CreateWorkflowInstanceRequest) (*WorkflowInstanceDTO, error)
 	GetWorkflowInstance(ctx context.Context, req GetWorkflowInstanceRequest) (*WorkflowInstanceDTO, error)
 	ListInstanceTasks(ctx context.Context, req ListInstanceTasksRequest) ([]TaskDTO, error)
 	ListInstanceReminders(ctx context.Context, req ListInstanceRemindersRequest) ([]InstanceReminderDTO, error)

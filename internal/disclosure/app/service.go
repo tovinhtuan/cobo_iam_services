@@ -14,10 +14,11 @@ import (
 )
 
 type service struct {
-	repo       Repository
-	auth       authapp.Service
-	idg        idgen.Generator
-	calculator *DeadlineCalculator
+	repo                  Repository
+	auth                  authapp.Service
+	idg                   idgen.Generator
+	calculator            *DeadlineCalculator
+	workflowGroupsEnabled bool
 }
 
 // ServiceOption configures disclosure service construction.
@@ -29,6 +30,13 @@ func WithHolidayCalendarProvider(p HolidayCalendarProvider) ServiceOption {
 		if p != nil {
 			s.calculator = NewDeadlineCalculator(p)
 		}
+	}
+}
+
+// WithWorkflowGroupsEnabled enables the WORKFLOW_GROUPS_ENABLED feature flag.
+func WithWorkflowGroupsEnabled(enabled bool) ServiceOption {
+	return func(s *service) {
+		s.workflowGroupsEnabled = enabled
 	}
 }
 
@@ -480,8 +488,7 @@ func (s *service) UpsertCompanyWorkflowOverrideDraft(ctx context.Context, req Up
 	for i := range req.Workflow {
 		req.Workflow[i].StepID = strings.TrimSpace(req.Workflow[i].StepID)
 		req.Workflow[i].Stage = strings.TrimSpace(req.Workflow[i].Stage)
-		req.Workflow[i].Department = strings.TrimSpace(req.Workflow[i].Department)
-		req.Workflow[i].AssigneeRole = strings.TrimSpace(req.Workflow[i].AssigneeRole)
+		req.Workflow[i].DepartmentID = strings.TrimSpace(req.Workflow[i].DepartmentID)
 		req.Workflow[i].DueRule = strings.TrimSpace(req.Workflow[i].DueRule)
 		if req.Workflow[i].StepID == "" || req.Workflow[i].Stage == "" {
 			return nil, &perr.HTTPError{
@@ -491,6 +498,29 @@ func (s *service) UpsertCompanyWorkflowOverrideDraft(ctx context.Context, req Up
 				Details:    map[string]any{"field_errors": map[string]string{fmt.Sprintf("workflow[%d]", i): "step_id and stage are required"}},
 			}
 		}
+		// Auto-fill active groups when flag is on, step has a department, and
+		// groups field was absent in the request (nil != explicit empty slice []).
+		if s.workflowGroupsEnabled && req.Workflow[i].DepartmentID != "" && req.Workflow[i].Groups == nil {
+			isActive := true
+			fetched, ferr := s.repo.ListCompanyGroups(ctx, req.Subject.CompanyID, req.Workflow[i].DepartmentID, &isActive)
+			if ferr != nil {
+				return nil, ferr
+			}
+			filled := make([]WorkflowStepGroupDTO, 0, len(fetched))
+			for j, g := range fetched {
+				filled = append(filled, WorkflowStepGroupDTO{
+					GroupID:        g.GroupID,
+					GroupName:      g.GroupName,
+					DepartmentID:   g.DepartmentID,
+					DepartmentName: g.DepartmentName,
+					Source:         "auto_fill",
+					DurationMode:   "inherit",
+					DisplayOrder:   j + 1,
+					IsActive:       g.IsActive,
+				})
+			}
+			req.Workflow[i].Groups = filled
+		}
 	}
 	resp, err := s.repo.UpsertCompanyWorkflowOverrideDraft(ctx, req)
 	if err != nil {
@@ -499,6 +529,7 @@ func (s *service) UpsertCompanyWorkflowOverrideDraft(ctx context.Context, req Up
 	if resp != nil {
 		resp.DraftEtag = WorkflowDraftEtagFromVersion(resp.DraftVersionNo)
 		resp.VersionNo = resp.DraftVersionNo
+		resp.Workflow = req.Workflow
 	}
 	return resp, nil
 }
@@ -506,11 +537,16 @@ func (s *service) UpsertCompanyWorkflowOverrideDraft(ctx context.Context, req Up
 func (s *service) ApproveCompanyWorkflowOverride(ctx context.Context, req ApproveCompanyWorkflowOverrideRequest) (*ApproveCompanyWorkflowOverrideResponse, error) {
 	req.TypeID = strings.TrimSpace(req.TypeID)
 	req.Reason = strings.TrimSpace(req.Reason)
+	req.BaseEtag = strings.TrimSpace(req.BaseEtag)
 	if req.TypeID == "" {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "type_id is required", nil)
 	}
+	// Normalize version from base_etag if version_no not provided directly.
 	if req.VersionNo <= 0 {
-		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "version_no must be > 0", nil)
+		req.VersionNo = ResolveWorkflowBaseVersionNo(req.VersionNo, req.BaseEtag)
+	}
+	if req.VersionNo <= 0 {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "version_no or base_etag is required", nil)
 	}
 	if err := s.authorize(ctx, req.Subject, "template.workflow.override.approve", authapp.ResourceRef{
 		Type: "disclosure_type",
@@ -770,6 +806,55 @@ func (s *service) hasPermission(ctx context.Context, sub Subject, permission str
 		}
 	}
 	return false
+}
+
+func (s *service) ListCompanyGroups(ctx context.Context, req ListCompanyGroupsRequest) (*ListCompanyGroupsResponse, error) {
+	if !s.workflowGroupsEnabled {
+		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodeFeatureNotEnabled, "workflow groups feature is not enabled", nil)
+	}
+	if err := s.authorize(ctx, req.Subject, "template.workflow.override.read", authapp.ResourceRef{
+		Type: "company",
+		ID:   req.Subject.CompanyID,
+	}); err != nil {
+		return nil, err
+	}
+	items, err := s.repo.ListCompanyGroups(ctx, req.Subject.CompanyID, req.DepartmentID, req.IsActive)
+	if err != nil {
+		return nil, err
+	}
+	return &ListCompanyGroupsResponse{Items: items}, nil
+}
+
+func (s *service) UpdateWorkflowOverrideStepGroups(ctx context.Context, req UpdateWorkflowOverrideStepGroupsRequest) (*UpdateWorkflowOverrideStepGroupsResponse, error) {
+	if !s.workflowGroupsEnabled {
+		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodeFeatureNotEnabled, "workflow groups feature is not enabled", nil)
+	}
+	req.TypeID = strings.TrimSpace(req.TypeID)
+	req.StepID = strings.TrimSpace(req.StepID)
+	req.BaseEtag = strings.TrimSpace(req.BaseEtag)
+	if req.TypeID == "" || req.StepID == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "type_id and step_id are required", nil)
+	}
+	if req.BaseEtag == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "base_etag is required", nil)
+	}
+	if err := s.authorize(ctx, req.Subject, "template.workflow.override.write", authapp.ResourceRef{
+		Type: "disclosure_type",
+		ID:   req.TypeID,
+	}); err != nil {
+		return nil, err
+	}
+	for i, g := range req.Groups {
+		if g.DurationMode != "inherit" && g.DurationMode != "custom" {
+			return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest,
+				fmt.Sprintf("groups[%d].duration_mode must be inherit or custom", i), nil)
+		}
+		if g.DurationMode == "custom" && (g.ProcessingDays == nil || *g.ProcessingDays <= 0) {
+			return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest,
+				fmt.Sprintf("groups[%d].processing_days must be > 0 when duration_mode=custom", i), nil)
+		}
+	}
+	return s.repo.UpdateWorkflowOverrideStepGroups(ctx, req)
 }
 
 func normalizeDate(raw string) (string, error) {

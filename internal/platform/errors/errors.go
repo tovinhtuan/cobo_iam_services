@@ -28,6 +28,10 @@ const (
 	CodeInvalidRequest         Code = "INVALID_REQUEST"
 	CodeMFARequired            Code = "MFA_REQUIRED"
 	CodeInternal               Code = "INTERNAL_ERROR"
+	CodeStaleEtag              Code = "STALE_ETAG"
+	CodeSelfApprovalNotAllowed Code = "SELF_APPROVAL_NOT_ALLOWED"
+	CodeFeatureNotEnabled      Code = "FEATURE_NOT_ENABLED"
+	CodeGroupNotInDepartment   Code = "GROUP_NOT_IN_DEPARTMENT"
 )
 
 // HTTPError is returned to clients as JSON { "error": { ... } }.

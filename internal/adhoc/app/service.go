@@ -115,25 +115,27 @@ func (s *service) AdminApprove(ctx context.Context, req AdminApproveRequest) (*A
 	if cur.ChangeNote != "" {
 		title = "Ad-hoc: " + cur.ChangeNote
 	}
-	recordID, err := s.recordCreator.CreateAndSubmitRecord(ctx, cur.CompanyID, cur.TypeID, req.Subject.MembershipID, title)
+	recordID, workflowInstanceID, err := s.recordCreator.CreateAndSubmitRecord(ctx, cur.CompanyID, cur.TypeID, req.Subject.MembershipID, title)
 	if err != nil {
 		return nil, perr.NewHTTPError(http.StatusInternalServerError, perr.CodeInternal, "failed to create disclosure record", err)
 	}
 
 	updated, err := s.repo.UpdateStatus(ctx, StatusUpdate{
-		ProposalID:        req.ProposalID,
-		CompanyID:         req.Subject.CompanyID,
-		Status:            StatusApproved,
-		ActorMembershipID: req.Subject.MembershipID,
-		ActorUserID:       req.Subject.UserID,
-		RecordID:          recordID,
+		ProposalID:         req.ProposalID,
+		CompanyID:          req.Subject.CompanyID,
+		Status:             StatusApproved,
+		ActorMembershipID:  req.Subject.MembershipID,
+		ActorUserID:        req.Subject.UserID,
+		RecordID:           recordID,
+		WorkflowInstanceID: workflowInstanceID,
 	})
 	if err != nil {
 		return nil, err
 	}
 	return &AdminApproveResponse{
-		Proposal: *updated,
-		RecordID: recordID,
+		Proposal:           *updated,
+		RecordID:           recordID,
+		WorkflowInstanceID: workflowInstanceID,
 	}, nil
 }
 

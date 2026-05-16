@@ -628,6 +628,21 @@ func (r *Repository) UpsertCompanyWorkflowOverrideDraft(ctx context.Context, req
 		}
 	}
 
+	// Stale etag check: if caller sent a base version, ensure it matches the latest draft.
+	if req.BaseVersionNo > 0 {
+		var latestDraft int
+		if err := tx.QueryRowContext(ctx, `
+			SELECT COALESCE(MAX(version_no), 0)
+			FROM company_template_workflow_override_versions
+			WHERE override_id = ? AND state = 'draft'
+		`, overrideID).Scan(&latestDraft); err != nil {
+			return nil, err
+		}
+		if latestDraft > 0 && req.BaseVersionNo != latestDraft {
+			return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStaleEtag, "draft has been modified by another session; reload and retry", nil)
+		}
+	}
+
 	var nextVersion int
 	if err := tx.QueryRowContext(ctx, `
 		SELECT COALESCE(MAX(version_no), 0) + 1
@@ -687,12 +702,12 @@ func (r *Repository) ApproveCompanyWorkflowOverride(ctx context.Context, req dis
 		}
 		return nil, err
 	}
-	var state string
+	var state, createdBy string
 	if err := tx.QueryRowContext(ctx, `
-		SELECT state
+		SELECT state, COALESCE(created_by, '')
 		FROM company_template_workflow_override_versions
 		WHERE override_id = ? AND version_no = ?
-	`, overrideID, req.VersionNo).Scan(&state); err != nil {
+	`, overrideID, req.VersionNo).Scan(&state, &createdBy); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "workflow override version not found", nil)
 		}
@@ -700,6 +715,22 @@ func (r *Repository) ApproveCompanyWorkflowOverride(ctx context.Context, req dis
 	}
 	if state != "draft" {
 		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "workflow override version is not draft", nil)
+	}
+	// Self-approval guard: drafter cannot approve their own draft.
+	if createdBy != "" && createdBy == req.Subject.UserID {
+		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodeSelfApprovalNotAllowed, "drafter cannot approve their own workflow draft", nil)
+	}
+	// Stale etag guard: req.VersionNo must be the latest draft version.
+	var latestDraft int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COALESCE(MAX(version_no), 0)
+		FROM company_template_workflow_override_versions
+		WHERE override_id = ? AND state = 'draft'
+	`, overrideID).Scan(&latestDraft); err != nil {
+		return nil, err
+	}
+	if latestDraft > 0 && req.VersionNo != latestDraft {
+		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStaleEtag, "a newer draft version exists; reload and approve the latest draft", nil)
 	}
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE company_template_workflow_override_versions
@@ -1111,4 +1142,174 @@ func (r *Repository) UpdateActiveVersionDeadlineConfig(ctx context.Context, type
 		return perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "disclosure type not found or no active version", nil)
 	}
 	return nil
+}
+
+// ─── Sprint C: Groups / tổ nhóm ─────────────────────────────────────────────
+
+// ListCompanyGroups returns team-level org units (tổ/nhóm) for a company,
+// optionally filtered by department (parent org_unit) and active status.
+func (r *Repository) ListCompanyGroups(ctx context.Context, companyID, departmentID string, isActive *bool) ([]disclosureapp.CompanyGroupDTO, error) {
+	query := `
+		SELECT t.org_unit_id, t.unit_name, d.org_unit_id, d.unit_name, t.status
+		FROM org_units t
+		INNER JOIN org_units d ON d.org_unit_id = t.parent_org_unit_id AND d.unit_type = 'department'
+		WHERE t.company_id = ? AND t.unit_type = 'team'
+	`
+	args := []any{companyID}
+	if strings.TrimSpace(departmentID) != "" {
+		query += " AND t.parent_org_unit_id = ?"
+		args = append(args, departmentID)
+	}
+	if isActive != nil {
+		if *isActive {
+			query += " AND t.status = 'active'"
+		} else {
+			query += " AND t.status != 'active'"
+		}
+	}
+	query += " ORDER BY d.unit_name ASC, t.unit_name ASC"
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list company groups: %w", err)
+	}
+	defer rows.Close()
+	out := make([]disclosureapp.CompanyGroupDTO, 0)
+	for rows.Next() {
+		var item disclosureapp.CompanyGroupDTO
+		var status string
+		if err := rows.Scan(&item.GroupID, &item.GroupName, &item.DepartmentID, &item.DepartmentName, &status); err != nil {
+			return nil, err
+		}
+		item.IsActive = status == "active"
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
+
+// UpdateWorkflowOverrideStepGroups patches the groups field of one step in the latest draft version.
+// The entire workflow JSON for that version is read, the step is located, groups are updated, and the JSON is written back.
+func (r *Repository) UpdateWorkflowOverrideStepGroups(ctx context.Context, req disclosureapp.UpdateWorkflowOverrideStepGroupsRequest) (*disclosureapp.UpdateWorkflowOverrideStepGroupsResponse, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// Resolve override and find draft version.
+	var overrideID string
+	if err := tx.QueryRowContext(ctx, `
+		SELECT override_id FROM company_template_workflow_overrides
+		WHERE company_id = ? AND type_id = ? FOR UPDATE
+	`, req.Subject.CompanyID, req.TypeID).Scan(&overrideID); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "workflow override not found", nil)
+		}
+		return nil, err
+	}
+
+	// Resolve base_etag → version no.
+	baseVersionNo := disclosureapp.ResolveWorkflowBaseVersionNo(0, req.BaseEtag)
+
+	var draftVersionNo int
+	var workflowRaw []byte
+	if err := tx.QueryRowContext(ctx, `
+		SELECT version_no, workflow_json
+		FROM company_template_workflow_override_versions
+		WHERE override_id = ? AND state = 'draft'
+		ORDER BY version_no DESC LIMIT 1
+	`, overrideID).Scan(&draftVersionNo, &workflowRaw); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "no draft version found", nil)
+		}
+		return nil, err
+	}
+	if baseVersionNo > 0 && baseVersionNo != draftVersionNo {
+		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStaleEtag, "draft has been modified; reload and retry", nil)
+	}
+
+	// Unmarshal workflow, locate step, validate groups belong to step's department.
+	var steps []disclosureapp.WorkflowStepDTO
+	if len(workflowRaw) > 0 {
+		if err := json.Unmarshal(workflowRaw, &steps); err != nil {
+			return nil, fmt.Errorf("unmarshal workflow: %w", err)
+		}
+	}
+	stepIdx := -1
+	for i := range steps {
+		if steps[i].StepID == req.StepID {
+			stepIdx = i
+			break
+		}
+	}
+	if stepIdx < 0 {
+		return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "step not found in draft", nil)
+	}
+	stepDeptID := steps[stepIdx].DepartmentID
+
+	// Validate all groups belong to step's department (if we can look them up).
+	if stepDeptID != "" && len(req.Groups) > 0 {
+		placeholders := make([]string, len(req.Groups))
+		args := []any{req.Subject.CompanyID}
+		for i, g := range req.Groups {
+			placeholders[i] = "?"
+			args = append(args, g.GroupID)
+		}
+		args = append(args, stepDeptID)
+		countQuery := fmt.Sprintf(`
+			SELECT COUNT(1) FROM org_units
+			WHERE company_id = ? AND org_unit_id IN (%s) AND parent_org_unit_id = ? AND unit_type = 'team'
+		`, strings.Join(placeholders, ","))
+		var matchCount int
+		if err := tx.QueryRowContext(ctx, countQuery, args...).Scan(&matchCount); err != nil {
+			return nil, err
+		}
+		if matchCount != len(req.Groups) {
+			return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeGroupNotInDepartment, "one or more groups do not belong to the step's department", nil)
+		}
+	}
+
+	// Build updated groups slice.
+	var updatedGroups []disclosureapp.WorkflowStepGroupDTO
+	if !req.ClearAll && len(req.Groups) > 0 {
+		updatedGroups = make([]disclosureapp.WorkflowStepGroupDTO, 0, len(req.Groups))
+		for _, g := range req.Groups {
+			dto := disclosureapp.WorkflowStepGroupDTO{
+				GroupID:      g.GroupID,
+				DepartmentID: stepDeptID,
+				Source:       "manual",
+				DurationMode: g.DurationMode,
+				DisplayOrder: g.DisplayOrder,
+				IsActive:     true,
+			}
+			if g.ProcessingDays != nil {
+				dto.ProcessingDays = g.ProcessingDays
+			}
+			updatedGroups = append(updatedGroups, dto)
+		}
+	}
+	steps[stepIdx].Groups = updatedGroups
+
+	// Write back updated workflow JSON.
+	newJSON, err := json.Marshal(steps)
+	if err != nil {
+		return nil, fmt.Errorf("marshal updated workflow: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE company_template_workflow_override_versions
+		SET workflow_json = CAST(? AS JSON), updated_at = ?
+		WHERE override_id = ? AND version_no = ?
+	`, string(newJSON), time.Now().UTC(), overrideID, draftVersionNo); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+
+	newEtag := disclosureapp.WorkflowDraftEtagFromVersion(draftVersionNo)
+	return &disclosureapp.UpdateWorkflowOverrideStepGroupsResponse{
+		DraftEtag: newEtag,
+		StepID:    req.StepID,
+		Groups:    updatedGroups,
+	}, nil
 }

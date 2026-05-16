@@ -50,6 +50,8 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/v1/company/disclosure-types/{type_id}/workflow-override/active", h.resetCompanyWorkflowOverrideActive)
 	mux.HandleFunc("GET /api/v1/company/disclosure-types/{type_id}/workflow-override/versions", h.listCompanyWorkflowOverrideVersions)
 	mux.HandleFunc("GET /api/v1/company/disclosure-types/{type_id}/workflow-override/draft/reminder-preview", h.getCompanyWorkflowOverrideDraftReminderPreview)
+	mux.HandleFunc("PUT /api/v1/company/disclosure-types/{type_id}/workflow-override/draft/steps/{step_id}/groups", h.updateWorkflowOverrideStepGroups)
+	mux.HandleFunc("GET /api/v1/company/groups", h.listCompanyGroups)
 	mux.HandleFunc("GET /api/v1/disclosure-types/{type_id}/effective-workflow", h.getEffectiveWorkflow)
 	mux.HandleFunc("GET /api/v1/admin/disclosure-types/{type_id}/config", h.getTemplateDeadlineConfig)
 	mux.HandleFunc("PUT /api/v1/admin/disclosure-types/{type_id}/config", h.updateTemplateDeadlineConfig)
@@ -660,4 +662,64 @@ func bearerToken(h string) string {
 		return strings.TrimSpace(parts[1])
 	}
 	return h
+}
+
+func (h *Handler) listCompanyGroups(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subjectFromToken(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	departmentID := strings.TrimSpace(r.URL.Query().Get("department_id"))
+	var isActive *bool
+	if raw := strings.TrimSpace(r.URL.Query().Get("is_active")); raw != "" {
+		v := raw == "true"
+		isActive = &v
+	}
+	resp, err := h.svc.ListCompanyGroups(r.Context(), disclosureapp.ListCompanyGroupsRequest{
+		Subject:      sub,
+		DepartmentID: departmentID,
+		IsActive:     isActive,
+	})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) updateWorkflowOverrideStepGroups(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subjectFromToken(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	typeID := strings.TrimSpace(r.PathValue("type_id"))
+	stepID := strings.TrimSpace(r.PathValue("step_id"))
+	var body struct {
+		BaseEtag  string                                   `json:"base_etag"`
+		Groups    []disclosureapp.WorkflowStepGroupWriteInput `json:"groups"`
+		ClearAll  bool                                     `json:"clear_all_groups"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	resp, err := h.svc.UpdateWorkflowOverrideStepGroups(r.Context(), disclosureapp.UpdateWorkflowOverrideStepGroupsRequest{
+		Subject:  sub,
+		TypeID:   typeID,
+		StepID:   stepID,
+		BaseEtag: body.BaseEtag,
+		Groups:   body.Groups,
+		ClearAll: body.ClearAll,
+	})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	h.auditLog(r, sub, "disclosure.workflow_override.step_groups_updated", "disclosure_type", typeID, map[string]any{
+		"step_id":    stepID,
+		"group_count": len(resp.Groups),
+	})
+	httpx.WriteJSON(w, http.StatusOK, resp)
 }

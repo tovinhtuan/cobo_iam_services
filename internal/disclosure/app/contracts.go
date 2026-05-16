@@ -30,6 +30,8 @@ type Service interface {
 	GetEffectiveWorkflow(ctx context.Context, req GetEffectiveWorkflowRequest) (*GetEffectiveWorkflowResponse, error)
 	GetTemplateDeadlineConfig(ctx context.Context, req GetTemplateDeadlineConfigRequest) (*GetTemplateDeadlineConfigResponse, error)
 	UpdateTemplateDeadlineConfig(ctx context.Context, req UpdateTemplateDeadlineConfigRequest) (*UpdateTemplateDeadlineConfigResponse, error)
+	ListCompanyGroups(ctx context.Context, req ListCompanyGroupsRequest) (*ListCompanyGroupsResponse, error)
+	UpdateWorkflowOverrideStepGroups(ctx context.Context, req UpdateWorkflowOverrideStepGroupsRequest) (*UpdateWorkflowOverrideStepGroupsResponse, error)
 }
 
 type Repository interface {
@@ -54,6 +56,8 @@ type Repository interface {
 	GetCompanyDeadlineContext(ctx context.Context, companyID string) (CompanyDeadlineContext, error)
 	GetActiveVersionDeadlineConfig(ctx context.Context, typeID string) (versionNo int, cfg *TemplateDeadlineConfig, err error)
 	UpdateActiveVersionDeadlineConfig(ctx context.Context, typeID string, cfg TemplateDeadlineConfig, updatedBy string) error
+	ListCompanyGroups(ctx context.Context, companyID, departmentID string, isActive *bool) ([]CompanyGroupDTO, error)
+	UpdateWorkflowOverrideStepGroups(ctx context.Context, req UpdateWorkflowOverrideStepGroupsRequest) (*UpdateWorkflowOverrideStepGroupsResponse, error)
 }
 
 type CreateRecordRequest struct {
@@ -206,15 +210,30 @@ type WorkflowDocumentDTO struct {
 	Required bool   `json:"required"`
 }
 
+// WorkflowStepGroupDTO is one tổ/nhóm assignment for a workflow step.
+// Present in response only when WORKFLOW_GROUPS_ENABLED=true.
+type WorkflowStepGroupDTO struct {
+	GroupID        string `json:"group_id"`
+	GroupName      string `json:"group_name"`
+	DepartmentID   string `json:"department_id"`
+	DepartmentName string `json:"department_name,omitempty"`
+	Source         string `json:"source"`          // "auto_fill" | "manual"
+	DurationMode   string `json:"duration_mode"`   // "inherit" | "custom"
+	ProcessingDays *int   `json:"processing_days,omitempty"`
+	DisplayOrder   int    `json:"display_order"`
+	IsActive       bool   `json:"is_active"`
+}
+
 type WorkflowStepDTO struct {
-	StepID       string                `json:"step_id"`
-	Stage        string                `json:"stage"`
-	Department   string                `json:"department"`
-	AssigneeRole string                `json:"assignee_role"`
-	DueRule        string                `json:"due_rule"`
-	ProcessingDays int                   `json:"processing_days,omitempty"`
-	Documents      []WorkflowDocumentDTO `json:"documents"`
-	DisplayOrder   int                   `json:"display_order"`
+	StepID          string                 `json:"step_id"`
+	Stage           string                 `json:"stage"`
+	DepartmentID    string                 `json:"department_id"`
+	AssigneeRoleIds []string               `json:"assignee_role_ids"`
+	DueRule         string                 `json:"due_rule"`
+	ProcessingDays  int                    `json:"processing_days,omitempty"`
+	Documents       []WorkflowDocumentDTO  `json:"documents"`
+	DisplayOrder    int                    `json:"display_order"`
+	Groups          []WorkflowStepGroupDTO `json:"groups,omitempty"`
 }
 
 type CompanyWorkflowOverrideHeaderDTO struct {
@@ -266,19 +285,21 @@ type UpsertCompanyWorkflowOverrideDraftRequest struct {
 }
 
 type UpsertCompanyWorkflowOverrideDraftResponse struct {
-	OverrideID     string    `json:"override_id"`
-	TypeID         string    `json:"type_id"`
-	CompanyID      string    `json:"company_id"`
-	DraftVersionNo int       `json:"draft_version_no"`
-	DraftEtag      string    `json:"draft_etag"`
-	VersionNo      int       `json:"version_no"`
-	State          string    `json:"state"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	OverrideID     string            `json:"override_id"`
+	TypeID         string            `json:"type_id"`
+	CompanyID      string            `json:"company_id"`
+	DraftVersionNo int               `json:"draft_version_no"`
+	DraftEtag      string            `json:"draft_etag"`
+	VersionNo      int               `json:"version_no"`
+	State          string            `json:"state"`
+	UpdatedAt      time.Time         `json:"updated_at"`
+	Workflow       []WorkflowStepDTO `json:"workflow"`
 }
 
 type ApproveCompanyWorkflowOverrideRequest struct {
 	Subject   Subject
 	TypeID    string `json:"type_id"`
+	BaseEtag  string `json:"base_etag,omitempty"`
 	VersionNo int    `json:"version_no"`
 	Reason    string `json:"reason"`
 }
@@ -362,6 +383,52 @@ type EffectiveWorkflowDTO struct {
 type GetEffectiveWorkflowResponse struct {
 	Data EffectiveWorkflowDTO `json:"data"`
 }
+
+// ─── Groups / tổ nhóm (WORKFLOW_GROUPS_ENABLED) ───────────────────────────────
+
+type ListCompanyGroupsRequest struct {
+	Subject      Subject
+	DepartmentID string // optional filter; empty = all active groups in company
+	IsActive     *bool  // nil = no filter
+}
+
+type ListCompanyGroupsResponse struct {
+	Items []CompanyGroupDTO `json:"items"`
+}
+
+// CompanyGroupDTO is a tổ/nhóm (team-level org unit) belonging to a department.
+type CompanyGroupDTO struct {
+	GroupID        string `json:"group_id"`
+	GroupName      string `json:"group_name"`
+	DepartmentID   string `json:"department_id"`
+	DepartmentName string `json:"department_name,omitempty"`
+	IsActive       bool   `json:"is_active"`
+}
+
+// WorkflowStepGroupWriteInput is the write shape for one group in a step.
+type WorkflowStepGroupWriteInput struct {
+	GroupID        string `json:"group_id"`
+	DurationMode   string `json:"duration_mode"`   // "inherit" | "custom"
+	ProcessingDays *int   `json:"processing_days,omitempty"`
+	DisplayOrder   int    `json:"display_order"`
+}
+
+type UpdateWorkflowOverrideStepGroupsRequest struct {
+	Subject       Subject
+	TypeID        string                        `json:"type_id"`
+	StepID        string                        `json:"step_id"`
+	BaseEtag      string                        `json:"base_etag"`
+	Groups        []WorkflowStepGroupWriteInput `json:"groups"`
+	ClearAll      bool                          `json:"clear_all_groups"`
+}
+
+type UpdateWorkflowOverrideStepGroupsResponse struct {
+	DraftEtag string                 `json:"draft_etag"`
+	StepID    string                 `json:"step_id"`
+	Groups    []WorkflowStepGroupDTO `json:"groups"`
+}
+
+// ─── End Groups ────────────────────────────────────────────────────────────────
 
 type GetTemplateDeadlineConfigRequest struct {
 	Subject Subject
@@ -499,6 +566,12 @@ type TemplateDeadlineConfig struct {
 	DeadlineDays   int    `json:"deadline_days,omitempty"`
 	// ProcessingDays is the default per-step duration in calendar days.
 	ProcessingDays int    `json:"processing_days,omitempty"`
+	// Portal/CMS template config extensions (stored in deadline_config_json).
+	TemplateCategory  string `json:"template_category,omitempty"`
+	FrequencyInterval int    `json:"frequency_interval,omitempty"`
+	FrequencyUnit     string `json:"frequency_unit,omitempty"`
+	AllowT0Override   *bool  `json:"allow_t0_override,omitempty"`
+	ReportInfoLocked  *bool  `json:"report_info_locked,omitempty"`
 }
 
 // WorkflowOverrideReminderPreviewMilestoneDTO is one projected reminder row for draft preview.

@@ -37,8 +37,9 @@ type Repository interface {
 // Implemented by disclosureapp.Service.SubmitRecord — injected to avoid circular imports.
 type RecordCreator interface {
 	// CreateAndSubmitRecord creates a Draft record for the proposal and immediately submits it.
-	// Returns the record_id on success.
-	CreateAndSubmitRecord(ctx context.Context, companyID, typeID, createdByMembershipID, title string) (recordID string, err error)
+	// When workflow is enabled, also creates a workflow instance for the record.
+	// Returns record_id and workflow_instance_id (may be empty when workflow is disabled).
+	CreateAndSubmitRecord(ctx context.Context, companyID, typeID, createdByMembershipID, title string) (recordID, workflowInstanceID string, err error)
 }
 
 type Subject struct {
@@ -70,9 +71,12 @@ type ProposalActionRequest struct {
 }
 
 type AdminApproveRequest struct {
-	Subject    Subject
-	ProposalID string
-	Comment    string `json:"comment,omitempty"`
+	Subject            Subject
+	ProposalID         string
+	Comment            string `json:"comment,omitempty"`
+	FinalT0Date        string `json:"final_t0_date,omitempty"`        // YYYY-MM-DD
+	FinalDeadlineDate  string `json:"final_deadline_date,omitempty"`  // YYYY-MM-DD or days string from FE
+	AdjustmentNote     string `json:"adjustment_note,omitempty"`
 }
 
 type AdminApproveResponse struct {
