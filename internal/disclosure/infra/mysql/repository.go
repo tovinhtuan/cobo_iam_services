@@ -717,7 +717,8 @@ func (r *Repository) ApproveCompanyWorkflowOverride(ctx context.Context, req dis
 		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "workflow override version is not draft", nil)
 	}
 	// Self-approval guard: drafter cannot approve their own draft.
-	if createdBy != "" && createdBy == req.Subject.UserID {
+	// Bypassed when SkipSelfApprovalCheck=true (save+apply path).
+	if !req.SkipSelfApprovalCheck && createdBy != "" && createdBy == req.Subject.UserID {
 		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodeSelfApprovalNotAllowed, "drafter cannot approve their own workflow draft", nil)
 	}
 	// Stale etag guard: req.VersionNo must be the latest draft version.

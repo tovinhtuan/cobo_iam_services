@@ -58,7 +58,8 @@ func (c *Checker) Check(_ context.Context, req authapp.AuthorizeRequest, effecti
 			DenyReasonCode:        &code,
 		}, nil
 	}
-	if strings.Contains(strings.ToLower(req.Action), "approve") {
+	// Responsibility gate only applies to direct workflow task approvals, not admin/template actions.
+	if isWorkflowTaskApproveAction(req.Action) {
 		if containsResponsibility(effective.Responsibilities, "workflow_approver:disclosure") {
 			respReasons = append(respReasons, "workflow_assignee_rule:legal_approval")
 		} else {
@@ -193,6 +194,17 @@ func containsAssignment(items []authapp.ResourceAssignment, resourceType, resour
 		if it.ResourceType == resourceType && it.ResourceID == resourceID {
 			return true
 		}
+	}
+	return false
+}
+
+// isWorkflowTaskApproveAction returns true only for direct workflow task/disclosure
+// approval actions, not for admin/template configuration actions.
+func isWorkflowTaskApproveAction(action string) bool {
+	a := strings.ToLower(strings.TrimSpace(action))
+	switch a {
+	case "workflow.approve", "disclosure.approve":
+		return true
 	}
 	return false
 }

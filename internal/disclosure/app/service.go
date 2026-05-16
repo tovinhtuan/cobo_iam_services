@@ -531,6 +531,24 @@ func (s *service) UpsertCompanyWorkflowOverrideDraft(ctx context.Context, req Up
 		resp.VersionNo = resp.DraftVersionNo
 		resp.Workflow = req.Workflow
 	}
+	if req.Publish && resp != nil {
+		if err2 := s.authorize(ctx, req.Subject, "template.workflow.override.approve", authapp.ResourceRef{
+			Type: "disclosure_type",
+			ID:   req.TypeID,
+		}); err2 != nil {
+			return nil, err2
+		}
+		if _, err2 := s.repo.ApproveCompanyWorkflowOverride(ctx, ApproveCompanyWorkflowOverrideRequest{
+			Subject:               req.Subject,
+			TypeID:                req.TypeID,
+			VersionNo:             resp.DraftVersionNo,
+			Reason:                "apply",
+			SkipSelfApprovalCheck: true,
+		}); err2 != nil {
+			return nil, err2
+		}
+		resp.State = "approved"
+	}
 	return resp, nil
 }
 

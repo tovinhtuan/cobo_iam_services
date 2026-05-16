@@ -282,6 +282,9 @@ type UpsertCompanyWorkflowOverrideDraftRequest struct {
 	BaseEtag      string            `json:"base_etag,omitempty"`
 	ChangeNote    string            `json:"change_note"`
 	Workflow      []WorkflowStepDTO `json:"workflow"`
+	// Publish=true atomically approves the draft immediately after saving.
+	// Caller must hold template.workflow.override.approve permission.
+	Publish bool `json:"publish,omitempty"`
 }
 
 type UpsertCompanyWorkflowOverrideDraftResponse struct {
@@ -302,6 +305,9 @@ type ApproveCompanyWorkflowOverrideRequest struct {
 	BaseEtag  string `json:"base_etag,omitempty"`
 	VersionNo int    `json:"version_no"`
 	Reason    string `json:"reason"`
+	// SkipSelfApprovalCheck bypasses the maker-checker guard.
+	// Used internally by the save+apply (publish) path.
+	SkipSelfApprovalCheck bool `json:"-"`
 }
 
 type ApproveCompanyWorkflowOverrideResponse struct {

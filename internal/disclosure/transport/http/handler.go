@@ -445,8 +445,13 @@ func (h *Handler) upsertCompanyWorkflowOverrideDraft(w http.ResponseWriter, r *h
 		httpx.WriteError(w, nil, err)
 		return
 	}
-	h.auditLog(r, sub, "disclosure.workflow_override.draft_saved", "disclosure_type", payload.TypeID, map[string]any{
+	auditAction := "disclosure.workflow_override.draft_saved"
+	if payload.Publish {
+		auditAction = "disclosure.workflow_override.applied"
+	}
+	h.auditLog(r, sub, auditAction, "disclosure_type", payload.TypeID, map[string]any{
 		"draft_version_no": resp.DraftVersionNo,
+		"state":            resp.State,
 	})
 	httpx.WriteJSON(w, http.StatusOK, resp)
 }
