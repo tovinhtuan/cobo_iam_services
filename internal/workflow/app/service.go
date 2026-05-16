@@ -12,13 +12,29 @@ import (
 )
 
 type service struct {
-	repo Repository
-	auth authapp.Service
-	idg  idgen.Generator
+	repo      Repository
+	milestone MilestoneRepository
+	auth      authapp.Service
+	idg       idgen.Generator
+	flags     Flags
 }
 
-func NewService(repo Repository, auth authapp.Service, idg idgen.Generator) Service {
-	return &service{repo: repo, auth: auth, idg: idg}
+func NewService(repo Repository, auth authapp.Service, idg idgen.Generator, opts ...ServiceOption) Service {
+	s := &service{repo: repo, auth: auth, idg: idg}
+	for _, o := range opts {
+		o(s)
+	}
+	return s
+}
+
+type ServiceOption func(*service)
+
+func WithMilestoneRepository(mr MilestoneRepository) ServiceOption {
+	return func(s *service) { s.milestone = mr }
+}
+
+func WithFlags(f Flags) ServiceOption {
+	return func(s *service) { s.flags = f }
 }
 
 func (s *service) CreateWorkflowInstance(ctx context.Context, req CreateWorkflowInstanceRequest) (*WorkflowInstanceDTO, error) {
@@ -34,12 +50,48 @@ func (s *service) CreateWorkflowInstance(ctx context.Context, req CreateWorkflow
 	}); err != nil {
 		return nil, err
 	}
-	inst := WorkflowInstanceDTO{WorkflowInstanceID: s.idg.NewUUID(), CompanyID: req.Subject.CompanyID, RecordID: req.RecordID, Status: "in_progress", CurrentStepCode: "review", CreatedBy: req.Subject.UserID}
+
+	inst := WorkflowInstanceDTO{
+		WorkflowInstanceID: s.idg.NewUUID(),
+		CompanyID:          req.Subject.CompanyID,
+		RecordID:           req.RecordID,
+		Status:             "in_progress",
+		CurrentStepCode:    "review",
+		CreatedBy:          req.Subject.UserID,
+	}
+	if s.flags.SnapshotEnabled {
+		inst.Snapshot = req.Snapshot
+		inst.WorkflowSource = req.WorkflowSource
+		inst.T0Date = req.T0Date
+		inst.T0Policy = req.T0Policy
+	}
+
 	created, err := s.repo.CreateInstance(ctx, inst)
 	if err != nil {
 		return nil, err
 	}
-	_, _ = s.repo.CreateTask(ctx, TaskDTO{TaskID: s.idg.NewUUID(), CompanyID: req.Subject.CompanyID, WorkflowInstanceID: created.WorkflowInstanceID, StepCode: "review", AssigneeMembershipID: req.Subject.MembershipID, Status: "pending"})
+	_, _ = s.repo.CreateTask(ctx, TaskDTO{
+		TaskID:               s.idg.NewUUID(),
+		CompanyID:            req.Subject.CompanyID,
+		WorkflowInstanceID:   created.WorkflowInstanceID,
+		StepCode:             "review",
+		AssigneeMembershipID: req.Subject.MembershipID,
+		Status:               "pending",
+	})
+
+	if s.flags.TimelineEnabled && s.milestone != nil && len(req.Milestones) > 0 {
+		// Attach the resolved instance ID to milestone rows (caller pre-computed them without it).
+		rows := make([]StepMilestoneRow, len(req.Milestones))
+		for i, m := range req.Milestones {
+			rows[i] = m
+			rows[i].InstanceID = created.WorkflowInstanceID
+			rows[i].CompanyID = req.Subject.CompanyID
+		}
+		if err := s.milestone.InsertStepMilestones(ctx, rows); err != nil {
+			// Non-fatal: instance is created; log and continue. Milestones can be retried.
+			_ = fmt.Errorf("seed milestones: %w", err)
+		}
+	}
 	return created, nil
 }
 

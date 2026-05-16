@@ -12,13 +12,14 @@ import (
 )
 
 type service struct {
-	configRepo     ConfigRepository
-	occurrenceRepo OccurrenceRepository
-	attemptRepo    AttemptRepository
-	emailSender    EmailSender
-	metrics        Metrics
-	auditor        Auditor
-	alertHook      AlertHook
+	configRepo      ConfigRepository
+	occurrenceRepo  OccurrenceRepository
+	attemptRepo     AttemptRepository
+	milestoneScanner MilestoneScanner
+	emailSender     EmailSender
+	metrics         Metrics
+	auditor         Auditor
+	alertHook       AlertHook
 }
 
 type EmailSender interface {
@@ -48,6 +49,12 @@ func WithAuditor(auditor Auditor) ServiceOption {
 func WithAlertHook(hook AlertHook) ServiceOption {
 	return func(s *service) {
 		s.alertHook = hook
+	}
+}
+
+func WithMilestoneScanner(ms MilestoneScanner) ServiceOption {
+	return func(s *service) {
+		s.milestoneScanner = ms
 	}
 }
 
@@ -492,4 +499,46 @@ func validateReminderConfig(cfg ReminderConfigInput) error {
 		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "invalid recipientType", nil)
 	}
 	return nil
+}
+
+// SeedOccurrencesFromDueMilestones bridges workflow_step_milestones → reminder_occurrences.
+// It is idempotent: each milestone row carries a unique milestone_id used as the idempotency_key,
+// and reminder_occurrences has a unique index on idempotency_key.
+func (s *service) SeedOccurrencesFromDueMilestones(ctx context.Context, now time.Time) (int, error) {
+	if s.milestoneScanner == nil {
+		return 0, nil // feature not wired; skip silently
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	const batchLimit = 200
+	milestones, err := s.milestoneScanner.ListDueMilestones(ctx, now, batchLimit)
+	if err != nil {
+		return 0, fmt.Errorf("list due milestones: %w", err)
+	}
+	seeded := 0
+	for _, m := range milestones {
+		idempotencyKey := fmt.Sprintf("wsm:%s:%s:%s", m.WorkflowInstanceID, m.StepID, m.MilestoneType)
+		occ, err := s.occurrenceRepo.SeedOccurrence(ctx, ReminderOccurrenceDTO{
+			OccurrenceID:   m.MilestoneID,
+			DisclosureID:   m.WorkflowInstanceID, // use instance as disclosure scope
+			ScopeType:      ScopeTypeWorkflowStep,
+			ScopeID:        m.StepID,
+			ScheduledAt:    m.ScheduledDate.UTC(),
+			Status:         ReminderStatusPending,
+			IdempotencyKey: idempotencyKey,
+		})
+		if err != nil {
+			// duplicate idempotency_key = already seeded; not an error
+			s.metrics.IncCounter("reminder_milestone_seed_error_total", map[string]string{"milestone_type": m.MilestoneType})
+			continue
+		}
+		if err := s.milestoneScanner.MarkMilestoneSent(ctx, m.MilestoneID, occ.OccurrenceID); err != nil {
+			s.metrics.IncCounter("reminder_milestone_mark_error_total", map[string]string{"milestone_type": m.MilestoneType})
+			continue
+		}
+		s.metrics.IncCounter("reminder_milestone_seeded_total", map[string]string{"milestone_type": m.MilestoneType})
+		seeded++
+	}
+	return seeded, nil
 }

@@ -132,6 +132,12 @@ func tick(ctx context.Context, log *slog.Logger, sqlDB *sql.DB, processor *platf
 		}
 	}
 	if reminderScheduler != nil {
+		seeded, err := reminderScheduler.SeedOccurrencesFromDueMilestones(ctx, time.Now().UTC())
+		if err != nil {
+			log.Warn("milestone bridge tick failed", slog.String("err", err.Error()))
+		} else if seeded > 0 {
+			log.Info("workflow milestone occurrences seeded", slog.Int("seeded", seeded))
+		}
 		inserted, err := reminderScheduler.MaterializeDueOccurrences(ctx, time.Now().UTC())
 		if err != nil {
 			log.Warn("reminder scheduler tick failed", slog.String("err", err.Error()))

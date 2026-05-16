@@ -1,6 +1,9 @@
 package app
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 type Service interface {
 	CreateWorkflowInstance(ctx context.Context, req CreateWorkflowInstanceRequest) (*WorkflowInstanceDTO, error)
@@ -20,15 +23,56 @@ type Repository interface {
 	ListTasksByInstance(ctx context.Context, companyID, workflowInstanceID string) ([]TaskDTO, error)
 }
 
+// MilestoneRepository persists workflow step milestone rows seeded at instance creation.
+type MilestoneRepository interface {
+	InsertStepMilestones(ctx context.Context, rows []StepMilestoneRow) error
+}
+
+// Flags carries feature-flag state for the workflow service.
+type Flags struct {
+	SnapshotEnabled bool
+	TimelineEnabled bool
+}
+
 type Subject struct {
 	UserID       string
 	MembershipID string
 	CompanyID    string
 }
 
+// StepSnapshot is the workflow step data frozen into workflow_instances.snapshot_json.
+type StepSnapshot struct {
+	StepID         string `json:"step_id"`
+	StepCode       string `json:"step_code,omitempty"`
+	Stage          string `json:"stage,omitempty"`
+	Department     string `json:"department,omitempty"`
+	AssigneeRole   string `json:"assignee_role,omitempty"`
+	DueRule        string `json:"due_rule,omitempty"`
+	DisplayOrder   int    `json:"display_order"`
+	ProcessingDays int    `json:"processing_days,omitempty"`
+}
+
+// StepMilestoneRow is a single milestone row ready for persistence.
+type StepMilestoneRow struct {
+	MilestoneID   string
+	CompanyID     string
+	InstanceID    string
+	StepID        string
+	StepOrder     int
+	MilestoneType string
+	ScheduledDate time.Time
+}
+
 type CreateWorkflowInstanceRequest struct {
-	Subject  Subject
-	RecordID string `json:"record_id"`
+	Subject        Subject
+	RecordID       string         `json:"record_id"`
+	// Optional: filled by caller when WORKFLOW_SNAPSHOT_ENABLED=true.
+	Snapshot       []StepSnapshot `json:"snapshot,omitempty"`
+	WorkflowSource string         `json:"workflow_source,omitempty"` // system_template | company_override
+	T0Date         *time.Time     `json:"t0_date,omitempty"`
+	T0Policy       string         `json:"t0_policy,omitempty"`
+	// Optional: pre-computed milestones from timeline computation (when WORKFLOW_TIMELINE_ENABLED=true).
+	Milestones     []StepMilestoneRow `json:"milestones,omitempty"`
 }
 
 type TaskActionRequest struct {
@@ -48,12 +92,16 @@ type ResolveAssigneesResponse struct {
 }
 
 type WorkflowInstanceDTO struct {
-	WorkflowInstanceID string `json:"workflow_instance_id"`
-	CompanyID          string `json:"company_id"`
-	RecordID           string `json:"record_id"`
-	Status             string `json:"status"`
-	CurrentStepCode    string `json:"current_step_code"`
-	CreatedBy          string `json:"created_by"`
+	WorkflowInstanceID string         `json:"workflow_instance_id"`
+	CompanyID          string         `json:"company_id"`
+	RecordID           string         `json:"record_id"`
+	Status             string         `json:"status"`
+	CurrentStepCode    string         `json:"current_step_code"`
+	CreatedBy          string         `json:"created_by"`
+	Snapshot           []StepSnapshot `json:"snapshot,omitempty"`
+	WorkflowSource     string         `json:"workflow_source,omitempty"`
+	T0Date             *time.Time     `json:"t0_date,omitempty"`
+	T0Policy           string         `json:"t0_policy,omitempty"`
 }
 
 type TaskDTO struct {

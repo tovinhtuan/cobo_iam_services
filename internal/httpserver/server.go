@@ -54,6 +54,10 @@ import (
 	remindermysql "github.com/cobo/cobo_iam_services/internal/reminder/infra/mysql"
 	reminderobserve "github.com/cobo/cobo_iam_services/internal/reminder/infra/observe"
 	reminderhttp "github.com/cobo/cobo_iam_services/internal/reminder/transport/http"
+	adhocapp "github.com/cobo/cobo_iam_services/internal/adhoc/app"
+	adhocrecord "github.com/cobo/cobo_iam_services/internal/adhoc/infra/disclosure"
+	adhocmysql "github.com/cobo/cobo_iam_services/internal/adhoc/infra/mysql"
+	adhochttp "github.com/cobo/cobo_iam_services/internal/adhoc/transport/http"
 	workflowapp "github.com/cobo/cobo_iam_services/internal/workflow/app"
 	workflowinmem "github.com/cobo/cobo_iam_services/internal/workflow/infra/inmemory"
 	workflowmysql "github.com/cobo/cobo_iam_services/internal/workflow/infra/mysql"
@@ -243,7 +247,16 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 		log.Info("disclosure submit/confirm idempotency enabled (Idempotency-Key header)")
 	}
 	disclosureHandler := disclosurehttp.NewHandler(disclosureSvc, tokenManager, idemStore, auditSvc)
-	workflowSvc := workflowapp.NewService(workflowRepo, authSvc, id)
+	workflowOpts := []workflowapp.ServiceOption{
+		workflowapp.WithFlags(workflowapp.Flags{
+			SnapshotEnabled: cfg.WorkflowSnapshotEnabled,
+			TimelineEnabled: cfg.WorkflowTimelineEnabled,
+		}),
+	}
+	if pool != nil && cfg.WorkflowTimelineEnabled {
+		workflowOpts = append(workflowOpts, workflowapp.WithMilestoneRepository(workflowmysql.NewMilestoneRepository(pool)))
+	}
+	workflowSvc := workflowapp.NewService(workflowRepo, authSvc, id, workflowOpts...)
 	workflowHandler := workflowhttp.NewHandler(workflowSvc, tokenManager)
 	notificationSvc := notificationapp.NewService(notificationRepo, authSvc, id, outboxPublisher, notifOpts...)
 	notificationHandler := notificationhttp.NewHandler(notificationSvc, tokenManager)
@@ -251,17 +264,19 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 	var reminderConfigRepo reminderapp.ConfigRepository = reminderRepo
 	var reminderOccurrenceRepo reminderapp.OccurrenceRepository = reminderRepo
 	var reminderAttemptRepo reminderapp.AttemptRepository = reminderRepo
+	var reminderSvcOpts []reminderapp.ServiceOption
 	if pool != nil {
 		reminderMySQLRepo := remindermysql.NewRepository(pool)
 		reminderConfigRepo = reminderMySQLRepo
 		reminderOccurrenceRepo = reminderMySQLRepo
 		reminderAttemptRepo = reminderMySQLRepo
 		log.Info("reminder module using MySQL repository")
+		if cfg.WorkflowRemindersEnabled {
+			reminderSvcOpts = append(reminderSvcOpts, reminderapp.WithMilestoneScanner(remindermysql.NewMilestoneScanner(pool)))
+			log.Info("workflow milestone reminder bridge enabled")
+		}
 	}
-	reminderSvc := reminderapp.NewService(
-		reminderConfigRepo,
-		reminderOccurrenceRepo,
-		reminderAttemptRepo,
+	reminderSvcOpts = append(reminderSvcOpts,
 		reminderapp.WithEmailSender(reminderemail.NewSMTPSender(reminderemail.SMTPConfig{
 			Host: cfg.SMTPHost,
 			Port: cfg.SMTPPort,
@@ -273,6 +288,7 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 		reminderapp.WithAuditor(reminderobserve.AuditRecorder{Svc: auditSvc, IDG: id}),
 		reminderapp.WithAlertHook(reminderobserve.AlertLogger{Log: log}),
 	)
+	reminderSvc := reminderapp.NewService(reminderConfigRepo, reminderOccurrenceRepo, reminderAttemptRepo, reminderSvcOpts...)
 	reminderHandler := reminderhttp.NewHandler(reminderSvc, tokenManager, "", cfg.Env)
 	var adminRepo companyaccessapp.AdminRepository = cainmem.NewAdminRepository()
 	if pool != nil {
@@ -297,7 +313,22 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 		PublicAPIBaseURL:    cfg.PublicAPIBaseURL,
 	})
 
-	return muxRegisterHealthAndIAM(mux, log, sqlDB, iamHandler, meHandler, authHandler, disclosureHandler, workflowHandler, notificationHandler, reminderHandler, adminHandler, platformCMSHandler)
+	// Ad-hoc proposal module (WORKFLOW_ADHOC_ENABLED flag).
+	var adhocHandler *adhochttp.Handler
+	if cfg.WorkflowAdhocEnabled {
+		var adhocRepo adhocapp.Repository
+		if pool != nil {
+			adhocRepo = adhocmysql.NewRepository(pool)
+		} else {
+			adhocRepo = adhocmysql.NewRepository(nil) // will panic on use; acceptable in no-DB mode
+		}
+		recordCreator := adhocrecord.NewRecordCreatorAdapter(disclosureSvc)
+		adhocSvc := adhocapp.NewService(adhocRepo, recordCreator, id, cfg.WorkflowAdhocAutoApproveEnabled)
+		adhocHandler = adhochttp.NewHandler(adhocSvc, tokenManager)
+		log.Info("ad-hoc proposal module enabled")
+	}
+
+	return muxRegisterHealthAndIAM(mux, log, sqlDB, iamHandler, meHandler, authHandler, disclosureHandler, workflowHandler, notificationHandler, reminderHandler, adminHandler, platformCMSHandler, adhocHandler)
 }
 
 func muxRegisterHealthAndIAM(
@@ -313,6 +344,7 @@ func muxRegisterHealthAndIAM(
 	reminderHandler *reminderhttp.Handler,
 	adminHandler *companyaccesshttp.AdminHandler,
 	platformCMSHandler *platformcmshttp.Handler,
+	adhocHandler *adhochttp.Handler,
 ) error {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		httpx.WriteJSON(w, http.StatusOK, map[string]any{"status": "ok"})
@@ -342,6 +374,9 @@ func muxRegisterHealthAndIAM(
 	reminderHandler.Register(mux)
 	adminHandler.Register(mux)
 	platformCMSHandler.Register(mux)
+	if adhocHandler != nil {
+		adhocHandler.Register(mux)
+	}
 	return nil
 }
 

@@ -581,6 +581,14 @@ func (r *Repository) ListCompanyWorkflowOverrideVersions(_ context.Context, comp
 	return out[start:end], total, nil
 }
 
+func (r *Repository) GetActiveVersionDeadlineConfig(_ context.Context, _ string) (int, *disclosureapp.TemplateDeadlineConfig, error) {
+	return 0, nil, nil
+}
+
+func (r *Repository) UpdateActiveVersionDeadlineConfig(_ context.Context, _ string, _ disclosureapp.TemplateDeadlineConfig, _ string) error {
+	return perr.NewHTTPError(http.StatusNotImplemented, perr.CodeInternal, "not implemented in-memory", nil)
+}
+
 func (r *Repository) GetEffectiveWorkflow(_ context.Context, companyID, typeID string) (*disclosureapp.EffectiveWorkflowDTO, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

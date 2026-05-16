@@ -575,6 +575,60 @@ func (s *service) GetEffectiveWorkflow(ctx context.Context, req GetEffectiveWork
 	return &GetEffectiveWorkflowResponse{Data: *out}, nil
 }
 
+func (s *service) GetTemplateDeadlineConfig(ctx context.Context, req GetTemplateDeadlineConfigRequest) (*GetTemplateDeadlineConfigResponse, error) {
+	req.TypeID = strings.TrimSpace(req.TypeID)
+	if req.TypeID == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "type_id is required", nil)
+	}
+	if !s.hasPermission(ctx, req.Subject, "rbac.manage") {
+		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "access denied", nil)
+	}
+	versionNo, cfg, err := s.repo.GetActiveVersionDeadlineConfig(ctx, req.TypeID)
+	if err != nil {
+		return nil, err
+	}
+	out := &GetTemplateDeadlineConfigResponse{TypeID: req.TypeID, VersionNo: versionNo}
+	if cfg != nil {
+		out.DeadlineConfig = *cfg
+	}
+	return out, nil
+}
+
+func (s *service) UpdateTemplateDeadlineConfig(ctx context.Context, req UpdateTemplateDeadlineConfigRequest) (*UpdateTemplateDeadlineConfigResponse, error) {
+	req.TypeID = strings.TrimSpace(req.TypeID)
+	if req.TypeID == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "type_id is required", nil)
+	}
+	if !s.hasPermission(ctx, req.Subject, "rbac.manage") {
+		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "access denied", nil)
+	}
+	if req.DeadlineConfig.T0Policy != "" {
+		switch req.DeadlineConfig.T0Policy {
+		case "system_date", "event_date", "user_defined":
+		default:
+			return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "t0_policy must be system_date | event_date | user_defined", nil)
+		}
+	}
+	if req.DeadlineConfig.DeadlineDays < 0 {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "deadline_days must be >= 0", nil)
+	}
+	if req.DeadlineConfig.ProcessingDays < 0 {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "processing_days must be >= 0", nil)
+	}
+	if err := s.repo.UpdateActiveVersionDeadlineConfig(ctx, req.TypeID, req.DeadlineConfig, req.Subject.UserID); err != nil {
+		return nil, err
+	}
+	versionNo, cfg, err := s.repo.GetActiveVersionDeadlineConfig(ctx, req.TypeID)
+	if err != nil {
+		return nil, err
+	}
+	out := &UpdateTemplateDeadlineConfigResponse{TypeID: req.TypeID, VersionNo: versionNo, UpdatedBy: req.Subject.UserID}
+	if cfg != nil {
+		out.DeadlineConfig = *cfg
+	}
+	return out, nil
+}
+
 func (s *service) requireDisclosureCatalogRead(ctx context.Context, sub Subject) error {
 	if err := s.authorize(ctx, sub, "disclosure.create", authapp.ResourceRef{
 		Type: "disclosure_record",

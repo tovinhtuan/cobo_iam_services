@@ -3,6 +3,7 @@ package mysql
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
@@ -18,11 +19,25 @@ func NewRepository(db *sql.DB) *Repository {
 }
 
 func (r *Repository) CreateInstance(ctx context.Context, in workflowapp.WorkflowInstanceDTO) (*workflowapp.WorkflowInstanceDTO, error) {
+	var snapshotJSON []byte
+	if len(in.Snapshot) > 0 {
+		b, err := json.Marshal(in.Snapshot)
+		if err != nil {
+			return nil, fmt.Errorf("marshal snapshot: %w", err)
+		}
+		snapshotJSON = b
+	}
+	var t0Date any
+	if in.T0Date != nil {
+		t0Date = in.T0Date.Format("2006-01-02")
+	}
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO workflow_instances (
-			workflow_instance_id, company_id, record_id, status, current_step_code, created_by
-		) VALUES (?, ?, ?, ?, ?, ?)
-	`, in.WorkflowInstanceID, in.CompanyID, in.RecordID, in.Status, in.CurrentStepCode, in.CreatedBy)
+			workflow_instance_id, company_id, record_id, status, current_step_code, created_by,
+			snapshot_json, t0_date, t0_policy, workflow_source
+		) VALUES (?, ?, ?, ?, ?, ?, CAST(? AS JSON), ?, ?, ?)
+	`, in.WorkflowInstanceID, in.CompanyID, in.RecordID, in.Status, in.CurrentStepCode, in.CreatedBy,
+		nullableJSON(snapshotJSON), t0Date, nullStr(in.T0Policy), nullStr(in.WorkflowSource))
 	if err != nil {
 		return nil, fmt.Errorf("workflow instance insert: %w", err)
 	}
@@ -123,4 +138,18 @@ func (r *Repository) ListTasksByInstance(ctx context.Context, companyID, workflo
 		out = append(out, t)
 	}
 	return out, rows.Err()
+}
+
+func nullableJSON(b []byte) any {
+	if len(b) == 0 {
+		return nil
+	}
+	return string(b)
+}
+
+func nullStr(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
 }

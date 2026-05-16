@@ -1055,3 +1055,49 @@ func nullIfBlank(value string) any {
 	}
 	return trimmed
 }
+
+func (r *Repository) GetActiveVersionDeadlineConfig(ctx context.Context, typeID string) (int, *disclosureapp.TemplateDeadlineConfig, error) {
+	var versionNo int
+	var rawConfig sql.NullString
+	err := r.db.QueryRowContext(ctx, `
+		SELECT v.version_no, v.deadline_config_json
+		FROM disclosure_type_versions v
+		INNER JOIN disclosure_types t ON t.type_id = v.type_id AND t.active_version_no = v.version_no
+		WHERE v.type_id = ?
+	`, typeID).Scan(&versionNo, &rawConfig)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return 0, nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "disclosure type not found", nil)
+		}
+		return 0, nil, fmt.Errorf("get active version deadline config: %w", err)
+	}
+	if !rawConfig.Valid || rawConfig.String == "" || rawConfig.String == "null" {
+		return versionNo, nil, nil
+	}
+	var cfg disclosureapp.TemplateDeadlineConfig
+	if err := json.Unmarshal([]byte(rawConfig.String), &cfg); err != nil {
+		return versionNo, nil, fmt.Errorf("unmarshal deadline_config_json: %w", err)
+	}
+	return versionNo, &cfg, nil
+}
+
+func (r *Repository) UpdateActiveVersionDeadlineConfig(ctx context.Context, typeID string, cfg disclosureapp.TemplateDeadlineConfig, updatedBy string) error {
+	raw, err := json.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("marshal deadline config: %w", err)
+	}
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE disclosure_type_versions v
+		INNER JOIN disclosure_types t ON t.type_id = v.type_id AND t.active_version_no = v.version_no
+		SET v.deadline_config_json = CAST(? AS JSON), v.updated_by = ?
+		WHERE v.type_id = ?
+	`, string(raw), updatedBy, typeID)
+	if err != nil {
+		return fmt.Errorf("update active version deadline config: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "disclosure type not found or no active version", nil)
+	}
+	return nil
+}

@@ -90,6 +90,22 @@ type Config struct {
 	CMSMediaUploadSigningSecret string
 	CMSMediaUploadURLTTL        time.Duration
 	CMSMediaStorageDir          string
+
+	// ── Customize-Workflow feature flags ─────────────────────────────────────
+	// WORKFLOW_GROUPS_ENABLED: expose groups array on effective workflow response.
+	WorkflowGroupsEnabled bool
+	// WORKFLOW_DRAFT_ETAG_MODE: off | warn | enforce — optimistic locking on override drafts.
+	WorkflowDraftEtagMode string
+	// WORKFLOW_SNAPSHOT_ENABLED: freeze workflow snapshot on instance creation.
+	WorkflowSnapshotEnabled bool
+	// WORKFLOW_TIMELINE_ENABLED: compute step timelines and seed milestones on instance creation.
+	WorkflowTimelineEnabled bool
+	// WORKFLOW_REMINDERS_ENABLED: dispatch reminder emails from seeded milestones.
+	WorkflowRemindersEnabled bool
+	// WORKFLOW_ADHOC_ENABLED: enable ad-hoc proposal state machine.
+	WorkflowAdhocEnabled bool
+	// WORKFLOW_ADHOC_AUTOAPPROVE_ENABLED: skip focal approval step (single-stage admin-only).
+	WorkflowAdhocAutoApproveEnabled bool
 }
 
 // Load reads configuration from the environment with safe defaults for local dev.
@@ -133,6 +149,14 @@ func Load() (Config, error) {
 		CMSMediaUploadSigningSecret:   getenv("CMS_MEDIA_UPLOAD_SIGNING_SECRET", "dev-cms-media-secret"),
 		CMSMediaUploadURLTTL:          durationEnv("CMS_MEDIA_UPLOAD_URL_TTL", 10*time.Minute),
 		CMSMediaStorageDir:            getenv("CMS_MEDIA_STORAGE_DIR", "./var/cms-media"),
+
+		WorkflowGroupsEnabled:           boolEnv("WORKFLOW_GROUPS_ENABLED", false),
+		WorkflowDraftEtagMode:           getenv("WORKFLOW_DRAFT_ETAG_MODE", "off"),
+		WorkflowSnapshotEnabled:         boolEnv("WORKFLOW_SNAPSHOT_ENABLED", false),
+		WorkflowTimelineEnabled:         boolEnv("WORKFLOW_TIMELINE_ENABLED", false),
+		WorkflowRemindersEnabled:        boolEnv("WORKFLOW_REMINDERS_ENABLED", false),
+		WorkflowAdhocEnabled:            boolEnv("WORKFLOW_ADHOC_ENABLED", false),
+		WorkflowAdhocAutoApproveEnabled: boolEnv("WORKFLOW_ADHOC_AUTOAPPROVE_ENABLED", false),
 	}
 	if cfg.WorkerTickInterval < time.Second {
 		return Config{}, fmt.Errorf("WORKER_TICK_INTERVAL too small")
@@ -144,6 +168,11 @@ func Load() (Config, error) {
 	case "opaque", "jwt", "dual":
 	default:
 		return Config{}, fmt.Errorf("ACCESS_TOKEN_MODE invalid: %s", cfg.AccessTokenMode)
+	}
+	switch cfg.WorkflowDraftEtagMode {
+	case "off", "warn", "enforce":
+	default:
+		return Config{}, fmt.Errorf("WORKFLOW_DRAFT_ETAG_MODE invalid: %s", cfg.WorkflowDraftEtagMode)
 	}
 	return cfg, nil
 }
@@ -180,6 +209,14 @@ func durationEnv(key string, def time.Duration) time.Duration {
 		return def
 	}
 	return d
+}
+
+func boolEnv(key string, def bool) bool {
+	s := strings.TrimSpace(os.Getenv(key))
+	if s == "" {
+		return def
+	}
+	return strings.EqualFold(s, "true") || s == "1"
 }
 
 func normalizeMySQLDSN(dsn string) string {

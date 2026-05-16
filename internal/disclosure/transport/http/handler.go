@@ -50,6 +50,8 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/v1/company/disclosure-types/{type_id}/workflow-override/active", h.resetCompanyWorkflowOverrideActive)
 	mux.HandleFunc("GET /api/v1/company/disclosure-types/{type_id}/workflow-override/versions", h.listCompanyWorkflowOverrideVersions)
 	mux.HandleFunc("GET /api/v1/disclosure-types/{type_id}/effective-workflow", h.getEffectiveWorkflow)
+	mux.HandleFunc("GET /api/v1/admin/disclosure-types/{type_id}/config", h.getTemplateDeadlineConfig)
+	mux.HandleFunc("PUT /api/v1/admin/disclosure-types/{type_id}/config", h.updateTemplateDeadlineConfig)
 }
 
 func (h *Handler) getTemplateReferenceData(w http.ResponseWriter, r *http.Request) {
@@ -541,6 +543,49 @@ func (h *Handler) getEffectiveWorkflow(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, nil, err)
 		return
 	}
+	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) getTemplateDeadlineConfig(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subjectFromToken(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	resp, err := h.svc.GetTemplateDeadlineConfig(r.Context(), disclosureapp.GetTemplateDeadlineConfigRequest{
+		Subject: sub,
+		TypeID:  strings.TrimSpace(r.PathValue("type_id")),
+	})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) updateTemplateDeadlineConfig(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subjectFromToken(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	var req disclosureapp.UpdateTemplateDeadlineConfigRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	req.Subject = sub
+	req.TypeID = strings.TrimSpace(r.PathValue("type_id"))
+	resp, err := h.svc.UpdateTemplateDeadlineConfig(r.Context(), req)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	h.auditLog(r, sub, "disclosure.type.config.updated", "disclosure_type", req.TypeID, map[string]any{
+		"t0_policy":       req.DeadlineConfig.T0Policy,
+		"deadline_days":   req.DeadlineConfig.DeadlineDays,
+		"processing_days": req.DeadlineConfig.ProcessingDays,
+	})
 	httpx.WriteJSON(w, http.StatusOK, resp)
 }
 

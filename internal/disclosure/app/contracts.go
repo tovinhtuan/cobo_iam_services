@@ -27,6 +27,8 @@ type Service interface {
 	ResetCompanyWorkflowOverrideActive(ctx context.Context, req ResetCompanyWorkflowOverrideActiveRequest) (*ResetCompanyWorkflowOverrideActiveResponse, error)
 	ListCompanyWorkflowOverrideVersions(ctx context.Context, req ListCompanyWorkflowOverrideVersionsRequest) (*ListCompanyWorkflowOverrideVersionsResponse, error)
 	GetEffectiveWorkflow(ctx context.Context, req GetEffectiveWorkflowRequest) (*GetEffectiveWorkflowResponse, error)
+	GetTemplateDeadlineConfig(ctx context.Context, req GetTemplateDeadlineConfigRequest) (*GetTemplateDeadlineConfigResponse, error)
+	UpdateTemplateDeadlineConfig(ctx context.Context, req UpdateTemplateDeadlineConfigRequest) (*UpdateTemplateDeadlineConfigResponse, error)
 }
 
 type Repository interface {
@@ -49,6 +51,8 @@ type Repository interface {
 	ListCompanyWorkflowOverrideVersions(ctx context.Context, companyID, typeID string, page, pageSize int) ([]CompanyWorkflowOverrideVersionDTO, int, error)
 	GetEffectiveWorkflow(ctx context.Context, companyID, typeID string) (*EffectiveWorkflowDTO, error)
 	GetCompanyDeadlineContext(ctx context.Context, companyID string) (CompanyDeadlineContext, error)
+	GetActiveVersionDeadlineConfig(ctx context.Context, typeID string) (versionNo int, cfg *TemplateDeadlineConfig, err error)
+	UpdateActiveVersionDeadlineConfig(ctx context.Context, typeID string, cfg TemplateDeadlineConfig, updatedBy string) error
 }
 
 type CreateRecordRequest struct {
@@ -343,6 +347,30 @@ type GetEffectiveWorkflowResponse struct {
 	Data EffectiveWorkflowDTO `json:"data"`
 }
 
+type GetTemplateDeadlineConfigRequest struct {
+	Subject Subject
+	TypeID  string
+}
+
+type GetTemplateDeadlineConfigResponse struct {
+	TypeID        string                 `json:"type_id"`
+	VersionNo     int                    `json:"version_no"`
+	DeadlineConfig TemplateDeadlineConfig `json:"deadline_config"`
+}
+
+type UpdateTemplateDeadlineConfigRequest struct {
+	Subject        Subject
+	TypeID         string                 `json:"type_id"`
+	DeadlineConfig TemplateDeadlineConfig `json:"deadline_config"`
+}
+
+type UpdateTemplateDeadlineConfigResponse struct {
+	TypeID        string                 `json:"type_id"`
+	VersionNo     int                    `json:"version_no"`
+	DeadlineConfig TemplateDeadlineConfig `json:"deadline_config"`
+	UpdatedBy     string                 `json:"updated_by"`
+}
+
 type Subject struct {
 	UserID       string
 	MembershipID string
@@ -445,9 +473,16 @@ type DeadlineSummaryDTO struct {
 }
 
 type TemplateDeadlineConfig struct {
-	DeadlineMode  string               `json:"deadline_mode"`
-	FixedDeadline *FixedDeadlineConfig `json:"fixed_deadline,omitempty"`
-	DynamicRule   *DynamicDeadlineRule `json:"dynamic_rule,omitempty"`
+	DeadlineMode   string               `json:"deadline_mode"`
+	FixedDeadline  *FixedDeadlineConfig `json:"fixed_deadline,omitempty"`
+	DynamicRule    *DynamicDeadlineRule `json:"dynamic_rule,omitempty"`
+	// T0Policy defines how the T0 reference date is resolved for timeline computation.
+	// Values: "system_date" | "event_date" | "user_defined". Empty = legacy (no timeline).
+	T0Policy       string `json:"t0_policy,omitempty"`
+	// DeadlineDays is total calendar days from T0 to the outer deadline.
+	DeadlineDays   int    `json:"deadline_days,omitempty"`
+	// ProcessingDays is the default per-step duration in calendar days.
+	ProcessingDays int    `json:"processing_days,omitempty"`
 }
 
 type FixedDeadlineConfig struct {

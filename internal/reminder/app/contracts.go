@@ -15,6 +15,26 @@ type Service interface {
 	SeedOccurrence(ctx context.Context, req SeedOccurrenceRequest) (*ReminderOccurrenceDTO, error)
 	MaterializeDueOccurrences(ctx context.Context, now time.Time) (int, error)
 	DispatchDueOccurrences(ctx context.Context, now time.Time, limit int) (*DispatchDueResult, error)
+	// SeedOccurrencesFromDueMilestones scans workflow_step_milestones for rows whose
+	// scheduled_date <= DATE(now) and reminder_sent=0, seeds reminder_occurrences, and
+	// marks each milestone sent. Returns count of occurrences seeded.
+	SeedOccurrencesFromDueMilestones(ctx context.Context, now time.Time) (int, error)
+}
+
+// DueMilestone is a row returned by MilestoneScanner.
+type DueMilestone struct {
+	MilestoneID         string
+	CompanyID           string
+	WorkflowInstanceID  string
+	StepID              string
+	MilestoneType       string
+	ScheduledDate       time.Time
+}
+
+// MilestoneScanner reads due milestone rows from workflow_step_milestones.
+type MilestoneScanner interface {
+	ListDueMilestones(ctx context.Context, asOf time.Time, limit int) ([]DueMilestone, error)
+	MarkMilestoneSent(ctx context.Context, milestoneID, occurrenceID string) error
 }
 
 type ConfigRepository interface {
