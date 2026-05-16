@@ -49,6 +49,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/v1/company/disclosure-types/{type_id}/workflow-override/draft/{version_no}", h.deleteCompanyWorkflowOverrideDraft)
 	mux.HandleFunc("DELETE /api/v1/company/disclosure-types/{type_id}/workflow-override/active", h.resetCompanyWorkflowOverrideActive)
 	mux.HandleFunc("GET /api/v1/company/disclosure-types/{type_id}/workflow-override/versions", h.listCompanyWorkflowOverrideVersions)
+	mux.HandleFunc("GET /api/v1/company/disclosure-types/{type_id}/workflow-override/draft/reminder-preview", h.getCompanyWorkflowOverrideDraftReminderPreview)
 	mux.HandleFunc("GET /api/v1/disclosure-types/{type_id}/effective-workflow", h.getEffectiveWorkflow)
 	mux.HandleFunc("GET /api/v1/admin/disclosure-types/{type_id}/config", h.getTemplateDeadlineConfig)
 	mux.HandleFunc("PUT /api/v1/admin/disclosure-types/{type_id}/config", h.updateTemplateDeadlineConfig)
@@ -404,6 +405,24 @@ func (h *Handler) getCompanyWorkflowOverride(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) getCompanyWorkflowOverrideDraftReminderPreview(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subjectFromToken(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	resp, err := h.svc.GetCompanyWorkflowOverrideDraftReminderPreview(r.Context(), disclosureapp.GetCompanyWorkflowOverrideDraftReminderPreviewRequest{
+		Subject: sub,
+		TypeID:  strings.TrimSpace(r.PathValue("type_id")),
+		T0Date:  strings.TrimSpace(r.URL.Query().Get("t0")),
+	})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": resp.Data})
 }
 
 func (h *Handler) upsertCompanyWorkflowOverrideDraft(w http.ResponseWriter, r *http.Request) {

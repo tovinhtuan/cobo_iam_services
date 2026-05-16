@@ -107,6 +107,61 @@ func (s *service) ConfirmTask(ctx context.Context, req TaskActionRequest) (*Task
 	return s.transitionTask(ctx, req, "workflow.confirm", "confirmed")
 }
 
+func (s *service) RejectTask(ctx context.Context, req TaskActionRequest) (*TaskDTO, error) {
+	return s.transitionTask(ctx, req, "workflow.reject", "rejected")
+}
+
+func (s *service) GetWorkflowInstance(ctx context.Context, req GetWorkflowInstanceRequest) (*WorkflowInstanceDTO, error) {
+	if strings.TrimSpace(req.WorkflowInstanceID) == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "workflow_instance_id is required", nil)
+	}
+	if err := s.authorize(ctx, req.Subject, "workflow.read", authapp.ResourceRef{
+		Type: "workflow_instance",
+		ID:   req.WorkflowInstanceID,
+		Attributes: map[string]any{
+			"workflow_state": "*",
+		},
+	}); err != nil {
+		return nil, err
+	}
+	return s.repo.FindInstance(ctx, req.Subject.CompanyID, req.WorkflowInstanceID)
+}
+
+func (s *service) ListInstanceTasks(ctx context.Context, req ListInstanceTasksRequest) ([]TaskDTO, error) {
+	if strings.TrimSpace(req.WorkflowInstanceID) == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "workflow_instance_id is required", nil)
+	}
+	if err := s.authorize(ctx, req.Subject, "workflow.read", authapp.ResourceRef{
+		Type: "workflow_instance",
+		ID:   req.WorkflowInstanceID,
+		Attributes: map[string]any{
+			"workflow_state": "*",
+		},
+	}); err != nil {
+		return nil, err
+	}
+	return s.repo.ListTasksByInstance(ctx, req.Subject.CompanyID, req.WorkflowInstanceID)
+}
+
+func (s *service) ListInstanceReminders(ctx context.Context, req ListInstanceRemindersRequest) ([]InstanceReminderDTO, error) {
+	if strings.TrimSpace(req.WorkflowInstanceID) == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "workflow_instance_id is required", nil)
+	}
+	if err := s.authorize(ctx, req.Subject, "workflow.read", authapp.ResourceRef{
+		Type: "workflow_instance",
+		ID:   req.WorkflowInstanceID,
+		Attributes: map[string]any{
+			"workflow_state": "*",
+		},
+	}); err != nil {
+		return nil, err
+	}
+	if s.milestone == nil {
+		return []InstanceReminderDTO{}, nil
+	}
+	return s.milestone.ListByInstance(ctx, req.Subject.CompanyID, req.WorkflowInstanceID)
+}
+
 func (s *service) ResolveAssignees(ctx context.Context, req ResolveAssigneesRequest) (*ResolveAssigneesResponse, error) {
 	if strings.TrimSpace(req.WorkflowInstanceID) == "" {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "workflow_instance_id is required", nil)

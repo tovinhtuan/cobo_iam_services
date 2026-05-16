@@ -7,9 +7,13 @@ import (
 
 type Service interface {
 	CreateWorkflowInstance(ctx context.Context, req CreateWorkflowInstanceRequest) (*WorkflowInstanceDTO, error)
+	GetWorkflowInstance(ctx context.Context, req GetWorkflowInstanceRequest) (*WorkflowInstanceDTO, error)
+	ListInstanceTasks(ctx context.Context, req ListInstanceTasksRequest) ([]TaskDTO, error)
+	ListInstanceReminders(ctx context.Context, req ListInstanceRemindersRequest) ([]InstanceReminderDTO, error)
 	ApproveTask(ctx context.Context, req TaskActionRequest) (*TaskDTO, error)
 	ReviewTask(ctx context.Context, req TaskActionRequest) (*TaskDTO, error)
 	ConfirmTask(ctx context.Context, req TaskActionRequest) (*TaskDTO, error)
+	RejectTask(ctx context.Context, req TaskActionRequest) (*TaskDTO, error)
 	ResolveAssignees(ctx context.Context, req ResolveAssigneesRequest) (*ResolveAssigneesResponse, error)
 }
 
@@ -26,6 +30,32 @@ type Repository interface {
 // MilestoneRepository persists workflow step milestone rows seeded at instance creation.
 type MilestoneRepository interface {
 	InsertStepMilestones(ctx context.Context, rows []StepMilestoneRow) error
+	ListByInstance(ctx context.Context, companyID, workflowInstanceID string) ([]InstanceReminderDTO, error)
+}
+
+type GetWorkflowInstanceRequest struct {
+	Subject            Subject
+	WorkflowInstanceID string
+}
+
+type ListInstanceTasksRequest struct {
+	Subject            Subject
+	WorkflowInstanceID string
+}
+
+type ListInstanceRemindersRequest struct {
+	Subject            Subject
+	WorkflowInstanceID string
+}
+
+type InstanceReminderDTO struct {
+	ReminderID         string `json:"reminder_id"`
+	WorkflowInstanceID string `json:"workflow_instance_id"`
+	StepID             string `json:"step_id"`
+	StepIndex          int    `json:"step_index"`
+	MilestoneType      string `json:"milestone_type"`
+	ReminderAt         string `json:"reminder_at"`
+	Status             string `json:"status"`
 }
 
 // Flags carries feature-flag state for the workflow service.

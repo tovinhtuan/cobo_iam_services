@@ -37,6 +37,9 @@ seed_dev_identity_authorization.sql
 0029_company_profile_fields.up.sql
 0030_disclosure_template_block_display_names.up.sql
 0031_seed_dev_invite_accept_fixture.up.sql
+0032_customize_workflow_extension.up.sql
+0033_smoke_workflow_dev_seed.up.sql
+0034_seed_org_structure_demo.up.sql
 "
 
 mysql_exec() {

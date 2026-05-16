@@ -201,10 +201,14 @@ func legacyPolicy(action string) *authapp.ActionPolicy {
 		required = "disclosure.publish"
 	case "workflow.create":
 		required = "deadline.create"
+	case "workflow.read":
+		required = "disclosure.view"
 	case "workflow.review":
 		required = "deadline.assign"
+	case "workflow.approve":
+		required = "disclosure.approve"
 	case "workflow.confirm":
-		required = "workflow.step.confirm"
+		required = "deadline.manage"
 	case "workflow.override":
 		required = "workflow.step.override"
 	case "workflow.resolve_assignees":

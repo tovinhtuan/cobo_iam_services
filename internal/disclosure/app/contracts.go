@@ -26,6 +26,7 @@ type Service interface {
 	DeleteCompanyWorkflowOverrideDraft(ctx context.Context, req DeleteCompanyWorkflowOverrideDraftRequest) (*DeleteCompanyWorkflowOverrideDraftResponse, error)
 	ResetCompanyWorkflowOverrideActive(ctx context.Context, req ResetCompanyWorkflowOverrideActiveRequest) (*ResetCompanyWorkflowOverrideActiveResponse, error)
 	ListCompanyWorkflowOverrideVersions(ctx context.Context, req ListCompanyWorkflowOverrideVersionsRequest) (*ListCompanyWorkflowOverrideVersionsResponse, error)
+	GetCompanyWorkflowOverrideDraftReminderPreview(ctx context.Context, req GetCompanyWorkflowOverrideDraftReminderPreviewRequest) (*GetCompanyWorkflowOverrideDraftReminderPreviewResponse, error)
 	GetEffectiveWorkflow(ctx context.Context, req GetEffectiveWorkflowRequest) (*GetEffectiveWorkflowResponse, error)
 	GetTemplateDeadlineConfig(ctx context.Context, req GetTemplateDeadlineConfigRequest) (*GetTemplateDeadlineConfigResponse, error)
 	UpdateTemplateDeadlineConfig(ctx context.Context, req UpdateTemplateDeadlineConfigRequest) (*UpdateTemplateDeadlineConfigResponse, error)
@@ -210,9 +211,10 @@ type WorkflowStepDTO struct {
 	Stage        string                `json:"stage"`
 	Department   string                `json:"department"`
 	AssigneeRole string                `json:"assignee_role"`
-	DueRule      string                `json:"due_rule"`
-	Documents    []WorkflowDocumentDTO `json:"documents"`
-	DisplayOrder int                   `json:"display_order"`
+	DueRule        string                `json:"due_rule"`
+	ProcessingDays int                   `json:"processing_days,omitempty"`
+	Documents      []WorkflowDocumentDTO `json:"documents"`
+	DisplayOrder   int                   `json:"display_order"`
 }
 
 type CompanyWorkflowOverrideHeaderDTO struct {
@@ -226,6 +228,7 @@ type CompanyWorkflowOverrideHeaderDTO struct {
 
 type CompanyWorkflowOverrideVersionDTO struct {
 	VersionNo  int               `json:"version_no"`
+	DraftEtag  string            `json:"draft_etag,omitempty"`
 	State      string            `json:"state"`
 	ChangeNote string            `json:"change_note"`
 	Workflow   []WorkflowStepDTO `json:"workflow"`
@@ -257,6 +260,7 @@ type UpsertCompanyWorkflowOverrideDraftRequest struct {
 	Subject       Subject
 	TypeID        string            `json:"type_id"`
 	BaseVersionNo int               `json:"base_version_no"`
+	BaseEtag      string            `json:"base_etag,omitempty"`
 	ChangeNote    string            `json:"change_note"`
 	Workflow      []WorkflowStepDTO `json:"workflow"`
 }
@@ -266,6 +270,8 @@ type UpsertCompanyWorkflowOverrideDraftResponse struct {
 	TypeID         string    `json:"type_id"`
 	CompanyID      string    `json:"company_id"`
 	DraftVersionNo int       `json:"draft_version_no"`
+	DraftEtag      string    `json:"draft_etag"`
+	VersionNo      int       `json:"version_no"`
 	State          string    `json:"state"`
 	UpdatedAt      time.Time `json:"updated_at"`
 }
@@ -328,6 +334,16 @@ type ListCompanyWorkflowOverrideVersionsResponse struct {
 		PageSize int `json:"page_size"`
 		Total    int `json:"total"`
 	} `json:"meta"`
+}
+
+type GetCompanyWorkflowOverrideDraftReminderPreviewRequest struct {
+	Subject Subject
+	TypeID  string
+	T0Date  string // optional YYYY-MM-DD; defaults to today in company TZ
+}
+
+type GetCompanyWorkflowOverrideDraftReminderPreviewResponse struct {
+	Data WorkflowOverrideReminderPreviewDTO `json:"data"`
 }
 
 type GetEffectiveWorkflowRequest struct {
@@ -485,6 +501,24 @@ type TemplateDeadlineConfig struct {
 	ProcessingDays int    `json:"processing_days,omitempty"`
 }
 
+// WorkflowOverrideReminderPreviewMilestoneDTO is one projected reminder row for draft preview.
+type WorkflowOverrideReminderPreviewMilestoneDTO struct {
+	StepID        string `json:"step_id"`
+	StepOrder     int    `json:"step_order"`
+	MilestoneType string `json:"milestone_type"`
+	ScheduledDate string `json:"scheduled_date"`
+}
+
+// WorkflowOverrideReminderPreviewDTO is the read-only reminder schedule for a draft workflow.
+type WorkflowOverrideReminderPreviewDTO struct {
+	TypeID     string                                      `json:"type_id"`
+	CompanyID  string                                      `json:"company_id"`
+	T0Date     string                                      `json:"t0_date"`
+	Timezone   string                                      `json:"timezone"`
+	Source     string                                      `json:"source"`
+	Milestones []WorkflowOverrideReminderPreviewMilestoneDTO `json:"milestones"`
+}
+
 type FixedDeadlineConfig struct {
 	Date             string `json:"date"`
 	NonTradingPolicy string `json:"non_trading_policy,omitempty"`
@@ -555,8 +589,9 @@ type RecordDTO struct {
 	PublishedDate string          `json:"published_date,omitempty"`
 	Status        string          `json:"status"`
 	Attachments   []AttachmentDTO `json:"attachments"`
-	EvidenceLink  string          `json:"evidence_link,omitempty"`
-	CreatedBy     string          `json:"created_by"`
+	EvidenceLink        string          `json:"evidence_link,omitempty"`
+	WorkflowInstanceID  string          `json:"workflow_instance_id,omitempty"`
+	CreatedBy           string          `json:"created_by"`
 	UpdatedBy     string          `json:"updated_by"`
 	CreatedAt     time.Time       `json:"created_at"`
 	UpdatedAt     time.Time       `json:"updated_at"`

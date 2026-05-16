@@ -59,12 +59,23 @@ func (r *Repository) Update(ctx context.Context, rec disclosureapp.RecordDTO) (*
 
 func (r *Repository) FindByID(ctx context.Context, companyID, recordID string) (*disclosureapp.RecordDTO, error) {
 	row := r.db.QueryRowContext(ctx, `
-		SELECT record_id, company_id, COALESCE(type_id, ''), department_id, title, COALESCE(summary, ''), content, COALESCE(DATE_FORMAT(planned_date, '%Y-%m-%d'), ''), COALESCE(DATE_FORMAT(published_date, '%Y-%m-%d'), ''), status, attachments_json, COALESCE(evidence_link, ''), created_by, updated_by, created_at, updated_at
-		FROM disclosure_records WHERE company_id = ? AND record_id = ?
+		SELECT dr.record_id, dr.company_id, COALESCE(dr.type_id, ''), dr.department_id, dr.title, COALESCE(dr.summary, ''), dr.content,
+			COALESCE(DATE_FORMAT(dr.planned_date, '%Y-%m-%d'), ''), COALESCE(DATE_FORMAT(dr.published_date, '%Y-%m-%d'), ''), dr.status,
+			dr.attachments_json, COALESCE(dr.evidence_link, ''),
+			COALESCE((
+				SELECT wi.workflow_instance_id
+				FROM workflow_instances wi
+				WHERE wi.company_id = dr.company_id AND wi.record_id = dr.record_id
+				ORDER BY wi.workflow_instance_id ASC
+				LIMIT 1
+			), ''),
+			dr.created_by, dr.updated_by, dr.created_at, dr.updated_at
+		FROM disclosure_records dr
+		WHERE dr.company_id = ? AND dr.record_id = ?
 	`, companyID, recordID)
 	var rec disclosureapp.RecordDTO
 	var attachmentsRaw []byte
-	if err := row.Scan(&rec.RecordID, &rec.CompanyID, &rec.TypeID, &rec.DepartmentID, &rec.Title, &rec.Summary, &rec.Content, &rec.PlannedDate, &rec.PublishedDate, &rec.Status, &attachmentsRaw, &rec.EvidenceLink, &rec.CreatedBy, &rec.UpdatedBy, &rec.CreatedAt, &rec.UpdatedAt); err != nil {
+	if err := row.Scan(&rec.RecordID, &rec.CompanyID, &rec.TypeID, &rec.DepartmentID, &rec.Title, &rec.Summary, &rec.Content, &rec.PlannedDate, &rec.PublishedDate, &rec.Status, &attachmentsRaw, &rec.EvidenceLink, &rec.WorkflowInstanceID, &rec.CreatedBy, &rec.UpdatedBy, &rec.CreatedAt, &rec.UpdatedAt); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, perr.NewHTTPError(404, perr.CodeInvalidRequest, "record not found", nil)
 		}

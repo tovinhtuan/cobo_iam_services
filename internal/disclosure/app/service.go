@@ -438,12 +438,28 @@ func (s *service) GetCompanyWorkflowOverride(ctx context.Context, req GetCompany
 	if err != nil {
 		return nil, err
 	}
+	decorateWorkflowOverrideViewEtags(view)
 	return &GetCompanyWorkflowOverrideResponse{Data: *view}, nil
+}
+
+func decorateWorkflowOverrideViewEtags(view *CompanyWorkflowOverrideViewDTO) {
+	if view == nil {
+		return
+	}
+	if view.DraftVersion != nil {
+		view.DraftVersion.DraftEtag = WorkflowDraftEtagFromVersion(view.DraftVersion.VersionNo)
+	}
+	if view.ActiveVersion != nil && view.ActiveVersion.DraftEtag == "" {
+		view.ActiveVersion.DraftEtag = WorkflowDraftEtagFromVersion(view.ActiveVersion.VersionNo)
+	}
 }
 
 func (s *service) UpsertCompanyWorkflowOverrideDraft(ctx context.Context, req UpsertCompanyWorkflowOverrideDraftRequest) (*UpsertCompanyWorkflowOverrideDraftResponse, error) {
 	req.TypeID = strings.TrimSpace(req.TypeID)
 	req.ChangeNote = strings.TrimSpace(req.ChangeNote)
+	if req.BaseVersionNo <= 0 {
+		req.BaseVersionNo = ResolveWorkflowBaseVersionNo(req.BaseVersionNo, req.BaseEtag)
+	}
 	if req.TypeID == "" {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "type_id is required", nil)
 	}
@@ -476,7 +492,15 @@ func (s *service) UpsertCompanyWorkflowOverrideDraft(ctx context.Context, req Up
 			}
 		}
 	}
-	return s.repo.UpsertCompanyWorkflowOverrideDraft(ctx, req)
+	resp, err := s.repo.UpsertCompanyWorkflowOverrideDraft(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if resp != nil {
+		resp.DraftEtag = WorkflowDraftEtagFromVersion(resp.DraftVersionNo)
+		resp.VersionNo = resp.DraftVersionNo
+	}
+	return resp, nil
 }
 
 func (s *service) ApproveCompanyWorkflowOverride(ctx context.Context, req ApproveCompanyWorkflowOverrideRequest) (*ApproveCompanyWorkflowOverrideResponse, error) {
@@ -555,6 +579,97 @@ func (s *service) ListCompanyWorkflowOverrideVersions(ctx context.Context, req L
 	resp.Meta.PageSize = req.PageSize
 	resp.Meta.Total = total
 	return resp, nil
+}
+
+func (s *service) GetCompanyWorkflowOverrideDraftReminderPreview(
+	ctx context.Context,
+	req GetCompanyWorkflowOverrideDraftReminderPreviewRequest,
+) (*GetCompanyWorkflowOverrideDraftReminderPreviewResponse, error) {
+	req.TypeID = strings.TrimSpace(req.TypeID)
+	if req.TypeID == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "type_id is required", nil)
+	}
+	if err := s.authorize(ctx, req.Subject, "template.workflow.override.read", authapp.ResourceRef{
+		Type: "disclosure_type",
+		ID:   req.TypeID,
+	}); err != nil {
+		return nil, err
+	}
+	view, err := s.repo.GetCompanyWorkflowOverride(ctx, req.Subject.CompanyID, req.TypeID)
+	if err != nil {
+		return nil, err
+	}
+	decorateWorkflowOverrideViewEtags(view)
+	if view.DraftVersion == nil || len(view.DraftVersion.Workflow) == 0 {
+		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "workflow override draft is required for reminder preview", nil)
+	}
+	steps := append([]WorkflowStepDTO(nil), view.DraftVersion.Workflow...)
+	sortWorkflowSteps(steps)
+
+	loc := CompanyLocation(defaultCompanyTimezone)
+	t0Local := time.Now().In(loc)
+	if raw := strings.TrimSpace(req.T0Date); raw != "" {
+		parsed, parseErr := time.ParseInLocation("2006-01-02", raw, loc)
+		if parseErr != nil {
+			return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "t0 must be YYYY-MM-DD", parseErr)
+		}
+		t0Local = parsed
+	}
+	t0Local = time.Date(t0Local.Year(), t0Local.Month(), t0Local.Day(), 0, 0, 0, 0, loc)
+
+	typeDefaultDays := 1
+	if _, cfg, cfgErr := s.repo.GetActiveVersionDeadlineConfig(ctx, req.TypeID); cfgErr == nil && cfg != nil && cfg.ProcessingDays > 0 {
+		typeDefaultDays = cfg.ProcessingDays
+	}
+
+	timelines, err := ComputeStepTimelines(t0Local, defaultCompanyTimezone, steps, typeDefaultDays)
+	if err != nil {
+		return nil, err
+	}
+	previewInstanceID := "preview-" + req.TypeID
+	milestones := make([]WorkflowOverrideReminderPreviewMilestoneDTO, 0, len(timelines)*5)
+	for _, tl := range timelines {
+		for _, row := range GenerateMilestoneCandidates(tl, t0Local, req.Subject.CompanyID, previewInstanceID, s.idg.NewUUID) {
+			milestones = append(milestones, WorkflowOverrideReminderPreviewMilestoneDTO{
+				StepID:        row.StepID,
+				StepOrder:     row.StepOrder,
+				MilestoneType: string(row.MilestoneType),
+				ScheduledDate: row.ScheduledDate.Format("2006-01-02"),
+			})
+		}
+	}
+	source := view.EffectiveSource
+	if source == "" {
+		source = "company_override"
+	}
+	return &GetCompanyWorkflowOverrideDraftReminderPreviewResponse{
+		Data: WorkflowOverrideReminderPreviewDTO{
+			TypeID:     req.TypeID,
+			CompanyID:  req.Subject.CompanyID,
+			T0Date:     t0Local.Format("2006-01-02"),
+			Timezone:   defaultCompanyTimezone,
+			Source:     source,
+			Milestones: milestones,
+		},
+	}, nil
+}
+
+func sortWorkflowSteps(steps []WorkflowStepDTO) {
+	for i := 0; i < len(steps); i++ {
+		for j := i + 1; j < len(steps); j++ {
+			left := steps[i].DisplayOrder
+			right := steps[j].DisplayOrder
+			if left <= 0 {
+				left = i + 1
+			}
+			if right <= 0 {
+				right = j + 1
+			}
+			if right < left {
+				steps[i], steps[j] = steps[j], steps[i]
+			}
+		}
+	}
 }
 
 func (s *service) GetEffectiveWorkflow(ctx context.Context, req GetEffectiveWorkflowRequest) (*GetEffectiveWorkflowResponse, error) {

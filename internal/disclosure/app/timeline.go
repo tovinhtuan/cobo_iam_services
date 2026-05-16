@@ -2,8 +2,13 @@ package app
 
 import (
 	"fmt"
+	"regexp"
+	"strconv"
+	"strings"
 	"time"
 )
+
+var dueRuleProcessingDaysPattern = regexp.MustCompile(`(?i)t\s*\+\s*(\d+)`)
 
 // StepTimeline holds the computed date window for one workflow step.
 type StepTimeline struct {
@@ -67,10 +72,7 @@ func ComputeStepTimelines(t0 time.Time, tz string, steps []WorkflowStepDTO, type
 	timelines := make([]StepTimeline, 0, len(steps))
 	cursor := t0Local
 	for i, step := range steps {
-		pd := typeDefaultProcessingDays
-		if pd <= 0 {
-			pd = 1 // minimum 1-day step
-		}
+		pd := processingDaysForStep(step, typeDefaultProcessingDays)
 		tl := StepTimeline{
 			StepID:         step.StepID,
 			StepOrder:      i + 1,
@@ -127,4 +129,30 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// processingDaysForStep resolves per-step duration from due_rule (T+N) or defaults.
+func processingDaysForStep(step WorkflowStepDTO, typeDefaultProcessingDays int) int {
+	if step.ProcessingDays > 0 {
+		return step.ProcessingDays
+	}
+	if days := parseDueRuleProcessingDays(step.DueRule); days > 0 {
+		return days
+	}
+	if typeDefaultProcessingDays > 0 {
+		return typeDefaultProcessingDays
+	}
+	return 1
+}
+
+func parseDueRuleProcessingDays(dueRule string) int {
+	matches := dueRuleProcessingDaysPattern.FindStringSubmatch(strings.TrimSpace(dueRule))
+	if len(matches) < 2 {
+		return 0
+	}
+	n, err := strconv.Atoi(matches[1])
+	if err != nil || n <= 0 {
+		return 0
+	}
+	return n
 }

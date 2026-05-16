@@ -155,7 +155,7 @@ func Load() (Config, error) {
 		WorkflowSnapshotEnabled:         boolEnv("WORKFLOW_SNAPSHOT_ENABLED", false),
 		WorkflowTimelineEnabled:         boolEnv("WORKFLOW_TIMELINE_ENABLED", false),
 		WorkflowRemindersEnabled:        boolEnv("WORKFLOW_REMINDERS_ENABLED", false),
-		WorkflowAdhocEnabled:            boolEnv("WORKFLOW_ADHOC_ENABLED", false),
+		WorkflowAdhocEnabled:            devAwareBoolEnv("WORKFLOW_ADHOC_ENABLED", false, true),
 		WorkflowAdhocAutoApproveEnabled: boolEnv("WORKFLOW_ADHOC_AUTOAPPROVE_ENABLED", false),
 	}
 	if cfg.WorkerTickInterval < time.Second {
@@ -217,6 +217,17 @@ func boolEnv(key string, def bool) bool {
 		return def
 	}
 	return strings.EqualFold(s, "true") || s == "1"
+}
+
+// devAwareBoolEnv uses devDefault when ENV=development and the variable is unset.
+func devAwareBoolEnv(key string, prodDefault, devDefault bool) bool {
+	if strings.TrimSpace(os.Getenv(key)) != "" {
+		return boolEnv(key, prodDefault)
+	}
+	if strings.EqualFold(strings.TrimSpace(getenv("ENV", "development")), "development") {
+		return devDefault
+	}
+	return prodDefault
 }
 
 func normalizeMySQLDSN(dsn string) string {

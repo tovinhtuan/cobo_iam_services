@@ -49,3 +49,31 @@ func (r *MilestoneRepository) InsertStepMilestones(ctx context.Context, rows []w
 	}
 	return tx.Commit()
 }
+
+func (r *MilestoneRepository) ListByInstance(ctx context.Context, companyID, workflowInstanceID string) ([]workflowapp.InstanceReminderDTO, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT milestone_id, workflow_instance_id, step_id, step_order, milestone_type, scheduled_date, reminder_sent
+		FROM workflow_step_milestones
+		WHERE company_id = ? AND workflow_instance_id = ?
+		ORDER BY step_order ASC, milestone_type ASC
+	`, companyID, workflowInstanceID)
+	if err != nil {
+		return nil, fmt.Errorf("list milestones: %w", err)
+	}
+	defer rows.Close()
+	out := make([]workflowapp.InstanceReminderDTO, 0)
+	for rows.Next() {
+		var item workflowapp.InstanceReminderDTO
+		var sent bool
+		if err := rows.Scan(&item.ReminderID, &item.WorkflowInstanceID, &item.StepID, &item.StepIndex, &item.MilestoneType, &item.ReminderAt, &sent); err != nil {
+			return nil, err
+		}
+		if sent {
+			item.Status = "sent"
+		} else {
+			item.Status = "pending"
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
