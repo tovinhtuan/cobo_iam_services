@@ -1248,26 +1248,58 @@ func (r *Repository) UpdateWorkflowOverrideStepGroups(ctx context.Context, req d
 	}
 	stepDeptID := steps[stepIdx].DepartmentID
 
-	// Validate all groups belong to step's department (if we can look them up).
-	if stepDeptID != "" && len(req.Groups) > 0 {
+	// Validate all groups belong to step's department (if we can look them up)
+	// and fetch their names in the same pass.
+	groupNameMap := make(map[string]string, len(req.Groups))
+	var deptName string
+	if len(req.Groups) > 0 {
 		placeholders := make([]string, len(req.Groups))
 		args := []any{req.Subject.CompanyID}
 		for i, g := range req.Groups {
 			placeholders[i] = "?"
 			args = append(args, g.GroupID)
 		}
-		args = append(args, stepDeptID)
-		countQuery := fmt.Sprintf(`
-			SELECT COUNT(1) FROM org_units
-			WHERE company_id = ? AND org_unit_id IN (%s) AND parent_org_unit_id = ? AND unit_type = 'team'
+		// Fetch group names and validate department membership in one query.
+		nameQuery := fmt.Sprintf(`
+			SELECT org_unit_id, unit_name, parent_org_unit_id
+			FROM org_units
+			WHERE company_id = ? AND org_unit_id IN (%s) AND unit_type = 'team'
 		`, strings.Join(placeholders, ","))
-		var matchCount int
-		if err := tx.QueryRowContext(ctx, countQuery, args...).Scan(&matchCount); err != nil {
+		nameRows, nameErr := tx.QueryContext(ctx, nameQuery, args...)
+		if nameErr != nil {
+			return nil, nameErr
+		}
+		var rowScanErr error
+		for nameRows.Next() {
+			var gid, gname, parentID string
+			if err := nameRows.Scan(&gid, &gname, &parentID); err != nil {
+				rowScanErr = err
+				break
+			}
+			groupNameMap[gid] = gname
+			if stepDeptID != "" && parentID != stepDeptID {
+				rowScanErr = perr.NewHTTPError(http.StatusBadRequest, perr.CodeGroupNotInDepartment, "one or more groups do not belong to the step's department", nil)
+				break
+			}
+		}
+		_ = nameRows.Close()
+		if rowScanErr != nil {
+			return nil, rowScanErr
+		}
+		if err := nameRows.Err(); err != nil {
 			return nil, err
 		}
-		if matchCount != len(req.Groups) {
+		if stepDeptID != "" && len(groupNameMap) != len(req.Groups) {
 			return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeGroupNotInDepartment, "one or more groups do not belong to the step's department", nil)
 		}
+	}
+
+	// Fetch department name for the step (best-effort; skip on error).
+	if stepDeptID != "" {
+		_ = tx.QueryRowContext(ctx,
+			`SELECT unit_name FROM org_units WHERE org_unit_id = ? AND unit_type = 'department' LIMIT 1`,
+			stepDeptID,
+		).Scan(&deptName)
 	}
 
 	// Build updated groups slice.
@@ -1276,12 +1308,14 @@ func (r *Repository) UpdateWorkflowOverrideStepGroups(ctx context.Context, req d
 		updatedGroups = make([]disclosureapp.WorkflowStepGroupDTO, 0, len(req.Groups))
 		for _, g := range req.Groups {
 			dto := disclosureapp.WorkflowStepGroupDTO{
-				GroupID:      g.GroupID,
-				DepartmentID: stepDeptID,
-				Source:       "manual",
-				DurationMode: g.DurationMode,
-				DisplayOrder: g.DisplayOrder,
-				IsActive:     true,
+				GroupID:        g.GroupID,
+				GroupName:      groupNameMap[g.GroupID],
+				DepartmentID:   stepDeptID,
+				DepartmentName: deptName,
+				Source:         "manual",
+				DurationMode:   g.DurationMode,
+				DisplayOrder:   g.DisplayOrder,
+				IsActive:       true,
 			}
 			if g.ProcessingDays != nil {
 				dto.ProcessingDays = g.ProcessingDays

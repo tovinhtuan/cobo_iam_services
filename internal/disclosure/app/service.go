@@ -867,9 +867,9 @@ func (s *service) UpdateWorkflowOverrideStepGroups(ctx context.Context, req Upda
 			return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest,
 				fmt.Sprintf("groups[%d].duration_mode must be inherit or custom", i), nil)
 		}
-		if g.DurationMode == "custom" && (g.ProcessingDays == nil || *g.ProcessingDays <= 0) {
+		if g.DurationMode == "custom" && g.ProcessingDays == nil {
 			return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest,
-				fmt.Sprintf("groups[%d].processing_days must be > 0 when duration_mode=custom", i), nil)
+				fmt.Sprintf("groups[%d].processing_days is required when duration_mode=custom", i), nil)
 		}
 	}
 	return s.repo.UpdateWorkflowOverrideStepGroups(ctx, req)

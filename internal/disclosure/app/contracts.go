@@ -224,16 +224,25 @@ type WorkflowStepGroupDTO struct {
 	IsActive       bool   `json:"is_active"`
 }
 
+// WorkflowStepReminderConfig lưu cấu hình nhắc nhở riêng theo từng bước.
+// Được lưu trong workflow_json blob — không cần migration SQL.
+type WorkflowStepReminderConfig struct {
+	Enabled    bool   `json:"enabled"`
+	Mode       string `json:"mode,omitempty"`        // "days_before" | "specific_date"
+	DaysBefore []int  `json:"days_before,omitempty"` // VD: [1, 3, 5, 7]
+}
+
 type WorkflowStepDTO struct {
-	StepID          string                 `json:"step_id"`
-	Stage           string                 `json:"stage"`
-	DepartmentID    string                 `json:"department_id"`
-	AssigneeRoleIds []string               `json:"assignee_role_ids"`
-	DueRule         string                 `json:"due_rule"`
-	ProcessingDays  int                    `json:"processing_days,omitempty"`
-	Documents       []WorkflowDocumentDTO  `json:"documents"`
-	DisplayOrder    int                    `json:"display_order"`
-	Groups          []WorkflowStepGroupDTO `json:"groups,omitempty"`
+	StepID          string                      `json:"step_id"`
+	Stage           string                      `json:"stage"`
+	DepartmentID    string                      `json:"department_id"`
+	AssigneeRoleIds []string                    `json:"assignee_role_ids"`
+	DueRule         string                      `json:"due_rule"`
+	ProcessingDays  int                         `json:"processing_days,omitempty"`
+	Documents       []WorkflowDocumentDTO       `json:"documents"`
+	DisplayOrder    int                         `json:"display_order"`
+	Groups          []WorkflowStepGroupDTO      `json:"groups,omitempty"`
+	ReminderConfig  *WorkflowStepReminderConfig `json:"reminder_config,omitempty"`
 }
 
 type CompanyWorkflowOverrideHeaderDTO struct {
