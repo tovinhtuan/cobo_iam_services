@@ -41,10 +41,11 @@ seed_dev_identity_authorization.sql
 0033_smoke_workflow_dev_seed.up.sql
 0034_seed_org_structure_demo.up.sql
 0035_disclosure_display_groups.up.sql
+0036_fix_unicode_mojibake.up.sql
 "
 
 mysql_exec() {
-  MYSQL_PWD="${DB_PASSWORD}" mysql -h "${DB_HOST}" -u"${DB_USER}" "${DB_NAME}" "$@"
+  MYSQL_PWD="${DB_PASSWORD}" mysql --default-character-set=utf8mb4 -h "${DB_HOST}" -u"${DB_USER}" "${DB_NAME}" "$@"
 }
 
 echo "Ensuring schema_migrations table exists..."

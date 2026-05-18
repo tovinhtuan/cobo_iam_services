@@ -1,6 +1,8 @@
 -- 0035: Add display groups table and map existing templates
 -- Non-breaking: display_group_code column is nullable
 
+SET NAMES utf8mb4;
+
 CREATE TABLE IF NOT EXISTS disclosure_display_groups (
     display_group_code  VARCHAR(64)   NOT NULL,
     name_vi             VARCHAR(255)  NOT NULL,
@@ -13,7 +15,7 @@ CREATE TABLE IF NOT EXISTS disclosure_display_groups (
     created_at          DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at          DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (display_group_code)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 ALTER TABLE disclosure_types
     ADD COLUMN display_group_code VARCHAR(64) NULL AFTER group_id;
