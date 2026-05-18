@@ -244,6 +244,17 @@ func (s *service) ListTypeGroups(ctx context.Context, req ListTypeGroupsRequest)
 	return &ListTypeGroupsResponse{Items: out}, nil
 }
 
+func (s *service) ListDisplayGroups(ctx context.Context, req ListDisplayGroupsRequest) (*ListDisplayGroupsResponse, error) {
+	if err := s.requireDisclosureCatalogRead(ctx, req.Subject); err != nil {
+		return nil, err
+	}
+	items, err := s.repo.ListDisplayGroups(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &ListDisplayGroupsResponse{Items: items}, nil
+}
+
 func (s *service) ListTypes(ctx context.Context, req ListTypesRequest) (*ListTypesResponse, error) {
 	if err := s.requireDisclosureCatalogRead(ctx, req.Subject); err != nil {
 		return nil, err

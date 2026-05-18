@@ -16,6 +16,8 @@ type Repository struct {
 	mu                    sync.RWMutex
 	items                 map[string]disclosureapp.RecordDTO
 	groups                []disclosureapp.DisclosureGroupDTO
+	displayGroups         []disclosureapp.DisplayGroupDTO
+	displayGroupCodes     map[string]string
 	catalog               map[string]disclosureapp.DisclosureTypeDTO
 	catalogByVer          map[string]map[int]disclosureapp.DisclosureTypeDTO
 	versions              map[string][]disclosureapp.DisclosureTypeVersionDTO
@@ -32,6 +34,8 @@ func NewRepository() *Repository {
 	repo := &Repository{
 		items:                 map[string]disclosureapp.RecordDTO{},
 		groups:                disclosureapp.SeedDisclosureTypeGroups(),
+		displayGroups:         disclosureapp.SeedDisplayGroups(),
+		displayGroupCodes:     map[string]string{},
 		catalog:               map[string]disclosureapp.DisclosureTypeDTO{},
 		catalogByVer:          map[string]map[int]disclosureapp.DisclosureTypeDTO{},
 		versions:              map[string][]disclosureapp.DisclosureTypeVersionDTO{},
@@ -43,6 +47,7 @@ func NewRepository() *Repository {
 		repo.catalog[item.TypeID] = item
 		repo.catalogByVer[item.TypeID] = map[int]disclosureapp.DisclosureTypeDTO{1: item}
 		repo.catalogScope[item.TypeID] = "global"
+		repo.displayGroupCodes[item.TypeID] = item.DisplayGroupCode
 		repo.versions[item.TypeID] = []disclosureapp.DisclosureTypeVersionDTO{
 			{
 				TypeID:      item.TypeID,
@@ -112,6 +117,14 @@ func (r *Repository) ListTypeGroups(_ context.Context, _ string) ([]disclosureap
 	return out, nil
 }
 
+func (r *Repository) ListDisplayGroups(_ context.Context) ([]disclosureapp.DisplayGroupDTO, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]disclosureapp.DisplayGroupDTO, len(r.displayGroups))
+	copy(out, r.displayGroups)
+	return out, nil
+}
+
 func (r *Repository) ListTypes(_ context.Context, companyID, groupID, query string) ([]disclosureapp.DisclosureTypeSummaryDTO, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -131,6 +144,7 @@ func (r *Repository) ListTypes(_ context.Context, companyID, groupID, query stri
 		out = append(out, disclosureapp.DisclosureTypeSummaryDTO{
 			TypeID:  item.TypeID,
 			GroupID: item.GroupID,
+			DisplayGroupCode: r.displayGroupCodes[item.TypeID],
 			Scope: func() string {
 				if r.catalogScope[item.TypeID] == "global" {
 					return "global"

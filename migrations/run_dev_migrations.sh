@@ -40,6 +40,7 @@ seed_dev_identity_authorization.sql
 0032_customize_workflow_extension.up.sql
 0033_smoke_workflow_dev_seed.up.sql
 0034_seed_org_structure_demo.up.sql
+0035_disclosure_display_groups.up.sql
 "
 
 mysql_exec() {

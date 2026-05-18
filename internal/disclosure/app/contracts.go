@@ -13,6 +13,7 @@ type Service interface {
 	ListRecords(ctx context.Context, req ListRecordsRequest) (*ListRecordsResponse, error)
 	GetRecord(ctx context.Context, req GetRecordRequest) (*RecordDTO, error)
 	ListTypeGroups(ctx context.Context, req ListTypeGroupsRequest) (*ListTypeGroupsResponse, error)
+	ListDisplayGroups(ctx context.Context, req ListDisplayGroupsRequest) (*ListDisplayGroupsResponse, error)
 	ListTypes(ctx context.Context, req ListTypesRequest) (*ListTypesResponse, error)
 	GetTypeDetail(ctx context.Context, req GetTypeDetailRequest) (*DisclosureTypeDTO, error)
 	GetTypeVersionDetail(ctx context.Context, req GetTypeVersionDetailRequest) (*DisclosureTypeDTO, error)
@@ -40,6 +41,7 @@ type Repository interface {
 	FindByID(ctx context.Context, companyID, recordID string) (*RecordDTO, error)
 	List(ctx context.Context, companyID string) ([]RecordDTO, error)
 	ListTypeGroups(ctx context.Context, companyID string) ([]DisclosureGroupDTO, error)
+	ListDisplayGroups(ctx context.Context) ([]DisplayGroupDTO, error)
 	ListTypes(ctx context.Context, companyID, groupID, query string) ([]DisclosureTypeSummaryDTO, error)
 	GetTypeDetail(ctx context.Context, companyID, typeID string) (*DisclosureTypeDTO, error)
 	GetTypeVersionDetail(ctx context.Context, companyID, typeID string, versionNo int) (*DisclosureTypeDTO, error)
@@ -100,6 +102,14 @@ type ListTypeGroupsRequest struct {
 
 type ListTypeGroupsResponse struct {
 	Items []DisclosureGroupDTO `json:"items"`
+}
+
+type ListDisplayGroupsRequest struct {
+	Subject Subject
+}
+
+type ListDisplayGroupsResponse struct {
+	Items []DisplayGroupDTO `json:"items"`
 }
 
 type ListTypesRequest struct {
@@ -501,9 +511,21 @@ type DisclosureGroupDTO struct {
 	DisplayOrder int    `json:"display_order"`
 }
 
+type DisplayGroupDTO struct {
+	DisplayGroupCode string `json:"display_group_code"`
+	NameVI           string `json:"name_vi"`
+	NameEN           string `json:"name_en"`
+	Description      string `json:"description"`
+	Icon             string `json:"icon"`
+	DisplayOrder     int    `json:"display_order"`
+	IsActive         bool   `json:"is_active"`
+	IsSystem         bool   `json:"is_system"`
+}
+
 type DisclosureTypeSummaryDTO struct {
 	TypeID           string   `json:"type_id"`
 	GroupID          string   `json:"group_id"`
+	DisplayGroupCode string   `json:"display_group_code,omitempty"`
 	Scope            string   `json:"scope"`
 	OwnerCompanyID   string   `json:"owner_company_id"`
 	Name             string   `json:"name"`
@@ -547,6 +569,7 @@ type DisclosureTypeDTO struct {
 	Checklist             []ChecklistItemDTO      `json:"checklist"`
 	Tags                  []string                `json:"tags"`
 	Blocks                []TemplateBlockDTO      `json:"blocks"`
+	DisplayGroupCode      string                  `json:"display_group_code,omitempty"`
 }
 
 type DeadlineSummaryDTO struct {

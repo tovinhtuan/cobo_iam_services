@@ -24,10 +24,21 @@ var disclosureTypeGroups = []DisclosureGroupDTO{
 	},
 }
 
+var disclosureDisplayGroupSeed = []DisplayGroupDTO{
+	{DisplayGroupCode: "display-governance", NameVI: "Quản trị, Tuân thủ, Rủi ro & Pháp lý", NameEN: "Governance, Compliance, Risk & Legal", Description: "Các nghĩa vụ liên quan đến quản trị doanh nghiệp, tuân thủ pháp luật, quản trị rủi ro, pháp lý và các thay đổi quan trọng trong cơ cấu quản trị.", Icon: "ShieldCheck", DisplayOrder: 1, IsActive: true, IsSystem: true},
+	{DisplayGroupCode: "display-strategy", NameVI: "Chiến lược, Điều hành & Tình báo thị trường", NameEN: "Strategy, Executive Management & Market Intelligence", Description: "Các thông tin về định hướng chiến lược, hoạt động điều hành, quyết định quản lý và tín hiệu thị trường có ảnh hưởng đến doanh nghiệp.", Icon: "GitMerge", DisplayOrder: 2, IsActive: true, IsSystem: true},
+	{DisplayGroupCode: "display-finance", NameVI: "Tài chính, Hiệu quả kinh doanh & Kiểm soát hiệu suất", NameEN: "Finance, Business Performance & Performance Control", Description: "Các báo cáo và chỉ số liên quan đến tài chính, kết quả kinh doanh, hiệu quả vận hành, kiểm toán và kiểm soát hiệu suất.", Icon: "BarChart2", DisplayOrder: 3, IsActive: true, IsSystem: true},
+	{DisplayGroupCode: "display-operations", NameVI: "Vận hành, Quy trình, Dự án & Chuyển đổi", NameEN: "Operations, Process, Project & Change Management", Description: "Các thông tin về hoạt động vận hành, quy trình nội bộ, dự án trọng điểm, chương trình chuyển đổi và thay đổi vận hành.", Icon: "Settings", DisplayOrder: 4, IsActive: true, IsSystem: true},
+	{DisplayGroupCode: "display-growth", NameVI: "Tăng trưởng, Marketing, Bán hàng & Khách hàng", NameEN: "Growth, Marketing, Sales & Customer Management", Description: "Các thông tin liên quan đến tăng trưởng, thị trường, hoạt động marketing, bán hàng và quản lý quan hệ khách hàng.", Icon: "TrendingUp", DisplayOrder: 5, IsActive: true, IsSystem: true},
+	{DisplayGroupCode: "display-people", NameVI: "Con người, Tri thức, Công nghệ, Dữ liệu & AI", NameEN: "People, Knowledge, Technology, Data & AI", Description: "Các thông tin liên quan đến nhân sự, tri thức tổ chức, công nghệ, dữ liệu, AI và năng lực số của doanh nghiệp.", Icon: "Users", DisplayOrder: 6, IsActive: true, IsSystem: true},
+	{DisplayGroupCode: "group-006", NameVI: "CBTT/Báo cáo tùy chỉnh", NameEN: "Custom Disclosure / Custom Report", Description: "Các loại CBTT/Báo cáo do doanh nghiệp tự định nghĩa ngoài danh mục mặc định của hệ thống, phục vụ nhu cầu quản trị và công bố riêng.", Icon: "Layers", DisplayOrder: 7, IsActive: true, IsSystem: true},
+}
+
 var disclosureTypeCatalog = []DisclosureTypeDTO{
 	{
 		TypeID:                "dt-periodic-financial",
 		GroupID:               "group-001",
+		DisplayGroupCode:      "display-finance",
 		Name:                  "Báo cáo tài chính định kỳ",
 		Category:              "Định kỳ",
 		TemplateCategory:      TemplateCategoryPeriodic,
@@ -53,6 +64,7 @@ var disclosureTypeCatalog = []DisclosureTypeDTO{
 	{
 		TypeID:                "dt-event-major-change",
 		GroupID:               "group-002",
+		DisplayGroupCode:      "display-governance",
 		Name:                  "Công bố sự kiện bất thường",
 		Category:              "Bất thường",
 		TemplateCategory:      TemplateCategoryIrregular,
@@ -78,6 +90,7 @@ var disclosureTypeCatalog = []DisclosureTypeDTO{
 	{
 		TypeID:                "dt-custom-obligation",
 		GroupID:               "group-006",
+		DisplayGroupCode:      "group-006",
 		Name:                  "Template nghĩa vụ tùy chỉnh",
 		Category:              "Tùy chỉnh",
 		TemplateCategory:      TemplateCategoryCustom,
@@ -103,6 +116,7 @@ var disclosureTypeCatalog = []DisclosureTypeDTO{
 	{
 		TypeID:                "dt-obligation-report",
 		GroupID:               "group-001",
+		DisplayGroupCode:      "display-operations",
 		Name:                  "Báo cáo nghĩa vụ",
 		Category:              "Định kỳ",
 		TemplateCategory:      TemplateCategoryPeriodic,
@@ -128,6 +142,7 @@ var disclosureTypeCatalog = []DisclosureTypeDTO{
 	{
 		TypeID:                "dt-shareholder-meeting",
 		GroupID:               "group-001",
+		DisplayGroupCode:      "display-strategy",
 		Name:                  "Tổ chức đại hội cổ đông",
 		Category:              "Định kỳ",
 		TemplateCategory:      TemplateCategoryPeriodic,
@@ -153,6 +168,7 @@ var disclosureTypeCatalog = []DisclosureTypeDTO{
 	{
 		TypeID:                "dt-disclosure-transaction",
 		GroupID:               "group-002",
+		DisplayGroupCode:      "display-finance",
 		Name:                  "Công bố thông tin về giao dịch",
 		Category:              "Bất thường",
 		TemplateCategory:      TemplateCategoryIrregular,
@@ -175,6 +191,12 @@ var disclosureTypeCatalog = []DisclosureTypeDTO{
 		GeneralInfo:           "Sử dụng cho các giao dịch phải công bố theo cơ chế bất thường.",
 		Tags:                  []string{"Giao dịch", "Bất thường"},
 	},
+}
+
+func SeedDisplayGroups() []DisplayGroupDTO {
+	out := make([]DisplayGroupDTO, len(disclosureDisplayGroupSeed))
+	copy(out, disclosureDisplayGroupSeed)
+	return out
 }
 
 func SeedDisclosureTypeGroups() []DisclosureGroupDTO {

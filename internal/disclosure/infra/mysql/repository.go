@@ -124,6 +124,28 @@ func decodeAttachments(raw []byte, target *[]disclosureapp.AttachmentDTO) error 
 	return nil
 }
 
+func (r *Repository) ListDisplayGroups(ctx context.Context) ([]disclosureapp.DisplayGroupDTO, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT display_group_code, name_vi, name_en, description, icon, display_order, is_active, is_system
+		FROM disclosure_display_groups
+		WHERE is_active = 1
+		ORDER BY display_order ASC, display_group_code ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]disclosureapp.DisplayGroupDTO, 0)
+	for rows.Next() {
+		var item disclosureapp.DisplayGroupDTO
+		if err := rows.Scan(&item.DisplayGroupCode, &item.NameVI, &item.NameEN, &item.Description, &item.Icon, &item.DisplayOrder, &item.IsActive, &item.IsSystem); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
+
 func (r *Repository) ListTypeGroups(ctx context.Context, _ string) ([]disclosureapp.DisclosureGroupDTO, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT group_id, name, description, icon, display_order
@@ -158,7 +180,7 @@ func (r *Repository) ListTypes(ctx context.Context, companyID, groupID, query st
 		args = append(args, like, like)
 	}
 	sqlText := `
-		SELECT t.type_id, t.group_id, t.company_id, v.name, v.category, v.template_category, v.description, v.deadline_rule, v.tags_json
+		SELECT t.type_id, t.group_id, COALESCE(t.display_group_code, ''), t.company_id, v.name, v.category, v.template_category, v.description, v.deadline_rule, v.tags_json
 		FROM disclosure_types t
 		INNER JOIN disclosure_type_versions v
 			ON v.type_id = t.type_id AND v.version_no = t.active_version_no
@@ -175,7 +197,7 @@ func (r *Repository) ListTypes(ctx context.Context, companyID, groupID, query st
 		var item disclosureapp.DisclosureTypeSummaryDTO
 		var tagsRaw []byte
 		var ownerCompanyID sql.NullString
-		if err := rows.Scan(&item.TypeID, &item.GroupID, &ownerCompanyID, &item.Name, &item.Category, &item.TemplateCategory, &item.Description, &item.DeadlineRule, &tagsRaw); err != nil {
+		if err := rows.Scan(&item.TypeID, &item.GroupID, &item.DisplayGroupCode, &ownerCompanyID, &item.Name, &item.Category, &item.TemplateCategory, &item.Description, &item.DeadlineRule, &tagsRaw); err != nil {
 			return nil, err
 		}
 		item.OwnerCompanyID = ownerCompanyID.String
@@ -195,7 +217,7 @@ func (r *Repository) ListTypes(ctx context.Context, companyID, groupID, query st
 func (r *Repository) GetTypeDetail(ctx context.Context, companyID, typeID string) (*disclosureapp.DisclosureTypeDTO, error) {
 	row := r.db.QueryRowContext(ctx, `
 		SELECT
-			t.type_id, t.group_id, t.company_id, t.active_version_no,
+			t.type_id, t.group_id, COALESCE(t.display_group_code, ''), t.company_id, t.active_version_no,
 			v.name, v.category, v.template_category, COALESCE(v.deadline_strategy, ''), v.description,
 			COALESCE(v.legal_basis, ''), COALESCE(v.applicability, ''), COALESCE(v.implementation_content, ''), COALESCE(v.implementation_notes, ''),
 			COALESCE(v.special_cases, ''), COALESCE(v.report_content, ''), COALESCE(v.required_docs, ''),
@@ -218,7 +240,7 @@ func (r *Repository) GetTypeDetail(ctx context.Context, companyID, typeID string
 	var checklistRaw []byte
 	var tagsRaw []byte
 	if err := row.Scan(
-		&item.TypeID, &item.GroupID, &ownerCompanyID, &item.VersionNo,
+		&item.TypeID, &item.GroupID, &item.DisplayGroupCode, &ownerCompanyID, &item.VersionNo,
 		&item.Name, &item.Category, &item.TemplateCategory, &item.DeadlineStrategy, &item.Description,
 		&item.LegalBasis, &item.Applicability, &item.ImplementationContent, &item.ImplementationNotes,
 		&item.SpecialCases, &item.ReportContent, &item.RequiredDocs,
