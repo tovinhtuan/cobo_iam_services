@@ -40,7 +40,7 @@ INSERT INTO disclosure_records (
 ) VALUES (
   'rec_smoke_wf_c001',
   'c_001',
-  'dt-001',
+  'dt-periodic-financial',
   'd_legal',
   'Smoke workflow — in progress',
   'Seed record for portal workflow instance smoke tests.',
@@ -103,7 +103,7 @@ INSERT INTO ad_hoc_proposals (
 ) VALUES (
   'adhoc_smoke_c001_001',
   'c_001',
-  'dt-001',
+  'dt-periodic-financial',
   'ad_hoc_draft',
   JSON_ARRAY(JSON_OBJECT('step_id', 'ws-smoke-1', 'processing_days', 3)),
   'Smoke ad-hoc proposal for portal list/detail',

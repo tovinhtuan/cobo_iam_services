@@ -1,6 +1,6 @@
 SET NAMES utf8mb4;
 
-CREATE TABLE user_subscription_tiers (
+CREATE TABLE IF NOT EXISTS user_subscription_tiers (
   user_id            VARCHAR(36) PRIMARY KEY,
   subscription_tier  VARCHAR(32) NOT NULL,
   source             VARCHAR(64) NOT NULL DEFAULT 'seed',
@@ -21,14 +21,3 @@ ON DUPLICATE KEY UPDATE
   effective_from = user_subscription_tiers.effective_from,
   effective_to = user_subscription_tiers.effective_to;
 
-INSERT INTO user_subscription_tiers (user_id, subscription_tier, source, effective_from, effective_to) VALUES
-  ('u_admin_web', 'Premium', 'migration-0011-override', NULL, NULL),
-  ('u_admin_dn', 'Enterprise', 'migration-0011-override', NULL, NULL),
-  ('u_cms_operator', 'Enterprise', 'migration-0011-override', NULL, NULL),
-  ('u_truong_phong', 'Premium', 'migration-0011-override', NULL, NULL),
-  ('u_truong_nhom', 'Premium', 'migration-0011-override', NULL, NULL)
-ON DUPLICATE KEY UPDATE
-  subscription_tier = VALUES(subscription_tier),
-  source = VALUES(source),
-  effective_from = VALUES(effective_from),
-  effective_to = VALUES(effective_to);

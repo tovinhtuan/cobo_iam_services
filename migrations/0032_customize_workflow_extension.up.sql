@@ -1,13 +1,28 @@
 SET NAMES utf8mb4;
 
 -- ============================================================
--- workflow_instances: add snapshot + T0 fields
+-- workflow_instances: add snapshot + T0 fields (idempotent)
 -- ============================================================
-ALTER TABLE workflow_instances
-  ADD COLUMN snapshot_json     JSON         NULL AFTER current_step_code,
-  ADD COLUMN t0_date           DATE         NULL AFTER snapshot_json,
-  ADD COLUMN t0_policy         VARCHAR(32)  NULL AFTER t0_date,
-  ADD COLUMN workflow_source   VARCHAR(32)  NULL AFTER t0_policy;
+DROP PROCEDURE IF EXISTS _add_col_if_not_exists;
+DELIMITER $$
+CREATE PROCEDURE _add_col_if_not_exists()
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'workflow_instances' AND column_name = 'snapshot_json') THEN
+    ALTER TABLE workflow_instances ADD COLUMN snapshot_json JSON NULL AFTER current_step_code;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'workflow_instances' AND column_name = 't0_date') THEN
+    ALTER TABLE workflow_instances ADD COLUMN t0_date DATE NULL AFTER snapshot_json;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'workflow_instances' AND column_name = 't0_policy') THEN
+    ALTER TABLE workflow_instances ADD COLUMN t0_policy VARCHAR(32) NULL AFTER t0_date;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'workflow_instances' AND column_name = 'workflow_source') THEN
+    ALTER TABLE workflow_instances ADD COLUMN workflow_source VARCHAR(32) NULL AFTER t0_policy;
+  END IF;
+END$$
+DELIMITER ;
+CALL _add_col_if_not_exists();
+DROP PROCEDURE IF EXISTS _add_col_if_not_exists;
 -- workflow_source values: 'system_template' | 'company_override'
 -- t0_policy values: 'system_date' | 'event_date' | 'user_defined'
 
@@ -40,7 +55,7 @@ CREATE TABLE IF NOT EXISTS workflow_step_milestones (
   KEY idx_wsm_dispatch (company_id, reminder_sent, scheduled_date),
   CONSTRAINT fk_wsm_instance FOREIGN KEY (workflow_instance_id)
     REFERENCES workflow_instances(workflow_instance_id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 -- ============================================================
 -- ad_hoc_proposals: per-type ad-hoc submission workflow
@@ -75,4 +90,4 @@ CREATE TABLE IF NOT EXISTS ad_hoc_proposals (
   KEY idx_adhoc_type (company_id, type_id),
   CONSTRAINT fk_adhoc_type FOREIGN KEY (type_id)
     REFERENCES disclosure_types(type_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
