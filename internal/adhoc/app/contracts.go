@@ -7,12 +7,12 @@ import (
 
 // Status values for ad_hoc_proposals.
 const (
-	StatusDraft                 = "ad_hoc_draft"
-	StatusPendingFocalApproval  = "pending_focal_approval"
-	StatusPendingAdminApproval  = "pending_admin_approval"
-	StatusApproved              = "approved"
-	StatusRejected              = "rejected"
-	StatusCancelled             = "cancelled"
+	StatusDraft                = "ad_hoc_draft"
+	StatusPendingFocalApproval = "pending_focal_approval"
+	StatusPendingAdminApproval = "pending_admin_approval"
+	StatusApproved             = "approved"
+	StatusRejected             = "rejected"
+	StatusCancelled            = "cancelled"
 )
 
 type Service interface {
@@ -39,7 +39,7 @@ type RecordCreator interface {
 	// CreateAndSubmitRecord creates a Draft record for the proposal and immediately submits it.
 	// When workflow is enabled, also creates a workflow instance for the record.
 	// Returns record_id and workflow_instance_id (may be empty when workflow is disabled).
-	CreateAndSubmitRecord(ctx context.Context, companyID, typeID, createdByMembershipID, title string) (recordID, workflowInstanceID string, err error)
+	CreateAndSubmitRecord(ctx context.Context, companyID, typeID, createdByMembershipID, title string, t0Date *time.Time) (recordID, workflowInstanceID string, err error)
 }
 
 type Subject struct {
@@ -71,12 +71,12 @@ type ProposalActionRequest struct {
 }
 
 type AdminApproveRequest struct {
-	Subject            Subject
-	ProposalID         string
-	Comment            string `json:"comment,omitempty"`
-	FinalT0Date        string `json:"final_t0_date,omitempty"`        // YYYY-MM-DD
-	FinalDeadlineDate  string `json:"final_deadline_date,omitempty"`  // YYYY-MM-DD or days string from FE
-	AdjustmentNote     string `json:"adjustment_note,omitempty"`
+	Subject           Subject
+	ProposalID        string
+	Comment           string `json:"comment,omitempty"`
+	FinalT0Date       string `json:"final_t0_date,omitempty"`       // YYYY-MM-DD
+	FinalDeadlineDate string `json:"final_deadline_date,omitempty"` // YYYY-MM-DD
+	AdjustmentNote    string `json:"adjustment_note,omitempty"`
 }
 
 type AdminApproveResponse struct {
@@ -117,6 +117,9 @@ type ProposalDTO struct {
 	Status               string                 `json:"status"`
 	StepOverrides        []WorkflowStepOverride `json:"step_overrides"`
 	ProposedT0Date       *string                `json:"proposed_t0_date,omitempty"`
+	FinalT0Date          *string                `json:"final_t0_date,omitempty"`
+	FinalDeadlineDate    *string                `json:"final_deadline_date,omitempty"`
+	AdjustmentNote       string                 `json:"adjustment_note,omitempty"`
 	ProposedDeadlineDate *string                `json:"proposed_deadline_date,omitempty"`
 	ChangeNote           string                 `json:"change_note,omitempty"`
 	FocalApprovedBy      string                 `json:"focal_approved_by,omitempty"`
@@ -143,4 +146,7 @@ type StatusUpdate struct {
 	RejectReason       string
 	RecordID           string
 	WorkflowInstanceID string
+	FinalT0Date        *string
+	FinalDeadlineDate  *string
+	AdjustmentNote     string
 }

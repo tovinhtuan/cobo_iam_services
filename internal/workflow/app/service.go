@@ -69,11 +69,11 @@ func (s *service) createWorkflowInstance(ctx context.Context, req CreateWorkflow
 		CurrentStepCode:    "review",
 		CreatedBy:          req.Subject.UserID,
 	}
+	inst.T0Date = req.T0Date
+	inst.T0Policy = req.T0Policy
 	if s.flags.SnapshotEnabled {
 		inst.Snapshot = req.Snapshot
 		inst.WorkflowSource = req.WorkflowSource
-		inst.T0Date = req.T0Date
-		inst.T0Policy = req.T0Policy
 	}
 
 	created, err := s.repo.CreateInstance(ctx, inst)

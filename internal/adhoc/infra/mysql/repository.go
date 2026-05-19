@@ -44,6 +44,7 @@ func (r *Repository) FindByID(ctx context.Context, companyID, proposalID string)
 	row := r.db.QueryRowContext(ctx, `
 		SELECT proposal_id, company_id, type_id, status, proposed_workflow_json,
 		       proposed_t0_date, proposed_deadline_date, change_note,
+		       final_t0_date, final_deadline_date, adjustment_note,
 		       focal_approved_by, focal_approved_at, admin_approved_by, admin_approved_at,
 		       rejected_by, rejected_at, reject_reason,
 		       record_id, workflow_instance_id, created_by, created_at, updated_at
@@ -68,9 +69,10 @@ func (r *Repository) UpdateStatus(ctx context.Context, upd adhocapp.StatusUpdate
 		args = []any{upd.Status, upd.ActorMembershipID, now, upd.RejectReason, now, upd.ProposalID, upd.CompanyID}
 	case adhocapp.StatusApproved:
 		q = `UPDATE ad_hoc_proposals SET status = ?, admin_approved_by = ?, admin_approved_at = ?,
-		     record_id = NULLIF(?, ''), workflow_instance_id = NULLIF(?, ''), updated_at = ?
+		     record_id = NULLIF(?, ''), workflow_instance_id = NULLIF(?, ''),
+		     final_t0_date = ?, final_deadline_date = ?, adjustment_note = ?, updated_at = ?
 		     WHERE proposal_id = ? AND company_id = ?`
-		args = []any{upd.Status, upd.ActorMembershipID, now, upd.RecordID, upd.WorkflowInstanceID, now, upd.ProposalID, upd.CompanyID}
+		args = []any{upd.Status, upd.ActorMembershipID, now, upd.RecordID, upd.WorkflowInstanceID, nullableStr(upd.FinalT0Date), nullableStr(upd.FinalDeadlineDate), nullIfBlank(upd.AdjustmentNote), now, upd.ProposalID, upd.CompanyID}
 	default:
 		return nil, fmt.Errorf("unknown status transition: %s", upd.Status)
 	}
@@ -118,6 +120,7 @@ func (r *Repository) List(ctx context.Context, companyID string, statusFilter []
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT proposal_id, company_id, type_id, status, proposed_workflow_json,
 		       proposed_t0_date, proposed_deadline_date, change_note,
+		       final_t0_date, final_deadline_date, adjustment_note,
 		       focal_approved_by, focal_approved_at, admin_approved_by, admin_approved_at,
 		       rejected_by, rejected_at, reject_reason,
 		       record_id, workflow_instance_id, created_by, created_at, updated_at
@@ -155,14 +158,15 @@ func scanProposal(row *sql.Row) (*adhocapp.ProposalDTO, error) {
 func scanProposalRow(row rowScanner) (*adhocapp.ProposalDTO, error) {
 	var p adhocapp.ProposalDTO
 	var overridesRaw string
-	var t0Date, dlDate, focalBy, adminBy, rejectedBy sql.NullString
+	var t0Date, dlDate, finalT0Date, finalDeadlineDate, focalBy, adminBy, rejectedBy sql.NullString
 	var focalAt, adminAt, rejectedAt sql.NullTime
 	var recordID, wfiID sql.NullString
-	var changeNote, rejectReason sql.NullString
+	var changeNote, adjustmentNote, rejectReason sql.NullString
 
 	if err := row.Scan(
 		&p.ProposalID, &p.CompanyID, &p.TypeID, &p.Status, &overridesRaw,
 		&t0Date, &dlDate, &changeNote,
+		&finalT0Date, &finalDeadlineDate, &adjustmentNote,
 		&focalBy, &focalAt, &adminBy, &adminAt,
 		&rejectedBy, &rejectedAt, &rejectReason,
 		&recordID, &wfiID, &p.CreatedBy, &p.CreatedAt, &p.UpdatedAt,
@@ -186,6 +190,15 @@ func scanProposalRow(row rowScanner) (*adhocapp.ProposalDTO, error) {
 	}
 	if changeNote.Valid {
 		p.ChangeNote = changeNote.String
+	}
+	if finalT0Date.Valid {
+		p.FinalT0Date = &finalT0Date.String
+	}
+	if finalDeadlineDate.Valid {
+		p.FinalDeadlineDate = &finalDeadlineDate.String
+	}
+	if adjustmentNote.Valid {
+		p.AdjustmentNote = adjustmentNote.String
 	}
 	if focalBy.Valid {
 		p.FocalApprovedBy = focalBy.String

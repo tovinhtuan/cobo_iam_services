@@ -3,6 +3,7 @@ package http
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 
 	adhocapp "github.com/cobo/cobo_iam_services/internal/adhoc/app"
@@ -64,9 +65,13 @@ func (h *Handler) listProposals(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	page, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("page")))
+	pageSize, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("page_size")))
 	resp, err := h.svc.ListProposals(r.Context(), adhocapp.ListProposalsRequest{
 		Subject:      sub,
 		StatusFilter: statusFilter,
+		Page:         page,
+		PageSize:     pageSize,
 	})
 	if err != nil {
 		httpx.WriteError(w, nil, err)

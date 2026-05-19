@@ -42,6 +42,7 @@ seed_dev_identity_authorization.sql
 0034_seed_org_structure_demo.up.sql
 0035_disclosure_display_groups.up.sql
 0036_fix_unicode_mojibake.up.sql
+0037_adhoc_admin_approve_final_fields.up.sql
 "
 
 mysql_exec() {

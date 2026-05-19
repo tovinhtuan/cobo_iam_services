@@ -4,6 +4,7 @@ package disclosure
 import (
 	"context"
 	"fmt"
+	"time"
 
 	adhocapp "github.com/cobo/cobo_iam_services/internal/adhoc/app"
 	disclosureapp "github.com/cobo/cobo_iam_services/internal/disclosure/app"
@@ -21,7 +22,7 @@ func NewRecordCreatorAdapter(svc disclosureapp.Service, workflowSvc workflowapp.
 	return &RecordCreatorAdapter{svc: svc, workflow: workflowSvc, workflowOn: workflowEnabled && workflowSvc != nil}
 }
 
-func (a *RecordCreatorAdapter) CreateAndSubmitRecord(ctx context.Context, companyID, typeID, createdByMembershipID, title string) (string, string, error) {
+func (a *RecordCreatorAdapter) CreateAndSubmitRecord(ctx context.Context, companyID, typeID, createdByMembershipID, title string, t0Date *time.Time) (string, string, error) {
 	sub := disclosureapp.Subject{
 		UserID:       createdByMembershipID,
 		MembershipID: createdByMembershipID,
@@ -47,14 +48,19 @@ func (a *RecordCreatorAdapter) CreateAndSubmitRecord(ctx context.Context, compan
 
 	instanceID := ""
 	if a.workflowOn {
-		inst, wfErr := a.workflow.CreateWorkflowInstanceInternal(ctx, workflowapp.CreateWorkflowInstanceRequest{
+		wfReq := workflowapp.CreateWorkflowInstanceRequest{
 			Subject: workflowapp.Subject{
 				UserID:       sub.UserID,
 				MembershipID: sub.MembershipID,
 				CompanyID:    sub.CompanyID,
 			},
 			RecordID: rec.RecordID,
-		})
+		}
+		if t0Date != nil {
+			wfReq.T0Date = t0Date
+			wfReq.T0Policy = "user_defined"
+		}
+		inst, wfErr := a.workflow.CreateWorkflowInstanceInternal(ctx, wfReq)
 		if wfErr != nil {
 			return rec.RecordID, "", fmt.Errorf("create workflow instance: %w", wfErr)
 		}

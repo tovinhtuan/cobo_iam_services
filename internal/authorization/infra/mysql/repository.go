@@ -231,6 +231,14 @@ func legacyPolicy(action string) *authapp.ActionPolicy {
 		required = "system.settings"
 	case "dashboard.view":
 		required = "dashboard.view"
+	case "ad_hoc_alert.read":
+		required = "ad_hoc_alert.read"
+	case "ad_hoc_alert.propose":
+		required = "ad_hoc_alert.propose"
+	case "ad_hoc_alert.focal_review":
+		required = "ad_hoc_alert.focal_review"
+	case "ad_hoc_alert.admin_review":
+		required = "ad_hoc_alert.admin_review"
 	case "admin.membership.create",
 		"admin.membership.update",
 		"admin.membership.delete",

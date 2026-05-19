@@ -2,9 +2,12 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
+	authapp "github.com/cobo/cobo_iam_services/internal/authorization/app"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 	"github.com/cobo/cobo_iam_services/internal/platform/idgen"
 )
@@ -14,13 +17,17 @@ type service struct {
 	recordCreator RecordCreator
 	idg           idgen.Generator
 	autoApprove   bool // WORKFLOW_ADHOC_AUTOAPPROVE_ENABLED: skip focal step
+	auth          authapp.Service
 }
 
-func NewService(repo Repository, recordCreator RecordCreator, idg idgen.Generator, autoApprove bool) Service {
-	return &service{repo: repo, recordCreator: recordCreator, idg: idg, autoApprove: autoApprove}
+func NewService(repo Repository, recordCreator RecordCreator, idg idgen.Generator, autoApprove bool, auth authapp.Service) Service {
+	return &service{repo: repo, recordCreator: recordCreator, idg: idg, autoApprove: autoApprove, auth: auth}
 }
 
 func (s *service) CreateProposal(ctx context.Context, req CreateProposalRequest) (*ProposalDTO, error) {
+	if err := s.authorize(ctx, req.Subject, "ad_hoc_alert.propose", authapp.ResourceRef{Type: "ad_hoc_proposal"}); err != nil {
+		return nil, err
+	}
 	req.TypeID = strings.TrimSpace(req.TypeID)
 	if req.TypeID == "" {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "type_id is required", nil)
@@ -58,6 +65,9 @@ func (s *service) CreateProposal(ctx context.Context, req CreateProposalRequest)
 }
 
 func (s *service) SubmitProposal(ctx context.Context, req ProposalActionRequest) (*ProposalDTO, error) {
+	if err := s.authorize(ctx, req.Subject, "ad_hoc_alert.propose", authapp.ResourceRef{Type: "ad_hoc_proposal", ID: req.ProposalID}); err != nil {
+		return nil, err
+	}
 	cur, err := s.repo.FindByID(ctx, req.Subject.CompanyID, req.ProposalID)
 	if err != nil {
 		return nil, err
@@ -82,6 +92,9 @@ func (s *service) SubmitProposal(ctx context.Context, req ProposalActionRequest)
 }
 
 func (s *service) FocalApprove(ctx context.Context, req ProposalActionRequest) (*ProposalDTO, error) {
+	if err := s.authorize(ctx, req.Subject, "ad_hoc_alert.focal_review", authapp.ResourceRef{Type: "ad_hoc_proposal", ID: req.ProposalID}); err != nil {
+		return nil, err
+	}
 	if s.autoApprove {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "focal approval step is disabled (WORKFLOW_ADHOC_AUTOAPPROVE_ENABLED=true)", nil)
 	}
@@ -102,6 +115,9 @@ func (s *service) FocalApprove(ctx context.Context, req ProposalActionRequest) (
 }
 
 func (s *service) AdminApprove(ctx context.Context, req AdminApproveRequest) (*AdminApproveResponse, error) {
+	if err := s.authorize(ctx, req.Subject, "ad_hoc_alert.admin_review", authapp.ResourceRef{Type: "ad_hoc_proposal", ID: req.ProposalID}); err != nil {
+		return nil, err
+	}
 	cur, err := s.repo.FindByID(ctx, req.Subject.CompanyID, req.ProposalID)
 	if err != nil {
 		return nil, err
@@ -110,12 +126,22 @@ func (s *service) AdminApprove(ctx context.Context, req AdminApproveRequest) (*A
 		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "proposal is not pending admin approval", nil)
 	}
 
+	finalT0Time, finalT0Date, err := parseOptionalISODate(req.FinalT0Date, "final_t0_date")
+	if err != nil {
+		return nil, err
+	}
+	_, finalDeadlineDate, err := parseOptionalISODate(req.FinalDeadlineDate, "final_deadline_date")
+	if err != nil {
+		return nil, err
+	}
+	adjustmentNote := strings.TrimSpace(req.AdjustmentNote)
+
 	// Auto-create and submit the disclosure record synchronously.
 	title := "Ad-hoc: " + cur.TypeID
 	if cur.ChangeNote != "" {
 		title = "Ad-hoc: " + cur.ChangeNote
 	}
-	recordID, workflowInstanceID, err := s.recordCreator.CreateAndSubmitRecord(ctx, cur.CompanyID, cur.TypeID, req.Subject.MembershipID, title)
+	recordID, workflowInstanceID, err := s.recordCreator.CreateAndSubmitRecord(ctx, cur.CompanyID, cur.TypeID, req.Subject.MembershipID, title, finalT0Time)
 	if err != nil {
 		return nil, perr.NewHTTPError(http.StatusInternalServerError, perr.CodeInternal, "failed to create disclosure record", err)
 	}
@@ -128,6 +154,9 @@ func (s *service) AdminApprove(ctx context.Context, req AdminApproveRequest) (*A
 		ActorUserID:        req.Subject.UserID,
 		RecordID:           recordID,
 		WorkflowInstanceID: workflowInstanceID,
+		FinalT0Date:        finalT0Date,
+		FinalDeadlineDate:  finalDeadlineDate,
+		AdjustmentNote:     adjustmentNote,
 	})
 	if err != nil {
 		return nil, err
@@ -149,6 +178,13 @@ func (s *service) Reject(ctx context.Context, req RejectRequest) (*ProposalDTO, 
 	default:
 		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "proposal cannot be rejected in current state", nil)
 	}
+	permission := "ad_hoc_alert.admin_review"
+	if cur.Status == StatusPendingFocalApproval {
+		permission = "ad_hoc_alert.focal_review"
+	}
+	if err := s.authorize(ctx, req.Subject, permission, authapp.ResourceRef{Type: "ad_hoc_proposal", ID: req.ProposalID, Attributes: map[string]any{"workflow_state": cur.Status}}); err != nil {
+		return nil, err
+	}
 	reason := strings.TrimSpace(req.RejectReason)
 	if reason == "" {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "reject_reason is required", nil)
@@ -164,6 +200,9 @@ func (s *service) Reject(ctx context.Context, req RejectRequest) (*ProposalDTO, 
 }
 
 func (s *service) Cancel(ctx context.Context, req ProposalActionRequest) (*ProposalDTO, error) {
+	if err := s.authorize(ctx, req.Subject, "ad_hoc_alert.propose", authapp.ResourceRef{Type: "ad_hoc_proposal", ID: req.ProposalID}); err != nil {
+		return nil, err
+	}
 	cur, err := s.repo.FindByID(ctx, req.Subject.CompanyID, req.ProposalID)
 	if err != nil {
 		return nil, err
@@ -186,6 +225,9 @@ func (s *service) Cancel(ctx context.Context, req ProposalActionRequest) (*Propo
 }
 
 func (s *service) GetProposal(ctx context.Context, req GetProposalRequest) (*ProposalDTO, error) {
+	if err := s.authorize(ctx, req.Subject, "ad_hoc_alert.read", authapp.ResourceRef{Type: "ad_hoc_proposal", ID: req.ProposalID}); err != nil {
+		return nil, err
+	}
 	if strings.TrimSpace(req.ProposalID) == "" {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "proposal_id is required", nil)
 	}
@@ -193,6 +235,9 @@ func (s *service) GetProposal(ctx context.Context, req GetProposalRequest) (*Pro
 }
 
 func (s *service) ListProposals(ctx context.Context, req ListProposalsRequest) (*ListProposalsResponse, error) {
+	if err := s.authorize(ctx, req.Subject, "ad_hoc_alert.read", authapp.ResourceRef{Type: "ad_hoc_proposal"}); err != nil {
+		return nil, err
+	}
 	if req.Page <= 0 {
 		req.Page = 1
 	}
@@ -204,4 +249,36 @@ func (s *service) ListProposals(ctx context.Context, req ListProposalsRequest) (
 		return nil, err
 	}
 	return &ListProposalsResponse{Items: items, Page: req.Page, PageSize: req.PageSize, Total: total}, nil
+}
+
+func (s *service) authorize(ctx context.Context, sub Subject, action string, resource authapp.ResourceRef) error {
+	decision, err := s.auth.Authorize(ctx, authapp.AuthorizeRequest{
+		Subject:  authapp.SubjectRef{UserID: sub.UserID, MembershipID: sub.MembershipID, CompanyID: sub.CompanyID},
+		Action:   action,
+		Resource: resource,
+	})
+	if err != nil {
+		return fmt.Errorf("authorize adhoc action: %w", err)
+	}
+	if decision.Decision != authapp.DecisionAllow {
+		code := perr.CodePermissionDenied
+		if decision.DenyReasonCode != nil {
+			code = *decision.DenyReasonCode
+		}
+		return perr.NewHTTPError(http.StatusForbidden, code, "access denied", nil)
+	}
+	return nil
+}
+
+func parseOptionalISODate(raw, field string) (*time.Time, *string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil, nil
+	}
+	parsed, err := time.Parse("2006-01-02", raw)
+	if err != nil {
+		return nil, nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, field+" must be YYYY-MM-DD", nil)
+	}
+	normalized := parsed.Format("2006-01-02")
+	return &parsed, &normalized, nil
 }

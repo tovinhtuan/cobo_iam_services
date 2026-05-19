@@ -47,15 +47,25 @@ func (r *Repository) CreateInstance(ctx context.Context, in workflowapp.Workflow
 
 func (r *Repository) FindInstance(ctx context.Context, companyID, workflowInstanceID string) (*workflowapp.WorkflowInstanceDTO, error) {
 	row := r.db.QueryRowContext(ctx, `
-		SELECT workflow_instance_id, company_id, record_id, status, current_step_code, created_by
+		SELECT workflow_instance_id, company_id, record_id, status, current_step_code, created_by,
+		       t0_date, t0_policy
 		FROM workflow_instances WHERE company_id = ? AND workflow_instance_id = ?
 	`, companyID, workflowInstanceID)
 	var in workflowapp.WorkflowInstanceDTO
-	if err := row.Scan(&in.WorkflowInstanceID, &in.CompanyID, &in.RecordID, &in.Status, &in.CurrentStepCode, &in.CreatedBy); err != nil {
+	var t0Date sql.NullTime
+	var t0Policy sql.NullString
+	if err := row.Scan(&in.WorkflowInstanceID, &in.CompanyID, &in.RecordID, &in.Status, &in.CurrentStepCode, &in.CreatedBy, &t0Date, &t0Policy); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, perr.NewHTTPError(404, perr.CodeInvalidRequest, "workflow instance not found", nil)
 		}
 		return nil, err
+	}
+	if t0Date.Valid {
+		v := t0Date.Time
+		in.T0Date = &v
+	}
+	if t0Policy.Valid {
+		in.T0Policy = t0Policy.String
 	}
 	return &in, nil
 }

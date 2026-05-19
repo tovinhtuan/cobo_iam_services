@@ -9,6 +9,10 @@ import (
 	"path/filepath"
 	"time"
 
+	adhocapp "github.com/cobo/cobo_iam_services/internal/adhoc/app"
+	adhocrecord "github.com/cobo/cobo_iam_services/internal/adhoc/infra/disclosure"
+	adhocmysql "github.com/cobo/cobo_iam_services/internal/adhoc/infra/mysql"
+	adhochttp "github.com/cobo/cobo_iam_services/internal/adhoc/transport/http"
 	auditapp "github.com/cobo/cobo_iam_services/internal/audit/app"
 	auditappimpl "github.com/cobo/cobo_iam_services/internal/audit/appimpl"
 	auditinmem "github.com/cobo/cobo_iam_services/internal/audit/infra/inmemory"
@@ -54,10 +58,6 @@ import (
 	remindermysql "github.com/cobo/cobo_iam_services/internal/reminder/infra/mysql"
 	reminderobserve "github.com/cobo/cobo_iam_services/internal/reminder/infra/observe"
 	reminderhttp "github.com/cobo/cobo_iam_services/internal/reminder/transport/http"
-	adhocapp "github.com/cobo/cobo_iam_services/internal/adhoc/app"
-	adhocrecord "github.com/cobo/cobo_iam_services/internal/adhoc/infra/disclosure"
-	adhocmysql "github.com/cobo/cobo_iam_services/internal/adhoc/infra/mysql"
-	adhochttp "github.com/cobo/cobo_iam_services/internal/adhoc/transport/http"
 	workflowapp "github.com/cobo/cobo_iam_services/internal/workflow/app"
 	workflowinmem "github.com/cobo/cobo_iam_services/internal/workflow/infra/inmemory"
 	workflowmysql "github.com/cobo/cobo_iam_services/internal/workflow/infra/mysql"
@@ -167,8 +167,8 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 	}
 	var iamOpts []iamapp.ServiceOption
 	iamOpts = append(iamOpts, iamapp.WithAuthFlowConfig(iamapp.AuthFlowConfig{
-		WebBaseURL:                cfg.PublicWebBaseURL,
-		UserInvitationTokenTTL:    cfg.UserInvitationTokenTTL,
+		WebBaseURL:              cfg.PublicWebBaseURL,
+		UserInvitationTokenTTL:  cfg.UserInvitationTokenTTL,
 		EmailVerificationOTPTTL: cfg.EmailVerificationOTPTTL,
 	}))
 	if pool != nil {
@@ -324,7 +324,7 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 			adhocRepo = adhocmysql.NewRepository(nil) // will panic on use; acceptable in no-DB mode
 		}
 		recordCreator := adhocrecord.NewRecordCreatorAdapter(disclosureSvc, workflowSvc, true)
-		adhocSvc := adhocapp.NewService(adhocRepo, recordCreator, id, cfg.WorkflowAdhocAutoApproveEnabled)
+		adhocSvc := adhocapp.NewService(adhocRepo, recordCreator, id, cfg.WorkflowAdhocAutoApproveEnabled, authSvc)
 		adhocHandler = adhochttp.NewHandler(adhocSvc, tokenManager)
 		log.Info("ad-hoc proposal module enabled")
 	}
