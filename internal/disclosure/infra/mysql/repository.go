@@ -1370,3 +1370,133 @@ func (r *Repository) UpdateWorkflowOverrideStepGroups(ctx context.Context, req d
 		Groups:    updatedGroups,
 	}, nil
 }
+
+// ── Periodic auto-creation ────────────────────────────────────────────────────
+
+func (r *Repository) ListActivePeriodicTypes(ctx context.Context) ([]disclosureapp.PeriodicTypeRow, error) {
+	const q = `
+		SELECT dt.type_id,
+		       COALESCE(JSON_UNQUOTE(JSON_EXTRACT(dtv.deadline_config_json, '$.frequency_unit')), '')   AS frequency_unit,
+		       COALESCE(JSON_EXTRACT(dtv.deadline_config_json, '$.frequency_interval'), 1)              AS frequency_interval,
+		       COALESCE(JSON_EXTRACT(dtv.deadline_config_json, '$.deadline_days'), 0)                   AS deadline_days,
+		       COALESCE(JSON_EXTRACT(dtv.deadline_config_json, '$.cycle_anchor_day'), 0)                AS anchor_day,
+		       COALESCE(JSON_EXTRACT(dtv.deadline_config_json, '$.cycle_anchor_month'), 0)              AS anchor_month
+		FROM disclosure_types dt
+		JOIN disclosure_type_versions dtv ON dtv.type_id = dt.type_id AND dtv.is_active = 1
+		WHERE JSON_UNQUOTE(JSON_EXTRACT(dtv.deadline_config_json, '$.template_category')) IN ('periodic', 'custom')
+		  AND JSON_UNQUOTE(JSON_EXTRACT(dtv.deadline_config_json, '$.frequency_unit'))    IN ('monthly', 'quarterly', 'yearly')
+		  AND dt.status = 'active'`
+	rows, err := r.db.QueryContext(ctx, q)
+	if err != nil {
+		return nil, fmt.Errorf("list periodic types: %w", err)
+	}
+	defer rows.Close()
+	var out []disclosureapp.PeriodicTypeRow
+	for rows.Next() {
+		var row disclosureapp.PeriodicTypeRow
+		if err := rows.Scan(&row.TypeID, &row.FrequencyUnit, &row.FrequencyInterval,
+			&row.DeadlineDays, &row.CycleAnchorDay, &row.CycleAnchorMonth); err != nil {
+			return nil, fmt.Errorf("scan periodic type row: %w", err)
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repository) UpsertPeriodicCycle(ctx context.Context, in disclosureapp.PeriodicCycleRow) error {
+	const q = `
+		INSERT INTO periodic_cycles (cycle_id, type_id, company_id, cycle_label, due_date)
+		VALUES (?, ?, ?, ?, ?)
+		ON DUPLICATE KEY UPDATE cycle_id = cycle_id`
+	_, err := r.db.ExecContext(ctx, q, in.CycleID, in.TypeID, in.CompanyID, in.CycleLabel, in.DueDate.Format("2006-01-02"))
+	if err != nil {
+		return fmt.Errorf("upsert periodic cycle: %w", err)
+	}
+	return nil
+}
+
+func (r *Repository) ListPendingCycles(ctx context.Context, asOf time.Time, bufferDays int) ([]disclosureapp.PeriodicCycleRow, error) {
+	cutoff := asOf.AddDate(0, 0, bufferDays).Format("2006-01-02")
+	const q = `
+		SELECT cycle_id, type_id, company_id, cycle_label, due_date
+		FROM periodic_cycles
+		WHERE record_id IS NULL AND due_date <= ?
+		ORDER BY due_date ASC
+		LIMIT 200`
+	rows, err := r.db.QueryContext(ctx, q, cutoff)
+	if err != nil {
+		return nil, fmt.Errorf("list pending cycles: %w", err)
+	}
+	defer rows.Close()
+	var out []disclosureapp.PeriodicCycleRow
+	for rows.Next() {
+		var row disclosureapp.PeriodicCycleRow
+		var dueDateStr string
+		if err := rows.Scan(&row.CycleID, &row.TypeID, &row.CompanyID, &row.CycleLabel, &dueDateStr); err != nil {
+			return nil, fmt.Errorf("scan pending cycle: %w", err)
+		}
+		row.DueDate, _ = time.Parse("2006-01-02", dueDateStr)
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repository) UpdateCycleRecord(ctx context.Context, cycleID, recordID string) error {
+	const q = `UPDATE periodic_cycles SET record_id = ?, materialized_at = NOW(3) WHERE cycle_id = ?`
+	_, err := r.db.ExecContext(ctx, q, recordID, cycleID)
+	if err != nil {
+		return fmt.Errorf("update cycle record: %w", err)
+	}
+	return nil
+}
+
+func (r *Repository) ListAllActiveCompanyIDs(ctx context.Context) ([]string, error) {
+	const q = `SELECT company_id FROM companies WHERE status = 'active'`
+	rows, err := r.db.QueryContext(ctx, q)
+	if err != nil {
+		return nil, fmt.Errorf("list active companies: %w", err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repository) GetCompanyTypePreference(ctx context.Context, companyID, typeID string) (*disclosureapp.CompanyTypePreference, error) {
+	const q = `SELECT auto_create_enabled, COALESCE(updated_by, '') FROM company_type_preferences WHERE company_id = ? AND type_id = ?`
+	var pref disclosureapp.CompanyTypePreference
+	var enabled int
+	err := r.db.QueryRowContext(ctx, q, companyID, typeID).Scan(&enabled, &pref.UpdatedBy)
+	if err == sql.ErrNoRows {
+		return nil, nil // no row = default enabled
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get company type preference: %w", err)
+	}
+	pref.CompanyID = companyID
+	pref.TypeID = typeID
+	pref.AutoCreateEnabled = enabled == 1
+	return &pref, nil
+}
+
+func (r *Repository) UpsertCompanyTypePreference(ctx context.Context, in disclosureapp.CompanyTypePreference) error {
+	enabled := 0
+	if in.AutoCreateEnabled {
+		enabled = 1
+	}
+	const q = `
+		INSERT INTO company_type_preferences (company_id, type_id, auto_create_enabled, updated_by)
+		VALUES (?, ?, ?, ?)
+		ON DUPLICATE KEY UPDATE auto_create_enabled = VALUES(auto_create_enabled), updated_by = VALUES(updated_by)`
+	_, err := r.db.ExecContext(ctx, q, in.CompanyID, in.TypeID, enabled, in.UpdatedBy)
+	if err != nil {
+		return fmt.Errorf("upsert company type preference: %w", err)
+	}
+	return nil
+}

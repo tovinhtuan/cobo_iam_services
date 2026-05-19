@@ -56,6 +56,8 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/disclosure-types/{type_id}/effective-workflow", h.getEffectiveWorkflow)
 	mux.HandleFunc("GET /api/v1/admin/disclosure-types/{type_id}/config", h.getTemplateDeadlineConfig)
 	mux.HandleFunc("PUT /api/v1/admin/disclosure-types/{type_id}/config", h.updateTemplateDeadlineConfig)
+	mux.HandleFunc("GET /api/v1/company/disclosure-types/{type_id}/preferences", h.getCompanyTypePreference)
+	mux.HandleFunc("PATCH /api/v1/company/disclosure-types/{type_id}/preferences", h.upsertCompanyTypePreference)
 }
 
 func (h *Handler) getTemplateReferenceData(w http.ResponseWriter, r *http.Request) {
@@ -741,5 +743,49 @@ func (h *Handler) updateWorkflowOverrideStepGroups(w http.ResponseWriter, r *htt
 		"step_id":    stepID,
 		"group_count": len(resp.Groups),
 	})
+	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) getCompanyTypePreference(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subjectFromToken(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	typeID := strings.TrimSpace(r.PathValue("type_id"))
+	resp, err := h.svc.GetCompanyTypePreference(r.Context(), disclosureapp.GetCompanyTypePreferenceRequest{
+		Subject: sub,
+		TypeID:  typeID,
+	})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) upsertCompanyTypePreference(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subjectFromToken(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	typeID := strings.TrimSpace(r.PathValue("type_id"))
+	var body struct {
+		AutoCreateEnabled bool `json:"auto_create_enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	resp, err := h.svc.UpsertCompanyTypePreference(r.Context(), disclosureapp.UpsertCompanyTypePreferenceRequest{
+		Subject:           sub,
+		TypeID:            typeID,
+		AutoCreateEnabled: body.AutoCreateEnabled,
+	})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
 	httpx.WriteJSON(w, http.StatusOK, resp)
 }

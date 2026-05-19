@@ -324,8 +324,9 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 			adhocRepo = adhocmysql.NewRepository(nil) // will panic on use; acceptable in no-DB mode
 		}
 		recordCreator := adhocrecord.NewRecordCreatorAdapter(disclosureSvc, workflowSvc, true)
-		adhocSvc := adhocapp.NewService(adhocRepo, recordCreator, id, cfg.WorkflowAdhocAutoApproveEnabled, authSvc)
-		adhocHandler = adhochttp.NewHandler(adhocSvc, tokenManager)
+		typeCatalog := adhocrecord.NewTypeCatalogAdapter(disclosureRepo)
+		adhocSvc := adhocapp.NewService(adhocRepo, recordCreator, typeCatalog, id, cfg.WorkflowAdhocAutoApproveEnabled, authSvc)
+		adhocHandler = adhochttp.NewHandler(adhocSvc, tokenManager, idemStore)
 		log.Info("ad-hoc proposal module enabled")
 	}
 

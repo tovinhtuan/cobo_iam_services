@@ -15,13 +15,14 @@ import (
 type service struct {
 	repo          Repository
 	recordCreator RecordCreator
+	typeCatalog   TypeCatalog
 	idg           idgen.Generator
 	autoApprove   bool // WORKFLOW_ADHOC_AUTOAPPROVE_ENABLED: skip focal step
 	auth          authapp.Service
 }
 
-func NewService(repo Repository, recordCreator RecordCreator, idg idgen.Generator, autoApprove bool, auth authapp.Service) Service {
-	return &service{repo: repo, recordCreator: recordCreator, idg: idg, autoApprove: autoApprove, auth: auth}
+func NewService(repo Repository, recordCreator RecordCreator, typeCatalog TypeCatalog, idg idgen.Generator, autoApprove bool, auth authapp.Service) Service {
+	return &service{repo: repo, recordCreator: recordCreator, typeCatalog: typeCatalog, idg: idg, autoApprove: autoApprove, auth: auth}
 }
 
 func (s *service) CreateProposal(ctx context.Context, req CreateProposalRequest) (*ProposalDTO, error) {
@@ -32,8 +33,15 @@ func (s *service) CreateProposal(ctx context.Context, req CreateProposalRequest)
 	if req.TypeID == "" {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "type_id is required", nil)
 	}
-	if len(req.StepOverrides) == 0 {
-		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "step_overrides is required", nil)
+	if s.typeCatalog == nil {
+		return nil, perr.NewHTTPError(http.StatusInternalServerError, perr.CodeInternal, "template catalog is unavailable", nil)
+	}
+	templateCategory, err := s.typeCatalog.GetTemplateCategory(ctx, req.Subject.CompanyID, req.TypeID)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(strings.ToLower(templateCategory)) != "irregular" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "ad-hoc proposals are only supported for irregular templates", nil)
 	}
 	// Phase 1: validate processing_days per step (must be > 0 when provided).
 	for _, o := range req.StepOverrides {
@@ -83,11 +91,12 @@ func (s *service) SubmitProposal(ctx context.Context, req ProposalActionRequest)
 		nextStatus = StatusPendingAdminApproval
 	}
 	return s.repo.UpdateStatus(ctx, StatusUpdate{
-		ProposalID:        req.ProposalID,
-		CompanyID:         req.Subject.CompanyID,
-		Status:            nextStatus,
-		ActorMembershipID: req.Subject.MembershipID,
-		ActorUserID:       req.Subject.UserID,
+		ProposalID:               req.ProposalID,
+		CompanyID:                req.Subject.CompanyID,
+		Status:                   nextStatus,
+		ActorMembershipID:        req.Subject.MembershipID,
+		ActorUserID:              req.Subject.UserID,
+		SetFocalApprovalMetadata: false,
 	})
 }
 
@@ -106,11 +115,12 @@ func (s *service) FocalApprove(ctx context.Context, req ProposalActionRequest) (
 		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "proposal is not pending focal approval", nil)
 	}
 	return s.repo.UpdateStatus(ctx, StatusUpdate{
-		ProposalID:        req.ProposalID,
-		CompanyID:         req.Subject.CompanyID,
-		Status:            StatusPendingAdminApproval,
-		ActorMembershipID: req.Subject.MembershipID,
-		ActorUserID:       req.Subject.UserID,
+		ProposalID:               req.ProposalID,
+		CompanyID:                req.Subject.CompanyID,
+		Status:                   StatusPendingAdminApproval,
+		ActorMembershipID:        req.Subject.MembershipID,
+		ActorUserID:              req.Subject.UserID,
+		SetFocalApprovalMetadata: true,
 	})
 }
 
@@ -118,9 +128,25 @@ func (s *service) AdminApprove(ctx context.Context, req AdminApproveRequest) (*A
 	if err := s.authorize(ctx, req.Subject, "ad_hoc_alert.admin_review", authapp.ResourceRef{Type: "ad_hoc_proposal", ID: req.ProposalID}); err != nil {
 		return nil, err
 	}
-	cur, err := s.repo.FindByID(ctx, req.Subject.CompanyID, req.ProposalID)
+	reservation, err := s.repo.ReserveAdminApproval(ctx, ReserveAdminApprovalInput{
+		CompanyID:         req.Subject.CompanyID,
+		ProposalID:        req.ProposalID,
+		IdempotencyKey:    strings.TrimSpace(req.IdempotencyKey),
+		ActorMembershipID: req.Subject.MembershipID,
+	})
 	if err != nil {
 		return nil, err
+	}
+	cur := reservation.Proposal
+	if cur == nil {
+		return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "proposal not found", nil)
+	}
+	if reservation.ReplayApproved {
+		return &AdminApproveResponse{
+			Proposal:           *cur,
+			RecordID:           cur.RecordID,
+			WorkflowInstanceID: cur.WorkflowInstanceID,
+		}, nil
 	}
 	if cur.Status != StatusPendingAdminApproval {
 		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "proposal is not pending admin approval", nil)
@@ -141,12 +167,19 @@ func (s *service) AdminApprove(ctx context.Context, req AdminApproveRequest) (*A
 	if cur.ChangeNote != "" {
 		title = "Ad-hoc: " + cur.ChangeNote
 	}
-	recordID, workflowInstanceID, err := s.recordCreator.CreateAndSubmitRecord(ctx, cur.CompanyID, cur.TypeID, req.Subject.MembershipID, title, finalT0Time)
-	if err != nil {
-		return nil, perr.NewHTTPError(http.StatusInternalServerError, perr.CodeInternal, "failed to create disclosure record", err)
+	recordID := reservation.ProgressRecordID
+	workflowInstanceID := reservation.ProgressWorkflowID
+	if strings.TrimSpace(recordID) == "" {
+		recordID, workflowInstanceID, err = s.recordCreator.CreateAndSubmitRecord(ctx, cur.CompanyID, cur.TypeID, req.Subject.MembershipID, title, finalT0Time)
+		if err != nil {
+			return nil, perr.NewHTTPError(http.StatusInternalServerError, perr.CodeInternal, "failed to create disclosure record", err)
+		}
+		if err := s.repo.SaveAdminApprovalProgress(ctx, req.Subject.CompanyID, req.ProposalID, strings.TrimSpace(req.IdempotencyKey), recordID, workflowInstanceID, ""); err != nil {
+			return nil, err
+		}
 	}
 
-	updated, err := s.repo.UpdateStatus(ctx, StatusUpdate{
+	updated, err := s.repo.CompleteAdminApproval(ctx, StatusUpdate{
 		ProposalID:         req.ProposalID,
 		CompanyID:          req.Subject.CompanyID,
 		Status:             StatusApproved,
@@ -157,7 +190,7 @@ func (s *service) AdminApprove(ctx context.Context, req AdminApproveRequest) (*A
 		FinalT0Date:        finalT0Date,
 		FinalDeadlineDate:  finalDeadlineDate,
 		AdjustmentNote:     adjustmentNote,
-	})
+	}, strings.TrimSpace(req.IdempotencyKey))
 	if err != nil {
 		return nil, err
 	}

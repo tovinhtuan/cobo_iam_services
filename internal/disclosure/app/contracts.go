@@ -33,6 +33,14 @@ type Service interface {
 	UpdateTemplateDeadlineConfig(ctx context.Context, req UpdateTemplateDeadlineConfigRequest) (*UpdateTemplateDeadlineConfigResponse, error)
 	ListCompanyGroups(ctx context.Context, req ListCompanyGroupsRequest) (*ListCompanyGroupsResponse, error)
 	UpdateWorkflowOverrideStepGroups(ctx context.Context, req UpdateWorkflowOverrideStepGroupsRequest) (*UpdateWorkflowOverrideStepGroupsResponse, error)
+
+	// Periodic auto-creation.
+	SeedPeriodicCycles(ctx context.Context, now time.Time) (int, error)
+	MaterializePeriodicDisclosures(ctx context.Context, now time.Time, creator PeriodicRecordCreator) (int, error)
+
+	// Company preferences (auto_create toggle).
+	GetCompanyTypePreference(ctx context.Context, req GetCompanyTypePreferenceRequest) (*CompanyTypePreferenceDTO, error)
+	UpsertCompanyTypePreference(ctx context.Context, req UpsertCompanyTypePreferenceRequest) (*CompanyTypePreferenceDTO, error)
 }
 
 type Repository interface {
@@ -60,6 +68,15 @@ type Repository interface {
 	UpdateActiveVersionDeadlineConfig(ctx context.Context, typeID string, cfg TemplateDeadlineConfig, updatedBy string) error
 	ListCompanyGroups(ctx context.Context, companyID, departmentID string, isActive *bool) ([]CompanyGroupDTO, error)
 	UpdateWorkflowOverrideStepGroups(ctx context.Context, req UpdateWorkflowOverrideStepGroupsRequest) (*UpdateWorkflowOverrideStepGroupsResponse, error)
+
+	// Periodic auto-creation support.
+	ListActivePeriodicTypes(ctx context.Context) ([]PeriodicTypeRow, error)
+	UpsertPeriodicCycle(ctx context.Context, in PeriodicCycleRow) error
+	ListPendingCycles(ctx context.Context, asOf time.Time, bufferDays int) ([]PeriodicCycleRow, error)
+	UpdateCycleRecord(ctx context.Context, cycleID, recordID string) error
+	ListAllActiveCompanyIDs(ctx context.Context) ([]string, error)
+	GetCompanyTypePreference(ctx context.Context, companyID, typeID string) (*CompanyTypePreference, error)
+	UpsertCompanyTypePreference(ctx context.Context, in CompanyTypePreference) error
 }
 
 type CreateRecordRequest struct {
@@ -610,6 +627,10 @@ type TemplateDeadlineConfig struct {
 	FrequencyUnit     string `json:"frequency_unit,omitempty"`
 	AllowT0Override   *bool  `json:"allow_t0_override,omitempty"`
 	ReportInfoLocked  *bool  `json:"report_info_locked,omitempty"`
+	// CycleAnchorDay/Month define the fiscal year start for yearly periodic templates.
+	// 0 = unset (defaults to 01/01). Not needed for monthly/quarterly.
+	CycleAnchorDay   int `json:"cycle_anchor_day,omitempty"`
+	CycleAnchorMonth int `json:"cycle_anchor_month,omitempty"`
 }
 
 // WorkflowOverrideReminderPreviewMilestoneDTO is one projected reminder row for draft preview.
@@ -706,4 +727,58 @@ type RecordDTO struct {
 	UpdatedBy     string          `json:"updated_by"`
 	CreatedAt     time.Time       `json:"created_at"`
 	UpdatedAt     time.Time       `json:"updated_at"`
+}
+
+// PeriodicRecordCreator is the cross-module interface used by periodic auto-creation.
+// Implemented by disclosureapp.service itself; injected into MaterializePeriodicDisclosures
+// to allow worker to pass a system-actor creator without circular imports.
+type PeriodicRecordCreator interface {
+	CreateAndSubmitRecord(ctx context.Context, companyID, typeID, createdByMembershipID, title string, t0Date *time.Time) (recordID, workflowInstanceID string, err error)
+}
+
+// PeriodicTypeRow is returned by ListActivePeriodicTypes.
+type PeriodicTypeRow struct {
+	TypeID            string
+	FrequencyUnit     string // "monthly" | "quarterly" | "yearly"
+	FrequencyInterval int
+	DeadlineDays      int
+	CycleAnchorDay    int // 0 = unset → defaults to 1
+	CycleAnchorMonth  int // 0 = unset → defaults to 1
+}
+
+// PeriodicCycleRow represents one (type, company, cycle) idempotency slot.
+type PeriodicCycleRow struct {
+	CycleID   string
+	TypeID    string
+	CompanyID string
+	CycleLabel string
+	DueDate   time.Time
+	RecordID  string // empty = pending
+}
+
+// CompanyTypePreference is used by the repository layer.
+type CompanyTypePreference struct {
+	CompanyID         string
+	TypeID            string
+	AutoCreateEnabled bool
+	UpdatedBy         string
+}
+
+// CompanyTypePreferenceDTO is the API-facing representation.
+type CompanyTypePreferenceDTO struct {
+	TypeID            string    `json:"type_id"`
+	CompanyID         string    `json:"company_id"`
+	AutoCreateEnabled bool      `json:"auto_create_enabled"`
+	UpdatedAt         time.Time `json:"updated_at"`
+}
+
+type GetCompanyTypePreferenceRequest struct {
+	Subject Subject
+	TypeID  string
+}
+
+type UpsertCompanyTypePreferenceRequest struct {
+	Subject           Subject
+	TypeID            string
+	AutoCreateEnabled bool
 }

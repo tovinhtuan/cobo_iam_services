@@ -30,7 +30,14 @@ type Repository interface {
 	Insert(ctx context.Context, p ProposalDTO) (*ProposalDTO, error)
 	FindByID(ctx context.Context, companyID, proposalID string) (*ProposalDTO, error)
 	UpdateStatus(ctx context.Context, upd StatusUpdate) (*ProposalDTO, error)
+	ReserveAdminApproval(ctx context.Context, in ReserveAdminApprovalInput) (*AdminApprovalReservation, error)
+	SaveAdminApprovalProgress(ctx context.Context, companyID, proposalID, idemKey, recordID, workflowID, lastError string) error
+	CompleteAdminApproval(ctx context.Context, upd StatusUpdate, idemKey string) (*ProposalDTO, error)
 	List(ctx context.Context, companyID string, statusFilter []string, page, pageSize int) ([]ProposalDTO, int, error)
+}
+
+type TypeCatalog interface {
+	GetTemplateCategory(ctx context.Context, companyID, typeID string) (string, error)
 }
 
 // RecordCreator is the cross-module interface the ad-hoc service uses to submit a disclosure record.
@@ -73,10 +80,25 @@ type ProposalActionRequest struct {
 type AdminApproveRequest struct {
 	Subject           Subject
 	ProposalID        string
+	IdempotencyKey    string `json:"-"`
 	Comment           string `json:"comment,omitempty"`
 	FinalT0Date       string `json:"final_t0_date,omitempty"`       // YYYY-MM-DD
 	FinalDeadlineDate string `json:"final_deadline_date,omitempty"` // YYYY-MM-DD
 	AdjustmentNote    string `json:"adjustment_note,omitempty"`
+}
+
+type ReserveAdminApprovalInput struct {
+	CompanyID         string
+	ProposalID        string
+	IdempotencyKey    string
+	ActorMembershipID string
+}
+
+type AdminApprovalReservation struct {
+	Proposal           *ProposalDTO
+	ReplayApproved     bool
+	ProgressRecordID   string
+	ProgressWorkflowID string
 }
 
 type AdminApproveResponse struct {
@@ -138,15 +160,16 @@ type ProposalDTO struct {
 
 // StatusUpdate carries fields for a state transition update.
 type StatusUpdate struct {
-	ProposalID         string
-	CompanyID          string
-	Status             string
-	ActorMembershipID  string
-	ActorUserID        string
-	RejectReason       string
-	RecordID           string
-	WorkflowInstanceID string
-	FinalT0Date        *string
-	FinalDeadlineDate  *string
-	AdjustmentNote     string
+	ProposalID               string
+	CompanyID                string
+	Status                   string
+	ActorMembershipID        string
+	ActorUserID              string
+	SetFocalApprovalMetadata bool
+	RejectReason             string
+	RecordID                 string
+	WorkflowInstanceID       string
+	FinalT0Date              *string
+	FinalDeadlineDate        *string
+	AdjustmentNote           string
 }

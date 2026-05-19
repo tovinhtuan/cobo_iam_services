@@ -986,7 +986,56 @@ func sanitizeChecklist(items []ChecklistItemDTO) []ChecklistItemDTO {
 	return out
 }
 
+// SeedPeriodicCycles computes expected cycles for the current tick and upserts them.
+// Idempotent — safe to call on every worker tick.
+func (s *service) SeedPeriodicCycles(ctx context.Context, now time.Time) (int, error) {
+	return seedPeriodicCycles(ctx, now, s.repo, s.idg, s.calculator)
+}
+
+// MaterializePeriodicDisclosures picks up pending cycles and creates disclosure records.
+func (s *service) MaterializePeriodicDisclosures(ctx context.Context, now time.Time, creator PeriodicRecordCreator) (int, error) {
+	return materializePeriodicDisclosures(ctx, now, s.repo, creator)
+}
+
+// GetCompanyTypePreference returns auto_create preference for a (company, type) pair.
+// Defaults to enabled when no row exists.
+func (s *service) GetCompanyTypePreference(ctx context.Context, req GetCompanyTypePreferenceRequest) (*CompanyTypePreferenceDTO, error) {
+	pref, err := s.repo.GetCompanyTypePreference(ctx, req.Subject.CompanyID, req.TypeID)
+	if err != nil {
+		return nil, err
+	}
+	dto := &CompanyTypePreferenceDTO{
+		TypeID:            req.TypeID,
+		CompanyID:         req.Subject.CompanyID,
+		AutoCreateEnabled: true, // default
+	}
+	if pref != nil {
+		dto.AutoCreateEnabled = pref.AutoCreateEnabled
+	}
+	return dto, nil
+}
+
+// UpsertCompanyTypePreference sets auto_create_enabled for a (company, type) pair.
+func (s *service) UpsertCompanyTypePreference(ctx context.Context, req UpsertCompanyTypePreferenceRequest) (*CompanyTypePreferenceDTO, error) {
+	if err := s.repo.UpsertCompanyTypePreference(ctx, CompanyTypePreference{
+		CompanyID:         req.Subject.CompanyID,
+		TypeID:            req.TypeID,
+		AutoCreateEnabled: req.AutoCreateEnabled,
+		UpdatedBy:         req.Subject.MembershipID,
+	}); err != nil {
+		return nil, err
+	}
+	return s.GetCompanyTypePreference(ctx, GetCompanyTypePreferenceRequest{
+		Subject: req.Subject,
+		TypeID:  req.TypeID,
+	})
+}
+
 func (s *service) authorize(ctx context.Context, sub Subject, action string, resource authapp.ResourceRef) error {
+	if s.auth == nil {
+		// Worker mode: no user-facing requests; trust the caller.
+		return nil
+	}
 	decision, err := s.auth.Authorize(ctx, authapp.AuthorizeRequest{Subject: authapp.SubjectRef{UserID: sub.UserID, MembershipID: sub.MembershipID, CompanyID: sub.CompanyID}, Action: action, Resource: resource})
 	if err != nil {
 		return fmt.Errorf("authorize disclosure action: %w", err)

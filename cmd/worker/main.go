@@ -20,10 +20,14 @@ import (
 	platformoutbox "github.com/cobo/cobo_iam_services/internal/platform/outbox"
 	outboxinmem "github.com/cobo/cobo_iam_services/internal/platform/outbox/inmemory"
 	outboxmysql "github.com/cobo/cobo_iam_services/internal/platform/outbox/mysql"
+	disclosureapp "github.com/cobo/cobo_iam_services/internal/disclosure/app"
+	disclosuremysql "github.com/cobo/cobo_iam_services/internal/disclosure/infra/mysql"
+	adhocrecord "github.com/cobo/cobo_iam_services/internal/adhoc/infra/disclosure"
 	reminderapp "github.com/cobo/cobo_iam_services/internal/reminder/app"
 	reminderemail "github.com/cobo/cobo_iam_services/internal/reminder/infra/email"
 	remindermysql "github.com/cobo/cobo_iam_services/internal/reminder/infra/mysql"
 	reminderobserve "github.com/cobo/cobo_iam_services/internal/reminder/infra/observe"
+	"github.com/cobo/cobo_iam_services/internal/platform/idgen"
 )
 
 func main() {
@@ -83,6 +87,16 @@ func main() {
 	runCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	var (
+		disclosureSvc disclosureapp.Service
+		periodicCreator disclosureapp.PeriodicRecordCreator
+	)
+	if sqlDB != nil && cfg.PeriodicSeedingEnabled {
+		disclosureRepo := disclosuremysql.NewRepository(sqlDB)
+		disclosureSvc = disclosureapp.NewService(disclosureRepo, nil /* no auth: worker mode */, idgen.UUIDv7Generator{})
+		periodicCreator = adhocrecord.NewRecordCreatorAdapter(disclosureSvc, nil /* workflow disabled in worker */, false)
+	}
+
 	var reminderScheduler reminderapp.Service
 	if sqlDB != nil {
 		reminderRepo := remindermysql.NewRepository(sqlDB)
@@ -113,7 +127,7 @@ func main() {
 			case <-runCtx.Done():
 				return
 			case <-t.C:
-				tick(runCtx, log, sqlDB, processor, reminderScheduler)
+				tick(runCtx, log, sqlDB, processor, reminderScheduler, disclosureSvc, periodicCreator)
 			}
 		}
 	}()
@@ -124,11 +138,28 @@ func main() {
 	log.Info("worker stopped")
 }
 
-func tick(ctx context.Context, log *slog.Logger, sqlDB *sql.DB, processor *platformoutbox.Processor, reminderScheduler reminderapp.Service) {
+func tick(ctx context.Context, log *slog.Logger, sqlDB *sql.DB, processor *platformoutbox.Processor, reminderScheduler reminderapp.Service, disclosureSvc disclosureapp.Service, periodicCreator disclosureapp.PeriodicRecordCreator) {
 	if sqlDB != nil {
 		if err := sqlDB.PingContext(ctx); err != nil {
 			log.Warn("worker tick ping failed", slog.String("err", err.Error()))
 			return
+		}
+	}
+	now := time.Now().UTC()
+	if disclosureSvc != nil {
+		seeded, err := disclosureSvc.SeedPeriodicCycles(ctx, now)
+		if err != nil {
+			log.Warn("periodic cycle seed failed", slog.String("err", err.Error()))
+		} else if seeded > 0 {
+			log.Info("periodic cycles seeded", slog.Int("seeded", seeded))
+		}
+		if periodicCreator != nil {
+			materialized, err := disclosureSvc.MaterializePeriodicDisclosures(ctx, now, periodicCreator)
+			if err != nil {
+				log.Warn("periodic disclosure materialize failed", slog.String("err", err.Error()))
+			} else if materialized > 0 {
+				log.Info("periodic disclosures materialized", slog.Int("materialized", materialized))
+			}
 		}
 	}
 	if reminderScheduler != nil {

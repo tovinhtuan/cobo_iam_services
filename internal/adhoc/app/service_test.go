@@ -11,12 +11,20 @@ import (
 )
 
 type fakeRepository struct {
-	proposal    *ProposalDTO
-	lastUpdate  StatusUpdate
-	updateCalls int
+	proposal           *ProposalDTO
+	lastUpdate         StatusUpdate
+	insertCalls        int
+	updateCalls        int
+	reserveCalls       int
+	progressCalls      int
+	completeCalls      int
+	progressRecordID   string
+	progressWorkflowID string
+	completeErr        error
 }
 
 func (f *fakeRepository) Insert(ctx context.Context, p ProposalDTO) (*ProposalDTO, error) {
+	f.insertCalls++
 	cp := p
 	return &cp, nil
 }
@@ -35,6 +43,44 @@ func (f *fakeRepository) UpdateStatus(ctx context.Context, upd StatusUpdate) (*P
 	cp.FinalT0Date = upd.FinalT0Date
 	cp.FinalDeadlineDate = upd.FinalDeadlineDate
 	cp.AdjustmentNote = upd.AdjustmentNote
+	if upd.Status == StatusPendingAdminApproval && upd.SetFocalApprovalMetadata {
+		now := time.Now().UTC()
+		cp.FocalApprovedBy = upd.ActorMembershipID
+		cp.FocalApprovedAt = &now
+	}
+	return &cp, nil
+}
+
+func (f *fakeRepository) ReserveAdminApproval(ctx context.Context, in ReserveAdminApprovalInput) (*AdminApprovalReservation, error) {
+	f.reserveCalls++
+	return &AdminApprovalReservation{
+		Proposal:           f.proposal,
+		ProgressRecordID:   f.progressRecordID,
+		ProgressWorkflowID: f.progressWorkflowID,
+	}, nil
+}
+
+func (f *fakeRepository) SaveAdminApprovalProgress(ctx context.Context, companyID, proposalID, idemKey, recordID, workflowID, lastError string) error {
+	f.progressCalls++
+	f.progressRecordID = recordID
+	f.progressWorkflowID = workflowID
+	return nil
+}
+
+func (f *fakeRepository) CompleteAdminApproval(ctx context.Context, upd StatusUpdate, idemKey string) (*ProposalDTO, error) {
+	f.completeCalls++
+	f.lastUpdate = upd
+	if f.completeErr != nil {
+		return nil, f.completeErr
+	}
+	cp := *f.proposal
+	cp.Status = upd.Status
+	cp.RecordID = upd.RecordID
+	cp.WorkflowInstanceID = upd.WorkflowInstanceID
+	cp.FinalT0Date = upd.FinalT0Date
+	cp.FinalDeadlineDate = upd.FinalDeadlineDate
+	cp.AdjustmentNote = upd.AdjustmentNote
+	f.proposal = &cp
 	return &cp, nil
 }
 
@@ -79,14 +125,31 @@ func (f *fakeAuthService) GetEffectiveAccess(_ context.Context, _, _ string) (*a
 	return &authapp.EffectiveAccessSummary{}, nil
 }
 
-func newTestService(repo *fakeRepository, recordCreator *fakeRecordCreator, auth *fakeAuthService) Service {
-	return NewService(repo, recordCreator, fakeIDGen{}, false, auth)
+type fakeTypeCatalog struct {
+	category  string
+	err       error
+	callCount int
+	lastType  string
+}
+
+func (f *fakeTypeCatalog) GetTemplateCategory(_ context.Context, _ string, typeID string) (string, error) {
+	f.callCount++
+	f.lastType = typeID
+	if f.err != nil {
+		return "", f.err
+	}
+	return f.category, nil
+}
+
+func newTestService(repo *fakeRepository, recordCreator *fakeRecordCreator, typeCatalog *fakeTypeCatalog, auth *fakeAuthService) Service {
+	return NewService(repo, recordCreator, typeCatalog, fakeIDGen{}, false, auth)
 }
 
 func TestCreateProposalRequiresPermission(t *testing.T) {
 	repo := &fakeRepository{}
+	typeCatalog := &fakeTypeCatalog{category: "irregular"}
 	auth := &fakeAuthService{decision: authapp.DecisionDeny}
-	svc := newTestService(repo, &fakeRecordCreator{}, auth)
+	svc := newTestService(repo, &fakeRecordCreator{}, typeCatalog, auth)
 
 	_, err := svc.CreateProposal(context.Background(), CreateProposalRequest{
 		Subject: Subject{CompanyID: "company-001", MembershipID: "member-001", UserID: "user-001"},
@@ -102,6 +165,66 @@ func TestCreateProposalRequiresPermission(t *testing.T) {
 	if auth.lastAction != "ad_hoc_alert.propose" {
 		t.Fatalf("expected propose action, got %q", auth.lastAction)
 	}
+	if typeCatalog.callCount != 0 {
+		t.Fatalf("expected catalog lookup to be skipped on denied auth, got %d calls", typeCatalog.callCount)
+	}
+}
+
+func TestCreateProposalRejectsNonIrregularTemplates(t *testing.T) {
+	tests := []struct {
+		name     string
+		category string
+	}{
+		{name: "periodic", category: "periodic"},
+		{name: "custom", category: "custom"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := &fakeRepository{}
+			typeCatalog := &fakeTypeCatalog{category: tc.category}
+			auth := &fakeAuthService{decision: authapp.DecisionAllow}
+			svc := newTestService(repo, &fakeRecordCreator{}, typeCatalog, auth)
+
+			_, err := svc.CreateProposal(context.Background(), CreateProposalRequest{
+				Subject: Subject{CompanyID: "company-001", MembershipID: "member-001", UserID: "user-001"},
+				TypeID:  "dt-001",
+			})
+			if err == nil {
+				t.Fatal("expected non-irregular template to be rejected")
+			}
+			httpErr, ok := err.(*perr.HTTPError)
+			if !ok || httpErr.HTTPStatus != http.StatusBadRequest {
+				t.Fatalf("expected 400 HTTPError, got %#v", err)
+			}
+			if repo.insertCalls != 0 {
+				t.Fatalf("expected no proposal insert for category %q, got %d inserts", tc.category, repo.insertCalls)
+			}
+		})
+	}
+}
+
+func TestCreateProposalAllowsIrregularTemplate(t *testing.T) {
+	repo := &fakeRepository{}
+	typeCatalog := &fakeTypeCatalog{category: "irregular"}
+	auth := &fakeAuthService{decision: authapp.DecisionAllow}
+	svc := newTestService(repo, &fakeRecordCreator{}, typeCatalog, auth)
+
+	resp, err := svc.CreateProposal(context.Background(), CreateProposalRequest{
+		Subject: Subject{CompanyID: "company-001", MembershipID: "member-001", UserID: "user-001"},
+		TypeID:  "dt-irregular",
+	})
+	if err != nil {
+		t.Fatalf("CreateProposal() error = %v", err)
+	}
+	if typeCatalog.lastType != "dt-irregular" {
+		t.Fatalf("expected catalog lookup for dt-irregular, got %q", typeCatalog.lastType)
+	}
+	if repo.insertCalls != 1 {
+		t.Fatalf("expected one proposal insert, got %d", repo.insertCalls)
+	}
+	if resp.TypeID != "dt-irregular" {
+		t.Fatalf("expected proposal TypeID dt-irregular, got %q", resp.TypeID)
+	}
 }
 
 func TestFocalApproveRequiresPermission(t *testing.T) {
@@ -109,7 +232,7 @@ func TestFocalApproveRequiresPermission(t *testing.T) {
 		ProposalID: "prop-001", CompanyID: "company-001", TypeID: "dt-001", Status: StatusPendingFocalApproval,
 	}}
 	auth := &fakeAuthService{decision: authapp.DecisionDeny}
-	svc := newTestService(repo, &fakeRecordCreator{}, auth)
+	svc := newTestService(repo, &fakeRecordCreator{}, &fakeTypeCatalog{category: "irregular"}, auth)
 
 	_, err := svc.FocalApprove(context.Background(), ProposalActionRequest{
 		Subject:    Subject{CompanyID: "company-001", MembershipID: "member-001", UserID: "user-001"},
@@ -130,12 +253,69 @@ func TestFocalApproveRequiresPermission(t *testing.T) {
 	}
 }
 
+func TestSubmitProposalAutoApproveSkipsFocalMetadata(t *testing.T) {
+	repo := &fakeRepository{proposal: &ProposalDTO{
+		ProposalID: "prop-001",
+		CompanyID:  "company-001",
+		TypeID:     "dt-001",
+		Status:     StatusDraft,
+		CreatedBy:  "member-creator",
+	}}
+	auth := &fakeAuthService{decision: authapp.DecisionAllow}
+	svc := NewService(repo, &fakeRecordCreator{}, &fakeTypeCatalog{category: "irregular"}, fakeIDGen{}, true, auth)
+
+	resp, err := svc.SubmitProposal(context.Background(), ProposalActionRequest{
+		Subject:    Subject{CompanyID: "company-001", MembershipID: "member-creator", UserID: "user-001"},
+		ProposalID: "prop-001",
+	})
+	if err != nil {
+		t.Fatalf("SubmitProposal() error = %v", err)
+	}
+	if resp.Status != StatusPendingAdminApproval {
+		t.Fatalf("expected status %q, got %q", StatusPendingAdminApproval, resp.Status)
+	}
+	if repo.lastUpdate.SetFocalApprovalMetadata {
+		t.Fatal("expected auto-approve submit to skip focal approval metadata")
+	}
+	if resp.FocalApprovedBy != "" || resp.FocalApprovedAt != nil {
+		t.Fatalf("expected no focal approval metadata, got by=%q at=%v", resp.FocalApprovedBy, resp.FocalApprovedAt)
+	}
+}
+
+func TestFocalApproveSetsFocalMetadata(t *testing.T) {
+	repo := &fakeRepository{proposal: &ProposalDTO{
+		ProposalID: "prop-001",
+		CompanyID:  "company-001",
+		TypeID:     "dt-001",
+		Status:     StatusPendingFocalApproval,
+	}}
+	auth := &fakeAuthService{decision: authapp.DecisionAllow}
+	svc := newTestService(repo, &fakeRecordCreator{}, &fakeTypeCatalog{category: "irregular"}, auth)
+
+	resp, err := svc.FocalApprove(context.Background(), ProposalActionRequest{
+		Subject:    Subject{CompanyID: "company-001", MembershipID: "member-focal", UserID: "user-focal"},
+		ProposalID: "prop-001",
+	})
+	if err != nil {
+		t.Fatalf("FocalApprove() error = %v", err)
+	}
+	if resp.Status != StatusPendingAdminApproval {
+		t.Fatalf("expected status %q, got %q", StatusPendingAdminApproval, resp.Status)
+	}
+	if !repo.lastUpdate.SetFocalApprovalMetadata {
+		t.Fatal("expected focal approve transition to persist focal metadata")
+	}
+	if resp.FocalApprovedBy != "member-focal" || resp.FocalApprovedAt == nil {
+		t.Fatalf("expected focal metadata to be set, got by=%q at=%v", resp.FocalApprovedBy, resp.FocalApprovedAt)
+	}
+}
+
 func TestRejectUsesStatusBasedPermission(t *testing.T) {
 	repo := &fakeRepository{proposal: &ProposalDTO{
 		ProposalID: "prop-001", CompanyID: "company-001", TypeID: "dt-001", Status: StatusPendingAdminApproval,
 	}}
 	auth := &fakeAuthService{decision: authapp.DecisionDeny}
-	svc := newTestService(repo, &fakeRecordCreator{}, auth)
+	svc := newTestService(repo, &fakeRecordCreator{}, &fakeTypeCatalog{category: "irregular"}, auth)
 
 	_, err := svc.Reject(context.Background(), RejectRequest{
 		Subject:      Subject{CompanyID: "company-001", MembershipID: "member-001", UserID: "user-001"},
@@ -163,11 +343,12 @@ func TestAdminApprovePersistsFinalOverrideFields(t *testing.T) {
 	}}
 	recordCreator := &fakeRecordCreator{recordID: "record-001", workflowID: "wf-001"}
 	auth := &fakeAuthService{decision: authapp.DecisionAllow}
-	svc := newTestService(repo, recordCreator, auth)
+	svc := newTestService(repo, recordCreator, &fakeTypeCatalog{category: "irregular"}, auth)
 
 	resp, err := svc.AdminApprove(context.Background(), AdminApproveRequest{
 		Subject:           Subject{CompanyID: "company-001", MembershipID: "member-admin", UserID: "user-admin"},
 		ProposalID:        "prop-001",
+		IdempotencyKey:    "idem-001",
 		FinalT0Date:       "2026-06-01",
 		FinalDeadlineDate: "2026-06-30",
 		AdjustmentNote:    "  Finalized by admin  ",
@@ -184,8 +365,11 @@ func TestAdminApprovePersistsFinalOverrideFields(t *testing.T) {
 	if recordCreator.t0Date == nil || recordCreator.t0Date.Format("2006-01-02") != "2026-06-01" {
 		t.Fatalf("expected t0Date 2026-06-01, got %#v", recordCreator.t0Date)
 	}
-	if repo.updateCalls != 1 {
-		t.Fatalf("expected repository update once, got %d", repo.updateCalls)
+	if repo.progressCalls != 1 {
+		t.Fatalf("expected progress to be saved once, got %d", repo.progressCalls)
+	}
+	if repo.completeCalls != 1 {
+		t.Fatalf("expected repository complete once, got %d", repo.completeCalls)
 	}
 	if repo.lastUpdate.FinalT0Date == nil || *repo.lastUpdate.FinalT0Date != "2026-06-01" {
 		t.Fatalf("expected FinalT0Date to be persisted, got %#v", repo.lastUpdate.FinalT0Date)
@@ -210,11 +394,12 @@ func TestAdminApproveRejectsInvalidFinalDate(t *testing.T) {
 	}}
 	recordCreator := &fakeRecordCreator{recordID: "record-001", workflowID: "wf-001"}
 	auth := &fakeAuthService{decision: authapp.DecisionAllow}
-	svc := newTestService(repo, recordCreator, auth)
+	svc := newTestService(repo, recordCreator, &fakeTypeCatalog{category: "irregular"}, auth)
 
 	_, err := svc.AdminApprove(context.Background(), AdminApproveRequest{
 		Subject:           Subject{CompanyID: "company-001", MembershipID: "member-admin", UserID: "user-admin"},
 		ProposalID:        "prop-001",
+		IdempotencyKey:    "idem-001",
 		FinalDeadlineDate: "06/30/2026",
 	})
 	if err == nil {
@@ -222,5 +407,50 @@ func TestAdminApproveRejectsInvalidFinalDate(t *testing.T) {
 	}
 	if recordCreator.callCount != 0 {
 		t.Fatalf("expected record creator to not be called, got %d", recordCreator.callCount)
+	}
+}
+
+func TestAdminApproveRetryReusesSavedProgressAfterFinalizeFailure(t *testing.T) {
+	repo := &fakeRepository{proposal: &ProposalDTO{
+		ProposalID: "prop-001",
+		CompanyID:  "company-001",
+		TypeID:     "dt-001",
+		Status:     StatusPendingAdminApproval,
+		ChangeNote: "Urgent approval",
+	}}
+	recordCreator := &fakeRecordCreator{recordID: "record-001", workflowID: "wf-001"}
+	auth := &fakeAuthService{decision: authapp.DecisionAllow}
+	svc := newTestService(repo, recordCreator, &fakeTypeCatalog{category: "irregular"}, auth)
+
+	repo.completeErr = perr.NewHTTPError(http.StatusInternalServerError, perr.CodeInternal, "transient finalize failure", nil)
+	_, err := svc.AdminApprove(context.Background(), AdminApproveRequest{
+		Subject:        Subject{CompanyID: "company-001", MembershipID: "member-admin", UserID: "user-admin"},
+		ProposalID:     "prop-001",
+		IdempotencyKey: "idem-001",
+	})
+	if err == nil {
+		t.Fatal("expected first admin approve to fail")
+	}
+	if recordCreator.callCount != 1 {
+		t.Fatalf("expected record creator to be called once on first attempt, got %d", recordCreator.callCount)
+	}
+	if repo.progressRecordID != "record-001" {
+		t.Fatalf("expected progress record to be saved, got %q", repo.progressRecordID)
+	}
+
+	repo.completeErr = nil
+	resp, err := svc.AdminApprove(context.Background(), AdminApproveRequest{
+		Subject:        Subject{CompanyID: "company-001", MembershipID: "member-admin", UserID: "user-admin"},
+		ProposalID:     "prop-001",
+		IdempotencyKey: "idem-001",
+	})
+	if err != nil {
+		t.Fatalf("expected retry to succeed, got %v", err)
+	}
+	if recordCreator.callCount != 1 {
+		t.Fatalf("expected retry to reuse saved progress without creating a second record, got %d calls", recordCreator.callCount)
+	}
+	if resp.RecordID != "record-001" || resp.WorkflowInstanceID != "wf-001" {
+		t.Fatalf("expected saved progress ids to be reused, got record=%q workflow=%q", resp.RecordID, resp.WorkflowInstanceID)
 	}
 }

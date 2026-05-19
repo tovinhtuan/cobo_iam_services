@@ -634,3 +634,33 @@ func (r *Repository) GetEffectiveWorkflow(_ context.Context, companyID, typeID s
 	dto.Workflow = cloneWorkflowSteps(v.Workflow)
 	return dto, nil
 }
+
+// ── Periodic auto-creation stubs (not used by in-memory / dev server) ────────
+
+func (r *Repository) ListActivePeriodicTypes(_ context.Context) ([]disclosureapp.PeriodicTypeRow, error) {
+	return nil, nil
+}
+
+func (r *Repository) UpsertPeriodicCycle(_ context.Context, _ disclosureapp.PeriodicCycleRow) error {
+	return nil
+}
+
+func (r *Repository) ListPendingCycles(_ context.Context, _ time.Time, _ int) ([]disclosureapp.PeriodicCycleRow, error) {
+	return nil, nil
+}
+
+func (r *Repository) UpdateCycleRecord(_ context.Context, _, _ string) error {
+	return nil
+}
+
+func (r *Repository) ListAllActiveCompanyIDs(_ context.Context) ([]string, error) {
+	return nil, nil
+}
+
+func (r *Repository) GetCompanyTypePreference(_ context.Context, _, _ string) (*disclosureapp.CompanyTypePreference, error) {
+	return nil, nil
+}
+
+func (r *Repository) UpsertCompanyTypePreference(_ context.Context, _ disclosureapp.CompanyTypePreference) error {
+	return nil
+}

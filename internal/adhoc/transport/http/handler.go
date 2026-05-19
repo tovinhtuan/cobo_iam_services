@@ -1,7 +1,10 @@
 package http
 
 import (
+	"crypto/sha256"
 	"encoding/json"
+	"encoding/hex"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -9,15 +12,17 @@ import (
 	adhocapp "github.com/cobo/cobo_iam_services/internal/adhoc/app"
 	iamapp "github.com/cobo/cobo_iam_services/internal/iam/app"
 	"github.com/cobo/cobo_iam_services/internal/platform/httpx"
+	"github.com/cobo/cobo_iam_services/internal/platform/idempotency"
 )
 
 type Handler struct {
 	svc       adhocapp.Service
 	inspector iamapp.TokenInspector
+	idem      idempotency.Store
 }
 
-func NewHandler(svc adhocapp.Service, inspector iamapp.TokenInspector) *Handler {
-	return &Handler{svc: svc, inspector: inspector}
+func NewHandler(svc adhocapp.Service, inspector iamapp.TokenInspector, idem idempotency.Store) *Handler {
+	return &Handler{svc: svc, inspector: inspector, idem: idem}
 }
 
 func (h *Handler) Register(mux *http.ServeMux) {
@@ -143,7 +148,43 @@ func (h *Handler) adminApprove(w http.ResponseWriter, r *http.Request) {
 	}
 	body.Subject = sub
 	body.ProposalID = strings.TrimSpace(r.PathValue("proposal_id"))
+	body.IdempotencyKey = strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+	if body.IdempotencyKey == "" {
+		body.IdempotencyKey = adhocAdminApproveFallbackKey(sub.CompanyID, body.ProposalID, sub.MembershipID, body.FinalT0Date, body.FinalDeadlineDate, body.AdjustmentNote)
+	}
+	var res idempotency.Result
+	if h.idem != nil {
+		hash := adhocAdminApproveRequestHash(sub.CompanyID, body.ProposalID, sub.MembershipID, body.FinalT0Date, body.FinalDeadlineDate, body.AdjustmentNote)
+		res, err = h.idem.TryReserve(r.Context(), idempotency.Params{
+			CompanyID: sub.CompanyID,
+			Scope:     "adhoc.admin_approve",
+			Key:       body.IdempotencyKey,
+			RequestHash: hash,
+		})
+		if err != nil {
+			httpx.WriteError(w, nil, err)
+			return
+		}
+		if res.Replay {
+			httpx.WriteJSONRaw(w, res.ReplayHTTPStatus, res.ReplayBody)
+			return
+		}
+		if res.Conflict {
+			httpx.WriteJSON(w, http.StatusConflict, idempotencyConflictBody("idempotency conflict or request in progress"))
+			return
+		}
+	}
 	resp, err := h.svc.AdminApprove(r.Context(), body)
+	if res.ReservationID != "" && h.idem != nil {
+		if err != nil {
+			_ = h.idem.Abandon(r.Context(), res.ReservationID)
+		} else {
+			respBody, _ := json.Marshal(resp)
+			env := idempotency.Envelope{HTTPStatus: http.StatusOK, Body: respBody}
+			envBytes, _ := json.Marshal(&env)
+			_ = h.idem.Complete(r.Context(), res.ReservationID, envBytes)
+		}
+	}
 	if err != nil {
 		httpx.WriteError(w, nil, err)
 		return
@@ -208,4 +249,29 @@ func bearerToken(h string) string {
 		return strings.TrimSpace(parts[1])
 	}
 	return ""
+}
+
+func adhocAdminApproveFallbackKey(companyID, proposalID, membershipID, finalT0Date, finalDeadlineDate, adjustmentNote string) string {
+	return adhocAdminApproveRequestHash(companyID, proposalID, membershipID, finalT0Date, finalDeadlineDate, adjustmentNote)
+}
+
+func adhocAdminApproveRequestHash(companyID, proposalID, membershipID, finalT0Date, finalDeadlineDate, adjustmentNote string) string {
+	h := sha256.Sum256([]byte(fmt.Sprintf("%s|%s|%s|%s|%s|%s",
+		strings.TrimSpace(companyID),
+		strings.TrimSpace(proposalID),
+		strings.TrimSpace(membershipID),
+		strings.TrimSpace(finalT0Date),
+		strings.TrimSpace(finalDeadlineDate),
+		strings.TrimSpace(adjustmentNote),
+	)))
+	return hex.EncodeToString(h[:])
+}
+
+func idempotencyConflictBody(msg string) map[string]any {
+	return map[string]any{
+		"error": map[string]any{
+			"code":    "IDEMPOTENCY_CONFLICT",
+			"message": msg,
+		},
+	}
 }

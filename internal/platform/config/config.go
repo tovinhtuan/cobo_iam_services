@@ -106,6 +106,8 @@ type Config struct {
 	WorkflowAdhocEnabled bool
 	// WORKFLOW_ADHOC_AUTOAPPROVE_ENABLED: skip focal approval step (single-stage admin-only).
 	WorkflowAdhocAutoApproveEnabled bool
+	// PERIODIC_SEEDING_ENABLED: worker seeds + materializes periodic/custom disclosure records.
+	PeriodicSeedingEnabled bool
 }
 
 // Load reads configuration from the environment with safe defaults for local dev.
@@ -157,6 +159,7 @@ func Load() (Config, error) {
 		WorkflowRemindersEnabled:        boolEnv("WORKFLOW_REMINDERS_ENABLED", false),
 		WorkflowAdhocEnabled:            devAwareBoolEnv("WORKFLOW_ADHOC_ENABLED", false, true),
 		WorkflowAdhocAutoApproveEnabled: boolEnv("WORKFLOW_ADHOC_AUTOAPPROVE_ENABLED", false),
+		PeriodicSeedingEnabled:          boolEnv("PERIODIC_SEEDING_ENABLED", false),
 	}
 	if cfg.WorkerTickInterval < time.Second {
 		return Config{}, fmt.Errorf("WORKER_TICK_INTERVAL too small")
