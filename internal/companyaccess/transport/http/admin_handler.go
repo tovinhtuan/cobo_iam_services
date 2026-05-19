@@ -46,6 +46,8 @@ func (h *AdminHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/v1/admin/notification-rules/{notification_rule_id}", h.deleteNotificationRule)
 	mux.HandleFunc("GET /api/v1/admin/account/settings", h.getAdminAccountSettings)
 	mux.HandleFunc("PATCH /api/v1/admin/account/settings", h.patchAdminAccountSettings)
+	mux.HandleFunc("GET /api/v1/admin/company", h.getOwnCompany)
+	mux.HandleFunc("PATCH /api/v1/admin/company", h.patchOwnCompany)
 }
 
 func (h *AdminHandler) createUser(w http.ResponseWriter, r *http.Request) {
@@ -473,6 +475,54 @@ func (h *AdminHandler) createRule(w http.ResponseWriter, r *http.Request, action
 	}
 	h.auditLog(r, action, "rule", "")
 	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"success": true})
+}
+
+func (h *AdminHandler) getOwnCompany(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	out, err := h.svc.GetOwnCompany(r.Context(), caapp.GetOwnCompanyRequest{Subject: sub})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, out)
+}
+
+func (h *AdminHandler) patchOwnCompany(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	var body struct {
+		CompanyName        *string `json:"company_name"`
+		TaxCode            *string `json:"tax_code"`
+		RegistrationNumber *string `json:"registration_number"`
+		Address            *string `json:"address"`
+		Phone              *string `json:"phone"`
+		ContactEmail       *string `json:"contact_email"`
+		RepresentativeName *string `json:"representative_name"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	out, err := h.svc.PatchOwnCompany(r.Context(), caapp.PatchOwnCompanyRequest{
+		Subject:            sub,
+		CompanyName:        body.CompanyName,
+		TaxCode:            body.TaxCode,
+		RegistrationNumber: body.RegistrationNumber,
+		Address:            body.Address,
+		Phone:              body.Phone,
+		ContactEmail:       body.ContactEmail,
+		RepresentativeName: body.RepresentativeName,
+	})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	h.auditLog(r, "admin.company.patch", "company", sub.CompanyID)
+	httpx.WriteJSON(w, http.StatusOK, out)
 }
 
 func bearerToken(h string) string {

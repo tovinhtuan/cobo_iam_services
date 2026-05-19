@@ -45,6 +45,12 @@ type AdminService interface {
 	DeleteNotificationRule(ctx context.Context, req DeleteNotificationRuleRequest) error
 	GetAdminAccountSettings(ctx context.Context, req GetAdminAccountSettingsRequest) (*AdminAccountSettingsView, error)
 	PatchAdminAccountSettings(ctx context.Context, req PatchAdminAccountSettingsRequest) error
+
+	// GetOwnCompany returns the profile of the enterprise admin's own company (scoped to sub.CompanyID).
+	GetOwnCompany(ctx context.Context, req GetOwnCompanyRequest) (*PlatformCompanyDetail, error)
+	// PatchOwnCompany updates editable profile fields of the enterprise admin's own company.
+	// verification_status and status are intentionally excluded — only platform admins may change those.
+	PatchOwnCompany(ctx context.Context, req PatchOwnCompanyRequest) (*PlatformCompanyDetail, error)
 }
 
 type AdminRepository interface {
@@ -363,4 +369,19 @@ type PatchAdminAccountSettingsRequest struct {
 	FullName *string `json:"full_name"`
 	Email    *string `json:"email"`
 	Phone    *string `json:"phone"`
+}
+
+type GetOwnCompanyRequest struct {
+	Subject AdminSubject
+}
+
+type PatchOwnCompanyRequest struct {
+	Subject            AdminSubject
+	CompanyName        *string `json:"company_name"`
+	TaxCode            *string `json:"tax_code"`
+	RegistrationNumber *string `json:"registration_number"`
+	Address            *string `json:"address"`
+	Phone              *string `json:"phone"`
+	ContactEmail       *string `json:"contact_email"`
+	RepresentativeName *string `json:"representative_name"`
 }

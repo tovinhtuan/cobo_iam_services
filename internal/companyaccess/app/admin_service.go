@@ -791,6 +791,40 @@ func (s *adminService) PatchAdminAccountSettings(ctx context.Context, req PatchA
 	return s.repo.PatchAdminAccountSettings(ctx, req.Subject.UserID, req.FullName, req.Email, req.Phone)
 }
 
+func (s *adminService) GetOwnCompany(ctx context.Context, req GetOwnCompanyRequest) (*PlatformCompanyDetail, error) {
+	if req.Subject.CompanyID == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "company context required", nil)
+	}
+	if err := s.authorize(ctx, req.Subject, "company.view", req.Subject.CompanyID); err != nil {
+		return nil, err
+	}
+	return s.repo.GetCompanyPlatform(ctx, req.Subject.CompanyID)
+}
+
+func (s *adminService) PatchOwnCompany(ctx context.Context, req PatchOwnCompanyRequest) (*PlatformCompanyDetail, error) {
+	if req.Subject.CompanyID == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "company context required", nil)
+	}
+	if err := s.authorize(ctx, req.Subject, "company.edit", req.Subject.CompanyID); err != nil {
+		return nil, err
+	}
+	// VerificationStatus and Status are intentionally absent — only platform admins may change those.
+	if err := s.repo.UpdateCompanyPlatform(ctx, UpdatePlatformCompanyRequest{
+		Subject:            req.Subject,
+		CompanyID:          req.Subject.CompanyID,
+		CompanyName:        req.CompanyName,
+		TaxCode:            req.TaxCode,
+		RegistrationNumber: req.RegistrationNumber,
+		Address:            req.Address,
+		Phone:              req.Phone,
+		ContactEmail:       req.ContactEmail,
+		RepresentativeName: req.RepresentativeName,
+	}); err != nil {
+		return nil, err
+	}
+	return s.repo.GetCompanyPlatform(ctx, req.Subject.CompanyID)
+}
+
 func (s *adminService) authorize(ctx context.Context, sub AdminSubject, action, resourceID string) error {
 	decision, err := s.auth.Authorize(ctx, authapp.AuthorizeRequest{Subject: authapp.SubjectRef{UserID: sub.UserID, MembershipID: sub.MembershipID, CompanyID: sub.CompanyID}, Action: action, Resource: authapp.ResourceRef{Type: "admin_access", ID: resourceID, Attributes: map[string]any{}}})
 	if err != nil {
