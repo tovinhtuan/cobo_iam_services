@@ -190,6 +190,73 @@ Xóa luôn volume MySQL (reset data):
 docker compose -f docker-compose.dev.yml down -v
 ```
 
+## Chạy Docker trên server dev không cần source code
+
+Nếu bạn không muốn đẩy toàn bộ source code lên server dev, hãy dùng stack artifact-mode:
+
+- `docker-compose.artifacts.yml`
+- thư mục `deploy-artifacts/` chứa:
+  - FE build tĩnh `dist/`
+  - binary `api`
+  - binary `worker`
+  - `migrations/*.sql`
+  - `migrations/run_dev_migrations.sh`
+  - `configs/non_trading_days/`
+
+### Build artifact bundle ở máy local/dev
+
+Từ repo `cobo_iam_services`:
+
+```powershell
+./scripts/build_artifact_bundle.ps1
+```
+
+Mặc định script sẽ:
+
+- build Go binaries Linux:
+  - `deploy-artifacts/backend/bin/api`
+  - `deploy-artifacts/backend/bin/worker`
+- copy migrations + holiday config runtime
+- chạy `npm.cmd run build` ở `../cobo_web_design`
+- copy FE bundle vào `deploy-artifacts/web/dist`
+- copy nginx config artifact vào `deploy-artifacts/web/nginx.conf`
+
+`VITE_API_BASE_URL` được ép rỗng khi build FE để browser gọi cùng origin; nginx trong compose sẽ proxy `/api` sang service `api`.
+
+### Copy lên server dev
+
+Chỉ cần copy:
+
+- `docker-compose.artifacts.yml`
+- `deploy-artifacts/`
+- `.env` nếu worker cần SMTP thật
+
+Không cần copy toàn bộ source tree.
+
+### Chạy artifact stack trên server dev
+
+```bash
+docker compose -f docker-compose.artifacts.yml up -d
+```
+
+Endpoints:
+
+- FE: `http://localhost:3000`
+- API: `http://localhost:8080`
+- Mailpit: `http://localhost:8025`
+
+### Cập nhật bản build mới
+
+Mỗi khi có code mới:
+
+1. chạy lại `./scripts/build_artifact_bundle.ps1`
+2. copy lại `deploy-artifacts/` lên server
+3. restart stack:
+
+```bash
+docker compose -f docker-compose.artifacts.yml up -d --force-recreate web api worker migrate
+```
+
 ## Chạy Worker
 
 Worker và API nên dùng **cùng** `MYSQL_DSN` để consumer đọc outbox API đã ghi.

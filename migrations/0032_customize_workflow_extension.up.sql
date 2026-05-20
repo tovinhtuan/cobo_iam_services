@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS workflow_step_milestones (
   id                    BIGINT UNSIGNED    NOT NULL AUTO_INCREMENT,
   milestone_id          VARCHAR(80)        NOT NULL,
   company_id            VARCHAR(64)        NOT NULL,
-  workflow_instance_id  VARCHAR(36)        NOT NULL,
+  workflow_instance_id  VARCHAR(36) COLLATE utf8mb4_unicode_ci NOT NULL,
   step_id               VARCHAR(64)        NOT NULL,
   step_order            INT UNSIGNED       NOT NULL DEFAULT 0,
   milestone_type        ENUM(
@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS workflow_step_milestones (
   KEY idx_wsm_dispatch (company_id, reminder_sent, scheduled_date),
   CONSTRAINT fk_wsm_instance FOREIGN KEY (workflow_instance_id)
     REFERENCES workflow_instances(workflow_instance_id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================================
 -- ad_hoc_proposals: per-type ad-hoc submission workflow
@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS workflow_step_milestones (
 CREATE TABLE IF NOT EXISTS ad_hoc_proposals (
   proposal_id              VARCHAR(64)    NOT NULL,
   company_id               VARCHAR(64)    NOT NULL,
-  type_id                  VARCHAR(64)    NOT NULL,
+  type_id                  VARCHAR(64) COLLATE utf8mb4_0900_ai_ci NOT NULL,
   status                   VARCHAR(32)    NOT NULL DEFAULT 'ad_hoc_draft',
   proposed_workflow_json   JSON           NOT NULL,
   proposed_t0_date         DATE           NULL,
@@ -75,4 +75,4 @@ CREATE TABLE IF NOT EXISTS ad_hoc_proposals (
   KEY idx_adhoc_type (company_id, type_id),
   CONSTRAINT fk_adhoc_type FOREIGN KEY (type_id)
     REFERENCES disclosure_types(type_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

@@ -21,12 +21,20 @@ ON DUPLICATE KEY UPDATE
   effective_from = user_subscription_tiers.effective_from,
   effective_to = user_subscription_tiers.effective_to;
 
-INSERT INTO user_subscription_tiers (user_id, subscription_tier, source, effective_from, effective_to) VALUES
-  ('u_admin_web', 'Premium', 'migration-0011-override', NULL, NULL),
-  ('u_admin_dn', 'Enterprise', 'migration-0011-override', NULL, NULL),
-  ('u_cms_operator', 'Enterprise', 'migration-0011-override', NULL, NULL),
-  ('u_truong_phong', 'Premium', 'migration-0011-override', NULL, NULL),
-  ('u_truong_nhom', 'Premium', 'migration-0011-override', NULL, NULL)
+INSERT INTO user_subscription_tiers (user_id, subscription_tier, source, effective_from, effective_to)
+SELECT seeded.user_id, seeded.subscription_tier, seeded.source, seeded.effective_from, seeded.effective_to
+FROM (
+  SELECT 'u_admin_web' AS user_id, 'Premium' AS subscription_tier, 'migration-0011-override' AS source, NULL AS effective_from, NULL AS effective_to
+  UNION ALL
+  SELECT 'u_admin_dn', 'Enterprise', 'migration-0011-override', NULL, NULL
+  UNION ALL
+  SELECT 'u_cms_operator', 'Enterprise', 'migration-0011-override', NULL, NULL
+  UNION ALL
+  SELECT 'u_truong_phong', 'Premium', 'migration-0011-override', NULL, NULL
+  UNION ALL
+  SELECT 'u_truong_nhom', 'Premium', 'migration-0011-override', NULL, NULL
+) AS seeded
+INNER JOIN users u ON u.user_id = seeded.user_id
 ON DUPLICATE KEY UPDATE
   subscription_tier = VALUES(subscription_tier),
   source = VALUES(source),

@@ -3,6 +3,13 @@ SET NAMES utf8mb4;
 -- Password for all users below: secret
 SET @PWD_HASH = '$2a$10$34UTU89qY8PQrxq78GZaHuwZSvPIfI/JteqD86am.jnNe.1qcReES';
 
+INSERT INTO companies (company_id, company_code, company_name, status) VALUES
+  ('c_001', 'c001', 'Company X', 'active')
+ON DUPLICATE KEY UPDATE
+  company_code = VALUES(company_code),
+  company_name = VALUES(company_name),
+  status = VALUES(status);
+
 INSERT INTO users (user_id, login_id, full_name, account_status) VALUES
   ('u_admin_web', 'admin.web@example.com', 'Admin Web', 'active'),
   ('u_cms_operator', 'cms.operator@example.com', 'CMS Operator', 'active'),
@@ -62,11 +69,30 @@ INSERT INTO membership_roles (membership_id, role_id, status) VALUES
 ON DUPLICATE KEY UPDATE status = VALUES(status);
 
 INSERT INTO permissions (permission_id, permission_code, permission_name, module_name, status) VALUES
+  ('10000000-0001-4000-8000-000000000001', 'disclosure.view', 'View disclosure', 'disclosure', 'active'),
+  ('10000000-0001-4000-8000-000000000002', 'disclosure.approve', 'Approve disclosure', 'disclosure', 'active'),
+  ('10000000-0001-4000-8000-000000000003', 'dashboard.view', 'View dashboard', 'dashboard', 'active'),
+  ('10000000-0001-4000-8000-000000000004', 'disclosure.create', 'Create disclosure', 'disclosure', 'active'),
+  ('10000000-0001-4000-8000-000000000005', 'disclosure.edit', 'Update disclosure', 'disclosure', 'active'),
+  ('10000000-0001-4000-8000-000000000006', 'disclosure.publish', 'Submit disclosure', 'disclosure', 'active'),
+  ('10000000-0001-4000-8000-000000000007', 'deadline.create', 'Create workflow', 'workflow', 'active'),
+  ('10000000-0001-4000-8000-000000000008', 'deadline.assign', 'Review workflow task', 'workflow', 'active'),
+  ('10000000-0001-4000-8000-000000000009', 'deadline.manage', 'Confirm workflow task', 'workflow', 'active'),
+  ('10000000-0001-4000-8000-00000000000a', 'alert.channels.manage', 'Enqueue notification', 'notification', 'active'),
+  ('10000000-0001-4000-8000-00000000000b', 'workflow.step.override', 'Dispatch notification', 'workflow', 'active'),
+  ('10000000-0001-4000-8000-00000000000c', 'rbac.manage', 'Admin manage access', 'admin', 'active'),
   ('10000000-0001-4000-8000-00000000000d', 'platform.cms.view', 'View platform CMS', 'platform', 'active')
 ON DUPLICATE KEY UPDATE
   permission_code = VALUES(permission_code),
   permission_name = VALUES(permission_name),
   module_name = VALUES(module_name),
+  status = VALUES(status);
+
+INSERT INTO departments (department_id, company_id, department_code, department_name, status) VALUES
+  ('d_legal', 'c_001', 'legal', 'Legal', 'active')
+ON DUPLICATE KEY UPDATE
+  department_code = VALUES(department_code),
+  department_name = VALUES(department_name),
   status = VALUES(status);
 
 INSERT INTO role_permissions (role_id, permission_id, status) VALUES
