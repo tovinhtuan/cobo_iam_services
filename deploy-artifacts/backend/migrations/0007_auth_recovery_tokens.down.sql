@@ -1,0 +1,7 @@
+SET NAMES utf8mb4;
+
+DROP TABLE IF EXISTS email_verification_tokens;
+DROP TABLE IF EXISTS password_reset_tokens;
+
+ALTER TABLE users
+  DROP COLUMN email_verified_at;
