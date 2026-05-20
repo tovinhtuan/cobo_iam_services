@@ -1,5 +1,56 @@
 # Reusable Task Updates
 
+## 2026-05-20 - Plan deadline alerts tab adjustment (cross-repo analysis)
+
+- task type: understand / plan
+- objective: recheck current UI/contract boundaries and prepare ticket-ready implementation plan for adjusting the `Cảnh báo thời hạn` tab without affecting other flows
+- discovered:
+  - FE route `/app/deadlines` renders `DeadlineList` and contains two internal tabs: `Cảnh báo thời hạn` and `Lịch sử CBTT`.
+  - current alert cards are mock-driven from `mockDeadlines` and still render `owner` plus CTA buttons `Chi tiết` and `Tạo cảnh báo mới`.
+  - current FE `DeadlineAlert` type does not contain workflow-derived department state; therefore requirement 4.2 cannot be implemented correctly by simple label changes.
+  - BE workflow contract already exposes `workflow instance` data with `snapshot`, `current_step_code`, `t0_date`, `t0_policy`; snapshot rows include `department`, `step_code`, and `processing_days`.
+  - current BE workflow task DTO is additive-safe but not yet shaped specifically for the deadline list card view; deriving active department from workflow instance is the safest boundary.
+- affected repos/files/modules:
+  - `cobo_web_design/src/pages/portal/DeadlineList.tsx`
+  - `cobo_web_design/src/types.ts`
+  - `cobo_web_design/src/mockData.ts`
+  - `cobo_web_design/src/services/*` (new adapter likely needed)
+  - `cobo_iam_services/internal/workflow/app/contracts.go`
+  - `cobo_iam_services/internal/workflow/transport/http/handler.go`
+- contracts/behaviors/constraints/decisions:
+  - phase 1 should stay FE-only and isolate changes to the deadline alert card rendering path.
+  - phase 2 should be additive: FE consumes workflow-backed department data without changing existing workflow action flows or history behavior.
+  - source of truth for `phòng đang thực hiện` should come from workflow state / snapshot mapping, not from the current `owner` field.
+- build/verification result:
+  - planning-only task; no runtime code changes; docker/build verification not required
+- remaining gaps/risks/next steps:
+  - clarify whether multi-department display can be derived from one active step or requires backend support for multiple simultaneous active steps
+  - next step: produce ticket-ready plan with phase split, acceptance criteria, and test scope
+
+## 2026-05-20 - Review ticket-ready plan for deadline alerts tab
+
+- task type: review / understand
+- objective: review the proposed 2-phase implementation plan and identify high-conflict assumptions before implementation
+- findings:
+  - current FE alert list has no stable link from `DeadlineAlert` to `workflow_instance_id`, so phase 2 cannot reliably fetch workflow-backed active departments until the source-of-truth join is defined.
+  - current BE workflow contract exposes only singular `current_step_code`; this does not by itself satisfy the requirement to show multiple departments at the same time if more than one step can be active concurrently.
+  - current requirement wording says active department is based on `T0 + ngày`, while the plan recommends backend `current_step_code` as source of truth; this is a deliberate architectural choice but needs explicit business/technical confirmation to avoid contract mismatch.
+  - the current page also has a top header CTA `Tạo cảnh báo mới` for the `Deadlines` tab, not only per-item CTAs; requirement wording only mentions removing the button in each item, so header CTA scope must be confirmed before FE work starts.
+- affected repos/files/modules:
+  - `cobo_web_design/src/pages/portal/DeadlineList.tsx`
+  - `cobo_web_design/src/types.ts`
+  - `cobo_web_design/src/mockData.ts`
+  - `cobo_iam_services/internal/workflow/app/contracts.go`
+- contracts/behaviors/constraints/decisions:
+  - phase 2 should not start until the alert -> workflow instance join and multi-department semantics are explicit.
+  - phase 1 remains safe because it can isolate UI-only changes and local adapter boundaries.
+- build/verification result:
+  - review-only task; no runtime code changes; docker/build verification not required
+- remaining gaps/risks/next steps:
+  - confirm whether header CTA stays or goes
+  - confirm whether one active step or multiple active steps are valid in the domain
+  - confirm where `workflow_instance_id` for deadline cards comes from in the eventual live data flow
+
 ## 2026-05-20 - Debug local Docker stack ports for Cobo IAM services
 
 - task type: understand
@@ -1923,3 +1974,47 @@
   - `docker compose -f docker-compose.dev.yml build api`: pass
 - remaining gaps/risks/next steps:
   - if deployment environment uses customized role sets beyond seed roles, ops must assign new `template.workflow.override.*` permissions to intended roles before rollout
+
+## 2026-05-20 - Feature: Kiểm soát quy trình (Process Controller) for Ad-Hoc Alert flow
+
+- task type: feature-extension (cross-repo)
+- objective: replace permission-based admin approval gate (`ad_hoc_alert.admin_review`) in ad-hoc alert flow with identity-based process controller assigned by the proposal creator
+- affected repos/files/modules:
+  - **cobo_iam_services**:
+    - `migrations/0042_adhoc_process_controller.up.sql` / `.down.sql` — nullable `process_controller_id` column + index
+    - `migrations/0033_smoke_workflow_dev_seed.up.sql` — seed new permission `ad_hoc_alert.process_control`
+    - `migrations/0034_seed_org_structure_demo.up.sql` — assign permission to `admin_doanh_nghiep` + `truong_phong` roles
+    - `internal/adhoc/app/contracts.go` — `EligibleController`, `MembershipValidator` interface, `ListEligibleControllers`, `ProcessControllerID` on DTO
+    - `internal/adhoc/infra/mysql/membership_validator.go` — NEW: SQL implementation of MembershipValidator
+    - `internal/adhoc/infra/mysql/repository.go` — scan/insert `process_controller_id` in all 4 repo methods
+    - `internal/adhoc/app/service.go` — validate controller at CreateProposal; identity gate at AdminApprove + Reject(admin stage); `ListEligibleControllers` method
+    - `internal/adhoc/transport/http/handler.go` — NEW route `GET /api/v1/company/ad-hoc-proposals/eligible-controllers` (registered BEFORE wildcard `{proposal_id}`)
+    - `internal/httpserver/server.go` — wire `MembershipValidator` into `adhocapp.NewService`
+    - `internal/adhoc/app/service_test.go` — updated 4 existing tests + 6 new process controller tests
+    - `internal/adhoc/transport/http/handler_test.go` — added `ListEligibleControllers` stub to fakeService
+  - **cobo_web_design**:
+    - `src/types.ts` — `EligibleProcessController` interface; `process_controller_id` on `AdHocProposalDto`; `ad_hoc_alert.process_control` permission
+    - `src/services/adHocAlertsApi.ts` — `listEligibleControllers()` method; `process_controller_membership_id` required field
+    - `src/services/workflowOverrideMappers.ts` — map `process_controller_id` in normalizer
+    - `src/pages/portal/AdHocProposalCreatePage.tsx` — required process controller combobox (eligible-controllers fetch + dropdown)
+    - `src/pages/portal/AdHocProposalDetailPage.tsx` — `canAdminApprove` now identity-based; button text "Phê duyệt"; status "Chờ Kiểm soát duyệt"
+    - `src/pages/portal/AdHocProposalListPage.tsx` — status label updated
+    - `src/services/workflowServices.contract.test.ts` — 2 new contract tests
+    - `src/pages/portal/portal.workflow.regression.test.tsx` — fixed 4 tests + 1 new identity gate test
+  - `docs/canh-bao-bat-thuong-feature-doc.md` — updated to reflect Process Controller role
+  - `docs/permission_catalog.md` — added `ad_hoc_alert.process_control`; marked `ad_hoc_alert.admin_review` deprecated
+- contracts/decisions (ADRs):
+  - **ADR-1**: `process_controller_membership_id` required at create time; validated: not empty, not self, active membership, has `ad_hoc_alert.process_control`
+  - **ADR-2**: `AdminApprove` + `Reject(admin stage)` gate changed from permission check to identity check: `cur.ProcessControllerID != req.Subject.MembershipID → 403`
+  - **ADR-3**: `GET /api/v1/company/ad-hoc-proposals/eligible-controllers` added to adhoc module (NOT admin module) to avoid `admin.membership.list` permission requirement
+  - **ADR-4**: `MembershipValidator` interface defined in `adhoc/app/contracts.go`, implemented in `adhoc/infra/mysql` to prevent circular imports with `authorization` module
+  - **ADR-5**: Migration adds `process_controller_id` as NULL for zero-downtime rollout; application layer enforces non-null
+- build/verification result:
+  - `go test ./...`: pass (all packages)
+  - `npm run lint` (tsc --noEmit): pass
+  - `npx vitest run src/pages/portal/portal.workflow.regression.test.tsx`: 19 tests pass
+  - `npx vitest run src/services/workflowServices.contract.test.ts`: all pass
+- remaining gaps/risks/next steps:
+  - **Reassign controller**: no endpoint to change `process_controller_id` after creation — only cancellation + re-creation workaround
+  - **`ad_hoc_alert.admin_review` permission**: deprecated but not removed from DB; old admin users with this permission can no longer approve unless also designated as controller
+  - ops must run migration 0042 before deploying; nullable column ensures safe rollout
