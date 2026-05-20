@@ -19,16 +19,25 @@ func NewRepository(db *sql.DB) *Repository {
 
 func (r *Repository) ListPermissionCodes(ctx context.Context, membershipID, companyID string) ([]string, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT DISTINCT p.permission_code
-		FROM memberships m
-		INNER JOIN membership_roles mr ON mr.membership_id = m.membership_id AND mr.status = 'active'
-		INNER JOIN roles r ON r.role_id = mr.role_id AND r.status = 'active'
-		INNER JOIN role_permissions rp ON rp.role_id = r.role_id AND rp.status = 'active'
-		INNER JOIN permissions p ON p.permission_id = rp.permission_id AND p.status = 'active'
-		WHERE m.membership_id = ? AND m.company_id = ?
-		  AND (r.company_id IS NULL OR r.company_id = m.company_id)
-		ORDER BY p.permission_code
-	`, membershipID, companyID)
+		SELECT DISTINCT permission_code FROM (
+			SELECT p.permission_code
+			FROM memberships m
+			INNER JOIN membership_roles mr ON mr.membership_id = m.membership_id AND mr.status = 'active'
+			INNER JOIN roles r ON r.role_id = mr.role_id AND r.status = 'active'
+			INNER JOIN role_permissions rp ON rp.role_id = r.role_id AND rp.status = 'active'
+			INNER JOIN permissions p ON p.permission_id = rp.permission_id AND p.status = 'active'
+			WHERE m.membership_id = ? AND m.company_id = ?
+			  AND (r.company_id IS NULL OR r.company_id = m.company_id)
+
+			UNION ALL
+
+			SELECT mdp.permission_code
+			FROM membership_direct_permissions mdp
+			WHERE mdp.membership_id = ? AND mdp.company_id = ?
+			  AND mdp.revoked_at IS NULL
+		) AS combined
+		ORDER BY permission_code
+	`, membershipID, companyID, membershipID, companyID)
 	if err != nil {
 		return nil, fmt.Errorf("list permission codes: %w", err)
 	}
@@ -235,6 +244,8 @@ func legacyPolicy(action string) *authapp.ActionPolicy {
 		required = "ad_hoc_alert.read"
 	case "ad_hoc_alert.propose":
 		required = "ad_hoc_alert.propose"
+	case "disclosure_type.manage":
+		required = "disclosure_type.manage"
 	case "ad_hoc_alert.focal_review":
 		required = "ad_hoc_alert.focal_review"
 	case "ad_hoc_alert.admin_review":

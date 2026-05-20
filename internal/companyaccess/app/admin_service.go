@@ -293,6 +293,11 @@ func (s *adminService) inviteUserWithCompany(ctx context.Context, req InviteUser
 	if req.MembershipStatus == "" {
 		req.MembershipStatus = "active"
 	}
+	for _, p := range req.Permissions {
+		if !isGrantable(p) {
+			return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "permission_code is not grantable: "+p, nil)
+		}
+	}
 
 	existingUserID, existingStatus, found, err := s.repo.LookupUserByLoginID(ctx, req.Email)
 	if err != nil {
@@ -327,6 +332,11 @@ func (s *adminService) inviteUserWithCompany(ctx context.Context, req InviteUser
 		if err := s.repo.AddRole(ctx, m.MembershipID, roleID); err != nil {
 			_ = s.repo.DeleteMembership(ctx, m.MembershipID)
 			return nil, err
+		}
+		for _, p := range req.Permissions {
+			if err := s.repo.InsertDirectPermission(ctx, m.MembershipID, req.CompanyID, p, req.CreatedByUserID); err != nil {
+				return nil, err
+			}
 		}
 		companyDisplay := ""
 		if cn, err := s.repo.GetCompanyName(ctx, req.CompanyID); err == nil {
@@ -396,6 +406,11 @@ func (s *adminService) inviteUserWithCompany(ctx context.Context, req InviteUser
 	out, err := s.repo.InviteUserWithMembership(ctx, u, opts, invitationID, tokHash, createdBy, expiresAt)
 	if err != nil {
 		return nil, err
+	}
+	for _, p := range req.Permissions {
+		if err := s.repo.InsertDirectPermission(ctx, opts.MembershipID, req.CompanyID, p, createdBy); err != nil {
+			return nil, err
+		}
 	}
 	if s.invMailer != nil {
 		if err := s.invMailer.SendInvitationEmail(ctx, InvitationMailPayload{
@@ -823,6 +838,39 @@ func (s *adminService) PatchOwnCompany(ctx context.Context, req PatchOwnCompanyR
 		return nil, err
 	}
 	return s.repo.GetCompanyPlatform(ctx, req.Subject.CompanyID)
+}
+
+func (s *adminService) AddDirectPermission(ctx context.Context, req AddDirectPermissionRequest) error {
+	if err := s.authorize(ctx, req.Subject, "rbac.manage", ""); err != nil {
+		return err
+	}
+	if !isGrantable(req.PermissionCode) {
+		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "permission_code is not grantable", nil)
+	}
+	return s.repo.InsertDirectPermission(ctx, req.MembershipID, req.Subject.CompanyID, req.PermissionCode, req.Subject.UserID)
+}
+
+func (s *adminService) RemoveDirectPermission(ctx context.Context, req RemoveDirectPermissionRequest) error {
+	if err := s.authorize(ctx, req.Subject, "rbac.manage", ""); err != nil {
+		return err
+	}
+	return s.repo.RevokeDirectPermission(ctx, req.MembershipID, req.PermissionCode, req.Subject.UserID)
+}
+
+func (s *adminService) ListDirectPermissions(ctx context.Context, req ListDirectPermissionsRequest) ([]DirectPermissionView, error) {
+	if err := s.authorize(ctx, req.Subject, "rbac.manage", ""); err != nil {
+		return nil, err
+	}
+	return s.repo.ListActiveDirectPermissions(ctx, req.MembershipID)
+}
+
+func isGrantable(permCode string) bool {
+	for _, p := range GrantablePermissions {
+		if p == permCode {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *adminService) authorize(ctx context.Context, sub AdminSubject, action, resourceID string) error {

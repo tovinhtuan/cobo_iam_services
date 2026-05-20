@@ -2075,3 +2075,171 @@
     - `GET /api/v1/disclosure-types/dt-disclosure-transaction/effective-workflow` => `200`
 - remaining gaps/risks/next steps:
   - if the browser still holds an older session/app state, user should refresh and retry after the recreated API is running
+
+## 2026-05-20 - Review/doc: current-state audit for ad-hoc alert CRUD/proposal flow
+
+- task type: review-and-documentation (cross-repo)
+- objective/question:
+  - audit the latest real logic for ad-hoc alert CRUD / related workflow
+  - document what is actually implemented, what is missing, current issues/conflicts, and business-readable contract notes for BA/marketing
+- implemented/discovered:
+  - created business + engineering summary doc:
+    - `docs/ai-cache/adhoc-alert-crud-current-state-business-audit-summary.md`
+  - clarified that current scope is not “full alert CRUD”; it is primarily a proposal workflow:
+    - create/list/detail proposal
+    - submit / focal approve / final approve / reject / cancel
+    - auto-create disclosure record + workflow instance after final approval
+  - identified major contract debt / risks:
+    - no real draft update API/UI after creation
+    - FE title/description are inferred from backend `change_note`
+    - FE `proposed_deadline_days` conflicts semantically with BE/DB `proposed_deadline_date`
+    - `admin-approve` has partial-failure/data-consistency risk around downstream record/workflow creation
+    - disclosure record creation adapter appears to reuse membership id as user id
+    - disclosure type detail CTA for ad-hoc create is not explicitly gated by `ad_hoc_alert.propose`
+    - docs drift: `docs/api-contracts-json.md` still describes older effective-workflow permission boundary
+- affected repos/files/modules:
+  - `cobo_iam_services/internal/adhoc/*`
+  - `cobo_iam_services/internal/disclosure/*`
+  - `cobo_iam_services/internal/httpserver/server.go`
+  - `cobo_iam_services/docs/api-contracts-json.md`
+  - `cobo_web_design/src/pages/portal/AdHocProposal*.tsx`
+  - `cobo_web_design/src/pages/portal/DisclosureTypeDetail.tsx`
+  - `cobo_web_design/src/services/adHocAlertsApi.ts`
+  - `cobo_web_design/src/services/workflowOverrideMappers.ts`
+  - `cobo_web_design/docs/canh-bao-bat-thuong-feature-doc.md`
+  - `cobo_web_design/docs/permission_catalog.md`
+- contracts/behaviors/constraints/decisions:
+  - product wording should prefer “đề xuất cảnh báo bất thường” / “proposal workflow” over “full CRUD cảnh báo”
+  - final approval is identity-based via `process_controller_id`, not generic admin role-based
+  - existing feature can be demoed, but documentation should not promise editable drafts or fully clean domain contracts
+- build/verification result:
+  - `BLOCKED:` review/documentation-only task; no runtime code changed in this cycle
+- remaining gaps/risks/next steps:
+  - decide whether to split follow-up into:
+    - contract cleanup
+    - correctness fixes
+    - UX/permission alignment
+    - business doc refresh in sibling frontend repo
+
+## 2026-05-20 - Documentation split: dev action plan + BA/marketing one-pager for ad-hoc alert flow
+
+- task type: documentation-derivative
+- objective/question:
+  - turn the current-state ad-hoc alert audit into:
+    - a dev-facing priority action plan
+    - a business-facing simplified one-pager
+- implemented/discovered:
+  - created:
+    - `docs/ai-cache/adhoc-alert-crud-priority-action-plan.md`
+    - `docs/ai-cache/adhoc-alert-business-one-pager.md`
+  - dev plan is grouped by `P0/P1/P2` and focuses on execution order, ownership split, and acceptance
+  - business one-pager strips most engineering detail and frames the feature as a “proposal + approval workflow”, not full final-alert CRUD
+- affected repos/files/modules:
+  - `cobo_iam_services/docs/ai-cache/adhoc-alert-crud-priority-action-plan.md`
+  - `cobo_iam_services/docs/ai-cache/adhoc-alert-business-one-pager.md`
+- contracts/behaviors/constraints/decisions:
+  - business narrative should use “đề xuất cảnh báo bất thường” and avoid overclaiming editable drafts / full CRUD
+  - engineering follow-up should prioritize contract correctness and admin-approve consistency before broader UX polish
+- build/verification result:
+  - `BLOCKED:` documentation-only task; no runtime code changed in this cycle
+- remaining gaps/risks/next steps:
+  - optionally sync the business one-pager back into `cobo_web_design/docs/` if that repo is the canonical BA-facing doc location
+
+## 2026-05-20 - Backlog refinement: Jira-ready checklist + P0 bug-vs-techdebt classification
+
+- task type: backlog-refinement
+- objective/question:
+  - convert the ad-hoc alert `P0/P1/P2` action plan into Jira-ready ticket checklists
+  - classify each `P0` item as confirmed bug, tech debt, or investigation/risk
+- implemented/discovered:
+  - created:
+    - `docs/ai-cache/adhoc-alert-jira-ticket-ready-checklist.md`
+    - `docs/ai-cache/adhoc-alert-p0-bug-vs-techdebt-review.md`
+  - P0 classification result:
+    - `P0.1` deadline contract mismatch => confirmed bug + contract debt
+    - `P0.2` title/description via `change_note` => tech debt
+    - `P0.3` admin-approve consistency => high-risk investigation / hardening, not yet proven as a live bug
+    - `P0.4` downstream actor attribution => likely bug, needs persistence verification
+    - `P0.5` backend validation parity => confirmed robustness bug
+- affected repos/files/modules:
+  - `cobo_iam_services/docs/ai-cache/adhoc-alert-jira-ticket-ready-checklist.md`
+  - `cobo_iam_services/docs/ai-cache/adhoc-alert-p0-bug-vs-techdebt-review.md`
+- contracts/behaviors/constraints/decisions:
+  - Jira wording should distinguish:
+    - bug
+    - tech debt
+    - investigation/hardening
+  - not every P0 item should be filed as a confirmed runtime bug
+- build/verification result:
+  - `BLOCKED:` documentation-only task; no runtime code changed in this cycle
+- remaining gaps/risks/next steps:
+  - if needed, next step is to turn each P0 item into per-team tickets with owners / estimates / dependencies
+
+## 2026-05-20 - Backlog planning: ticket estimates/dependency graph + P0.1 cross-repo implementation plan
+
+- task type: backlog-planning
+- objective/question:
+  - assign `S/M/L` estimates and a dependency graph for ad-hoc alert tickets
+  - break out `P0.1` into a cross-repo implementation plan ready to start once semantics are approved
+- implemented/discovered:
+  - created:
+    - `docs/ai-cache/adhoc-alert-ticket-estimates-and-dependency-graph.md`
+    - `docs/ai-cache/p0-1-deadline-contract-cross-repo-implementation-plan.md`
+  - recommended ticket size summary:
+    - `P0-1` M
+    - `P0-2` L
+    - `P0-3` L
+    - `P0-4` M
+    - `P0-5` S
+    - `P1-1` L
+    - `P1-2` S
+    - `P1-3` M
+    - `P1-4` M
+    - `P1-5` S
+    - `P2-*` S
+  - identified dependency highlights:
+    - `P0-5` depends on `P0-1`
+    - `P1-1` depends on `P0-1` and partially `P0-2`
+    - `P0-3` benefits from `P0-4`
+    - docs refresh should happen after `P0/P1` decisions settle
+  - `P0.1` implementation recommendation:
+    - normalize whole system toward `proposed_deadline_days`
+    - use additive migration path instead of overloading existing `DATE` semantics
+- affected repos/files/modules:
+  - `cobo_iam_services/docs/ai-cache/adhoc-alert-ticket-estimates-and-dependency-graph.md`
+  - `cobo_iam_services/docs/ai-cache/p0-1-deadline-contract-cross-repo-implementation-plan.md`
+- contracts/behaviors/constraints/decisions:
+  - for `P0.1`, preferred direction is canonical `proposed_deadline_days` across FE/API/DB if product confirms day-count semantics
+  - recommended migration strategy is additive:
+    - add canonical field
+    - dual-read/controlled compatibility
+    - remove deprecated field later
+- build/verification result:
+  - `BLOCKED:` documentation-only task; no runtime code changed in this cycle
+- remaining gaps/risks/next steps:
+  - the only blocking decision before implementing `P0.1` is product confirmation on `days` vs `absolute date`
+
+## 2026-05-20 - Review pack: mandatory pre-implementation questions for ad-hoc alert flow
+
+- task type: review-facilitation
+- objective/question:
+  - compress the ad-hoc alert analysis into a short set of mandatory decision questions for a pre-implementation review meeting
+- implemented/discovered:
+  - created `docs/ai-cache/adhoc-alert-pre-implementation-review-pack.md`
+  - packed the flow into 7 decision gates:
+    - deadline semantics
+    - draft semantics
+    - title/description contract
+    - downstream actor attribution
+    - final approval hardening target
+    - final approval identity rule
+    - business/product wording
+- affected repos/files/modules:
+  - `cobo_iam_services/docs/ai-cache/adhoc-alert-pre-implementation-review-pack.md`
+- contracts/behaviors/constraints/decisions:
+  - the pack is intended to be used before implementation approval, not after coding starts
+  - missing any of these decisions materially increases rework risk
+- build/verification result:
+  - `BLOCKED:` documentation-only task; no runtime code changed in this cycle
+- remaining gaps/risks/next steps:
+  - next practical step is to run the review meeting and fill the decision table at the end of the review-pack doc

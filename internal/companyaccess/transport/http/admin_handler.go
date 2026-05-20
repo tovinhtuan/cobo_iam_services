@@ -48,6 +48,12 @@ func (h *AdminHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("PATCH /api/v1/admin/account/settings", h.patchAdminAccountSettings)
 	mux.HandleFunc("GET /api/v1/admin/company", h.getOwnCompany)
 	mux.HandleFunc("PATCH /api/v1/admin/company", h.patchOwnCompany)
+	mux.HandleFunc("POST /api/v1/admin/users/invite", h.inviteUser)
+	mux.HandleFunc("GET /api/v1/admin/invite-roles", h.listInviteRoles)
+	mux.HandleFunc("POST /api/v1/admin/users/{user_id}/resend-invitation", h.resendInvitation)
+	mux.HandleFunc("POST /api/v1/admin/memberships/{membership_id}/permissions", h.addMemberPermission)
+	mux.HandleFunc("DELETE /api/v1/admin/memberships/{membership_id}/permissions/{permission_code}", h.removeMemberPermission)
+	mux.HandleFunc("GET /api/v1/admin/memberships/{membership_id}/permissions", h.listMemberPermissions)
 }
 
 func (h *AdminHandler) createUser(w http.ResponseWriter, r *http.Request) {
@@ -523,6 +529,132 @@ func (h *AdminHandler) patchOwnCompany(w http.ResponseWriter, r *http.Request) {
 	}
 	h.auditLog(r, "admin.company.patch", "company", sub.CompanyID)
 	httpx.WriteJSON(w, http.StatusOK, out)
+}
+
+func (h *AdminHandler) inviteUser(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	var p struct {
+		Email       string   `json:"email"`
+		FullName    string   `json:"full_name"`
+		RoleID      string   `json:"role_id"`
+		RoleCode    string   `json:"role_code"`
+		Permissions []string `json:"permissions"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&p)
+	resp, err := h.svc.InviteUser(r.Context(), caapp.InviteUserRequest{
+		Subject:         sub,
+		Email:           p.Email,
+		FullName:        p.FullName,
+		CompanyID:       sub.CompanyID,
+		CreatedByUserID: sub.UserID,
+		RoleID:          p.RoleID,
+		RoleCode:        p.RoleCode,
+		Permissions:     p.Permissions,
+	})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	h.auditLog(r, "admin.user.invite", "user", resp.UserID)
+	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+func (h *AdminHandler) listInviteRoles(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	items, err := h.svc.ListInviteRoles(r.Context(), caapp.ListInviteRolesRequest{Subject: sub, CompanyID: sub.CompanyID})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (h *AdminHandler) resendInvitation(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	userID := r.PathValue("user_id")
+	if err := h.svc.ResendUserInvitation(r.Context(), caapp.ResendUserInvitationRequest{
+		Subject:   sub,
+		UserID:    userID,
+		CompanyID: sub.CompanyID,
+	}); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	h.auditLog(r, "admin.user.resend_invitation", "user", userID)
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"success": true})
+}
+
+func (h *AdminHandler) addMemberPermission(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	mid := r.PathValue("membership_id")
+	var p struct {
+		PermissionCode string `json:"permission_code"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&p)
+	if err := h.svc.AddDirectPermission(r.Context(), caapp.AddDirectPermissionRequest{
+		Subject:        sub,
+		MembershipID:   mid,
+		PermissionCode: p.PermissionCode,
+	}); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	h.auditLog(r, "admin.membership.permission.add", "membership", mid)
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"success": true})
+}
+
+func (h *AdminHandler) removeMemberPermission(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	mid := r.PathValue("membership_id")
+	permCode := r.PathValue("permission_code")
+	if err := h.svc.RemoveDirectPermission(r.Context(), caapp.RemoveDirectPermissionRequest{
+		Subject:        sub,
+		MembershipID:   mid,
+		PermissionCode: permCode,
+	}); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	h.auditLog(r, "admin.membership.permission.remove", "membership", mid)
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"success": true})
+}
+
+func (h *AdminHandler) listMemberPermissions(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	mid := r.PathValue("membership_id")
+	items, err := h.svc.ListDirectPermissions(r.Context(), caapp.ListDirectPermissionsRequest{
+		Subject:      sub,
+		MembershipID: mid,
+	})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
 func bearerToken(h string) string {

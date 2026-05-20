@@ -244,4 +244,21 @@ ON DUPLICATE KEY UPDATE
   position_code = VALUES(position_code),
   status = VALUES(status);
 
+-- role_default_grant_permissions: grantable permissions pre-checked at invite time
+-- admin_doanh_nghiep (r...012) and truong_phong_ban (r...013) get all grantable permissions
+INSERT INTO role_default_grant_permissions (role_id, permission_code) VALUES
+  ('r0000001-0001-4000-8000-000000000012', 'template.workflow.override.write'),
+  ('r0000001-0001-4000-8000-000000000012', 'template.workflow.override.read'),
+  ('r0000001-0001-4000-8000-000000000012', 'template.workflow.override.approve'),
+  ('r0000001-0001-4000-8000-000000000012', 'template.workflow.override.reset'),
+  ('r0000001-0001-4000-8000-000000000012', 'ad_hoc_alert.propose'),
+  ('r0000001-0001-4000-8000-000000000012', 'disclosure_type.manage'),
+  ('r0000001-0001-4000-8000-000000000013', 'template.workflow.override.write'),
+  ('r0000001-0001-4000-8000-000000000013', 'template.workflow.override.read'),
+  ('r0000001-0001-4000-8000-000000000013', 'template.workflow.override.approve'),
+  ('r0000001-0001-4000-8000-000000000013', 'template.workflow.override.reset'),
+  ('r0000001-0001-4000-8000-000000000013', 'ad_hoc_alert.propose'),
+  ('r0000001-0001-4000-8000-000000000013', 'disclosure_type.manage')
+ON DUPLICATE KEY UPDATE permission_code = VALUES(permission_code);
+
 SET FOREIGN_KEY_CHECKS = 1;

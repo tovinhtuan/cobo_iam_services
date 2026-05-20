@@ -107,6 +107,20 @@ func InsertCompanyWithDefaultRolesTx(ctx context.Context, tx *sql.Tx, companyID,
 			return "", fmt.Errorf("copy seed role_permissions: %w", err)
 		}
 	}
+	for _, permCode := range []string{
+		"template.workflow.override.write",
+		"template.workflow.override.read",
+		"template.workflow.override.approve",
+		"template.workflow.override.reset",
+		"ad_hoc_alert.propose",
+		"disclosure_type.manage",
+	} {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT IGNORE INTO role_default_grant_permissions (role_id, permission_code) VALUES (?, ?)
+		`, roleAdminID, permCode); err != nil {
+			return "", fmt.Errorf("seed role_default_grant_permissions: %w", err)
+		}
+	}
 	return companyCode, nil
 }
 

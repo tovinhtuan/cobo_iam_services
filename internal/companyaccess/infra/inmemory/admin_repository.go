@@ -33,6 +33,7 @@ type AdminRepository struct {
 	notificationRules     []map[string]any
 
 	invitationsByUser map[string][]string // stacked token hashes for in-mem sanity (minimal)
+	directPermissions map[string]caapp.DirectPermissionView // key: membershipID:permCode
 }
 
 func NewAdminRepository() *AdminRepository {
@@ -51,6 +52,7 @@ func NewAdminRepository() *AdminRepository {
 		workflowAssigneeRules:   []map[string]any{},
 		notificationRules:       []map[string]any{},
 		invitationsByUser:       map[string][]string{},
+		directPermissions:       map[string]caapp.DirectPermissionView{},
 	}
 }
 
@@ -183,9 +185,10 @@ func (r *AdminRepository) ListInviteRolesForCompany(_ context.Context, companyID
 	out := make([]caapp.InviteRoleOption, 0, len(codes))
 	for _, code := range codes {
 		out = append(out, caapp.InviteRoleOption{
-			RoleID:   "r_invite_" + code,
-			RoleCode: code,
-			RoleName: code,
+			RoleID:             "r_invite_" + code,
+			RoleCode:           code,
+			RoleName:           code,
+			DefaultPermissions: []string{},
 		})
 	}
 	return out, nil
@@ -608,4 +611,42 @@ func (r *AdminRepository) UpdateCompanyPlatform(_ context.Context, _ caapp.Updat
 
 func (r *AdminRepository) SetCompanyStatusPlatform(_ context.Context, _, _ string) error {
 	return nil
+}
+
+func (r *AdminRepository) InsertDirectPermission(_ context.Context, membershipID, _, permCode, grantedBy string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	key := membershipID + ":" + permCode
+	r.directPermissions[key] = caapp.DirectPermissionView{
+		PermissionCode: permCode,
+		GrantedBy:      grantedBy,
+		GrantedAt:      "now",
+	}
+	return nil
+}
+
+func (r *AdminRepository) RevokeDirectPermission(_ context.Context, membershipID, permCode, _ string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	key := membershipID + ":" + permCode
+	if _, ok := r.directPermissions[key]; !ok {
+		return perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "active direct permission grant not found", nil)
+	}
+	delete(r.directPermissions, key)
+	return nil
+}
+
+func (r *AdminRepository) ListActiveDirectPermissions(_ context.Context, membershipID string) ([]caapp.DirectPermissionView, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var out []caapp.DirectPermissionView
+	for key, v := range r.directPermissions {
+		if strings.HasPrefix(key, membershipID+":") {
+			out = append(out, v)
+		}
+	}
+	if out == nil {
+		out = []caapp.DirectPermissionView{}
+	}
+	return out, nil
 }

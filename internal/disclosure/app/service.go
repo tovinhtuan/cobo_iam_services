@@ -360,7 +360,9 @@ func (s *service) GetTemplateReferenceData(ctx context.Context, req GetTemplateR
 }
 
 func (s *service) UpsertTypeVersion(ctx context.Context, req UpsertTypeVersionRequest) (*UpsertTypeVersionResponse, error) {
-	if !s.hasPermission(ctx, req.Subject, "rbac.manage") {
+	isPlat := s.hasPermission(ctx, req.Subject, "platform.cms.view")
+	canManageType := s.hasPermission(ctx, req.Subject, "disclosure_type.manage")
+	if !isPlat && !canManageType {
 		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "access denied", nil)
 	}
 	req.TypeID = strings.TrimSpace(req.TypeID)
@@ -413,7 +415,7 @@ func isCompanyCreatableTemplateCategory(category string) bool {
 }
 
 func (s *service) ListTypeVersions(ctx context.Context, req ListTypeVersionsRequest) (*ListTypeVersionsResponse, error) {
-	if !s.hasPermission(ctx, req.Subject, "rbac.manage") {
+	if !s.hasPermission(ctx, req.Subject, "platform.cms.view") && !s.hasPermission(ctx, req.Subject, "disclosure_type.manage") {
 		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "access denied", nil)
 	}
 	req.TypeID = strings.TrimSpace(req.TypeID)
@@ -428,7 +430,7 @@ func (s *service) ListTypeVersions(ctx context.Context, req ListTypeVersionsRequ
 }
 
 func (s *service) ActivateTypeVersion(ctx context.Context, req ActivateTypeVersionRequest) (*ActivateTypeVersionResponse, error) {
-	if !s.hasPermission(ctx, req.Subject, "rbac.manage") {
+	if !s.hasPermission(ctx, req.Subject, "platform.cms.view") && !s.hasPermission(ctx, req.Subject, "disclosure_type.manage") {
 		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "access denied", nil)
 	}
 	req.TypeID = strings.TrimSpace(req.TypeID)

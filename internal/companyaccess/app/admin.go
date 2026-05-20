@@ -51,6 +51,13 @@ type AdminService interface {
 	// PatchOwnCompany updates editable profile fields of the enterprise admin's own company.
 	// verification_status and status are intentionally excluded — only platform admins may change those.
 	PatchOwnCompany(ctx context.Context, req PatchOwnCompanyRequest) (*PlatformCompanyDetail, error)
+
+	// AddDirectPermission grants a grantable permission directly to a membership (not via role).
+	AddDirectPermission(ctx context.Context, req AddDirectPermissionRequest) error
+	// RemoveDirectPermission revokes a previously granted direct permission.
+	RemoveDirectPermission(ctx context.Context, req RemoveDirectPermissionRequest) error
+	// ListDirectPermissions returns active direct permission grants for a membership.
+	ListDirectPermissions(ctx context.Context, req ListDirectPermissionsRequest) ([]DirectPermissionView, error)
 }
 
 type AdminRepository interface {
@@ -83,8 +90,16 @@ type AdminRepository interface {
 	// LookupRoleIDForInvite resolves an assignable role for a new membership: explicit role_id,
 	// or role_code / defaultRoleCode against companies.roles (company-specific overrides global).
 	LookupRoleIDForInvite(ctx context.Context, companyID, preferRoleID, preferRoleCode, defaultRoleCode string) (string, error)
-	// ListInviteRolesForCompany lists active roles assignable to memberships in companyID (global roles + that company).
+	// ListInviteRolesForCompany lists active roles assignable to memberships in companyID (global roles + that company),
+	// with DefaultPermissions pre-populated from role_default_grant_permissions.
 	ListInviteRolesForCompany(ctx context.Context, companyID string) ([]InviteRoleOption, error)
+
+	// InsertDirectPermission inserts a membership_direct_permissions row (idempotent via INSERT IGNORE).
+	InsertDirectPermission(ctx context.Context, membershipID, companyID, permCode, grantedBy string) error
+	// RevokeDirectPermission sets revoked_at/revoked_by for an active direct grant.
+	RevokeDirectPermission(ctx context.Context, membershipID, permCode, revokedBy string) error
+	// ListActiveDirectPermissions returns all non-revoked direct grants for a membership.
+	ListActiveDirectPermissions(ctx context.Context, membershipID string) ([]DirectPermissionView, error)
 
 	AddRole(ctx context.Context, membershipID, roleID string) error
 	RemoveRole(ctx context.Context, membershipID, roleID string) error
@@ -161,6 +176,8 @@ type InviteUserRequest struct {
 	// Optional role for the new membership. If both empty, InviteDefaultRoleCode (e.g. user_thuong) is used.
 	RoleID   string `json:"role_id,omitempty"`
 	RoleCode string `json:"role_code,omitempty"`
+	// Permissions is a subset of GrantablePermissions to apply as direct grants after membership creation.
+	Permissions []string `json:"permissions,omitempty"`
 }
 
 type InviteUserResponse struct {
@@ -174,11 +191,24 @@ type InviteUserResponse struct {
 	InvitationExpiresAt string `json:"invitation_expires_at,omitempty"`
 }
 
+// GrantablePermissions is the whitelist of permissions that enterprise admin can grant/revoke directly
+// on individual memberships. Validated by AddDirectPermission and InviteUser.
+var GrantablePermissions = []string{
+	"template.workflow.override.write",
+	"template.workflow.override.read",
+	"template.workflow.override.approve",
+	"template.workflow.override.reset",
+	"ad_hoc_alert.propose",
+	"disclosure_type.manage",
+}
+
 // InviteRoleOption is one row from roles for invite UI (matches LookupRoleIDForInvite eligibility).
 type InviteRoleOption struct {
 	RoleID   string `json:"role_id"`
 	RoleCode string `json:"role_code"`
 	RoleName string `json:"role_name"`
+	// DefaultPermissions lists grantable permission codes pre-checked for this role at invite time.
+	DefaultPermissions []string `json:"default_permissions"`
 }
 
 // ListInviteRolesRequest scopes invite-role listing to a target company (same rules as InviteUser).
@@ -384,4 +414,28 @@ type PatchOwnCompanyRequest struct {
 	Phone              *string `json:"phone"`
 	ContactEmail       *string `json:"contact_email"`
 	RepresentativeName *string `json:"representative_name"`
+}
+
+// DirectPermissionView is one active direct grant row returned by ListDirectPermissions.
+type DirectPermissionView struct {
+	PermissionCode string `json:"permission_code"`
+	GrantedBy      string `json:"granted_by"`
+	GrantedAt      string `json:"granted_at"`
+}
+
+type AddDirectPermissionRequest struct {
+	Subject        AdminSubject
+	MembershipID   string
+	PermissionCode string `json:"permission_code"`
+}
+
+type RemoveDirectPermissionRequest struct {
+	Subject        AdminSubject
+	MembershipID   string
+	PermissionCode string
+}
+
+type ListDirectPermissionsRequest struct {
+	Subject      AdminSubject
+	MembershipID string
 }

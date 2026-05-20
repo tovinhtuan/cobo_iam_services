@@ -577,10 +577,13 @@ func (r *AdminRepository) ListInviteRolesForCompany(ctx context.Context, company
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "company_id is required", nil)
 	}
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT role_id, role_code, role_name
-		FROM roles
-		WHERE status = 'active' AND (company_id IS NULL OR company_id = ?)
-		ORDER BY role_code
+		SELECT r.role_id, r.role_code, r.role_name,
+		       COALESCE(GROUP_CONCAT(rdgp.permission_code ORDER BY rdgp.permission_code SEPARATOR ','), '') AS default_permissions
+		FROM roles r
+		LEFT JOIN role_default_grant_permissions rdgp ON rdgp.role_id = r.role_id
+		WHERE r.status = 'active' AND (r.company_id IS NULL OR r.company_id = ?)
+		GROUP BY r.role_id, r.role_code, r.role_name
+		ORDER BY r.role_code
 	`, companyID)
 	if err != nil {
 		return nil, fmt.Errorf("list invite roles: %w", err)
@@ -589,10 +592,71 @@ func (r *AdminRepository) ListInviteRolesForCompany(ctx context.Context, company
 	var out []caapp.InviteRoleOption
 	for rows.Next() {
 		var o caapp.InviteRoleOption
-		if err := rows.Scan(&o.RoleID, &o.RoleCode, &o.RoleName); err != nil {
+		var defaultPermsCSV string
+		if err := rows.Scan(&o.RoleID, &o.RoleCode, &o.RoleName, &defaultPermsCSV); err != nil {
 			return nil, err
 		}
+		if defaultPermsCSV != "" {
+			o.DefaultPermissions = strings.Split(defaultPermsCSV, ",")
+		} else {
+			o.DefaultPermissions = []string{}
+		}
 		out = append(out, o)
+	}
+	return out, rows.Err()
+}
+
+func (r *AdminRepository) InsertDirectPermission(ctx context.Context, membershipID, companyID, permCode, grantedBy string) error {
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO membership_direct_permissions (membership_id, company_id, permission_code, granted_by)
+		VALUES (?, ?, ?, ?)
+		ON DUPLICATE KEY UPDATE revoked_at = NULL, revoked_by = NULL, granted_by = VALUES(granted_by), granted_at = CURRENT_TIMESTAMP
+	`, membershipID, companyID, permCode, grantedBy)
+	if err != nil {
+		return fmt.Errorf("insert direct permission: %w", err)
+	}
+	return nil
+}
+
+func (r *AdminRepository) RevokeDirectPermission(ctx context.Context, membershipID, permCode, revokedBy string) error {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE membership_direct_permissions
+		SET revoked_at = CURRENT_TIMESTAMP, revoked_by = ?
+		WHERE membership_id = ? AND permission_code = ? AND revoked_at IS NULL
+	`, revokedBy, membershipID, permCode)
+	if err != nil {
+		return fmt.Errorf("revoke direct permission: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "active direct permission grant not found", nil)
+	}
+	return nil
+}
+
+func (r *AdminRepository) ListActiveDirectPermissions(ctx context.Context, membershipID string) ([]caapp.DirectPermissionView, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT permission_code, granted_by, granted_at
+		FROM membership_direct_permissions
+		WHERE membership_id = ? AND revoked_at IS NULL
+		ORDER BY permission_code
+	`, membershipID)
+	if err != nil {
+		return nil, fmt.Errorf("list direct permissions: %w", err)
+	}
+	defer rows.Close()
+	var out []caapp.DirectPermissionView
+	for rows.Next() {
+		var v caapp.DirectPermissionView
+		var grantedAt []byte
+		if err := rows.Scan(&v.PermissionCode, &v.GrantedBy, &grantedAt); err != nil {
+			return nil, err
+		}
+		v.GrantedAt = string(grantedAt)
+		out = append(out, v)
+	}
+	if out == nil {
+		out = []caapp.DirectPermissionView{}
 	}
 	return out, rows.Err()
 }
