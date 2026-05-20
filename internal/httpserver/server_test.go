@@ -1520,6 +1520,18 @@ func TestIntegration_disclosureTypeCatalog_contractAndAuth(t *testing.T) {
 		t.Fatalf("unexpected type detail id=%s", detailOut.TypeID)
 	}
 
+	reqEffectiveWorkflow, _ := http.NewRequest(http.MethodGet, srv.URL+"/api/v1/disclosure-types/dt-event-major-change/effective-workflow", nil)
+	reqEffectiveWorkflow.Header.Set("Authorization", "Bearer "+token)
+	resEffectiveWorkflow, err := http.DefaultClient.Do(reqEffectiveWorkflow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resEffectiveWorkflow.Body.Close()
+	if resEffectiveWorkflow.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resEffectiveWorkflow.Body)
+		t.Fatalf("effective workflow status=%d body=%s", resEffectiveWorkflow.StatusCode, b)
+	}
+
 	reqMissing, _ := http.NewRequest(http.MethodGet, srv.URL+"/api/v1/disclosure-types/type-not-found", nil)
 	reqMissing.Header.Set("Authorization", "Bearer "+token)
 	resMissing, err := http.DefaultClient.Do(reqMissing)
@@ -1543,6 +1555,18 @@ func TestIntegration_disclosureTypeCatalog_contractAndAuth(t *testing.T) {
 	if resForbidden.StatusCode != http.StatusForbidden {
 		b, _ := io.ReadAll(resForbidden.Body)
 		t.Fatalf("forbidden groups status=%d body=%s", resForbidden.StatusCode, b)
+	}
+
+	reqForbiddenWorkflow, _ := http.NewRequest(http.MethodGet, srv.URL+"/api/v1/disclosure-types/dt-event-major-change/effective-workflow", nil)
+	reqForbiddenWorkflow.Header.Set("Authorization", "Bearer "+forbiddenToken)
+	resForbiddenWorkflow, err := http.DefaultClient.Do(reqForbiddenWorkflow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resForbiddenWorkflow.Body.Close()
+	if resForbiddenWorkflow.StatusCode != http.StatusForbidden {
+		b, _ := io.ReadAll(resForbiddenWorkflow.Body)
+		t.Fatalf("forbidden effective workflow status=%d body=%s", resForbiddenWorkflow.StatusCode, b)
 	}
 }
 

@@ -1,5 +1,31 @@
 # Reusable Task Updates
 
+## 2026-05-20 - Fix local Docker Redis port conflict for Cobo stack
+
+- task type: implement
+- objective: eliminate recurring local `6379` host-port conflict that blocked `cobo-iam-redis` during `docker compose up`
+- what was implemented:
+  - removed host port publishing from the `redis` service in `docker-compose.dev.yml`
+  - kept Redis accessible internally via compose service name `redis:6379`, which is sufficient for `api` and `worker`
+- affected repos/files/modules:
+  - `docker-compose.dev.yml`
+- contracts/behaviors/constraints/decisions:
+  - this is a local/dev compose change only
+  - external host access to Cobo Redis via `localhost:6379` is no longer provided by this compose file
+  - no application runtime contract between compose services changed; internal dependency remains `redis:6379`
+- build/verification result:
+  - `docker compose -f docker-compose.dev.yml build api` => exit 0
+  - `docker compose -f docker-compose.dev.yml up -d --force-recreate` => exit 0
+  - resulting stack status:
+    - `cobo-iam-api` up on `8080`
+    - `cobo-web-design` up on `3000`
+    - `cobo-iam-mysql` healthy
+    - `cobo-iam-redis` healthy (internal only, `6379/tcp`)
+    - `cobo-iam-worker` up
+    - `cobo-iam-mailpit` healthy
+- remaining gaps/risks/next steps:
+  - if a developer explicitly needs host-side Redis inspection, use `docker exec` into `cobo-iam-redis` or temporarily add a non-conflicting host port mapping
+
 ## 2026-05-20 - Plan deadline alerts tab adjustment (cross-repo analysis)
 
 - task type: understand / plan
@@ -2018,3 +2044,34 @@
   - **Reassign controller**: no endpoint to change `process_controller_id` after creation — only cancellation + re-creation workaround
   - **`ad_hoc_alert.admin_review` permission**: deprecated but not removed from DB; old admin users with this permission can no longer approve unless also designated as controller
   - ops must run migration 0042 before deploying; nullable column ensures safe rollout
+
+## 2026-05-20 - Bug fix: ad-hoc alert create page denied for valid proposer
+
+- task type: bug-fix
+- objective/question:
+  - investigate why `admin.dn@example.com` received access denied after clicking `Tạo cảnh báo bất thường mới` despite having `ad_hoc_alert.propose`
+- implemented/discovered:
+  - confirmed DB effective permissions for membership `m_102` include `ad_hoc_alert.propose`
+  - confirmed `/api/v1/me/effective-access` returns `ad_hoc_alert.propose` for a fresh `admin.dn@example.com` session
+  - traced the failure to `GET /api/v1/disclosure-types/{type_id}/effective-workflow`, which returned `403 access denied`
+  - root cause: `internal/disclosure/app/service.go` gated `GetEffectiveWorkflow` with `template.workflow.override.read`, which is stricter than the surrounding disclosure catalog / ad-hoc create flow
+  - fixed `GetEffectiveWorkflow` to reuse `requireDisclosureCatalogRead`, matching `listTypes` and `getTypeDetail`
+  - added regression assertions in `internal/httpserver/server_test.go`:
+    - authorized catalog user can fetch effective workflow
+    - forbidden user still receives `403`
+- affected repos/files/modules:
+  - `cobo_iam_services/internal/disclosure/app/service.go`
+  - `cobo_iam_services/internal/httpserver/server_test.go`
+- contracts/behaviors/constraints/decisions:
+  - read access to effective workflow now follows disclosure catalog read boundary, not workflow override admin-read boundary
+  - this preserves denial for users who cannot read the disclosure catalog at all
+  - `template.workflow.override.read` remains in place for company workflow override management endpoints
+- build/verification result:
+  - `go test ./internal/httpserver -run TestIntegration_disclosureTypeCatalog_contractAndAuth`: pass
+  - `docker compose -f docker-compose.dev.yml build api`: pass
+  - `docker compose -f docker-compose.dev.yml up -d --force-recreate api`: pass
+  - live probe after restart:
+    - login `admin.dn@example.com` succeeded
+    - `GET /api/v1/disclosure-types/dt-disclosure-transaction/effective-workflow` => `200`
+- remaining gaps/risks/next steps:
+  - if the browser still holds an older session/app state, user should refresh and retry after the recreated API is running

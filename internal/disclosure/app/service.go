@@ -742,10 +742,7 @@ func (s *service) GetEffectiveWorkflow(ctx context.Context, req GetEffectiveWork
 	if req.TypeID == "" {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "type_id is required", nil)
 	}
-	if err := s.authorize(ctx, req.Subject, "template.workflow.override.read", authapp.ResourceRef{
-		Type: "disclosure_type",
-		ID:   req.TypeID,
-	}); err != nil {
+	if err := s.requireDisclosureCatalogRead(ctx, req.Subject); err != nil {
 		return nil, err
 	}
 	out, err := s.repo.GetEffectiveWorkflow(ctx, req.Subject.CompanyID, req.TypeID)
