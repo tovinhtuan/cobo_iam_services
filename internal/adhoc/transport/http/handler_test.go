@@ -48,6 +48,10 @@ func (f *fakeService) ListProposals(_ context.Context, req adhocapp.ListProposal
 	return &adhocapp.ListProposalsResponse{Items: []adhocapp.ProposalDTO{}, Page: req.Page, PageSize: req.PageSize, Total: 0}, nil
 }
 
+func (f *fakeService) ListEligibleControllers(_ context.Context, _ adhocapp.ListEligibleControllersRequest) ([]adhocapp.EligibleController, error) {
+	return []adhocapp.EligibleController{}, nil
+}
+
 type fakeInspector struct{}
 
 type fakeIdemStore struct {

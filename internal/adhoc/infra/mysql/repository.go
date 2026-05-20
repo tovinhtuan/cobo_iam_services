@@ -29,11 +29,11 @@ func (r *Repository) Insert(ctx context.Context, p adhocapp.ProposalDTO) (*adhoc
 	_, err = r.db.ExecContext(ctx, `
 		INSERT INTO ad_hoc_proposals
 			(proposal_id, company_id, type_id, status, proposed_workflow_json, proposed_t0_date,
-			 proposed_deadline_date, change_note, created_by)
-		VALUES (?, ?, ?, ?, CAST(? AS JSON), ?, ?, ?, ?)
+			 proposed_deadline_date, change_note, created_by, process_controller_id)
+		VALUES (?, ?, ?, ?, CAST(? AS JSON), ?, ?, ?, ?, ?)
 	`, p.ProposalID, p.CompanyID, p.TypeID, p.Status, string(overridesJSON),
 		nullableStr(p.ProposedT0Date), nullableStr(p.ProposedDeadlineDate),
-		nullIfBlank(p.ChangeNote), p.CreatedBy)
+		nullIfBlank(p.ChangeNote), p.CreatedBy, nullIfBlank(p.ProcessControllerID))
 	if err != nil {
 		return nil, fmt.Errorf("insert ad_hoc_proposal: %w", err)
 	}
@@ -47,7 +47,7 @@ func (r *Repository) FindByID(ctx context.Context, companyID, proposalID string)
 		       final_t0_date, final_deadline_date, adjustment_note,
 		       focal_approved_by, focal_approved_at, admin_approved_by, admin_approved_at,
 		       rejected_by, rejected_at, reject_reason,
-		       record_id, workflow_instance_id, created_by, created_at, updated_at
+		       record_id, workflow_instance_id, created_by, process_controller_id, created_at, updated_at
 		FROM ad_hoc_proposals
 		WHERE proposal_id = ? AND company_id = ?
 	`, proposalID, companyID)
@@ -108,7 +108,7 @@ func (r *Repository) ReserveAdminApproval(ctx context.Context, in adhocapp.Reser
 		       final_t0_date, final_deadline_date, adjustment_note,
 		       focal_approved_by, focal_approved_at, admin_approved_by, admin_approved_at,
 		       rejected_by, rejected_at, reject_reason,
-		       record_id, workflow_instance_id, created_by, created_at, updated_at,
+		       record_id, workflow_instance_id, created_by, process_controller_id, created_at, updated_at,
 		       approval_idempotency_key, approval_record_id, approval_workflow_instance_id
 		FROM ad_hoc_proposals
 		WHERE proposal_id = ? AND company_id = ?
@@ -238,7 +238,7 @@ func (r *Repository) List(ctx context.Context, companyID string, statusFilter []
 		       final_t0_date, final_deadline_date, adjustment_note,
 		       focal_approved_by, focal_approved_at, admin_approved_by, admin_approved_at,
 		       rejected_by, rejected_at, reject_reason,
-		       record_id, workflow_instance_id, created_by, created_at, updated_at
+		       record_id, workflow_instance_id, created_by, process_controller_id, created_at, updated_at
 		FROM ad_hoc_proposals
 		WHERE company_id = ?`+whereExtra+`
 		ORDER BY created_at DESC
@@ -275,7 +275,7 @@ func scanProposalRow(row rowScanner) (*adhocapp.ProposalDTO, error) {
 	var overridesRaw string
 	var t0Date, dlDate, finalT0Date, finalDeadlineDate, focalBy, adminBy, rejectedBy sql.NullString
 	var focalAt, adminAt, rejectedAt sql.NullTime
-	var recordID, wfiID sql.NullString
+	var recordID, wfiID, processControllerID sql.NullString
 	var changeNote, adjustmentNote, rejectReason sql.NullString
 
 	if err := row.Scan(
@@ -284,7 +284,7 @@ func scanProposalRow(row rowScanner) (*adhocapp.ProposalDTO, error) {
 		&finalT0Date, &finalDeadlineDate, &adjustmentNote,
 		&focalBy, &focalAt, &adminBy, &adminAt,
 		&rejectedBy, &rejectedAt, &rejectReason,
-		&recordID, &wfiID, &p.CreatedBy, &p.CreatedAt, &p.UpdatedAt,
+		&recordID, &wfiID, &p.CreatedBy, &processControllerID, &p.CreatedAt, &p.UpdatedAt,
 	); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "proposal not found", nil)
@@ -345,6 +345,9 @@ func scanProposalRow(row rowScanner) (*adhocapp.ProposalDTO, error) {
 	if wfiID.Valid {
 		p.WorkflowInstanceID = wfiID.String
 	}
+	if processControllerID.Valid {
+		p.ProcessControllerID = processControllerID.String
+	}
 	return &p, nil
 }
 
@@ -353,7 +356,7 @@ func scanProposalWithApprovalState(row rowScanner) (*adhocapp.ProposalDTO, strin
 	var overridesRaw string
 	var t0Date, dlDate, finalT0Date, finalDeadlineDate, focalBy, adminBy, rejectedBy sql.NullString
 	var focalAt, adminAt, rejectedAt sql.NullTime
-	var recordID, wfiID sql.NullString
+	var recordID, wfiID, processControllerID sql.NullString
 	var changeNote, adjustmentNote, rejectReason sql.NullString
 	var approvalKey, approvalRecordID, approvalWorkflowID sql.NullString
 
@@ -363,7 +366,7 @@ func scanProposalWithApprovalState(row rowScanner) (*adhocapp.ProposalDTO, strin
 		&finalT0Date, &finalDeadlineDate, &adjustmentNote,
 		&focalBy, &focalAt, &adminBy, &adminAt,
 		&rejectedBy, &rejectedAt, &rejectReason,
-		&recordID, &wfiID, &p.CreatedBy, &p.CreatedAt, &p.UpdatedAt,
+		&recordID, &wfiID, &p.CreatedBy, &processControllerID, &p.CreatedAt, &p.UpdatedAt,
 		&approvalKey, &approvalRecordID, &approvalWorkflowID,
 	); err != nil {
 		if err == sql.ErrNoRows {
@@ -423,6 +426,9 @@ func scanProposalWithApprovalState(row rowScanner) (*adhocapp.ProposalDTO, strin
 	}
 	if wfiID.Valid {
 		p.WorkflowInstanceID = wfiID.String
+	}
+	if processControllerID.Valid {
+		p.ProcessControllerID = processControllerID.String
 	}
 	return &p, approvalKey.String, approvalRecordID.String, approvalWorkflowID.String, nil
 }

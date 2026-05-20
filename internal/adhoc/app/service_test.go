@@ -141,8 +141,26 @@ func (f *fakeTypeCatalog) GetTemplateCategory(_ context.Context, _ string, typeI
 	return f.category, nil
 }
 
+// fakeMembershipValidator always returns active=true and hasPerm=true unless overridden.
+type fakeMembershipValidator struct {
+	active  bool
+	hasPerm bool
+}
+
+func newAllowValidator() *fakeMembershipValidator { return &fakeMembershipValidator{active: true, hasPerm: true} }
+
+func (f *fakeMembershipValidator) IsActiveMembership(_ context.Context, _, _ string) (bool, error) {
+	return f.active, nil
+}
+func (f *fakeMembershipValidator) HasPermission(_ context.Context, _, _, _ string) (bool, error) {
+	return f.hasPerm, nil
+}
+func (f *fakeMembershipValidator) ListMembersWithPermission(_ context.Context, _, _, _ string) ([]EligibleController, error) {
+	return []EligibleController{}, nil
+}
+
 func newTestService(repo *fakeRepository, recordCreator *fakeRecordCreator, typeCatalog *fakeTypeCatalog, auth *fakeAuthService) Service {
-	return NewService(repo, recordCreator, typeCatalog, fakeIDGen{}, false, auth)
+	return NewService(repo, recordCreator, typeCatalog, fakeIDGen{}, false, auth, newAllowValidator())
 }
 
 func TestCreateProposalRequiresPermission(t *testing.T) {
@@ -210,8 +228,9 @@ func TestCreateProposalAllowsIrregularTemplate(t *testing.T) {
 	svc := newTestService(repo, &fakeRecordCreator{}, typeCatalog, auth)
 
 	resp, err := svc.CreateProposal(context.Background(), CreateProposalRequest{
-		Subject: Subject{CompanyID: "company-001", MembershipID: "member-001", UserID: "user-001"},
-		TypeID:  "dt-irregular",
+		Subject:                        Subject{CompanyID: "company-001", MembershipID: "member-001", UserID: "user-001"},
+		TypeID:                         "dt-irregular",
+		ProcessControllerMembershipID:  "member-controller",
 	})
 	if err != nil {
 		t.Fatalf("CreateProposal() error = %v", err)
@@ -262,7 +281,7 @@ func TestSubmitProposalAutoApproveSkipsFocalMetadata(t *testing.T) {
 		CreatedBy:  "member-creator",
 	}}
 	auth := &fakeAuthService{decision: authapp.DecisionAllow}
-	svc := NewService(repo, &fakeRecordCreator{}, &fakeTypeCatalog{category: "irregular"}, fakeIDGen{}, true, auth)
+	svc := NewService(repo, &fakeRecordCreator{}, &fakeTypeCatalog{category: "irregular"}, fakeIDGen{}, true, auth, nil)
 
 	resp, err := svc.SubmitProposal(context.Background(), ProposalActionRequest{
 		Subject:    Subject{CompanyID: "company-001", MembershipID: "member-creator", UserID: "user-001"},
@@ -311,10 +330,12 @@ func TestFocalApproveSetsFocalMetadata(t *testing.T) {
 }
 
 func TestRejectUsesStatusBasedPermission(t *testing.T) {
+	// At pending_admin_approval stage, Reject uses identity check (not permission check).
 	repo := &fakeRepository{proposal: &ProposalDTO{
-		ProposalID: "prop-001", CompanyID: "company-001", TypeID: "dt-001", Status: StatusPendingAdminApproval,
+		ProposalID: "prop-001", CompanyID: "company-001", TypeID: "dt-001",
+		Status: StatusPendingAdminApproval, ProcessControllerID: "member-controller",
 	}}
-	auth := &fakeAuthService{decision: authapp.DecisionDeny}
+	auth := &fakeAuthService{decision: authapp.DecisionAllow}
 	svc := newTestService(repo, &fakeRecordCreator{}, &fakeTypeCatalog{category: "irregular"}, auth)
 
 	_, err := svc.Reject(context.Background(), RejectRequest{
@@ -323,10 +344,11 @@ func TestRejectUsesStatusBasedPermission(t *testing.T) {
 		RejectReason: "Not valid",
 	})
 	if err == nil {
-		t.Fatal("expected permission error")
+		t.Fatal("expected identity check error")
 	}
-	if auth.lastAction != "ad_hoc_alert.admin_review" {
-		t.Fatalf("expected admin_review action, got %q", auth.lastAction)
+	// No permission check should be called — gate is purely by identity.
+	if auth.authorizeCalls != 0 {
+		t.Fatalf("expected no authorize calls for admin stage rejection, got %d", auth.authorizeCalls)
 	}
 	if repo.updateCalls != 0 {
 		t.Fatalf("expected no mutation, got %d updates", repo.updateCalls)
@@ -335,11 +357,12 @@ func TestRejectUsesStatusBasedPermission(t *testing.T) {
 
 func TestAdminApprovePersistsFinalOverrideFields(t *testing.T) {
 	repo := &fakeRepository{proposal: &ProposalDTO{
-		ProposalID: "prop-001",
-		CompanyID:  "company-001",
-		TypeID:     "dt-001",
-		Status:     StatusPendingAdminApproval,
-		ChangeNote: "Urgent approval",
+		ProposalID:          "prop-001",
+		CompanyID:           "company-001",
+		TypeID:              "dt-001",
+		Status:              StatusPendingAdminApproval,
+		ChangeNote:          "Urgent approval",
+		ProcessControllerID: "member-admin",
 	}}
 	recordCreator := &fakeRecordCreator{recordID: "record-001", workflowID: "wf-001"}
 	auth := &fakeAuthService{decision: authapp.DecisionAllow}
@@ -355,9 +378,6 @@ func TestAdminApprovePersistsFinalOverrideFields(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("AdminApprove() error = %v", err)
-	}
-	if auth.lastAction != "ad_hoc_alert.admin_review" {
-		t.Fatalf("expected admin_review action, got %q", auth.lastAction)
 	}
 	if recordCreator.callCount != 1 {
 		t.Fatalf("expected record creator to be called once, got %d", recordCreator.callCount)
@@ -387,10 +407,11 @@ func TestAdminApprovePersistsFinalOverrideFields(t *testing.T) {
 
 func TestAdminApproveRejectsInvalidFinalDate(t *testing.T) {
 	repo := &fakeRepository{proposal: &ProposalDTO{
-		ProposalID: "prop-001",
-		CompanyID:  "company-001",
-		TypeID:     "dt-001",
-		Status:     StatusPendingAdminApproval,
+		ProposalID:          "prop-001",
+		CompanyID:           "company-001",
+		TypeID:              "dt-001",
+		Status:              StatusPendingAdminApproval,
+		ProcessControllerID: "member-admin",
 	}}
 	recordCreator := &fakeRecordCreator{recordID: "record-001", workflowID: "wf-001"}
 	auth := &fakeAuthService{decision: authapp.DecisionAllow}
@@ -412,11 +433,12 @@ func TestAdminApproveRejectsInvalidFinalDate(t *testing.T) {
 
 func TestAdminApproveRetryReusesSavedProgressAfterFinalizeFailure(t *testing.T) {
 	repo := &fakeRepository{proposal: &ProposalDTO{
-		ProposalID: "prop-001",
-		CompanyID:  "company-001",
-		TypeID:     "dt-001",
-		Status:     StatusPendingAdminApproval,
-		ChangeNote: "Urgent approval",
+		ProposalID:          "prop-001",
+		CompanyID:           "company-001",
+		TypeID:              "dt-001",
+		Status:              StatusPendingAdminApproval,
+		ChangeNote:          "Urgent approval",
+		ProcessControllerID: "member-admin",
 	}}
 	recordCreator := &fakeRecordCreator{recordID: "record-001", workflowID: "wf-001"}
 	auth := &fakeAuthService{decision: authapp.DecisionAllow}

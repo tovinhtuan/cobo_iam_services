@@ -26,6 +26,7 @@ func NewHandler(svc adhocapp.Service, inspector iamapp.TokenInspector, idem idem
 }
 
 func (h *Handler) Register(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/v1/company/ad-hoc-proposals/eligible-controllers", h.listEligibleControllers)
 	mux.HandleFunc("POST /api/v1/company/ad-hoc-proposals", h.createProposal)
 	mux.HandleFunc("GET /api/v1/company/ad-hoc-proposals", h.listProposals)
 	mux.HandleFunc("GET /api/v1/company/ad-hoc-proposals/{proposal_id}", h.getProposal)
@@ -34,6 +35,23 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/company/ad-hoc-proposals/{proposal_id}/admin-approve", h.adminApprove)
 	mux.HandleFunc("POST /api/v1/company/ad-hoc-proposals/{proposal_id}/reject", h.reject)
 	mux.HandleFunc("POST /api/v1/company/ad-hoc-proposals/{proposal_id}/cancel", h.cancel)
+}
+
+func (h *Handler) listEligibleControllers(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subjectFromToken(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	items, err := h.svc.ListEligibleControllers(r.Context(), adhocapp.ListEligibleControllersRequest{Subject: sub})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	if items == nil {
+		items = []adhocapp.EligibleController{}
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
 func (h *Handler) createProposal(w http.ResponseWriter, r *http.Request) {

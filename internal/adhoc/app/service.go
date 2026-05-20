@@ -13,16 +13,17 @@ import (
 )
 
 type service struct {
-	repo          Repository
-	recordCreator RecordCreator
-	typeCatalog   TypeCatalog
-	idg           idgen.Generator
-	autoApprove   bool // WORKFLOW_ADHOC_AUTOAPPROVE_ENABLED: skip focal step
-	auth          authapp.Service
+	repo                Repository
+	recordCreator        RecordCreator
+	typeCatalog          TypeCatalog
+	idg                  idgen.Generator
+	autoApprove          bool // WORKFLOW_ADHOC_AUTOAPPROVE_ENABLED: skip focal step
+	auth                 authapp.Service
+	membershipValidator  MembershipValidator
 }
 
-func NewService(repo Repository, recordCreator RecordCreator, typeCatalog TypeCatalog, idg idgen.Generator, autoApprove bool, auth authapp.Service) Service {
-	return &service{repo: repo, recordCreator: recordCreator, typeCatalog: typeCatalog, idg: idg, autoApprove: autoApprove, auth: auth}
+func NewService(repo Repository, recordCreator RecordCreator, typeCatalog TypeCatalog, idg idgen.Generator, autoApprove bool, auth authapp.Service, mv MembershipValidator) Service {
+	return &service{repo: repo, recordCreator: recordCreator, typeCatalog: typeCatalog, idg: idg, autoApprove: autoApprove, auth: auth, membershipValidator: mv}
 }
 
 func (s *service) CreateProposal(ctx context.Context, req CreateProposalRequest) (*ProposalDTO, error) {
@@ -52,16 +53,37 @@ func (s *service) CreateProposal(ctx context.Context, req CreateProposalRequest)
 			return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "processing_days must be >= 0", nil)
 		}
 	}
+
+	// Validate process controller (ADR-1: required at create time).
+	pcID := strings.TrimSpace(req.ProcessControllerMembershipID)
+	if pcID == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "process_controller_membership_id is required", nil)
+	}
+	if pcID == req.Subject.MembershipID {
+		return nil, perr.NewHTTPError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, "process controller cannot be the creator", nil)
+	}
+	if s.membershipValidator != nil {
+		active, err := s.membershipValidator.IsActiveMembership(ctx, req.Subject.CompanyID, pcID)
+		if err != nil || !active {
+			return nil, perr.NewHTTPError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, "process controller membership not found or inactive", nil)
+		}
+		hasPerm, err := s.membershipValidator.HasPermission(ctx, req.Subject.CompanyID, pcID, "ad_hoc_alert.process_control")
+		if err != nil || !hasPerm {
+			return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "designated member does not have process control authority (ad_hoc_alert.process_control)", nil)
+		}
+	}
+
 	t0 := strings.TrimSpace(req.ProposedT0Date)
 	dl := strings.TrimSpace(req.ProposedDeadline)
 	p := ProposalDTO{
-		ProposalID:    s.idg.NewUUID(),
-		CompanyID:     req.Subject.CompanyID,
-		TypeID:        req.TypeID,
-		Status:        StatusDraft,
-		StepOverrides: req.StepOverrides,
-		ChangeNote:    strings.TrimSpace(req.ChangeNote),
-		CreatedBy:     req.Subject.MembershipID,
+		ProposalID:          s.idg.NewUUID(),
+		CompanyID:           req.Subject.CompanyID,
+		TypeID:              req.TypeID,
+		Status:              StatusDraft,
+		StepOverrides:       req.StepOverrides,
+		ChangeNote:          strings.TrimSpace(req.ChangeNote),
+		CreatedBy:           req.Subject.MembershipID,
+		ProcessControllerID: pcID,
 	}
 	if t0 != "" {
 		p.ProposedT0Date = &t0
@@ -125,8 +147,14 @@ func (s *service) FocalApprove(ctx context.Context, req ProposalActionRequest) (
 }
 
 func (s *service) AdminApprove(ctx context.Context, req AdminApproveRequest) (*AdminApproveResponse, error) {
-	if err := s.authorize(ctx, req.Subject, "ad_hoc_alert.admin_review", authapp.ResourceRef{Type: "ad_hoc_proposal", ID: req.ProposalID}); err != nil {
+	// ADR-2: identity check — only the designated process controller may approve.
+	// Permission-based check (ad_hoc_alert.admin_review) is deprecated and no longer the gate.
+	cur0, err := s.repo.FindByID(ctx, req.Subject.CompanyID, req.ProposalID)
+	if err != nil {
 		return nil, err
+	}
+	if cur0.ProcessControllerID != req.Subject.MembershipID {
+		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "only the designated process controller can approve this proposal", nil)
 	}
 	reservation, err := s.repo.ReserveAdminApproval(ctx, ReserveAdminApprovalInput{
 		CompanyID:         req.Subject.CompanyID,
@@ -211,12 +239,15 @@ func (s *service) Reject(ctx context.Context, req RejectRequest) (*ProposalDTO, 
 	default:
 		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "proposal cannot be rejected in current state", nil)
 	}
-	permission := "ad_hoc_alert.admin_review"
 	if cur.Status == StatusPendingFocalApproval {
-		permission = "ad_hoc_alert.focal_review"
-	}
-	if err := s.authorize(ctx, req.Subject, permission, authapp.ResourceRef{Type: "ad_hoc_proposal", ID: req.ProposalID, Attributes: map[string]any{"workflow_state": cur.Status}}); err != nil {
-		return nil, err
+		if err := s.authorize(ctx, req.Subject, "ad_hoc_alert.focal_review", authapp.ResourceRef{Type: "ad_hoc_proposal", ID: req.ProposalID, Attributes: map[string]any{"workflow_state": cur.Status}}); err != nil {
+			return nil, err
+		}
+	} else {
+		// pending_admin_approval: only the designated process controller may reject.
+		if cur.ProcessControllerID != req.Subject.MembershipID {
+			return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "only the designated process controller can reject this proposal at admin stage", nil)
+		}
 	}
 	reason := strings.TrimSpace(req.RejectReason)
 	if reason == "" {
@@ -282,6 +313,16 @@ func (s *service) ListProposals(ctx context.Context, req ListProposalsRequest) (
 		return nil, err
 	}
 	return &ListProposalsResponse{Items: items, Page: req.Page, PageSize: req.PageSize, Total: total}, nil
+}
+
+func (s *service) ListEligibleControllers(ctx context.Context, req ListEligibleControllersRequest) ([]EligibleController, error) {
+	if err := s.authorize(ctx, req.Subject, "ad_hoc_alert.propose", authapp.ResourceRef{Type: "ad_hoc_proposal"}); err != nil {
+		return nil, err
+	}
+	if s.membershipValidator == nil {
+		return []EligibleController{}, nil
+	}
+	return s.membershipValidator.ListMembersWithPermission(ctx, req.Subject.CompanyID, "ad_hoc_alert.process_control", req.Subject.MembershipID)
 }
 
 func (s *service) authorize(ctx context.Context, sub Subject, action string, resource authapp.ResourceRef) error {

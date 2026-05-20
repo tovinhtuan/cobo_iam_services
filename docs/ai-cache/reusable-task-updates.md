@@ -1,5 +1,48 @@
 # Reusable Task Updates
 
+## 2026-05-20 - Debug local Docker stack ports for Cobo IAM services
+
+- task type: understand
+- objective: determine why local Cobo Docker containers were all exited and why they do not come back up cleanly
+- discovered:
+  - all Cobo containers (`cobo-iam-*`, `cobo-web-design`) share the same `FinishedAt` timestamp around `2026-05-19T01:23:28Z`, which indicates an external stop/daemon restart pattern rather than independent app crashes.
+  - historical container logs show MySQL, Redis, Mailpit, API, worker, and web all started successfully before that stop event.
+  - re-running `docker compose -f docker-compose.dev.yml up -d` restarts infra containers successfully, but `cobo-iam-api` fails to bind host port `8080` because another container `go-api` is already using `0.0.0.0:8080`.
+  - manually starting `cobo-web-design` fails to bind host port `3000` because another container `nextjs-app` is already using `0.0.0.0:3000`.
+  - current partial stack state after diagnosis: MySQL, Redis, Mailpit, worker are up; API and web remain blocked by host port conflicts.
+- affected repos/files/modules:
+  - `docker-compose.dev.yml`
+  - local Docker host container set (`go-api`, `nextjs-app`, `cobo-iam-*`, `cobo-web-design`)
+- contracts/behaviors/constraints/decisions:
+  - this is an environment/runtime issue, not evidence of an application startup bug in current logs.
+  - the compose file expects exclusive use of host ports `8080` and `3000` for `api` and `web`.
+- build/verification result:
+  - `docker compose -f docker-compose.dev.yml up -d` => failed at `cobo-iam-api` with `Bind for 0.0.0.0:8080 failed: port is already allocated`
+  - `docker start cobo-web-design` => failed with `Bind for 0.0.0.0:3000 failed: port is already allocated`
+- remaining gaps/risks/next steps:
+  - either stop/remove the conflicting containers (`go-api`, `nextjs-app`) before starting Cobo, or remap Cobo host ports in `docker-compose.dev.yml`
+
+## 2026-05-20 - Verify Codex global skill loading vs local `agent-skills` repo
+
+- task type: understand
+- objective: verify whether skills under `/home/icom/go/src/myself/backend_api_cobo/agent-skills` are missing from Codex global skills
+- discovered:
+  - Codex user-level skills are loaded from `~/.codex/skills`, not directly from arbitrary local repos.
+  - The 23 lifecycle/meta skills under `/home/icom/go/src/myself/backend_api_cobo/agent-skills/skills` match the 23 user-level skill directories under `~/.codex/skills` exactly at `SKILL.md` level.
+  - The only extra directory under `~/.codex/skills` is `.system`, which is expected for preinstalled system skills.
+  - Therefore there is no current gap where those repo skills are absent from Codex global scope; the remaining difference is that the local repo is not the live source of truth for future auto-sync unless linked/copied again.
+- affected repos/files/modules:
+  - `~/.codex/skills/*`
+  - `/home/icom/go/src/myself/backend_api_cobo/agent-skills/skills/*`
+  - `docs/ai-cache/reusable-task-updates.md`
+- contracts/behaviors/constraints/decisions:
+  - Codex does not auto-discover skills from `/home/icom/go/src/myself/backend_api_cobo/agent-skills`; it discovers skills from `~/.codex/skills`.
+  - New or changed skills require syncing into `~/.codex/skills` and typically a Codex restart to be picked up by fresh sessions.
+- build/verification result:
+  - analysis-only task; no runtime code changes; docker/build verification not required
+- remaining gaps/risks/next steps:
+  - if the goal is live reuse from the local repo, convert `~/.codex/skills/<name>` entries to symlinks pointing at `/home/icom/go/src/myself/backend_api_cobo/agent-skills/skills/<name>` or introduce a repeatable sync script
+
 ## 2026-05-06 - Tenant workflow override skeleton (migration + IAM contracts/service/repo + API docs)
 
 - task type: implement

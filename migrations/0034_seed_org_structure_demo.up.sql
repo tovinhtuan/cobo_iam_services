@@ -103,11 +103,12 @@ WHERE p.permission_code IN (
   'disclosure_type.config.read','disclosure_type.config.write',
   'template.workflow.override.read','template.workflow.override.write',
   'template.workflow.override.approve','template.workflow.override.reset',
-  'ad_hoc_alert.read','ad_hoc_alert.propose','ad_hoc_alert.focal_review','ad_hoc_alert.admin_review'
+  'ad_hoc_alert.read','ad_hoc_alert.propose','ad_hoc_alert.focal_review','ad_hoc_alert.admin_review',
+  'ad_hoc_alert.process_control'
 ) AND p.status = 'active'
 ON DUPLICATE KEY UPDATE status = VALUES(status);
 
--- truong_phong: disclosure + workflow read/review + ad_hoc propose+focal_review
+-- truong_phong: disclosure + workflow read/review + ad_hoc propose+focal_review+process_control
 INSERT INTO role_permissions (role_id, permission_id, status)
 SELECT 'role_org_tp_001', p.permission_id, 'active'
 FROM permissions p
@@ -117,7 +118,7 @@ WHERE p.permission_code IN (
   'deadline.view','workflow.read','workflow.review','workflow.step.confirm',
   'recipient.view','disclosure_type.config.read',
   'template.workflow.override.read','template.workflow.override.write','template.workflow.override.approve',
-  'ad_hoc_alert.read','ad_hoc_alert.propose','ad_hoc_alert.focal_review'
+  'ad_hoc_alert.read','ad_hoc_alert.propose','ad_hoc_alert.focal_review','ad_hoc_alert.process_control'
 ) AND p.status = 'active'
 ON DUPLICATE KEY UPDATE status = VALUES(status);
 

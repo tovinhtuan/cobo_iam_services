@@ -24,6 +24,11 @@ type Service interface {
 	Cancel(ctx context.Context, req ProposalActionRequest) (*ProposalDTO, error)
 	GetProposal(ctx context.Context, req GetProposalRequest) (*ProposalDTO, error)
 	ListProposals(ctx context.Context, req ListProposalsRequest) (*ListProposalsResponse, error)
+	ListEligibleControllers(ctx context.Context, req ListEligibleControllersRequest) ([]EligibleController, error)
+}
+
+type ListEligibleControllersRequest struct {
+	Subject Subject
 }
 
 type Repository interface {
@@ -49,6 +54,22 @@ type RecordCreator interface {
 	CreateAndSubmitRecord(ctx context.Context, companyID, typeID, createdByMembershipID, title string, t0Date *time.Time) (recordID, workflowInstanceID string, err error)
 }
 
+// EligibleController is a membership that has the ad_hoc_alert.process_control permission
+// and can be assigned as the process controller when creating a proposal.
+type EligibleController struct {
+	MembershipID string `json:"membership_id"`
+	FullName     string `json:"full_name"`
+	Email        string `json:"email"`
+}
+
+// MembershipValidator lets the adhoc service validate a target membership
+// without coupling to the authorization module's internal implementation.
+type MembershipValidator interface {
+	IsActiveMembership(ctx context.Context, companyID, membershipID string) (bool, error)
+	HasPermission(ctx context.Context, companyID, membershipID, permissionCode string) (bool, error)
+	ListMembersWithPermission(ctx context.Context, companyID, permissionCode, excludeMembershipID string) ([]EligibleController, error)
+}
+
 type Subject struct {
 	UserID       string
 	MembershipID string
@@ -63,12 +84,13 @@ type WorkflowStepOverride struct {
 }
 
 type CreateProposalRequest struct {
-	Subject          Subject
-	TypeID           string                 `json:"type_id"`
-	StepOverrides    []WorkflowStepOverride `json:"step_overrides"`
-	ProposedT0Date   string                 `json:"proposed_t0_date,omitempty"` // YYYY-MM-DD
-	ProposedDeadline string                 `json:"proposed_deadline_date,omitempty"`
-	ChangeNote       string                 `json:"change_note,omitempty"`
+	Subject                      Subject
+	TypeID                       string                 `json:"type_id"`
+	StepOverrides                []WorkflowStepOverride `json:"step_overrides"`
+	ProposedT0Date               string                 `json:"proposed_t0_date,omitempty"` // YYYY-MM-DD
+	ProposedDeadline             string                 `json:"proposed_deadline_date,omitempty"`
+	ChangeNote                   string                 `json:"change_note,omitempty"`
+	ProcessControllerMembershipID string                `json:"process_controller_membership_id,omitempty"`
 }
 
 type ProposalActionRequest struct {
@@ -133,29 +155,30 @@ type ListProposalsResponse struct {
 }
 
 type ProposalDTO struct {
-	ProposalID           string                 `json:"proposal_id"`
-	CompanyID            string                 `json:"company_id"`
-	TypeID               string                 `json:"type_id"`
-	Status               string                 `json:"status"`
-	StepOverrides        []WorkflowStepOverride `json:"step_overrides"`
-	ProposedT0Date       *string                `json:"proposed_t0_date,omitempty"`
-	FinalT0Date          *string                `json:"final_t0_date,omitempty"`
-	FinalDeadlineDate    *string                `json:"final_deadline_date,omitempty"`
-	AdjustmentNote       string                 `json:"adjustment_note,omitempty"`
-	ProposedDeadlineDate *string                `json:"proposed_deadline_date,omitempty"`
-	ChangeNote           string                 `json:"change_note,omitempty"`
-	FocalApprovedBy      string                 `json:"focal_approved_by,omitempty"`
-	FocalApprovedAt      *time.Time             `json:"focal_approved_at,omitempty"`
-	AdminApprovedBy      string                 `json:"admin_approved_by,omitempty"`
-	AdminApprovedAt      *time.Time             `json:"admin_approved_at,omitempty"`
-	RejectedBy           string                 `json:"rejected_by,omitempty"`
-	RejectedAt           *time.Time             `json:"rejected_at,omitempty"`
-	RejectReason         string                 `json:"reject_reason,omitempty"`
-	RecordID             string                 `json:"record_id,omitempty"`
-	WorkflowInstanceID   string                 `json:"workflow_instance_id,omitempty"`
-	CreatedBy            string                 `json:"created_by"`
-	CreatedAt            time.Time              `json:"created_at"`
-	UpdatedAt            time.Time              `json:"updated_at"`
+	ProposalID              string                 `json:"proposal_id"`
+	CompanyID               string                 `json:"company_id"`
+	TypeID                  string                 `json:"type_id"`
+	Status                  string                 `json:"status"`
+	StepOverrides           []WorkflowStepOverride `json:"step_overrides"`
+	ProposedT0Date          *string                `json:"proposed_t0_date,omitempty"`
+	FinalT0Date             *string                `json:"final_t0_date,omitempty"`
+	FinalDeadlineDate       *string                `json:"final_deadline_date,omitempty"`
+	AdjustmentNote          string                 `json:"adjustment_note,omitempty"`
+	ProposedDeadlineDate    *string                `json:"proposed_deadline_date,omitempty"`
+	ChangeNote              string                 `json:"change_note,omitempty"`
+	FocalApprovedBy         string                 `json:"focal_approved_by,omitempty"`
+	FocalApprovedAt         *time.Time             `json:"focal_approved_at,omitempty"`
+	AdminApprovedBy         string                 `json:"admin_approved_by,omitempty"`
+	AdminApprovedAt         *time.Time             `json:"admin_approved_at,omitempty"`
+	RejectedBy              string                 `json:"rejected_by,omitempty"`
+	RejectedAt              *time.Time             `json:"rejected_at,omitempty"`
+	RejectReason            string                 `json:"reject_reason,omitempty"`
+	RecordID                string                 `json:"record_id,omitempty"`
+	WorkflowInstanceID      string                 `json:"workflow_instance_id,omitempty"`
+	CreatedBy               string                 `json:"created_by"`
+	ProcessControllerID     string                 `json:"process_controller_id,omitempty"`
+	CreatedAt               time.Time              `json:"created_at"`
+	UpdatedAt               time.Time              `json:"updated_at"`
 }
 
 // StatusUpdate carries fields for a state transition update.
