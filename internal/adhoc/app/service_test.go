@@ -476,3 +476,129 @@ func TestAdminApproveRetryReusesSavedProgressAfterFinalizeFailure(t *testing.T) 
 		t.Fatalf("expected saved progress ids to be reused, got record=%q workflow=%q", resp.RecordID, resp.WorkflowInstanceID)
 	}
 }
+
+// ─── Process Controller validation tests ─────────────────────────────────────
+
+func TestCreateProposal_MissingController(t *testing.T) {
+	repo := &fakeRepository{}
+	auth := &fakeAuthService{decision: authapp.DecisionAllow}
+	svc := newTestService(repo, &fakeRecordCreator{}, &fakeTypeCatalog{category: "irregular"}, auth)
+
+	_, err := svc.CreateProposal(context.Background(), CreateProposalRequest{
+		Subject: Subject{CompanyID: "company-001", MembershipID: "member-001", UserID: "user-001"},
+		TypeID:  "dt-001",
+		// ProcessControllerMembershipID intentionally omitted
+	})
+	if err == nil {
+		t.Fatal("expected error for missing process controller")
+	}
+	httpErr, ok := err.(*perr.HTTPError)
+	if !ok || httpErr.HTTPStatus != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %#v", err)
+	}
+}
+
+func TestCreateProposal_ControllerIsSelf(t *testing.T) {
+	repo := &fakeRepository{}
+	auth := &fakeAuthService{decision: authapp.DecisionAllow}
+	svc := newTestService(repo, &fakeRecordCreator{}, &fakeTypeCatalog{category: "irregular"}, auth)
+
+	_, err := svc.CreateProposal(context.Background(), CreateProposalRequest{
+		Subject:                       Subject{CompanyID: "company-001", MembershipID: "member-001", UserID: "user-001"},
+		TypeID:                        "dt-001",
+		ProcessControllerMembershipID: "member-001", // same as creator
+	})
+	if err == nil {
+		t.Fatal("expected error for controller == creator")
+	}
+	httpErr, ok := err.(*perr.HTTPError)
+	if !ok || httpErr.HTTPStatus != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422, got %#v", err)
+	}
+}
+
+func TestCreateProposal_ControllerNoPermission(t *testing.T) {
+	repo := &fakeRepository{}
+	auth := &fakeAuthService{decision: authapp.DecisionAllow}
+	mv := &fakeMembershipValidator{active: true, hasPerm: false}
+	svc := NewService(repo, &fakeRecordCreator{}, &fakeTypeCatalog{category: "irregular"}, fakeIDGen{}, false, auth, mv)
+
+	_, err := svc.CreateProposal(context.Background(), CreateProposalRequest{
+		Subject:                       Subject{CompanyID: "company-001", MembershipID: "member-001", UserID: "user-001"},
+		TypeID:                        "dt-001",
+		ProcessControllerMembershipID: "member-controller",
+	})
+	if err == nil {
+		t.Fatal("expected permission error for controller without process_control permission")
+	}
+	httpErr, ok := err.(*perr.HTTPError)
+	if !ok || httpErr.HTTPStatus != http.StatusForbidden {
+		t.Fatalf("expected 403, got %#v", err)
+	}
+}
+
+func TestCreateProposal_ControllerInactive(t *testing.T) {
+	repo := &fakeRepository{}
+	auth := &fakeAuthService{decision: authapp.DecisionAllow}
+	mv := &fakeMembershipValidator{active: false, hasPerm: true}
+	svc := NewService(repo, &fakeRecordCreator{}, &fakeTypeCatalog{category: "irregular"}, fakeIDGen{}, false, auth, mv)
+
+	_, err := svc.CreateProposal(context.Background(), CreateProposalRequest{
+		Subject:                       Subject{CompanyID: "company-001", MembershipID: "member-001", UserID: "user-001"},
+		TypeID:                        "dt-001",
+		ProcessControllerMembershipID: "member-inactive",
+	})
+	if err == nil {
+		t.Fatal("expected error for inactive controller")
+	}
+	httpErr, ok := err.(*perr.HTTPError)
+	if !ok || httpErr.HTTPStatus != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422, got %#v", err)
+	}
+}
+
+func TestCreateProposal_ValidController_StoresID(t *testing.T) {
+	repo := &fakeRepository{}
+	auth := &fakeAuthService{decision: authapp.DecisionAllow}
+	svc := newTestService(repo, &fakeRecordCreator{}, &fakeTypeCatalog{category: "irregular"}, auth)
+
+	resp, err := svc.CreateProposal(context.Background(), CreateProposalRequest{
+		Subject:                       Subject{CompanyID: "company-001", MembershipID: "member-001", UserID: "user-001"},
+		TypeID:                        "dt-irregular",
+		ProcessControllerMembershipID: "member-controller",
+	})
+	if err != nil {
+		t.Fatalf("CreateProposal() error = %v", err)
+	}
+	if resp.ProcessControllerID != "member-controller" {
+		t.Fatalf("expected ProcessControllerID 'member-controller', got %q", resp.ProcessControllerID)
+	}
+	if repo.insertCalls != 1 {
+		t.Fatalf("expected one insert, got %d", repo.insertCalls)
+	}
+}
+
+func TestAdminApprove_ByNonController_Returns403(t *testing.T) {
+	repo := &fakeRepository{proposal: &ProposalDTO{
+		ProposalID:          "prop-001",
+		CompanyID:           "company-001",
+		TypeID:              "dt-001",
+		Status:              StatusPendingAdminApproval,
+		ProcessControllerID: "member-controller", // different from requester
+	}}
+	auth := &fakeAuthService{decision: authapp.DecisionAllow}
+	svc := newTestService(repo, &fakeRecordCreator{}, &fakeTypeCatalog{category: "irregular"}, auth)
+
+	_, err := svc.AdminApprove(context.Background(), AdminApproveRequest{
+		Subject:        Subject{CompanyID: "company-001", MembershipID: "member-other", UserID: "user-other"},
+		ProposalID:     "prop-001",
+		IdempotencyKey: "idem-001",
+	})
+	if err == nil {
+		t.Fatal("expected 403 for non-controller")
+	}
+	httpErr, ok := err.(*perr.HTTPError)
+	if !ok || httpErr.HTTPStatus != http.StatusForbidden {
+		t.Fatalf("expected 403, got %#v", err)
+	}
+}
