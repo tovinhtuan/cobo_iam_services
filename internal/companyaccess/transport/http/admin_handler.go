@@ -13,13 +13,21 @@ import (
 )
 
 type AdminHandler struct {
-	svc       caapp.AdminService
-	inspector iamapp.TokenInspector
-	audit     auditapp.Service
+	svc         caapp.AdminService
+	inspector   iamapp.TokenInspector
+	tokenIssuer iamapp.TokenIssuer
+	sessions    iamapp.SessionRepository
+	audit       auditapp.Service
 }
 
 func NewAdminHandler(svc caapp.AdminService, inspector iamapp.TokenInspector, audit auditapp.Service) *AdminHandler {
 	return &AdminHandler{svc: svc, inspector: inspector, audit: audit}
+}
+
+// WithTokenIssuer wires token issuing for POST /api/v1/company/initialize.
+func (h *AdminHandler) WithTokenIssuer(t iamapp.TokenIssuer, s iamapp.SessionRepository) {
+	h.tokenIssuer = t
+	h.sessions = s
 }
 
 func (h *AdminHandler) Register(mux *http.ServeMux) {
@@ -70,6 +78,9 @@ func (h *AdminHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/v1/admin/titles/{title_id}", h.deleteTitle)
 	mux.HandleFunc("POST /api/v1/admin/titles/{title_id}/members", h.addTitleMember)
 	mux.HandleFunc("DELETE /api/v1/admin/titles/{title_id}/members/{membership_id}", h.removeTitleMember)
+
+	// Company self-service initialization (no rbac.manage required)
+	mux.HandleFunc("POST /api/v1/company/initialize", h.initializeCompany)
 }
 
 func (h *AdminHandler) createUser(w http.ResponseWriter, r *http.Request) {
@@ -181,6 +192,58 @@ func (h *AdminHandler) deleteMembership(w http.ResponseWriter, r *http.Request) 
 	}
 	h.auditLog(r, "admin.membership.delete", "membership", id)
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"success": true})
+}
+
+func (h *AdminHandler) initializeCompany(w http.ResponseWriter, r *http.Request) {
+	claims, err := h.inspector.InspectAccessToken(r.Context(), bearerToken(r.Header.Get("Authorization")))
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	var p struct {
+		CompanyName  string `json:"company_name"`
+		TaxCode      string `json:"tax_code"`
+		Address      string `json:"address"`
+		Phone        string `json:"phone"`
+		ContactEmail string `json:"contact_email"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&p)
+	result, err := h.svc.InitializeCompany(r.Context(), caapp.InitializeCompanyRequest{
+		UserID:       claims.Sub,
+		CompanyName:  p.CompanyName,
+		TaxCode:      p.TaxCode,
+		Address:      p.Address,
+		Phone:        p.Phone,
+		ContactEmail: p.ContactEmail,
+	})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	resp := map[string]any{
+		"company_id":    result.CompanyID,
+		"company_code":  result.CompanyCode,
+		"company_name":  result.CompanyName,
+		"membership_id": result.MembershipID,
+	}
+	if h.tokenIssuer != nil && h.sessions != nil && claims.SessionID != "" {
+		_ = h.sessions.UpdateContext(r.Context(), claims.SessionID, result.MembershipID, result.CompanyID)
+		access, exp, _ := h.tokenIssuer.IssueAccessToken(r.Context(), iamapp.AccessTokenClaims{
+			Sub: claims.Sub, SessionID: claims.SessionID,
+			MembershipID: result.MembershipID, CompanyID: result.CompanyID,
+		})
+		refresh, _ := h.tokenIssuer.IssueRefreshToken(r.Context(), claims.SessionID, claims.Sub)
+		if refresh != "" {
+			_ = h.sessions.RotateRefreshToken(r.Context(), claims.SessionID, refresh)
+		}
+		resp["session"] = map[string]any{
+			"access_token":  access,
+			"refresh_token": refresh,
+			"expires_in":    exp,
+		}
+	}
+	h.auditLog(r, "company.initialize", "company", result.CompanyID)
+	httpx.WriteJSON(w, http.StatusCreated, resp)
 }
 
 func (h *AdminHandler) listMemberships(w http.ResponseWriter, r *http.Request) {

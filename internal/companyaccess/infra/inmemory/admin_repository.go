@@ -744,3 +744,7 @@ func (r *AdminRepository) SoftDeleteTitle(_ context.Context, _, _ string) error 
 func (r *AdminRepository) CountTitleMembers(_ context.Context, _ string) (int, error) {
 	return 0, nil
 }
+
+func (r *AdminRepository) SetMembershipPrimaryAdmin(_ context.Context, _ string) error {
+	return nil
+}

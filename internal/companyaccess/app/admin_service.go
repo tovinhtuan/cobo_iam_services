@@ -906,6 +906,51 @@ func (s *adminService) grantDefaultPermissions(ctx context.Context, membershipID
 	return nil
 }
 
+func (s *adminService) InitializeCompany(ctx context.Context, req InitializeCompanyRequest) (*InitializeCompanyResult, error) {
+	name := strings.TrimSpace(req.CompanyName)
+	if len([]rune(name)) < 2 || len(name) > 255 {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "company_name must be 2-255 characters", nil)
+	}
+	n, err := s.repo.CountMembershipsForUser(ctx, req.UserID)
+	if err != nil {
+		return nil, err
+	}
+	if n > 0 {
+		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "COMPANY_ALREADY_EXISTS", nil)
+	}
+	companyID, companyCode, err := s.repo.CreateStandaloneCompany(ctx, name, CreateCompanyBootstrap{
+		TaxCode:      strings.TrimSpace(req.TaxCode),
+		Address:      strings.TrimSpace(req.Address),
+		Phone:        strings.TrimSpace(req.Phone),
+		ContactEmail: strings.TrimSpace(req.ContactEmail),
+	})
+	if err != nil {
+		return nil, err
+	}
+	membershipID := s.idg.NewUUID()
+	if _, err = s.repo.CreateMembership(ctx, MembershipView{
+		MembershipID: membershipID,
+		UserID:       req.UserID,
+		CompanyID:    companyID,
+		Status:       "active",
+	}); err != nil {
+		return nil, err
+	}
+	if err := s.repo.SetMembershipPrimaryAdmin(ctx, membershipID); err != nil {
+		return nil, err
+	}
+	if roleID, err := s.repo.LookupRoleIDForInvite(ctx, companyID, "", "company_admin", "user_thuong"); err == nil && roleID != "" {
+		_ = s.repo.AddRole(ctx, membershipID, roleID)
+	}
+	_ = s.grantDefaultPermissions(ctx, membershipID, companyID, req.UserID)
+	return &InitializeCompanyResult{
+		CompanyID:    companyID,
+		CompanyCode:  companyCode,
+		CompanyName:  name,
+		MembershipID: membershipID,
+	}, nil
+}
+
 func (s *adminService) authorize(ctx context.Context, sub AdminSubject, action, resourceID string) error {
 	decision, err := s.auth.Authorize(ctx, authapp.AuthorizeRequest{Subject: authapp.SubjectRef{UserID: sub.UserID, MembershipID: sub.MembershipID, CompanyID: sub.CompanyID}, Action: action, Resource: authapp.ResourceRef{Type: "admin_access", ID: resourceID, Attributes: map[string]any{}}})
 	if err != nil {

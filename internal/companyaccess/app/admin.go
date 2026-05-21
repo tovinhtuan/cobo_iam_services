@@ -74,6 +74,10 @@ type AdminService interface {
 	RemoveDirectPermission(ctx context.Context, req RemoveDirectPermissionRequest) error
 	// ListDirectPermissions returns active direct permission grants for a membership.
 	ListDirectPermissions(ctx context.Context, req ListDirectPermissionsRequest) ([]DirectPermissionView, error)
+
+	// InitializeCompany creates a new company for a user with no existing membership (self-service onboarding).
+	// Caller is responsible for issuing new session tokens after this returns.
+	InitializeCompany(ctx context.Context, req InitializeCompanyRequest) (*InitializeCompanyResult, error)
 }
 
 type AdminRepository interface {
@@ -155,6 +159,9 @@ type AdminRepository interface {
 	DeleteNotificationRule(ctx context.Context, companyID, ruleID string) error
 	GetAdminAccountSettings(ctx context.Context, userID string) (*AdminAccountSettingsView, error)
 	PatchAdminAccountSettings(ctx context.Context, userID string, fullName, email, phone *string) error
+
+	// SetMembershipPrimaryAdmin sets is_primary_admin = true for the given membership.
+	SetMembershipPrimaryAdmin(ctx context.Context, membershipID string) error
 }
 
 type AdminSubject struct {
@@ -471,6 +478,22 @@ type RemoveDirectPermissionRequest struct {
 type ListDirectPermissionsRequest struct {
 	Subject      AdminSubject
 	MembershipID string
+}
+
+type InitializeCompanyRequest struct {
+	UserID       string
+	CompanyName  string
+	TaxCode      string
+	Address      string
+	Phone        string
+	ContactEmail string
+}
+
+type InitializeCompanyResult struct {
+	CompanyID    string `json:"company_id"`
+	CompanyCode  string `json:"company_code"`
+	CompanyName  string `json:"company_name"`
+	MembershipID string `json:"membership_id"`
 }
 
 type ListDepartmentsRequest struct {

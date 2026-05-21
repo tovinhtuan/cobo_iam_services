@@ -158,7 +158,7 @@ func (r *AdminRepository) DeleteMembership(ctx context.Context, membershipID str
 func (r *AdminRepository) ListMembershipsByCompany(ctx context.Context, companyID string) ([]caapp.MembershipView, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT m.membership_id, m.user_id, m.company_id, c.company_name, m.membership_status,
-		       u.login_id, u.full_name, u.account_status
+		       u.login_id, u.full_name, u.account_status, m.is_primary_admin
 		FROM memberships m
 		INNER JOIN companies c ON c.company_id = m.company_id
 		INNER JOIN users u ON u.user_id = m.user_id
@@ -173,12 +173,73 @@ func (r *AdminRepository) ListMembershipsByCompany(ctx context.Context, companyI
 	for rows.Next() {
 		var v caapp.MembershipView
 		if err := rows.Scan(&v.MembershipID, &v.UserID, &v.CompanyID, &v.CompanyName, &v.Status,
-			&v.LoginID, &v.FullName, &v.AccountStatus); err != nil {
+			&v.LoginID, &v.FullName, &v.AccountStatus, &v.IsPrimaryAdmin); err != nil {
 			return nil, err
 		}
 		out = append(out, v)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for i := range out {
+		out[i].Departments, _ = r.listMembershipDeptViews(ctx, out[i].MembershipID)
+		out[i].Titles, _ = r.listMembershipTitleViews(ctx, out[i].MembershipID)
+	}
+	return out, nil
+}
+
+func (r *AdminRepository) listMembershipDeptViews(ctx context.Context, membershipID string) ([]caapp.DepartmentView, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT d.department_id, d.department_name
+		FROM department_memberships dm
+		INNER JOIN departments d ON d.department_id = dm.department_id
+		WHERE dm.membership_id = ? AND dm.status = 'active' AND d.status = 'active'
+		ORDER BY d.department_name
+	`, membershipID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []caapp.DepartmentView
+	for rows.Next() {
+		var v caapp.DepartmentView
+		if err := rows.Scan(&v.DepartmentID, &v.DepartmentName); err != nil {
+			return nil, err
+		}
+		v.Name = v.DepartmentName
+		out = append(out, v)
+	}
 	return out, rows.Err()
+}
+
+func (r *AdminRepository) listMembershipTitleViews(ctx context.Context, membershipID string) ([]caapp.TitleView, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT t.title_id, t.title_name
+		FROM membership_titles mt
+		INNER JOIN titles t ON t.title_id = mt.title_id
+		WHERE mt.membership_id = ? AND mt.status = 'active' AND t.status = 'active'
+		ORDER BY t.title_name
+	`, membershipID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []caapp.TitleView
+	for rows.Next() {
+		var v caapp.TitleView
+		if err := rows.Scan(&v.TitleID, &v.TitleName); err != nil {
+			return nil, err
+		}
+		v.Name = v.TitleName
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
+func (r *AdminRepository) SetMembershipPrimaryAdmin(ctx context.Context, membershipID string) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE memberships SET is_primary_admin = TRUE WHERE membership_id = ?`, membershipID)
+	return err
 }
 
 func (r *AdminRepository) ListUsersWithNoMembership(ctx context.Context) ([]caapp.MembershipView, error) {

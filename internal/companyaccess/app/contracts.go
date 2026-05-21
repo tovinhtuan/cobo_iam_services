@@ -21,14 +21,17 @@ type MembershipRepository interface {
 }
 
 type MembershipView struct {
-	MembershipID  string `json:"membership_id"`
-	UserID        string `json:"user_id"`
-	CompanyID     string `json:"company_id"`
-	CompanyName   string `json:"company_name"`
-	Status        string `json:"membership_status"`
-	LoginID       string `json:"login_id,omitempty"`
-	FullName      string `json:"full_name,omitempty"`
-	AccountStatus string `json:"account_status,omitempty"`
+	MembershipID   string           `json:"membership_id"`
+	UserID         string           `json:"user_id"`
+	CompanyID      string           `json:"company_id"`
+	CompanyName    string           `json:"company_name"`
+	Status         string           `json:"membership_status"`
+	LoginID        string           `json:"login_id,omitempty"`
+	FullName       string           `json:"full_name,omitempty"`
+	AccountStatus  string           `json:"account_status,omitempty"`
+	IsPrimaryAdmin bool             `json:"is_primary_admin,omitempty"`
+	Departments    []DepartmentView `json:"departments,omitempty"`
+	Titles         []TitleView      `json:"titles,omitempty"`
 }
 
 type TitleView struct {

@@ -31,6 +31,7 @@ SCP := scp -P $(DEV_PORT)
     fe-install fe-dev fe-build fe-test fe-clean \
     dc-up dc-down dc-build dc-rebuild dc-logs dc-ps dc-restart \
     deploy-init deploy-be deploy-fe deploy-all push-migration \
+    deploy-dev deploy-dev-be deploy-dev-fe deploy-dev-migrate \
     dev-up dev-down dev-ps dev-logs dev-restart dev-ssh
 
 # ─────────────────────────────────────────────────────────────────────
@@ -129,6 +130,18 @@ deploy-fe: fe-build ## [dev] Build FE, copy dist + nginx.conf, SCP, restart web
 	    docker compose -f docker-compose.artifacts.yml restart web"
 
 deploy-all: deploy-be deploy-fe ## [dev] Deploy cả BE + FE lên dev
+
+deploy-dev: ## [dev] Deploy dev (auto-detect BE/FE/migrations): make deploy-dev [MODE=be|fe|all|migrate|verify]
+	sh deploy-dev.sh $(MODE)
+
+deploy-dev-be: ## [dev] Chỉ deploy BE lên dev
+	sh deploy-dev.sh be
+
+deploy-dev-fe: ## [dev] Chỉ deploy FE lên dev
+	sh deploy-dev.sh fe
+
+deploy-dev-migrate: ## [dev] Chỉ push + apply migrations mới lên dev
+	sh deploy-dev.sh migrate
 
 push-migration: ## [dev] Push + apply một migration: make push-migration FILE=0007_foo.up.sql
 	@test -n "$(FILE)" || { echo "Usage: make push-migration FILE=0007_foo.up.sql"; exit 1; }
