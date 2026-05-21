@@ -3,9 +3,10 @@
 -- for a given role, without hardcoding tier logic in application code.
 
 -- Insert disclosure_type.manage permission (company-scoped disclosure type CRUD).
-INSERT IGNORE INTO permissions (permission_id, permission_code, description, status)
+INSERT IGNORE INTO permissions (permission_id, permission_code, permission_name, module_name, status)
 VALUES (UUID(), 'disclosure_type.manage',
-        'Tạo, chỉnh sửa, archive loại công bố của công ty (company-scoped, isSystemType=false)',
+        'Manage company disclosure types',
+        'cms',
         'active');
 
 CREATE TABLE role_default_grant_permissions (

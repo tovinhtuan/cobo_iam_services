@@ -44,6 +44,8 @@ seed_dev_identity_authorization.sql
 0036_fix_unicode_mojibake.up.sql
 0037_adhoc_admin_approve_final_fields.up.sql
 0043_membership_direct_permissions.up.sql
+0044_role_default_grant_permissions.up.sql
+0045_backfill_workflow_read_permission.up.sql
 "
 
 mysql_exec() {

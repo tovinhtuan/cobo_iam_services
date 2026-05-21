@@ -1,0 +1,168 @@
+# ─────────────────────────────────────────────────────────────────────
+# docker-compose.artifacts.yml — Dev server (SSH)
+#
+# Dùng pre-compiled binaries (./bin/) + built FE (./web/dist/).
+# KHÔNG dùng go run / npm run dev — không cần Go SDK hay Node trong container.
+#
+# Cấu trúc thư mục cần có trên server (/root/cobo_project/):
+#   bin/api          ← cross-compiled từ make be-build-linux
+#   bin/worker       ← cross-compiled từ make be-build-linux
+#   configs/         ← SCP'd từ make deploy-be
+#   migrations/      ← managed bởi push-migration.sh
+#   web/dist/        ← built từ make deploy-fe
+#   web/nginx.conf   ← SCP'd từ make deploy-fe
+#   .env             ← tạo thủ công từ configs/config.example.env
+#
+# Lần đầu: make deploy-init
+# Deploy BE:  make deploy-be
+# Deploy FE:  make deploy-fe
+# ─────────────────────────────────────────────────────────────────────
+
+x-runtime: &runtime
+  build:
+    context: .
+    dockerfile_inline: |
+      FROM alpine:3.19
+      RUN apk add --no-cache ca-certificates tzdata bash
+      WORKDIR /app
+  image: cobo-iam-runtime
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: cobo-iam-mysql
+    environment:
+      MYSQL_DATABASE: cobo_iam
+      MYSQL_USER: cobo
+      MYSQL_PASSWORD: cobo
+      MYSQL_ROOT_PASSWORD: root
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -proot --silent"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: cobo-iam-redis
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: cobo-iam-mailpit
+    ports:
+      - "8025:8025"
+      - "1025:1025"
+    restart: unless-stopped
+
+  migrate:
+    image: mysql:8.0
+    container_name: cobo-iam-migrate
+    depends_on:
+      mysql:
+        condition: service_healthy
+    working_dir: /workspace
+    volumes:
+      - ./migrations:/workspace/migrations
+    command: ["sh", "-c", "tr -d '\\r' < /workspace/migrations/run_dev_migrations.sh | sh"]
+    restart: "no"
+
+  api:
+    <<: *runtime
+    container_name: cobo-iam-api
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    command: ./bin/api
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      SERVICE_NAME: cobo_iam_services
+      ENV: development
+      LOG_LEVEL: debug
+      HTTP_ADDR: :8080
+      MYSQL_DSN: cobo:cobo@tcp(mysql:3306)/cobo_iam?parseTime=true&loc=UTC&tls=false
+      REDIS_ADDR: redis:6379
+      REDIS_DB: "0"
+      EFFECTIVE_ACCESS_CACHE_TTL: 5m
+      ACCESS_TOKEN_MODE: opaque
+      ACCESS_TOKEN_TTL: 15m
+      JWT_ISSUER: cobo_iam_services
+      JWT_AUDIENCE: cobo_clients
+      JWT_ALG: EdDSA
+      JWT_CLOCK_SKEW_SEC: "60"
+      PUBLIC_WEB_BASE_URL: http://localhost:3000
+      PUBLIC_API_BASE_URL: http://localhost:8080
+      WORKER_TICK_INTERVAL: 5s
+      WORKFLOW_GROUPS_ENABLED: "true"
+      WORKFLOW_DRAFT_ETAG_MODE: enforce
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./bin:/app/bin:ro
+      - ./configs:/app/configs:ro
+    restart: unless-stopped
+
+  web:
+    image: nginx:alpine
+    container_name: cobo-web-design
+    depends_on:
+      api:
+        condition: service_started
+    ports:
+      - "3000:80"
+    volumes:
+      - ./web/dist:/usr/share/nginx/html:ro
+      - ./web/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    restart: unless-stopped
+
+  worker:
+    <<: *runtime
+    container_name: cobo-iam-worker
+    depends_on:
+      mysql:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      mailpit:
+        condition: service_started
+    command: ./bin/worker
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      SERVICE_NAME: cobo_iam_services
+      ENV: development
+      LOG_LEVEL: info
+      MYSQL_DSN: cobo:cobo@tcp(mysql:3306)/cobo_iam?parseTime=true&loc=UTC&tls=false
+      WORKER_TICK_INTERVAL: 5s
+      ACCESS_TOKEN_MODE: opaque
+      ACCESS_TOKEN_TTL: 15m
+      PUBLIC_WEB_BASE_URL: http://localhost:3000
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-no-reply@cobo.local}
+    volumes:
+      - ./bin:/app/bin:ro
+      - ./configs:/app/configs:ro
+    restart: unless-stopped
+
+volumes:
+  mysql_data:

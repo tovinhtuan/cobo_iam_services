@@ -338,6 +338,9 @@ func (s *adminService) inviteUserWithCompany(ctx context.Context, req InviteUser
 				return nil, err
 			}
 		}
+		if err := s.grantDefaultPermissions(ctx, m.MembershipID, req.CompanyID, req.CreatedByUserID); err != nil {
+			return nil, err
+		}
 		companyDisplay := ""
 		if cn, err := s.repo.GetCompanyName(ctx, req.CompanyID); err == nil {
 			companyDisplay = cn
@@ -411,6 +414,9 @@ func (s *adminService) inviteUserWithCompany(ctx context.Context, req InviteUser
 		if err := s.repo.InsertDirectPermission(ctx, opts.MembershipID, req.CompanyID, p, createdBy); err != nil {
 			return nil, err
 		}
+	}
+	if err := s.grantDefaultPermissions(ctx, opts.MembershipID, req.CompanyID, createdBy); err != nil {
+		return nil, err
 	}
 	if s.invMailer != nil {
 		if err := s.invMailer.SendInvitationEmail(ctx, InvitationMailPayload{
@@ -620,6 +626,11 @@ func (s *adminService) AssignUserToCompany(ctx context.Context, req AssignUserTo
 		}
 	}
 
+	createdBy := strings.TrimSpace(req.Subject.UserID)
+	if err := s.grantDefaultPermissions(ctx, m.MembershipID, companyID, createdBy); err != nil {
+		return nil, err
+	}
+
 	resp := &AssignUserToCompanyResponse{
 		UserID: userID, CompanyID: companyID, MembershipID: m.MembershipID,
 	}
@@ -658,7 +669,14 @@ func (s *adminService) CreateMembership(ctx context.Context, req CreateMembershi
 	if m.Status == "" {
 		m.Status = "active"
 	}
-	return s.repo.CreateMembership(ctx, m)
+	result, err := s.repo.CreateMembership(ctx, m)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.grantDefaultPermissions(ctx, result.MembershipID, req.CompanyID, req.Subject.UserID); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 func (s *adminService) UpdateMembership(ctx context.Context, req UpdateMembershipRequest) (*MembershipView, error) {
 	if err := s.authorize(ctx, req.Subject, "admin.membership.update", req.MembershipID); err != nil {
@@ -871,6 +889,21 @@ func isGrantable(permCode string) bool {
 		}
 	}
 	return false
+}
+
+// defaultMembershipPermissions are granted to every new active membership automatically.
+// Using InsertDirectPermission (upsert) makes this idempotent.
+var defaultMembershipPermissions = []string{
+	"template.workflow.override.read",
+}
+
+func (s *adminService) grantDefaultPermissions(ctx context.Context, membershipID, companyID, grantedBy string) error {
+	for _, p := range defaultMembershipPermissions {
+		if err := s.repo.InsertDirectPermission(ctx, membershipID, companyID, p, grantedBy); err != nil {
+			return fmt.Errorf("grant default permission %s: %w", p, err)
+		}
+	}
+	return nil
 }
 
 func (s *adminService) authorize(ctx context.Context, sub AdminSubject, action, resourceID string) error {
