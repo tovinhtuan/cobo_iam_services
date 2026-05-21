@@ -1,0 +1,981 @@
+{
+  "info": {
+    "_postman_id": "2f3cfd0f-7f92-4fc8-9f88-cms-collection",
+    "name": "CMS",
+    "description": "CMS Postman collection generated from cross-checked FE `cobo_web_design` and BE `cobo_iam_services`. Excludes mismatch and unmapped endpoints.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{access_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:8080" },
+    { "key": "access_token", "value": "" },
+    { "key": "refresh_token", "value": "" },
+    { "key": "pre_company_token", "value": "" },
+    { "key": "company_id", "value": "" },
+    { "key": "membership_id", "value": "" },
+    { "key": "user_id", "value": "" },
+    { "key": "collection_id", "value": "" },
+    { "key": "entry_id", "value": "" },
+    { "key": "asset_id", "value": "" },
+    { "key": "session_id", "value": "" },
+    { "key": "type_id", "value": "" },
+    { "key": "version_no", "value": "1" },
+    { "key": "year", "value": "2026" },
+    { "key": "invitation_token", "value": "" },
+    { "key": "verify_token", "value": "" },
+    { "key": "reset_password_token", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Shared - Auth & Bootstrap",
+      "item": [
+        {
+          "name": "Get Login Password Key",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/login-password-key",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "login-password-key"]
+            }
+          }
+        },
+        {
+          "name": "Login",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"login_id\": \"admin@example.com\",\n  \"password\": \"Secret123!\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "login"]
+            }
+          }
+        },
+        {
+          "name": "Register",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"login_id\": \"owner@example.com\",\n  \"password\": \"Secret123!\",\n  \"full_name\": \"Owner Name\",\n  \"email\": \"owner@example.com\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/register",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "register"]
+            }
+          }
+        },
+        {
+          "name": "Select Company",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{pre_company_token}}", "type": "string" }]
+            },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"company_id\": \"{{company_id}}\"\n}" },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/select-company",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "select-company"]
+            }
+          }
+        },
+        {
+          "name": "Switch Company",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"company_id\": \"{{company_id}}\"\n}" },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/switch-company",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "switch-company"]
+            }
+          }
+        },
+        {
+          "name": "Refresh Token",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}" },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/refresh",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "refresh"]
+            }
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}" },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/logout",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "logout"]
+            }
+          }
+        },
+        {
+          "name": "Validate Invitation",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/invitations/validate?token={{invitation_token}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "invitations", "validate"],
+              "query": [{ "key": "token", "value": "{{invitation_token}}" }]
+            }
+          }
+        },
+        {
+          "name": "Accept Invitation",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{invitation_token}}\",\n  \"password\": \"Secret123!\",\n  \"full_name\": \"Invited User\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/invitations/accept",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "invitations", "accept"]
+            }
+          }
+        },
+        {
+          "name": "Reset Password",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{reset_password_token}}\",\n  \"password\": \"NewSecret123!\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/reset-password",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "reset-password"]
+            }
+          }
+        },
+        {
+          "name": "Verify Email",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"token\": \"{{verify_token}}\"\n}" },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/verify-email",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "verify-email"]
+            }
+          }
+        },
+        {
+          "name": "Resend Verification Email",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"owner@example.com\"\n}" },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/resend-verification-email",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "resend-verification-email"]
+            }
+          }
+        },
+        {
+          "name": "Initialize Company",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"company_name\": \"Demo Co\",\n  \"company_code\": \"DEMO\",\n  \"tax_code\": \"1234567890\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/company/initialize",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "company", "initialize"]
+            }
+          }
+        },
+        {
+          "name": "Get Me",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/me",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "me"]
+            }
+          }
+        },
+        {
+          "name": "Get My Companies",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/me/companies",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "me", "companies"]
+            }
+          }
+        },
+        {
+          "name": "Get Effective Access",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/me/effective-access",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "me", "effective-access"]
+            }
+          }
+        },
+        {
+          "name": "Get My Membership",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/me/membership",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "me", "membership"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Screen: Dashboard",
+      "item": [
+        {
+          "name": "Get Dashboard Summary",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/platform/cms/dashboard/summary",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "platform", "cms", "dashboard", "summary"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Screen: Content Collections",
+      "item": [
+        {
+          "name": "List Collections",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/platform/cms/collections",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "platform", "cms", "collections"]
+            }
+          }
+        },
+        {
+          "name": "Get Collection Detail",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/platform/cms/collections/{{collection_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "platform", "cms", "collections", "{{collection_id}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Screen: Content Entries",
+      "item": [
+        {
+          "name": "List Entries",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/platform/cms/entries?collection_id={{collection_id}}&status=draft&q=report&page=1",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "platform", "cms", "entries"],
+              "query": [
+                { "key": "collection_id", "value": "{{collection_id}}" },
+                { "key": "status", "value": "draft" },
+                { "key": "q", "value": "report" },
+                { "key": "page", "value": "1" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Entry Detail",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/platform/cms/entries/{{entry_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "platform", "cms", "entries", "{{entry_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Create Entry",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"collection_id\": \"DISCLOSURE_FINANCIAL\",\n  \"title\": \"Quarterly Report\",\n  \"payload\": {}\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/platform/cms/entries",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "platform", "cms", "entries"]
+            }
+          }
+        },
+        {
+          "name": "Update Entry",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Quarterly Report v2\",\n  \"payload\": {}\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/platform/cms/entries/{{entry_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "platform", "cms", "entries", "{{entry_id}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Screen: Media",
+      "item": [
+        {
+          "name": "Create Upload Intent",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"filename\": \"banner.png\",\n  \"content_type\": \"image/png\",\n  \"size_bytes\": 24512\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/platform/cms/media/upload",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "platform", "cms", "media", "upload"]
+            }
+          }
+        },
+        {
+          "name": "Complete Upload",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"etag\": \"abc123\"\n}" },
+            "url": {
+              "raw": "{{base_url}}/api/v1/platform/cms/media/{{asset_id}}/complete",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "platform", "cms", "media", "{{asset_id}}", "complete"]
+            }
+          }
+        },
+        {
+          "name": "List Media",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/platform/cms/media?q=banner&page=1&limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "platform", "cms", "media"],
+              "query": [
+                { "key": "q", "value": "banner" },
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Delete Media",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{base_url}}/api/v1/platform/cms/media/{{asset_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "platform", "cms", "media", "{{asset_id}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Screen: Publishing Review",
+      "item": [
+        {
+          "name": "List Reviews",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/platform/cms/reviews",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "platform", "cms", "reviews"]
+            }
+          }
+        },
+        {
+          "name": "Review Entry - Approve",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"decision\": \"approve\"\n}" },
+            "url": {
+              "raw": "{{base_url}}/api/v1/platform/cms/reviews/{{entry_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "platform", "cms", "reviews", "{{entry_id}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Screen: Publishing Schedule",
+      "item": [
+        {
+          "name": "List Schedules",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/platform/cms/schedules",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "platform", "cms", "schedules"]
+            }
+          }
+        },
+        {
+          "name": "Create Schedule",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"entry_id\": \"{{entry_id}}\",\n  \"publish_at\": \"2026-05-22T09:00:00Z\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/platform/cms/schedules",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "platform", "cms", "schedules"]
+            }
+          }
+        },
+        {
+          "name": "Delete Schedule",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{base_url}}/api/v1/platform/cms/schedules/{{entry_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "platform", "cms", "schedules", "{{entry_id}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Screen: Releases",
+      "item": [
+        {
+          "name": "List Releases",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/platform/cms/releases?entry_id={{entry_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "platform", "cms", "releases"],
+              "query": [{ "key": "entry_id", "value": "{{entry_id}}" }]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Screen: Admin Companies",
+      "item": [
+        {
+          "name": "List Companies",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/platform/cms/admin/companies?q=demo&status=active&page=1&limit=20&sort_by=company_name&sort_order=asc",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "platform", "cms", "admin", "companies"],
+              "query": [
+                { "key": "q", "value": "demo" },
+                { "key": "status", "value": "active" },
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" },
+                { "key": "sort_by", "value": "company_name" },
+                { "key": "sort_order", "value": "asc" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Create Company",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"company_name\": \"Demo Co\",\n  \"company_code\": \"DEMO\",\n  \"tax_code\": \"1234567890\",\n  \"contact_email\": \"ops@example.com\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/platform/cms/admin/companies",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "platform", "cms", "admin", "companies"]
+            }
+          }
+        },
+        {
+          "name": "Get Company Detail",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/platform/cms/admin/companies/{{company_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "platform", "cms", "admin", "companies", "{{company_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Patch Company",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"company_name\": \"Demo Co Updated\",\n  \"contact_email\": \"new@example.com\"\n}" },
+            "url": {
+              "raw": "{{base_url}}/api/v1/platform/cms/admin/companies/{{company_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "platform", "cms", "admin", "companies", "{{company_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Deactivate Company",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/api/v1/platform/cms/admin/companies/{{company_id}}/deactivate",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "platform", "cms", "admin", "companies", "{{company_id}}", "deactivate"]
+            }
+          }
+        },
+        {
+          "name": "Activate Company",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/api/v1/platform/cms/admin/companies/{{company_id}}/activate",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "platform", "cms", "admin", "companies", "{{company_id}}", "activate"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Screen: Admin Users",
+      "item": [
+        {
+          "name": "List Admin Users",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/platform/cms/admin/users?company_id={{company_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "platform", "cms", "admin", "users"],
+              "query": [{ "key": "company_id", "value": "{{company_id}}" }]
+            }
+          }
+        },
+        {
+          "name": "Invite Admin User",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"member@example.com\",\n  \"full_name\": \"Member Name\",\n  \"company_id\": \"{{company_id}}\",\n  \"role_code\": \"company_admin\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/platform/cms/admin/users/invite",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "platform", "cms", "admin", "users", "invite"]
+            }
+          }
+        },
+        {
+          "name": "Resend Admin Invitation",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/api/v1/platform/cms/admin/users/{{user_id}}/resend-invitation?company_id={{company_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "platform", "cms", "admin", "users", "{{user_id}}", "resend-invitation"],
+              "query": [{ "key": "company_id", "value": "{{company_id}}" }]
+            }
+          }
+        },
+        {
+          "name": "Request User Password Reset",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/api/v1/platform/cms/admin/users/{{user_id}}/request-password-reset",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "platform", "cms", "admin", "users", "{{user_id}}", "request-password-reset"]
+            }
+          }
+        },
+        {
+          "name": "Create Admin User",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"login_id\": \"new.user@example.com\",\n  \"password\": \"Secret123!\",\n  \"full_name\": \"New User\",\n  \"company_id\": \"{{company_id}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/platform/cms/admin/users",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "platform", "cms", "admin", "users"]
+            }
+          }
+        },
+        {
+          "name": "Assign User To Company",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"company_id\": \"{{company_id}}\",\n  \"role_code\": \"company_admin\"\n}" },
+            "url": {
+              "raw": "{{base_url}}/api/v1/platform/cms/admin/users/{{user_id}}/assign-company",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "platform", "cms", "admin", "users", "{{user_id}}", "assign-company"]
+            }
+          }
+        },
+        {
+          "name": "Add Company Member",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"user_id\": \"{{user_id}}\",\n  \"role_code\": \"company_admin\"\n}" },
+            "url": {
+              "raw": "{{base_url}}/api/v1/platform/cms/admin/companies/{{company_id}}/members",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "platform", "cms", "admin", "companies", "{{company_id}}", "members"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Screen: Admin Roles",
+      "item": [
+        {
+          "name": "List CMS Roles",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/platform/cms/admin/roles",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "platform", "cms", "admin", "roles"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Screen: Admin Rules",
+      "item": [
+        {
+          "name": "List CMS Rules",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/platform/cms/admin/rules",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "platform", "cms", "admin", "rules"]
+            }
+          }
+        },
+        {
+          "name": "Validate CMS Rule",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"rule_type\": \"notification\",\n  \"conditions\": [],\n  \"outcome\": {}\n}" },
+            "url": {
+              "raw": "{{base_url}}/api/v1/platform/cms/admin/rules/validate",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "platform", "cms", "admin", "rules", "validate"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Screen: Ops Audit",
+      "item": [
+        {
+          "name": "List CMS Audit Logs",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/platform/cms/ops/audit?action=cms.entry.create",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "platform", "cms", "ops", "audit"],
+              "query": [{ "key": "action", "value": "cms.entry.create" }]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Screen: Ops Sessions",
+      "item": [
+        {
+          "name": "List CMS Sessions",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/platform/cms/ops/sessions",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "platform", "cms", "ops", "sessions"]
+            }
+          }
+        },
+        {
+          "name": "Revoke CMS Session",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/api/v1/platform/cms/ops/sessions/{{session_id}}/revoke",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "platform", "cms", "ops", "sessions", "{{session_id}}", "revoke"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Screen: Ops Health",
+      "item": [
+        {
+          "name": "Get CMS Health",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/platform/cms/ops/health",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "platform", "cms", "ops", "health"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Screen: Holiday Calendar",
+      "item": [
+        {
+          "name": "Get Holiday Calendar",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/platform/cms/holiday-calendars/{{year}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "platform", "cms", "holiday-calendars", "{{year}}"]
+            }
+          }
+        },
+        {
+          "name": "Preview Holiday Calendar",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"holidays\": [\n    {\n      \"date\": \"2026-01-01\",\n      \"name\": \"New Year\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/platform/cms/holiday-calendars/{{year}}/preview",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "platform", "cms", "holiday-calendars", "{{year}}", "preview"]
+            }
+          }
+        },
+        {
+          "name": "Replace Holiday Calendar",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"holidays\": [\n    {\n      \"date\": \"2026-01-01\",\n      \"name\": \"New Year\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/platform/cms/holiday-calendars/{{year}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "platform", "cms", "holiday-calendars", "{{year}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Screen: Templates",
+      "item": [
+        {
+          "name": "List Disclosure Groups",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/disclosure-groups",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "disclosure-groups"]
+            }
+          }
+        },
+        {
+          "name": "List Disclosure Types",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/disclosure-types?group_id=&q=financial",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "disclosure-types"],
+              "query": [
+                { "key": "group_id", "value": "" },
+                { "key": "q", "value": "financial" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Template Reference Data",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/disclosure-types/reference-data",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "admin", "disclosure-types", "reference-data"]
+            }
+          }
+        },
+        {
+          "name": "Get Disclosure Type Detail",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/disclosure-types/{{type_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "disclosure-types", "{{type_id}}"]
+            }
+          }
+        },
+        {
+          "name": "List Template Versions",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/disclosure-types/{{type_id}}/versions",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "admin", "disclosure-types", "{{type_id}}", "versions"]
+            }
+          }
+        },
+        {
+          "name": "Get Template Version Detail",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/disclosure-types/{{type_id}}/versions/{{version_no}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "admin", "disclosure-types", "{{type_id}}", "versions", "{{version_no}}"]
+            }
+          }
+        },
+        {
+          "name": "Save Template Version",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Financial\",\n  \"workflow\": {\n    \"steps\": []\n  },\n  \"deadline_config\": {},\n  \"channels\": []\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/disclosure-types/{{type_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "admin", "disclosure-types", "{{type_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Activate Template Version",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"version_no\": {{version_no}}\n}" },
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/disclosure-types/{{type_id}}/activate",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "admin", "disclosure-types", "{{type_id}}", "activate"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

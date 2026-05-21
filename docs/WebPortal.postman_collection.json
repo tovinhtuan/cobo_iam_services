@@ -1,0 +1,901 @@
+{
+  "info": {
+    "_postman_id": "4e48f8da-b649-4ee0-93d4-webportal-collection",
+    "name": "WebPortal",
+    "description": "Web Portal Postman collection generated from cross-checked FE `cobo_web_design` and BE `cobo_iam_services`. Excludes mismatch and unmapped endpoints.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{access_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:8080" },
+    { "key": "access_token", "value": "" },
+    { "key": "refresh_token", "value": "" },
+    { "key": "pre_company_token", "value": "" },
+    { "key": "company_id", "value": "" },
+    { "key": "membership_id", "value": "" },
+    { "key": "user_id", "value": "" },
+    { "key": "record_id", "value": "" },
+    { "key": "type_id", "value": "" },
+    { "key": "workflow_instance_id", "value": "" },
+    { "key": "task_id", "value": "" },
+    { "key": "proposal_id", "value": "" },
+    { "key": "permission_code", "value": "workflow.step.confirm" },
+    { "key": "role_id", "value": "" },
+    { "key": "permission_id", "value": "" },
+    { "key": "invitation_token", "value": "" },
+    { "key": "verify_token", "value": "" },
+    { "key": "reset_password_token", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Shared - Auth & Bootstrap",
+      "item": [
+        {
+          "name": "Get Login Password Key",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/login-password-key",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "login-password-key"]
+            }
+          }
+        },
+        {
+          "name": "Login",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"login_id\": \"admin@example.com\",\n  \"password\": \"Secret123!\"\n}" },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "login"]
+            }
+          }
+        },
+        {
+          "name": "Register",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"login_id\": \"owner@example.com\",\n  \"password\": \"Secret123!\",\n  \"full_name\": \"Owner Name\",\n  \"email\": \"owner@example.com\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/register",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "register"]
+            }
+          }
+        },
+        {
+          "name": "Select Company",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{pre_company_token}}", "type": "string" }]
+            },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"company_id\": \"{{company_id}}\"\n}" },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/select-company",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "select-company"]
+            }
+          }
+        },
+        {
+          "name": "Switch Company",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"company_id\": \"{{company_id}}\"\n}" },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/switch-company",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "switch-company"]
+            }
+          }
+        },
+        {
+          "name": "Refresh Token",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}" },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/refresh",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "refresh"]
+            }
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}" },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/logout",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "logout"]
+            }
+          }
+        },
+        {
+          "name": "Validate Invitation",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/invitations/validate?token={{invitation_token}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "invitations", "validate"],
+              "query": [{ "key": "token", "value": "{{invitation_token}}" }]
+            }
+          }
+        },
+        {
+          "name": "Accept Invitation",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{invitation_token}}\",\n  \"password\": \"Secret123!\",\n  \"full_name\": \"Invited User\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/invitations/accept",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "invitations", "accept"]
+            }
+          }
+        },
+        {
+          "name": "Reset Password",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{reset_password_token}}\",\n  \"password\": \"NewSecret123!\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/reset-password",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "reset-password"]
+            }
+          }
+        },
+        {
+          "name": "Verify Email",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"token\": \"{{verify_token}}\"\n}" },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/verify-email",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "verify-email"]
+            }
+          }
+        },
+        {
+          "name": "Resend Verification Email",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"owner@example.com\"\n}" },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/resend-verification-email",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "resend-verification-email"]
+            }
+          }
+        },
+        {
+          "name": "Initialize Company",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"company_name\": \"Demo Co\",\n  \"company_code\": \"DEMO\",\n  \"tax_code\": \"1234567890\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/company/initialize",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "company", "initialize"]
+            }
+          }
+        },
+        {
+          "name": "Get Me",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/me",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "me"]
+            }
+          }
+        },
+        {
+          "name": "Get My Companies",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/me/companies",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "me", "companies"]
+            }
+          }
+        },
+        {
+          "name": "Get Effective Access",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/me/effective-access",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "me", "effective-access"]
+            }
+          }
+        },
+        {
+          "name": "Get My Membership",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/me/membership",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "me", "membership"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Screen: Disclosure Types",
+      "item": [
+        {
+          "name": "List Disclosure Types",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/disclosure-types?group_id=&q=financial",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "disclosure-types"],
+              "query": [
+                { "key": "group_id", "value": "" },
+                { "key": "q", "value": "financial" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Screen: Disclosure Type Detail",
+      "item": [
+        {
+          "name": "Get Disclosure Type Detail",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/disclosure-types/{{type_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "disclosure-types", "{{type_id}}"]
+            }
+          }
+        },
+        {
+          "name": "List Disclosure Groups",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/disclosure-groups",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "disclosure-groups"]
+            }
+          }
+        },
+        {
+          "name": "Get Effective Workflow",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/disclosure-types/{{type_id}}/effective-workflow",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "disclosure-types", "{{type_id}}", "effective-workflow"]
+            }
+          }
+        },
+        {
+          "name": "Get Company Workflow Override",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/company/disclosure-types/{{type_id}}/workflow-override",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "company", "disclosure-types", "{{type_id}}", "workflow-override"]
+            }
+          }
+        },
+        {
+          "name": "Save Workflow Override Draft",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"steps\": [],\n  \"deadline_config\": {},\n  \"channels\": []\n}" },
+            "url": {
+              "raw": "{{base_url}}/api/v1/company/disclosure-types/{{type_id}}/workflow-override/draft?publish=false",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "company", "disclosure-types", "{{type_id}}", "workflow-override", "draft"],
+              "query": [{ "key": "publish", "value": "false" }]
+            }
+          }
+        },
+        {
+          "name": "Reset Active Workflow Override",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{base_url}}/api/v1/company/disclosure-types/{{type_id}}/workflow-override/active",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "company", "disclosure-types", "{{type_id}}", "workflow-override", "active"]
+            }
+          }
+        },
+        {
+          "name": "Preview Reminder Schedule",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/company/disclosure-types/{{type_id}}/workflow-override/draft/reminder-preview?t0=2026-05-21",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "company", "disclosure-types", "{{type_id}}", "workflow-override", "draft", "reminder-preview"],
+              "query": [{ "key": "t0", "value": "2026-05-21" }]
+            }
+          }
+        },
+        {
+          "name": "List Company Groups",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/company-groups?department_id=&is_active=true",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "company-groups"],
+              "query": [
+                { "key": "department_id", "value": "" },
+                { "key": "is_active", "value": "true" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Screen: Disclosure Form",
+      "item": [
+        {
+          "name": "Create Disclosure",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type_id\": \"{{type_id}}\",\n  \"title\": \"Quarterly Disclosure\",\n  \"content\": {},\n  \"t0_date\": \"2026-05-21\",\n  \"deadline_date\": \"2026-05-25\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/disclosures",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "disclosures"]
+            }
+          }
+        },
+        {
+          "name": "Get Disclosure Detail",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/disclosures/{{record_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "disclosures", "{{record_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Update Disclosure",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"title\": \"Quarterly Disclosure Updated\",\n  \"content\": {},\n  \"t0_date\": \"2026-05-21\"\n}" },
+            "url": {
+              "raw": "{{base_url}}/api/v1/disclosures/{{record_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "disclosures", "{{record_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Get Effective Workflow",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/disclosure-types/{{type_id}}/effective-workflow",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "disclosure-types", "{{type_id}}", "effective-workflow"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Screen: Disclosure Detail",
+      "item": [
+        {
+          "name": "Get Disclosure Detail",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/disclosures/{{record_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "disclosures", "{{record_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Get Disclosure Type Detail",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/disclosure-types/{{type_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "disclosure-types", "{{type_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Get Workflow Instance",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/workflows/instances/{{workflow_instance_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "workflows", "instances", "{{workflow_instance_id}}"]
+            }
+          }
+        },
+        {
+          "name": "List Workflow Tasks",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/workflows/instances/{{workflow_instance_id}}/tasks",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "workflows", "instances", "{{workflow_instance_id}}", "tasks"]
+            }
+          }
+        },
+        {
+          "name": "List Workflow Reminders",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/workflows/instances/{{workflow_instance_id}}/reminders",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "workflows", "instances", "{{workflow_instance_id}}", "reminders"]
+            }
+          }
+        },
+        {
+          "name": "Act On Workflow Task - Approve",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"comment\": \"Approved by reviewer\"\n}" },
+            "url": {
+              "raw": "{{base_url}}/api/v1/workflows/tasks/{{task_id}}/actions/approve",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "workflows", "tasks", "{{task_id}}", "actions", "approve"]
+            }
+          }
+        },
+        {
+          "name": "Act On Workflow Task - Reject",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"comment\": \"Rejected\"\n}" },
+            "url": {
+              "raw": "{{base_url}}/api/v1/workflows/tasks/{{task_id}}/actions/reject",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "workflows", "tasks", "{{task_id}}", "actions", "reject"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Screen: Ad Hoc Proposals",
+      "item": [
+        {
+          "name": "List Ad Hoc Proposals",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/company/ad-hoc-proposals?status=submitted,approved&page=1&page_size=20",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "company", "ad-hoc-proposals"],
+              "query": [
+                { "key": "status", "value": "submitted,approved" },
+                { "key": "page", "value": "1" },
+                { "key": "page_size", "value": "20" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Screen: Ad Hoc Proposal Create",
+      "item": [
+        {
+          "name": "List Eligible Controllers",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/company/ad-hoc-proposals/eligible-controllers",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "company", "ad-hoc-proposals", "eligible-controllers"]
+            }
+          }
+        },
+        {
+          "name": "List Disclosure Types",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/disclosure-types?group_id=&q=",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "disclosure-types"],
+              "query": [
+                { "key": "group_id", "value": "" },
+                { "key": "q", "value": "" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Effective Workflow",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/disclosure-types/{{type_id}}/effective-workflow",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "disclosure-types", "{{type_id}}", "effective-workflow"]
+            }
+          }
+        },
+        {
+          "name": "Create Ad Hoc Proposal Draft",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type_id\": \"{{type_id}}\",\n  \"step_overrides\": [],\n  \"proposed_t0_date\": \"2026-05-21\",\n  \"proposed_deadline_date\": \"2026-05-28\",\n  \"change_note\": \"Need custom approval path\",\n  \"process_controller_membership_id\": \"{{membership_id}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/company/ad-hoc-proposals",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "company", "ad-hoc-proposals"]
+            }
+          }
+        },
+        {
+          "name": "Submit Ad Hoc Proposal",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/api/v1/company/ad-hoc-proposals/{{proposal_id}}/submit",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "company", "ad-hoc-proposals", "{{proposal_id}}", "submit"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Screen: Ad Hoc Proposal Detail",
+      "item": [
+        {
+          "name": "Get Ad Hoc Proposal Detail",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/company/ad-hoc-proposals/{{proposal_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "company", "ad-hoc-proposals", "{{proposal_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Submit Ad Hoc Proposal",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/api/v1/company/ad-hoc-proposals/{{proposal_id}}/submit",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "company", "ad-hoc-proposals", "{{proposal_id}}", "submit"]
+            }
+          }
+        },
+        {
+          "name": "Focal Approve Proposal",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/api/v1/company/ad-hoc-proposals/{{proposal_id}}/focal-approve",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "company", "ad-hoc-proposals", "{{proposal_id}}", "focal-approve"]
+            }
+          }
+        },
+        {
+          "name": "Admin Approve Proposal",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{$guid}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"final_t0\": \"2026-05-21\",\n  \"final_deadline_date\": \"2026-05-28\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/company/ad-hoc-proposals/{{proposal_id}}/admin-approve",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "company", "ad-hoc-proposals", "{{proposal_id}}", "admin-approve"]
+            }
+          }
+        },
+        {
+          "name": "Reject Proposal",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"reject_reason\": \"Not compliant\"\n}" },
+            "url": {
+              "raw": "{{base_url}}/api/v1/company/ad-hoc-proposals/{{proposal_id}}/reject",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "company", "ad-hoc-proposals", "{{proposal_id}}", "reject"]
+            }
+          }
+        },
+        {
+          "name": "Cancel Proposal",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/api/v1/company/ad-hoc-proposals/{{proposal_id}}/cancel",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "company", "ad-hoc-proposals", "{{proposal_id}}", "cancel"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Screen: Admin Users",
+      "item": [
+        {
+          "name": "List Company Memberships",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/companies/{{company_id}}/memberships",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "admin", "companies", "{{company_id}}", "memberships"]
+            }
+          }
+        },
+        {
+          "name": "List Invite Roles",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/invite-roles",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "admin", "invite-roles"]
+            }
+          }
+        },
+        {
+          "name": "Resend Portal Invitation",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/users/{{user_id}}/resend-invitation",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "admin", "users", "{{user_id}}", "resend-invitation"]
+            }
+          }
+        },
+        {
+          "name": "List Member Permissions",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/memberships/{{membership_id}}/permissions",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "admin", "memberships", "{{membership_id}}", "permissions"]
+            }
+          }
+        },
+        {
+          "name": "Remove Member Permission",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/memberships/{{membership_id}}/permissions/{{permission_code}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "admin", "memberships", "{{membership_id}}", "permissions", "{{permission_code}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Screen: Admin Roles",
+      "item": [
+        {
+          "name": "List Portal Roles",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/roles",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "admin", "roles"]
+            }
+          }
+        },
+        {
+          "name": "List Portal Permissions",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/permissions",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "admin", "permissions"]
+            }
+          }
+        },
+        {
+          "name": "Assign Permission To Role",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"permission_id\": \"{{permission_id}}\"\n}" },
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/roles/{{role_id}}/permissions",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "admin", "roles", "{{role_id}}", "permissions"]
+            }
+          }
+        },
+        {
+          "name": "Remove Permission From Role",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/roles/{{role_id}}/permissions/{{permission_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "admin", "roles", "{{role_id}}", "permissions", "{{permission_id}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Screen: Admin Rules",
+      "item": [
+        {
+          "name": "Create Resource Scope Rule",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Department scope rule\",\n  \"status\": \"draft\",\n  \"conditions\": [],\n  \"outcome\": {}\n}" },
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/resource-scope-rules",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "admin", "resource-scope-rules"]
+            }
+          }
+        },
+        {
+          "name": "Create Workflow Assignee Rule",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Workflow assignee rule\",\n  \"status\": \"draft\",\n  \"conditions\": [],\n  \"outcome\": {}\n}" },
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/workflow-assignee-rules",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "admin", "workflow-assignee-rules"]
+            }
+          }
+        },
+        {
+          "name": "Create Notification Rule",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Reminder rule\",\n  \"status\": \"draft\",\n  \"conditions\": [],\n  \"outcome\": {}\n}" },
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/notification-rules",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "admin", "notification-rules"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Screen: Admin Company",
+      "item": [
+        {
+          "name": "Get Own Company",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/company",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "admin", "company"]
+            }
+          }
+        },
+        {
+          "name": "Patch Own Company",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"company_name\": \"Demo Co Updated\",\n  \"tax_code\": \"1234567890\",\n  \"registration_number\": \"REG001\",\n  \"address\": \"HCMC\",\n  \"phone\": \"0900000000\",\n  \"contact_email\": \"ops@example.com\",\n  \"representative_name\": \"Jane Doe\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/company",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "admin", "company"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
