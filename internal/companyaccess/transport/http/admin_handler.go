@@ -54,6 +54,22 @@ func (h *AdminHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/admin/memberships/{membership_id}/permissions", h.addMemberPermission)
 	mux.HandleFunc("DELETE /api/v1/admin/memberships/{membership_id}/permissions/{permission_code}", h.removeMemberPermission)
 	mux.HandleFunc("GET /api/v1/admin/memberships/{membership_id}/permissions", h.listMemberPermissions)
+
+	// Department CRUD
+	mux.HandleFunc("GET /api/v1/admin/departments", h.listDepartments)
+	mux.HandleFunc("POST /api/v1/admin/departments", h.createDepartment)
+	mux.HandleFunc("PATCH /api/v1/admin/departments/{department_id}", h.updateDepartment)
+	mux.HandleFunc("DELETE /api/v1/admin/departments/{department_id}", h.deleteDepartment)
+	mux.HandleFunc("POST /api/v1/admin/departments/{department_id}/members", h.addDeptMember)
+	mux.HandleFunc("DELETE /api/v1/admin/departments/{department_id}/members/{membership_id}", h.removeDeptMember)
+
+	// Title CRUD
+	mux.HandleFunc("GET /api/v1/admin/titles", h.listTitles)
+	mux.HandleFunc("POST /api/v1/admin/titles", h.createTitle)
+	mux.HandleFunc("PATCH /api/v1/admin/titles/{title_id}", h.updateTitle)
+	mux.HandleFunc("DELETE /api/v1/admin/titles/{title_id}", h.deleteTitle)
+	mux.HandleFunc("POST /api/v1/admin/titles/{title_id}/members", h.addTitleMember)
+	mux.HandleFunc("DELETE /api/v1/admin/titles/{title_id}/members/{membership_id}", h.removeTitleMember)
 }
 
 func (h *AdminHandler) createUser(w http.ResponseWriter, r *http.Request) {
@@ -655,6 +671,264 @@ func (h *AdminHandler) listMemberPermissions(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (h *AdminHandler) listDepartments(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	items, err := h.svc.ListDepartments(r.Context(), caapp.ListDepartmentsRequest{Subject: sub})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (h *AdminHandler) createDepartment(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	var p struct {
+		Name             string  `json:"name"`
+		HeadMembershipID *string `json:"head_membership_id"`
+		SortOrder        int     `json:"sort_order"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&p)
+	out, err := h.svc.CreateDepartment(r.Context(), caapp.CreateDepartmentRequest{
+		Subject:          sub,
+		Name:             p.Name,
+		HeadMembershipID: p.HeadMembershipID,
+		SortOrder:        p.SortOrder,
+	})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	h.auditLog(r, "admin.department.create", "department", out.DepartmentID)
+	httpx.WriteJSON(w, http.StatusCreated, out)
+}
+
+func (h *AdminHandler) updateDepartment(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	deptID := r.PathValue("department_id")
+	var p struct {
+		Name             *string `json:"name"`
+		HeadMembershipID *string `json:"head_membership_id"`
+		SortOrder        *int    `json:"sort_order"`
+		Status           *string `json:"status"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&p)
+	out, err := h.svc.UpdateDepartment(r.Context(), caapp.UpdateDepartmentRequest{
+		Subject:          sub,
+		DepartmentID:     deptID,
+		Name:             p.Name,
+		HeadMembershipID: p.HeadMembershipID,
+		SortOrder:        p.SortOrder,
+		Status:           p.Status,
+	})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	h.auditLog(r, "admin.department.update", "department", deptID)
+	httpx.WriteJSON(w, http.StatusOK, out)
+}
+
+func (h *AdminHandler) deleteDepartment(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	deptID := r.PathValue("department_id")
+	if err := h.svc.DeleteDepartment(r.Context(), caapp.DeleteDepartmentRequest{
+		Subject:      sub,
+		DepartmentID: deptID,
+	}); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	h.auditLog(r, "admin.department.delete", "department", deptID)
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (h *AdminHandler) addDeptMember(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	deptID := r.PathValue("department_id")
+	var p struct {
+		MembershipID string `json:"membership_id"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&p)
+	if err := h.svc.AddDeptMember(r.Context(), caapp.AddDeptMemberRequest{
+		Subject:      sub,
+		DepartmentID: deptID,
+		MembershipID: p.MembershipID,
+	}); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	h.auditLog(r, "admin.department.member.add", "department", deptID)
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (h *AdminHandler) removeDeptMember(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	deptID := r.PathValue("department_id")
+	membershipID := r.PathValue("membership_id")
+	if err := h.svc.RemoveDeptMember(r.Context(), caapp.RemoveDeptMemberRequest{
+		Subject:      sub,
+		DepartmentID: deptID,
+		MembershipID: membershipID,
+	}); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	h.auditLog(r, "admin.department.member.remove", "department", deptID)
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (h *AdminHandler) listTitles(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	items, err := h.svc.ListTitles(r.Context(), caapp.ListTitlesRequest{Subject: sub})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (h *AdminHandler) createTitle(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	var p struct {
+		Name      string `json:"name"`
+		SortOrder int    `json:"sort_order"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&p)
+	out, err := h.svc.CreateTitle(r.Context(), caapp.CreateTitleRequest{
+		Subject:   sub,
+		Name:      p.Name,
+		SortOrder: p.SortOrder,
+	})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	h.auditLog(r, "admin.title.create", "title", out.TitleID)
+	httpx.WriteJSON(w, http.StatusCreated, out)
+}
+
+func (h *AdminHandler) updateTitle(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	titleID := r.PathValue("title_id")
+	var p struct {
+		Name      *string `json:"name"`
+		SortOrder *int    `json:"sort_order"`
+		Status    *string `json:"status"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&p)
+	out, err := h.svc.UpdateTitle(r.Context(), caapp.UpdateTitleRequest{
+		Subject:   sub,
+		TitleID:   titleID,
+		Name:      p.Name,
+		SortOrder: p.SortOrder,
+		Status:    p.Status,
+	})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	h.auditLog(r, "admin.title.update", "title", titleID)
+	httpx.WriteJSON(w, http.StatusOK, out)
+}
+
+func (h *AdminHandler) deleteTitle(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	titleID := r.PathValue("title_id")
+	if err := h.svc.DeleteTitle(r.Context(), caapp.DeleteTitleRequest{
+		Subject: sub,
+		TitleID: titleID,
+	}); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	h.auditLog(r, "admin.title.delete", "title", titleID)
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (h *AdminHandler) addTitleMember(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	titleID := r.PathValue("title_id")
+	var p struct {
+		MembershipID string `json:"membership_id"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&p)
+	if err := h.svc.AddTitleMember(r.Context(), caapp.AddTitleMemberRequest{
+		Subject:      sub,
+		TitleID:      titleID,
+		MembershipID: p.MembershipID,
+	}); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	h.auditLog(r, "admin.title.member.add", "title", titleID)
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (h *AdminHandler) removeTitleMember(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	titleID := r.PathValue("title_id")
+	membershipID := r.PathValue("membership_id")
+	if err := h.svc.RemoveTitleMember(r.Context(), caapp.RemoveTitleMemberRequest{
+		Subject:      sub,
+		TitleID:      titleID,
+		MembershipID: membershipID,
+	}); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	h.auditLog(r, "admin.title.member.remove", "title", titleID)
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 func bearerToken(h string) string {

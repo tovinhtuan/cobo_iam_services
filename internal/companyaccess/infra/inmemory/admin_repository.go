@@ -650,3 +650,97 @@ func (r *AdminRepository) ListActiveDirectPermissions(_ context.Context, members
 	}
 	return out, nil
 }
+
+// Department CRUD — in-memory stubs (used by unit tests; MySQL impl is the production path).
+
+func (r *AdminRepository) MembershipBelongsToCompany(_ context.Context, membershipID, companyID string) (bool, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	m, ok := r.memberships[membershipID]
+	if !ok {
+		return false, nil
+	}
+	return m.CompanyID == companyID, nil
+}
+
+func (r *AdminRepository) ListCompanyDepartments(_ context.Context, _ string) ([]caapp.DepartmentView, error) {
+	return []caapp.DepartmentView{}, nil
+}
+
+func (r *AdminRepository) CreateDepartmentRow(_ context.Context, companyID, deptID, _, name string, headMembershipID *string, sortOrder int) (*caapp.DepartmentView, error) {
+	v := &caapp.DepartmentView{
+		DepartmentID:     deptID,
+		DepartmentName:   name,
+		Name:             name,
+		HeadMembershipID: headMembershipID,
+		Status:           "active",
+		SortOrder:        sortOrder,
+	}
+	return v, nil
+}
+
+func (r *AdminRepository) PatchDepartmentRow(_ context.Context, _, deptID string, name *string, headMembershipID *string, clearHead bool, sortOrder *int, status *string) (*caapp.DepartmentView, error) {
+	v := &caapp.DepartmentView{DepartmentID: deptID, Status: "active"}
+	if name != nil {
+		v.Name = *name
+		v.DepartmentName = *name
+	}
+	if !clearHead && headMembershipID != nil {
+		v.HeadMembershipID = headMembershipID
+	}
+	if sortOrder != nil {
+		v.SortOrder = *sortOrder
+	}
+	if status != nil {
+		v.Status = *status
+	}
+	return v, nil
+}
+
+func (r *AdminRepository) SoftDeleteDepartment(_ context.Context, _, _ string) error {
+	return nil
+}
+
+func (r *AdminRepository) CountDepartmentMembers(_ context.Context, _ string) (int, error) {
+	return 0, nil
+}
+
+// Title CRUD — in-memory stubs (used by unit tests; MySQL impl is the production path).
+
+func (r *AdminRepository) ListCompanyTitles(_ context.Context, _ string) ([]caapp.TitleView, error) {
+	return []caapp.TitleView{}, nil
+}
+
+func (r *AdminRepository) CreateTitleRow(_ context.Context, _, titleID, _, name string, sortOrder int) (*caapp.TitleView, error) {
+	v := &caapp.TitleView{
+		TitleID:   titleID,
+		TitleName: name,
+		Name:      name,
+		Status:    "active",
+		SortOrder: sortOrder,
+	}
+	return v, nil
+}
+
+func (r *AdminRepository) PatchTitleRow(_ context.Context, _, titleID string, name *string, sortOrder *int, status *string) (*caapp.TitleView, error) {
+	v := &caapp.TitleView{TitleID: titleID, Status: "active"}
+	if name != nil {
+		v.Name = *name
+		v.TitleName = *name
+	}
+	if sortOrder != nil {
+		v.SortOrder = *sortOrder
+	}
+	if status != nil {
+		v.Status = *status
+	}
+	return v, nil
+}
+
+func (r *AdminRepository) SoftDeleteTitle(_ context.Context, _, _ string) error {
+	return nil
+}
+
+func (r *AdminRepository) CountTitleMembers(_ context.Context, _ string) (int, error) {
+	return 0, nil
+}

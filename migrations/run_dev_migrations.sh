@@ -46,6 +46,10 @@ seed_dev_identity_authorization.sql
 0043_membership_direct_permissions.up.sql
 0044_role_default_grant_permissions.up.sql
 0045_backfill_workflow_read_permission.up.sql
+0046_add_is_primary_admin.up.sql
+0047_extend_departments.up.sql
+0048_extend_titles.up.sql
+0049_seed_org_roles.up.sql
 "
 
 mysql_exec() {

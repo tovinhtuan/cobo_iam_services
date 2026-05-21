@@ -32,6 +32,22 @@ type AdminService interface {
 	AssignTitle(ctx context.Context, req AssignTitleRequest) error
 	RemoveTitle(ctx context.Context, req RemoveTitleRequest) error
 
+	// Department CRUD (enterprise admin, guard: rbac.manage)
+	ListDepartments(ctx context.Context, req ListDepartmentsRequest) ([]DepartmentView, error)
+	CreateDepartment(ctx context.Context, req CreateDepartmentRequest) (*DepartmentView, error)
+	UpdateDepartment(ctx context.Context, req UpdateDepartmentRequest) (*DepartmentView, error)
+	DeleteDepartment(ctx context.Context, req DeleteDepartmentRequest) error
+	AddDeptMember(ctx context.Context, req AddDeptMemberRequest) error
+	RemoveDeptMember(ctx context.Context, req RemoveDeptMemberRequest) error
+
+	// Title CRUD (enterprise admin, guard: rbac.manage)
+	ListTitles(ctx context.Context, req ListTitlesRequest) ([]TitleView, error)
+	CreateTitle(ctx context.Context, req CreateTitleRequest) (*TitleView, error)
+	UpdateTitle(ctx context.Context, req UpdateTitleRequest) (*TitleView, error)
+	DeleteTitle(ctx context.Context, req DeleteTitleRequest) error
+	AddTitleMember(ctx context.Context, req AddTitleMemberRequest) error
+	RemoveTitleMember(ctx context.Context, req RemoveTitleMemberRequest) error
+
 	ListPermissions(ctx context.Context, req AdminSubjectRequest) ([]string, error)
 	ListRoles(ctx context.Context, req AdminSubjectRequest) ([]string, error)
 	AssignRolePermission(ctx context.Context, req AssignRolePermissionRequest) error
@@ -107,6 +123,23 @@ type AdminRepository interface {
 	RemoveDepartment(ctx context.Context, membershipID, departmentID string) error
 	AddTitle(ctx context.Context, membershipID, titleID string) error
 	RemoveTitle(ctx context.Context, membershipID, titleID string) error
+
+	// MembershipBelongsToCompany checks that a membership exists and its company_id matches.
+	MembershipBelongsToCompany(ctx context.Context, membershipID, companyID string) (bool, error)
+
+	// Department CRUD repository methods
+	ListCompanyDepartments(ctx context.Context, companyID string) ([]DepartmentView, error)
+	CreateDepartmentRow(ctx context.Context, companyID, deptID, deptCode, name string, headMembershipID *string, sortOrder int) (*DepartmentView, error)
+	PatchDepartmentRow(ctx context.Context, companyID, deptID string, name *string, headMembershipID *string, clearHead bool, sortOrder *int, status *string) (*DepartmentView, error)
+	SoftDeleteDepartment(ctx context.Context, deptID, companyID string) error
+	CountDepartmentMembers(ctx context.Context, deptID string) (int, error)
+
+	// Title CRUD repository methods
+	ListCompanyTitles(ctx context.Context, companyID string) ([]TitleView, error)
+	CreateTitleRow(ctx context.Context, companyID, titleID, titleCode, name string, sortOrder int) (*TitleView, error)
+	PatchTitleRow(ctx context.Context, companyID, titleID string, name *string, sortOrder *int, status *string) (*TitleView, error)
+	SoftDeleteTitle(ctx context.Context, titleID, companyID string) error
+	CountTitleMembers(ctx context.Context, titleID string) (int, error)
 
 	ListPermissions(ctx context.Context) ([]string, error)
 	// ListRoles returns role_id values for the given company: global roles (company_id NULL) plus roles scoped to that company.
@@ -437,5 +470,79 @@ type RemoveDirectPermissionRequest struct {
 
 type ListDirectPermissionsRequest struct {
 	Subject      AdminSubject
+	MembershipID string
+}
+
+type ListDepartmentsRequest struct {
+	Subject AdminSubject
+}
+
+type CreateDepartmentRequest struct {
+	Subject          AdminSubject
+	Name             string  `json:"name"`
+	HeadMembershipID *string `json:"head_membership_id"`
+	SortOrder        int     `json:"sort_order"`
+}
+
+type UpdateDepartmentRequest struct {
+	Subject      AdminSubject
+	DepartmentID string
+	// nil = not provided (no change). For HeadMembershipID: "" = clear, non-empty = set.
+	Name             *string `json:"name"`
+	HeadMembershipID *string `json:"head_membership_id"`
+	SortOrder        *int    `json:"sort_order"`
+	Status           *string `json:"status"`
+}
+
+type DeleteDepartmentRequest struct {
+	Subject      AdminSubject
+	DepartmentID string
+}
+
+type AddDeptMemberRequest struct {
+	Subject      AdminSubject
+	DepartmentID string
+	MembershipID string `json:"membership_id"`
+}
+
+type RemoveDeptMemberRequest struct {
+	Subject      AdminSubject
+	DepartmentID string
+	MembershipID string
+}
+
+type ListTitlesRequest struct {
+	Subject AdminSubject
+}
+
+type CreateTitleRequest struct {
+	Subject   AdminSubject
+	Name      string `json:"name"`
+	SortOrder int    `json:"sort_order"`
+}
+
+type UpdateTitleRequest struct {
+	Subject   AdminSubject
+	TitleID   string
+	// nil = not provided (no change).
+	Name      *string `json:"name"`
+	SortOrder *int    `json:"sort_order"`
+	Status    *string `json:"status"`
+}
+
+type DeleteTitleRequest struct {
+	Subject AdminSubject
+	TitleID string
+}
+
+type AddTitleMemberRequest struct {
+	Subject      AdminSubject
+	TitleID      string
+	MembershipID string `json:"membership_id"`
+}
+
+type RemoveTitleMemberRequest struct {
+	Subject      AdminSubject
+	TitleID      string
 	MembershipID string
 }
