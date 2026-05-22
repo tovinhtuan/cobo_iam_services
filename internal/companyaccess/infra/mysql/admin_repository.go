@@ -266,6 +266,45 @@ func (r *AdminRepository) SetMembershipPrimaryAdmin(ctx context.Context, members
 	return err
 }
 
+func (r *AdminRepository) ClearMembershipPrimaryAdmin(ctx context.Context, membershipID string) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE memberships SET is_primary_admin = FALSE WHERE membership_id = ?`, membershipID)
+	return err
+}
+
+func (r *AdminRepository) GetMembershipByID(ctx context.Context, membershipID string) (*caapp.MembershipView, error) {
+	row := r.db.QueryRowContext(ctx, `
+		SELECT m.membership_id, m.user_id, m.company_id, c.company_name,
+		       m.membership_status, u.login_id, u.full_name, u.account_status, m.is_primary_admin
+		FROM memberships m
+		INNER JOIN users u ON u.user_id = m.user_id
+		INNER JOIN companies c ON c.company_id = m.company_id
+		WHERE m.membership_id = ?
+	`, membershipID)
+	var mv caapp.MembershipView
+	var isPrimaryAdmin bool
+	err := row.Scan(&mv.MembershipID, &mv.UserID, &mv.CompanyID, &mv.CompanyName,
+		&mv.Status, &mv.LoginID, &mv.FullName, &mv.AccountStatus, &isPrimaryAdmin)
+	if err != nil {
+		return nil, err
+	}
+	mv.IsPrimaryAdmin = isPrimaryAdmin
+	return &mv, nil
+}
+
+func (r *AdminRepository) CountAdminsInCompany(ctx context.Context, companyID string) (int, error) {
+	var count int
+	err := r.db.QueryRowContext(ctx, `
+		SELECT COUNT(DISTINCT mr.membership_id)
+		FROM membership_roles mr
+		INNER JOIN memberships m ON m.membership_id = mr.membership_id
+		INNER JOIN roles ro ON ro.role_id = mr.role_id
+		WHERE m.company_id = ? AND m.membership_status = 'active'
+		  AND ro.role_code = 'company_admin' AND mr.status = 'active'
+	`, companyID).Scan(&count)
+	return count, err
+}
+
 func (r *AdminRepository) ListUsersWithNoMembership(ctx context.Context) ([]caapp.MembershipView, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT '' AS membership_id,

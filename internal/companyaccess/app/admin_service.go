@@ -682,13 +682,91 @@ func (s *adminService) UpdateMembership(ctx context.Context, req UpdateMembershi
 	if err := s.authorize(ctx, req.Subject, "admin.membership.update", req.MembershipID); err != nil {
 		return nil, err
 	}
+	if req.Status == "inactive" {
+		m, err := s.repo.GetMembershipByID(ctx, req.MembershipID)
+		if err == nil && m.IsPrimaryAdmin {
+			return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "CANNOT_DEACTIVATE_PRIMARY_ADMIN", nil)
+		}
+	}
 	return s.repo.UpdateMembershipStatus(ctx, req.MembershipID, req.Status)
 }
+
 func (s *adminService) DeleteMembership(ctx context.Context, req DeleteMembershipRequest) error {
 	if err := s.authorize(ctx, req.Subject, "admin.membership.delete", req.MembershipID); err != nil {
 		return err
 	}
+	m, err := s.repo.GetMembershipByID(ctx, req.MembershipID)
+	if err == nil && m.IsPrimaryAdmin {
+		return perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "CANNOT_DELETE_PRIMARY_ADMIN", nil)
+	}
 	return s.repo.DeleteMembership(ctx, req.MembershipID)
+}
+
+func (s *adminService) AssignCompanyAdmin(ctx context.Context, req AssignCompanyAdminRequest) error {
+	if err := s.authorize(ctx, req.Subject, "rbac.manage", ""); err != nil {
+		return err
+	}
+	ok, err := s.repo.MembershipBelongsToCompany(ctx, req.MembershipID, req.Subject.CompanyID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "membership not found in company", nil)
+	}
+	count, err := s.repo.CountAdminsInCompany(ctx, req.Subject.CompanyID)
+	if err != nil {
+		return err
+	}
+	if count >= 5 {
+		return perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "ADMIN_LIMIT_REACHED", nil)
+	}
+	roleID, err := s.repo.LookupRoleIDForInvite(ctx, req.Subject.CompanyID, "", "company_admin", "company_admin")
+	if err != nil || roleID == "" {
+		return perr.NewHTTPError(http.StatusInternalServerError, perr.CodeInternal, "company_admin role not found", nil)
+	}
+	return s.repo.AddRole(ctx, req.MembershipID, roleID)
+}
+
+func (s *adminService) RevokeCompanyAdmin(ctx context.Context, req RevokeCompanyAdminRequest) error {
+	if err := s.authorize(ctx, req.Subject, "rbac.manage", ""); err != nil {
+		return err
+	}
+	m, err := s.repo.GetMembershipByID(ctx, req.MembershipID)
+	if err != nil {
+		return err
+	}
+	if m.IsPrimaryAdmin {
+		return perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "CANNOT_REVOKE_PRIMARY_ADMIN", nil)
+	}
+	roleID, err := s.repo.LookupRoleIDForInvite(ctx, req.Subject.CompanyID, "", "company_admin", "company_admin")
+	if err != nil || roleID == "" {
+		return perr.NewHTTPError(http.StatusInternalServerError, perr.CodeInternal, "company_admin role not found", nil)
+	}
+	return s.repo.RemoveRole(ctx, req.MembershipID, roleID)
+}
+
+func (s *adminService) TransferOwnership(ctx context.Context, req TransferOwnershipRequest) error {
+	if err := s.authorize(ctx, req.Subject, "rbac.manage", ""); err != nil {
+		return err
+	}
+	caller, err := s.repo.GetMembershipByID(ctx, req.Subject.MembershipID)
+	if err != nil {
+		return err
+	}
+	if !caller.IsPrimaryAdmin {
+		return perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "only the primary admin can transfer ownership", nil)
+	}
+	ok, err := s.repo.MembershipBelongsToCompany(ctx, req.TargetMembershipID, req.Subject.CompanyID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "target membership not found in company", nil)
+	}
+	if err := s.repo.ClearMembershipPrimaryAdmin(ctx, req.Subject.MembershipID); err != nil {
+		return err
+	}
+	return s.repo.SetMembershipPrimaryAdmin(ctx, req.TargetMembershipID)
 }
 func (s *adminService) ListCompanyMemberships(ctx context.Context, req ListCompanyMembershipsRequest) ([]MembershipView, error) {
 	if req.ListWithoutCompany {

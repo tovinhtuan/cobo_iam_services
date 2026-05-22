@@ -79,6 +79,11 @@ func (h *AdminHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/admin/titles/{title_id}/members", h.addTitleMember)
 	mux.HandleFunc("DELETE /api/v1/admin/titles/{title_id}/members/{membership_id}", h.removeTitleMember)
 
+	// Company admin assignment and transfer-ownership
+	mux.HandleFunc("POST /api/v1/admin/company/admins", h.assignCompanyAdmin)
+	mux.HandleFunc("DELETE /api/v1/admin/company/admins/{membership_id}", h.revokeCompanyAdmin)
+	mux.HandleFunc("POST /api/v1/admin/company/transfer-ownership", h.transferOwnership)
+
 	// Company self-service initialization (no rbac.manage required)
 	mux.HandleFunc("POST /api/v1/company/initialize", h.initializeCompany)
 }
@@ -993,6 +998,66 @@ func (h *AdminHandler) removeTitleMember(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	h.auditLog(r, "admin.title.member.remove", "title", titleID)
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (h *AdminHandler) assignCompanyAdmin(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	var body struct {
+		MembershipID string `json:"membership_id"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	if err := h.svc.AssignCompanyAdmin(r.Context(), caapp.AssignCompanyAdminRequest{
+		Subject:      sub,
+		MembershipID: body.MembershipID,
+	}); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	h.auditLog(r, "admin.company.admin.assign", "membership", body.MembershipID)
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (h *AdminHandler) revokeCompanyAdmin(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	membershipID := r.PathValue("membership_id")
+	if err := h.svc.RevokeCompanyAdmin(r.Context(), caapp.RevokeCompanyAdminRequest{
+		Subject:      sub,
+		MembershipID: membershipID,
+	}); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	h.auditLog(r, "admin.company.admin.revoke", "membership", membershipID)
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (h *AdminHandler) transferOwnership(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	var body struct {
+		TargetMembershipID string `json:"target_membership_id"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	if err := h.svc.TransferOwnership(r.Context(), caapp.TransferOwnershipRequest{
+		Subject:            sub,
+		TargetMembershipID: body.TargetMembershipID,
+	}); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	h.auditLog(r, "admin.company.ownership.transfer", "membership", body.TargetMembershipID)
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 

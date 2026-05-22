@@ -795,6 +795,53 @@ func (r *AdminRepository) CountTitleMembers(_ context.Context, _ string) (int, e
 	return 0, nil
 }
 
-func (r *AdminRepository) SetMembershipPrimaryAdmin(_ context.Context, _ string) error {
+func (r *AdminRepository) SetMembershipPrimaryAdmin(_ context.Context, membershipID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if m, ok := r.memberships[membershipID]; ok {
+		m.IsPrimaryAdmin = true
+		r.memberships[membershipID] = m
+	}
 	return nil
+}
+
+func (r *AdminRepository) ClearMembershipPrimaryAdmin(_ context.Context, membershipID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if m, ok := r.memberships[membershipID]; ok {
+		m.IsPrimaryAdmin = false
+		r.memberships[membershipID] = m
+	}
+	return nil
+}
+
+func (r *AdminRepository) GetMembershipByID(_ context.Context, membershipID string) (*caapp.MembershipView, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	m, ok := r.memberships[membershipID]
+	if !ok {
+		return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "membership not found", nil)
+	}
+	cp := m
+	return &cp, nil
+}
+
+func (r *AdminRepository) CountAdminsInCompany(_ context.Context, companyID string) (int, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	count := 0
+	for _, m := range r.memberships {
+		if m.CompanyID != companyID || m.Status != "active" {
+			continue
+		}
+		if roles, ok := r.rolesByMembership[m.MembershipID]; ok {
+			for id := range roles {
+				if strings.Contains(id, "company_admin") {
+					count++
+					break
+				}
+			}
+		}
+	}
+	return count, nil
 }

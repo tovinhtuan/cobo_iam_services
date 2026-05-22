@@ -75,6 +75,13 @@ type AdminService interface {
 	// ListDirectPermissions returns active direct permission grants for a membership.
 	ListDirectPermissions(ctx context.Context, req ListDirectPermissionsRequest) ([]DirectPermissionView, error)
 
+	// AssignCompanyAdmin grants company_admin role to a membership (max 5 total admins).
+	AssignCompanyAdmin(ctx context.Context, req AssignCompanyAdminRequest) error
+	// RevokeCompanyAdmin removes company_admin role from a membership (primary admin cannot be revoked).
+	RevokeCompanyAdmin(ctx context.Context, req RevokeCompanyAdminRequest) error
+	// TransferOwnership atomically changes the primary admin from caller to target membership.
+	TransferOwnership(ctx context.Context, req TransferOwnershipRequest) error
+
 	// InitializeCompany creates a new company for a user with no existing membership (self-service onboarding).
 	// Caller is responsible for issuing new session tokens after this returns.
 	InitializeCompany(ctx context.Context, req InitializeCompanyRequest) (*InitializeCompanyResult, error)
@@ -162,6 +169,12 @@ type AdminRepository interface {
 
 	// SetMembershipPrimaryAdmin sets is_primary_admin = true for the given membership.
 	SetMembershipPrimaryAdmin(ctx context.Context, membershipID string) error
+	// ClearMembershipPrimaryAdmin sets is_primary_admin = false for the given membership.
+	ClearMembershipPrimaryAdmin(ctx context.Context, membershipID string) error
+	// GetMembershipByID returns the MembershipView for a given membership_id, or an error if not found.
+	GetMembershipByID(ctx context.Context, membershipID string) (*MembershipView, error)
+	// CountAdminsInCompany returns the number of memberships with the company_admin role in the company.
+	CountAdminsInCompany(ctx context.Context, companyID string) (int, error)
 }
 
 type AdminSubject struct {
@@ -478,6 +491,21 @@ type RemoveDirectPermissionRequest struct {
 type ListDirectPermissionsRequest struct {
 	Subject      AdminSubject
 	MembershipID string
+}
+
+type AssignCompanyAdminRequest struct {
+	Subject      AdminSubject
+	MembershipID string
+}
+
+type RevokeCompanyAdminRequest struct {
+	Subject      AdminSubject
+	MembershipID string
+}
+
+type TransferOwnershipRequest struct {
+	Subject            AdminSubject
+	TargetMembershipID string
 }
 
 type InitializeCompanyRequest struct {
