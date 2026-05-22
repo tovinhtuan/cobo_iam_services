@@ -2516,3 +2516,18 @@
   - `docs/backend-module-inventory.md` groups current design by backend ownership (`iam`, `companyaccess`, `disclosure`, `workflow`, `platformcms`), with FE surfaces, major endpoints, and flow ownership per module.
   - `docs/lifecycle-flow-inventory.md` groups the same system by operational lifecycle (`auth`, `disclosure`, `reminder`, `ops`) to make end-to-end tracing easier than route-by-route reading.
 - 2026-05-22: Added `docs/inventory-index.md` as the short navigation entrypoint for the full documentation set, with a "read this when you want to know X" table linking the master inventory, route matrix, status map, module view, lifecycle view, CMS inventory, and Enterprise Admin inventory.
+- 2026-05-22: Converted the email notification SA into an implementation-ready rollout plan in `docs/email-notification-system-implementation-plan.md`.
+  - grounded the plan in the current repo reality:
+    - auth emails are still built in `internal/iam/app/service.go`
+    - reminder email still sends directly from `internal/reminder/infra/email/smtp_sender.go`
+    - worker still handles auth outbox events in `cmd/worker/main.go`
+    - `internal/notification` already exists for generic notification jobs, so the safest plan is to extend it with email-focused subpackages/files instead of replacing it
+  - the plan includes:
+    - phase-by-phase rollout with feature flags and rollback
+    - current code impact map
+    - target package structure
+    - DB migration plan
+    - testing strategy
+    - risk register
+    - PR plan
+    - staging/production deployment checklist

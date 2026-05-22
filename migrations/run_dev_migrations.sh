@@ -56,6 +56,17 @@ mysql_exec() {
   MYSQL_PWD="${DB_PASSWORD}" mysql --default-character-set=utf8mb4 -h "${DB_HOST}" -u"${DB_USER}" "${DB_NAME}" "$@"
 }
 
+mysql_server_exec() {
+  MYSQL_PWD="${DB_PASSWORD}" mysql --default-character-set=utf8mb4 -h "${DB_HOST}" -u"${DB_USER}" "$@"
+}
+
+echo "Ensuring database ${DB_NAME} exists..."
+mysql_server_exec <<SQL
+CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\`
+  CHARACTER SET utf8mb4
+  COLLATE utf8mb4_unicode_ci;
+SQL
+
 echo "Ensuring schema_migrations table exists..."
 mysql_exec <<'SQL'
 CREATE TABLE IF NOT EXISTS schema_migrations (
