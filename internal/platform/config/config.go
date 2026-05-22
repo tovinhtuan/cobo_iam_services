@@ -87,6 +87,17 @@ type Config struct {
 	SMTPFrom     string
 	// EmailTemplateSource controls phase-1 rendering path: legacy | embed.
 	EmailTemplateSource string
+	// EmailNotificationEnabled gates the new NotificationService worker handler (phases 2-3).
+	// When false, no new email.dispatch outbox handler runs.
+	EmailNotificationEnabled bool
+	// EmailDeliveryPath selects the delivery code path per dispatch: legacy | notification_service.
+	// Used during phases 2-5 to migrate auth and reminder paths one at a time.
+	EmailDeliveryPath string
+	// EmailFormat selects the rendered MIME flavour: text | html. Default text.
+	EmailFormat string
+	// EmailShadowMode mirrors dispatch into the new pipeline without taking over delivery (phases 2-4).
+	// Shadow failures must never break the legacy path.
+	EmailShadowMode bool
 
 	// CMS media signed-upload/storage settings.
 	CMSMediaUploadSigningSecret string
@@ -151,6 +162,10 @@ func Load() (Config, error) {
 		SMTPPassword:                  os.Getenv("SMTP_PASSWORD"),
 		SMTPFrom:                      getenv("SMTP_FROM", "no-reply@cobo.local"),
 		EmailTemplateSource:           getenv("EMAIL_TEMPLATE_SOURCE", "legacy"),
+		EmailNotificationEnabled:      boolEnv("EMAIL_NOTIFICATION_ENABLED", false),
+		EmailDeliveryPath:             getenv("EMAIL_DELIVERY_PATH", "legacy"),
+		EmailFormat:                   getenv("EMAIL_FORMAT", "text"),
+		EmailShadowMode:               boolEnv("EMAIL_SHADOW_MODE", false),
 		CMSMediaUploadSigningSecret:   getenv("CMS_MEDIA_UPLOAD_SIGNING_SECRET", "dev-cms-media-secret"),
 		CMSMediaUploadURLTTL:          durationEnv("CMS_MEDIA_UPLOAD_URL_TTL", 10*time.Minute),
 		CMSMediaStorageDir:            getenv("CMS_MEDIA_STORAGE_DIR", "./var/cms-media"),
@@ -184,6 +199,16 @@ func Load() (Config, error) {
 	case "legacy", "embed":
 	default:
 		return Config{}, fmt.Errorf("EMAIL_TEMPLATE_SOURCE invalid: %s", cfg.EmailTemplateSource)
+	}
+	switch cfg.EmailDeliveryPath {
+	case "legacy", "notification_service":
+	default:
+		return Config{}, fmt.Errorf("EMAIL_DELIVERY_PATH invalid: %s", cfg.EmailDeliveryPath)
+	}
+	switch cfg.EmailFormat {
+	case "text", "html":
+	default:
+		return Config{}, fmt.Errorf("EMAIL_FORMAT invalid: %s", cfg.EmailFormat)
 	}
 	return cfg, nil
 }

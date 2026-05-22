@@ -61,6 +61,10 @@ func (emailRenderer) Render(t ResolvedTemplate, vars map[string]any) (RenderedEm
 }
 
 func renderTemplate(field, src string, vars map[string]any) (string, error) {
+	// Normalise CRLF to LF before parsing so a Windows checkout (or a stray
+	// editor) cannot turn rendered email bodies into CRCRLF when downstream
+	// SMTP layers convert \n -> \r\n for the wire format.
+	src = strings.ReplaceAll(src, "\r\n", "\n")
 	tmpl, err := template.New(field).Parse(src)
 	if err != nil {
 		return "", &TemplateRenderError{Field: field, Err: err}

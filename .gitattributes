@@ -1,0 +1,9 @@
+# Force LF for email templates and golden fixtures so renderer output is
+# stable across OSes (Windows autocrlf would otherwise inject \r\n on checkout
+# and the renderer would emit CRLF mid-body, breaking the SMTP wire layer
+# which already converts \n -> \r\n).
+internal/notification/templates/**/subject.txt text eol=lf
+internal/notification/templates/**/body.txt    text eol=lf
+internal/notification/templates/**/body.html   text eol=lf
+internal/notification/templates/**/meta.yaml   text eol=lf
+internal/notification/app/testdata/email-golden/** text eol=lf

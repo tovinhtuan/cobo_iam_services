@@ -1,6 +1,8 @@
 package config
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestNormalizeMySQLDSN(t *testing.T) {
 	tests := []struct {
@@ -32,5 +34,53 @@ func TestNormalizeMySQLDSN(t *testing.T) {
 				t.Fatalf("normalizeMySQLDSN() = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+// TestLoad_EmailFlagDefaults locks the safe defaults so phase 0 cannot accidentally
+// change current production behaviour. Every email flag added in phase 0 must default
+// to a value that keeps the legacy auth/reminder paths unchanged.
+func TestLoad_EmailFlagDefaults(t *testing.T) {
+	for _, k := range []string{
+		"EMAIL_TEMPLATE_SOURCE",
+		"EMAIL_NOTIFICATION_ENABLED",
+		"EMAIL_DELIVERY_PATH",
+		"EMAIL_FORMAT",
+		"EMAIL_SHADOW_MODE",
+	} {
+		t.Setenv(k, "")
+	}
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.EmailTemplateSource != "legacy" {
+		t.Fatalf("EmailTemplateSource = %q, want legacy", cfg.EmailTemplateSource)
+	}
+	if cfg.EmailNotificationEnabled {
+		t.Fatalf("EmailNotificationEnabled must default to false")
+	}
+	if cfg.EmailDeliveryPath != "legacy" {
+		t.Fatalf("EmailDeliveryPath = %q, want legacy", cfg.EmailDeliveryPath)
+	}
+	if cfg.EmailFormat != "text" {
+		t.Fatalf("EmailFormat = %q, want text", cfg.EmailFormat)
+	}
+	if cfg.EmailShadowMode {
+		t.Fatalf("EmailShadowMode must default to false")
+	}
+}
+
+func TestLoad_EmailDeliveryPathInvalid(t *testing.T) {
+	t.Setenv("EMAIL_DELIVERY_PATH", "bogus")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected error for invalid EMAIL_DELIVERY_PATH")
+	}
+}
+
+func TestLoad_EmailFormatInvalid(t *testing.T) {
+	t.Setenv("EMAIL_FORMAT", "rtf")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected error for invalid EMAIL_FORMAT")
 	}
 }

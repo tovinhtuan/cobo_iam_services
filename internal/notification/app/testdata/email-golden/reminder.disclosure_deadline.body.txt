@@ -1,0 +1,13 @@
+Hello,
+
+This is an automated reminder for a disclosure task.
+
+Disclosure: Annual disclosure report
+Disclosure ID: disc-001
+Deadline: 2026-05-10
+Current status: draft
+Action link: /app/disclosures/disc-001
+
+Please review and complete the required action before the deadline.
+
+COBO Notification System
