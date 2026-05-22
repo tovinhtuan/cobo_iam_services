@@ -28,7 +28,7 @@
 #   sh deploy-dev.sh verify                 # xem trạng thái không deploy gì
 #
 # YÊU CẦU:
-#   - SSH key đã cấu hình cho root@88.216.208.0 (port 21239)
+#   - Có thể SSH tới root@88.216.208.0 (port 21239) bằng SSH key hoặc password
 #   - Go toolchain (cho BE cross-compile)
 #   - Node.js + npm (cho FE build)
 # =============================================================================
@@ -77,17 +77,30 @@ ssh_exec() {
   ssh -p "$DEV_PORT" "${DEV_USER}@${DEV_HOST}" "$@"
 }
 
+sync_migrations_dir() {
+  log_step "Migrations: đồng bộ thư mục migrations lên dev server"
+  ssh_exec "mkdir -p ${DEV_PATH} && rm -rf ${DEV_PATH}/migrations"
+  scp -P "$DEV_PORT" -r "$MIGRATIONS_DIR" "${DEV_USER}@${DEV_HOST}:${DEV_PATH}/"
+  log_ok "Đã đồng bộ migrations/"
+}
+
+read_applied_migrations() {
+  ssh_exec \
+    "docker exec cobo-iam-mysql mysql -uroot -proot cobo_iam -Nse 'SELECT file_name FROM schema_migrations'"
+}
+
 # =============================================================================
 # BƯỚC 1: Pre-flight — kiểm tra SSH
 # =============================================================================
 preflight_check() {
   log_step "Pre-flight: kiểm tra kết nối SSH tới dev server"
+  log_info "SSH có thể yêu cầu nhập password nếu SSH key chưa sẵn sàng"
 
-  if ! ssh -p "$DEV_PORT" -o ConnectTimeout=8 -o BatchMode=yes \
+  if ! ssh -p "$DEV_PORT" -o ConnectTimeout=8 \
        "${DEV_USER}@${DEV_HOST}" "echo ok" >/dev/null 2>&1; then
     log_error "Không kết nối được SSH tới ${DEV_USER}@${DEV_HOST}:${DEV_PORT}"
     printf "    Kiểm tra:\n"
-    printf "      1. SSH key đã được thêm vào ssh-agent chưa?  (ssh-add ~/.ssh/id_rsa)\n"
+    printf "      1. Password hoặc SSH key có đúng không?\n"
     printf "      2. Dev server có đang chạy không?\n"
     printf "      3. Thử thủ công:  ssh -p %s %s@%s\n" \
            "$DEV_PORT" "$DEV_USER" "$DEV_HOST"
@@ -139,16 +152,56 @@ precheck_fe() {
 # =============================================================================
 deploy_migrations() {
   log_step "Migrations: so sánh local vs server"
+  sync_migrations_dir
+  bootstrap_recovered=0
 
   # Lấy danh sách migrations đã apply trên server
-  applied="$(ssh_exec \
-    "docker exec cobo-iam-mysql mysql -uroot -proot cobo_iam -Nse \
-     'SELECT file_name FROM schema_migrations' 2>/dev/null" \
-  )" || {
-    log_warn "Không lấy được schema_migrations từ server (MySQL chưa chạy?)"
-    log_warn "Bỏ qua bước migration."
-    return
-  }
+  if ! applied="$(read_applied_migrations 2>&1)"; then
+    log_error "Không lấy được schema_migrations từ server."
+    case "$applied" in
+      *"Permission denied"*|*"Host key verification failed"*)
+        log_error "SSH authentication thất bại khi truy vấn dev server."
+        ;;
+      *"No such container: cobo-iam-mysql"*)
+        log_error "Container MySQL 'cobo-iam-mysql' không tồn tại trên dev server."
+        ;;
+      *"is not running"*|*"Container "*)
+        log_error "Container MySQL trên dev server không chạy ổn định."
+        ;;
+      *"Access denied for user"*)
+        log_error "MySQL từ chối credentials hiện tại."
+        ;;
+      *"Unknown database 'cobo_iam'"*)
+        log_error "Database 'cobo_iam' chưa tồn tại trên dev server."
+        ;;
+      *"Table 'cobo_iam.schema_migrations' doesn't exist"*)
+        log_warn "Bảng 'schema_migrations' chưa tồn tại trong database 'cobo_iam'."
+        log_info "Đang chạy bootstrap migration runner trên dev server..."
+        if ! ssh_exec "cd ${DEV_PATH} && docker compose -f docker-compose.artifacts.yml run --rm migrate"; then
+          log_error "Bootstrap migration runner thất bại."
+          exit 1
+        fi
+        if ! applied="$(read_applied_migrations 2>&1)"; then
+          log_error "Bootstrap đã chạy nhưng vẫn không đọc được schema_migrations."
+          log_error "Chi tiết lỗi: ${applied:-không có output}"
+          exit 1
+        fi
+        bootstrap_recovered=1
+        ;;
+      *"Can't connect to local MySQL server"*|*"Can't connect to MySQL server"*)
+        log_error "MySQL không chấp nhận kết nối từ bên trong container dev."
+        ;;
+      *)
+        log_error "Chi tiết lỗi: ${applied:-không có output}"
+        ;;
+    esac
+    if [ "$bootstrap_recovered" -ne 1 ]; then
+      log_error "Dừng deploy vì không xác định được trạng thái migration hiện tại trên dev server."
+      log_info "Thử thủ công: ssh -p ${DEV_PORT} ${DEV_USER}@${DEV_HOST}"
+      log_info "Sau đó chạy: docker exec cobo-iam-mysql mysql -uroot -proot cobo_iam -Nse 'SELECT file_name FROM schema_migrations'"
+      exit 1
+    fi
+  fi
 
   # Lấy danh sách migrations local từ run_dev_migrations.sh
   # Lấy các dòng trong block MIGRATIONS="..." — chỉ dòng chứa .sql, loại comment

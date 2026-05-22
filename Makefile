@@ -25,6 +25,14 @@ ARTIFACTS := ./deploy-artifacts
 SSH := ssh -p $(DEV_PORT) $(DEV_USER)@$(DEV_HOST)
 SCP := scp -P $(DEV_PORT)
 
+ensure_fe_env = if [ "$$(id -u)" -eq 0 ]; then \
+	echo "FE targets must not run with sudo/root."; \
+	echo "Reason: root is using a different Node/npm runtime than your user shell, which breaks Vite startup."; \
+	echo "Run without sudo, for example: make fe-build"; \
+	exit 1; \
+fi; \
+node -e "const major = Number(process.versions.node.split('.')[0]); const ok = (major >= 18 && major < 19) || (major >= 20 && major < 21) || major >= 22; if (!ok) { console.error('FE targets require Node ^18 || ^20 || >=22. Current: ' + process.version); process.exit(1); }"
+
 .DEFAULT_GOAL := help
 .PHONY: help \
     be-build be-build-linux be-run be-run-worker be-test \
@@ -63,18 +71,23 @@ be-test: ## Chạy toàn bộ Go test
 # Frontend (React/Vite — ../cobo_web_design)
 # ─────────────────────────────────────────────────────────────────────
 fe-install: ## npm install
+	@$(ensure_fe_env)
 	cd $(FE_DIR) && npm install
 
 fe-dev: ## Khởi động Vite dev server (port 3000)
+	@$(ensure_fe_env)
 	cd $(FE_DIR) && npm run dev
 
 fe-build: ## Production build → cobo_web_design/dist/
+	@$(ensure_fe_env)
 	cd $(FE_DIR) && npm run build
 
 fe-test: ## Chạy FE tests
+	@$(ensure_fe_env)
 	cd $(FE_DIR) && npm test
 
 fe-clean: ## Xóa dist/
+	@$(ensure_fe_env)
 	cd $(FE_DIR) && npm run clean
 
 # ─────────────────────────────────────────────────────────────────────
@@ -112,13 +125,19 @@ deploy-init: ## [dev] Lần đầu: SCP docker-compose.artifacts.yml + tạo th�
 	$(SCP) docker-compose.artifacts.yml \
 	    $(DEV_USER)@$(DEV_HOST):$(DEV_PATH)/docker-compose.artifacts.yml
 	$(SSH) "mkdir -p $(DEV_PATH)/bin $(DEV_PATH)/configs $(DEV_PATH)/web $(DEV_PATH)/migrations"
+	$(SCP) -r migrations $(DEV_USER)@$(DEV_HOST):$(DEV_PATH)/
 	@echo "==> Xong. Tiếp theo: tạo $(DEV_PATH)/.env từ configs/config.example.env trên server"
 
 deploy-be: be-build-linux ## [dev] Build Linux binary, SCP bin/ + configs/, restart api + worker
-	$(SCP) $(ARTIFACTS)/backend/bin/api    $(DEV_USER)@$(DEV_HOST):$(DEV_PATH)/bin/api
-	$(SCP) $(ARTIFACTS)/backend/bin/worker $(DEV_USER)@$(DEV_HOST):$(DEV_PATH)/bin/worker
+	$(SSH) "mkdir -p $(DEV_PATH)/bin $(DEV_PATH)/configs && rm -rf $(DEV_PATH)/bin/api $(DEV_PATH)/bin/worker $(DEV_PATH)/migrations"
+	$(SCP) $(ARTIFACTS)/backend/bin/api    $(DEV_USER)@$(DEV_HOST):$(DEV_PATH)/bin/.api.tmp
+	$(SCP) $(ARTIFACTS)/backend/bin/worker $(DEV_USER)@$(DEV_HOST):$(DEV_PATH)/bin/.worker.tmp
 	$(SCP) -r $(ARTIFACTS)/backend/configs $(DEV_USER)@$(DEV_HOST):$(DEV_PATH)/
-	$(SSH) "cd $(DEV_PATH) && \
+	$(SCP) -r migrations $(DEV_USER)@$(DEV_HOST):$(DEV_PATH)/
+	$(SSH) "mv $(DEV_PATH)/bin/.api.tmp $(DEV_PATH)/bin/api && \
+	    mv $(DEV_PATH)/bin/.worker.tmp $(DEV_PATH)/bin/worker && \
+	    chmod 755 $(DEV_PATH)/bin/api $(DEV_PATH)/bin/worker && \
+	    cd $(DEV_PATH) && \
 	    docker compose -f docker-compose.artifacts.yml up -d --force-recreate --no-deps api worker"
 
 deploy-fe: fe-build ## [dev] Build FE, copy dist + nginx.conf, SCP, restart web

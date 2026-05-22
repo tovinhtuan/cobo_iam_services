@@ -2243,3 +2243,185 @@
   - `BLOCKED:` documentation-only task; no runtime code changed in this cycle
 - remaining gaps/risks/next steps:
   - next practical step is to run the review meeting and fill the decision table at the end of the review-pack doc
+
+## 2026-05-22 - FE build debugging: guard against sudo/root Node mismatch
+
+- task type: bugfix
+- objective/question:
+  - explain and fix the frontend build failure triggered from `make fe-build`
+- implemented/discovered:
+  - confirmed the reported `vite` syntax error came from running FE build via `sudo`, which switched execution from user Node `v23.9.0` to a different root runtime too old for Vite 6 ESM entrypoints
+  - added FE environment guards in `Makefile` so `fe-install`, `fe-dev`, `fe-build`, `fe-test`, and `fe-clean` now fail fast when invoked as `root` or with an unsupported Node version
+  - reran `make fe-build` as the normal user and isolated a second issue: previous privileged builds left `../cobo_web_design/dist/assets` with foreign ownership, causing `EACCES` during Vite output cleanup
+- affected repos/files/modules:
+  - `cobo_iam_services/Makefile`
+  - runtime artifact path: `cobo_web_design/dist`
+- contracts/behaviors/constraints/decisions:
+  - FE Make targets must run as the normal user, not via `sudo`
+  - FE Make targets require a Node version matching Vite 6 engine support: `^18 || ^20 || >=22`
+  - root-owned or foreign-owned FE build artifacts must be cleaned from a privileged shell before unprivileged FE builds can succeed again
+- build/verification result:
+  - `make fe-build` (normal user, outside sandbox): reached Vite build and then failed with `EACCES` on `../cobo_web_design/dist/assets`
+  - `docker compose -f docker-compose.dev.yml build api`: passed
+  - `BLOCKED:` agent environment could not repair ownership of `../cobo_web_design/dist` because privileged filesystem access was unavailable
+- remaining gaps/risks/next steps:
+  - run `sudo rm -rf ../cobo_web_design/dist`
+  - rerun `make fe-build` without `sudo`
+
+## 2026-05-22 - BE deploy debugging: prevent remote binary path from turning into a directory
+
+- task type: bugfix
+- objective/question:
+  - fix `make deploy-be` failure where the `api` container could not start because `./bin/api` was treated as a directory
+- implemented/discovered:
+  - confirmed local artifacts `deploy-artifacts/backend/bin/api` and `worker` are valid ELF executables, so the failure was not from cross-compilation output
+  - identified the most probable failure path in deploy logic: `scp ...:/root/cobo_project/bin/api` will copy *into* that path if it already exists as a directory, leaving Docker with `/app/bin/api` as a directory mount target
+  - changed `deploy-be` to remove any stale remote `bin/api` and `bin/worker` paths first, upload to `.api.tmp` / `.worker.tmp`, then atomically `mv` to final executable names and `chmod 755` before restarting `api` and `worker`
+- affected repos/files/modules:
+  - `cobo_iam_services/Makefile`
+- contracts/behaviors/constraints/decisions:
+  - backend deploy must treat remote binary targets as files, not assume previous state is sane
+  - deploy step is now idempotent against stale remote directories at `/root/cobo_project/bin/api` and `/root/cobo_project/bin/worker`
+- build/verification result:
+  - `make -n deploy-be`: confirmed new remote command order is `rm -rf -> scp to temp -> mv/chmod -> docker compose up`
+  - `docker compose -f docker-compose.dev.yml build api`: passed
+  - `BLOCKED:` direct SSH verification against the dev server was not possible from the agent environment because `root@88.216.208.0:21239` authentication was unavailable here
+- remaining gaps/risks/next steps:
+  - rerun `make deploy-be` from your shell with working SSH credentials to clean remote stale paths and redeploy binaries
+
+## 2026-05-22 - Deploy script: allow interactive SSH password during preflight
+
+- task type: bugfix
+- objective/question:
+  - make `deploy-dev.sh` allow password-based SSH instead of failing early in preflight when no SSH key is loaded
+- implemented/discovered:
+  - confirmed the failing behavior came from `ssh ... -o BatchMode=yes` in `preflight_check`, which forces non-interactive auth and suppresses password prompts
+  - removed `BatchMode=yes` from preflight and added an explicit informational log that SSH may prompt for a password
+  - updated the script header and failure guidance to reflect that both SSH key and password flows are valid
+- affected repos/files/modules:
+  - `cobo_iam_services/deploy-dev.sh`
+- contracts/behaviors/constraints/decisions:
+  - deploy preflight now supports either SSH key auth or interactive password auth
+  - the rest of the deploy flow still depends on the invoking terminal being able to satisfy SSH/SCP prompts interactively
+- build/verification result:
+  - code review/readback confirmed `preflight_check` no longer passes `BatchMode=yes`
+  - `docker compose -f docker-compose.dev.yml build api`: passed
+  - `BLOCKED:` agent environment could not complete an end-to-end interactive SSH/password verification against the dev server
+- remaining gaps/risks/next steps:
+  - rerun `make deploy-dev MODE=migrate` from your terminal and confirm password prompt appears
+
+## 2026-05-22 - Deploy script: fail hard and classify schema_migrations lookup errors
+
+- task type: bugfix
+- objective/question:
+  - make `deploy-dev.sh` explain why reading `schema_migrations` failed and stop the deploy immediately instead of skipping migrations silently
+- implemented/discovered:
+  - replaced the old `schema_migrations` lookup path that swallowed stderr and returned early with a warning
+  - `deploy_migrations()` now captures the real `ssh`/`docker exec`/`mysql` error output and classifies common cases:
+    - SSH authentication failure
+    - missing `cobo-iam-mysql` container
+    - non-running MySQL container
+    - MySQL credential rejection
+    - missing `cobo_iam` database
+    - missing `schema_migrations` table
+    - MySQL connection failure inside the dev stack
+  - the script now exits with status `1` when migration state cannot be determined, so it no longer prints a misleading success path after migrations were skipped
+- affected repos/files/modules:
+  - `cobo_iam_services/deploy-dev.sh`
+- contracts/behaviors/constraints/decisions:
+  - migration deploy requires a successful remote read of `schema_migrations`; otherwise the deploy is considered failed
+  - stderr from the remote migration-state probe is now preserved for diagnostics instead of being discarded
+- build/verification result:
+  - `sh -n deploy-dev.sh`: passed
+  - `docker compose -f docker-compose.dev.yml build api`: passed
+  - `BLOCKED:` interactive end-to-end migration verification against the dev server was not possible from the agent environment
+- remaining gaps/risks/next steps:
+  - rerun `make deploy-dev MODE=migrate` and confirm the new error classification matches the actual remote fault if migration lookup still fails
+
+## 2026-05-22 - Deploy script: remove shell command substitution from migration error messages
+
+- task type: bugfix
+- objective/question:
+  - fix the new `deploy-dev.sh` regression where migration diagnostics printed `schema_migrations: not found` and `cobo_iam: not found`
+- implemented/discovered:
+  - traced the regression to backticks inside double-quoted `log_error` messages in a `/bin/sh` script
+  - `/bin/sh` treated `` `schema_migrations` `` and `` `cobo_iam` `` as command substitution, which corrupted the diagnostic output
+  - replaced those backticks with plain single-quoted identifiers in the migration error branch
+- affected repos/files/modules:
+  - `cobo_iam_services/deploy-dev.sh`
+- contracts/behaviors/constraints/decisions:
+  - shell-visible diagnostics in POSIX `sh` scripts must avoid backticks inside double-quoted strings unless command substitution is intended
+- build/verification result:
+  - `sh -n deploy-dev.sh`: passed
+  - `docker compose -f docker-compose.dev.yml build api`: passed
+  - `BLOCKED:` end-to-end interactive verification against the dev server was not possible from the agent environment
+- remaining gaps/risks/next steps:
+  - rerun `make deploy-dev MODE=migrate`; if the migration lookup still fails, the next log should now show the real classified cause cleanly
+
+## 2026-05-22 - Deploy migration bootstrap: sync remote migrations dir and auto-bootstrap missing schema_migrations
+
+- task type: bugfix
+- objective/question:
+  - fix dev migration bootstrap when the remote server does not yet have `/root/cobo_project/migrations/run_dev_migrations.sh` and `schema_migrations` is missing
+- implemented/discovered:
+  - confirmed the remote bootstrap failure was caused by a missing `migrations/` directory payload on the dev server, even though `docker-compose.artifacts.yml` expects it to exist for the `migrate` service
+  - updated `deploy-dev.sh` so `deploy_migrations()` now:
+    - synchronizes the full local `migrations/` directory to the dev server before any comparison
+    - attempts the normal `schema_migrations` query
+    - automatically runs `docker compose -f docker-compose.artifacts.yml run --rm migrate` when the table is missing
+    - retries the migration-state query after bootstrap before continuing
+  - updated `Makefile` so `deploy-init` and `deploy-be` also copy the `migrations/` directory to the dev server, preventing future artifacts environments from missing the migration runner inputs
+- affected repos/files/modules:
+  - `cobo_iam_services/deploy-dev.sh`
+  - `cobo_iam_services/Makefile`
+- contracts/behaviors/constraints/decisions:
+  - the dev artifacts environment now treats `migrations/` as a required deploy asset, not an implicit manual prerequisite
+  - missing `schema_migrations` is now a bootstrap case, not just a hard error, provided the migration runner can execute successfully
+- build/verification result:
+  - `sh -n deploy-dev.sh`: passed
+  - `make -n deploy-be`: confirmed migrations directory is now copied during backend deploy
+  - `docker compose -f docker-compose.dev.yml build api`: passed
+  - `BLOCKED:` end-to-end interactive verification against the dev server was not possible from the agent environment
+- remaining gaps/risks/next steps:
+  - rerun `make deploy-dev MODE=migrate` from your terminal; the script should now sync `migrations/`, bootstrap `schema_migrations` if needed, and then continue with the normal diff/apply flow
+
+## 2026-05-22 - Migration fix: align disclosure_template_blocks FK column type with disclosure_type_versions
+
+- task type: bugfix
+- objective/question:
+  - fix bootstrap migration failure at `0016_disclosure_template_blocks.up.sql` caused by an incompatible foreign key definition
+- implemented/discovered:
+  - confirmed from bootstrap logs that MySQL failed on foreign key `fk_disclosure_template_blocks_version`
+  - traced the incompatibility to `disclosure_template_blocks.type_id` being declared as `VARCHAR(100)` while the parent key `disclosure_type_versions.type_id` is `VARCHAR(64)`
+  - updated `0016_disclosure_template_blocks.up.sql` to use `VARCHAR(64)` and explicitly match the table engine/charset/collation used by the parent tables
+- affected repos/files/modules:
+  - `cobo_iam_services/migrations/0016_disclosure_template_blocks.up.sql`
+- contracts/behaviors/constraints/decisions:
+  - string foreign key columns must match both logical width and storage charset/collation of the referenced parent key
+- build/verification result:
+  - readback confirmed `0016_disclosure_template_blocks.up.sql` now defines `type_id VARCHAR(64)` with `ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+  - `docker compose -f docker-compose.dev.yml build api`: passed
+  - `BLOCKED:` end-to-end rerun of the migration bootstrap against the dev server was not possible from the agent environment
+- remaining gaps/risks/next steps:
+  - rerun `make deploy-dev MODE=migrate`; bootstrap should now pass `0016` and either continue or reveal the next failing migration, if any
+
+## 2026-05-22 - Migration fix: align company_template_workflow_overrides table charset/collation with disclosure_types
+
+- task type: bugfix
+- objective/question:
+  - fix migration failure at `0020_company_template_workflow_overrides.up.sql` on foreign key `fk_ctwo_type`
+- implemented/discovered:
+  - confirmed `type_id` width already matched `disclosure_types.type_id` (`VARCHAR(64)`), so the remaining incompatibility was table-level storage definition
+  - `0020` created both override tables without explicit `ENGINE/CHARSET/COLLATE`, unlike the referenced disclosure catalog tables created earlier
+  - updated both tables in `0020_company_template_workflow_overrides.up.sql` to use `ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+- affected repos/files/modules:
+  - `cobo_iam_services/migrations/0020_company_template_workflow_overrides.up.sql`
+- contracts/behaviors/constraints/decisions:
+  - string foreign keys into disclosure catalog tables must match table charset/collation, not just column width
+- build/verification result:
+  - readback confirmed both tables in `0020` now explicitly use `InnoDB/utf8mb4/utf8mb4_unicode_ci`
+  - `sh -n deploy-dev.sh`: passed
+  - `docker compose -f docker-compose.dev.yml build api`: passed
+  - `BLOCKED:` end-to-end migration rerun against the dev server was not possible from the agent environment
+- remaining gaps/risks/next steps:
+  - rerun `make deploy-dev MODE=migrate`; if there is another legacy migration with implicit table collation, the next failing FK should now be exposed directly

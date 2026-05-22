@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS company_template_workflow_overrides (
     INDEX idx_ctwo_company_status (company_id, status),
     INDEX idx_ctwo_type (type_id),
     CONSTRAINT fk_ctwo_type FOREIGN KEY (type_id) REFERENCES disclosure_types(type_id)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS company_template_workflow_override_versions (
     override_id VARCHAR(64) NOT NULL,
@@ -32,4 +32,4 @@ CREATE TABLE IF NOT EXISTS company_template_workflow_override_versions (
     CONSTRAINT fk_ctwov_override FOREIGN KEY (override_id)
         REFERENCES company_template_workflow_overrides(override_id)
         ON DELETE CASCADE
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

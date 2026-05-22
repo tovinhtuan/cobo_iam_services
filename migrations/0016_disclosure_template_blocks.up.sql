@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS disclosure_template_blocks (
-    type_id VARCHAR(100) NOT NULL,
+    type_id VARCHAR(64) NOT NULL,
     version_no INT NOT NULL,
     block_id VARCHAR(64) NOT NULL,
     block_key VARCHAR(100) NOT NULL,
@@ -20,4 +20,4 @@ CREATE TABLE IF NOT EXISTS disclosure_template_blocks (
     CONSTRAINT uq_disclosure_template_blocks_key UNIQUE (type_id, version_no, block_key),
     CONSTRAINT uq_disclosure_template_blocks_order UNIQUE (type_id, version_no, display_order),
     INDEX idx_disclosure_template_blocks_lookup (type_id, version_no, display_order)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
