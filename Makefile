@@ -55,8 +55,8 @@ be-build: ## Build binary cho OS hiện tại → bin/api, bin/worker
 	go build -o bin/worker ./cmd/worker
 
 be-build-linux: ## Cross-compile Linux x86-64 → deploy-artifacts/backend/bin/
-	GOOS=linux GOARCH=amd64 go build -o $(ARTIFACTS)/backend/bin/api    ./cmd/api
-	GOOS=linux GOARCH=amd64 go build -o $(ARTIFACTS)/backend/bin/worker ./cmd/worker
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o $(ARTIFACTS)/backend/bin/api    ./cmd/api
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o $(ARTIFACTS)/backend/bin/worker ./cmd/worker
 
 be-run: ## Chạy API local (in-memory nếu không có MYSQL_DSN)
 	go run ./cmd/api

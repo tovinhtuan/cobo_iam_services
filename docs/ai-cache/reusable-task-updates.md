@@ -2425,3 +2425,94 @@
   - `BLOCKED:` end-to-end migration rerun against the dev server was not possible from the agent environment
 - remaining gaps/risks/next steps:
   - rerun `make deploy-dev MODE=migrate`; if there is another legacy migration with implicit table collation, the next failing FK should now be exposed directly
+
+## 2026-05-22 - Deploy fix: build static Linux binaries for Alpine runtime
+
+- task type: bugfix
+- objective/question:
+  - fix dev runtime failures `exec ./bin/api: no such file or directory` and `exec ./bin/worker: no such file or directory`
+- implemented/discovered:
+  - confirmed the deployed backend artifacts were Linux ELF binaries dynamically linked against glibc (`interpreter /lib64/ld-linux-x86-64.so.2`)
+  - confirmed the dev runtime image is Alpine-based, so those binaries fail at process start even when the file exists
+  - updated `be-build-linux` in `Makefile` to compile deploy artifacts with `CGO_ENABLED=0`, producing statically linked binaries compatible with the current Alpine runtime image
+- affected repos/files/modules:
+  - `cobo_iam_services/Makefile`
+  - generated artifacts: `deploy-artifacts/backend/bin/api`, `deploy-artifacts/backend/bin/worker`
+- contracts/behaviors/constraints/decisions:
+  - deploy artifacts for the SSH/dev-server flow must be static Linux binaries unless the runtime image is changed to ship glibc
+- build/verification result:
+  - `make be-build-linux`: passed outside sandbox
+  - `file deploy-artifacts/backend/bin/api deploy-artifacts/backend/bin/worker`: both now report `statically linked`
+  - `docker compose -f docker-compose.dev.yml build api`: passed
+- remaining gaps/risks/next steps:
+  - rerun `make deploy-be` so the new static binaries are copied to `/root/cobo_project/bin/`
+  - after backend is healthy again, `web` should stop failing on upstream resolution of `api`
+
+## 2026-05-22 - Cross-repo documentation inventory: FE and BE feature/flow map
+
+- task type: documentation
+- objective/question:
+  - review both FE and BE codebases and list the currently designed functions and flows into one file
+- implemented/discovered:
+  - created a single cross-repo inventory document based on:
+    - FE route wiring in `src/App.tsx`
+    - FE service clients in `src/services/**`, `src/features/admin-core/services/**`, `src/features/cms-core/services/**`
+    - BE route registration in `internal/httpserver/server.go` and transport handlers
+    - active product/spec docs in both repos
+  - the resulting document groups the project into:
+    - public/auth/account lifecycle
+    - company context and portal shell
+    - portal business flows (disclosure, deadlines, workflow, notifications, ad-hoc)
+    - enterprise admin flows
+    - CMS/platform admin flows
+    - authorization/audit/outbox/worker internals
+- affected repos/files/modules:
+  - `cobo_iam_services/docs/current-feature-flow-inventory.md`
+- contracts/behaviors/constraints/decisions:
+  - because the session did not provide the expected `integration-cross-repo` skill, the task was completed using `documentation-and-adrs` plus direct code/spec review across both repos
+  - the inventory intentionally documents features/flows that are visible in current code/spec wiring, not hypothetical backlog items
+- build/verification result:
+  - `BLOCKED:` documentation-only task; no runtime code changed in this cycle
+- remaining gaps/risks/next steps:
+  - if needed, next step is to split this inventory into:
+  - endpoint matrix by module
+  - screen-to-endpoint traceability table
+  - implemented vs partial vs planned status map
+
+## 2026-05-22 - Documentation split: route matrix, implementation status, CMS and Enterprise Admin inventories
+
+- task type: documentation
+- objective/question:
+  - split the master cross-repo inventory into smaller documents for traceability and status review
+- implemented/discovered:
+  - created:
+    - `docs/fe-route-to-be-endpoint-matrix.md`
+    - `docs/feature-implementation-status.md`
+    - `docs/cms-feature-inventory.md`
+    - `docs/enterprise-admin-feature-inventory.md`
+  - the split now supports four different review lenses:
+    - FE route to BE endpoint traceability
+    - implemented vs partial vs planned status
+    - CMS-only scope
+    - Enterprise Admin-only scope
+- affected repos/files/modules:
+  - `cobo_iam_services/docs/fe-route-to-be-endpoint-matrix.md`
+  - `cobo_iam_services/docs/feature-implementation-status.md`
+  - `cobo_iam_services/docs/cms-feature-inventory.md`
+  - `cobo_iam_services/docs/enterprise-admin-feature-inventory.md`
+- contracts/behaviors/constraints/decisions:
+  - status labels were defined conservatively:
+    - `Implemented` only when FE and BE wiring are both visible
+    - `Partial` when the route/design is clear but the backend surface is incomplete or indirect
+    - `Planned` for spec-visible areas not fully evidenced in current code wiring
+  - although the user said "CMS hoặc Enterprise Admin", both focused inventories were generated because they are separate major surfaces and the split is more reusable this way
+- build/verification result:
+  - `BLOCKED:` documentation-only task; no runtime code changed in this cycle
+- remaining gaps/risks/next steps:
+  - next useful split, if needed:
+    - by backend module (`iam`, `companyaccess`, `disclosure`, `workflow`, `platformcms`)
+    - by lifecycle (`auth`, `disclosure`, `reminder`, `ops`)
+- 2026-05-22: Added two more documentation slices on top of the workspace feature inventory:
+  - `docs/backend-module-inventory.md` groups current design by backend ownership (`iam`, `companyaccess`, `disclosure`, `workflow`, `platformcms`), with FE surfaces, major endpoints, and flow ownership per module.
+  - `docs/lifecycle-flow-inventory.md` groups the same system by operational lifecycle (`auth`, `disclosure`, `reminder`, `ops`) to make end-to-end tracing easier than route-by-route reading.
+- 2026-05-22: Added `docs/inventory-index.md` as the short navigation entrypoint for the full documentation set, with a "read this when you want to know X" table linking the master inventory, route matrix, status map, module view, lifecycle view, CMS inventory, and Enterprise Admin inventory.
