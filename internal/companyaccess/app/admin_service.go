@@ -702,6 +702,68 @@ func (s *adminService) DeleteMembership(ctx context.Context, req DeleteMembershi
 	return s.repo.DeleteMembership(ctx, req.MembershipID)
 }
 
+func (s *adminService) ListDepartmentTeams(ctx context.Context, req ListDepartmentTeamsRequest) ([]TeamView, error) {
+	if err := s.authorize(ctx, req.Subject, "rbac.manage", ""); err != nil {
+		return nil, err
+	}
+	return s.repo.ListDepartmentTeams(ctx, req.Subject.CompanyID, req.DepartmentID)
+}
+
+func (s *adminService) CreateTeam(ctx context.Context, req CreateTeamRequest) (*TeamView, error) {
+	if err := s.authorize(ctx, req.Subject, "rbac.manage", ""); err != nil {
+		return nil, err
+	}
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "name is required", nil)
+	}
+	count, err := s.repo.CountTeamsInDepartment(ctx, req.DepartmentID)
+	if err != nil {
+		return nil, err
+	}
+	if count >= 5 {
+		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "TEAM_LIMIT_REACHED", nil)
+	}
+	teamID := s.idg.NewUUID()
+	return s.repo.CreateTeamRow(ctx, req.Subject.CompanyID, req.DepartmentID, teamID, name)
+}
+
+func (s *adminService) UpdateTeam(ctx context.Context, req UpdateTeamRequest) (*TeamView, error) {
+	if err := s.authorize(ctx, req.Subject, "rbac.manage", ""); err != nil {
+		return nil, err
+	}
+	return s.repo.PatchTeamRow(ctx, req.Subject.CompanyID, req.TeamID, req.Name, req.Status)
+}
+
+func (s *adminService) DeleteTeam(ctx context.Context, req DeleteTeamRequest) error {
+	if err := s.authorize(ctx, req.Subject, "rbac.manage", ""); err != nil {
+		return err
+	}
+	return s.repo.DeleteTeamRow(ctx, req.Subject.CompanyID, req.TeamID)
+}
+
+func (s *adminService) AddTeamMember(ctx context.Context, req AddTeamMemberRequest) error {
+	if err := s.authorize(ctx, req.Subject, "rbac.manage", ""); err != nil {
+		return err
+	}
+	// Member must belong to the parent department
+	ok, err := s.repo.MemberBelongsToDepartment(ctx, req.MembershipID, req.DepartmentID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "MEMBER_NOT_IN_DEPARTMENT", nil)
+	}
+	return s.repo.AddTeamMember(ctx, req.Subject.CompanyID, req.TeamID, req.MembershipID)
+}
+
+func (s *adminService) RemoveTeamMember(ctx context.Context, req RemoveTeamMemberRequest) error {
+	if err := s.authorize(ctx, req.Subject, "rbac.manage", ""); err != nil {
+		return err
+	}
+	return s.repo.RemoveTeamMember(ctx, req.Subject.CompanyID, req.TeamID, req.MembershipID)
+}
+
 func (s *adminService) AssignCompanyAdmin(ctx context.Context, req AssignCompanyAdminRequest) error {
 	if err := s.authorize(ctx, req.Subject, "rbac.manage", ""); err != nil {
 		return err

@@ -75,6 +75,14 @@ type AdminService interface {
 	// ListDirectPermissions returns active direct permission grants for a membership.
 	ListDirectPermissions(ctx context.Context, req ListDirectPermissionsRequest) ([]DirectPermissionView, error)
 
+	// Team CRUD (org_units)
+	ListDepartmentTeams(ctx context.Context, req ListDepartmentTeamsRequest) ([]TeamView, error)
+	CreateTeam(ctx context.Context, req CreateTeamRequest) (*TeamView, error)
+	UpdateTeam(ctx context.Context, req UpdateTeamRequest) (*TeamView, error)
+	DeleteTeam(ctx context.Context, req DeleteTeamRequest) error
+	AddTeamMember(ctx context.Context, req AddTeamMemberRequest) error
+	RemoveTeamMember(ctx context.Context, req RemoveTeamMemberRequest) error
+
 	// AssignCompanyAdmin grants company_admin role to a membership (max 5 total admins).
 	AssignCompanyAdmin(ctx context.Context, req AssignCompanyAdminRequest) error
 	// RevokeCompanyAdmin removes company_admin role from a membership (primary admin cannot be revoked).
@@ -151,6 +159,16 @@ type AdminRepository interface {
 	PatchTitleRow(ctx context.Context, companyID, titleID string, name *string, sortOrder *int, status *string) (*TitleView, error)
 	SoftDeleteTitle(ctx context.Context, titleID, companyID string) error
 	CountTitleMembers(ctx context.Context, titleID string) (int, error)
+
+	// Team CRUD repository methods (using org_units table)
+	ListDepartmentTeams(ctx context.Context, companyID, departmentID string) ([]TeamView, error)
+	CreateTeamRow(ctx context.Context, companyID, departmentID, teamID, name string) (*TeamView, error)
+	PatchTeamRow(ctx context.Context, companyID, teamID string, name *string, status *string) (*TeamView, error)
+	DeleteTeamRow(ctx context.Context, companyID, teamID string) error
+	CountTeamsInDepartment(ctx context.Context, departmentID string) (int, error)
+	AddTeamMember(ctx context.Context, companyID, teamID, membershipID string) error
+	RemoveTeamMember(ctx context.Context, companyID, teamID, membershipID string) error
+	MemberBelongsToDepartment(ctx context.Context, membershipID, departmentID string) (bool, error)
 
 	ListPermissions(ctx context.Context) ([]string, error)
 	// ListRoles returns role_id values for the given company: global roles (company_id NULL) plus roles scoped to that company.
@@ -490,6 +508,42 @@ type RemoveDirectPermissionRequest struct {
 
 type ListDirectPermissionsRequest struct {
 	Subject      AdminSubject
+	MembershipID string
+}
+
+type ListDepartmentTeamsRequest struct {
+	Subject      AdminSubject
+	DepartmentID string
+}
+
+type CreateTeamRequest struct {
+	Subject      AdminSubject
+	DepartmentID string
+	Name         string
+}
+
+type UpdateTeamRequest struct {
+	Subject AdminSubject
+	TeamID  string
+	Name    *string
+	Status  *string
+}
+
+type DeleteTeamRequest struct {
+	Subject AdminSubject
+	TeamID  string
+}
+
+type AddTeamMemberRequest struct {
+	Subject      AdminSubject
+	TeamID       string
+	DepartmentID string
+	MembershipID string
+}
+
+type RemoveTeamMemberRequest struct {
+	Subject      AdminSubject
+	TeamID       string
 	MembershipID string
 }
 

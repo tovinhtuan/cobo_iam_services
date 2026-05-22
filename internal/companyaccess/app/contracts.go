@@ -60,3 +60,11 @@ type DepartmentView struct {
 	Status           string  `json:"status,omitempty"`
 	SortOrder        int     `json:"sort_order,omitempty"`
 }
+
+type TeamView struct {
+	TeamID       string `json:"team_id"`
+	DepartmentID string `json:"department_id"`
+	Name         string `json:"name"`
+	Status       string `json:"status"`
+	MemberCount  int    `json:"member_count,omitempty"`
+}

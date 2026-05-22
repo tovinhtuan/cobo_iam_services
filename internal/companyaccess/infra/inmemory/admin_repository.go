@@ -717,6 +717,39 @@ func (r *AdminRepository) ListCompanyDepartments(_ context.Context, _ string) ([
 	return []caapp.DepartmentView{}, nil
 }
 
+func (r *AdminRepository) ListDepartmentTeams(_ context.Context, _, _ string) ([]caapp.TeamView, error) {
+	return []caapp.TeamView{}, nil
+}
+
+func (r *AdminRepository) CreateTeamRow(_ context.Context, companyID, departmentID, teamID, name string) (*caapp.TeamView, error) {
+	return &caapp.TeamView{TeamID: teamID, DepartmentID: departmentID, Name: name, Status: "active"}, nil
+}
+
+func (r *AdminRepository) PatchTeamRow(_ context.Context, _, teamID string, name *string, status *string) (*caapp.TeamView, error) {
+	v := &caapp.TeamView{TeamID: teamID, Status: "active"}
+	if name != nil {
+		v.Name = *name
+	}
+	if status != nil {
+		v.Status = *status
+	}
+	return v, nil
+}
+
+func (r *AdminRepository) DeleteTeamRow(_ context.Context, _, _ string) error { return nil }
+
+func (r *AdminRepository) CountTeamsInDepartment(_ context.Context, _ string) (int, error) {
+	return 0, nil
+}
+
+func (r *AdminRepository) AddTeamMember(_ context.Context, _, _, _ string) error { return nil }
+
+func (r *AdminRepository) RemoveTeamMember(_ context.Context, _, _, _ string) error { return nil }
+
+func (r *AdminRepository) MemberBelongsToDepartment(_ context.Context, _, _ string) (bool, error) {
+	return true, nil
+}
+
 func (r *AdminRepository) CreateDepartmentRow(_ context.Context, companyID, deptID, _, name string, headMembershipID *string, sortOrder int) (*caapp.DepartmentView, error) {
 	v := &caapp.DepartmentView{
 		DepartmentID:     deptID,

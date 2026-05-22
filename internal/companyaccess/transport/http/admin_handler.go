@@ -71,6 +71,14 @@ func (h *AdminHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/admin/departments/{department_id}/members", h.addDeptMember)
 	mux.HandleFunc("DELETE /api/v1/admin/departments/{department_id}/members/{membership_id}", h.removeDeptMember)
 
+	// Team CRUD (org_units)
+	mux.HandleFunc("GET /api/v1/admin/departments/{department_id}/teams", h.listTeams)
+	mux.HandleFunc("POST /api/v1/admin/departments/{department_id}/teams", h.createTeam)
+	mux.HandleFunc("PATCH /api/v1/admin/teams/{team_id}", h.updateTeam)
+	mux.HandleFunc("DELETE /api/v1/admin/teams/{team_id}", h.deleteTeam)
+	mux.HandleFunc("POST /api/v1/admin/teams/{team_id}/members", h.addTeamMember)
+	mux.HandleFunc("DELETE /api/v1/admin/teams/{team_id}/members/{membership_id}", h.removeTeamMember)
+
 	// Title CRUD
 	mux.HandleFunc("GET /api/v1/admin/titles", h.listTitles)
 	mux.HandleFunc("POST /api/v1/admin/titles", h.createTitle)
@@ -998,6 +1006,122 @@ func (h *AdminHandler) removeTitleMember(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	h.auditLog(r, "admin.title.member.remove", "title", titleID)
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (h *AdminHandler) listTeams(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	deptID := r.PathValue("department_id")
+	items, err := h.svc.ListDepartmentTeams(r.Context(), caapp.ListDepartmentTeamsRequest{Subject: sub, DepartmentID: deptID})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (h *AdminHandler) createTeam(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	deptID := r.PathValue("department_id")
+	var p struct {
+		Name string `json:"name"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&p)
+	out, err := h.svc.CreateTeam(r.Context(), caapp.CreateTeamRequest{Subject: sub, DepartmentID: deptID, Name: p.Name})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	h.auditLog(r, "admin.team.create", "team", out.TeamID)
+	httpx.WriteJSON(w, http.StatusCreated, out)
+}
+
+func (h *AdminHandler) updateTeam(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	teamID := r.PathValue("team_id")
+	var p struct {
+		Name   *string `json:"name"`
+		Status *string `json:"status"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&p)
+	out, err := h.svc.UpdateTeam(r.Context(), caapp.UpdateTeamRequest{Subject: sub, TeamID: teamID, Name: p.Name, Status: p.Status})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	h.auditLog(r, "admin.team.update", "team", teamID)
+	httpx.WriteJSON(w, http.StatusOK, out)
+}
+
+func (h *AdminHandler) deleteTeam(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	teamID := r.PathValue("team_id")
+	if err := h.svc.DeleteTeam(r.Context(), caapp.DeleteTeamRequest{Subject: sub, TeamID: teamID}); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	h.auditLog(r, "admin.team.delete", "team", teamID)
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (h *AdminHandler) addTeamMember(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	teamID := r.PathValue("team_id")
+	var p struct {
+		MembershipID string `json:"membership_id"`
+		DepartmentID string `json:"department_id"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&p)
+	if err := h.svc.AddTeamMember(r.Context(), caapp.AddTeamMemberRequest{
+		Subject:      sub,
+		TeamID:       teamID,
+		DepartmentID: p.DepartmentID,
+		MembershipID: p.MembershipID,
+	}); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	h.auditLog(r, "admin.team.member.add", "team", teamID)
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (h *AdminHandler) removeTeamMember(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	teamID := r.PathValue("team_id")
+	membershipID := r.PathValue("membership_id")
+	if err := h.svc.RemoveTeamMember(r.Context(), caapp.RemoveTeamMemberRequest{
+		Subject:      sub,
+		TeamID:       teamID,
+		MembershipID: membershipID,
+	}); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	h.auditLog(r, "admin.team.member.remove", "team", teamID)
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
