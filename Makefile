@@ -143,7 +143,8 @@ deploy-be: be-build-linux ## [dev] Build Linux binary, SCP bin/ + configs/, rest
 deploy-fe: fe-build ## [dev] Build FE, copy dist + nginx.conf, SCP, restart web
 	rm -rf $(ARTIFACTS)/web/dist
 	cp -r $(FE_DIR)/dist $(ARTIFACTS)/web/dist
-	$(SCP) -r $(ARTIFACTS)/web/dist     $(DEV_USER)@$(DEV_HOST):$(DEV_PATH)/web/dist
+	$(SSH) "mkdir -p $(DEV_PATH)/web && rm -rf $(DEV_PATH)/web/dist && mkdir -p $(DEV_PATH)/web/dist"
+	$(SCP) -r $(ARTIFACTS)/web/dist/*   $(DEV_USER)@$(DEV_HOST):$(DEV_PATH)/web/dist/
 	$(SCP)    $(ARTIFACTS)/web/nginx.conf $(DEV_USER)@$(DEV_HOST):$(DEV_PATH)/web/nginx.conf
 	$(SSH) "cd $(DEV_PATH) && \
 	    docker compose -f docker-compose.artifacts.yml restart web"

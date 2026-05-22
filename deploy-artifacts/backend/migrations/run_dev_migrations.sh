@@ -58,11 +58,16 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 SQL
 
 echo "Ensuring auth plugin is caching_sha2_password..."
-mysql_exec <<'SQL'
+if mysql_exec <<'SQL'
 ALTER USER IF EXISTS 'root'@'localhost' IDENTIFIED WITH caching_sha2_password BY 'root';
 ALTER USER IF EXISTS 'root'@'%' IDENTIFIED WITH caching_sha2_password BY 'root';
 ALTER USER IF EXISTS 'cobo'@'%' IDENTIFIED WITH caching_sha2_password BY 'cobo';
 SQL
+then
+  echo "Auth plugin check/update complete."
+else
+  echo "WARN: skipping auth plugin update; current DB user lacks ALTER USER / CREATE USER privileges."
+fi
 
 existing_count="$(mysql_exec -Nse "SELECT COUNT(1) FROM information_schema.tables WHERE table_schema='${DB_NAME}' AND table_name='users'")"
 tracked_count="$(mysql_exec -Nse "SELECT COUNT(1) FROM schema_migrations")"

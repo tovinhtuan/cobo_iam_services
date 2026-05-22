@@ -2531,3 +2531,74 @@
     - risk register
     - PR plan
     - staging/production deployment checklist
+
+## 2026-05-22 - Artifacts migrate service DB credentials bootstrap fix
+
+- task type: bugfix
+- objective/question:
+  - fix dev artifacts migration bootstrap when `docker-compose.artifacts.yml` runs `migrate` with default `root/root` credentials that do not have DDL access from the migrate container
+- implemented/discovered:
+  - confirmed on the dev server that `migrate` failed at `CREATE TABLE schema_migrations` with `ERROR 1142 (42000): CREATE command denied to user 'root'@'172.18.0.x'`
+  - traced the failure to `migrations/run_dev_migrations.sh` defaulting to `DB_USER=root`, `DB_PASSWORD=root`, `DB_NAME=cobo_iam` when compose does not inject overrides
+  - updated `docker-compose.artifacts.yml` so service `migrate` now passes:
+    - `DB_HOST=mysql`
+    - `DB_USER=cobo`
+    - `DB_PASSWORD=cobo`
+    - `DB_NAME=cobo_iam`
+- affected repos/files/modules:
+  - `cobo_iam_services/docker-compose.artifacts.yml`
+- contracts/behaviors/constraints/decisions:
+  - the dev artifacts migration runner should use the same database principal as `api` and `worker` unless a dedicated migration principal is explicitly provisioned
+  - relying on cross-container MySQL `root` defaults is not safe across dev servers
+- build/verification result:
+  - `BLOCKED:` local `docker compose -f docker-compose.artifacts.yml config` crashed in the agent environment's Docker CLI plugin before returning config output
+  - `BLOCKED:` remote end-to-end rerun of `migrate` was not available from the agent environment
+- remaining gaps/risks/next steps:
+  - rerun `docker compose -f docker-compose.artifacts.yml run --rm migrate` on the dev server
+  - if migrations complete, restart `api`, `worker`, and `web`, then verify login shifts from `500` to `401 INVALID_CREDENTIALS` or `200`
+
+## 2026-05-22 - Migration runner: tolerate missing ALTER USER privilege
+
+- task type: bugfix
+- objective/question:
+  - allow dev migration bootstrap to continue when the application DB user can create tables in `cobo_iam` but cannot execute `ALTER USER`
+- implemented/discovered:
+  - confirmed the remote runner progressed past `schema_migrations` creation with `cobo/cobo`, then failed on:
+    - `ERROR 1227 (42000): Access denied; you need (at least one of) the CREATE USER privilege(s) for this operation`
+  - updated both migration runner copies so the auth-plugin step is now best-effort:
+    - `migrations/run_dev_migrations.sh`
+    - `deploy-artifacts/backend/migrations/run_dev_migrations.sh`
+  - failed `ALTER USER IF EXISTS ...` now emits a warning and does not abort the whole migration run
+- affected repos/files/modules:
+  - `cobo_iam_services/migrations/run_dev_migrations.sh`
+  - `cobo_iam_services/deploy-artifacts/backend/migrations/run_dev_migrations.sh`
+- contracts/behaviors/constraints/decisions:
+  - schema/bootstrap migrations must not depend on account-management privileges when the runtime stack already authenticates successfully with the configured app user
+  - auth plugin normalization remains opportunistic rather than mandatory in dev bootstrap
+- build/verification result:
+  - `BLOCKED:` remote rerun against the dev server was not available from the agent environment
+- remaining gaps/risks/next steps:
+  - rerun the remote `migrate` service with `DB_USER=cobo`
+  - if another migration fails, capture the first failing SQL file name and MySQL error
+
+## 2026-05-22 - Dev FE deploy path fix for nested dist directory
+
+- task type: bugfix
+- objective/question:
+  - fix dev frontend deploy so `/root/cobo_project/web/dist` contains `index.html` directly instead of accidentally nesting as `web/dist/dist/index.html`
+- implemented/discovered:
+  - confirmed local FE build artifacts include `deploy-artifacts/web/dist/index.html`
+  - traced the dev-server `403 /` to `deploy-fe` copying the whole `dist` directory into an existing remote `web/dist` path via `scp -r`, which can produce `web/dist/dist/...`
+  - updated `Makefile` `deploy-fe` target to:
+    - recreate remote `$(DEV_PATH)/web/dist`
+    - copy the contents of local `dist` via `scp -r deploy-artifacts/web/dist/. .../web/dist/`
+- affected repos/files/modules:
+  - `cobo_iam_services/Makefile`
+- contracts/behaviors/constraints/decisions:
+  - dev FE artifacts on the server must be mounted such that nginx root `/usr/share/nginx/html` contains `index.html` at the top level
+- build/verification result:
+  - local artifact inspection confirmed `deploy-artifacts/web/dist/index.html` exists
+  - `BLOCKED:` remote redeploy/verify was not available from the agent environment
+- remaining gaps/risks/next steps:
+  - rerun `make deploy-fe`
+  - if the remote tree still looks wrong, inspect `/root/cobo_project/web/dist` and remove any stale nested `dist/` directory before restarting `web`

@@ -71,6 +71,11 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
+    environment:
+      DB_HOST: mysql
+      DB_USER: cobo
+      DB_PASSWORD: cobo
+      DB_NAME: cobo_iam
     working_dir: /workspace
     volumes:
       - ./migrations:/workspace/migrations
