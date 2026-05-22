@@ -34,6 +34,8 @@ type AdminRepository struct {
 
 	invitationsByUser map[string][]string // stacked token hashes for in-mem sanity (minimal)
 	directPermissions map[string]caapp.DirectPermissionView // key: membershipID:permCode
+
+	companies map[string]*caapp.PlatformCompanyDetail
 }
 
 func NewAdminRepository() *AdminRepository {
@@ -53,7 +55,16 @@ func NewAdminRepository() *AdminRepository {
 		notificationRules:       []map[string]any{},
 		invitationsByUser:       map[string][]string{},
 		directPermissions:       map[string]caapp.DirectPermissionView{},
+		companies:               map[string]*caapp.PlatformCompanyDetail{},
 	}
+}
+
+// SeedCompany adds a company to the in-memory store for testing.
+func (r *AdminRepository) SeedCompany(c caapp.PlatformCompanyDetail) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	cp := c
+	r.companies[c.CompanyID] = &cp
 }
 
 func (r *AdminRepository) CreateUser(_ context.Context, u caapp.UserView, passwordHash string, opts caapp.CreateUserOptions) (*caapp.UserView, error) {
@@ -607,11 +618,44 @@ func (r *AdminRepository) ListCompaniesPlatform(_ context.Context, _ caapp.ListP
 	return &caapp.ListPlatformCompaniesResult{Items: []caapp.PlatformCompanySummary{}, Total: 0}, nil
 }
 
-func (r *AdminRepository) GetCompanyPlatform(_ context.Context, _ string) (*caapp.PlatformCompanyDetail, error) {
+func (r *AdminRepository) GetCompanyPlatform(_ context.Context, companyID string) (*caapp.PlatformCompanyDetail, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if c, ok := r.companies[companyID]; ok {
+		cp := *c
+		return &cp, nil
+	}
 	return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "company not found", nil)
 }
 
-func (r *AdminRepository) UpdateCompanyPlatform(_ context.Context, _ caapp.UpdatePlatformCompanyRequest) error {
+func (r *AdminRepository) UpdateCompanyPlatform(_ context.Context, req caapp.UpdatePlatformCompanyRequest) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	c, ok := r.companies[req.CompanyID]
+	if !ok {
+		return perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "company not found", nil)
+	}
+	if req.CompanyName != nil {
+		c.CompanyName = *req.CompanyName
+	}
+	if req.TaxCode != nil {
+		c.TaxCode = *req.TaxCode
+	}
+	if req.RegistrationNumber != nil {
+		c.RegistrationNumber = *req.RegistrationNumber
+	}
+	if req.Address != nil {
+		c.Address = *req.Address
+	}
+	if req.Phone != nil {
+		c.Phone = *req.Phone
+	}
+	if req.ContactEmail != nil {
+		c.ContactEmail = *req.ContactEmail
+	}
+	if req.RepresentativeName != nil {
+		c.RepresentativeName = *req.RepresentativeName
+	}
 	return nil
 }
 
