@@ -1,0 +1,17 @@
+Hello,
+
+This is an automated reminder for a disclosure task.
+
+Disclosure: {{.title}}
+Disclosure ID: {{.disclosure_id}}
+Deadline: {{.deadline_date}}
+{{- if .status }}
+Current status: {{.status}}
+{{- end }}
+{{- if .action_url }}
+Action link: {{.action_url}}
+{{- end }}
+
+Please review and complete the required action before the deadline.
+
+COBO Notification System

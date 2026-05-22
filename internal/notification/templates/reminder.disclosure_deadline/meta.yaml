@@ -1,0 +1,8 @@
+default_locale: vi
+variables:
+  - name: title
+    required: true
+  - name: deadline_date
+    required: true
+  - name: disclosure_id
+    required: true

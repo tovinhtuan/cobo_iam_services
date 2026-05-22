@@ -1,0 +1,8 @@
+Xin chao {{.display_name}},
+
+{{if .company_name}}Cong ty: {{.company_name}}
+{{end}}
+Tai khoan da duoc tao. Thiet lap mat khau qua link sau:
+{{.setup_link}}
+
+Link het han sau khoang {{.expiry_hours}} gio. Neu ban khong yeu cau, bo qua email nay.

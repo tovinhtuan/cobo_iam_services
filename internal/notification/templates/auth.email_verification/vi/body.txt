@@ -1,0 +1,6 @@
+Xin chao {{.full_name}},
+
+Ma xac thuc email cua ban la: {{.otp_code}}
+Ma het han sau {{.expiry_minutes}} phut.
+
+Neu ban khong yeu cau ma nay, hay bo qua email nay.

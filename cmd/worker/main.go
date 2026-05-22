@@ -14,20 +14,22 @@ import (
 	"syscall"
 	"time"
 
+	adhocrecord "github.com/cobo/cobo_iam_services/internal/adhoc/infra/disclosure"
+	disclosureapp "github.com/cobo/cobo_iam_services/internal/disclosure/app"
+	disclosuremysql "github.com/cobo/cobo_iam_services/internal/disclosure/infra/mysql"
+	notificationapp "github.com/cobo/cobo_iam_services/internal/notification/app"
+	notificationregistry "github.com/cobo/cobo_iam_services/internal/notification/infra/registry"
 	"github.com/cobo/cobo_iam_services/internal/platform/config"
 	"github.com/cobo/cobo_iam_services/internal/platform/db"
+	"github.com/cobo/cobo_iam_services/internal/platform/idgen"
 	"github.com/cobo/cobo_iam_services/internal/platform/logger"
 	platformoutbox "github.com/cobo/cobo_iam_services/internal/platform/outbox"
 	outboxinmem "github.com/cobo/cobo_iam_services/internal/platform/outbox/inmemory"
 	outboxmysql "github.com/cobo/cobo_iam_services/internal/platform/outbox/mysql"
-	disclosureapp "github.com/cobo/cobo_iam_services/internal/disclosure/app"
-	disclosuremysql "github.com/cobo/cobo_iam_services/internal/disclosure/infra/mysql"
-	adhocrecord "github.com/cobo/cobo_iam_services/internal/adhoc/infra/disclosure"
 	reminderapp "github.com/cobo/cobo_iam_services/internal/reminder/app"
 	reminderemail "github.com/cobo/cobo_iam_services/internal/reminder/infra/email"
 	remindermysql "github.com/cobo/cobo_iam_services/internal/reminder/infra/mysql"
 	reminderobserve "github.com/cobo/cobo_iam_services/internal/reminder/infra/observe"
-	"github.com/cobo/cobo_iam_services/internal/platform/idgen"
 )
 
 func main() {
@@ -88,7 +90,7 @@ func main() {
 	defer stop()
 
 	var (
-		disclosureSvc disclosureapp.Service
+		disclosureSvc   disclosureapp.Service
 		periodicCreator disclosureapp.PeriodicRecordCreator
 	)
 	if sqlDB != nil && cfg.PeriodicSeedingEnabled {
@@ -99,6 +101,8 @@ func main() {
 
 	var reminderScheduler reminderapp.Service
 	if sqlDB != nil {
+		emailTemplateRegistry := notificationregistry.NewEmbedRegistry()
+		emailRenderer := notificationapp.NewEmailRenderer()
 		reminderRepo := remindermysql.NewRepository(sqlDB)
 		reminderScheduler = reminderapp.NewService(
 			reminderRepo,
@@ -110,7 +114,7 @@ func main() {
 				User: cfg.SMTPUser,
 				Pass: cfg.SMTPPassword,
 				From: cfg.SMTPFrom,
-			})),
+			}, reminderemail.WithTemplateRendering(cfg.EmailTemplateSource, emailTemplateRegistry, emailRenderer))),
 			reminderapp.WithMetrics(reminderobserve.NewPromMetrics()),
 			reminderapp.WithAlertHook(reminderobserve.AlertLogger{Log: log}),
 		)

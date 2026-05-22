@@ -40,6 +40,7 @@ import (
 	notificationapp "github.com/cobo/cobo_iam_services/internal/notification/app"
 	notificationinmem "github.com/cobo/cobo_iam_services/internal/notification/infra/inmemory"
 	notificationmysql "github.com/cobo/cobo_iam_services/internal/notification/infra/mysql"
+	notificationregistry "github.com/cobo/cobo_iam_services/internal/notification/infra/registry"
 	notificationhttp "github.com/cobo/cobo_iam_services/internal/notification/transport/http"
 	platformclock "github.com/cobo/cobo_iam_services/internal/platform/clock"
 	"github.com/cobo/cobo_iam_services/internal/platform/config"
@@ -166,10 +167,15 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 		identity = static
 	}
 	var iamOpts []iamapp.ServiceOption
+	emailTemplateRegistry := notificationregistry.NewEmbedRegistry()
+	emailRenderer := notificationapp.NewEmailRenderer()
 	iamOpts = append(iamOpts, iamapp.WithAuthFlowConfig(iamapp.AuthFlowConfig{
 		WebBaseURL:              cfg.PublicWebBaseURL,
 		UserInvitationTokenTTL:  cfg.UserInvitationTokenTTL,
 		EmailVerificationOTPTTL: cfg.EmailVerificationOTPTTL,
+		EmailTemplateSource:     cfg.EmailTemplateSource,
+		EmailTemplateRegistry:   emailTemplateRegistry,
+		EmailRenderer:           emailRenderer,
 	}))
 	if pool != nil {
 		iamOpts = append(iamOpts,
@@ -284,7 +290,7 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 			User: cfg.SMTPUser,
 			Pass: cfg.SMTPPassword,
 			From: cfg.SMTPFrom,
-		})),
+		}, reminderemail.WithTemplateRendering(cfg.EmailTemplateSource, emailTemplateRegistry, emailRenderer))),
 		reminderapp.WithMetrics(reminderobserve.NewPromMetrics()),
 		reminderapp.WithAuditor(reminderobserve.AuditRecorder{Svc: auditSvc, IDG: id}),
 		reminderapp.WithAlertHook(reminderobserve.AlertLogger{Log: log}),

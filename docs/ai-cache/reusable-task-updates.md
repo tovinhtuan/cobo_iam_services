@@ -2602,3 +2602,54 @@
 - remaining gaps/risks/next steps:
   - rerun `make deploy-fe`
   - if the remote tree still looks wrong, inspect `/root/cobo_project/web/dist` and remove any stale nested `dist/` directory before restarting `web`
+
+## 2026-05-22 - Email notification system phase 1 embed template extraction
+
+- task type: feature implementation
+- objective/question:
+  - implement phase 1 from `docs/email-notification-system-implementation-plan.md` without changing auth/reminder business behavior:
+    - extract current auth + reminder email content into `embed.FS` templates
+    - add template registry + renderer
+    - wire auth/reminder to use `EMAIL_TEMPLATE_SOURCE=embed`
+    - fallback to legacy hardcoded rendering on registry/render failure
+- implemented/discovered:
+  - added `internal/notification/templates` with 6 template sets that mirror current outputs:
+    - `auth.email_verification`
+    - `auth.password_reset.user`
+    - `auth.password_reset.admin`
+    - `auth.user_invitation.new_user`
+    - `auth.user_invitation.existing_user`
+    - `reminder.disclosure_deadline`
+  - added `internal/notification/app/email_contracts.go`, `email_renderer.go` and `internal/notification/infra/registry/embed_registry.go`
+  - metadata supports required variable validation, locale fallback, and legacy trailing-newline preservation so rendered output matches current auth/reminder strings
+  - auth flows now render through the template layer only when `EMAIL_TEMPLATE_SOURCE=embed`; otherwise they keep legacy strings
+  - reminder SMTP sender now renders through the same embed template layer under the same flag, while preserving direct SMTP + retry path and falling back to legacy renderer on failure
+  - added config wiring and runtime injection in:
+    - `internal/httpserver/server.go`
+    - `cmd/worker/main.go`
+- affected repos/files/modules:
+  - `cobo_iam_services/internal/notification/app/*`
+  - `cobo_iam_services/internal/notification/infra/registry/*`
+  - `cobo_iam_services/internal/notification/templates/*`
+  - `cobo_iam_services/internal/iam/app/{hooks.go,service.go,service_test.go}`
+  - `cobo_iam_services/internal/reminder/infra/email/{smtp_sender.go,smtp_sender_test.go}`
+  - `cobo_iam_services/internal/platform/config/config.go`
+  - `cobo_iam_services/internal/httpserver/server.go`
+  - `cobo_iam_services/cmd/worker/main.go`
+- contracts/behaviors/constraints/decisions:
+  - `EMAIL_TEMPLATE_SOURCE` accepts `legacy|embed`; default remains `legacy`
+  - phase 1 does not change:
+    - outbox event types/payload shape (`to`, `subject`, `body`)
+    - OTP/reset/invitation token generation
+    - TTL source of truth
+    - reminder SMTP dispatch and retry semantics
+  - when embed registry/render fails under `embed`, auth/reminder fall back to legacy rendering instead of failing the business path
+  - reminder embed output is normalized to CRLF body lines to preserve the legacy SMTP body formatting
+- build/verification result:
+  - `go test ./internal/notification/app ./internal/notification/infra/registry ./internal/reminder/infra/email ./internal/iam/app` ✅
+  - `go test ./internal/httpserver ./cmd/worker` ✅
+  - `docker compose -f docker-compose.dev.yml build api` ✅
+- remaining gaps/risks/next steps:
+  - auth worker delivery still consumes rendered `subject/body` payload exactly as before; phase 2 is still needed for `NotificationService` and `email.dispatch`
+  - only `vi` template files exist in phase 1; locale fallback is wired but not yet populated with additional locales
+  - no HTML templates were added in phase 1 because the current legacy paths are plain-text only

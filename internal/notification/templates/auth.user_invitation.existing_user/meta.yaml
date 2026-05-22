@@ -1,0 +1,5 @@
+default_locale: vi
+trailing_lf: true
+variables:
+  - name: display_name
+    required: true

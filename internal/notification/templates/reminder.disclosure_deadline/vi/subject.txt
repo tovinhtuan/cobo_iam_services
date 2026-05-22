@@ -1,0 +1,1 @@
+[COBO] Reminder: {{.title}} is due on {{.deadline_date}}

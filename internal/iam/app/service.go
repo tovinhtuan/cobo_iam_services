@@ -14,6 +14,7 @@ import (
 
 	ca "github.com/cobo/cobo_iam_services/internal/companyaccess/app"
 	iamregmysql "github.com/cobo/cobo_iam_services/internal/iam/registrationmysql"
+	notificationapp "github.com/cobo/cobo_iam_services/internal/notification/app"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 	"github.com/cobo/cobo_iam_services/internal/platform/events"
 	"github.com/cobo/cobo_iam_services/internal/platform/idgen"
@@ -23,32 +24,36 @@ import (
 )
 
 type service struct {
-	cred                 CredentialVerifier
-	sessions             SessionRepository
-	tokens               TokenIssuer
-	memberships          ca.MembershipQueryService
-	idgen                idgen.Generator
-	mfa                  MFACheck
-	sso                  SSOLoginBridge
-	attempts             LoginAttemptRecorder
-	recovery             AuthRecoveryRepository
-	outbox               outbox.Publisher
-	invite               UserInvitationExecutor
-	regDB                *sql.DB
-	registrationDisabled bool
-	webBaseURL           string
-	passwordResetTTL     time.Duration
-	emailVerifyTTL       time.Duration
-	emailOTPTTL          time.Duration
-	invitationTTL        time.Duration
+	cred                  CredentialVerifier
+	sessions              SessionRepository
+	tokens                TokenIssuer
+	memberships           ca.MembershipQueryService
+	idgen                 idgen.Generator
+	mfa                   MFACheck
+	sso                   SSOLoginBridge
+	attempts              LoginAttemptRecorder
+	recovery              AuthRecoveryRepository
+	outbox                outbox.Publisher
+	invite                UserInvitationExecutor
+	regDB                 *sql.DB
+	registrationDisabled  bool
+	webBaseURL            string
+	passwordResetTTL      time.Duration
+	emailVerifyTTL        time.Duration
+	emailOTPTTL           time.Duration
+	invitationTTL         time.Duration
+	emailTemplateSource   string
+	emailTemplateRegistry notificationapp.TemplateRegistry
+	emailRenderer         notificationapp.EmailRenderer
 }
 
 func NewService(cred CredentialVerifier, sessions SessionRepository, tokens TokenIssuer, memberships ca.MembershipQueryService, idgen idgen.Generator, opts ...ServiceOption) Service {
 	s := &service{
 		cred: cred, sessions: sessions, tokens: tokens, memberships: memberships, idgen: idgen,
 		webBaseURL: "http://localhost:5173", passwordResetTTL: 30 * time.Minute, emailVerifyTTL: 24 * time.Hour,
-		emailOTPTTL:   15 * time.Minute,
-		invitationTTL: 72 * time.Hour,
+		emailOTPTTL:         15 * time.Minute,
+		invitationTTL:       72 * time.Hour,
+		emailTemplateSource: "legacy",
 	}
 	for _, opt := range opts {
 		if opt != nil {
@@ -253,11 +258,16 @@ func (s *service) issueEmailVerificationOTP(ctx context.Context, userID string) 
 	if minutes < 1 {
 		minutes = 1
 	}
+	subject, body := s.renderEmailContent(ctx, "auth.email_verification", map[string]any{
+		"full_name":      coalesce(u.FullName, u.LoginID),
+		"otp_code":       code,
+		"expiry_minutes": minutes,
+	}, "Verify your email", fmt.Sprintf("Xin chao %s,\n\nMa xac thuc email cua ban la: %s\nMa het han sau %d phut.\n\nNeu ban khong yeu cau ma nay, hay bo qua email nay.",
+		coalesce(u.FullName, u.LoginID), code, minutes))
 	s.publishEmail(ctx, "auth.email_verification_requested", userID, map[string]any{
 		"to":      to,
-		"subject": "Verify your email",
-		"body": fmt.Sprintf("Xin chao %s,\n\nMa xac thuc email cua ban la: %s\nMa het han sau %d phut.\n\nNeu ban khong yeu cau ma nay, hay bo qua email nay.",
-			coalesce(u.FullName, u.LoginID), code, minutes),
+		"subject": subject,
+		"body":    body,
 	})
 	return nil
 }
@@ -417,11 +427,17 @@ func (s *service) ForgotPassword(ctx context.Context, req ForgotPasswordRequest)
 	}); err != nil {
 		return nil, fmt.Errorf("store password reset token: %w", err)
 	}
+	resetLink := s.buildActionLink("/reset-password", rawToken)
+	subject, body := s.renderEmailContent(ctx, "auth.password_reset.user", map[string]any{
+		"full_name":      coalesce(user.FullName, user.LoginID),
+		"reset_link":     resetLink,
+		"expiry_minutes": int(s.passwordResetTTL.Minutes()),
+	}, "Reset your password", fmt.Sprintf("Xin chao %s,\n\nVui long dat lai mat khau qua link sau:\n%s\n\nLink het han sau %d phut.",
+		coalesce(user.FullName, user.LoginID), resetLink, int(s.passwordResetTTL.Minutes())))
 	s.publishEmail(ctx, "auth.password_reset_requested", user.UserID, map[string]any{
 		"to":      user.Email,
-		"subject": "Reset your password",
-		"body": fmt.Sprintf("Xin chao %s,\n\nVui long dat lai mat khau qua link sau:\n%s\n\nLink het han sau %d phut.",
-			coalesce(user.FullName, user.LoginID), s.buildActionLink("/reset-password", rawToken), int(s.passwordResetTTL.Minutes())),
+		"subject": subject,
+		"body":    body,
 	})
 	return &ForgotPasswordResponse{Success: true}, nil
 }
@@ -692,29 +708,39 @@ func (s *service) PublishUserInvitationEmail(ctx context.Context, userID, toEmai
 	displayName := coalesce(fullName, loginID)
 
 	if rawToken == "" {
-		// Active user gained a new membership — no password setup link.
-		body := fmt.Sprintf("Xin chao %s,\n\n", displayName)
+		legacyBody := fmt.Sprintf("Xin chao %s,\n\n", displayName)
 		if companyName != "" {
-			body += fmt.Sprintf("Cong ty: %s\n\n", companyName)
+			legacyBody += fmt.Sprintf("Cong ty: %s\n\n", companyName)
 		}
-		body += "Ban da duoc them vao tai khoan cong ty tren he thong. Vui long dang nhap bang email va mat khau hien tai cua ban.\n\nNeu ban khong cho doi thao tac nay, hay lien he quan tri vien.\n"
+		legacyBody += "Ban da duoc them vao tai khoan cong ty tren he thong. Vui long dang nhap bang email va mat khau hien tai cua ban.\n\nNeu ban khong cho doi thao tac nay, hay lien he quan tri vien.\n"
+		subject, body := s.renderEmailContent(ctx, "auth.user_invitation.existing_user", map[string]any{
+			"display_name": displayName,
+			"company_name": companyName,
+		}, "Tham gia cong ty", legacyBody)
 		s.publishEmail(ctx, "auth.user_invitation_sent", userID, map[string]any{
 			"to":      to,
-			"subject": "Tham gia cong ty",
+			"subject": subject,
 			"body":    body,
 		})
 		return nil
 	}
 
-	body := fmt.Sprintf("Xin chao %s,\n\n", displayName)
+	setupLink := s.buildActionLink("/accept-invitation", rawToken)
+	legacyBody := fmt.Sprintf("Xin chao %s,\n\n", displayName)
 	if companyName != "" {
-		body += fmt.Sprintf("Cong ty: %s\n\n", companyName)
+		legacyBody += fmt.Sprintf("Cong ty: %s\n\n", companyName)
 	}
-	body += fmt.Sprintf("Tai khoan da duoc tao. Thiet lap mat khau qua link sau:\n%s\n\nLink het han sau khoang %d gio. Neu ban khong yeu cau, bo qua email nay.\n",
-		s.buildActionLink("/accept-invitation", rawToken), int(s.invitationTTL.Hours()))
+	legacyBody += fmt.Sprintf("Tai khoan da duoc tao. Thiet lap mat khau qua link sau:\n%s\n\nLink het han sau khoang %d gio. Neu ban khong yeu cau, bo qua email nay.\n",
+		setupLink, int(s.invitationTTL.Hours()))
+	subject, body := s.renderEmailContent(ctx, "auth.user_invitation.new_user", map[string]any{
+		"display_name": displayName,
+		"company_name": companyName,
+		"setup_link":   setupLink,
+		"expiry_hours": int(s.invitationTTL.Hours()),
+	}, "Thiet lap mat khau tai khoan", legacyBody)
 	s.publishEmail(ctx, "auth.user_invitation_sent", userID, map[string]any{
 		"to":      to,
-		"subject": "Thiet lap mat khau tai khoan",
+		"subject": subject,
 		"body":    body,
 	})
 	return nil
@@ -748,11 +774,17 @@ func (s *service) AdminRequestPasswordReset(ctx context.Context, targetUserID st
 		return fmt.Errorf("store password reset token: %w", err)
 	}
 	addr := coalesce(strings.TrimSpace(user.Email), strings.TrimSpace(user.LoginID))
+	resetLink := s.buildActionLink("/reset-password", rawToken)
+	subject, body := s.renderEmailContent(ctx, "auth.password_reset.admin", map[string]any{
+		"full_name":      coalesce(user.FullName, user.LoginID),
+		"reset_link":     resetLink,
+		"expiry_minutes": int(s.passwordResetTTL.Minutes()),
+	}, "Dat lai mat khau (yeu cau tu quan tri)", fmt.Sprintf("Xin chao %s,\n\nQuan tri vien da yeu cau dat lai mat khau.\n%s\n\nLink het han sau %d phut.\n",
+		coalesce(user.FullName, user.LoginID), resetLink, int(s.passwordResetTTL.Minutes())))
 	s.publishEmail(ctx, "auth.admin_password_reset_requested", user.UserID, map[string]any{
 		"to":      addr,
-		"subject": "Dat lai mat khau (yeu cau tu quan tri)",
-		"body": fmt.Sprintf("Xin chao %s,\n\nQuan tri vien da yeu cau dat lai mat khau.\n%s\n\nLink het han sau %d phut.\n",
-			coalesce(user.FullName, user.LoginID), s.buildActionLink("/reset-password", rawToken), int(s.passwordResetTTL.Minutes())),
+		"subject": subject,
+		"body":    body,
 	})
 	return nil
 }
@@ -782,6 +814,21 @@ func (s *service) publishEmail(ctx context.Context, eventType, userID string, pa
 		EventID: s.idgen.NewUUID(), AggregateType: "user", AggregateID: userID,
 		EventType: eventType, Payload: payload, OccurredAt: time.Now().UTC(),
 	})
+}
+
+func (s *service) renderEmailContent(ctx context.Context, key string, vars map[string]any, legacySubject, legacyBody string) (string, string) {
+	if s.emailTemplateSource != "embed" || s.emailTemplateRegistry == nil || s.emailRenderer == nil {
+		return legacySubject, legacyBody
+	}
+	resolved, err := s.emailTemplateRegistry.Resolve(ctx, key, "vi")
+	if err != nil {
+		return legacySubject, legacyBody
+	}
+	rendered, err := s.emailRenderer.Render(resolved, vars)
+	if err != nil {
+		return legacySubject, legacyBody
+	}
+	return rendered.Subject, rendered.TextBody
 }
 
 func coalesce(a, b string) string {

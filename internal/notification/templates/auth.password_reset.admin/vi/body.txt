@@ -1,0 +1,7 @@
+Xin chao {{.full_name}},
+
+Quan tri vien da yeu cau dat lai mat khau.
+{{.reset_link}}
+
+Link het han sau {{.expiry_minutes}} phut.
+

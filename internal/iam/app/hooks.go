@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"time"
 
+	notificationapp "github.com/cobo/cobo_iam_services/internal/notification/app"
 	"github.com/cobo/cobo_iam_services/internal/platform/outbox"
 )
 
@@ -47,12 +48,15 @@ func WithOutboxPublisher(p outbox.Publisher) ServiceOption {
 }
 
 type AuthFlowConfig struct {
-	WebBaseURL               string
-	PasswordResetTokenTTL    time.Duration
+	WebBaseURL                string
+	PasswordResetTokenTTL     time.Duration
 	EmailVerificationTokenTTL time.Duration
 	// EmailVerificationOTPTTL expiry for numeric email OTP (register/resend).
 	EmailVerificationOTPTTL time.Duration
-	UserInvitationTokenTTL   time.Duration
+	UserInvitationTokenTTL  time.Duration
+	EmailTemplateSource     string
+	EmailTemplateRegistry   notificationapp.TemplateRegistry
+	EmailRenderer           notificationapp.EmailRenderer
 }
 
 // WithAuthFlowConfig overrides token TTLs and link base URL for email actions.
@@ -72,6 +76,15 @@ func WithAuthFlowConfig(cfg AuthFlowConfig) ServiceOption {
 		}
 		if cfg.UserInvitationTokenTTL > 0 {
 			s.invitationTTL = cfg.UserInvitationTokenTTL
+		}
+		if cfg.EmailTemplateSource != "" {
+			s.emailTemplateSource = cfg.EmailTemplateSource
+		}
+		if cfg.EmailTemplateRegistry != nil {
+			s.emailTemplateRegistry = cfg.EmailTemplateRegistry
+		}
+		if cfg.EmailRenderer != nil {
+			s.emailRenderer = cfg.EmailRenderer
 		}
 	}
 }

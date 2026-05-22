@@ -7,6 +7,8 @@ import (
 	"net/smtp"
 	"strings"
 	"time"
+
+	notificationapp "github.com/cobo/cobo_iam_services/internal/notification/app"
 )
 
 type SMTPConfig struct {
@@ -18,11 +20,30 @@ type SMTPConfig struct {
 }
 
 type Sender struct {
-	cfg SMTPConfig
+	cfg            SMTPConfig
+	templateSource string
+	registry       notificationapp.TemplateRegistry
+	renderer       notificationapp.EmailRenderer
 }
 
-func NewSMTPSender(cfg SMTPConfig) *Sender {
-	return &Sender{cfg: cfg}
+type Option func(*Sender)
+
+func WithTemplateRendering(source string, registry notificationapp.TemplateRegistry, renderer notificationapp.EmailRenderer) Option {
+	return func(s *Sender) {
+		s.templateSource = source
+		s.registry = registry
+		s.renderer = renderer
+	}
+}
+
+func NewSMTPSender(cfg SMTPConfig, opts ...Option) *Sender {
+	s := &Sender{cfg: cfg, templateSource: "legacy"}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(s)
+		}
+	}
+	return s
 }
 
 func (s *Sender) SendReminderEmail(_ context.Context, templateCode string, payload map[string]any, recipients []string, _ string) (string, error) {
@@ -32,7 +53,7 @@ func (s *Sender) SendReminderEmail(_ context.Context, templateCode string, paylo
 	if len(recipients) == 0 {
 		return "", PermanentError{Err: fmt.Errorf("recipient list is empty")}
 	}
-	subject, body, err := renderReminderEmail(templateCode, payload)
+	subject, body, err := s.renderReminderEmailContent(templateCode, payload)
 	if err != nil {
 		return "", PermanentError{Err: err}
 	}
@@ -64,6 +85,30 @@ func (s *Sender) SendReminderEmail(_ context.Context, templateCode string, paylo
 		return "", PermanentError{Err: err}
 	}
 	return fmt.Sprintf("smtp-%d", time.Now().UnixNano()), nil
+}
+
+func (s *Sender) renderReminderEmailContent(templateCode string, payload map[string]any) (string, string, error) {
+	if s.templateSource == "embed" && s.registry != nil && s.renderer != nil {
+		if key, ok := reminderTemplateKey(templateCode); ok {
+			resolved, err := s.registry.Resolve(context.Background(), key, "vi")
+			if err == nil {
+				rendered, renderErr := s.renderer.Render(resolved, payload)
+				if renderErr == nil {
+					return rendered.Subject, strings.ReplaceAll(rendered.TextBody, "\n", "\r\n"), nil
+				}
+			}
+		}
+	}
+	return renderReminderEmail(templateCode, payload)
+}
+
+func reminderTemplateKey(templateCode string) (string, bool) {
+	switch strings.TrimSpace(templateCode) {
+	case "REMINDER_DISCLOSURE_DUE":
+		return "reminder.disclosure_deadline", true
+	default:
+		return "", false
+	}
 }
 
 func renderReminderEmail(templateCode string, payload map[string]any) (string, string, error) {

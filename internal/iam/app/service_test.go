@@ -4,12 +4,16 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	caapp "github.com/cobo/cobo_iam_services/internal/companyaccess/app"
 	cainmem "github.com/cobo/cobo_iam_services/internal/companyaccess/infra/inmemory"
 	iamapp "github.com/cobo/cobo_iam_services/internal/iam/app"
 	iaminmem "github.com/cobo/cobo_iam_services/internal/iam/infra/inmemory"
+	notificationapp "github.com/cobo/cobo_iam_services/internal/notification/app"
+	notificationregistry "github.com/cobo/cobo_iam_services/internal/notification/infra/registry"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
+	"github.com/cobo/cobo_iam_services/internal/platform/events"
 )
 
 func TestLogin_invalidCredentials(t *testing.T) {
@@ -315,11 +319,72 @@ func TestResendVerificationEmail_requiresRecipient(t *testing.T) {
 	}
 }
 
+func TestPublishUserInvitationEmail_EmbedUsesTemplate(t *testing.T) {
+	ctx := context.Background()
+	publisher := &captureOutboxPublisher{}
+	svc := newTestIAMService(t, testIAMDeps{
+		cred:    testCred(),
+		members: cainmem.NewMembershipQueryService(),
+		opts: []iamapp.ServiceOption{
+			iamapp.WithOutboxPublisher(publisher),
+			iamapp.WithAuthFlowConfig(iamapp.AuthFlowConfig{
+				WebBaseURL:             "https://app.example.com",
+				UserInvitationTokenTTL: 72 * time.Hour,
+				EmailTemplateSource:    "embed",
+				EmailTemplateRegistry:  notificationregistry.NewEmbedRegistry(),
+				EmailRenderer:          notificationapp.NewEmailRenderer(),
+			}),
+		},
+	})
+
+	if err := svc.PublishUserInvitationEmail(ctx, "u_123", "invitee@example.com", "Nguyen Van A", "invitee@example.com", "token-123", "COBO"); err != nil {
+		t.Fatalf("PublishUserInvitationEmail error = %v", err)
+	}
+	if publisher.last.EventType != "auth.user_invitation_sent" {
+		t.Fatalf("event_type = %q", publisher.last.EventType)
+	}
+	if got := publisher.last.Payload["subject"]; got != "Thiet lap mat khau tai khoan" {
+		t.Fatalf("subject = %v", got)
+	}
+	wantBody := "Xin chao Nguyen Van A,\n\nCong ty: COBO\n\nTai khoan da duoc tao. Thiet lap mat khau qua link sau:\nhttps://app.example.com/accept-invitation?token=token-123\n\nLink het han sau khoang 72 gio. Neu ban khong yeu cau, bo qua email nay.\n"
+	if got := publisher.last.Payload["body"]; got != wantBody {
+		t.Fatalf("body mismatch\nwant: %q\ngot:  %q", wantBody, got)
+	}
+}
+
+func TestPublishUserInvitationEmail_EmbedFallsBackToLegacy(t *testing.T) {
+	ctx := context.Background()
+	publisher := &captureOutboxPublisher{}
+	svc := newTestIAMService(t, testIAMDeps{
+		cred:    testCred(),
+		members: cainmem.NewMembershipQueryService(),
+		opts: []iamapp.ServiceOption{
+			iamapp.WithOutboxPublisher(publisher),
+			iamapp.WithAuthFlowConfig(iamapp.AuthFlowConfig{
+				WebBaseURL:             "https://app.example.com",
+				UserInvitationTokenTTL: 72 * time.Hour,
+				EmailTemplateSource:    "embed",
+				EmailTemplateRegistry:  brokenIAMRegistry{},
+				EmailRenderer:          notificationapp.NewEmailRenderer(),
+			}),
+		},
+	})
+
+	if err := svc.PublishUserInvitationEmail(ctx, "u_123", "invitee@example.com", "Nguyen Van A", "invitee@example.com", "", "COBO"); err != nil {
+		t.Fatalf("PublishUserInvitationEmail error = %v", err)
+	}
+	wantBody := "Xin chao Nguyen Van A,\n\nCong ty: COBO\n\nBan da duoc them vao tai khoan cong ty tren he thong. Vui long dang nhap bang email va mat khau hien tai cua ban.\n\nNeu ban khong cho doi thao tac nay, hay lien he quan tri vien.\n"
+	if got := publisher.last.Payload["body"]; got != wantBody {
+		t.Fatalf("legacy fallback body mismatch\nwant: %q\ngot:  %q", wantBody, got)
+	}
+}
+
 // --- test harness
 
 type testIAMDeps struct {
 	cred    *iaminmem.StaticCredentialVerifier
 	members *cainmem.MembershipQueryService
+	opts    []iamapp.ServiceOption
 }
 
 func testCred() *iaminmem.StaticCredentialVerifier {
@@ -332,7 +397,7 @@ func testCred() *iaminmem.StaticCredentialVerifier {
 func newTestIAMService(t *testing.T, d testIAMDeps) iamapp.Service {
 	t.Helper()
 	id := &testSeqID{}
-	return iamapp.NewService(d.cred, iaminmem.NewSessionRepository(), iaminmem.NewTokenManager(id), d.members, id)
+	return iamapp.NewService(d.cred, iaminmem.NewSessionRepository(), iaminmem.NewTokenManager(id), d.members, id, d.opts...)
 }
 
 type testSeqID struct{ n int }
@@ -352,4 +417,19 @@ type ssoStub struct{ user *iamapp.AuthenticatedUser }
 
 func (s ssoStub) TryExternalPrimaryAuth(ctx context.Context, req iamapp.LoginRequest) (*iamapp.AuthenticatedUser, bool, error) {
 	return s.user, true, nil
+}
+
+type captureOutboxPublisher struct {
+	last events.Event
+}
+
+func (c *captureOutboxPublisher) Publish(_ context.Context, event events.Event) error {
+	c.last = event
+	return nil
+}
+
+type brokenIAMRegistry struct{}
+
+func (brokenIAMRegistry) Resolve(context.Context, string, string) (notificationapp.ResolvedTemplate, error) {
+	return notificationapp.ResolvedTemplate{}, context.DeadlineExceeded
 }

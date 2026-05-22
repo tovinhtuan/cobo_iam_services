@@ -1,0 +1,6 @@
+Xin chao {{.full_name}},
+
+Vui long dat lai mat khau qua link sau:
+{{.reset_link}}
+
+Link het han sau {{.expiry_minutes}} phut.

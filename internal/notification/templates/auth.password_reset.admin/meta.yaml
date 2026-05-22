@@ -1,0 +1,9 @@
+default_locale: vi
+trailing_lf: true
+variables:
+  - name: full_name
+    required: true
+  - name: reset_link
+    required: true
+  - name: expiry_minutes
+    required: true

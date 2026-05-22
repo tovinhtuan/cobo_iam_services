@@ -1,0 +1,8 @@
+default_locale: vi
+variables:
+  - name: full_name
+    required: true
+  - name: otp_code
+    required: true
+  - name: expiry_minutes
+    required: true

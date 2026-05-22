@@ -85,6 +85,8 @@ type Config struct {
 	SMTPUser     string
 	SMTPPassword string
 	SMTPFrom     string
+	// EmailTemplateSource controls phase-1 rendering path: legacy | embed.
+	EmailTemplateSource string
 
 	// CMS media signed-upload/storage settings.
 	CMSMediaUploadSigningSecret string
@@ -137,7 +139,7 @@ func Load() (Config, error) {
 		PublicWebBaseURL:              getenv("PUBLIC_WEB_BASE_URL", "http://localhost:5173"),
 		PublicAPIBaseURL:              getenv("PUBLIC_API_BASE_URL", "http://localhost:8080"),
 		UserInvitationTokenTTL:        durationEnv("USER_INVITATION_TOKEN_TTL", 72*time.Hour),
-		EmailVerificationOTPTTL:     durationEnv("EMAIL_VERIFICATION_OTP_TTL", 15*time.Minute),
+		EmailVerificationOTPTTL:       durationEnv("EMAIL_VERIFICATION_OTP_TTL", 15*time.Minute),
 		InviteDefaultRoleCode:         getenv("INVITE_DEFAULT_ROLE_CODE", "user_thuong"),
 		RegistrationDisabled:          strings.EqualFold(strings.TrimSpace(os.Getenv("REGISTRATION_DISABLED")), "true"),
 		LoginPasswordRSAPrivateKeyPEM: os.Getenv("LOGIN_PASSWORD_RSA_PRIVATE_KEY_PEM"),
@@ -148,6 +150,7 @@ func Load() (Config, error) {
 		SMTPUser:                      os.Getenv("SMTP_USER"),
 		SMTPPassword:                  os.Getenv("SMTP_PASSWORD"),
 		SMTPFrom:                      getenv("SMTP_FROM", "no-reply@cobo.local"),
+		EmailTemplateSource:           getenv("EMAIL_TEMPLATE_SOURCE", "legacy"),
 		CMSMediaUploadSigningSecret:   getenv("CMS_MEDIA_UPLOAD_SIGNING_SECRET", "dev-cms-media-secret"),
 		CMSMediaUploadURLTTL:          durationEnv("CMS_MEDIA_UPLOAD_URL_TTL", 10*time.Minute),
 		CMSMediaStorageDir:            getenv("CMS_MEDIA_STORAGE_DIR", "./var/cms-media"),
@@ -176,6 +179,11 @@ func Load() (Config, error) {
 	case "off", "warn", "enforce":
 	default:
 		return Config{}, fmt.Errorf("WORKFLOW_DRAFT_ETAG_MODE invalid: %s", cfg.WorkflowDraftEtagMode)
+	}
+	switch cfg.EmailTemplateSource {
+	case "legacy", "embed":
+	default:
+		return Config{}, fmt.Errorf("EMAIL_TEMPLATE_SOURCE invalid: %s", cfg.EmailTemplateSource)
 	}
 	return cfg, nil
 }
