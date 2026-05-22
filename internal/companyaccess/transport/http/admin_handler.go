@@ -201,20 +201,22 @@ func (h *AdminHandler) initializeCompany(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	var p struct {
-		CompanyName  string `json:"company_name"`
-		TaxCode      string `json:"tax_code"`
-		Address      string `json:"address"`
-		Phone        string `json:"phone"`
-		ContactEmail string `json:"contact_email"`
+		CompanyName        string `json:"company_name"`
+		TaxCode            string `json:"tax_code"`
+		RegistrationNumber string `json:"registration_number"`
+		Address            string `json:"address"`
+		Phone              string `json:"phone"`
+		ContactEmail       string `json:"contact_email"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&p)
 	result, err := h.svc.InitializeCompany(r.Context(), caapp.InitializeCompanyRequest{
-		UserID:       claims.Sub,
-		CompanyName:  p.CompanyName,
-		TaxCode:      p.TaxCode,
-		Address:      p.Address,
-		Phone:        p.Phone,
-		ContactEmail: p.ContactEmail,
+		UserID:             claims.Sub,
+		CompanyName:        p.CompanyName,
+		TaxCode:            p.TaxCode,
+		RegistrationNumber: p.RegistrationNumber,
+		Address:            p.Address,
+		Phone:              p.Phone,
+		ContactEmail:       p.ContactEmail,
 	})
 	if err != nil {
 		httpx.WriteError(w, nil, err)

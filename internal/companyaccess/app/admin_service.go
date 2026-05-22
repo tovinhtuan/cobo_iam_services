@@ -919,10 +919,11 @@ func (s *adminService) InitializeCompany(ctx context.Context, req InitializeComp
 		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "COMPANY_ALREADY_EXISTS", nil)
 	}
 	companyID, companyCode, err := s.repo.CreateStandaloneCompany(ctx, name, CreateCompanyBootstrap{
-		TaxCode:      strings.TrimSpace(req.TaxCode),
-		Address:      strings.TrimSpace(req.Address),
-		Phone:        strings.TrimSpace(req.Phone),
-		ContactEmail: strings.TrimSpace(req.ContactEmail),
+		TaxCode:            strings.TrimSpace(req.TaxCode),
+		RegistrationNumber: strings.TrimSpace(req.RegistrationNumber),
+		Address:            strings.TrimSpace(req.Address),
+		Phone:              strings.TrimSpace(req.Phone),
+		ContactEmail:       strings.TrimSpace(req.ContactEmail),
 	})
 	if err != nil {
 		return nil, err

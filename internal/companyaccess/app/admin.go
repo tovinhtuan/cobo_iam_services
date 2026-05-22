@@ -481,12 +481,13 @@ type ListDirectPermissionsRequest struct {
 }
 
 type InitializeCompanyRequest struct {
-	UserID       string
-	CompanyName  string
-	TaxCode      string
-	Address      string
-	Phone        string
-	ContactEmail string
+	UserID             string
+	CompanyName        string
+	TaxCode            string
+	RegistrationNumber string
+	Address            string
+	Phone              string
+	ContactEmail       string
 }
 
 type InitializeCompanyResult struct {
