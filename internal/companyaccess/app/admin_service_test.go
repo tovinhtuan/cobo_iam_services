@@ -472,3 +472,53 @@ func TestAdminService_NotificationRulesListPatchDelete_and_AccountSettings(t *te
 	}
 }
 
+
+func TestListCompanyMemberships_RolesEnriched(t *testing.T) {
+	repo := cainmem.NewAdminRepository()
+	svc := caapp.NewAdminService(
+		repo,
+		fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{"rbac.manage"}},
+		fixedIDGen("u_member"),
+	)
+	sub := caapp.AdminSubject{UserID: "u_admin", MembershipID: "m_admin", CompanyID: "c_roles"}
+
+	// Create a member in company c_roles
+	out, err := svc.CreateUser(context.Background(), caapp.CreateUserRequest{
+		Subject:   sub,
+		LoginID:   "member@roles.test",
+		Password:  "StrongPass123!",
+		FullName:  "Role Member",
+		CompanyID: "c_roles",
+	})
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+
+	// Assign a role to the member's membership
+	roleID, err := repo.LookupRoleIDForInvite(context.Background(), "c_roles", "", "company_admin", "user_thuong")
+	if err != nil {
+		t.Fatalf("LookupRoleID: %v", err)
+	}
+	if err := repo.AddRole(context.Background(), out.MembershipID, roleID); err != nil {
+		t.Fatalf("AddRole: %v", err)
+	}
+
+	// List memberships and verify Roles is enriched
+	items, err := svc.ListCompanyMemberships(context.Background(), caapp.ListCompanyMembershipsRequest{
+		Subject:   sub,
+		CompanyID: "c_roles",
+	})
+	if err != nil {
+		t.Fatalf("ListCompanyMemberships: %v", err)
+	}
+	if len(items) == 0 {
+		t.Fatal("expected at least 1 membership")
+	}
+	member := items[0]
+	if len(member.Roles) == 0 {
+		t.Fatalf("expected Roles to be enriched, got empty. MembershipID=%q", member.MembershipID)
+	}
+	if member.Roles[0].RoleID == "" {
+		t.Fatal("expected Roles[0].RoleID to be non-empty")
+	}
+}

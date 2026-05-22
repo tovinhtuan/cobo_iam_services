@@ -184,6 +184,7 @@ func (r *AdminRepository) ListMembershipsByCompany(ctx context.Context, companyI
 	for i := range out {
 		out[i].Departments, _ = r.listMembershipDeptViews(ctx, out[i].MembershipID)
 		out[i].Titles, _ = r.listMembershipTitleViews(ctx, out[i].MembershipID)
+		out[i].Roles, _ = r.listMembershipRoleViews(ctx, out[i].MembershipID)
 	}
 	return out, nil
 }
@@ -231,6 +232,29 @@ func (r *AdminRepository) listMembershipTitleViews(ctx context.Context, membersh
 			return nil, err
 		}
 		v.Name = v.TitleName
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
+func (r *AdminRepository) listMembershipRoleViews(ctx context.Context, membershipID string) ([]caapp.RoleView, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT r.role_id, r.role_code, r.role_name
+		FROM membership_roles mr
+		INNER JOIN roles r ON r.role_id = mr.role_id
+		WHERE mr.membership_id = ? AND mr.status = 'active' AND r.status = 'active'
+		ORDER BY r.role_name
+	`, membershipID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []caapp.RoleView
+	for rows.Next() {
+		var v caapp.RoleView
+		if err := rows.Scan(&v.RoleID, &v.RoleCode, &v.RoleName); err != nil {
+			return nil, err
+		}
 		out = append(out, v)
 	}
 	return out, rows.Err()

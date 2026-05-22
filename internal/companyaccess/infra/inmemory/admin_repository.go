@@ -252,6 +252,12 @@ func (r *AdminRepository) ListMembershipsByCompany(_ context.Context, companyID 
 				cp.FullName = u.FullName
 				cp.AccountStatus = u.AccountStatus
 			}
+			if roleIDs, ok := r.rolesByMembership[m.MembershipID]; ok {
+				for id := range roleIDs {
+					code := strings.TrimPrefix(id, "r_invite_")
+					cp.Roles = append(cp.Roles, caapp.RoleView{RoleID: id, RoleCode: code, RoleName: code})
+				}
+			}
 			out = append(out, cp)
 		}
 	}

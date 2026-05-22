@@ -32,6 +32,13 @@ type MembershipView struct {
 	IsPrimaryAdmin bool             `json:"is_primary_admin,omitempty"`
 	Departments    []DepartmentView `json:"departments,omitempty"`
 	Titles         []TitleView      `json:"titles,omitempty"`
+	Roles          []RoleView       `json:"roles,omitempty"`
+}
+
+type RoleView struct {
+	RoleID   string `json:"role_id"`
+	RoleCode string `json:"role_code,omitempty"`
+	RoleName string `json:"role_name,omitempty"`
 }
 
 type TitleView struct {
