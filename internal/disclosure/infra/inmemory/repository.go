@@ -2,6 +2,7 @@ package inmemory
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"slices"
 	"strings"
@@ -125,11 +126,19 @@ func (r *Repository) ListDisplayGroups(_ context.Context) ([]disclosureapp.Displ
 	return out, nil
 }
 
-func (r *Repository) ListTypes(_ context.Context, companyID, groupID, query string) ([]disclosureapp.DisclosureTypeSummaryDTO, error) {
+func (r *Repository) ListTypes(_ context.Context, params disclosureapp.ListTypesParams) ([]disclosureapp.DisclosureTypeSummaryDTO, int, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	groupID = strings.TrimSpace(groupID)
-	query = strings.ToLower(strings.TrimSpace(query))
+	companyID := params.CompanyID
+	groupID := strings.TrimSpace(params.GroupID)
+	displayGroupCode := strings.TrimSpace(params.DisplayGroupCode)
+	query := strings.ToLower(strings.TrimSpace(params.Query))
+	page := params.Page
+	pageSize := params.PageSize
+	if pageSize <= 0 || pageSize > 100 {
+		pageSize = 20
+	}
+
 	out := make([]disclosureapp.DisclosureTypeSummaryDTO, 0)
 	for _, item := range r.catalog {
 		if scope := r.catalogScope[item.TypeID]; scope != "global" && scope != companyID {
@@ -138,25 +147,30 @@ func (r *Repository) ListTypes(_ context.Context, companyID, groupID, query stri
 		if groupID != "" && item.GroupID != groupID {
 			continue
 		}
+		if displayGroupCode != "" && r.displayGroupCodes[item.TypeID] != displayGroupCode {
+			continue
+		}
 		if query != "" && !strings.Contains(strings.ToLower(item.Name+" "+item.Description), query) {
 			continue
 		}
+		scope := "company"
+		ownerCompanyID := r.catalogScope[item.TypeID]
+		if ownerCompanyID == "global" {
+			scope = "global"
+			ownerCompanyID = ""
+		}
 		out = append(out, disclosureapp.DisclosureTypeSummaryDTO{
-			TypeID:  item.TypeID,
-			GroupID: item.GroupID,
+			TypeID:           item.TypeID,
+			GroupID:          item.GroupID,
 			DisplayGroupCode: r.displayGroupCodes[item.TypeID],
-			Scope: func() string {
-				if r.catalogScope[item.TypeID] == "global" {
-					return "global"
+			DisplayGroupCodes: func() []string {
+				if c := r.displayGroupCodes[item.TypeID]; c != "" {
+					return []string{c}
 				}
-				return "company"
+				return []string{}
 			}(),
-			OwnerCompanyID: func() string {
-				if r.catalogScope[item.TypeID] == "global" {
-					return ""
-				}
-				return r.catalogScope[item.TypeID]
-			}(),
+			Scope:            scope,
+			OwnerCompanyID:   ownerCompanyID,
 			Name:             item.Name,
 			Category:         item.Category,
 			TemplateCategory: item.TemplateCategory,
@@ -165,7 +179,19 @@ func (r *Repository) ListTypes(_ context.Context, companyID, groupID, query stri
 			Tags:             slices.Clone(item.Tags),
 		})
 	}
-	return out, nil
+	total := len(out)
+	if page > 0 {
+		start := (page - 1) * pageSize
+		if start >= total {
+			return []disclosureapp.DisclosureTypeSummaryDTO{}, total, nil
+		}
+		end := start + pageSize
+		if end > total {
+			end = total
+		}
+		out = out[start:end]
+	}
+	return out, total, nil
 }
 
 func (r *Repository) GetTypeDetail(_ context.Context, companyID, typeID string) (*disclosureapp.DisclosureTypeDTO, error) {
@@ -663,4 +689,22 @@ func (r *Repository) GetCompanyTypePreference(_ context.Context, _, _ string) (*
 
 func (r *Repository) UpsertCompanyTypePreference(_ context.Context, _ disclosureapp.CompanyTypePreference) error {
 	return nil
+}
+
+// BE-004A stubs — in-memory path not used in production for these write APIs.
+
+func (r *Repository) CreateCompanyTemplate(_ context.Context, _ disclosureapp.CreateCompanyTemplateRequest) (*disclosureapp.CompanyTemplateWriteResponse, error) {
+	return nil, fmt.Errorf("not implemented in memory")
+}
+
+func (r *Repository) UpdateCompanyTemplate(_ context.Context, _ disclosureapp.UpdateCompanyTemplateRequest) (*disclosureapp.CompanyTemplateWriteResponse, error) {
+	return nil, fmt.Errorf("not implemented in memory")
+}
+
+func (r *Repository) GetCompanyTemplateForLifecycle(_ context.Context, _, _ string) (*disclosureapp.CompanyTemplateWriteResponse, error) {
+	return nil, fmt.Errorf("not implemented in memory")
+}
+
+func (r *Repository) TransitionCompanyTemplateReviewStatus(_ context.Context, _, _, _, _ string) error {
+	return fmt.Errorf("not implemented in memory")
 }

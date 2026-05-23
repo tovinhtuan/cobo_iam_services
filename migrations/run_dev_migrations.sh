@@ -50,6 +50,14 @@ seed_dev_identity_authorization.sql
 0047_extend_departments.up.sql
 0048_extend_titles.up.sql
 0049_seed_org_roles.up.sql
+0050_org_units_department_link.up.sql
+0051_email_notifications.up.sql
+0052_email_delivery_attempts.up.sql
+0053_cms_portal_template_tables.up.sql
+0054_cms_display_groups_po_seed.up.sql
+0055_cms_system_template_seed.up.sql
+0056_company_template_lifecycle.up.sql
+0057_workflow_override_versioning.up.sql
 "
 
 mysql_exec() {

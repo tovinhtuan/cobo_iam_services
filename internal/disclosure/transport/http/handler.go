@@ -58,6 +58,11 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/v1/admin/disclosure-types/{type_id}/config", h.updateTemplateDeadlineConfig)
 	mux.HandleFunc("GET /api/v1/company/disclosure-types/{type_id}/preferences", h.getCompanyTypePreference)
 	mux.HandleFunc("PATCH /api/v1/company/disclosure-types/{type_id}/preferences", h.upsertCompanyTypePreference)
+	// BE-004A: company-defined template create/update (portal path)
+	mux.HandleFunc("POST /api/v1/company/disclosure-types", h.createCompanyTemplate)
+	mux.HandleFunc("PUT /api/v1/company/disclosure-types/{type_id}", h.updateCompanyTemplate)
+	// BE-004B: lifecycle transitions
+	mux.HandleFunc("POST /api/v1/company/disclosure-types/{type_id}/lifecycle/{action}", h.transitionCompanyTemplateLifecycle)
 }
 
 func (h *Handler) getTemplateReferenceData(w http.ResponseWriter, r *http.Request) {
@@ -268,10 +273,17 @@ func (h *Handler) listTypes(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, nil, err)
 		return
 	}
+	page, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("page")))
+	pageSize, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("page_size")))
 	resp, err := h.svc.ListTypes(r.Context(), disclosureapp.ListTypesRequest{
-		Subject: sub,
-		GroupID: strings.TrimSpace(r.URL.Query().Get("group_id")),
-		Query:   strings.TrimSpace(r.URL.Query().Get("q")),
+		Subject:          sub,
+		GroupID:          strings.TrimSpace(r.URL.Query().Get("group_id")),
+		DisplayGroupCode: strings.TrimSpace(r.URL.Query().Get("display_group_code")),
+		Query:            strings.TrimSpace(r.URL.Query().Get("q")),
+		Page:             page,
+		PageSize:         pageSize,
+		SortBy:           strings.TrimSpace(r.URL.Query().Get("sort_by")),
+		SortDir:          strings.TrimSpace(r.URL.Query().Get("sort_dir")),
 	})
 	if err != nil {
 		httpx.WriteError(w, nil, err)
@@ -788,4 +800,90 @@ func (h *Handler) upsertCompanyTypePreference(w http.ResponseWriter, r *http.Req
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+// BE-004A handlers.
+
+func (h *Handler) createCompanyTemplate(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subjectFromToken(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	var body disclosureapp.CreateCompanyTemplateRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	body.Subject = sub
+	resp, err := h.svc.CreateCompanyTemplate(r.Context(), body)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	h.auditLog(r, sub, "disclosure.company_template.created", "disclosure_type", resp.TypeID, map[string]any{
+		"template_category": resp.TemplateCategory,
+		"review_status":     resp.ReviewStatus,
+		"change_note":       strings.TrimSpace(body.ChangeNote),
+	})
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"data": resp})
+}
+
+func (h *Handler) updateCompanyTemplate(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subjectFromToken(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	typeID := strings.TrimSpace(r.PathValue("type_id"))
+	var body disclosureapp.UpdateCompanyTemplateRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	body.Subject = sub
+	body.TypeID = typeID
+	resp, err := h.svc.UpdateCompanyTemplate(r.Context(), body)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	h.auditLog(r, sub, "disclosure.company_template.updated", "disclosure_type", resp.TypeID, map[string]any{
+		"template_category": resp.TemplateCategory,
+		"review_status":     resp.ReviewStatus,
+		"change_note":       strings.TrimSpace(body.ChangeNote),
+	})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": resp})
+}
+
+// BE-004B handler.
+
+func (h *Handler) transitionCompanyTemplateLifecycle(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subjectFromToken(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	typeID := strings.TrimSpace(r.PathValue("type_id"))
+	action := strings.TrimSpace(r.PathValue("action"))
+	var body struct {
+		Reason string `json:"reason"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	resp, err := h.svc.TransitionCompanyTemplateLifecycle(r.Context(), disclosureapp.TransitionCompanyTemplateLifecycleRequest{
+		Subject: sub,
+		TypeID:  typeID,
+		Action:  action,
+		Reason:  body.Reason,
+	})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	h.auditLog(r, sub, "disclosure.company_template.lifecycle_transition", "disclosure_type", typeID, map[string]any{
+		"action":        action,
+		"reason":        strings.TrimSpace(body.Reason),
+		"review_status": resp.ReviewStatus,
+	})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": resp})
 }

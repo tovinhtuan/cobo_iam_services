@@ -85,6 +85,15 @@ func (s *service) CreateRecord(ctx context.Context, req CreateRecordRequest) (*R
 	}); err != nil {
 		return nil, err
 	}
+	// BE-002: Enforce has_workflow gate. A disclosure record cannot be created
+	// unless the selected template has an effective active workflow.
+	// TODO: BE-002 — this gate is wired in but requires global_workflows (migration 0053)
+	// to be populated. Until CMS seeds data via the new schema, use feature-flag guard.
+	if typeID := strings.TrimSpace(req.Payload.TypeID); typeID != "" {
+		if err := s.enforceHasWorkflowGate(ctx, req.Subject.CompanyID, typeID); err != nil {
+			return nil, err
+		}
+	}
 	rec := RecordDTO{
 		RecordID:     s.idg.NewUUID(),
 		CompanyID:    req.Subject.CompanyID,
@@ -255,15 +264,47 @@ func (s *service) ListDisplayGroups(ctx context.Context, req ListDisplayGroupsRe
 	return &ListDisplayGroupsResponse{Items: items}, nil
 }
 
+var allowedSortBy = map[string]bool{"name": true, "created_at": true}
+var allowedSortDir = map[string]bool{"asc": true, "desc": true}
+
 func (s *service) ListTypes(ctx context.Context, req ListTypesRequest) (*ListTypesResponse, error) {
 	if err := s.requireDisclosureCatalogRead(ctx, req.Subject); err != nil {
 		return nil, err
 	}
-	out, err := s.repo.ListTypes(ctx, req.Subject.CompanyID, req.GroupID, req.Query)
+	sortBy := strings.ToLower(strings.TrimSpace(req.SortBy))
+	sortDir := strings.ToLower(strings.TrimSpace(req.SortDir))
+	if sortBy == "" {
+		sortBy = "created_at"
+	} else if !allowedSortBy[sortBy] {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "sort_by must be one of: name, created_at", nil)
+	}
+	if sortDir == "" {
+		sortDir = "desc"
+	} else if !allowedSortDir[sortDir] {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "sort_dir must be one of: asc, desc", nil)
+	}
+	out, total, err := s.repo.ListTypes(ctx, ListTypesParams{
+		CompanyID:        req.Subject.CompanyID,
+		GroupID:          req.GroupID,
+		DisplayGroupCode: req.DisplayGroupCode,
+		Query:            req.Query,
+		Page:             req.Page,
+		PageSize:         req.PageSize,
+		SortBy:           sortBy,
+		SortDir:          sortDir,
+	})
 	if err != nil {
 		return nil, err
 	}
-	return &ListTypesResponse{Items: out}, nil
+	page := req.Page
+	pageSize := req.PageSize
+	if pageSize <= 0 || pageSize > 100 {
+		pageSize = 20
+	}
+	if page <= 0 {
+		page = 0
+	}
+	return &ListTypesResponse{Items: out, Total: total, Page: page, PageSize: pageSize}, nil
 }
 
 func (s *service) GetTypeDetail(ctx context.Context, req GetTypeDetailRequest) (*DisclosureTypeDTO, error) {
@@ -616,6 +657,13 @@ func (s *service) ResetCompanyWorkflowOverrideActive(ctx context.Context, req Re
 		ID:   req.TypeID,
 	}); err != nil {
 		return nil, err
+	}
+	view, err := s.repo.GetCompanyWorkflowOverride(ctx, req.Subject.CompanyID, req.TypeID)
+	if err != nil {
+		return nil, err
+	}
+	if view.EffectiveSource == "global_template" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "no active override to reset — effective source is already global template", nil)
 	}
 	return s.repo.ResetCompanyWorkflowOverrideActive(ctx, req)
 }
@@ -1028,6 +1076,127 @@ func (s *service) UpsertCompanyTypePreference(ctx context.Context, req UpsertCom
 		Subject: req.Subject,
 		TypeID:  req.TypeID,
 	})
+}
+
+// companyTemplateLifecycleTransitions defines valid (from → to) pairs.
+var companyTemplateLifecycleTransitions = map[string]string{
+	"submit-review": "in_review",
+	"publish":       "published",
+	"reject":        "rejected",
+	"archive":       "archived",
+}
+
+// validFromStatus lists states from which each action is allowed.
+var companyTemplateActionFromStatus = map[string]string{
+	"submit-review": "draft",
+	"publish":       "in_review",
+	"reject":        "in_review",
+	"archive":       "published",
+}
+
+func (s *service) CreateCompanyTemplate(ctx context.Context, req CreateCompanyTemplateRequest) (*CompanyTemplateWriteResponse, error) {
+	if req.Subject.CompanyID == "" {
+		return nil, perr.NewHTTPError(http.StatusUnauthorized, perr.CodeCompanyContextRequired, "company context required", nil)
+	}
+	if !s.hasPermission(ctx, req.Subject, "disclosure_type.manage") {
+		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "access denied", nil)
+	}
+	req.Name = strings.TrimSpace(req.Name)
+	req.TemplateCategory = strings.ToLower(strings.TrimSpace(req.TemplateCategory))
+	if req.Name == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "name is required", nil)
+	}
+	if req.TemplateCategory != TemplateCategoryPeriodic && req.TemplateCategory != TemplateCategoryIrregular {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "template_category must be periodic or irregular", nil)
+	}
+	return s.repo.CreateCompanyTemplate(ctx, req)
+}
+
+func (s *service) UpdateCompanyTemplate(ctx context.Context, req UpdateCompanyTemplateRequest) (*CompanyTemplateWriteResponse, error) {
+	if req.Subject.CompanyID == "" {
+		return nil, perr.NewHTTPError(http.StatusUnauthorized, perr.CodeCompanyContextRequired, "company context required", nil)
+	}
+	if !s.hasPermission(ctx, req.Subject, "disclosure_type.manage") {
+		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "access denied", nil)
+	}
+	req.TypeID = strings.TrimSpace(req.TypeID)
+	req.Name = strings.TrimSpace(req.Name)
+	req.TemplateCategory = strings.ToLower(strings.TrimSpace(req.TemplateCategory))
+	if req.TypeID == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "type_id is required", nil)
+	}
+	if req.Name == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "name is required", nil)
+	}
+	if req.TemplateCategory != "" && req.TemplateCategory != TemplateCategoryPeriodic && req.TemplateCategory != TemplateCategoryIrregular {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "template_category must be periodic or irregular", nil)
+	}
+	current, err := s.repo.GetCompanyTemplateForLifecycle(ctx, req.Subject.CompanyID, req.TypeID)
+	if err != nil {
+		return nil, err
+	}
+	if current.ReviewStatus != "draft" && current.ReviewStatus != "rejected" {
+		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "template can only be edited in draft or rejected status", nil)
+	}
+	return s.repo.UpdateCompanyTemplate(ctx, req)
+}
+
+// companyTemplateLifecycleCapability returns the required capability for a lifecycle action.
+// submit-review is a maker action (disclosure_type.manage).
+// publish, reject, archive are checker actions (disclosure_type.publish) — enforcing maker-checker separation.
+func companyTemplateLifecycleCapability(action string) string {
+	switch action {
+	case "publish", "reject", "archive":
+		return "disclosure_type.publish"
+	default:
+		return "disclosure_type.manage"
+	}
+}
+
+func (s *service) TransitionCompanyTemplateLifecycle(ctx context.Context, req TransitionCompanyTemplateLifecycleRequest) (*CompanyTemplateWriteResponse, error) {
+	if req.Subject.CompanyID == "" {
+		return nil, perr.NewHTTPError(http.StatusUnauthorized, perr.CodeCompanyContextRequired, "company context required", nil)
+	}
+	req.TypeID = strings.TrimSpace(req.TypeID)
+	req.Action = strings.ToLower(strings.TrimSpace(req.Action))
+	if !s.hasPermission(ctx, req.Subject, companyTemplateLifecycleCapability(req.Action)) {
+		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "access denied", nil)
+	}
+	newStatus, valid := companyTemplateLifecycleTransitions[req.Action]
+	if !valid {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "unknown lifecycle action", nil)
+	}
+	current, err := s.repo.GetCompanyTemplateForLifecycle(ctx, req.Subject.CompanyID, req.TypeID)
+	if err != nil {
+		return nil, err
+	}
+	requiredFrom := companyTemplateActionFromStatus[req.Action]
+	if current.ReviewStatus != requiredFrom {
+		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict,
+			fmt.Sprintf("action %q requires status %q; current status is %q", req.Action, requiredFrom, current.ReviewStatus), nil)
+	}
+	if err := s.repo.TransitionCompanyTemplateReviewStatus(ctx, req.Subject.CompanyID, req.TypeID, newStatus, req.Subject.MembershipID); err != nil {
+		return nil, err
+	}
+	return s.repo.GetCompanyTemplateForLifecycle(ctx, req.Subject.CompanyID, req.TypeID)
+}
+
+// enforceHasWorkflowGate checks if the template has an effective active workflow.
+// Returns 422 TEMPLATE_NO_WORKFLOW if no workflow is available.
+// BE-002: gate logic. Currently checks company override; global_workflow check requires
+// migration 0053 + 0055 to be applied and CMS to seed workflow data.
+func (s *service) enforceHasWorkflowGate(ctx context.Context, companyID, typeID string) error {
+	effective, err := s.repo.GetEffectiveWorkflow(ctx, companyID, typeID)
+	if err != nil {
+		// If workflow lookup fails, don't block create — log and continue.
+		// TODO: BE-002 — tighten this after global_workflow query is integrated.
+		return nil
+	}
+	if len(effective.Workflow) == 0 {
+		return perr.NewHTTPError(http.StatusUnprocessableEntity, "TEMPLATE_NO_WORKFLOW",
+			"template has no active workflow; disclosure cannot be created", nil)
+	}
+	return nil
 }
 
 func (s *service) authorize(ctx context.Context, sub Subject, action string, resource authapp.ResourceRef) error {

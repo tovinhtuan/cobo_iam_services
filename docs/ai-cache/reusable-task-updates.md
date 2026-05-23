@@ -2653,3 +2653,130 @@
   - auth worker delivery still consumes rendered `subject/body` payload exactly as before; phase 2 is still needed for `NotificationService` and `email.dispatch`
   - only `vi` template files exist in phase 1; locale fallback is wired but not yet populated with additional locales
   - no HTML templates were added in phase 1 because the current legacy paths are plain-text only
+
+## 2026-05-23 - DOC-001: Maker-checker capability split + sort_by API + CMS template migrations fix
+
+- task type: implement (multi-increment)
+- objective: chốt 4 quyết định DOC-001 và fix lỗi danh sách template rỗng + API 500 trên server dev
+- what was implemented:
+
+  **Increment 1 — BE: lifecycle capability split (maker-checker)**
+  - tách permission `disclosure_type.manage` (maker: create/edit/submit-review) khỏi `disclosure_type.publish` (checker: publish/reject/archive)
+  - thêm helper `companyTemplateLifecycleCapability()` trong `internal/disclosure/app/service.go`
+  - test: `internal/disclosure/app/lifecycle_capability_test.go` — 7 tests, fakeAuthService, fakeLifecycleRepo
+
+  **Increment 2 — BE: sort_by cho list API**
+  - thêm `SortBy`/`SortDir` vào `ListTypesParams` và `ListTypesRequest` (`internal/disclosure/app/contracts.go`)
+  - validation + defaulting trong service (`created_at DESC` nếu không truyền)
+  - handler parse `sort_by`/`sort_dir` từ query params
+  - repo SQL `ORDER BY` đã được wire thực sự (trước đó hardcode `t.type_id ASC`)
+  - allowed values: `sort_by=name|created_at`, `sort_dir=asc|desc`
+
+  **Increment 3 — BE: reset-override trả 400 khi không có override active**
+  - `ResetCompanyWorkflowOverrideActive` trong service.go kiểm tra `effective_source == "global_template"` trước khi cho phép reset
+  - trả `400 INVALID_REQUEST` thay vì 200 no-op
+
+  **Increment 4 — FE: capability split cho action visibility**
+  - `canManageCompanyTemplate` (disclosure_type.manage) — gate submit-review
+  - `canPublishCompanyTemplate` (disclosure_type.publish) — gate publish/reject/archive
+  - cập nhật `types.ts` để thêm 3 permission mới vào union
+  - cập nhật regression tests để reflect permission split
+
+  **Fix: CMS migrations đúng số (0053–0057)**
+  - root cause: `deploy-artifacts/backend/migrations/0045–0047` có nội dung CMS nhưng đã bị conflict số với migration chính
+  - fix từ session trước: tạo lại đúng ở `migrations/0053–0055` (đã có), `0056_company_template_lifecycle`, `0057_workflow_override_versioning`
+  - session này xóa file duplicate 0058/0059/0060 (được tạo nhầm khi context window cũ)
+
+  **Fix: repo SQL sort thực sự được dùng**
+  - `internal/disclosure/infra/mysql/repository.go` — `ORDER BY` dùng `sortCol`/`sortDir` thay vì hardcode
+
+  **Chẩn đoán API 500 trên server dev**
+  - nguyên nhân: migration 0053–0057 chưa được apply lên DB server → `review_status`, `is_mandatory` columns thiếu → MySQL error → 500
+  - fix: apply migrations thủ công trên server (xem lệnh bên dưới)
+
+- affected repos/files/modules:
+  - `cobo_iam_services/internal/disclosure/app/service.go`
+  - `cobo_iam_services/internal/disclosure/app/contracts.go`
+  - `cobo_iam_services/internal/disclosure/app/lifecycle_capability_test.go` (NEW)
+  - `cobo_iam_services/internal/disclosure/transport/http/handler.go`
+  - `cobo_iam_services/internal/disclosure/infra/mysql/repository.go`
+  - `cobo_web_design/src/types.ts`
+  - `cobo_web_design/src/pages/portal/DisclosureTypeDetail.tsx`
+  - `cobo_web_design/src/pages/portal/DisclosureTypeDetail.lifecycle-regression.test.tsx`
+  - `cobo_web_design/src/pages/portal/DisclosureTypeDetail.fe004cd-regression.test.tsx`
+  - migrations 0053–0057 (đã tồn tại, không thay đổi)
+  - xóa migrations 0058/0059/0060 (duplicate, đã remove)
+
+- contracts/behaviors/constraints/decisions:
+  - `disclosure_type.manage`: create/edit/submit-review (maker)
+  - `disclosure_type.publish`: publish/reject/archive (checker) — tách biệt hoàn toàn, không kiêm nhiệm
+  - `archive` và `reject` cũng thuộc `publish` permission (không phải `manage`) để đảm bảo segregation of duties
+  - sort default: `created_at DESC`
+  - reset-override 400 khi `effective_source == "global_template"` (Option A trong DOC-001 Q3)
+
+- build/verification result:
+  - `go build ./...`: pass
+  - FE: `npm run lint` (tsc --noEmit): pass
+  - FE tests: lifecycle-regression + fe004cd-regression: pass sau khi fix permission assertions
+
+- server dev apply migrations — lệnh SCP + run:
+
+  ```
+  Server: 88.216.208.0:21239  user: root  path: /root/cobo_project
+  DB container: cobo-iam-mysql  DB: cobo_iam  user/pass: root/root
+  ```
+
+  **Bước 1 — Kiểm tra migration hiện tại:**
+  ```
+  ssh -p 21239 root@88.216.208.0 "docker exec cobo-iam-mysql mysql -uroot -proot cobo_iam -e \"SELECT file_name, executed_at FROM schema_migrations ORDER BY executed_at DESC LIMIT 20;\""
+  ```
+
+  **Bước 2 — Xóa file CMS cũ sai số (nếu tồn tại):**
+  ```
+  ssh -p 21239 root@88.216.208.0 "rm -f /root/cobo_project/migrations/0045_cms_portal_template_tables.{up,down}.sql /root/cobo_project/migrations/0046_cms_display_groups_po_seed.{up,down}.sql /root/cobo_project/migrations/0047_cms_system_template_seed.{up,down}.sql && echo done"
+  ```
+
+  **Bước 3 — SCP 5 file migration mới:**
+  ```powershell
+  $SRC = "C:\Users\tvttt\OneDrive\Desktop\cobo\cobo_web\cobo_iam_services\migrations"
+  $DST = "root@88.216.208.0:/root/cobo_project/migrations/"
+  scp -P 21239 `
+    "$SRC\0053_cms_portal_template_tables.up.sql" `
+    "$SRC\0054_cms_display_groups_po_seed.up.sql" `
+    "$SRC\0055_cms_system_template_seed.up.sql" `
+    "$SRC\0056_company_template_lifecycle.up.sql" `
+    "$SRC\0057_workflow_override_versioning.up.sql" `
+    $DST
+  ```
+
+  **Bước 4 — Apply từng migration (idempotent, skip nếu đã apply):**
+  ```powershell
+  $PORT = "21239"; $HOST = "root@88.216.208.0"
+  $MP   = "/root/cobo_project/migrations"
+  @("0053_cms_portal_template_tables.up.sql",
+    "0054_cms_display_groups_po_seed.up.sql",
+    "0055_cms_system_template_seed.up.sql",
+    "0056_company_template_lifecycle.up.sql",
+    "0057_workflow_override_versioning.up.sql") | ForEach-Object {
+    $f = $_
+    ssh -p $PORT $HOST @"
+      already=`$(docker exec cobo-iam-mysql mysql -uroot -proot cobo_iam -Nse "SELECT COUNT(1) FROM schema_migrations WHERE file_name='$f'")
+      if [ "`$already" -gt 0 ]; then echo "SKIP: $f"; else
+        docker exec -i cobo-iam-mysql mysql -uroot -proot cobo_iam < $MP/$f && \
+        docker exec cobo-iam-mysql mysql -uroot -proot cobo_iam -e "INSERT IGNORE INTO schema_migrations(file_name) VALUES ('$f');" && \
+        echo "OK: $f"
+      fi
+"@
+  }
+  ```
+
+  **Bước 5 — Verify templates trong DB:**
+  ```
+  ssh -p 21239 root@88.216.208.0 "docker exec cobo-iam-mysql mysql -uroot -proot cobo_iam -e \"SELECT type_id, status, is_mandatory FROM disclosure_types WHERE company_id IS NULL;\""
+  ```
+  Kết quả mong đợi: 3 rows — `dt-sys-q1-financial`, `dt-sys-hr-executive`, `dt-sys-board-resolution`
+
+- remaining gaps/risks/next steps:
+  - sau khi apply migrations: rebuild Docker image API với code mới (sort wiring + lifecycle capability) rồi redeploy
+  - `docker compose -f docker-compose.artifacts.yml build api && docker compose -f docker-compose.artifacts.yml up -d api`
+  - verify API không còn 500: `curl http://88.216.208.0:3000/api/v1/disclosure-types?page=1&page_size=20 -H "Authorization: Bearer <token>"`

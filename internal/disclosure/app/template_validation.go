@@ -9,54 +9,96 @@ import (
 )
 
 const (
+	// New model — portal/company-defined template flow (BE-006)
 	TemplateCategoryPeriodic  = "periodic"
 	TemplateCategoryIrregular = "irregular"
-	TemplateCategoryCustom    = "custom"
 
-	PeriodicityMonthly    = "monthly"
-	PeriodicityQuarterly  = "quarterly"
-	PeriodicityYearly     = "yearly"
-	PeriodicityEventBased = "event_based"
-	PeriodicityAdHoc      = "ad_hoc"
+	PeriodicityMonthly   = "monthly"
+	PeriodicityQuarterly = "quarterly"
+	PeriodicityYearly    = "yearly"
+	PeriodicityDaily     = "daily"
 
 	DeadlineStrategyFixedCycleDays = "fixed_cycle_days"
 	DeadlineStrategyEventHours     = "event_relative_hours"
-	DeadlineStrategyConfigurable   = "configurable"
+
+	// Legacy model constants — kept for compatibility adapter (BE-008) only.
+	// DO NOT use in new portal/company-defined template validation paths.
+	legacyTemplateCategoryCustom       = "custom"
+	legacyPeriodicityEventBased        = "event_based"
+	legacyPeriodicityAdHoc             = "ad_hoc"
+	legacyDeadlineStrategyConfigurable = "configurable"
+
+	// Exported legacy aliases — transitional compatibility for catalog.go and service.go.
+	// These will be removed when BE-008 compatibility adapter is fully sunset.
+	TemplateCategoryCustom    = legacyTemplateCategoryCustom
+	PeriodicityEventBased     = legacyPeriodicityEventBased
+	PeriodicityAdHoc          = legacyPeriodicityAdHoc
+	DeadlineStrategyConfigurable = legacyDeadlineStrategyConfigurable
 )
 
 var (
-	templateCategoryAliases = map[string]string{
+	// portalTemplateCategoryAliases: new model only — no custom.
+	portalTemplateCategoryAliases = map[string]string{
 		TemplateCategoryPeriodic:  TemplateCategoryPeriodic,
 		"định kỳ":                 TemplateCategoryPeriodic,
 		"dinh ky":                 TemplateCategoryPeriodic,
 		TemplateCategoryIrregular: TemplateCategoryIrregular,
 		"bất thường":              TemplateCategoryIrregular,
 		"bat thuong":              TemplateCategoryIrregular,
-		TemplateCategoryCustom:    TemplateCategoryCustom,
-		"tùy chỉnh":               TemplateCategoryCustom,
-		"tuy chinh":               TemplateCategoryCustom,
 	}
-	periodicityAliases = map[string]string{
-		PeriodicityMonthly:    PeriodicityMonthly,
-		"hàng tháng":          PeriodicityMonthly,
-		"hang thang":          PeriodicityMonthly,
-		PeriodicityQuarterly:  PeriodicityQuarterly,
-		"hàng quý":            PeriodicityQuarterly,
-		"hang quy":            PeriodicityQuarterly,
-		PeriodicityYearly:     PeriodicityYearly,
-		"hàng năm":            PeriodicityYearly,
-		"hang nam":            PeriodicityYearly,
-		PeriodicityEventBased: PeriodicityEventBased,
-		"bất thường":          PeriodicityEventBased,
-		"bat thuong":          PeriodicityEventBased,
-		PeriodicityAdHoc:      PeriodicityAdHoc,
-		"theo yêu cầu":        PeriodicityAdHoc,
-		"theo yeu cau":        PeriodicityAdHoc,
+	// legacyTemplateCategoryAliases: compatibility adapter only (BE-008).
+	legacyTemplateCategoryAliases = map[string]string{
+		TemplateCategoryPeriodic:     TemplateCategoryPeriodic,
+		"định kỳ":                    TemplateCategoryPeriodic,
+		"dinh ky":                    TemplateCategoryPeriodic,
+		TemplateCategoryIrregular:    TemplateCategoryIrregular,
+		"bất thường":                 TemplateCategoryIrregular,
+		"bat thuong":                 TemplateCategoryIrregular,
+		legacyTemplateCategoryCustom: legacyTemplateCategoryCustom,
+		"tùy chỉnh":                  legacyTemplateCategoryCustom,
+		"tuy chinh":                  legacyTemplateCategoryCustom,
 	}
-	deadlineStrategyAliases = map[string]string{
+	// portalPeriodicityAliases: new model — daily added, event_based/ad_hoc removed.
+	portalPeriodicityAliases = map[string]string{
+		PeriodicityMonthly:   PeriodicityMonthly,
+		"hàng tháng":         PeriodicityMonthly,
+		"hang thang":         PeriodicityMonthly,
+		PeriodicityQuarterly: PeriodicityQuarterly,
+		"hàng quý":           PeriodicityQuarterly,
+		"hang quy":           PeriodicityQuarterly,
+		PeriodicityYearly:    PeriodicityYearly,
+		"hàng năm":           PeriodicityYearly,
+		"hang nam":           PeriodicityYearly,
+		PeriodicityDaily:     PeriodicityDaily,
+		"hàng ngày":          PeriodicityDaily,
+		"hang ngay":          PeriodicityDaily,
+	}
+	// legacyPeriodicityAliases: compatibility adapter only (BE-008).
+	legacyPeriodicityAliases = map[string]string{
+		PeriodicityMonthly:       PeriodicityMonthly,
+		"hàng tháng":             PeriodicityMonthly,
+		"hang thang":             PeriodicityMonthly,
+		PeriodicityQuarterly:     PeriodicityQuarterly,
+		"hàng quý":               PeriodicityQuarterly,
+		"hang quy":               PeriodicityQuarterly,
+		PeriodicityYearly:        PeriodicityYearly,
+		"hàng năm":               PeriodicityYearly,
+		"hang nam":               PeriodicityYearly,
+		legacyPeriodicityEventBased: legacyPeriodicityEventBased,
+		"bat thuong":             legacyPeriodicityEventBased,
+		legacyPeriodicityAdHoc:  legacyPeriodicityAdHoc,
+		"theo yêu cầu":           legacyPeriodicityAdHoc,
+		"theo yeu cau":           legacyPeriodicityAdHoc,
+	}
+	portalDeadlineStrategyAliases = map[string]string{
 		DeadlineStrategyFixedCycleDays: DeadlineStrategyFixedCycleDays,
 		DeadlineStrategyEventHours:     DeadlineStrategyEventHours,
-		DeadlineStrategyConfigurable:   DeadlineStrategyConfigurable,
+	}
+	// legacyDeadlineStrategyAliases: compatibility adapter only (BE-008).
+	legacyDeadlineStrategyAliases = map[string]string{
+		DeadlineStrategyFixedCycleDays:     DeadlineStrategyFixedCycleDays,
+		DeadlineStrategyEventHours:         DeadlineStrategyEventHours,
+		legacyDeadlineStrategyConfigurable: legacyDeadlineStrategyConfigurable,
 	}
 	allowedChannelFileTypes = map[string]struct{}{
 		"PDF":  {},
@@ -87,12 +129,58 @@ func newValidationError(fieldErrors map[string]string) error {
 	}
 }
 
+// validatePortalTemplateMatrix validates template create/update requests for the portal
+// company-defined template flow. Accepts only periodic|irregular; rejects custom.
+// Use this for BE-004A (company-defined template lifecycle write path).
+func validatePortalTemplateMatrix(req *UpsertTypeVersionRequest) error {
+	fieldErrors := map[string]string{}
+
+	req.TemplateCategory = normalizeAlias(req.TemplateCategory, portalTemplateCategoryAliases)
+	req.Periodicity = normalizeAlias(req.Periodicity, portalPeriodicityAliases)
+	req.DeadlineStrategy = normalizeAlias(req.DeadlineStrategy, portalDeadlineStrategyAliases)
+
+	if req.TemplateCategory == "" {
+		fieldErrors["template_category"] = "template_category is required"
+	}
+	if req.DeadlineRule == "" {
+		fieldErrors["deadline_rule"] = "deadline_rule is required"
+	}
+
+	switch req.TemplateCategory {
+	case TemplateCategoryPeriodic:
+		if req.Periodicity != PeriodicityMonthly &&
+			req.Periodicity != PeriodicityQuarterly &&
+			req.Periodicity != PeriodicityYearly &&
+			req.Periodicity != PeriodicityDaily {
+			fieldErrors["periodicity"] = "periodic templates require periodicity in [monthly, quarterly, yearly, daily]"
+		}
+	case TemplateCategoryIrregular:
+		// irregular: periodicity is not required; deadline_rule validates deadline
+	case "":
+		// already captured above
+	default:
+		fieldErrors["template_category"] = "template_category must be one of [periodic, irregular]"
+	}
+
+	if len(fieldErrors) > 0 {
+		return newValidationError(fieldErrors)
+	}
+	validateTemplateBlocks(req, fieldErrors)
+	if len(fieldErrors) > 0 {
+		return newValidationError(fieldErrors)
+	}
+	return nil
+}
+
+// validateTemplateMatrix is the legacy CMS path validator.
+// Kept for compatibility adapter (BE-008) and existing CMS write flows.
+// DO NOT use for new portal/company-defined template write paths.
 func validateTemplateMatrix(req *UpsertTypeVersionRequest) error {
 	fieldErrors := map[string]string{}
 
-	req.TemplateCategory = normalizeAlias(req.TemplateCategory, templateCategoryAliases)
-	req.Periodicity = normalizeAlias(req.Periodicity, periodicityAliases)
-	req.DeadlineStrategy = normalizeAlias(req.DeadlineStrategy, deadlineStrategyAliases)
+	req.TemplateCategory = normalizeAlias(req.TemplateCategory, legacyTemplateCategoryAliases)
+	req.Periodicity = normalizeAlias(req.Periodicity, legacyPeriodicityAliases)
+	req.DeadlineStrategy = normalizeAlias(req.DeadlineStrategy, legacyDeadlineStrategyAliases)
 
 	if req.TemplateCategory == "" {
 		fieldErrors["template_category"] = "template_category is required"
@@ -113,20 +201,20 @@ func validateTemplateMatrix(req *UpsertTypeVersionRequest) error {
 			fieldErrors["deadline_strategy"] = "periodic templates require deadline_strategy=fixed_cycle_days"
 		}
 	case TemplateCategoryIrregular:
-		if req.Periodicity != PeriodicityEventBased {
+		if req.Periodicity != legacyPeriodicityEventBased {
 			fieldErrors["periodicity"] = "irregular templates require periodicity=event_based"
 		}
 		if req.DeadlineStrategy != DeadlineStrategyEventHours {
 			fieldErrors["deadline_strategy"] = "irregular templates require deadline_strategy=event_relative_hours"
 		}
-	case TemplateCategoryCustom:
+	case legacyTemplateCategoryCustom:
 		if req.Periodicity != PeriodicityMonthly &&
 			req.Periodicity != PeriodicityQuarterly &&
 			req.Periodicity != PeriodicityYearly &&
-			req.Periodicity != PeriodicityAdHoc {
+			req.Periodicity != legacyPeriodicityAdHoc {
 			fieldErrors["periodicity"] = "custom templates require periodicity in [monthly, quarterly, yearly, ad_hoc]"
 		}
-		if req.DeadlineStrategy != DeadlineStrategyConfigurable {
+		if req.DeadlineStrategy != legacyDeadlineStrategyConfigurable {
 			fieldErrors["deadline_strategy"] = "custom templates require deadline_strategy=configurable"
 		}
 	default:

@@ -34,6 +34,11 @@ type Service interface {
 	ListCompanyGroups(ctx context.Context, req ListCompanyGroupsRequest) (*ListCompanyGroupsResponse, error)
 	UpdateWorkflowOverrideStepGroups(ctx context.Context, req UpdateWorkflowOverrideStepGroupsRequest) (*UpdateWorkflowOverrideStepGroupsResponse, error)
 
+	// Company-defined template lifecycle (BE-004A / BE-004B).
+	CreateCompanyTemplate(ctx context.Context, req CreateCompanyTemplateRequest) (*CompanyTemplateWriteResponse, error)
+	UpdateCompanyTemplate(ctx context.Context, req UpdateCompanyTemplateRequest) (*CompanyTemplateWriteResponse, error)
+	TransitionCompanyTemplateLifecycle(ctx context.Context, req TransitionCompanyTemplateLifecycleRequest) (*CompanyTemplateWriteResponse, error)
+
 	// Periodic auto-creation.
 	SeedPeriodicCycles(ctx context.Context, now time.Time) (int, error)
 	MaterializePeriodicDisclosures(ctx context.Context, now time.Time, creator PeriodicRecordCreator) (int, error)
@@ -50,7 +55,7 @@ type Repository interface {
 	List(ctx context.Context, companyID string) ([]RecordDTO, error)
 	ListTypeGroups(ctx context.Context, companyID string) ([]DisclosureGroupDTO, error)
 	ListDisplayGroups(ctx context.Context) ([]DisplayGroupDTO, error)
-	ListTypes(ctx context.Context, companyID, groupID, query string) ([]DisclosureTypeSummaryDTO, error)
+	ListTypes(ctx context.Context, params ListTypesParams) ([]DisclosureTypeSummaryDTO, int, error)
 	GetTypeDetail(ctx context.Context, companyID, typeID string) (*DisclosureTypeDTO, error)
 	GetTypeVersionDetail(ctx context.Context, companyID, typeID string, versionNo int) (*DisclosureTypeDTO, error)
 	UpsertTypeVersion(ctx context.Context, req UpsertTypeVersionRequest) (*UpsertTypeVersionResponse, error)
@@ -68,6 +73,12 @@ type Repository interface {
 	UpdateActiveVersionDeadlineConfig(ctx context.Context, typeID string, cfg TemplateDeadlineConfig, updatedBy string) error
 	ListCompanyGroups(ctx context.Context, companyID, departmentID string, isActive *bool) ([]CompanyGroupDTO, error)
 	UpdateWorkflowOverrideStepGroups(ctx context.Context, req UpdateWorkflowOverrideStepGroupsRequest) (*UpdateWorkflowOverrideStepGroupsResponse, error)
+
+	// Company-defined template persistence (BE-004A / BE-004B).
+	CreateCompanyTemplate(ctx context.Context, req CreateCompanyTemplateRequest) (*CompanyTemplateWriteResponse, error)
+	UpdateCompanyTemplate(ctx context.Context, req UpdateCompanyTemplateRequest) (*CompanyTemplateWriteResponse, error)
+	GetCompanyTemplateForLifecycle(ctx context.Context, companyID, typeID string) (*CompanyTemplateWriteResponse, error)
+	TransitionCompanyTemplateReviewStatus(ctx context.Context, companyID, typeID, newStatus, updatedBy string) error
 
 	// Periodic auto-creation support.
 	ListActivePeriodicTypes(ctx context.Context) ([]PeriodicTypeRow, error)
@@ -129,14 +140,36 @@ type ListDisplayGroupsResponse struct {
 	Items []DisplayGroupDTO `json:"items"`
 }
 
+// ListTypesParams carries all filter/pagination/sort inputs to the repository.
+// Allowed SortBy values: "name", "created_at". Allowed SortDir: "asc", "desc".
+// Defaults (applied by service): SortBy="created_at", SortDir="desc".
+type ListTypesParams struct {
+	CompanyID        string
+	GroupID          string // legacy: filter by disclosure_types.group_id
+	DisplayGroupCode string // new model: filter via template_display_groups junction table
+	Query            string
+	Page             int    // 1-based; 0 or negative → no pagination (return all)
+	PageSize         int    // effective only when Page > 0; clamped 1–100, default 20
+	SortBy           string // "name" | "created_at"
+	SortDir          string // "asc" | "desc"
+}
+
 type ListTypesRequest struct {
-	Subject Subject
-	GroupID string
-	Query   string
+	Subject          Subject
+	GroupID          string
+	DisplayGroupCode string
+	Query            string
+	Page             int
+	PageSize         int
+	SortBy           string // "name" | "created_at"; empty → default "created_at"
+	SortDir          string // "asc" | "desc"; empty → default "desc"
 }
 
 type ListTypesResponse struct {
-	Items []DisclosureTypeSummaryDTO `json:"items"`
+	Items    []DisclosureTypeSummaryDTO `json:"items"`
+	Total    int                        `json:"total"`
+	Page     int                        `json:"page"`
+	PageSize int                        `json:"page_size"`
 }
 
 type GetTypeDetailRequest struct {
@@ -229,6 +262,56 @@ type ActivateTypeVersionResponse struct {
 	IsActive    bool      `json:"is_active"`
 	UpdatedBy   string    `json:"updated_by"`
 	ActivatedAt time.Time `json:"activated_at"`
+}
+
+// BE-004A: Company-defined template create/update (portal path).
+type CreateCompanyTemplateRequest struct {
+	Subject          Subject
+	Name             string   `json:"name"`
+	TemplateCategory string   `json:"template_category"` // "periodic" | "irregular"
+	Description      string   `json:"description"`
+	DeadlineRule     string   `json:"deadline_rule"`
+	Periodicity      string   `json:"periodicity"`
+	Tags             []string `json:"tags"`
+	LegalBasis       string   `json:"legal_basis"`
+	Applicability    string   `json:"applicability"`
+	ChangeNote       string   `json:"change_note"`
+}
+
+type UpdateCompanyTemplateRequest struct {
+	Subject          Subject
+	TypeID           string   `json:"type_id"`
+	Name             string   `json:"name"`
+	TemplateCategory string   `json:"template_category"`
+	Description      string   `json:"description"`
+	DeadlineRule     string   `json:"deadline_rule"`
+	Periodicity      string   `json:"periodicity"`
+	Tags             []string `json:"tags"`
+	LegalBasis       string   `json:"legal_basis"`
+	Applicability    string   `json:"applicability"`
+	ChangeNote       string   `json:"change_note"`
+}
+
+// BE-004B: Lifecycle transition.
+type TransitionCompanyTemplateLifecycleRequest struct {
+	Subject Subject
+	TypeID  string `json:"type_id"`
+	Action  string `json:"action"` // "submit-review" | "publish" | "reject" | "archive"
+	Reason  string `json:"reason"`
+}
+
+type CompanyTemplateWriteResponse struct {
+	TypeID           string   `json:"type_id"`
+	CompanyID        string   `json:"company_id"`
+	Name             string   `json:"name"`
+	TemplateCategory string   `json:"template_category"`
+	Description      string   `json:"description"`
+	ReviewStatus     string   `json:"review_status"`
+	DeadlineRule     string   `json:"deadline_rule,omitempty"`
+	Periodicity      string   `json:"periodicity,omitempty"`
+	Tags             []string `json:"tags,omitempty"`
+	CreatedAt        string   `json:"created_at"`
+	UpdatedAt        string   `json:"updated_at"`
 }
 
 type WorkflowDocumentDTO struct {
@@ -542,15 +625,20 @@ type DisplayGroupDTO struct {
 type DisclosureTypeSummaryDTO struct {
 	TypeID           string   `json:"type_id"`
 	GroupID          string   `json:"group_id"`
-	DisplayGroupCode string   `json:"display_group_code,omitempty"`
-	Scope            string   `json:"scope"`
-	OwnerCompanyID   string   `json:"owner_company_id"`
-	Name             string   `json:"name"`
-	Category         string   `json:"category"`
-	TemplateCategory string   `json:"template_category"`
-	Description      string   `json:"description"`
-	DeadlineRule     string   `json:"deadline_rule"`
-	Tags             []string `json:"tags"`
+	// Deprecated: use DisplayGroupCodes. Kept for compatibility window (BE-008).
+	DisplayGroupCode  string   `json:"display_group_code,omitempty"`
+	DisplayGroupCodes []string `json:"display_group_codes"`
+	Scope             string   `json:"scope"`
+	OwnerCompanyID    string   `json:"owner_company_id"`
+	Name              string   `json:"name"`
+	Category          string   `json:"category"`
+	TemplateCategory  string   `json:"template_category"`
+	Description       string   `json:"description"`
+	DeadlineRule      string   `json:"deadline_rule"`
+	IsMandatory       bool     `json:"is_mandatory"`
+	HasWorkflow       bool     `json:"has_workflow"`
+	ReviewStatus      string   `json:"review_status,omitempty"`
+	Tags              []string `json:"tags"`
 }
 
 type DisclosureTypeDTO struct {
@@ -586,7 +674,12 @@ type DisclosureTypeDTO struct {
 	Checklist             []ChecklistItemDTO      `json:"checklist"`
 	Tags                  []string                `json:"tags"`
 	Blocks                []TemplateBlockDTO      `json:"blocks"`
-	DisplayGroupCode      string                  `json:"display_group_code,omitempty"`
+	// Deprecated: use DisplayGroupCodes. Kept for compatibility window (BE-008).
+	DisplayGroupCode  string   `json:"display_group_code,omitempty"`
+	DisplayGroupCodes []string `json:"display_group_codes"`
+	IsMandatory       bool     `json:"is_mandatory"`
+	HasWorkflow       bool     `json:"has_workflow"`
+	ReviewStatus      string   `json:"review_status,omitempty"`
 }
 
 type DeadlineSummaryDTO struct {

@@ -167,38 +167,96 @@ func (r *Repository) ListTypeGroups(ctx context.Context, _ string) ([]disclosure
 	return out, rows.Err()
 }
 
-func (r *Repository) ListTypes(ctx context.Context, companyID, groupID, query string) ([]disclosureapp.DisclosureTypeSummaryDTO, error) {
+func (r *Repository) ListTypes(ctx context.Context, params disclosureapp.ListTypesParams) ([]disclosureapp.DisclosureTypeSummaryDTO, int, error) {
+	companyID := params.CompanyID
+	groupID := strings.TrimSpace(params.GroupID)
+	displayGroupCode := strings.TrimSpace(params.DisplayGroupCode)
+	query := strings.TrimSpace(params.Query)
+
+	page := params.Page
+	pageSize := params.PageSize
+	if pageSize <= 0 || pageSize > 100 {
+		pageSize = 20
+	}
+	sortCol := map[string]string{"name": "v.name", "created_at": "t.created_at"}[params.SortBy]
+	if sortCol == "" {
+		sortCol = "t.created_at"
+	}
+	sortDir := "DESC"
+	if strings.ToUpper(params.SortDir) == "ASC" {
+		sortDir = "ASC"
+	}
+
+	joins := ""
 	args := []any{companyID}
 	conditions := []string{"(t.company_id IS NULL OR t.company_id = ?)"}
-	if strings.TrimSpace(groupID) != "" {
+
+	if groupID != "" {
 		conditions = append(conditions, "t.group_id = ?")
-		args = append(args, strings.TrimSpace(groupID))
+		args = append(args, groupID)
 	}
-	if strings.TrimSpace(query) != "" {
+	// Display group filter: use junction table when provided (new many-to-many model).
+	if displayGroupCode != "" {
+		joins = " INNER JOIN template_display_groups tdg ON tdg.template_id = t.type_id AND tdg.display_group_code = ?"
+		args = append([]any{displayGroupCode}, args...)
+		// Re-order args: displayGroupCode goes to the JOIN placeholder, rest follow WHERE.
+		// Simpler: rebuild args in WHERE order after JOIN.
+		args = []any{displayGroupCode, companyID}
+		if groupID != "" {
+			conditions = append(conditions[1:], "t.group_id = ?")
+			args = append(args, groupID)
+			conditions = append([]string{"(t.company_id IS NULL OR t.company_id = ?)"}, conditions[1:]...)
+		}
+	}
+	if query != "" {
 		conditions = append(conditions, "(LOWER(v.name) LIKE ? OR LOWER(v.description) LIKE ?)")
-		like := "%" + strings.ToLower(strings.TrimSpace(query)) + "%"
+		like := "%" + strings.ToLower(query) + "%"
 		args = append(args, like, like)
 	}
-	sqlText := `
-		SELECT t.type_id, t.group_id, COALESCE(t.display_group_code, ''), t.company_id, v.name, v.category, v.template_category, v.description, v.deadline_rule, v.tags_json
-		FROM disclosure_types t
+
+	whereClause := strings.Join(conditions, " AND ")
+	baseSQL := `FROM disclosure_types t` + joins + `
 		INNER JOIN disclosure_type_versions v
 			ON v.type_id = t.type_id AND v.version_no = t.active_version_no
-		WHERE ` + strings.Join(conditions, " AND ") + `
-		ORDER BY t.type_id ASC
-	`
-	rows, err := r.db.QueryContext(ctx, sqlText, args...)
+		WHERE ` + whereClause
+
+	// Count query for pagination metadata.
+	var total int
+	countSQL := `SELECT COUNT(*) ` + baseSQL
+	if err := r.db.QueryRowContext(ctx, countSQL, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	// Data query — LIMIT/OFFSET applied only when page > 0.
+	dataSQL := `SELECT t.type_id, t.group_id, COALESCE(t.display_group_code, ''), t.company_id,
+		       COALESCE(t.is_mandatory, 0), COALESCE(t.review_status, ''),
+		       v.name, v.category, v.template_category, v.description, v.deadline_rule, v.tags_json
+		` + baseSQL + `
+		ORDER BY ` + sortCol + ` ` + sortDir
+	dataArgs := args
+	if page > 0 {
+		offset := (page - 1) * pageSize
+		dataSQL += " LIMIT ? OFFSET ?"
+		dataArgs = append(dataArgs, pageSize, offset)
+	}
+
+	rows, err := r.db.QueryContext(ctx, dataSQL, dataArgs...)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer rows.Close()
 	out := make([]disclosureapp.DisclosureTypeSummaryDTO, 0)
+	typeIDs := make([]string, 0)
 	for rows.Next() {
 		var item disclosureapp.DisclosureTypeSummaryDTO
 		var tagsRaw []byte
 		var ownerCompanyID sql.NullString
-		if err := rows.Scan(&item.TypeID, &item.GroupID, &item.DisplayGroupCode, &ownerCompanyID, &item.Name, &item.Category, &item.TemplateCategory, &item.Description, &item.DeadlineRule, &tagsRaw); err != nil {
-			return nil, err
+		if err := rows.Scan(
+			&item.TypeID, &item.GroupID, &item.DisplayGroupCode, &ownerCompanyID,
+			&item.IsMandatory, &item.ReviewStatus,
+			&item.Name, &item.Category, &item.TemplateCategory, &item.Description, &item.DeadlineRule, &tagsRaw,
+		); err != nil {
+			return nil, 0, err
 		}
 		item.OwnerCompanyID = ownerCompanyID.String
 		if ownerCompanyID.Valid && strings.TrimSpace(ownerCompanyID.String) != "" {
@@ -207,17 +265,68 @@ func (r *Repository) ListTypes(ctx context.Context, companyID, groupID, query st
 			item.Scope = "global"
 		}
 		if err := decodeTags(tagsRaw, &item.Tags); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
+		item.DisplayGroupCodes = []string{}
+		typeIDs = append(typeIDs, item.TypeID)
 		out = append(out, item)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+	// Batch-load display_group_codes from junction table (DBA-001 / many-to-many).
+	if len(typeIDs) > 0 {
+		groupsByType, err := r.batchLoadDisplayGroupCodes(ctx, typeIDs)
+		if err != nil {
+			return nil, 0, err
+		}
+		for i := range out {
+			if codes, ok := groupsByType[out[i].TypeID]; ok {
+				out[i].DisplayGroupCodes = codes
+			}
+		}
+	}
+	return out, total, nil
+}
+
+// batchLoadDisplayGroupCodes fetches display_group_codes for a set of type IDs from the
+// template_display_groups junction table. Falls back gracefully if the table does not
+// exist yet (pre-migration 0053 environments).
+func (r *Repository) batchLoadDisplayGroupCodes(ctx context.Context, typeIDs []string) (map[string][]string, error) {
+	if len(typeIDs) == 0 {
+		return map[string][]string{}, nil
+	}
+	placeholders := make([]string, len(typeIDs))
+	args := make([]any, len(typeIDs))
+	for i, id := range typeIDs {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+	sqlText := `SELECT template_id, display_group_code FROM template_display_groups
+	             WHERE template_id IN (` + strings.Join(placeholders, ",") + `)
+	             ORDER BY template_id, display_order ASC`
+	rows, err := r.db.QueryContext(ctx, sqlText, args...)
+	if err != nil {
+		// Table may not exist before migration 0053 — return empty map gracefully.
+		return map[string][]string{}, nil
+	}
+	defer rows.Close()
+	result := make(map[string][]string)
+	for rows.Next() {
+		var templateID, code string
+		if err := rows.Scan(&templateID, &code); err != nil {
+			return nil, err
+		}
+		result[templateID] = append(result[templateID], code)
+	}
+	return result, rows.Err()
 }
 
 func (r *Repository) GetTypeDetail(ctx context.Context, companyID, typeID string) (*disclosureapp.DisclosureTypeDTO, error) {
 	row := r.db.QueryRowContext(ctx, `
 		SELECT
 			t.type_id, t.group_id, COALESCE(t.display_group_code, ''), t.company_id, t.active_version_no,
+			COALESCE(t.is_mandatory, 0), COALESCE(t.review_status, ''),
 			v.name, v.category, v.template_category, COALESCE(v.deadline_strategy, ''), v.description,
 			COALESCE(v.legal_basis, ''), COALESCE(v.applicability, ''), COALESCE(v.implementation_content, ''), COALESCE(v.implementation_notes, ''),
 			COALESCE(v.special_cases, ''), COALESCE(v.report_content, ''), COALESCE(v.required_docs, ''),
@@ -241,6 +350,7 @@ func (r *Repository) GetTypeDetail(ctx context.Context, companyID, typeID string
 	var tagsRaw []byte
 	if err := row.Scan(
 		&item.TypeID, &item.GroupID, &item.DisplayGroupCode, &ownerCompanyID, &item.VersionNo,
+		&item.IsMandatory, &item.ReviewStatus,
 		&item.Name, &item.Category, &item.TemplateCategory, &item.DeadlineStrategy, &item.Description,
 		&item.LegalBasis, &item.Applicability, &item.ImplementationContent, &item.ImplementationNotes,
 		&item.SpecialCases, &item.ReportContent, &item.RequiredDocs,
@@ -283,6 +393,16 @@ func (r *Repository) GetTypeDetail(ctx context.Context, companyID, typeID string
 		return nil, err
 	}
 	item.Blocks = blocks
+	// Load display_group_codes from junction table (migration 0053).
+	groupsByType, err := r.batchLoadDisplayGroupCodes(ctx, []string{typeID})
+	if err != nil {
+		return nil, err
+	}
+	if codes, ok := groupsByType[typeID]; ok {
+		item.DisplayGroupCodes = codes
+	} else {
+		item.DisplayGroupCodes = []string{}
+	}
 	return &item, nil
 }
 
@@ -1497,6 +1617,131 @@ func (r *Repository) UpsertCompanyTypePreference(ctx context.Context, in disclos
 	_, err := r.db.ExecContext(ctx, q, in.CompanyID, in.TypeID, enabled, in.UpdatedBy)
 	if err != nil {
 		return fmt.Errorf("upsert company type preference: %w", err)
+	}
+	return nil
+}
+
+// BE-004A — Company-defined template persistence (portal path).
+
+func (r *Repository) CreateCompanyTemplate(ctx context.Context, req disclosureapp.CreateCompanyTemplateRequest) (*disclosureapp.CompanyTemplateWriteResponse, error) {
+	typeID := "dt-co-" + strings.ReplaceAll(fmt.Sprintf("%d", time.Now().UnixNano()), "-", "")
+	now := time.Now().UTC()
+
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	_, err = tx.ExecContext(ctx,
+		`INSERT INTO disclosure_types (type_id, company_id, group_id, active_version_no, status, review_status, created_at, updated_at)
+		 VALUES (?, ?, 'group-006', 1, 'active', 'draft', ?, ?)`,
+		typeID, req.Subject.CompanyID, now, now)
+	if err != nil {
+		return nil, fmt.Errorf("insert disclosure_types: %w", err)
+	}
+
+	tagsJSON, _ := json.Marshal(req.Tags)
+	_, err = tx.ExecContext(ctx,
+		`INSERT INTO disclosure_type_versions
+		 (type_id, version_no, name, category, template_category, description, legal_basis, applicability,
+		  deadline_rule, periodicity, tags_json, change_note, updated_by, activated_at, created_at)
+		 VALUES (?, 1, ?, 'Tùy chỉnh', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		typeID, req.Name, req.TemplateCategory, req.Description,
+		req.LegalBasis, req.Applicability, req.DeadlineRule, req.Periodicity,
+		string(tagsJSON), req.ChangeNote, req.Subject.MembershipID, now, now)
+	if err != nil {
+		return nil, fmt.Errorf("insert disclosure_type_versions: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit: %w", err)
+	}
+
+	return &disclosureapp.CompanyTemplateWriteResponse{
+		TypeID:           typeID,
+		CompanyID:        req.Subject.CompanyID,
+		Name:             req.Name,
+		TemplateCategory: req.TemplateCategory,
+		Description:      req.Description,
+		ReviewStatus:     "draft",
+		DeadlineRule:     req.DeadlineRule,
+		Periodicity:      req.Periodicity,
+		Tags:             req.Tags,
+		CreatedAt:        now.Format(time.RFC3339),
+		UpdatedAt:        now.Format(time.RFC3339),
+	}, nil
+}
+
+func (r *Repository) UpdateCompanyTemplate(ctx context.Context, req disclosureapp.UpdateCompanyTemplateRequest) (*disclosureapp.CompanyTemplateWriteResponse, error) {
+	now := time.Now().UTC()
+	tagsJSON, _ := json.Marshal(req.Tags)
+
+	res, err := r.db.ExecContext(ctx,
+		`UPDATE disclosure_type_versions dtv
+		 INNER JOIN disclosure_types dt ON dt.type_id = dtv.type_id
+		 SET dtv.name = ?, dtv.template_category = COALESCE(NULLIF(?, ''), dtv.template_category),
+		     dtv.description = ?, dtv.legal_basis = ?, dtv.applicability = ?,
+		     dtv.deadline_rule = ?, dtv.periodicity = ?,
+		     dtv.tags_json = ?, dtv.change_note = ?, dtv.updated_by = ?,
+		     dt.updated_at = ?
+		 WHERE dt.type_id = ? AND dt.company_id = ? AND dtv.version_no = dt.active_version_no`,
+		req.Name, req.TemplateCategory,
+		req.Description, req.LegalBasis, req.Applicability,
+		req.DeadlineRule, req.Periodicity,
+		string(tagsJSON), req.ChangeNote, req.Subject.MembershipID, now,
+		req.TypeID, req.Subject.CompanyID)
+	if err != nil {
+		return nil, fmt.Errorf("update company template: %w", err)
+	}
+	affected, _ := res.RowsAffected()
+	if affected == 0 {
+		return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "company template not found", nil)
+	}
+
+	return r.GetCompanyTemplateForLifecycle(ctx, req.Subject.CompanyID, req.TypeID)
+}
+
+func (r *Repository) GetCompanyTemplateForLifecycle(ctx context.Context, companyID, typeID string) (*disclosureapp.CompanyTemplateWriteResponse, error) {
+	const q = `
+		SELECT dt.type_id, dt.company_id, dtv.name, dtv.template_category, dtv.description,
+		       COALESCE(dt.review_status, 'draft'),
+		       COALESCE(dtv.deadline_rule, ''), COALESCE(dtv.periodicity, ''),
+		       COALESCE(dtv.tags_json, '[]'),
+		       dt.created_at, dt.updated_at
+		FROM disclosure_types dt
+		INNER JOIN disclosure_type_versions dtv ON dtv.type_id = dt.type_id AND dtv.version_no = dt.active_version_no
+		WHERE dt.type_id = ? AND dt.company_id = ?`
+	var resp disclosureapp.CompanyTemplateWriteResponse
+	var tagsJSON string
+	var createdAt, updatedAt time.Time
+	err := r.db.QueryRowContext(ctx, q, typeID, companyID).Scan(
+		&resp.TypeID, &resp.CompanyID, &resp.Name, &resp.TemplateCategory, &resp.Description,
+		&resp.ReviewStatus, &resp.DeadlineRule, &resp.Periodicity,
+		&tagsJSON, &createdAt, &updatedAt)
+	if err == sql.ErrNoRows {
+		return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "company template not found", nil)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get company template: %w", err)
+	}
+	_ = json.Unmarshal([]byte(tagsJSON), &resp.Tags)
+	resp.CreatedAt = createdAt.Format(time.RFC3339)
+	resp.UpdatedAt = updatedAt.Format(time.RFC3339)
+	return &resp, nil
+}
+
+func (r *Repository) TransitionCompanyTemplateReviewStatus(ctx context.Context, companyID, typeID, newStatus, updatedBy string) error {
+	now := time.Now().UTC()
+	res, err := r.db.ExecContext(ctx,
+		`UPDATE disclosure_types SET review_status = ?, updated_at = ? WHERE type_id = ? AND company_id = ?`,
+		newStatus, now, typeID, companyID)
+	if err != nil {
+		return fmt.Errorf("transition review_status: %w", err)
+	}
+	affected, _ := res.RowsAffected()
+	if affected == 0 {
+		return perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "company template not found", nil)
 	}
 	return nil
 }
