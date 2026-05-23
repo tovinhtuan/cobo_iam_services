@@ -45,6 +45,33 @@ func NewRepository() *Repository {
 	}
 	for _, item := range disclosureapp.SeedDisclosureTypeCatalog() {
 		item.VersionNo = 1
+		if (item.TypeID == "dt-periodic-financial" || item.TypeID == "dt-custom-obligation") && len(item.Blocks) == 0 {
+			item.Blocks = []disclosureapp.TemplateBlockDTO{
+				{
+					BlockID:      "seed-workflow-block",
+					BlockKey:     "enterprise_workflow",
+					BlockType:    "rich_text",
+					Title:        "Workflow",
+					Description:  "Seed workflow for integration tests",
+					DisplayOrder: 6,
+					Enabled:      true,
+					Config: map[string]any{
+						"steps": []any{
+							map[string]any{
+								"step_id":           "seed-review",
+								"stage":             "Review",
+								"department_id":     "dept-finance",
+								"assignee_role_ids": []any{"role-reviewer"},
+								"processing_days":   2,
+								"display_order":     1,
+								"documents":         []any{},
+							},
+						},
+					},
+					Validation: map[string]any{},
+				},
+			}
+		}
 		repo.catalog[item.TypeID] = item
 		repo.catalogByVer[item.TypeID] = map[int]disclosureapp.DisclosureTypeDTO{1: item}
 		repo.catalogScope[item.TypeID] = "global"
@@ -126,6 +153,23 @@ func (r *Repository) ListDisplayGroups(_ context.Context) ([]disclosureapp.Displ
 	return out, nil
 }
 
+func (r *Repository) ListActiveDeadlineRuleCatalog(_ context.Context) ([]disclosureapp.DeadlineRuleCatalogDTO, error) {
+	return []disclosureapp.DeadlineRuleCatalogDTO{
+		{
+			Code:      "T+N",
+			LabelVI:   "Trong vòng N ngày kể từ ngày sự kiện",
+			Pattern:   `^T\+\d+$`,
+			InputType: "number",
+		},
+		{
+			Code:      "dd/mm",
+			LabelVI:   "Ngày dd/mm hàng năm",
+			Pattern:   `^\d{2}/\d{2}$`,
+			InputType: "date_dm",
+		},
+	}, nil
+}
+
 func (r *Repository) ListTypes(_ context.Context, params disclosureapp.ListTypesParams) ([]disclosureapp.DisclosureTypeSummaryDTO, int, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -176,6 +220,7 @@ func (r *Repository) ListTypes(_ context.Context, params disclosureapp.ListTypes
 			TemplateCategory: item.TemplateCategory,
 			Description:      item.Description,
 			DeadlineRule:     item.DeadlineRule,
+			HasWorkflow:      disclosureapp.TemplateHasWorkflow(item.Blocks),
 			Tags:             slices.Clone(item.Tags),
 		})
 	}
@@ -217,6 +262,7 @@ func (r *Repository) GetTypeDetail(_ context.Context, companyID, typeID string) 
 	cp.LegalBases = slices.Clone(item.LegalBases)
 	cp.Checklist = slices.Clone(item.Checklist)
 	cp.Blocks = cloneTemplateBlocks(item.Blocks)
+	cp.HasWorkflow = disclosureapp.TemplateHasWorkflow(cp.Blocks)
 	disclosureapp.EnrichTemplateBlockDisplayNames(cp.Blocks)
 	return &cp, nil
 }
@@ -248,6 +294,7 @@ func (r *Repository) GetTypeVersionDetail(_ context.Context, companyID, typeID s
 	cp.LegalBases = slices.Clone(item.LegalBases)
 	cp.Checklist = slices.Clone(item.Checklist)
 	cp.Blocks = cloneTemplateBlocks(item.Blocks)
+	cp.HasWorkflow = disclosureapp.TemplateHasWorkflow(cp.Blocks)
 	disclosureapp.EnrichTemplateBlockDisplayNames(cp.Blocks)
 	return &cp, nil
 }
@@ -303,25 +350,31 @@ func (r *Repository) UpsertTypeVersion(_ context.Context, req disclosureapp.Upse
 		r.catalogScope[req.TypeID] = "global"
 	}
 
+	nextIsActive := !existed
 	vs := r.versions[req.TypeID]
-	for i := range vs {
-		vs[i].IsActive = false
+	if nextIsActive {
+		for i := range vs {
+			vs[i].IsActive = false
+		}
 	}
 	now := time.Now().UTC()
 	vs = append(vs, disclosureapp.DisclosureTypeVersionDTO{
 		TypeID:      req.TypeID,
 		VersionNo:   versionNo,
-		IsActive:    true,
+		IsActive:    nextIsActive,
 		ChangeNote:  strings.TrimSpace(req.ChangeNote),
 		UpdatedBy:   req.Subject.UserID,
 		ActivatedAt: now,
 	})
 	r.versions[req.TypeID] = vs
+	if !nextIsActive && existed {
+		r.catalog[req.TypeID] = current
+	}
 
 	return &disclosureapp.UpsertTypeVersionResponse{
 		TypeID:      req.TypeID,
 		VersionNo:   versionNo,
-		IsActive:    true,
+		IsActive:    nextIsActive,
 		UpdatedBy:   req.Subject.UserID,
 		ActivatedAt: now,
 	}, nil
@@ -649,10 +702,18 @@ func (r *Repository) GetEffectiveWorkflow(_ context.Context, companyID, typeID s
 	}
 	st, ok := r.overrideByCompanyType[overrideKey(companyID, typeID)]
 	if !ok || st.header.ActiveVersionNo <= 0 {
+		if current, exists := r.catalog[typeID]; exists {
+			dto.VersionNo = current.VersionNo
+			dto.Workflow = disclosureapp.ExtractTemplateWorkflow(current.Blocks)
+		}
 		return dto, nil
 	}
 	v, ok := st.versions[st.header.ActiveVersionNo]
 	if !ok || v.State != "approved" {
+		if current, exists := r.catalog[typeID]; exists {
+			dto.VersionNo = current.VersionNo
+			dto.Workflow = disclosureapp.ExtractTemplateWorkflow(current.Blocks)
+		}
 		return dto, nil
 	}
 	dto.Source = "company_override"

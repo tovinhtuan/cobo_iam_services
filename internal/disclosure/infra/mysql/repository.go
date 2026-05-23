@@ -146,6 +146,28 @@ func (r *Repository) ListDisplayGroups(ctx context.Context) ([]disclosureapp.Dis
 	return out, rows.Err()
 }
 
+func (r *Repository) ListActiveDeadlineRuleCatalog(ctx context.Context) ([]disclosureapp.DeadlineRuleCatalogDTO, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT code, label_vi, pattern, input_type
+		FROM deadline_rule_catalog
+		WHERE is_active = 1
+		ORDER BY code ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]disclosureapp.DeadlineRuleCatalogDTO, 0)
+	for rows.Next() {
+		var item disclosureapp.DeadlineRuleCatalogDTO
+		if err := rows.Scan(&item.Code, &item.LabelVI, &item.Pattern, &item.InputType); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
+
 func (r *Repository) ListTypeGroups(ctx context.Context, _ string) ([]disclosureapp.DisclosureGroupDTO, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT group_id, name, description, icon, display_order
@@ -280,10 +302,15 @@ func (r *Repository) ListTypes(ctx context.Context, params disclosureapp.ListTyp
 		if err != nil {
 			return nil, 0, err
 		}
+		workflowFlags, err := r.batchLoadActiveWorkflowFlags(ctx, typeIDs)
+		if err != nil {
+			return nil, 0, err
+		}
 		for i := range out {
 			if codes, ok := groupsByType[out[i].TypeID]; ok {
 				out[i].DisplayGroupCodes = codes
 			}
+			out[i].HasWorkflow = workflowFlags[out[i].TypeID]
 		}
 	}
 	return out, total, nil
@@ -318,6 +345,45 @@ func (r *Repository) batchLoadDisplayGroupCodes(ctx context.Context, typeIDs []s
 			return nil, err
 		}
 		result[templateID] = append(result[templateID], code)
+	}
+	return result, rows.Err()
+}
+
+func (r *Repository) batchLoadActiveWorkflowFlags(ctx context.Context, typeIDs []string) (map[string]bool, error) {
+	if len(typeIDs) == 0 {
+		return map[string]bool{}, nil
+	}
+	placeholders := make([]string, len(typeIDs))
+	args := make([]any, len(typeIDs))
+	for i, id := range typeIDs {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT b.type_id, b.config_json
+		FROM disclosure_template_blocks b
+		INNER JOIN disclosure_types t ON t.type_id = b.type_id AND t.active_version_no = b.version_no
+		WHERE b.block_key = 'enterprise_workflow' AND b.type_id IN (`+strings.Join(placeholders, ",")+`)
+	`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make(map[string]bool, len(typeIDs))
+	for rows.Next() {
+		var typeID string
+		var configRaw []byte
+		if err := rows.Scan(&typeID, &configRaw); err != nil {
+			return nil, err
+		}
+		var cfg map[string]any
+		if err := decodeJSONMap(configRaw, &cfg); err != nil {
+			return nil, fmt.Errorf("decode workflow config: %w", err)
+		}
+		result[typeID] = len(disclosureapp.ExtractTemplateWorkflow([]disclosureapp.TemplateBlockDTO{{
+			BlockKey: "enterprise_workflow",
+			Config:   cfg,
+		}})) > 0
 	}
 	return result, rows.Err()
 }
@@ -393,6 +459,7 @@ func (r *Repository) GetTypeDetail(ctx context.Context, companyID, typeID string
 		return nil, err
 	}
 	item.Blocks = blocks
+	item.HasWorkflow = disclosureapp.TemplateHasWorkflow(item.Blocks)
 	// Load display_group_codes from junction table (migration 0053).
 	groupsByType, err := r.batchLoadDisplayGroupCodes(ctx, []string{typeID})
 	if err != nil {
@@ -475,6 +542,7 @@ func (r *Repository) GetTypeVersionDetail(ctx context.Context, companyID, typeID
 		return nil, err
 	}
 	item.Blocks = blocks
+	item.HasWorkflow = disclosureapp.TemplateHasWorkflow(item.Blocks)
 	return &item, nil
 }
 
@@ -552,6 +620,7 @@ func (r *Repository) UpsertTypeVersion(ctx context.Context, req disclosureapp.Up
 		return nil, err
 	}
 	now := time.Now().UTC()
+	nextIsActive := !typeExists || !currentVersion.Valid || currentVersion.Int64 <= 0
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO disclosure_type_versions (
 			type_id, version_no, name, category, template_category, deadline_strategy, description, legal_basis, applicability, implementation_content,
@@ -591,11 +660,17 @@ func (r *Repository) UpsertTypeVersion(ctx context.Context, req disclosureapp.Up
 			return nil, err
 		}
 	}
+	activeVersionNo := 0
+	if nextIsActive {
+		activeVersionNo = nextVersion
+	} else if currentVersion.Valid {
+		activeVersionNo = int(currentVersion.Int64)
+	}
 	_, err = tx.ExecContext(ctx, `
 		UPDATE disclosure_types
 		SET group_id = ?, active_version_no = ?, status = 'active', updated_at = CURRENT_TIMESTAMP
 		WHERE type_id = ?
-	`, groupID, nextVersion, req.TypeID)
+	`, groupID, activeVersionNo, req.TypeID)
 	if err != nil {
 		return nil, err
 	}
@@ -605,7 +680,7 @@ func (r *Repository) UpsertTypeVersion(ctx context.Context, req disclosureapp.Up
 	return &disclosureapp.UpsertTypeVersionResponse{
 		TypeID:      req.TypeID,
 		VersionNo:   nextVersion,
-		IsActive:    true,
+		IsActive:    nextIsActive,
 		UpdatedBy:   req.Subject.UserID,
 		ActivatedAt: now,
 	}, nil
@@ -1007,7 +1082,14 @@ func (r *Repository) GetEffectiveWorkflow(ctx context.Context, companyID, typeID
 		dto.Source = "company_override"
 		dto.VersionNo = view.ActiveVersion.VersionNo
 		dto.Workflow = view.ActiveVersion.Workflow
+		return dto, nil
 	}
+	detail, err := r.GetTypeDetail(ctx, companyID, typeID)
+	if err != nil {
+		return nil, err
+	}
+	dto.VersionNo = detail.VersionNo
+	dto.Workflow = disclosureapp.ExtractTemplateWorkflow(detail.Blocks)
 	return dto, nil
 }
 

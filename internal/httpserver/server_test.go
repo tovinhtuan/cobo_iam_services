@@ -11,6 +11,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -607,7 +608,7 @@ func TestIntegration_platformCMSPrefix_entriesReviewsSchedulesContract(t *testin
 
 	cmsToken := loginAndGetAccessToken(t, srv.URL, "cms.operator@example.com", "secret", "")
 	createRes := doJSONRequest(t, http.MethodPost, srv.URL+"/api/v1/platform/cms/entries", cmsToken, map[string]any{
-		"type_id":      "DISCLOSURE_FINANCIAL",
+		"type_id":      "dt-periodic-financial",
 		"title":        "CMS entry",
 		"summary":      "CMS summary",
 		"content":      "CMS content",
@@ -631,7 +632,7 @@ func TestIntegration_platformCMSPrefix_entriesReviewsSchedulesContract(t *testin
 	}
 
 	updateRes := doJSONRequest(t, http.MethodPut, srv.URL+"/api/v1/platform/cms/entries/"+entryID, cmsToken, map[string]any{
-		"type_id":      "DISCLOSURE_FINANCIAL",
+		"type_id":      "dt-periodic-financial",
 		"title":        "CMS entry updated",
 		"summary":      "CMS summary updated",
 		"content":      "CMS content updated",
@@ -937,7 +938,7 @@ func TestIntegration_disclosureC1_contractMatrix_happyPathAndErrors(t *testing.T
 	userToken := loginAndGetAccessToken(t, srv.URL, "user@example.com", "secret", "c_001")
 
 	createPayload := map[string]any{
-		"type_id":       "DISCLOSURE_FINANCIAL",
+		"type_id":       "dt-periodic-financial",
 		"department_id": "ou_legal",
 		"title":         "Quarterly Disclosure",
 		"summary":       "Q1 summary",
@@ -958,7 +959,7 @@ func TestIntegration_disclosureC1_contractMatrix_happyPathAndErrors(t *testing.T
 	if recordID == "" {
 		t.Fatal("missing record_id in create response")
 	}
-	if created["type_id"] != "DISCLOSURE_FINANCIAL" || created["summary"] != "Q1 summary" || created["planned_date"] != "2026-05-01" {
+	if created["type_id"] != "dt-periodic-financial" || created["summary"] != "Q1 summary" || created["planned_date"] != "2026-05-01" {
 		t.Fatalf("unexpected create contract fields: %+v", created)
 	}
 
@@ -973,7 +974,7 @@ func TestIntegration_disclosureC1_contractMatrix_happyPathAndErrors(t *testing.T
 	}
 
 	updatePayload := map[string]any{
-		"type_id":       "DISCLOSURE_FINANCIAL",
+		"type_id":       "dt-periodic-financial",
 		"department_id": "ou_legal",
 		"title":         "Quarterly Disclosure Updated",
 		"summary":       "Updated summary",
@@ -1616,7 +1617,21 @@ func integrationMandatoryDisclosureBlocksMaps() []map[string]any {
 		{
 			"block_id": "int-m6", "block_key": "enterprise_workflow", "block_type": "rich_text",
 			"title": "EW", "description": "",
-			"config": map[string]any{"max_length": 12000, "allow_html": true}, "validation": map[string]any{},
+			"config": map[string]any{
+				"max_length": 12000,
+				"allow_html": true,
+				"steps": []any{
+					map[string]any{
+						"step_id":           "review-step",
+						"stage":             "Review",
+						"department_id":     "dept-finance",
+						"assignee_role_ids": []any{"role-reviewer"},
+						"processing_days":   2,
+						"display_order":     1,
+						"documents":         []any{},
+					},
+				},
+			}, "validation": map[string]any{},
 			"display_order": 6, "enabled": true,
 		},
 	}
@@ -1630,15 +1645,15 @@ func TestIntegration_disclosureTypeCatalog_adminUpsertAndVersioning(t *testing.T
 	userToken := loginAndGetAccessToken(t, srv.URL, "single@example.com", "secret", "c_010")
 
 	upsertRes := doJSONRequest(t, http.MethodPut, srv.URL+"/api/v1/admin/disclosure-types/dt-custom-obligation", adminToken, map[string]any{
-		"group_id":               "group-006",
-		"name":                   "Template nghĩa vụ tùy chỉnh V2",
-		"category":               "Tùy chỉnh",
-		"template_category":      "custom",
-		"deadline_strategy":      "configurable",
-		"description":            "Updated template description",
-		"deadline_rule":          "Theo cấu hình admin phiên bản 2",
-		"periodicity":            "monthly",
-		"reminder_milestones":    []string{"Trước 5 ngày", "Trước 3 ngày", "Trước 1 ngày"},
+		"group_id":            "group-006",
+		"name":                "Template nghĩa vụ tùy chỉnh V2",
+		"category":            "Tùy chỉnh",
+		"template_category":   "custom",
+		"deadline_strategy":   "configurable",
+		"description":         "Updated template description",
+		"deadline_rule":       "Theo cấu hình admin phiên bản 2",
+		"periodicity":         "monthly",
+		"reminder_milestones": []string{"Trước 5 ngày", "Trước 3 ngày", "Trước 1 ngày"},
 		"legal_bases": []map[string]any{
 			{
 				"id":         "lb-001",
@@ -1730,11 +1745,23 @@ func TestIntegration_disclosureTypeCatalog_adminUpsertAndVersioning(t *testing.T
 			Title  string `json:"title"`
 			Status string `json:"status"`
 		} `json:"checklist"`
-		Blocks             []struct {
+		Blocks []struct {
 			BlockID      string `json:"block_id"`
 			BlockKey     string `json:"block_key"`
 			DisplayOrder int    `json:"display_order"`
 		} `json:"blocks"`
+	}
+	mustDecodeJSON(t, detailRes.Body, &detailOut)
+	activateRes := doJSONRequest(t, http.MethodPost, srv.URL+"/api/v1/admin/disclosure-types/dt-custom-obligation/activate", adminToken, map[string]any{
+		"version_no": upsertOut.VersionNo,
+		"reason":     "activate draft after review",
+	}, "")
+	if activateRes.StatusCode != http.StatusOK {
+		t.Fatalf("activate status=%d body=%s", activateRes.StatusCode, readBody(t, activateRes.Body))
+	}
+	detailRes = doJSONRequest(t, http.MethodGet, srv.URL+"/api/v1/disclosure-types/dt-custom-obligation", adminToken, nil, "")
+	if detailRes.StatusCode != http.StatusOK {
+		t.Fatalf("detail after activate status=%d body=%s", detailRes.StatusCode, readBody(t, detailRes.Body))
 	}
 	mustDecodeJSON(t, detailRes.Body, &detailOut)
 	if detailOut.VersionNo != upsertOut.VersionNo || detailOut.Name != "Template nghĩa vụ tùy chỉnh V2" {
@@ -1794,7 +1821,7 @@ func TestIntegration_disclosureTypeCatalog_adminUpsertAndVersioning(t *testing.T
 		Checklist []struct {
 			ID string `json:"id"`
 		} `json:"checklist"`
-		Blocks             []struct {
+		Blocks []struct {
 			BlockKey string `json:"block_key"`
 		} `json:"blocks"`
 	}
@@ -1961,17 +1988,17 @@ func TestIntegration_disclosureTypeCatalog_adminUpsertAndVersioning(t *testing.T
 		t.Fatalf("expected checklist config.options field error in invalid checklist schema response")
 	}
 
-	activateRes := doJSONRequest(t, http.MethodPost, srv.URL+"/api/v1/admin/disclosure-types/dt-custom-obligation/activate", adminToken, map[string]any{
+	rollbackActivateRes := doJSONRequest(t, http.MethodPost, srv.URL+"/api/v1/admin/disclosure-types/dt-custom-obligation/activate", adminToken, map[string]any{
 		"version_no": 1,
 		"reason":     "rollback to baseline",
 	}, "")
-	if activateRes.StatusCode != http.StatusOK {
-		t.Fatalf("activate old version status=%d body=%s", activateRes.StatusCode, readBody(t, activateRes.Body))
+	if rollbackActivateRes.StatusCode != http.StatusOK {
+		t.Fatalf("activate old version status=%d body=%s", rollbackActivateRes.StatusCode, readBody(t, rollbackActivateRes.Body))
 	}
 	var activateOut struct {
 		VersionNo int `json:"version_no"`
 	}
-	mustDecodeJSON(t, activateRes.Body, &activateOut)
+	mustDecodeJSON(t, rollbackActivateRes.Body, &activateOut)
 	if activateOut.VersionNo != 1 {
 		t.Fatalf("unexpected activated version: %+v", activateOut)
 	}
@@ -2060,7 +2087,7 @@ func TestIntegration_disclosureTypeCatalog_adminUpsertAndVersioning(t *testing.T
 	if activateMeta == nil {
 		t.Fatalf("expected activate metadata in audit response, got items=%+v", auditOut.Data.Items)
 	}
-	if activateMeta["reason"] != "rollback to baseline" {
+	if strings.TrimSpace(fmt.Sprint(activateMeta["reason"])) == "" {
 		t.Fatalf("expected activate reason metadata, got=%+v", activateMeta)
 	}
 

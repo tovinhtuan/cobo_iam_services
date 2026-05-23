@@ -188,10 +188,11 @@ type GetTemplateReferenceDataRequest struct {
 }
 
 type TemplateReferenceDataDTO struct {
-	TemplateCategories []string            `json:"template_categories"`
-	Periodicities      []string            `json:"periodicities"`
-	DeadlineStrategies []string            `json:"deadline_strategies"`
-	MatrixRules        map[string][]string `json:"matrix_rules"`
+	TemplateCategories  []string                 `json:"template_categories"`
+	Periodicities       []string                 `json:"periodicities"`
+	DeadlineStrategies  []string                 `json:"deadline_strategies"`
+	DeadlineRuleCatalog []DeadlineRuleCatalogDTO `json:"deadline_rule_catalog,omitempty"`
+	MatrixRules         map[string][]string      `json:"matrix_rules"`
 }
 
 type GetTemplateReferenceDataResponse struct {
@@ -327,8 +328,8 @@ type WorkflowStepGroupDTO struct {
 	GroupName      string `json:"group_name"`
 	DepartmentID   string `json:"department_id"`
 	DepartmentName string `json:"department_name,omitempty"`
-	Source         string `json:"source"`          // "auto_fill" | "manual"
-	DurationMode   string `json:"duration_mode"`   // "inherit" | "custom"
+	Source         string `json:"source"`        // "auto_fill" | "manual"
+	DurationMode   string `json:"duration_mode"` // "inherit" | "custom"
 	ProcessingDays *int   `json:"processing_days,omitempty"`
 	DisplayOrder   int    `json:"display_order"`
 	IsActive       bool   `json:"is_active"`
@@ -533,18 +534,18 @@ type CompanyGroupDTO struct {
 // WorkflowStepGroupWriteInput is the write shape for one group in a step.
 type WorkflowStepGroupWriteInput struct {
 	GroupID        string `json:"group_id"`
-	DurationMode   string `json:"duration_mode"`   // "inherit" | "custom"
+	DurationMode   string `json:"duration_mode"` // "inherit" | "custom"
 	ProcessingDays *int   `json:"processing_days,omitempty"`
 	DisplayOrder   int    `json:"display_order"`
 }
 
 type UpdateWorkflowOverrideStepGroupsRequest struct {
-	Subject       Subject
-	TypeID        string                        `json:"type_id"`
-	StepID        string                        `json:"step_id"`
-	BaseEtag      string                        `json:"base_etag"`
-	Groups        []WorkflowStepGroupWriteInput `json:"groups"`
-	ClearAll      bool                          `json:"clear_all_groups"`
+	Subject  Subject
+	TypeID   string                        `json:"type_id"`
+	StepID   string                        `json:"step_id"`
+	BaseEtag string                        `json:"base_etag"`
+	Groups   []WorkflowStepGroupWriteInput `json:"groups"`
+	ClearAll bool                          `json:"clear_all_groups"`
 }
 
 type UpdateWorkflowOverrideStepGroupsResponse struct {
@@ -561,8 +562,8 @@ type GetTemplateDeadlineConfigRequest struct {
 }
 
 type GetTemplateDeadlineConfigResponse struct {
-	TypeID        string                 `json:"type_id"`
-	VersionNo     int                    `json:"version_no"`
+	TypeID         string                 `json:"type_id"`
+	VersionNo      int                    `json:"version_no"`
 	DeadlineConfig TemplateDeadlineConfig `json:"deadline_config"`
 }
 
@@ -573,10 +574,10 @@ type UpdateTemplateDeadlineConfigRequest struct {
 }
 
 type UpdateTemplateDeadlineConfigResponse struct {
-	TypeID        string                 `json:"type_id"`
-	VersionNo     int                    `json:"version_no"`
+	TypeID         string                 `json:"type_id"`
+	VersionNo      int                    `json:"version_no"`
 	DeadlineConfig TemplateDeadlineConfig `json:"deadline_config"`
-	UpdatedBy     string                 `json:"updated_by"`
+	UpdatedBy      string                 `json:"updated_by"`
 }
 
 type Subject struct {
@@ -623,8 +624,8 @@ type DisplayGroupDTO struct {
 }
 
 type DisclosureTypeSummaryDTO struct {
-	TypeID           string   `json:"type_id"`
-	GroupID          string   `json:"group_id"`
+	TypeID  string `json:"type_id"`
+	GroupID string `json:"group_id"`
 	// Deprecated: use DisplayGroupCodes. Kept for compatibility window (BE-008).
 	DisplayGroupCode  string   `json:"display_group_code,omitempty"`
 	DisplayGroupCodes []string `json:"display_group_codes"`
@@ -704,16 +705,16 @@ type DeadlineSummaryDTO struct {
 }
 
 type TemplateDeadlineConfig struct {
-	DeadlineMode   string               `json:"deadline_mode"`
-	FixedDeadline  *FixedDeadlineConfig `json:"fixed_deadline,omitempty"`
-	DynamicRule    *DynamicDeadlineRule `json:"dynamic_rule,omitempty"`
+	DeadlineMode  string               `json:"deadline_mode"`
+	FixedDeadline *FixedDeadlineConfig `json:"fixed_deadline,omitempty"`
+	DynamicRule   *DynamicDeadlineRule `json:"dynamic_rule,omitempty"`
 	// T0Policy defines how the T0 reference date is resolved for timeline computation.
 	// Values: "system_date" | "event_date" | "user_defined". Empty = legacy (no timeline).
-	T0Policy       string `json:"t0_policy,omitempty"`
+	T0Policy string `json:"t0_policy,omitempty"`
 	// DeadlineDays is total calendar days from T0 to the outer deadline.
-	DeadlineDays   int    `json:"deadline_days,omitempty"`
+	DeadlineDays int `json:"deadline_days,omitempty"`
 	// ProcessingDays is the default per-step duration in calendar days.
-	ProcessingDays int    `json:"processing_days,omitempty"`
+	ProcessingDays int `json:"processing_days,omitempty"`
 	// Portal/CMS template config extensions (stored in deadline_config_json).
 	TemplateCategory  string `json:"template_category,omitempty"`
 	FrequencyInterval int    `json:"frequency_interval,omitempty"`
@@ -736,11 +737,11 @@ type WorkflowOverrideReminderPreviewMilestoneDTO struct {
 
 // WorkflowOverrideReminderPreviewDTO is the read-only reminder schedule for a draft workflow.
 type WorkflowOverrideReminderPreviewDTO struct {
-	TypeID     string                                      `json:"type_id"`
-	CompanyID  string                                      `json:"company_id"`
-	T0Date     string                                      `json:"t0_date"`
-	Timezone   string                                      `json:"timezone"`
-	Source     string                                      `json:"source"`
+	TypeID     string                                        `json:"type_id"`
+	CompanyID  string                                        `json:"company_id"`
+	T0Date     string                                        `json:"t0_date"`
+	Timezone   string                                        `json:"timezone"`
+	Source     string                                        `json:"source"`
 	Milestones []WorkflowOverrideReminderPreviewMilestoneDTO `json:"milestones"`
 }
 
@@ -803,23 +804,23 @@ type DisclosureTypeVersionDTO struct {
 }
 
 type RecordDTO struct {
-	RecordID      string          `json:"record_id"`
-	CompanyID     string          `json:"company_id"`
-	TypeID        string          `json:"type_id"`
-	DepartmentID  string          `json:"department_id"`
-	Title         string          `json:"title"`
-	Summary       string          `json:"summary"`
-	Content       string          `json:"content"`
-	PlannedDate   string          `json:"planned_date,omitempty"`
-	PublishedDate string          `json:"published_date,omitempty"`
-	Status        string          `json:"status"`
-	Attachments   []AttachmentDTO `json:"attachments"`
-	EvidenceLink        string          `json:"evidence_link,omitempty"`
-	WorkflowInstanceID  string          `json:"workflow_instance_id,omitempty"`
-	CreatedBy           string          `json:"created_by"`
-	UpdatedBy     string          `json:"updated_by"`
-	CreatedAt     time.Time       `json:"created_at"`
-	UpdatedAt     time.Time       `json:"updated_at"`
+	RecordID           string          `json:"record_id"`
+	CompanyID          string          `json:"company_id"`
+	TypeID             string          `json:"type_id"`
+	DepartmentID       string          `json:"department_id"`
+	Title              string          `json:"title"`
+	Summary            string          `json:"summary"`
+	Content            string          `json:"content"`
+	PlannedDate        string          `json:"planned_date,omitempty"`
+	PublishedDate      string          `json:"published_date,omitempty"`
+	Status             string          `json:"status"`
+	Attachments        []AttachmentDTO `json:"attachments"`
+	EvidenceLink       string          `json:"evidence_link,omitempty"`
+	WorkflowInstanceID string          `json:"workflow_instance_id,omitempty"`
+	CreatedBy          string          `json:"created_by"`
+	UpdatedBy          string          `json:"updated_by"`
+	CreatedAt          time.Time       `json:"created_at"`
+	UpdatedAt          time.Time       `json:"updated_at"`
 }
 
 // PeriodicRecordCreator is the cross-module interface used by periodic auto-creation.
@@ -841,12 +842,12 @@ type PeriodicTypeRow struct {
 
 // PeriodicCycleRow represents one (type, company, cycle) idempotency slot.
 type PeriodicCycleRow struct {
-	CycleID   string
-	TypeID    string
-	CompanyID string
+	CycleID    string
+	TypeID     string
+	CompanyID  string
 	CycleLabel string
-	DueDate   time.Time
-	RecordID  string // empty = pending
+	DueDate    time.Time
+	RecordID   string // empty = pending
 }
 
 // CompanyTypePreference is used by the repository layer.

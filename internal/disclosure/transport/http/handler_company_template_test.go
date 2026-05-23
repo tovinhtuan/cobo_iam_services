@@ -21,6 +21,12 @@ type fakeDisclosureHandlerService struct {
 	updateErr      error
 	transitionResp *disclosureapp.CompanyTemplateWriteResponse
 	transitionErr  error
+	typeDetailResp *disclosureapp.DisclosureTypeDTO
+	typeDetailErr  error
+	upsertTypeResp *disclosureapp.UpsertTypeVersionResponse
+	upsertTypeErr  error
+	activateResp   *disclosureapp.ActivateTypeVersionResponse
+	activateErr    error
 }
 
 func (f *fakeDisclosureHandlerService) CreateCompanyTemplate(_ context.Context, _ disclosureapp.CreateCompanyTemplateRequest) (*disclosureapp.CompanyTemplateWriteResponse, error) {
@@ -33,6 +39,18 @@ func (f *fakeDisclosureHandlerService) UpdateCompanyTemplate(_ context.Context, 
 
 func (f *fakeDisclosureHandlerService) TransitionCompanyTemplateLifecycle(_ context.Context, _ disclosureapp.TransitionCompanyTemplateLifecycleRequest) (*disclosureapp.CompanyTemplateWriteResponse, error) {
 	return f.transitionResp, f.transitionErr
+}
+
+func (f *fakeDisclosureHandlerService) GetTypeDetail(_ context.Context, _ disclosureapp.GetTypeDetailRequest) (*disclosureapp.DisclosureTypeDTO, error) {
+	return f.typeDetailResp, f.typeDetailErr
+}
+
+func (f *fakeDisclosureHandlerService) UpsertTypeVersion(_ context.Context, _ disclosureapp.UpsertTypeVersionRequest) (*disclosureapp.UpsertTypeVersionResponse, error) {
+	return f.upsertTypeResp, f.upsertTypeErr
+}
+
+func (f *fakeDisclosureHandlerService) ActivateTypeVersion(_ context.Context, _ disclosureapp.ActivateTypeVersionRequest) (*disclosureapp.ActivateTypeVersionResponse, error) {
+	return f.activateResp, f.activateErr
 }
 
 type fakeDisclosureInspector struct{}
@@ -263,6 +281,91 @@ func TestCreateCompanyTemplate_DoesNotAppendAuditLogWhenTokenInvalid(t *testing.
 	}
 	if len(auditSvc.entries) != 0 {
 		t.Fatalf("expected 0 audit entries when token inspection fails, got %d", len(auditSvc.entries))
+	}
+}
+
+func TestUpsertTypeVersion_AppendsAuditLogOnSuccess(t *testing.T) {
+	svc := &fakeDisclosureHandlerService{
+		typeDetailResp: &disclosureapp.DisclosureTypeDTO{
+			TypeID:    "type-010",
+			VersionNo: 3,
+		},
+		upsertTypeResp: &disclosureapp.UpsertTypeVersionResponse{
+			TypeID:    "type-010",
+			VersionNo: 4,
+			IsActive:  false,
+			UpdatedBy: "user-001",
+		},
+	}
+	auditSvc := &fakeDisclosureAuditService{}
+	h := NewHandler(svc, fakeDisclosureInspector{}, nil, auditSvc)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/disclosure-types/type-010", strings.NewReader(`{"type_id":"type-010","group_id":"group-001","name":"Template D","template_category":"custom","deadline_strategy":"configurable","deadline_rule":"T+5","blocks":[]}`))
+	req.Header.Set("Authorization", "Bearer atk_test")
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("type_id", "type-010")
+	rr := httptest.NewRecorder()
+
+	h.upsertTypeVersion(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d want 200; body=%s", rr.Code, rr.Body.String())
+	}
+	if len(auditSvc.entries) != 1 {
+		t.Fatalf("expected 1 audit entry, got %d", len(auditSvc.entries))
+	}
+	if auditSvc.entries[0].Action != "disclosure.type.version.upsert" {
+		t.Fatalf("action=%q want disclosure.type.version.upsert", auditSvc.entries[0].Action)
+	}
+	if got := auditSvc.entries[0].Metadata["old_version_no"]; got != 3 {
+		t.Fatalf("metadata.old_version_no=%v want 3", got)
+	}
+	if got := auditSvc.entries[0].Metadata["new_version_no"]; got != 4 {
+		t.Fatalf("metadata.new_version_no=%v want 4", got)
+	}
+}
+
+func TestActivateTypeVersion_AppendsAuditLogOnSuccess(t *testing.T) {
+	svc := &fakeDisclosureHandlerService{
+		typeDetailResp: &disclosureapp.DisclosureTypeDTO{
+			TypeID:    "type-011",
+			VersionNo: 2,
+		},
+		activateResp: &disclosureapp.ActivateTypeVersionResponse{
+			TypeID:    "type-011",
+			VersionNo: 5,
+			IsActive:  true,
+			UpdatedBy: "user-001",
+		},
+	}
+	auditSvc := &fakeDisclosureAuditService{}
+	h := NewHandler(svc, fakeDisclosureInspector{}, nil, auditSvc)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/disclosure-types/type-011/activate", strings.NewReader(`{"version_no":5,"reason":"publish latest draft"}`))
+	req.Header.Set("Authorization", "Bearer atk_test")
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("type_id", "type-011")
+	rr := httptest.NewRecorder()
+
+	h.activateTypeVersion(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d want 200; body=%s", rr.Code, rr.Body.String())
+	}
+	if len(auditSvc.entries) != 1 {
+		t.Fatalf("expected 1 audit entry, got %d", len(auditSvc.entries))
+	}
+	if auditSvc.entries[0].Action != "disclosure.type.version.activate" {
+		t.Fatalf("action=%q want disclosure.type.version.activate", auditSvc.entries[0].Action)
+	}
+	if got := auditSvc.entries[0].Metadata["old_version_no"]; got != 2 {
+		t.Fatalf("metadata.old_version_no=%v want 2", got)
+	}
+	if got := auditSvc.entries[0].Metadata["new_version_no"]; got != 5 {
+		t.Fatalf("metadata.new_version_no=%v want 5", got)
+	}
+	if got := auditSvc.entries[0].Metadata["reason"]; got != "publish latest draft" {
+		t.Fatalf("metadata.reason=%v want publish latest draft", got)
 	}
 }
 

@@ -41,6 +41,7 @@ func NewRepository() *Repository {
 			},
 			"m_cms_001@c_001": {
 				"platform.cms.view",
+				"cms.template.read", "cms.template.write", "cms.template.activate", "cms.template.archive", "cms.template.config.write",
 				"company.view", "company.edit",
 				"recipient.view", "recipient.manage",
 				"deadline.view", "deadline.manage", "deadline.create", "deadline.assign",
@@ -156,7 +157,7 @@ func defaultPolicies() map[string]authapp.ActionPolicy {
 		"disclosure.approve":                 {ActionCode: "disclosure.approve", RequiredPermission: "disclosure.approve", ScopeType: "*", WorkflowState: "*", EligibleActor: "*", EffectType: "allow", DenyReasonCode: "responsibility_required"},
 		"workflow.read":                      {ActionCode: "workflow.read", RequiredPermission: "disclosure.view", ScopeType: "*", WorkflowState: "*", EligibleActor: "*", EffectType: "allow", DenyReasonCode: "permission_denied"},
 		"workflow.review":                    {ActionCode: "workflow.review", RequiredPermission: "deadline.assign", ScopeType: "*", WorkflowState: "*", EligibleActor: "*", EffectType: "allow", DenyReasonCode: "permission_denied"},
-		"workflow.approve":                 {ActionCode: "workflow.approve", RequiredPermission: "disclosure.approve", ScopeType: "*", WorkflowState: "*", EligibleActor: "*", EffectType: "allow", DenyReasonCode: "permission_denied"},
+		"workflow.approve":                   {ActionCode: "workflow.approve", RequiredPermission: "disclosure.approve", ScopeType: "*", WorkflowState: "*", EligibleActor: "*", EffectType: "allow", DenyReasonCode: "permission_denied"},
 		"template.workflow.override.read":    {ActionCode: "template.workflow.override.read", RequiredPermission: "template.workflow.override.read", ScopeType: "*", WorkflowState: "*", EligibleActor: "*", EffectType: "allow", DenyReasonCode: "permission_denied"},
 		"template.workflow.override.write":   {ActionCode: "template.workflow.override.write", RequiredPermission: "template.workflow.override.write", ScopeType: "*", WorkflowState: "*", EligibleActor: "*", EffectType: "allow", DenyReasonCode: "permission_denied"},
 		"template.workflow.override.approve": {ActionCode: "template.workflow.override.approve", RequiredPermission: "template.workflow.override.approve", ScopeType: "*", WorkflowState: "*", EligibleActor: "*", EffectType: "allow", DenyReasonCode: "permission_denied"},

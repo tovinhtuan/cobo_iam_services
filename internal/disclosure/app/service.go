@@ -346,8 +346,8 @@ func (s *service) GetTypeDetail(ctx context.Context, req GetTypeDetailRequest) (
 }
 
 func (s *service) GetTypeVersionDetail(ctx context.Context, req GetTypeVersionDetailRequest) (*DisclosureTypeDTO, error) {
-	if !s.hasPermission(ctx, req.Subject, "rbac.manage") {
-		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "access denied", nil)
+	if err := s.requireCMSTemplateRead(ctx, req.Subject); err != nil {
+		return nil, err
 	}
 	req.TypeID = strings.TrimSpace(req.TypeID)
 	if req.TypeID == "" {
@@ -360,8 +360,8 @@ func (s *service) GetTypeVersionDetail(ctx context.Context, req GetTypeVersionDe
 }
 
 func (s *service) GetTemplateReferenceData(ctx context.Context, req GetTemplateReferenceDataRequest) (*GetTemplateReferenceDataResponse, error) {
-	if !s.hasPermission(ctx, req.Subject, "rbac.manage") {
-		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "access denied", nil)
+	if err := s.requireCMSTemplateRead(ctx, req.Subject); err != nil {
+		return nil, err
 	}
 	return &GetTemplateReferenceDataResponse{
 		Data: TemplateReferenceDataDTO{
@@ -382,6 +382,7 @@ func (s *service) GetTemplateReferenceData(ctx context.Context, req GetTemplateR
 				DeadlineStrategyEventHours,
 				DeadlineStrategyConfigurable,
 			},
+			DeadlineRuleCatalog: s.loadDeadlineRuleCatalog(ctx),
 			MatrixRules: map[string][]string{
 				TemplateCategoryPeriodic: {
 					"periodicity in [monthly, quarterly, yearly]",
@@ -401,11 +402,10 @@ func (s *service) GetTemplateReferenceData(ctx context.Context, req GetTemplateR
 }
 
 func (s *service) UpsertTypeVersion(ctx context.Context, req UpsertTypeVersionRequest) (*UpsertTypeVersionResponse, error) {
-	isPlat := s.hasPermission(ctx, req.Subject, "platform.cms.view")
-	canManageType := s.hasPermission(ctx, req.Subject, "disclosure_type.manage")
-	if !isPlat && !canManageType {
-		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "access denied", nil)
+	if err := s.requireCMSTemplateWrite(ctx, req.Subject); err != nil {
+		return nil, err
 	}
+	isPlat := s.hasPermission(ctx, req.Subject, permissionPlatformCMSView)
 	req.TypeID = strings.TrimSpace(req.TypeID)
 	req.Scope = strings.ToLower(strings.TrimSpace(req.Scope))
 	req.GroupID = strings.TrimSpace(req.GroupID)
@@ -428,7 +428,7 @@ func (s *service) UpsertTypeVersion(ctx context.Context, req UpsertTypeVersionRe
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "name is required", nil)
 	}
 	if req.Scope == "" {
-		if s.hasPermission(ctx, req.Subject, "platform.cms.view") {
+		if s.hasPermission(ctx, req.Subject, permissionPlatformCMSView) {
 			req.Scope = templateScopeGlobal
 		} else {
 			req.Scope = templateScopeCompany
@@ -437,7 +437,7 @@ func (s *service) UpsertTypeVersion(ctx context.Context, req UpsertTypeVersionRe
 	if req.Scope != templateScopeGlobal && req.Scope != templateScopeCompany {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "scope must be global or company", nil)
 	}
-	if req.Scope == templateScopeGlobal && !s.hasPermission(ctx, req.Subject, "platform.cms.view") {
+	if req.Scope == templateScopeGlobal && !isPlat {
 		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "global scope requires platform admin permission", nil)
 	}
 	if req.Scope == templateScopeCompany && !isCompanyCreatableTemplateCategory(req.TemplateCategory) {
@@ -456,8 +456,8 @@ func isCompanyCreatableTemplateCategory(category string) bool {
 }
 
 func (s *service) ListTypeVersions(ctx context.Context, req ListTypeVersionsRequest) (*ListTypeVersionsResponse, error) {
-	if !s.hasPermission(ctx, req.Subject, "platform.cms.view") && !s.hasPermission(ctx, req.Subject, "disclosure_type.manage") {
-		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "access denied", nil)
+	if err := s.requireCMSTemplateRead(ctx, req.Subject); err != nil {
+		return nil, err
 	}
 	req.TypeID = strings.TrimSpace(req.TypeID)
 	if req.TypeID == "" {
@@ -471,8 +471,8 @@ func (s *service) ListTypeVersions(ctx context.Context, req ListTypeVersionsRequ
 }
 
 func (s *service) ActivateTypeVersion(ctx context.Context, req ActivateTypeVersionRequest) (*ActivateTypeVersionResponse, error) {
-	if !s.hasPermission(ctx, req.Subject, "platform.cms.view") && !s.hasPermission(ctx, req.Subject, "disclosure_type.manage") {
-		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "access denied", nil)
+	if err := s.requireCMSTemplateActivate(ctx, req.Subject); err != nil {
+		return nil, err
 	}
 	req.TypeID = strings.TrimSpace(req.TypeID)
 	req.Reason = strings.TrimSpace(req.Reason)
@@ -481,6 +481,22 @@ func (s *service) ActivateTypeVersion(ctx context.Context, req ActivateTypeVersi
 	}
 	if req.VersionNo <= 0 {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "version_no must be > 0", nil)
+	}
+	versionDetail, err := s.repo.GetTypeVersionDetail(ctx, req.Subject.CompanyID, req.TypeID, req.VersionNo)
+	if err != nil {
+		return nil, err
+	}
+	if err := ValidateTemplateWorkflowForActivation(versionDetail.Blocks); err != nil {
+		return nil, &perr.HTTPError{
+			Code:       "TEMPLATE_NO_WORKFLOW",
+			Message:    err.Error(),
+			HTTPStatus: http.StatusUnprocessableEntity,
+			Details: map[string]any{
+				"type_id":      req.TypeID,
+				"version_no":   req.VersionNo,
+				"field_errors": map[string]string{"enterprise_workflow": err.Error()},
+			},
+		}
 	}
 	return s.repo.ActivateTypeVersion(ctx, req)
 }
@@ -807,8 +823,8 @@ func (s *service) GetTemplateDeadlineConfig(ctx context.Context, req GetTemplate
 	if req.TypeID == "" {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "type_id is required", nil)
 	}
-	if !s.hasPermission(ctx, req.Subject, "rbac.manage") {
-		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "access denied", nil)
+	if err := s.requireCMSTemplateRead(ctx, req.Subject); err != nil {
+		return nil, err
 	}
 	versionNo, cfg, err := s.repo.GetActiveVersionDeadlineConfig(ctx, req.TypeID)
 	if err != nil {
@@ -826,8 +842,8 @@ func (s *service) UpdateTemplateDeadlineConfig(ctx context.Context, req UpdateTe
 	if req.TypeID == "" {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "type_id is required", nil)
 	}
-	if !s.hasPermission(ctx, req.Subject, "rbac.manage") {
-		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "access denied", nil)
+	if err := s.requireCMSTemplateConfigWrite(ctx, req.Subject); err != nil {
+		return nil, err
 	}
 	if req.DeadlineConfig.T0Policy != "" {
 		switch req.DeadlineConfig.T0Policy {
@@ -872,6 +888,9 @@ func (s *service) requireDisclosureCatalogRead(ctx context.Context, sub Subject)
 }
 
 func (s *service) hasPermission(ctx context.Context, sub Subject, permission string) bool {
+	if s.auth == nil {
+		return true
+	}
 	eff, err := s.auth.GetEffectiveAccess(ctx, sub.MembershipID, sub.CompanyID)
 	if err != nil {
 		return false
@@ -1098,7 +1117,7 @@ func (s *service) CreateCompanyTemplate(ctx context.Context, req CreateCompanyTe
 	if req.Subject.CompanyID == "" {
 		return nil, perr.NewHTTPError(http.StatusUnauthorized, perr.CodeCompanyContextRequired, "company context required", nil)
 	}
-	if !s.hasPermission(ctx, req.Subject, "disclosure_type.manage") {
+	if !s.hasPermission(ctx, req.Subject, permissionLegacyTemplateManage) {
 		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "access denied", nil)
 	}
 	req.Name = strings.TrimSpace(req.Name)
@@ -1106,8 +1125,16 @@ func (s *service) CreateCompanyTemplate(ctx context.Context, req CreateCompanyTe
 	if req.Name == "" {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "name is required", nil)
 	}
-	if req.TemplateCategory != TemplateCategoryPeriodic && req.TemplateCategory != TemplateCategoryIrregular {
-		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "template_category must be periodic or irregular", nil)
+	if err := validatePortalTemplateMatrix(&UpsertTypeVersionRequest{
+		Name:             req.Name,
+		TemplateCategory: req.TemplateCategory,
+		DeadlineRule:     strings.TrimSpace(req.DeadlineRule),
+		Periodicity:      strings.TrimSpace(req.Periodicity),
+	}); err != nil {
+		return nil, err
+	}
+	if err := validatePortalDeadlineRule(req.DeadlineRule, s.loadDeadlineRuleCatalog(ctx)); err != nil {
+		return nil, err
 	}
 	return s.repo.CreateCompanyTemplate(ctx, req)
 }
@@ -1116,7 +1143,7 @@ func (s *service) UpdateCompanyTemplate(ctx context.Context, req UpdateCompanyTe
 	if req.Subject.CompanyID == "" {
 		return nil, perr.NewHTTPError(http.StatusUnauthorized, perr.CodeCompanyContextRequired, "company context required", nil)
 	}
-	if !s.hasPermission(ctx, req.Subject, "disclosure_type.manage") {
+	if !s.hasPermission(ctx, req.Subject, permissionLegacyTemplateManage) {
 		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "access denied", nil)
 	}
 	req.TypeID = strings.TrimSpace(req.TypeID)
@@ -1128,11 +1155,31 @@ func (s *service) UpdateCompanyTemplate(ctx context.Context, req UpdateCompanyTe
 	if req.Name == "" {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "name is required", nil)
 	}
-	if req.TemplateCategory != "" && req.TemplateCategory != TemplateCategoryPeriodic && req.TemplateCategory != TemplateCategoryIrregular {
-		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "template_category must be periodic or irregular", nil)
-	}
 	current, err := s.repo.GetCompanyTemplateForLifecycle(ctx, req.Subject.CompanyID, req.TypeID)
 	if err != nil {
+		return nil, err
+	}
+	effectiveCategory := req.TemplateCategory
+	if effectiveCategory == "" {
+		effectiveCategory = current.TemplateCategory
+	}
+	effectiveDeadlineRule := strings.TrimSpace(req.DeadlineRule)
+	if effectiveDeadlineRule == "" {
+		effectiveDeadlineRule = strings.TrimSpace(current.DeadlineRule)
+	}
+	effectivePeriodicity := strings.TrimSpace(req.Periodicity)
+	if effectivePeriodicity == "" {
+		effectivePeriodicity = strings.TrimSpace(current.Periodicity)
+	}
+	if err := validatePortalTemplateMatrix(&UpsertTypeVersionRequest{
+		Name:             req.Name,
+		TemplateCategory: effectiveCategory,
+		DeadlineRule:     effectiveDeadlineRule,
+		Periodicity:      effectivePeriodicity,
+	}); err != nil {
+		return nil, err
+	}
+	if err := validatePortalDeadlineRule(effectiveDeadlineRule, s.loadDeadlineRuleCatalog(ctx)); err != nil {
 		return nil, err
 	}
 	if current.ReviewStatus != "draft" && current.ReviewStatus != "rejected" {
