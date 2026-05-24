@@ -19,6 +19,7 @@ type service struct {
 	idg                   idgen.Generator
 	calculator            *DeadlineCalculator
 	workflowGroupsEnabled bool
+	tierLookup            func(ctx context.Context, userID string) string
 }
 
 // ServiceOption configures disclosure service construction.
@@ -38,6 +39,21 @@ func WithWorkflowGroupsEnabled(enabled bool) ServiceOption {
 	return func(s *service) {
 		s.workflowGroupsEnabled = enabled
 	}
+}
+
+// WithSubscriptionTierLookup injects a function that returns the subscription tier for a user.
+// Used for server-side template quota enforcement. If not set, quota is not enforced.
+func WithSubscriptionTierLookup(fn func(ctx context.Context, userID string) string) ServiceOption {
+	return func(s *service) {
+		s.tierLookup = fn
+	}
+}
+
+func companyTemplateQuotaLimit(tier string) int {
+	if tier == "Free" || tier == "" {
+		return 5
+	}
+	return 100
 }
 
 const (
@@ -452,7 +468,51 @@ func (s *service) UpsertTypeVersion(ctx context.Context, req UpsertTypeVersionRe
 	if err := validateFn(&req); err != nil {
 		return nil, err
 	}
+	req.DisplayGroupCodes = normalizeDisplayGroupCodes(req.DisplayGroupCodes)
+	if len(req.DisplayGroupCodes) == 0 {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "display_group_codes is required (at least one Portal catalog group)", nil)
+	}
+	if err := validateDisplayGroupCodesExist(ctx, s.repo, req.DisplayGroupCodes); err != nil {
+		return nil, err
+	}
 	return s.repo.UpsertTypeVersion(ctx, req)
+}
+
+func normalizeDisplayGroupCodes(codes []string) []string {
+	if len(codes) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(codes))
+	out := make([]string, 0, len(codes))
+	for _, code := range codes {
+		code = strings.TrimSpace(code)
+		if code == "" {
+			continue
+		}
+		if _, ok := seen[code]; ok {
+			continue
+		}
+		seen[code] = struct{}{}
+		out = append(out, code)
+	}
+	return out
+}
+
+func validateDisplayGroupCodesExist(ctx context.Context, repo Repository, codes []string) error {
+	catalog, err := repo.ListDisplayGroups(ctx)
+	if err != nil {
+		return err
+	}
+	allowed := make(map[string]struct{}, len(catalog))
+	for _, item := range catalog {
+		allowed[strings.TrimSpace(item.DisplayGroupCode)] = struct{}{}
+	}
+	for _, code := range codes {
+		if _, ok := allowed[code]; !ok {
+			return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "invalid display_group_code: "+code, nil)
+		}
+	}
+	return nil
 }
 
 func isCompanyCreatableTemplateCategory(category string) bool {
@@ -1140,6 +1200,15 @@ func (s *service) CreateCompanyTemplate(ctx context.Context, req CreateCompanyTe
 	if err := validatePortalDeadlineRule(req.DeadlineRule, s.loadDeadlineRuleCatalog(ctx)); err != nil {
 		return nil, err
 	}
+	if s.tierLookup != nil {
+		tier := s.tierLookup(ctx, req.Subject.UserID)
+		limit := companyTemplateQuotaLimit(tier)
+		count, err := s.repo.CountCompanyTemplatesByCompanyID(ctx, req.Subject.CompanyID)
+		if err == nil && count >= limit {
+			return nil, perr.NewHTTPError(http.StatusPaymentRequired, "QUOTA_EXCEEDED",
+				fmt.Sprintf("subscription quota exceeded: company has %d of %d allowed templates", count, limit), nil)
+		}
+	}
 	return s.repo.CreateCompanyTemplate(ctx, req)
 }
 
@@ -1232,25 +1301,19 @@ func (s *service) TransitionCompanyTemplateLifecycle(ctx context.Context, req Tr
 	return s.repo.GetCompanyTemplateForLifecycle(ctx, req.Subject.CompanyID, req.TypeID)
 }
 
-// enforceHasWorkflowGate checks if the template has an effective active workflow.
-// Returns 422 TEMPLATE_NO_WORKFLOW if no workflow is configured.
-// Checks global_workflows table first (CMS-managed), then falls back to the
-// enterprise_workflow block embedded in the template version.
+// enforceHasWorkflowGate aligns with Portal FE has_workflow (PO D5-A):
+// active version must have ≥1 step in enterprise_workflow block.
+// global_workflows does not satisfy the gate (PO D6-B).
 func (s *service) enforceHasWorkflowGate(ctx context.Context, companyID, typeID string) error {
-	// CMS-managed global workflow takes priority (migration 0059).
-	count, err := s.repo.CountGlobalWorkflowsByTypeId(ctx, typeID)
-	if err == nil && count > 0 {
-		return nil
-	}
-	// Fall back to effective workflow (company override or enterprise_workflow block).
-	effective, err := s.repo.GetEffectiveWorkflow(ctx, companyID, typeID)
+	_ = companyID
+	hasWorkflow, err := s.repo.HasActiveEnterpriseWorkflow(ctx, typeID)
 	if err != nil {
 		// Workflow lookup failure must not silently block disclosure creation.
 		return nil
 	}
-	if len(effective.Workflow) == 0 {
+	if !hasWorkflow {
 		return perr.NewHTTPError(http.StatusUnprocessableEntity, "TEMPLATE_NO_WORKFLOW",
-			"template has no active workflow; disclosure cannot be created", nil)
+			"template has no active enterprise workflow; disclosure cannot be created", nil)
 	}
 	return nil
 }

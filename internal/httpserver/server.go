@@ -240,6 +240,15 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 	fileHoliday := disclosureapp.NewHolidayCalendarFileProvider(filepath.Join("configs", "non_trading_days"))
 	var disclosureOpts []disclosureapp.ServiceOption
 	disclosureOpts = append(disclosureOpts, disclosureapp.WithWorkflowGroupsEnabled(cfg.WorkflowGroupsEnabled))
+	if identity != nil {
+		disclosureOpts = append(disclosureOpts, disclosureapp.WithSubscriptionTierLookup(func(ctx context.Context, userID string) string {
+			u, err := identity.GetByUserID(ctx, userID)
+			if err != nil || u == nil {
+				return ""
+			}
+			return u.SubscriptionTier
+		}))
+	}
 	var holidaySvc holidayapp.Service
 	if pool != nil {
 		holidayRepo := holidaymysql.NewRepository(pool)

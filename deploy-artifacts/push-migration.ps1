@@ -38,12 +38,15 @@ $remote = "${DevUser}@${DevHost}"
 Write-Host "==> Copying $File to dev server..."
 & scp -P $DevPort $localFile "${remote}:$DevPath/migrations/"
 
-Write-Host "==> Applying migration in MySQL container..."
-Get-Content -Path $localFile -Raw -Encoding UTF8 | & ssh -p $DevPort $remote "docker exec -i cobo-iam-mysql mysql --default-character-set=utf8mb4 -uroot -proot cobo_iam"
+Write-Host "==> Applying migration in MySQL container (from server file — preserves UTF-8)..."
+$remoteFile = "$DevPath/migrations/$File"
+& ssh -p $DevPort $remote "cat $remoteFile | docker exec -i cobo-iam-mysql mysql --default-character-set=utf8mb4 -uroot -proot cobo_iam"
+if ($LASTEXITCODE -ne 0) { throw "Failed to apply migration $File" }
 
 Write-Host "==> Recording schema_migrations..."
 $sqlTrack = "INSERT IGNORE INTO schema_migrations(file_name) VALUES ('$File');"
-& ssh -p $DevPort $remote "docker exec cobo-iam-mysql mysql -uroot -proot cobo_iam -e ""$sqlTrack"""
+$sqlTrack | & ssh -p $DevPort $remote "docker exec -i cobo-iam-mysql mysql -uroot -proot cobo_iam"
+if ($LASTEXITCODE -ne 0) { throw "Failed to record schema_migrations for $File" }
 
 Write-Host "==> Verifying..."
 $sqlVerify = "SELECT file_name, executed_at FROM schema_migrations WHERE file_name='$File';"

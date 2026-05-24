@@ -162,6 +162,13 @@ func (r *Repository) GetActionPolicy(ctx context.Context, companyID, action stri
 		&p.ActionCode, &p.RequiredPermission, &p.ScopeType, &p.WorkflowState, &p.EligibleActor, &p.EffectType, &p.DenyReasonCode,
 	)
 	if err == nil {
+		action = strings.TrimSpace(action)
+		legacy := legacyPolicy(action)
+		// Mis-seeded matrix rows often default to system.settings; prefer explicit legacy mapping
+		// for actions like company.view when the user holds the action permission but not system.settings.
+		if legacy.RequiredPermission != "system.settings" && p.RequiredPermission == "system.settings" {
+			return legacy, nil
+		}
 		return &p, nil
 	}
 	if isMySQLMissingTable(err) {
@@ -240,6 +247,10 @@ func legacyPolicy(action string) *authapp.ActionPolicy {
 		required = "system.settings"
 	case "dashboard.view":
 		required = "dashboard.view"
+	case "company.view":
+		required = "company.view"
+	case "company.edit":
+		required = "company.edit"
 	case "ad_hoc_alert.read":
 		required = "ad_hoc_alert.read"
 	case "ad_hoc_alert.propose":

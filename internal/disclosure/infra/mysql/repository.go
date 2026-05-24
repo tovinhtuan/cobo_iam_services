@@ -367,6 +367,33 @@ func (r *Repository) batchLoadActiveWorkflowFlags(ctx context.Context, typeIDs [
 	return result, rows.Err()
 }
 
+func (r *Repository) HasActiveEnterpriseWorkflow(ctx context.Context, typeID string) (bool, error) {
+	flags, err := r.batchLoadActiveWorkflowFlags(ctx, []string{typeID})
+	if err != nil {
+		return false, err
+	}
+	return flags[typeID], nil
+}
+
+func (r *Repository) replaceTemplateDisplayGroups(ctx context.Context, tx *sql.Tx, typeID string, codes []string) error {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM template_display_groups WHERE template_id = ?`, typeID); err != nil {
+		return fmt.Errorf("delete template_display_groups: %w", err)
+	}
+	for i, code := range codes {
+		code = strings.TrimSpace(code)
+		if code == "" {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO template_display_groups (template_id, display_group_code, display_order)
+			VALUES (?, ?, ?)
+		`, typeID, code, i+1); err != nil {
+			return fmt.Errorf("insert template_display_groups: %w", err)
+		}
+	}
+	return nil
+}
+
 func (r *Repository) GetTypeDetail(ctx context.Context, companyID, typeID string) (*disclosureapp.DisclosureTypeDTO, error) {
 	row := r.db.QueryRowContext(ctx, `
 		SELECT
@@ -522,6 +549,16 @@ func (r *Repository) GetTypeVersionDetail(ctx context.Context, companyID, typeID
 	}
 	item.Blocks = blocks
 	item.HasWorkflow = disclosureapp.TemplateHasWorkflow(item.Blocks)
+	// Load display_group_codes from junction table (same as GetTypeDetail).
+	groupsByType, err := r.batchLoadDisplayGroupCodes(ctx, []string{typeID})
+	if err != nil {
+		return nil, err
+	}
+	if codes, ok := groupsByType[typeID]; ok {
+		item.DisplayGroupCodes = codes
+	} else {
+		item.DisplayGroupCodes = []string{}
+	}
 	return &item, nil
 }
 
@@ -570,9 +607,15 @@ func (r *Repository) UpsertTypeVersion(ctx context.Context, req disclosureapp.Up
 			return nil, err
 		}
 	}
-	nextVersion := 1
-	if currentVersion.Valid && currentVersion.Int64 > 0 {
-		nextVersion = int(currentVersion.Int64) + 1
+	var maxVersion sql.NullInt64
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COALESCE(MAX(version_no), 0) FROM disclosure_type_versions WHERE type_id = ?
+	`, req.TypeID).Scan(&maxVersion); err != nil {
+		return nil, err
+	}
+	nextVersion := int(maxVersion.Int64) + 1
+	if nextVersion < 1 {
+		nextVersion = 1
 	}
 	tagsJSON, err := json.Marshal(req.Tags)
 	if err != nil {
@@ -651,6 +694,9 @@ func (r *Repository) UpsertTypeVersion(ctx context.Context, req disclosureapp.Up
 		WHERE type_id = ?
 	`, groupID, activeVersionNo, req.TypeID)
 	if err != nil {
+		return nil, err
+	}
+	if err := r.replaceTemplateDisplayGroups(ctx, tx, req.TypeID, req.DisplayGroupCodes); err != nil {
 		return nil, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -1680,6 +1726,14 @@ func (r *Repository) UpsertCompanyTypePreference(ctx context.Context, in disclos
 		return fmt.Errorf("upsert company type preference: %w", err)
 	}
 	return nil
+}
+
+func (r *Repository) CountCompanyTemplatesByCompanyID(ctx context.Context, companyID string) (int, error) {
+	var count int
+	err := r.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM disclosure_types WHERE company_id = ? AND status != 'archived'`,
+		companyID).Scan(&count)
+	return count, err
 }
 
 // BE-004A — Company-defined template persistence (portal path).

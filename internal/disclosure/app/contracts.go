@@ -72,6 +72,7 @@ type Repository interface {
 	ListTypes(ctx context.Context, params ListTypesParams) ([]DisclosureTypeSummaryDTO, int, error)
 	GetTypeDetail(ctx context.Context, companyID, typeID string) (*DisclosureTypeDTO, error)
 	GetTypeVersionDetail(ctx context.Context, companyID, typeID string, versionNo int) (*DisclosureTypeDTO, error)
+	HasActiveEnterpriseWorkflow(ctx context.Context, typeID string) (bool, error)
 	UpsertTypeVersion(ctx context.Context, req UpsertTypeVersionRequest) (*UpsertTypeVersionResponse, error)
 	ListTypeVersions(ctx context.Context, companyID, typeID string) ([]DisclosureTypeVersionDTO, error)
 	ActivateTypeVersion(ctx context.Context, req ActivateTypeVersionRequest) (*ActivateTypeVersionResponse, error)
@@ -102,6 +103,9 @@ type Repository interface {
 	ListAllActiveCompanyIDs(ctx context.Context) ([]string, error)
 	GetCompanyTypePreference(ctx context.Context, companyID, typeID string) (*CompanyTypePreference, error)
 	UpsertCompanyTypePreference(ctx context.Context, in CompanyTypePreference) error
+
+	// Subscription quota.
+	CountCompanyTemplatesByCompanyID(ctx context.Context, companyID string) (int, error)
 
 	// CMS catalog management (Sprint 2).
 	ListActiveDeadlineRuleCatalog(ctx context.Context) ([]DeadlineRuleCatalogDTO, error)
@@ -259,6 +263,7 @@ type UpsertTypeVersionRequest struct {
 	Tags                  []string                `json:"tags"`
 	DeadlineConfig        *TemplateDeadlineConfig `json:"deadline_config,omitempty"`
 	Blocks                []TemplateBlockDTO      `json:"blocks"`
+	DisplayGroupCodes     []string                `json:"display_group_codes"`
 	ChangeNote            string                  `json:"change_note"`
 }
 

@@ -69,6 +69,13 @@ seed_dev_identity_authorization.sql
 0063_dev_platform_tenant_dual_admin.up.sql
 0064_platform_tenant_admin_process_control.up.sql
 0065_adhoc_proposed_deadline_days.up.sql
+0066_dev_company_profile_permissions.up.sql
+0067_dev_company_profile_permissions_fix.up.sql
+0068_fix_action_policy_company_profile.up.sql
+0069_template_display_groups_backfill.up.sql
+0070_prune_legacy_display_groups.up.sql
+0071_cms_template_write_from_platform_cms_view.up.sql
+0072_fix_display_groups_vietnamese_labels.up.sql
 "
 
 mysql_exec() {

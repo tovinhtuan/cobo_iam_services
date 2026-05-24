@@ -18,7 +18,8 @@ type Repository struct {
 	items                 map[string]disclosureapp.RecordDTO
 	groups                []disclosureapp.DisclosureGroupDTO
 	displayGroups         []disclosureapp.DisplayGroupDTO
-	displayGroupCodes     map[string]string
+	displayGroupCodes         map[string]string
+	templateDisplayGroupCodes map[string][]string
 	catalog               map[string]disclosureapp.DisclosureTypeDTO
 	catalogByVer          map[string]map[int]disclosureapp.DisclosureTypeDTO
 	versions              map[string][]disclosureapp.DisclosureTypeVersionDTO
@@ -37,7 +38,8 @@ func NewRepository() *Repository {
 		items:                 map[string]disclosureapp.RecordDTO{},
 		groups:                disclosureapp.SeedDisclosureTypeGroups(),
 		displayGroups:         disclosureapp.SeedDisplayGroups(),
-		displayGroupCodes:     map[string]string{},
+		displayGroupCodes:         map[string]string{},
+		templateDisplayGroupCodes: map[string][]string{},
 		catalog:               map[string]disclosureapp.DisclosureTypeDTO{},
 		catalogByVer:          map[string]map[int]disclosureapp.DisclosureTypeDTO{},
 		versions:              map[string][]disclosureapp.DisclosureTypeVersionDTO{},
@@ -77,6 +79,11 @@ func NewRepository() *Repository {
 		repo.catalogByVer[item.TypeID] = map[int]disclosureapp.DisclosureTypeDTO{1: item}
 		repo.catalogScope[item.TypeID] = "global"
 		repo.displayGroupCodes[item.TypeID] = item.DisplayGroupCode
+		if len(item.DisplayGroupCodes) > 0 {
+			repo.templateDisplayGroupCodes[item.TypeID] = slices.Clone(item.DisplayGroupCodes)
+		} else if code := strings.TrimSpace(item.DisplayGroupCode); code != "" {
+			repo.templateDisplayGroupCodes[item.TypeID] = []string{code}
+		}
 		repo.versions[item.TypeID] = []disclosureapp.DisclosureTypeVersionDTO{
 			{
 				TypeID:      item.TypeID,
@@ -193,6 +200,9 @@ func (r *Repository) ListTypes(_ context.Context, params disclosureapp.ListTypes
 			GroupID:          item.GroupID,
 			DisplayGroupCode: r.displayGroupCodes[item.TypeID],
 			DisplayGroupCodes: func() []string {
+				if codes := r.templateDisplayGroupCodes[item.TypeID]; len(codes) > 0 {
+					return slices.Clone(codes)
+				}
 				if c := r.displayGroupCodes[item.TypeID]; c != "" {
 					return []string{c}
 				}
@@ -248,8 +258,23 @@ func (r *Repository) GetTypeDetail(_ context.Context, companyID, typeID string) 
 	cp.Checklist = slices.Clone(item.Checklist)
 	cp.Blocks = cloneTemplateBlocks(item.Blocks)
 	cp.HasWorkflow = disclosureapp.TemplateHasWorkflow(cp.Blocks)
+	if codes := r.templateDisplayGroupCodes[typeID]; len(codes) > 0 {
+		cp.DisplayGroupCodes = slices.Clone(codes)
+	} else if code := strings.TrimSpace(r.displayGroupCodes[typeID]); code != "" {
+		cp.DisplayGroupCodes = []string{code}
+	}
 	disclosureapp.EnrichTemplateBlockDisplayNames(cp.Blocks)
 	return &cp, nil
+}
+
+func (r *Repository) HasActiveEnterpriseWorkflow(_ context.Context, typeID string) (bool, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	item, ok := r.catalog[typeID]
+	if !ok {
+		return false, nil
+	}
+	return disclosureapp.TemplateHasWorkflow(item.Blocks), nil
 }
 
 func (r *Repository) GetTypeVersionDetail(_ context.Context, companyID, typeID string, versionNo int) (*disclosureapp.DisclosureTypeDTO, error) {
@@ -280,6 +305,11 @@ func (r *Repository) GetTypeVersionDetail(_ context.Context, companyID, typeID s
 	cp.Checklist = slices.Clone(item.Checklist)
 	cp.Blocks = cloneTemplateBlocks(item.Blocks)
 	cp.HasWorkflow = disclosureapp.TemplateHasWorkflow(cp.Blocks)
+	if codes := r.templateDisplayGroupCodes[typeID]; len(codes) > 0 {
+		cp.DisplayGroupCodes = slices.Clone(codes)
+	} else if code := strings.TrimSpace(r.displayGroupCodes[typeID]); code != "" {
+		cp.DisplayGroupCodes = []string{code}
+	}
 	disclosureapp.EnrichTemplateBlockDisplayNames(cp.Blocks)
 	return &cp, nil
 }
@@ -290,8 +320,10 @@ func (r *Repository) UpsertTypeVersion(_ context.Context, req disclosureapp.Upse
 
 	current, existed := r.catalog[req.TypeID]
 	versionNo := 1
-	if existed {
-		versionNo = current.VersionNo + 1
+	for _, ver := range r.versions[req.TypeID] {
+		if ver.VersionNo >= versionNo {
+			versionNo = ver.VersionNo + 1
+		}
 	}
 	next := disclosureapp.DisclosureTypeDTO{
 		VersionNo:             versionNo,
@@ -323,6 +355,12 @@ func (r *Repository) UpsertTypeVersion(_ context.Context, req disclosureapp.Upse
 		Checklist:             slices.Clone(req.Checklist),
 		Tags:                  slices.Clone(req.Tags),
 		Blocks:                cloneTemplateBlocks(req.Blocks),
+	}
+	r.templateDisplayGroupCodes[req.TypeID] = slices.Clone(req.DisplayGroupCodes)
+	if len(req.DisplayGroupCodes) > 0 {
+		next.DisplayGroupCodes = slices.Clone(req.DisplayGroupCodes)
+		next.DisplayGroupCode = req.DisplayGroupCodes[0]
+		r.displayGroupCodes[req.TypeID] = req.DisplayGroupCodes[0]
 	}
 	r.catalog[req.TypeID] = next
 	if _, ok := r.catalogByVer[req.TypeID]; !ok {
@@ -735,6 +773,18 @@ func (r *Repository) GetCompanyTypePreference(_ context.Context, _, _ string) (*
 
 func (r *Repository) UpsertCompanyTypePreference(_ context.Context, _ disclosureapp.CompanyTypePreference) error {
 	return nil
+}
+
+func (r *Repository) CountCompanyTemplatesByCompanyID(_ context.Context, companyID string) (int, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	count := 0
+	for _, dt := range r.catalog {
+		if dt.OwnerCompanyID == companyID {
+			count++
+		}
+	}
+	return count, nil
 }
 
 // BE-004A stubs — in-memory path not used in production for these write APIs.

@@ -69,6 +69,9 @@ seed_dev_identity_authorization.sql
 0063_dev_platform_tenant_dual_admin.up.sql
 0064_platform_tenant_admin_process_control.up.sql
 0065_adhoc_proposed_deadline_days.up.sql
+0066_dev_company_profile_permissions.up.sql
+0067_dev_company_profile_permissions_fix.up.sql
+0068_fix_action_policy_company_profile.up.sql
 "
 
 mysql_exec() {
