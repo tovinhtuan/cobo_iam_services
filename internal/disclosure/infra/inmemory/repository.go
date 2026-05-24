@@ -24,6 +24,7 @@ type Repository struct {
 	versions              map[string][]disclosureapp.DisclosureTypeVersionDTO
 	catalogScope          map[string]string
 	overrideByCompanyType map[string]*overrideState
+	globalWorkflows       map[string]*disclosureapp.GlobalWorkflowDTO
 }
 
 type overrideState struct {
@@ -153,22 +154,6 @@ func (r *Repository) ListDisplayGroups(_ context.Context) ([]disclosureapp.Displ
 	return out, nil
 }
 
-func (r *Repository) ListActiveDeadlineRuleCatalog(_ context.Context) ([]disclosureapp.DeadlineRuleCatalogDTO, error) {
-	return []disclosureapp.DeadlineRuleCatalogDTO{
-		{
-			Code:      "T+N",
-			LabelVI:   "Trong vòng N ngày kể từ ngày sự kiện",
-			Pattern:   `^T\+\d+$`,
-			InputType: "number",
-		},
-		{
-			Code:      "dd/mm",
-			LabelVI:   "Ngày dd/mm hàng năm",
-			Pattern:   `^\d{2}/\d{2}$`,
-			InputType: "date_dm",
-		},
-	}, nil
-}
 
 func (r *Repository) ListTypes(_ context.Context, params disclosureapp.ListTypesParams) ([]disclosureapp.DisclosureTypeSummaryDTO, int, error) {
 	r.mu.RLock()

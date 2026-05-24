@@ -39,7 +39,7 @@ func (s *service) CreateProposal(ctx context.Context, req CreateProposalRequest)
 	}
 	templateCategory, err := s.typeCatalog.GetTemplateCategory(ctx, req.Subject.CompanyID, req.TypeID)
 	if err != nil {
-		return nil, err
+		return nil, mapRepositoryError(err)
 	}
 	if strings.TrimSpace(strings.ToLower(templateCategory)) != "irregular" {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "ad-hoc proposals are only supported for irregular templates", nil)
@@ -60,7 +60,13 @@ func (s *service) CreateProposal(ctx context.Context, req CreateProposalRequest)
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "process_controller_membership_id is required", nil)
 	}
 	if pcID == req.Subject.MembershipID {
-		return nil, perr.NewHTTPError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, "process controller cannot be the creator", nil)
+		allowSelf, err := s.creatorMaySelfAssignProcessController(ctx, req.Subject.CompanyID, req.Subject.MembershipID)
+		if err != nil {
+			return nil, mapRepositoryError(fmt.Errorf("check creator process controller eligibility: %w", err))
+		}
+		if !allowSelf {
+			return nil, perr.NewHTTPError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, "process controller cannot be the creator", nil)
+		}
 	}
 	if s.membershipValidator != nil {
 		active, err := s.membershipValidator.IsActiveMembership(ctx, req.Subject.CompanyID, pcID)
@@ -74,7 +80,10 @@ func (s *service) CreateProposal(ctx context.Context, req CreateProposalRequest)
 	}
 
 	t0 := strings.TrimSpace(req.ProposedT0Date)
-	dl := strings.TrimSpace(req.ProposedDeadline)
+	deadlineDays, deadlineDate, err := resolveProposedDeadline(t0, req.ProposedDeadline, req.ProposedDeadlineDays)
+	if err != nil {
+		return nil, err
+	}
 	p := ProposalDTO{
 		ProposalID:          s.idg.NewUUID(),
 		CompanyID:           req.Subject.CompanyID,
@@ -88,10 +97,10 @@ func (s *service) CreateProposal(ctx context.Context, req CreateProposalRequest)
 	if t0 != "" {
 		p.ProposedT0Date = &t0
 	}
-	if dl != "" {
-		p.ProposedDeadlineDate = &dl
-	}
-	return s.repo.Insert(ctx, p)
+	p.ProposedDeadlineDays = deadlineDays
+	p.ProposedDeadlineDate = deadlineDate
+	out, err := s.repo.Insert(ctx, p)
+	return out, mapRepositoryError(err)
 }
 
 func (s *service) SubmitProposal(ctx context.Context, req ProposalActionRequest) (*ProposalDTO, error) {
@@ -322,7 +331,22 @@ func (s *service) ListEligibleControllers(ctx context.Context, req ListEligibleC
 	if s.membershipValidator == nil {
 		return []EligibleController{}, nil
 	}
-	return s.membershipValidator.ListMembersWithPermission(ctx, req.Subject.CompanyID, "ad_hoc_alert.process_control", req.Subject.MembershipID)
+	excludeMembershipID := req.Subject.MembershipID
+	allowSelf, err := s.creatorMaySelfAssignProcessController(ctx, req.Subject.CompanyID, req.Subject.MembershipID)
+	if err != nil {
+		return nil, fmt.Errorf("check creator process controller eligibility: %w", err)
+	}
+	if allowSelf {
+		excludeMembershipID = ""
+	}
+	return s.membershipValidator.ListMembersWithPermission(ctx, req.Subject.CompanyID, "ad_hoc_alert.process_control", excludeMembershipID)
+}
+
+func (s *service) creatorMaySelfAssignProcessController(ctx context.Context, companyID, membershipID string) (bool, error) {
+	if s.membershipValidator == nil {
+		return false, nil
+	}
+	return s.membershipValidator.HasActiveRoleCode(ctx, companyID, membershipID, RoleCodeAdminDoanhNghiep)
 }
 
 func (s *service) authorize(ctx context.Context, sub Subject, action string, resource authapp.ResourceRef) error {
@@ -332,7 +356,7 @@ func (s *service) authorize(ctx context.Context, sub Subject, action string, res
 		Resource: resource,
 	})
 	if err != nil {
-		return fmt.Errorf("authorize adhoc action: %w", err)
+		return mapRepositoryError(fmt.Errorf("authorize adhoc action: %w", err))
 	}
 	if decision.Decision != authapp.DecisionAllow {
 		code := perr.CodePermissionDenied

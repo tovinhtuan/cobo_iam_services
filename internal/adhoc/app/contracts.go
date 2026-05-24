@@ -67,8 +67,12 @@ type EligibleController struct {
 type MembershipValidator interface {
 	IsActiveMembership(ctx context.Context, companyID, membershipID string) (bool, error)
 	HasPermission(ctx context.Context, companyID, membershipID, permissionCode string) (bool, error)
+	HasActiveRoleCode(ctx context.Context, companyID, membershipID, roleCode string) (bool, error)
 	ListMembersWithPermission(ctx context.Context, companyID, permissionCode, excludeMembershipID string) ([]EligibleController, error)
 }
+
+// RoleCodeAdminDoanhNghiep is the tenant company-admin role that may self-assign as process controller.
+const RoleCodeAdminDoanhNghiep = "admin_doanh_nghiep"
 
 type Subject struct {
 	UserID       string
@@ -88,7 +92,8 @@ type CreateProposalRequest struct {
 	TypeID                       string                 `json:"type_id"`
 	StepOverrides                []WorkflowStepOverride `json:"step_overrides"`
 	ProposedT0Date               string                 `json:"proposed_t0_date,omitempty"` // YYYY-MM-DD
-	ProposedDeadline             string                 `json:"proposed_deadline_date,omitempty"`
+	ProposedDeadlineDays         int                    `json:"proposed_deadline_days,omitempty"`
+	ProposedDeadline             string                 `json:"proposed_deadline_date,omitempty"` // YYYY-MM-DD or legacy day count string
 	ChangeNote                   string                 `json:"change_note,omitempty"`
 	ProcessControllerMembershipID string                `json:"process_controller_membership_id,omitempty"`
 }
@@ -164,7 +169,8 @@ type ProposalDTO struct {
 	FinalT0Date             *string                `json:"final_t0_date,omitempty"`
 	FinalDeadlineDate       *string                `json:"final_deadline_date,omitempty"`
 	AdjustmentNote          string                 `json:"adjustment_note,omitempty"`
-	ProposedDeadlineDate    *string                `json:"proposed_deadline_date,omitempty"`
+	ProposedDeadlineDays    *int                   `json:"proposed_deadline_days,omitempty"`
+	ProposedDeadlineDate    *string                `json:"proposed_deadline_date,omitempty"` // calendar date when set explicitly
 	ChangeNote              string                 `json:"change_note,omitempty"`
 	FocalApprovedBy         string                 `json:"focal_approved_by,omitempty"`
 	FocalApprovedAt         *time.Time             `json:"focal_approved_at,omitempty"`

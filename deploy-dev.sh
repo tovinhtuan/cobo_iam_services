@@ -291,6 +291,16 @@ verify() {
   else
     log_warn "/readyz: ${readyz:-không phản hồi}"
   fi
+
+  log_step "Verify: nginx proxy /api (port 3000)"
+  code300="$(ssh_exec "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/api/v1/auth/login-password-key 2>/dev/null || echo 000")"
+  if [ "$code300" = "200" ] || [ "$code300" = "204" ]; then
+    log_ok "/api/v1/auth/login-password-key via :3000 → HTTP $code300"
+  else
+    log_warn "login-password-key via :3000 → HTTP ${code300:-000} (502 thường do API down hoặc nginx chưa proxy được)"
+    log_info "Chạy trên server: sh ${DEV_PATH}/fix-dev-web-perms.sh"
+    log_info "Hoặc local: make dev-fix-web-perms"
+  fi
 }
 
 # =============================================================================

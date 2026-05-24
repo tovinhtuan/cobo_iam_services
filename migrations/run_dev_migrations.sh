@@ -43,6 +43,9 @@ seed_dev_identity_authorization.sql
 0035_disclosure_display_groups.up.sql
 0036_fix_unicode_mojibake.up.sql
 0037_adhoc_admin_approve_final_fields.up.sql
+0040_company_type_preferences.up.sql
+0041_adhoc_admin_approve_progress.up.sql
+0042_adhoc_process_controller.up.sql
 0043_membership_direct_permissions.up.sql
 0044_role_default_grant_permissions.up.sql
 0045_backfill_workflow_read_permission.up.sql
@@ -58,6 +61,14 @@ seed_dev_identity_authorization.sql
 0055_cms_system_template_seed.up.sql
 0056_company_template_lifecycle.up.sql
 0057_workflow_override_versioning.up.sql
+0058_cms_template_permissions.up.sql
+0059_global_workflows.up.sql
+0060_deadline_rule_catalog.up.sql
+0061_dev_ad_hoc_propose_admin_cms.up.sql
+0062_admin_doanh_nghiep_process_control.up.sql
+0063_dev_platform_tenant_dual_admin.up.sql
+0064_platform_tenant_admin_process_control.up.sql
+0065_adhoc_proposed_deadline_days.up.sql
 "
 
 mysql_exec() {
@@ -112,7 +123,10 @@ for file in ${MIGRATIONS}; do
   fi
 
   echo "Applying migration: ${file}"
-  mysql_exec < "migrations/${file}"
+  if ! mysql_exec < "migrations/${file}"; then
+    echo "ERROR: migration failed: ${file}" >&2
+    exit 1
+  fi
   mysql_exec -e "INSERT INTO schema_migrations(file_name) VALUES ('${file}')"
 done
 

@@ -3,10 +3,10 @@ package mysql
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	adhocapp "github.com/cobo/cobo_iam_services/internal/adhoc/app"
@@ -15,6 +15,10 @@ import (
 
 type Repository struct {
 	db *sql.DB
+
+	deadlineDaysColOnce sync.Once
+	deadlineDaysColOK   bool
+	deadlineDaysColErr  error
 }
 
 func NewRepository(db *sql.DB) *Repository {
@@ -22,18 +26,39 @@ func NewRepository(db *sql.DB) *Repository {
 }
 
 func (r *Repository) Insert(ctx context.Context, p adhocapp.ProposalDTO) (*adhocapp.ProposalDTO, error) {
-	overridesJSON, err := json.Marshal(p.StepOverrides)
+	hasDaysCol, err := r.hasProposedDeadlineDaysColumn(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("marshal step_overrides: %w", err)
+		return nil, fmt.Errorf("check ad_hoc_proposals schema: %w", err)
 	}
-	_, err = r.db.ExecContext(ctx, `
-		INSERT INTO ad_hoc_proposals
-			(proposal_id, company_id, type_id, status, proposed_workflow_json, proposed_t0_date,
-			 proposed_deadline_date, change_note, created_by, process_controller_id)
-		VALUES (?, ?, ?, ?, CAST(? AS JSON), ?, ?, ?, ?, ?)
-	`, p.ProposalID, p.CompanyID, p.TypeID, p.Status, string(overridesJSON),
-		nullableStr(p.ProposedT0Date), nullableStr(p.ProposedDeadlineDate),
-		nullIfBlank(p.ChangeNote), p.CreatedBy, nullIfBlank(p.ProcessControllerID))
+
+	embedDays := p.ProposedDeadlineDays
+	if hasDaysCol {
+		overridesJSON, mErr := marshalProposedWorkflowJSON(p.StepOverrides, nil)
+		if mErr != nil {
+			return nil, fmt.Errorf("marshal step_overrides: %w", mErr)
+		}
+		_, err = r.db.ExecContext(ctx, `
+			INSERT INTO ad_hoc_proposals
+				(proposal_id, company_id, type_id, status, proposed_workflow_json, proposed_t0_date,
+				 proposed_deadline_date, proposed_deadline_days, change_note, created_by, process_controller_id)
+			VALUES (?, ?, ?, ?, CAST(? AS JSON), ?, ?, ?, ?, ?, ?)
+		`, p.ProposalID, p.CompanyID, p.TypeID, p.Status, overridesJSON,
+			nullableStr(p.ProposedT0Date), nullableStr(p.ProposedDeadlineDate), nullableInt(p.ProposedDeadlineDays),
+			nullIfBlank(p.ChangeNote), p.CreatedBy, nullIfBlank(p.ProcessControllerID))
+	} else {
+		overridesJSON, mErr := marshalProposedWorkflowJSON(p.StepOverrides, embedDays)
+		if mErr != nil {
+			return nil, fmt.Errorf("marshal step_overrides: %w", mErr)
+		}
+		_, err = r.db.ExecContext(ctx, `
+			INSERT INTO ad_hoc_proposals
+				(proposal_id, company_id, type_id, status, proposed_workflow_json, proposed_t0_date,
+				 proposed_deadline_date, change_note, created_by, process_controller_id)
+			VALUES (?, ?, ?, ?, CAST(? AS JSON), ?, ?, ?, ?, ?)
+		`, p.ProposalID, p.CompanyID, p.TypeID, p.Status, overridesJSON,
+			nullableStr(p.ProposedT0Date), nullableStr(p.ProposedDeadlineDate),
+			nullIfBlank(p.ChangeNote), p.CreatedBy, nullIfBlank(p.ProcessControllerID))
+	}
 	if err != nil {
 		return nil, fmt.Errorf("insert ad_hoc_proposal: %w", err)
 	}
@@ -41,17 +66,16 @@ func (r *Repository) Insert(ctx context.Context, p adhocapp.ProposalDTO) (*adhoc
 }
 
 func (r *Repository) FindByID(ctx context.Context, companyID, proposalID string) (*adhocapp.ProposalDTO, error) {
+	cols, includeDays, err := r.proposalDetailColumns(ctx)
+	if err != nil {
+		return nil, err
+	}
 	row := r.db.QueryRowContext(ctx, `
-		SELECT proposal_id, company_id, type_id, status, proposed_workflow_json,
-		       proposed_t0_date, proposed_deadline_date, change_note,
-		       final_t0_date, final_deadline_date, adjustment_note,
-		       focal_approved_by, focal_approved_at, admin_approved_by, admin_approved_at,
-		       rejected_by, rejected_at, reject_reason,
-		       record_id, workflow_instance_id, created_by, process_controller_id, created_at, updated_at
+		SELECT `+cols+`
 		FROM ad_hoc_proposals
 		WHERE proposal_id = ? AND company_id = ?
 	`, proposalID, companyID)
-	return scanProposal(row)
+	return scanProposalRow(row, includeDays)
 }
 
 func (r *Repository) UpdateStatus(ctx context.Context, upd adhocapp.StatusUpdate) (*adhocapp.ProposalDTO, error) {
@@ -102,19 +126,18 @@ func (r *Repository) ReserveAdminApproval(ctx context.Context, in adhocapp.Reser
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	cols, includeDays, err := r.proposalDetailColumns(ctx)
+	if err != nil {
+		return nil, err
+	}
 	row := tx.QueryRowContext(ctx, `
-		SELECT proposal_id, company_id, type_id, status, proposed_workflow_json,
-		       proposed_t0_date, proposed_deadline_date, change_note,
-		       final_t0_date, final_deadline_date, adjustment_note,
-		       focal_approved_by, focal_approved_at, admin_approved_by, admin_approved_at,
-		       rejected_by, rejected_at, reject_reason,
-		       record_id, workflow_instance_id, created_by, process_controller_id, created_at, updated_at,
+		SELECT `+cols+`,
 		       approval_idempotency_key, approval_record_id, approval_workflow_instance_id
 		FROM ad_hoc_proposals
 		WHERE proposal_id = ? AND company_id = ?
 		FOR UPDATE
 	`, in.ProposalID, in.CompanyID)
-	p, approvalKey, progressRecordID, progressWorkflowID, err := scanProposalWithApprovalState(row)
+	p, approvalKey, progressRecordID, progressWorkflowID, err := scanProposalWithApprovalState(row, includeDays)
 	if err != nil {
 		return nil, err
 	}
@@ -232,13 +255,12 @@ func (r *Repository) List(ctx context.Context, companyID string, statusFilter []
 
 	offset := (page - 1) * pageSize
 	listArgs := append(countArgs, pageSize, offset)
+	cols, includeDays, err := r.proposalDetailColumns(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT proposal_id, company_id, type_id, status, proposed_workflow_json,
-		       proposed_t0_date, proposed_deadline_date, change_note,
-		       final_t0_date, final_deadline_date, adjustment_note,
-		       focal_approved_by, focal_approved_at, admin_approved_by, admin_approved_at,
-		       rejected_by, rejected_at, reject_reason,
-		       record_id, workflow_instance_id, created_by, process_controller_id, created_at, updated_at
+		SELECT `+cols+`
 		FROM ad_hoc_proposals
 		WHERE company_id = ?`+whereExtra+`
 		ORDER BY created_at DESC
@@ -251,7 +273,7 @@ func (r *Repository) List(ctx context.Context, companyID string, statusFilter []
 
 	var out []adhocapp.ProposalDTO
 	for rows.Next() {
-		p, err := scanProposalRow(rows)
+		p, err := scanProposalRow(rows, includeDays)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -266,37 +288,43 @@ type rowScanner interface {
 	Scan(dest ...any) error
 }
 
-func scanProposal(row *sql.Row) (*adhocapp.ProposalDTO, error) {
-	return scanProposalRow(row)
-}
-
-func scanProposalRow(row rowScanner) (*adhocapp.ProposalDTO, error) {
+func scanProposalRow(row rowScanner, includeDeadlineDaysCol bool) (*adhocapp.ProposalDTO, error) {
 	var p adhocapp.ProposalDTO
 	var overridesRaw string
 	var t0Date, dlDate, finalT0Date, finalDeadlineDate, focalBy, adminBy, rejectedBy sql.NullString
+	var dlDays sql.NullInt32
 	var focalAt, adminAt, rejectedAt sql.NullTime
 	var recordID, wfiID, processControllerID sql.NullString
 	var changeNote, adjustmentNote, rejectReason sql.NullString
 
-	if err := row.Scan(
-		&p.ProposalID, &p.CompanyID, &p.TypeID, &p.Status, &overridesRaw,
-		&t0Date, &dlDate, &changeNote,
-		&finalT0Date, &finalDeadlineDate, &adjustmentNote,
-		&focalBy, &focalAt, &adminBy, &adminAt,
-		&rejectedBy, &rejectedAt, &rejectReason,
-		&recordID, &wfiID, &p.CreatedBy, &processControllerID, &p.CreatedAt, &p.UpdatedAt,
-	); err != nil {
+	var err error
+	if includeDeadlineDaysCol {
+		err = row.Scan(
+			&p.ProposalID, &p.CompanyID, &p.TypeID, &p.Status, &overridesRaw,
+			&t0Date, &dlDate, &dlDays, &changeNote,
+			&finalT0Date, &finalDeadlineDate, &adjustmentNote,
+			&focalBy, &focalAt, &adminBy, &adminAt,
+			&rejectedBy, &rejectedAt, &rejectReason,
+			&recordID, &wfiID, &p.CreatedBy, &processControllerID, &p.CreatedAt, &p.UpdatedAt,
+		)
+	} else {
+		err = row.Scan(
+			&p.ProposalID, &p.CompanyID, &p.TypeID, &p.Status, &overridesRaw,
+			&t0Date, &dlDate, &changeNote,
+			&finalT0Date, &finalDeadlineDate, &adjustmentNote,
+			&focalBy, &focalAt, &adminBy, &adminAt,
+			&rejectedBy, &rejectedAt, &rejectReason,
+			&recordID, &wfiID, &p.CreatedBy, &processControllerID, &p.CreatedAt, &p.UpdatedAt,
+		)
+	}
+	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "proposal not found", nil)
 		}
 		return nil, fmt.Errorf("scan proposal: %w", err)
 	}
 
-	if overridesRaw != "" && overridesRaw != "null" {
-		if err := json.Unmarshal([]byte(overridesRaw), &p.StepOverrides); err != nil {
-			return nil, fmt.Errorf("unmarshal step_overrides: %w", err)
-		}
-	}
+	applyProposedWorkflowFields(&p, overridesRaw, dlDays)
 	if t0Date.Valid {
 		p.ProposedT0Date = &t0Date.String
 	}
@@ -351,34 +379,45 @@ func scanProposalRow(row rowScanner) (*adhocapp.ProposalDTO, error) {
 	return &p, nil
 }
 
-func scanProposalWithApprovalState(row rowScanner) (*adhocapp.ProposalDTO, string, string, string, error) {
+func scanProposalWithApprovalState(row rowScanner, includeDeadlineDaysCol bool) (*adhocapp.ProposalDTO, string, string, string, error) {
 	var p adhocapp.ProposalDTO
 	var overridesRaw string
 	var t0Date, dlDate, finalT0Date, finalDeadlineDate, focalBy, adminBy, rejectedBy sql.NullString
+	var dlDays sql.NullInt32
 	var focalAt, adminAt, rejectedAt sql.NullTime
 	var recordID, wfiID, processControllerID sql.NullString
 	var changeNote, adjustmentNote, rejectReason sql.NullString
 	var approvalKey, approvalRecordID, approvalWorkflowID sql.NullString
 
-	if err := row.Scan(
-		&p.ProposalID, &p.CompanyID, &p.TypeID, &p.Status, &overridesRaw,
-		&t0Date, &dlDate, &changeNote,
-		&finalT0Date, &finalDeadlineDate, &adjustmentNote,
-		&focalBy, &focalAt, &adminBy, &adminAt,
-		&rejectedBy, &rejectedAt, &rejectReason,
-		&recordID, &wfiID, &p.CreatedBy, &processControllerID, &p.CreatedAt, &p.UpdatedAt,
-		&approvalKey, &approvalRecordID, &approvalWorkflowID,
-	); err != nil {
+	var err error
+	if includeDeadlineDaysCol {
+		err = row.Scan(
+			&p.ProposalID, &p.CompanyID, &p.TypeID, &p.Status, &overridesRaw,
+			&t0Date, &dlDate, &dlDays, &changeNote,
+			&finalT0Date, &finalDeadlineDate, &adjustmentNote,
+			&focalBy, &focalAt, &adminBy, &adminAt,
+			&rejectedBy, &rejectedAt, &rejectReason,
+			&recordID, &wfiID, &p.CreatedBy, &processControllerID, &p.CreatedAt, &p.UpdatedAt,
+			&approvalKey, &approvalRecordID, &approvalWorkflowID,
+		)
+	} else {
+		err = row.Scan(
+			&p.ProposalID, &p.CompanyID, &p.TypeID, &p.Status, &overridesRaw,
+			&t0Date, &dlDate, &changeNote,
+			&finalT0Date, &finalDeadlineDate, &adjustmentNote,
+			&focalBy, &focalAt, &adminBy, &adminAt,
+			&rejectedBy, &rejectedAt, &rejectReason,
+			&recordID, &wfiID, &p.CreatedBy, &processControllerID, &p.CreatedAt, &p.UpdatedAt,
+			&approvalKey, &approvalRecordID, &approvalWorkflowID,
+		)
+	}
+	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, "", "", "", perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "proposal not found", nil)
 		}
 		return nil, "", "", "", fmt.Errorf("scan proposal: %w", err)
 	}
-	if overridesRaw != "" && overridesRaw != "null" {
-		if err := json.Unmarshal([]byte(overridesRaw), &p.StepOverrides); err != nil {
-			return nil, "", "", "", fmt.Errorf("unmarshal step_overrides: %w", err)
-		}
-	}
+	applyProposedWorkflowFields(&p, overridesRaw, dlDays)
 	if t0Date.Valid {
 		p.ProposedT0Date = &t0Date.String
 	}
@@ -433,6 +472,22 @@ func scanProposalWithApprovalState(row rowScanner) (*adhocapp.ProposalDTO, strin
 	return &p, approvalKey.String, approvalRecordID.String, approvalWorkflowID.String, nil
 }
 
+func applyProposedWorkflowFields(p *adhocapp.ProposalDTO, overridesRaw string, dlDays sql.NullInt32) {
+	steps, embeddedDays, err := unmarshalProposedWorkflowJSON(overridesRaw)
+	if err != nil {
+		p.StepOverrides = []adhocapp.WorkflowStepOverride{}
+	} else {
+		p.StepOverrides = steps
+		if embeddedDays != nil {
+			p.ProposedDeadlineDays = embeddedDays
+		}
+	}
+	if dlDays.Valid {
+		v := int(dlDays.Int32)
+		p.ProposedDeadlineDays = &v
+	}
+}
+
 func nullableStr(s *string) any {
 	if s == nil || *s == "" {
 		return nil
@@ -445,4 +500,11 @@ func nullIfBlank(s string) any {
 		return nil
 	}
 	return s
+}
+
+func nullableInt(v *int) any {
+	if v == nil {
+		return nil
+	}
+	return *v
 }

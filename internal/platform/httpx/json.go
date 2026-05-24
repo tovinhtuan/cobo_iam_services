@@ -54,9 +54,11 @@ func WriteError(w http.ResponseWriter, log *slog.Logger, err error) {
 		WriteJSON(w, he.HTTPStatus, body)
 		return
 	}
-	if log != nil {
-		log.Error("unhandled error", slog.String("err", err.Error()))
+	logger := log
+	if logger == nil {
+		logger = slog.Default()
 	}
+	logger.Error("unhandled error", slog.String("err", err.Error()))
 	body := ErrorBody{}
 	body.Error.Code = string(perr.CodeInternal)
 	body.Error.Message = "Internal server error"

@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	adhocapp "github.com/cobo/cobo_iam_services/internal/adhoc/app"
@@ -204,6 +206,9 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 		}
 		loginPWD = lp
 		log.Info("login password RSA-OAEP transport encryption enabled", slog.String("kid", loginPWD.KeyID()))
+	} else if pemFile := strings.TrimSpace(os.Getenv("LOGIN_PASSWORD_RSA_PRIVATE_KEY_PEM_FILE")); pemFile != "" {
+		log.Warn("login password RSA PEM file not loaded; using plaintext login fallback",
+			slog.String("path", pemFile))
 	}
 
 	iamSvc := iamapp.NewService(credVerifier, sessionRepo, tokenManager, memberQuery, id, iamOpts...)
@@ -334,7 +339,7 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 		typeCatalog := adhocrecord.NewTypeCatalogAdapter(disclosureRepo)
 		membershipValidator := adhocmysql.NewMembershipValidator(pool)
 		adhocSvc := adhocapp.NewService(adhocRepo, recordCreator, typeCatalog, id, cfg.WorkflowAdhocAutoApproveEnabled, authSvc, membershipValidator)
-		adhocHandler = adhochttp.NewHandler(adhocSvc, tokenManager, idemStore)
+		adhocHandler = adhochttp.NewHandler(log, adhocSvc, tokenManager, idemStore)
 		log.Info("ad-hoc proposal module enabled")
 	}
 

@@ -146,27 +146,6 @@ func (r *Repository) ListDisplayGroups(ctx context.Context) ([]disclosureapp.Dis
 	return out, rows.Err()
 }
 
-func (r *Repository) ListActiveDeadlineRuleCatalog(ctx context.Context) ([]disclosureapp.DeadlineRuleCatalogDTO, error) {
-	rows, err := r.db.QueryContext(ctx, `
-		SELECT code, label_vi, pattern, input_type
-		FROM deadline_rule_catalog
-		WHERE is_active = 1
-		ORDER BY code ASC
-	`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := make([]disclosureapp.DeadlineRuleCatalogDTO, 0)
-	for rows.Next() {
-		var item disclosureapp.DeadlineRuleCatalogDTO
-		if err := rows.Scan(&item.Code, &item.LabelVI, &item.Pattern, &item.InputType); err != nil {
-			return nil, err
-		}
-		out = append(out, item)
-	}
-	return out, rows.Err()
-}
 
 func (r *Repository) ListTypeGroups(ctx context.Context, _ string) ([]disclosureapp.DisclosureGroupDTO, error) {
 	rows, err := r.db.QueryContext(ctx, `

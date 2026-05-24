@@ -116,6 +116,8 @@ services:
       WORKER_TICK_INTERVAL: 5s
       WORKFLOW_GROUPS_ENABLED: "true"
       WORKFLOW_DRAFT_ETAG_MODE: enforce
+      LOGIN_PASSWORD_RSA_PRIVATE_KEY_PEM_FILE: /app/configs/login_password_rsa_dev.pem
+      LOGIN_PASSWORD_RSA_KEY_ID: dev
     ports:
       - "8080:8080"
     volumes:
@@ -129,6 +131,12 @@ services:
     depends_on:
       api:
         condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
     ports:
       - "3000:80"
     volumes:

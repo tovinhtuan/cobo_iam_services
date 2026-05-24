@@ -40,7 +40,7 @@ node -e "const major = Number(process.versions.node.split('.')[0]); const ok = (
     dc-up dc-down dc-build dc-rebuild dc-logs dc-ps dc-restart \
     deploy-init deploy-be deploy-fe deploy-all push-migration \
     deploy-dev deploy-dev-be deploy-dev-fe deploy-dev-migrate \
-    dev-up dev-down dev-ps dev-logs dev-restart dev-ssh
+    dev-up dev-down dev-ps dev-logs dev-restart dev-ssh dev-fix-web-perms
 
 # ─────────────────────────────────────────────────────────────────────
 help:  ## Liệt kê tất cả targets
@@ -133,6 +133,7 @@ deploy-be: be-build-linux ## [dev] Build Linux binary, SCP bin/ + configs/, rest
 	$(SCP) $(ARTIFACTS)/backend/bin/api    $(DEV_USER)@$(DEV_HOST):$(DEV_PATH)/bin/.api.tmp
 	$(SCP) $(ARTIFACTS)/backend/bin/worker $(DEV_USER)@$(DEV_HOST):$(DEV_PATH)/bin/.worker.tmp
 	$(SCP) -r $(ARTIFACTS)/backend/configs $(DEV_USER)@$(DEV_HOST):$(DEV_PATH)/
+	$(SCP) configs/login_password_rsa_dev.pem $(DEV_USER)@$(DEV_HOST):$(DEV_PATH)/configs/login_password_rsa_dev.pem
 	$(SCP) -r migrations $(DEV_USER)@$(DEV_HOST):$(DEV_PATH)/
 	$(SSH) "mv $(DEV_PATH)/bin/.api.tmp $(DEV_PATH)/bin/api && \
 	    mv $(DEV_PATH)/bin/.worker.tmp $(DEV_PATH)/bin/worker && \
@@ -146,9 +147,8 @@ deploy-fe: fe-build ## [dev] Build FE, copy dist + nginx.conf, SCP, restart web
 	$(SSH) "mkdir -p $(DEV_PATH)/web && rm -rf $(DEV_PATH)/web/dist && mkdir -p $(DEV_PATH)/web/dist"
 	$(SCP) -r $(ARTIFACTS)/web/dist/.   $(DEV_USER)@$(DEV_HOST):$(DEV_PATH)/web/dist/
 	$(SCP)    $(ARTIFACTS)/web/nginx.conf $(DEV_USER)@$(DEV_HOST):$(DEV_PATH)/web/nginx.conf
-	$(SSH) "cd $(DEV_PATH) && \
-	    chmod -R a+rX $(DEV_PATH)/web/dist && \
-	    docker compose -f docker-compose.artifacts.yml restart web"
+	$(SCP) scripts/fix-dev-web-perms.sh $(DEV_USER)@$(DEV_HOST):$(DEV_PATH)/fix-dev-web-perms.sh
+	$(SSH) "chmod +x $(DEV_PATH)/fix-dev-web-perms.sh && sh $(DEV_PATH)/fix-dev-web-perms.sh $(DEV_PATH)"
 
 deploy-all: deploy-be deploy-fe ## [dev] Deploy cả BE + FE lên dev
 
@@ -185,6 +185,11 @@ dev-logs: ## [dev] Tail logs trên dev server (Ctrl-C để thoát)
 
 dev-restart: ## [dev] Restart toàn bộ artifacts stack trên dev server
 	$(SSH) "cd $(DEV_PATH) && docker compose -f docker-compose.artifacts.yml restart"
+
+dev-fix-web-perms: ## [dev] chown/chmod web/dist + nginx.conf, recreate api+web, smoke curl
+	$(SCP) deploy-artifacts/web/nginx.conf $(DEV_USER)@$(DEV_HOST):$(DEV_PATH)/web/nginx.conf
+	$(SCP) scripts/fix-dev-web-perms.sh $(DEV_USER)@$(DEV_HOST):$(DEV_PATH)/fix-dev-web-perms.sh
+	$(SSH) "chmod +x $(DEV_PATH)/fix-dev-web-perms.sh && sh $(DEV_PATH)/fix-dev-web-perms.sh $(DEV_PATH)"
 
 dev-ssh: ## [dev] Mở SSH shell vào dev server
 	ssh -p $(DEV_PORT) $(DEV_USER)@$(DEV_HOST)

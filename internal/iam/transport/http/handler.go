@@ -53,7 +53,8 @@ func (h *Handler) Register(mux *http.ServeMux) {
 
 func (h *Handler) loginPasswordKey(w http.ResponseWriter, r *http.Request) {
 	if h.loginPWD == nil {
-		httpx.WriteError(w, h.log, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "login password encryption is not configured", nil))
+		// No encryption on this deployment — clients fall back to plaintext password on login.
+		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 	spki, err := h.loginPWD.PublicKeySPKIB64()

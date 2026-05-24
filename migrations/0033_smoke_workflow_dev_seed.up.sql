@@ -32,7 +32,7 @@ INNER JOIN permissions p ON p.permission_code IN (
   'workflow.confirm'
 )
 WHERE r.company_id = 'c_001'
-  AND r.role_code IN ('admin_doanh_nghiep', 'admin_web', 'full_access')
+  AND r.role_code IN ('admin_doanh_nghiep', 'admin_web', 'full_access', 'cms_operator')
 ON DUPLICATE KEY UPDATE status = VALUES(status);
 
 INSERT INTO disclosure_records (

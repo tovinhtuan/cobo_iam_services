@@ -114,8 +114,8 @@ func TestIntegration_loginPasswordKey_notConfigured(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer res.Body.Close()
-	if res.StatusCode != http.StatusNotFound {
-		t.Fatalf("status=%d want 404", res.StatusCode)
+	if res.StatusCode != http.StatusNoContent {
+		t.Fatalf("status=%d want 204", res.StatusCode)
 	}
 }
 

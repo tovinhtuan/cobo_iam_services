@@ -10,6 +10,7 @@ import (
 const (
 	permissionPlatformCMSView      = "platform.cms.view"
 	permissionLegacyTemplateManage = "disclosure_type.manage"
+	permissionLegacyPublish        = "disclosure_type.publish"
 	permissionLegacyConfigManage   = "rbac.manage"
 
 	permissionCMSTemplateRead        = "cms.template.read"
@@ -90,17 +91,33 @@ func (s *service) requireCMSTemplateWrite(ctx context.Context, sub Subject) erro
 	)
 }
 
+// requireCMSTemplateActivate enforces that activating a system template version is a checker action.
+// Per DOC-001 Q2: disclosure_type.publish is the legacy checker capability; disclosure_type.manage (maker) is NOT sufficient.
 func (s *service) requireCMSTemplateActivate(ctx context.Context, sub Subject) error {
 	if err := s.requireCMSRouteAccess(ctx, sub); err != nil {
 		return err
 	}
-	if s.hasAnyPermission(ctx, sub, permissionCMSTemplateActivate, permissionLegacyTemplateManage) {
+	if s.hasAnyPermission(ctx, sub, permissionCMSTemplateActivate, permissionLegacyPublish) {
 		return nil
 	}
 	return newCMSPermissionDenied(
 		"CMS template activate permission is required",
 		[]string{permissionCMSTemplateActivate},
-		[]string{permissionLegacyTemplateManage},
+		[]string{permissionLegacyPublish},
+	)
+}
+
+func (s *service) requireCMSTemplateArchive(ctx context.Context, sub Subject) error {
+	if err := s.requireCMSRouteAccess(ctx, sub); err != nil {
+		return err
+	}
+	if s.hasAnyPermission(ctx, sub, permissionCMSTemplateArchive, permissionLegacyPublish) {
+		return nil
+	}
+	return newCMSPermissionDenied(
+		"CMS template archive permission is required",
+		[]string{permissionCMSTemplateArchive},
+		[]string{permissionLegacyPublish},
 	)
 }
 

@@ -15,7 +15,9 @@ type deadlineRuleCatalogReader interface {
 	ListActiveDeadlineRuleCatalog(ctx context.Context) ([]DeadlineRuleCatalogDTO, error)
 }
 
-func defaultDeadlineRuleCatalog() []DeadlineRuleCatalogDTO {
+// DefaultDeadlineRuleCatalog returns the two built-in deadline rules used as
+// a seed/fallback when the deadline_rule_catalog table is empty.
+func DefaultDeadlineRuleCatalog() []DeadlineRuleCatalogDTO {
 	return []DeadlineRuleCatalogDTO{
 		{
 			Code:      "T+N",
@@ -32,12 +34,13 @@ func defaultDeadlineRuleCatalog() []DeadlineRuleCatalogDTO {
 	}
 }
 
+// defaultDeadlineRuleCatalog is retained for internal callers.
+func defaultDeadlineRuleCatalog() []DeadlineRuleCatalogDTO {
+	return DefaultDeadlineRuleCatalog()
+}
+
 func (s *service) loadDeadlineRuleCatalog(ctx context.Context) []DeadlineRuleCatalogDTO {
-	reader, ok := s.repo.(deadlineRuleCatalogReader)
-	if !ok {
-		return defaultDeadlineRuleCatalog()
-	}
-	items, err := reader.ListActiveDeadlineRuleCatalog(ctx)
+	items, err := s.repo.ListActiveDeadlineRuleCatalog(ctx)
 	if err != nil || len(items) == 0 {
 		return defaultDeadlineRuleCatalog()
 	}

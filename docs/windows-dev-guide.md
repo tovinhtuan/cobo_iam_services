@@ -374,7 +374,7 @@ scp -P 21239 .\deploy-artifacts\backend\bin\api root@88.216.208.0:/root/cobo_pro
 scp -P 21239 .\deploy-artifacts\backend\bin\worker root@88.216.208.0:/root/cobo_project/bin/.worker.tmp
 scp -P 21239 -r .\deploy-artifacts\backend\configs root@88.216.208.0:/root/cobo_project/
 scp -P 21239 -r .\migrations root@88.216.208.0:/root/cobo_project/
-ssh -p 21239 root@88.216.208.0 "mv /root/cobo_project/bin/.api.tmp /root/cobo_project/bin/api && mv /root/cobo_project/bin/.worker.tmp /root/cobo_project/bin/worker && chmod 755 /root/cobo_project/bin/api /root/cobo_project/bin/worker && cd /root/cobo_project && docker compose -f docker-compose.artifacts.yml up -d --force-recreate --no-deps api worker"
+ssh -p 21239 root@88.216.208.0 "mv /root/cobo_project/bin/.api.tmp /root/cobo_project/bin/api && mv /root/cobo_project/bin/.worker.tmp /root/cobo_project/bin/worker && chmod 755 /root/cobo_project/bin/api /root/cobo_project/bin/worker && cd /root/cobo_project && docker compose -f docker-compose.artifacts.yml up -d --force-recreate --no-deps api worker migrate"
 ```
 
 ### 5.4 Deploy Frontend
@@ -409,6 +409,65 @@ ssh -p 21239 root@88.216.208.0 "curl -sf http://localhost:8080/healthz && echo"
 ssh -p 21239 root@88.216.208.0 "curl -sf http://localhost:8080/readyz && echo"
 ```
 
+### 5.7 Migrate loi (container `cobo-iam-migrate` exit 1)
+
+Xem log migration tren server:
+
+```powershell
+cd C:\Users\tvttt\OneDrive\Desktop\cobo\cobo_web\cobo_iam_services\deploy-artifacts
+.\show-migrate-logs.ps1
+```
+
+Thuong gap: `0060_deadline_rule_catalog.up.sql` khi DB da co bang tu `0053` (schema cu PK tren `code`). Cap nhat file `0060` moi tu repo, push lai:
+
+```powershell
+.\push-migration.ps1 -File 0060_deadline_rule_catalog.up.sql
+```
+
+Sau do khoi dong stack (migrate chay lai khi `up -d`):
+
+```powershell
+ssh -p 21239 root@88.216.208.0 "cd /root/cobo_project && docker compose -f docker-compose.artifacts.yml up -d"
+```
+
+Neu `0060` da ghi trong `schema_migrations` nhung SQL loi giua chung — xoa dong do roi push lai file 0060 da sua.
+
+### 5.8 Apply mot migration (thay `make push-migration`)
+
+Tu thu muc `cobo_iam_services\deploy-artifacts`:
+
+```powershell
+Set-Location C:\Users\tvttt\OneDrive\Desktop\cobo\cobo_web\cobo_iam_services\deploy-artifacts
+.\push-migration.ps1 -File 0063_dev_platform_tenant_dual_admin.up.sql
+.\push-migration.ps1 -File 0064_platform_tenant_admin_process_control.up.sql
+```
+
+Neu can quyen ad-hoc + account platform truoc do, apply lan luot (bo qua file da co trong `schema_migrations`):
+
+```powershell
+$files = @(
+  "0061_dev_ad_hoc_propose_admin_cms.up.sql",
+  "0062_admin_doanh_nghiep_process_control.up.sql",
+  "0063_dev_platform_tenant_dual_admin.up.sql"
+)
+foreach ($f in $files) { .\push-migration.ps1 -File $f }
+```
+
+Kiem tra user da seed:
+
+```powershell
+ssh -p 21239 root@88.216.208.0 "docker exec cobo-iam-mysql mysql -uroot -proot cobo_iam -e `"SELECT login_id FROM users WHERE login_id='platform.tenant.admin@example.com';`""
+```
+
+Test login (dung `curl.exe`, khong phai alias PowerShell):
+
+```powershell
+@'
+{"email":"platform.tenant.admin@example.com","password":"secret","remember_me":false}
+'@ | Set-Content -Path "$env:TEMP\cobo-login.json" -Encoding utf8NoBOM
+curl.exe -s -w "`nHTTP:%{http_code}" "http://88.216.208.0:3000/api/v1/auth/login" -H "Content-Type: application/json" --data-binary "@$env:TEMP\cobo-login.json"
+```
+
 ---
 
 ## Bang mapping `make` -> Windows PowerShell
@@ -436,7 +495,7 @@ ssh -p 21239 root@88.216.208.0 "curl -sf http://localhost:8080/readyz && echo"
 | `make deploy-be` | dung chuoi lenh trong muc 5.3 |
 | `make deploy-fe` | dung chuoi lenh trong muc 5.4 |
 | `make deploy-all` | chay muc 5.3 roi 5.4 |
-| `make push-migration FILE=...` | `scp` file SQL len server, roi `docker exec ... mysql` nhu script `deploy-artifacts/push-migration.sh` |
+| `make push-migration FILE=...` | `.\deploy-artifacts\push-migration.ps1 -File ...` (Windows) hoac `deploy-artifacts/push-migration.sh` (Git Bash) |
 | `make dev-up` | `ssh -p 21239 root@88.216.208.0 "cd /root/cobo_project && docker compose -f docker-compose.artifacts.yml up -d"` |
 | `make dev-down` | `ssh -p 21239 root@88.216.208.0 "cd /root/cobo_project && docker compose -f docker-compose.artifacts.yml down"` |
 | `make dev-ps` | `ssh -p 21239 root@88.216.208.0 "cd /root/cobo_project && docker compose -f docker-compose.artifacts.yml ps"` |

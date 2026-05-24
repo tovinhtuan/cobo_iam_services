@@ -86,7 +86,7 @@ func (fakeInspector) InspectPreCompanyToken(context.Context, string) (*iamapp.Pr
 
 func TestListProposals_ParsesPagingQueryParams(t *testing.T) {
 	svc := &fakeService{}
-	handler := NewHandler(svc, fakeInspector{}, nil)
+	handler := NewHandler(nil, svc, fakeInspector{}, nil)
 	mux := http.NewServeMux()
 	handler.Register(mux)
 
@@ -123,7 +123,7 @@ func (f *fakeService) AdminApprove(ctx context.Context, req adhocapp.AdminApprov
 func TestAdminApprove_UsesFallbackIdempotencyKeyAndCompletesReservation(t *testing.T) {
 	svc := &fakeService{}
 	idem := &fakeIdemStore{tryResult: idempotency.Result{ReservationID: "idem-001"}}
-	handler := NewHandler(svc, fakeInspector{}, idem)
+	handler := NewHandler(nil, svc, fakeInspector{}, idem)
 	mux := http.NewServeMux()
 	handler.Register(mux)
 
@@ -163,7 +163,7 @@ func TestAdminApprove_ReplaysCompletedIdempotentResponse(t *testing.T) {
 	envBytes, _ := json.Marshal(&idempotency.Envelope{HTTPStatus: http.StatusOK, Body: body})
 	idem := &fakeIdemStore{tryResult: idempotency.Result{Replay: true, ReplayHTTPStatus: http.StatusOK, ReplayBody: body}}
 	_ = envBytes
-	handler := NewHandler(svc, fakeInspector{}, idem)
+	handler := NewHandler(nil, svc, fakeInspector{}, idem)
 	mux := http.NewServeMux()
 	handler.Register(mux)
 

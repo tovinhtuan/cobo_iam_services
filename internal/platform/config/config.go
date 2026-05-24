@@ -153,8 +153,7 @@ func Load() (Config, error) {
 		EmailVerificationOTPTTL:       durationEnv("EMAIL_VERIFICATION_OTP_TTL", 15*time.Minute),
 		InviteDefaultRoleCode:         getenv("INVITE_DEFAULT_ROLE_CODE", "user_thuong"),
 		RegistrationDisabled:          strings.EqualFold(strings.TrimSpace(os.Getenv("REGISTRATION_DISABLED")), "true"),
-		LoginPasswordRSAPrivateKeyPEM: os.Getenv("LOGIN_PASSWORD_RSA_PRIVATE_KEY_PEM"),
-		LoginPasswordRSAKeyID:         getenv("LOGIN_PASSWORD_RSA_KEY_ID", "default"),
+		LoginPasswordRSAKeyID: getenv("LOGIN_PASSWORD_RSA_KEY_ID", "default"),
 		CORSAllowedOrigins:            os.Getenv("CORS_ALLOWED_ORIGINS"),
 		SMTPHost:                      os.Getenv("SMTP_HOST"),
 		SMTPPort:                      intEnv("SMTP_PORT", 587),
@@ -210,7 +209,33 @@ func Load() (Config, error) {
 	default:
 		return Config{}, fmt.Errorf("EMAIL_FORMAT invalid: %s", cfg.EmailFormat)
 	}
+	pem, err := loadLoginPasswordRSAPEM()
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.LoginPasswordRSAPrivateKeyPEM = pem
 	return cfg, nil
+}
+
+// loadLoginPasswordRSAPEM reads RSA private key PEM from LOGIN_PASSWORD_RSA_PRIVATE_KEY_PEM
+// or LOGIN_PASSWORD_RSA_PRIVATE_KEY_PEM_FILE (used by docker-compose dev/artifacts).
+// A missing PEM file is ignored so the API can still start (plaintext login fallback).
+func loadLoginPasswordRSAPEM() (string, error) {
+	if v := strings.TrimSpace(os.Getenv("LOGIN_PASSWORD_RSA_PRIVATE_KEY_PEM")); v != "" {
+		return v, nil
+	}
+	path := strings.TrimSpace(os.Getenv("LOGIN_PASSWORD_RSA_PRIVATE_KEY_PEM_FILE"))
+	if path == "" {
+		return "", nil
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", fmt.Errorf("LOGIN_PASSWORD_RSA_PRIVATE_KEY_PEM_FILE: read %s: %w", path, err)
+	}
+	return string(b), nil
 }
 
 func getenv(key, def string) string {

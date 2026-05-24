@@ -63,6 +63,20 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/v1/company/disclosure-types/{type_id}", h.updateCompanyTemplate)
 	// BE-004B: lifecycle transitions
 	mux.HandleFunc("POST /api/v1/company/disclosure-types/{type_id}/lifecycle/{action}", h.transitionCompanyTemplateLifecycle)
+
+	// Platform CMS — platform admin only (gate: platform.cms.view)
+	mux.HandleFunc("POST /api/v1/platform/cms/templates/{type_id}/archive", h.cmsArchiveTemplate)
+	mux.HandleFunc("GET /api/v1/platform/cms/templates/{type_id}/workflow", h.cmsGetGlobalWorkflow)
+	mux.HandleFunc("PUT /api/v1/platform/cms/templates/{type_id}/workflow", h.cmsUpsertGlobalWorkflow)
+	mux.HandleFunc("DELETE /api/v1/platform/cms/templates/{type_id}/workflow", h.cmsDeleteGlobalWorkflow)
+	mux.HandleFunc("GET /api/v1/platform/cms/display-groups", h.cmsListDisplayGroups)
+	mux.HandleFunc("POST /api/v1/platform/cms/display-groups", h.cmsCreateDisplayGroup)
+	mux.HandleFunc("PATCH /api/v1/platform/cms/display-groups/{code}", h.cmsUpdateDisplayGroup)
+	mux.HandleFunc("DELETE /api/v1/platform/cms/display-groups/{code}", h.cmsDeleteDisplayGroup)
+	mux.HandleFunc("GET /api/v1/platform/cms/deadline-rules", h.cmsListDeadlineRules)
+	mux.HandleFunc("POST /api/v1/platform/cms/deadline-rules", h.cmsCreateDeadlineRule)
+	mux.HandleFunc("PATCH /api/v1/platform/cms/deadline-rules/{rule_id}", h.cmsUpdateDeadlineRule)
+	mux.HandleFunc("DELETE /api/v1/platform/cms/deadline-rules/{rule_id}", h.cmsDeleteDeadlineRule)
 }
 
 func (h *Handler) getTemplateReferenceData(w http.ResponseWriter, r *http.Request) {

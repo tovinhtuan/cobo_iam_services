@@ -445,7 +445,11 @@ func (s *service) UpsertTypeVersion(ctx context.Context, req UpsertTypeVersionRe
 	}
 	ApplyTemplateFlatBlockSync(&req, s.idg)
 	HydrateTemplateBlocksBilingualForPersistence(req.Blocks)
-	if err := validateTemplateMatrix(&req); err != nil {
+	validateFn := validateTemplateMatrix
+	if req.Scope == templateScopeGlobal {
+		validateFn = validatePortalTemplateMatrix
+	}
+	if err := validateFn(&req); err != nil {
 		return nil, err
 	}
 	return s.repo.UpsertTypeVersion(ctx, req)
@@ -1229,14 +1233,19 @@ func (s *service) TransitionCompanyTemplateLifecycle(ctx context.Context, req Tr
 }
 
 // enforceHasWorkflowGate checks if the template has an effective active workflow.
-// Returns 422 TEMPLATE_NO_WORKFLOW if no workflow is available.
-// BE-002: gate logic. Currently checks company override; global_workflow check requires
-// migration 0053 + 0055 to be applied and CMS to seed workflow data.
+// Returns 422 TEMPLATE_NO_WORKFLOW if no workflow is configured.
+// Checks global_workflows table first (CMS-managed), then falls back to the
+// enterprise_workflow block embedded in the template version.
 func (s *service) enforceHasWorkflowGate(ctx context.Context, companyID, typeID string) error {
+	// CMS-managed global workflow takes priority (migration 0059).
+	count, err := s.repo.CountGlobalWorkflowsByTypeId(ctx, typeID)
+	if err == nil && count > 0 {
+		return nil
+	}
+	// Fall back to effective workflow (company override or enterprise_workflow block).
 	effective, err := s.repo.GetEffectiveWorkflow(ctx, companyID, typeID)
 	if err != nil {
-		// If workflow lookup fails, don't block create — log and continue.
-		// TODO: BE-002 — tighten this after global_workflow query is integrated.
+		// Workflow lookup failure must not silently block disclosure creation.
 		return nil
 	}
 	if len(effective.Workflow) == 0 {

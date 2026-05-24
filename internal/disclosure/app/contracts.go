@@ -46,6 +46,20 @@ type Service interface {
 	// Company preferences (auto_create toggle).
 	GetCompanyTypePreference(ctx context.Context, req GetCompanyTypePreferenceRequest) (*CompanyTypePreferenceDTO, error)
 	UpsertCompanyTypePreference(ctx context.Context, req UpsertCompanyTypePreferenceRequest) (*CompanyTypePreferenceDTO, error)
+
+	// CMS system template management (Sprint 2).
+	CmsArchiveTemplate(ctx context.Context, req CmsArchiveTemplateRequest) (*CmsArchiveTemplateResponse, error)
+	CmsGetGlobalWorkflow(ctx context.Context, req CmsGetGlobalWorkflowRequest) (*CmsGetGlobalWorkflowResponse, error)
+	CmsUpsertGlobalWorkflow(ctx context.Context, req CmsUpsertGlobalWorkflowRequest) (*GlobalWorkflowDTO, error)
+	CmsDeleteGlobalWorkflow(ctx context.Context, req CmsDeleteGlobalWorkflowRequest) error
+	CmsListDisplayGroupsCatalog(ctx context.Context, req ListDisplayGroupsRequest) (*ListDisplayGroupsResponse, error)
+	CmsCreateDisplayGroup(ctx context.Context, req CmsDisplayGroupCreateRequest) (*DisplayGroupDTO, error)
+	CmsUpdateDisplayGroup(ctx context.Context, req CmsDisplayGroupUpdateRequest) (*DisplayGroupDTO, error)
+	CmsDeleteDisplayGroup(ctx context.Context, req CmsDisplayGroupDeleteRequest) error
+	CmsListDeadlineRules(ctx context.Context, req GetTemplateReferenceDataRequest) ([]CmsDeadlineRuleDTO, error)
+	CmsCreateDeadlineRule(ctx context.Context, req CmsDeadlineRuleCreateRequest) (*CmsDeadlineRuleDTO, error)
+	CmsUpdateDeadlineRule(ctx context.Context, req CmsDeadlineRuleUpdateRequest) (*CmsDeadlineRuleDTO, error)
+	CmsDeleteDeadlineRule(ctx context.Context, req CmsDeadlineRuleDeleteRequest) error
 }
 
 type Repository interface {
@@ -88,6 +102,21 @@ type Repository interface {
 	ListAllActiveCompanyIDs(ctx context.Context) ([]string, error)
 	GetCompanyTypePreference(ctx context.Context, companyID, typeID string) (*CompanyTypePreference, error)
 	UpsertCompanyTypePreference(ctx context.Context, in CompanyTypePreference) error
+
+	// CMS catalog management (Sprint 2).
+	ListActiveDeadlineRuleCatalog(ctx context.Context) ([]DeadlineRuleCatalogDTO, error)
+	ListCmsDeadlineRules(ctx context.Context) ([]CmsDeadlineRuleDTO, error)
+	ArchiveGlobalTemplate(ctx context.Context, typeID, updatedBy string) error
+	CountGlobalWorkflowsByTypeId(ctx context.Context, typeID string) (int, error)
+	GetGlobalWorkflow(ctx context.Context, typeID string) (*GlobalWorkflowDTO, error)
+	UpsertGlobalWorkflow(ctx context.Context, req CmsUpsertGlobalWorkflowRequest, workflowID string) (*GlobalWorkflowDTO, error)
+	DeleteGlobalWorkflow(ctx context.Context, typeID string) error
+	CreateDisplayGroup(ctx context.Context, req CmsDisplayGroupCreateRequest) (*DisplayGroupDTO, error)
+	UpdateDisplayGroup(ctx context.Context, req CmsDisplayGroupUpdateRequest) (*DisplayGroupDTO, error)
+	DeleteDisplayGroup(ctx context.Context, code string) error
+	CreateDeadlineRule(ctx context.Context, req CmsDeadlineRuleCreateRequest, ruleID string) (*CmsDeadlineRuleDTO, error)
+	UpdateDeadlineRule(ctx context.Context, req CmsDeadlineRuleUpdateRequest) (*CmsDeadlineRuleDTO, error)
+	DeleteDeadlineRule(ctx context.Context, ruleID string) error
 }
 
 type CreateRecordRequest struct {
@@ -875,4 +904,128 @@ type UpsertCompanyTypePreferenceRequest struct {
 	Subject           Subject
 	TypeID            string
 	AutoCreateEnabled bool
+}
+
+// ─── CMS System Template Management ──────────────────────────────────────────
+
+type CmsArchiveTemplateRequest struct {
+	Subject Subject
+	TypeID  string `json:"type_id"`
+	Reason  string `json:"reason"`
+}
+
+type CmsArchiveTemplateResponse struct {
+	TypeID string `json:"type_id"`
+	Status string `json:"status"`
+}
+
+// ─── Global Workflow ─────────────────────────────────────────────────────────
+
+type GlobalWorkflowStepInput struct {
+	StepID          string   `json:"step_id"`
+	Stage           string   `json:"stage"`
+	DepartmentID    string   `json:"department_id"`
+	AssigneeRoleIds []string `json:"assignee_role_ids"`
+	DueRule         string   `json:"due_rule"`
+	ProcessingDays  int      `json:"processing_days"`
+	DisplayOrder    int      `json:"display_order"`
+}
+
+type GlobalWorkflowDTO struct {
+	WorkflowID string                    `json:"workflow_id"`
+	TypeID     string                    `json:"type_id"`
+	Status     string                    `json:"status"`
+	ChangeNote string                    `json:"change_note,omitempty"`
+	Steps      []GlobalWorkflowStepInput `json:"steps"`
+	CreatedBy  string                    `json:"created_by"`
+	UpdatedBy  string                    `json:"updated_by"`
+	CreatedAt  time.Time                 `json:"created_at"`
+	UpdatedAt  time.Time                 `json:"updated_at"`
+}
+
+type CmsGetGlobalWorkflowRequest struct {
+	Subject Subject
+	TypeID  string
+}
+
+type CmsGetGlobalWorkflowResponse struct {
+	Data *GlobalWorkflowDTO `json:"data"`
+}
+
+type CmsUpsertGlobalWorkflowRequest struct {
+	Subject    Subject
+	TypeID     string                    `json:"type_id"`
+	ChangeNote string                    `json:"change_note"`
+	Steps      []GlobalWorkflowStepInput `json:"steps"`
+}
+
+type CmsDeleteGlobalWorkflowRequest struct {
+	Subject Subject
+	TypeID  string
+}
+
+// ─── Display Group CRUD ──────────────────────────────────────────────────────
+
+type CmsDisplayGroupCreateRequest struct {
+	Subject      Subject
+	Code         string `json:"code"`
+	NameVI       string `json:"name_vi"`
+	NameEN       string `json:"name_en"`
+	Description  string `json:"description"`
+	Icon         string `json:"icon"`
+	DisplayOrder int    `json:"display_order"`
+}
+
+type CmsDisplayGroupUpdateRequest struct {
+	Subject      Subject
+	Code         string `json:"code"`
+	NameVI       string `json:"name_vi"`
+	NameEN       string `json:"name_en"`
+	Description  string `json:"description"`
+	Icon         string `json:"icon"`
+	DisplayOrder int    `json:"display_order"`
+	IsActive     *bool  `json:"is_active"`
+}
+
+type CmsDisplayGroupDeleteRequest struct {
+	Subject Subject
+	Code    string
+}
+
+// ─── Deadline Rule Catalog CRUD ───────────────────────────────────────────────
+
+type CmsDeadlineRuleCreateRequest struct {
+	Subject      Subject
+	Code         string `json:"code"`
+	LabelVI      string `json:"label_vi"`
+	Pattern      string `json:"pattern"`
+	InputType    string `json:"input_type"`
+	DisplayOrder int    `json:"display_order"`
+}
+
+type CmsDeadlineRuleUpdateRequest struct {
+	Subject      Subject
+	RuleID       string `json:"rule_id"`
+	LabelVI      string `json:"label_vi"`
+	Pattern      string `json:"pattern"`
+	InputType    string `json:"input_type"`
+	DisplayOrder int    `json:"display_order"`
+	IsActive     *bool  `json:"is_active"`
+}
+
+type CmsDeadlineRuleDeleteRequest struct {
+	Subject Subject
+	RuleID  string
+}
+
+type CmsDeadlineRuleDTO struct {
+	RuleID       string    `json:"rule_id"`
+	Code         string    `json:"code"`
+	LabelVI      string    `json:"label_vi"`
+	Pattern      string    `json:"pattern"`
+	InputType    string    `json:"input_type"`
+	IsActive     bool      `json:"is_active"`
+	DisplayOrder int       `json:"display_order"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }

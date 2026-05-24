@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -16,13 +17,14 @@ import (
 )
 
 type Handler struct {
+	log       *slog.Logger
 	svc       adhocapp.Service
 	inspector iamapp.TokenInspector
 	idem      idempotency.Store
 }
 
-func NewHandler(svc adhocapp.Service, inspector iamapp.TokenInspector, idem idempotency.Store) *Handler {
-	return &Handler{svc: svc, inspector: inspector, idem: idem}
+func NewHandler(log *slog.Logger, svc adhocapp.Service, inspector iamapp.TokenInspector, idem idempotency.Store) *Handler {
+	return &Handler{log: log, svc: svc, inspector: inspector, idem: idem}
 }
 
 func (h *Handler) Register(mux *http.ServeMux) {
@@ -40,12 +42,12 @@ func (h *Handler) Register(mux *http.ServeMux) {
 func (h *Handler) listEligibleControllers(w http.ResponseWriter, r *http.Request) {
 	sub, err := h.subjectFromToken(r)
 	if err != nil {
-		httpx.WriteError(w, nil, err)
+		httpx.WriteError(w, h.log, err)
 		return
 	}
 	items, err := h.svc.ListEligibleControllers(r.Context(), adhocapp.ListEligibleControllersRequest{Subject: sub})
 	if err != nil {
-		httpx.WriteError(w, nil, err)
+		httpx.WriteError(w, h.log, err)
 		return
 	}
 	if items == nil {
@@ -57,18 +59,18 @@ func (h *Handler) listEligibleControllers(w http.ResponseWriter, r *http.Request
 func (h *Handler) createProposal(w http.ResponseWriter, r *http.Request) {
 	sub, err := h.subjectFromToken(r)
 	if err != nil {
-		httpx.WriteError(w, nil, err)
+		httpx.WriteError(w, h.log, err)
 		return
 	}
 	var req adhocapp.CreateProposalRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httpx.WriteError(w, nil, err)
+		httpx.WriteError(w, h.log, err)
 		return
 	}
 	req.Subject = sub
 	resp, err := h.svc.CreateProposal(r.Context(), req)
 	if err != nil {
-		httpx.WriteError(w, nil, err)
+		httpx.WriteError(w, h.log, err)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusCreated, resp)
@@ -77,7 +79,7 @@ func (h *Handler) createProposal(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) listProposals(w http.ResponseWriter, r *http.Request) {
 	sub, err := h.subjectFromToken(r)
 	if err != nil {
-		httpx.WriteError(w, nil, err)
+		httpx.WriteError(w, h.log, err)
 		return
 	}
 	var statusFilter []string
@@ -97,7 +99,7 @@ func (h *Handler) listProposals(w http.ResponseWriter, r *http.Request) {
 		PageSize:     pageSize,
 	})
 	if err != nil {
-		httpx.WriteError(w, nil, err)
+		httpx.WriteError(w, h.log, err)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, resp)
@@ -106,7 +108,7 @@ func (h *Handler) listProposals(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) getProposal(w http.ResponseWriter, r *http.Request) {
 	sub, err := h.subjectFromToken(r)
 	if err != nil {
-		httpx.WriteError(w, nil, err)
+		httpx.WriteError(w, h.log, err)
 		return
 	}
 	resp, err := h.svc.GetProposal(r.Context(), adhocapp.GetProposalRequest{
@@ -114,7 +116,7 @@ func (h *Handler) getProposal(w http.ResponseWriter, r *http.Request) {
 		ProposalID: strings.TrimSpace(r.PathValue("proposal_id")),
 	})
 	if err != nil {
-		httpx.WriteError(w, nil, err)
+		httpx.WriteError(w, h.log, err)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, resp)
@@ -123,7 +125,7 @@ func (h *Handler) getProposal(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) submitProposal(w http.ResponseWriter, r *http.Request) {
 	sub, err := h.subjectFromToken(r)
 	if err != nil {
-		httpx.WriteError(w, nil, err)
+		httpx.WriteError(w, h.log, err)
 		return
 	}
 	resp, err := h.svc.SubmitProposal(r.Context(), adhocapp.ProposalActionRequest{
@@ -131,7 +133,7 @@ func (h *Handler) submitProposal(w http.ResponseWriter, r *http.Request) {
 		ProposalID: strings.TrimSpace(r.PathValue("proposal_id")),
 	})
 	if err != nil {
-		httpx.WriteError(w, nil, err)
+		httpx.WriteError(w, h.log, err)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, resp)
@@ -140,7 +142,7 @@ func (h *Handler) submitProposal(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) focalApprove(w http.ResponseWriter, r *http.Request) {
 	sub, err := h.subjectFromToken(r)
 	if err != nil {
-		httpx.WriteError(w, nil, err)
+		httpx.WriteError(w, h.log, err)
 		return
 	}
 	resp, err := h.svc.FocalApprove(r.Context(), adhocapp.ProposalActionRequest{
@@ -148,7 +150,7 @@ func (h *Handler) focalApprove(w http.ResponseWriter, r *http.Request) {
 		ProposalID: strings.TrimSpace(r.PathValue("proposal_id")),
 	})
 	if err != nil {
-		httpx.WriteError(w, nil, err)
+		httpx.WriteError(w, h.log, err)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, resp)
@@ -157,7 +159,7 @@ func (h *Handler) focalApprove(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) adminApprove(w http.ResponseWriter, r *http.Request) {
 	sub, err := h.subjectFromToken(r)
 	if err != nil {
-		httpx.WriteError(w, nil, err)
+		httpx.WriteError(w, h.log, err)
 		return
 	}
 	var body adhocapp.AdminApproveRequest
@@ -180,7 +182,7 @@ func (h *Handler) adminApprove(w http.ResponseWriter, r *http.Request) {
 			RequestHash: hash,
 		})
 		if err != nil {
-			httpx.WriteError(w, nil, err)
+			httpx.WriteError(w, h.log, err)
 			return
 		}
 		if res.Replay {
@@ -204,7 +206,7 @@ func (h *Handler) adminApprove(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err != nil {
-		httpx.WriteError(w, nil, err)
+		httpx.WriteError(w, h.log, err)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, resp)
@@ -213,19 +215,19 @@ func (h *Handler) adminApprove(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) reject(w http.ResponseWriter, r *http.Request) {
 	sub, err := h.subjectFromToken(r)
 	if err != nil {
-		httpx.WriteError(w, nil, err)
+		httpx.WriteError(w, h.log, err)
 		return
 	}
 	var body adhocapp.RejectRequest
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		httpx.WriteError(w, nil, err)
+		httpx.WriteError(w, h.log, err)
 		return
 	}
 	body.Subject = sub
 	body.ProposalID = strings.TrimSpace(r.PathValue("proposal_id"))
 	resp, err := h.svc.Reject(r.Context(), body)
 	if err != nil {
-		httpx.WriteError(w, nil, err)
+		httpx.WriteError(w, h.log, err)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, resp)
@@ -234,7 +236,7 @@ func (h *Handler) reject(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) cancel(w http.ResponseWriter, r *http.Request) {
 	sub, err := h.subjectFromToken(r)
 	if err != nil {
-		httpx.WriteError(w, nil, err)
+		httpx.WriteError(w, h.log, err)
 		return
 	}
 	resp, err := h.svc.Cancel(r.Context(), adhocapp.ProposalActionRequest{
@@ -242,7 +244,7 @@ func (h *Handler) cancel(w http.ResponseWriter, r *http.Request) {
 		ProposalID: strings.TrimSpace(r.PathValue("proposal_id")),
 	})
 	if err != nil {
-		httpx.WriteError(w, nil, err)
+		httpx.WriteError(w, h.log, err)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, resp)

@@ -143,8 +143,9 @@ func (f *fakeTypeCatalog) GetTemplateCategory(_ context.Context, _ string, typeI
 
 // fakeMembershipValidator always returns active=true and hasPerm=true unless overridden.
 type fakeMembershipValidator struct {
-	active  bool
-	hasPerm bool
+	active       bool
+	hasPerm      bool
+	hasAdminRole bool
 }
 
 func newAllowValidator() *fakeMembershipValidator { return &fakeMembershipValidator{active: true, hasPerm: true} }
@@ -154,6 +155,9 @@ func (f *fakeMembershipValidator) IsActiveMembership(_ context.Context, _, _ str
 }
 func (f *fakeMembershipValidator) HasPermission(_ context.Context, _, _, _ string) (bool, error) {
 	return f.hasPerm, nil
+}
+func (f *fakeMembershipValidator) HasActiveRoleCode(_ context.Context, _, _, roleCode string) (bool, error) {
+	return f.hasAdminRole && roleCode == RoleCodeAdminDoanhNghiep, nil
 }
 func (f *fakeMembershipValidator) ListMembersWithPermission(_ context.Context, _, _, _ string) ([]EligibleController, error) {
 	return []EligibleController{}, nil
@@ -514,6 +518,25 @@ func TestCreateProposal_ControllerIsSelf(t *testing.T) {
 	httpErr, ok := err.(*perr.HTTPError)
 	if !ok || httpErr.HTTPStatus != http.StatusUnprocessableEntity {
 		t.Fatalf("expected 422, got %#v", err)
+	}
+}
+
+func TestCreateProposal_ControllerIsSelf_AdminDoanhNghiep_Allowed(t *testing.T) {
+	repo := &fakeRepository{}
+	auth := &fakeAuthService{decision: authapp.DecisionAllow}
+	mv := &fakeMembershipValidator{active: true, hasPerm: true, hasAdminRole: true}
+	svc := NewService(repo, &fakeRecordCreator{}, &fakeTypeCatalog{category: "irregular"}, fakeIDGen{}, false, auth, mv)
+
+	resp, err := svc.CreateProposal(context.Background(), CreateProposalRequest{
+		Subject:                       Subject{CompanyID: "company-001", MembershipID: "member-001", UserID: "user-001"},
+		TypeID:                        "dt-irregular",
+		ProcessControllerMembershipID: "member-001",
+	})
+	if err != nil {
+		t.Fatalf("CreateProposal() error = %v", err)
+	}
+	if resp.ProcessControllerID != "member-001" {
+		t.Fatalf("expected ProcessControllerID member-001, got %q", resp.ProcessControllerID)
 	}
 }
 
