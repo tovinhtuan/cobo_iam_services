@@ -28,7 +28,7 @@ Not the same as CMS admin **Create account** (`cms-core/pages.tsx` → platform 
 1. Guard: `REGISTRATION_DISABLED=true` → 403; no `WithPublicRegistration(db)` → 503.
 2. Validate email, full_name, password ≥12, password == confirm_password.
 3. bcrypt hash password.
-4. **With company_name:** `RegisterPublicAccount` — user + company + membership + global role `self_reg_company_owner` (`r0000000-0001-4000-8000-000099999001`); company `verification_status=unverified`; tenant roles `admin_doanh_nghiep`, `user_thuong` seeded.
+4. **With company_name:** `RegisterPublicAccount` — user + company + membership + roles **`self_reg_company_owner`** (global) **and** tenant **`admin_doanh_nghiep`**; `grantRoleCompanyProfilePermissionsTx` ensures `company.view`/`company.edit` on both role surfaces at register time; company `verification_status=unverified`; tenant roles `admin_doanh_nghiep`, `user_thuong` seeded on company row.
 5. **Without company_name:** `RegisterPublicUserOnly` — user + credential + Free tier only.
 6. Auto `Login` with same credentials → `LoginResponse` (201).
 7. `issueEmailVerificationOTP` → outbox `auth.email_verification_requested` (worker sends email).

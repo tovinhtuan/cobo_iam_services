@@ -42,11 +42,31 @@ type CompanyBootstrapProfile struct {
 	RepresentativeName string
 }
 
+// grantRoleCompanyProfilePermissionsTx ensures company.view and company.edit on a role (idempotent).
+func grantRoleCompanyProfilePermissionsTx(ctx context.Context, tx *sql.Tx, roleID string) error {
+	roleID = strings.TrimSpace(roleID)
+	if roleID == "" {
+		return nil
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO role_permissions (role_id, permission_id, status)
+		SELECT ?, p.permission_id, 'active'
+		FROM permissions p
+		WHERE p.permission_code IN ('company.view', 'company.edit')
+		  AND p.status = 'active'
+		ON DUPLICATE KEY UPDATE status = VALUES(status)
+	`, roleID); err != nil {
+		return fmt.Errorf("grant company profile permissions on role %s: %w", roleID, err)
+	}
+	return nil
+}
+
 // InsertCompanyWithDefaultRolesTx inserts companies + tenant default roles (admin_doanh_nghiep, user_thuong) and copies role_permissions from seed templates. Runs inside an open transaction.
-func InsertCompanyWithDefaultRolesTx(ctx context.Context, tx *sql.Tx, companyID, companyDisplayName string, profile CompanyBootstrapProfile) (companyCode string, err error) {
+// Returns the new tenant admin_doanh_nghiep role_id for membership assignment.
+func InsertCompanyWithDefaultRolesTx(ctx context.Context, tx *sql.Tx, companyID, companyDisplayName string, profile CompanyBootstrapProfile) (companyCode, tenantAdminRoleID string, err error) {
 	companyDisplayName = strings.TrimSpace(companyDisplayName)
 	if companyID == "" || companyDisplayName == "" {
-		return "", perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "company_id and company display name are required", nil)
+		return "", "", perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "company_id and company display name are required", nil)
 	}
 	vStatus := strings.TrimSpace(profile.VerificationStatus)
 	if vStatus == "" {
@@ -54,7 +74,7 @@ func InsertCompanyWithDefaultRolesTx(ctx context.Context, tx *sql.Tx, companyID,
 	}
 	companyCode, err = pickUniqueCompanyCode(ctx, tx, companyDisplayName)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
 	tax := strings.TrimSpace(profile.TaxCode)
@@ -80,9 +100,9 @@ func InsertCompanyWithDefaultRolesTx(ctx context.Context, tx *sql.Tx, companyID,
 		vStatus,
 	); err != nil {
 		if isMySQLDuplicateCompany(err) {
-			return "", perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "company tax code or unique field already exists", err)
+			return "", "", perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "company tax code or unique field already exists", err)
 		}
-		return "", fmt.Errorf("insert company: %w", err)
+		return "", "", fmt.Errorf("insert company: %w", err)
 	}
 
 	roleAdminID := uuid.NewString()
@@ -92,8 +112,9 @@ func InsertCompanyWithDefaultRolesTx(ctx context.Context, tx *sql.Tx, companyID,
 		(?, ?, 'admin_doanh_nghiep', 'Admin doanh nghiệp', 'active'),
 		(?, ?, 'user_thuong', 'User thường', 'active')
 	`, roleAdminID, companyID, roleUserThuongID, companyID); err != nil {
-		return "", fmt.Errorf("insert company default roles: %w", err)
+		return "", "", fmt.Errorf("insert company default roles: %w", err)
 	}
+	tenantAdminRoleID = roleAdminID
 	for _, tpl := range []struct{ dst, src string }{
 		{dst: roleAdminID, src: seedTplAdminDoanhNghiepRoleID},
 		{dst: roleUserThuongID, src: seedTplUserThuongRoleID},
@@ -104,8 +125,11 @@ func InsertCompanyWithDefaultRolesTx(ctx context.Context, tx *sql.Tx, companyID,
 			FROM role_permissions
 			WHERE role_id = ? AND status = 'active'
 		`, tpl.dst, tpl.src); err != nil {
-			return "", fmt.Errorf("copy seed role_permissions: %w", err)
+			return "", "", fmt.Errorf("copy seed role_permissions: %w", err)
 		}
+	}
+	if err := grantRoleCompanyProfilePermissionsTx(ctx, tx, roleAdminID); err != nil {
+		return "", "", err
 	}
 	for _, permCode := range []string{
 		"template.workflow.override.write",
@@ -118,10 +142,10 @@ func InsertCompanyWithDefaultRolesTx(ctx context.Context, tx *sql.Tx, companyID,
 		if _, err := tx.ExecContext(ctx, `
 			INSERT IGNORE INTO role_default_grant_permissions (role_id, permission_code) VALUES (?, ?)
 		`, roleAdminID, permCode); err != nil {
-			return "", fmt.Errorf("seed role_default_grant_permissions: %w", err)
+			return "", "", fmt.Errorf("seed role_default_grant_permissions: %w", err)
 		}
 	}
-	return companyCode, nil
+	return companyCode, tenantAdminRoleID, nil
 }
 
 // CreateStandaloneCompany creates only a company row and default tenant roles (no users / memberships).
@@ -139,7 +163,7 @@ func CreateStandaloneCompany(ctx context.Context, db *sql.DB, companyDisplayName
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	cc, err := InsertCompanyWithDefaultRolesTx(ctx, tx, companyID, companyDisplayName, profile)
+	cc, _, err := InsertCompanyWithDefaultRolesTx(ctx, tx, companyID, companyDisplayName, profile)
 	if err != nil {
 		return "", "", err
 	}
@@ -157,7 +181,9 @@ func isMySQLDuplicateCompany(err error) bool {
 	return strings.Contains(msg, "duplicate") && (strings.Contains(msg, "tax_code") || strings.Contains(msg, "uk_companies"))
 }
 
-// RegisterPublicAccount creates an active user, active company, membership, and assigns the global self-reg owner role.
+// RegisterPublicAccount creates an active user, active company, membership, and assigns:
+// - global self_reg_company_owner (with company profile permissions ensured at register time)
+// - tenant admin_doanh_nghiep for the new company (registering user is company admin while unverified).
 func RegisterPublicAccount(ctx context.Context, db *sql.DB, email, fullName, companyName, passwordHash string) (userID, companyID, membershipID string, err error) {
 	email = strings.TrimSpace(strings.ToLower(email))
 	fullName = strings.TrimSpace(fullName)
@@ -186,7 +212,8 @@ func RegisterPublicAccount(ctx context.Context, db *sql.DB, email, fullName, com
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	if _, err := InsertCompanyWithDefaultRolesTx(ctx, tx, companyID, companyName, CompanyBootstrapProfile{VerificationStatus: "unverified"}); err != nil {
+	var tenantAdminRoleID string
+	if _, tenantAdminRoleID, err = InsertCompanyWithDefaultRolesTx(ctx, tx, companyID, companyName, CompanyBootstrapProfile{VerificationStatus: "unverified"}); err != nil {
 		return "", "", "", err
 	}
 
@@ -218,11 +245,15 @@ func RegisterPublicAccount(ctx context.Context, db *sql.DB, email, fullName, com
 		return "", "", "", fmt.Errorf("insert membership: %w", err)
 	}
 
+	if err := grantRoleCompanyProfilePermissionsTx(ctx, tx, SelfRegOwnerRoleID); err != nil {
+		return "", "", "", err
+	}
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO membership_roles (membership_id, role_id, status)
-		VALUES (?, ?, 'active')
-	`, membershipID, SelfRegOwnerRoleID); err != nil {
-		return "", "", "", fmt.Errorf("insert membership role: %w", err)
+		INSERT INTO membership_roles (membership_id, role_id, status) VALUES
+		(?, ?, 'active'),
+		(?, ?, 'active')
+	`, membershipID, SelfRegOwnerRoleID, membershipID, tenantAdminRoleID); err != nil {
+		return "", "", "", fmt.Errorf("insert membership roles: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {
