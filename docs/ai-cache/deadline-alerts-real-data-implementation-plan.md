@@ -271,3 +271,13 @@ Theo `deadline-alerts-tab-plan-review-summary.md` tickets 1–3:
 3. **Phase 4 BE-DA-06** — verify worker periodic materialize (P1)  
 4. **Phase 1** UI CTA/card (song song)  
 5. **Phase 0** còn lại: map `Done` ↔ DB status values  
+6. **Phase 5** — màn «Chi tiết cảnh báo» đầy đủ: xem `deadline-alert-detail-screen-implementation-plan.md` (FE-DA-D01…D10, OQ-DETAIL-01)
+
+### Phase 5 — Chi tiết cảnh báo (tóm tắt)
+
+| Trạng thái | Nội dung |
+|------------|----------|
+| Phase 3 | `FE-DA-04` chỉ load disclosure + match alert + link history; **UI workflow vẫn mock** |
+| Phase 5 | Thay mock bằng workflow snapshot/tasks; 5A = Done read-only + CTA sang hồ sơ; 5B tùy PM |
+
+**Plan chi tiết:** `docs/ai-cache/deadline-alert-detail-screen-implementation-plan.md`
