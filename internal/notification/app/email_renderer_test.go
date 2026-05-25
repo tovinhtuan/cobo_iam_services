@@ -38,20 +38,40 @@ var GoldenFlows = []GoldenFlow{
 	{
 		Name:    "user password reset",
 		Key:     "auth.password_reset.user",
-		Vars:    map[string]any{"full_name": "Nguyen Van A", "reset_link": "https://app/reset", "expiry_minutes": 30},
+		Vars: map[string]any{
+			"full_name": "Nguyen Van A", "reset_link": "https://app/reset", "expiry_minutes": 30,
+			"support_email": "support@cobo.vn", "website_url": "https://app.example.com",
+		},
 		Fixture: "auth.password_reset.user",
 	},
 	{
 		Name:    "admin password reset",
 		Key:     "auth.password_reset.admin",
-		Vars:    map[string]any{"full_name": "Nguyen Van A", "reset_link": "https://app/reset", "expiry_minutes": 30},
+		Vars: map[string]any{
+			"full_name": "Nguyen Van A", "reset_link": "https://app/reset", "expiry_minutes": 30,
+			"support_email": "support@cobo.vn", "website_url": "https://app.example.com",
+		},
 		Fixture: "auth.password_reset.admin",
 	},
 	{
-		Name:    "new user invitation",
-		Key:     "auth.user_invitation.new_user",
-		Vars:    map[string]any{"display_name": "Nguyen Van A", "company_name": "COBO", "setup_link": "https://app/invite", "expiry_hours": 72},
+		Name: "new user invitation with company",
+		Key:  "auth.user_invitation.new_user_company",
+		Vars: map[string]any{
+			"display_name": "Tô Vinh Tuấn", "company_name": "Company X",
+			"setup_link": "https://app/invite", "expiry_hours": 72,
+			"support_email": "support@cobo.vn", "website_url": "https://app.example.com",
+		},
 		Fixture: "auth.user_invitation.new_user",
+	},
+	{
+		Name: "new user invitation no company",
+		Key:  "auth.user_invitation.new_user_no_company",
+		Vars: map[string]any{
+			"display_name": "Nguyen Van A",
+			"setup_link": "https://app/invite", "expiry_hours": 72,
+			"support_email": "support@cobo.vn", "website_url": "https://app.example.com",
+		},
+		Fixture: "auth.user_invitation.new_user_no_company",
 	},
 	{
 		Name:    "existing user invitation",

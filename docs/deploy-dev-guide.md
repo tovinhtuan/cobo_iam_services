@@ -327,7 +327,24 @@ ssh -p 21239 root@88.216.208.0 \
   "cd /root/cobo_project && docker compose -f docker-compose.artifacts.yml logs --tail=50 api"
 ```
 
-### 6.4 Kiểm tra FE trên browser
+### 6.4 Biến môi trường link email (reset password, invite, OTP)
+
+| Biến | Giá trị trên dev server `88.216.208.0` |
+|------|----------------------------------------|
+| `PUBLIC_WEB_BASE_URL` | `http://88.216.208.0:3000` |
+| `PUBLIC_API_BASE_URL` | `http://88.216.208.0:8080` |
+
+Đã cấu hình trong `docker-compose.artifacts.yml` (service `api` và `worker`). Có thể override thêm trong `/root/cobo_project/.env` rồi recreate:
+
+```bash
+ssh -p 21239 root@88.216.208.0 \
+  "cd /root/cobo_project && docker compose -f docker-compose.artifacts.yml up -d --force-recreate api worker"
+```
+
+Sau `POST /api/v1/auth/forgot-password`, link trong mail phải là  
+`http://88.216.208.0:3000/reset-password?token=...` — **không** dùng `localhost`.
+
+### 6.5 Kiểm tra FE trên browser
 
 Mở: **`http://88.216.208.0:3000`**
 

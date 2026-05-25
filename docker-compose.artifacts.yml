@@ -111,8 +111,8 @@ services:
       JWT_AUDIENCE: cobo_clients
       JWT_ALG: EdDSA
       JWT_CLOCK_SKEW_SEC: "60"
-      PUBLIC_WEB_BASE_URL: http://localhost:3000
-      PUBLIC_API_BASE_URL: http://localhost:8080
+      PUBLIC_WEB_BASE_URL: http://88.216.208.0:3000
+      PUBLIC_API_BASE_URL: http://88.216.208.0:8080
       WORKER_TICK_INTERVAL: 5s
       WORKFLOW_GROUPS_ENABLED: "true"
       WORKFLOW_DRAFT_ETAG_MODE: enforce
@@ -166,7 +166,8 @@ services:
       WORKER_TICK_INTERVAL: 5s
       ACCESS_TOKEN_MODE: opaque
       ACCESS_TOKEN_TTL: 15m
-      PUBLIC_WEB_BASE_URL: http://localhost:3000
+      PUBLIC_WEB_BASE_URL: http://88.216.208.0:3000
+      PUBLIC_API_BASE_URL: http://88.216.208.0:8080
       SMTP_HOST: ${SMTP_HOST:-mailpit}
       SMTP_PORT: ${SMTP_PORT:-1025}
       SMTP_USER: ${SMTP_USER:-}

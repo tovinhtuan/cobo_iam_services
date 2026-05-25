@@ -7,3 +7,7 @@ variables:
     required: true
   - name: expiry_minutes
     required: true
+  - name: support_email
+    required: true
+  - name: website_url
+    required: true

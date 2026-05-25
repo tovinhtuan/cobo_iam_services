@@ -402,9 +402,15 @@
 
 ## G. PO đã chốt (2026-05-25)
 
+### G.1 Quy tắc «hoàn tất» (bổ sung — canonical)
+
+**Hoàn tất trên màn cảnh báo = hoàn tất workflow + công bố hồ sơ (có bằng chứng).**
+
+Áp dụng OQ-DETAIL-01, 02, 03, 04 (HC-1). Chi tiết triển khai: `deadline-alert-detail-po-decisions-summary.md` §0.
+
 | ID | Quyết định |
 |----|------------|
-| OQ-DETAIL-01 | HC-1 |
+| OQ-DETAIL-01 | HC-1 *(theo §G.1)* |
 | OQ-DETAIL-02 | HC-1 |
 | OQ-DETAIL-03 | HC-1 |
 | OQ-DETAIL-04 | HC-1 |

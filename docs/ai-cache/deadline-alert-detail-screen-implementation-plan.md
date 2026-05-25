@@ -83,13 +83,36 @@
 
 **Nguồn:** `deadline-alert-detail-ba-decision-questionnaire.md` §G · **Tóm tắt:** `deadline-alert-detail-po-decisions-summary.md`
 
+### 5.0 Quy tắc «hoàn tất» (PO chốt — bám §3.6 + §3.8 + §3.9)
+
+**Hoàn tất trên màn cảnh báo = hoàn tất workflow + công bố hồ sơ (có bằng chứng).**
+
+```mermaid
+sequenceDiagram
+  participant U as User
+  participant AD as DeadlineDetail
+  participant WF as Workflow API
+  participant DR as Disclosure API
+  participant AL as deadline-alerts
+
+  U->>AD: Duyệt từng bước (toggle/actions)
+  AD->>WF: actOnTask review/approve/confirm
+  U->>AD: Xác nhận kết thúc / Đã công bố đúng hạn
+  AD->>DR: Publish + evidence_link
+  DR-->>AL: record published
+  AL-->>AD: status DONE
+```
+
+- **Không** endpoint / state «complete alert» riêng.
+- **Publish:** reuse `disclosureApi` (status `Published` + `evidenceLink`) — cùng rule `DisclosureForm` / §3.8.
+
 ### 5.1 Hành vi màn detail (HC-1 — persist, không mock local)
 
 | Thành phần UI | Quyết định PO | Engineering |
 |---------------|---------------|-------------|
-| Toggle «Hoàn thành» từng card | HC-1 | Map workflow task/step; **không** `toggleStage` local |
-| Sidebar «Đã Công bố/Báo cáo đúng hạn» | HC-1 | API → `published`/`completed`, alert `DONE` |
-| Footer: Hủy / Cập nhật / Xác nhận kết thúc | HC-1 | Wire API; **xóa** `handleFinish` / `handleUpdate` giả |
+| Toggle «Hoàn thành» từng card | HC-1 | §5.0: **`actOnTask`**; UI reflect task — **không** `toggleStage` local |
+| Sidebar «Đã Công bố/Báo cáo đúng hạn» | HC-1 | §5.0: **publish + evidence** khi workflow đủ điều kiện |
+| Footer: Hủy / Cập nhật / Xác nhận kết thúc | HC-1 | Hủy → list; Cập nhật → notes/field phụ; Xác nhận → **publish flow** §5.0 |
 | Layout cockpit | HC (timeline + 4 card + sidebar + footer) | Giữ shell mock; bind API |
 | Bước 4 email + InfoBox | **A — ẩn** | Không implement checklist/InfoBox bước 4 |
 | Sidebar dịch thuật | **A — bỏ** | Xóa widget |

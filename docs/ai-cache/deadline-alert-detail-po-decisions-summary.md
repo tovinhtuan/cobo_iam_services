@@ -5,14 +5,41 @@
 
 ---
 
+## 0. Quy tắc nghiệp vụ PO chốt bổ sung (canonical — 2026-05-25)
+
+> **«Hoàn tất trên màn cảnh báo = hoàn tất workflow + công bố hồ sơ (có bằng chứng)»**
+
+| Không phải | Là |
+|------------|-----|
+| Nút đổi `alert.status` / `setState('Done')` trên FE | Chuỗi nghiệp vụ trên **`disclosure_records`** + **`workflow_instances`** |
+| `POST /deadline-alerts/.../complete` | **Publish** hồ sơ (`published`) với **`evidence_link` bắt buộc** (§3.8) |
+| Toggle bước độc lập | Tiến bước qua **`actOnTask`** (review / approve / confirm / reject) §3.9 |
+
+**Thứ tự logic (happy path):**
+
+1. Các task workflow bắt buộc đã xử lý xong (instance không còn bước chặn publish).
+2. User **công bố hồ sơ** — nhập/link bằng chứng SSC/HNX → `status = published` (permission `disclosure.publish`).
+3. Hệ thống derive cảnh báo **`DONE`** (OQ-DA-01: `published` hoặc `completed`).
+
+**UI màn cảnh báo (map HC-1 đã chốt):**
+
+| Control mock | Hành vi sau quy tắc PO |
+|--------------|-------------------------|
+| Toggle từng card | Reflect + trigger **workflow task** (không PATCH step giả) |
+| «Cập nhật thông tin» | Lưu phụ trợ (ghi chú, field hồ sơ) — **không** thay thế publish |
+| «Xác nhận kết thúc» / sidebar «Đã Công bố đúng hạn» | Mở **publish flow** (modal evidence hoặc chuyển `/app/history/{id}` / edit) — chỉ enable khi đủ điều kiện workflow |
+| Badge Done | Read-only sau bước 2–3 thành công |
+
+---
+
 ## 1. Bảng quyết định (canonical)
 
 | ID | PO chọn | Ghi chú triển khai |
 |----|---------|-------------------|
-| **OQ-DETAIL-01** | **HC-1** | Toggle bước + sidebar + footer **persist DB** (publish/complete/DONE). Cần **API contract** trước FE. |
-| **OQ-DETAIL-02** | **HC-1** | Footer 3 nút wired: Hủy / Cập nhật / Xác nhận kết thúc. |
-| **OQ-DETAIL-03** | **HC-1** | Toggle «Hoàn thành» trên WorkflowCard → map workflow task/step. |
-| **OQ-DETAIL-04** | **HC-1** | Widget «Đã Công bố/Báo cáo đúng hạn» → API ghi nhận hoàn tất. |
+| **OQ-DETAIL-01** | **HC-1** | §0: workflow xong + **publish có evidence** → alert `DONE`. Không API alert-complete. |
+| **OQ-DETAIL-02** | **HC-1** | Footer: Hủy / Cập nhật (phụ trợ) / Xác nhận kết thúc = **publish flow** §0. |
+| **OQ-DETAIL-03** | **HC-1** | Toggle card → **`actOnTask`** (§3.9), UI reflect task state. |
+| **OQ-DETAIL-04** | **HC-1** | Sidebar «Đã Công bố đúng hạn» = **publish + evidence** (cùng §0), không click Done local. |
 | **OQ-DETAIL-05** | **HC** *(PO ghi HC-1)* | Cockpit đầy đủ: timeline + 4 card + sidebar + footer (không lens mỏng). |
 | **OQ-DETAIL-06** | **HC-1** | Progress % + milestone **có ngày**; từ `step_timelines` BE, fallback label T+N. |
 | **OQ-DETAIL-07** | **HC-1** | DocumentList theo bước + nút «+» → route upload hồ sơ. |
@@ -48,14 +75,14 @@ PO chọn **HC-1 / persist đầy đủ** cho hầu hết câu hành động (01
 **Chi tiết:** `deadline-alert-detail-contract-alignment-assessment.md`
 
 - **Đã bám:** P1–P4, §3.6 list/detail, ad-hoc entry (DA-06), Done/draft/phòng/H3, cockpit từ `workflow[]`.
-- **Cần chỉnh trước code HC-1:** Toggle bước (03) → workflow **task actions**, không PATCH/toggle giả; «hoàn tất» (01/04) → **publish + evidence** §3.8, không endpoint alert riêng; FE-DA-D19 thêm gate `irregular` + permission ad-hoc.
+- **PO đã chốt §0** — alignment assessment **đóng** phần «hoàn tất»; còn FE-DA-D19 gate `irregular` + permission ad-hoc.
 
 ## 3. API / BE blockers (bắt buộc trước wire HC-1)
 
 | Capability | Đề xuất endpoint / hành vi | Ticket gợi ý |
 |------------|---------------------------|--------------|
-| Xác nhận hoàn tất cảnh báo | **Reuse** disclosure publish (evidence bắt buộc) + derive alert `DONE` — **không** invent `POST .../deadline-alerts/complete` | BE-DA-D10 |
-| Cập nhật trạng thái bước / toggle | **`workflowInstancesApi.actOnTask`** (review/approve/confirm/reject) — toggle UI = reflect task state | BE-DA-D11 / FE |
+| Hoàn tất (§0) | Disclosure **update/publish** + `evidence_link`; list `deadline-alerts` → `DONE` | BE-DA-D10 = verify map; FE publish modal/redirect |
+| Bước workflow (§0) | **`workflowInstancesApi.actOnTask`** only | FE-DA-D15 / D11 |
 | Ghi chú record | `PUT/PATCH .../disclosures/{id}/notes` hoặc field trên record | BE-DA-D12 |
 | `remaining_days` / field card | Mở rộng `deadline-alerts` item hoặc workflow instance DTO | BE-DA-D13 |
 | `step_timelines` đủ ngày | Workflow instance response | BE-DA-D02 (đã có trong plan) |
@@ -81,10 +108,12 @@ PO chọn **HC-1 / persist đầy đủ** cho hầu hết câu hành động (01
 
 ## 5. Thứ tự triển khai đề xuất
 
-1. **BE contract** (§3) — review PO sign-off trên JSON + permission.  
-2. **FE foundation** (D01–D04) + timeline/cards với dữ liệu thật read-only tạm nếu API chưa xong.  
-3. **Wire mutations** (D15–D17) khi BE sẵn.  
-4. **OQ-DA-06** label + route (có thể ship độc lập).
+**Dev-ready (step-by-step):** `deadline-alert-detail-phase5-execution-plan.md`
+
+1. STEP 0–1: chuẩn bị + D19/D20 (ad-hoc CTA, fix submit path).  
+2. STEP 2–3: foundation + UI cockpit read-only.  
+3. STEP 4–5: workflow tasks + publish modal (§0).  
+4. STEP 6–8: documents, BE optional, QA.
 
 ---
 

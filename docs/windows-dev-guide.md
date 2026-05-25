@@ -340,6 +340,10 @@ Thong tin dev server hien tai:
 - User: `root`
 - Path: `/root/cobo_project`
 
+> **Email action links:** `docker-compose.artifacts.yml` tren server dat  
+> `PUBLIC_WEB_BASE_URL=http://88.216.208.0:3000` (reset password, invite, OTP).  
+> Dev local tren Windows van dung `localhost:3000` / `localhost:5173` — xem `configs/config.example.env`.
+
 ### 5.1 Test SSH
 
 ```powershell

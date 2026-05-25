@@ -459,12 +459,16 @@ func (s *service) ForgotPassword(ctx context.Context, req ForgotPasswordRequest)
 		return nil, fmt.Errorf("store password reset token: %w", err)
 	}
 	resetLink := s.buildActionLink("/reset-password", rawToken)
+	customerName := coalesce(user.FullName, user.LoginID)
+	websiteURL := strings.TrimRight(s.webBaseURL, "/")
+	legacySubject, legacyBody := passwordResetUserEmailContent(customerName, resetLink, int(s.passwordResetTTL.Minutes()), s.supportEmail, websiteURL)
 	subject, body := s.renderEmailContent(ctx, "auth.password_reset.user", map[string]any{
-		"full_name":      coalesce(user.FullName, user.LoginID),
+		"full_name":      customerName,
 		"reset_link":     resetLink,
 		"expiry_minutes": int(s.passwordResetTTL.Minutes()),
-	}, "Reset your password", fmt.Sprintf("Xin chao %s,\n\nVui long dat lai mat khau qua link sau:\n%s\n\nLink het han sau %d phut.",
-		coalesce(user.FullName, user.LoginID), resetLink, int(s.passwordResetTTL.Minutes())))
+		"support_email":  s.supportEmail,
+		"website_url":    websiteURL,
+	}, legacySubject, legacyBody)
 	s.publishEmail(ctx, "auth.password_reset_requested", user.UserID, map[string]any{
 		"to":      user.Email,
 		"subject": subject,
@@ -757,18 +761,22 @@ func (s *service) PublishUserInvitationEmail(ctx context.Context, userID, toEmai
 	}
 
 	setupLink := s.buildActionLink("/accept-invitation", rawToken)
-	legacyBody := fmt.Sprintf("Xin chao %s,\n\n", displayName)
-	if companyName != "" {
-		legacyBody += fmt.Sprintf("Cong ty: %s\n\n", companyName)
+	websiteURL := strings.TrimRight(s.webBaseURL, "/")
+	expiryHours := int(s.invitationTTL.Hours())
+	legacySubject, legacyBody := userInvitationNewUserEmailContent(displayName, companyName, setupLink, expiryHours, s.supportEmail, websiteURL)
+	templateKey := "auth.user_invitation.new_user_no_company"
+	vars := map[string]any{
+		"display_name":  displayName,
+		"setup_link":    setupLink,
+		"expiry_hours":  expiryHours,
+		"support_email": s.supportEmail,
+		"website_url":   websiteURL,
 	}
-	legacyBody += fmt.Sprintf("Tai khoan da duoc tao. Thiet lap mat khau qua link sau:\n%s\n\nLink het han sau khoang %d gio. Neu ban khong yeu cau, bo qua email nay.\n",
-		setupLink, int(s.invitationTTL.Hours()))
-	subject, body := s.renderEmailContent(ctx, "auth.user_invitation.new_user", map[string]any{
-		"display_name": displayName,
-		"company_name": companyName,
-		"setup_link":   setupLink,
-		"expiry_hours": int(s.invitationTTL.Hours()),
-	}, "Thiet lap mat khau tai khoan", legacyBody)
+	if companyName != "" {
+		templateKey = "auth.user_invitation.new_user_company"
+		vars["company_name"] = companyName
+	}
+	subject, body := s.renderEmailContent(ctx, templateKey, vars, legacySubject, legacyBody)
 	s.publishEmail(ctx, "auth.user_invitation_sent", userID, map[string]any{
 		"to":      to,
 		"subject": subject,
@@ -806,12 +814,17 @@ func (s *service) AdminRequestPasswordReset(ctx context.Context, targetUserID st
 	}
 	addr := coalesce(strings.TrimSpace(user.Email), strings.TrimSpace(user.LoginID))
 	resetLink := s.buildActionLink("/reset-password", rawToken)
+	customerName := coalesce(user.FullName, user.LoginID)
+	websiteURL := strings.TrimRight(s.webBaseURL, "/")
+	expiryMinutes := int(s.passwordResetTTL.Minutes())
+	legacySubject, legacyBody := passwordResetUserEmailContent(customerName, resetLink, expiryMinutes, s.supportEmail, websiteURL)
 	subject, body := s.renderEmailContent(ctx, "auth.password_reset.admin", map[string]any{
-		"full_name":      coalesce(user.FullName, user.LoginID),
+		"full_name":      customerName,
 		"reset_link":     resetLink,
-		"expiry_minutes": int(s.passwordResetTTL.Minutes()),
-	}, "Dat lai mat khau (yeu cau tu quan tri)", fmt.Sprintf("Xin chao %s,\n\nQuan tri vien da yeu cau dat lai mat khau.\n%s\n\nLink het han sau %d phut.\n",
-		coalesce(user.FullName, user.LoginID), resetLink, int(s.passwordResetTTL.Minutes())))
+		"expiry_minutes": expiryMinutes,
+		"support_email":  s.supportEmail,
+		"website_url":    websiteURL,
+	}, legacySubject, legacyBody)
 	s.publishEmail(ctx, "auth.admin_password_reset_requested", user.UserID, map[string]any{
 		"to":      addr,
 		"subject": subject,
@@ -867,6 +880,89 @@ func coalesce(a, b string) string {
 		return a
 	}
 	return b
+}
+
+func userInvitationNewUserEmailContent(displayName, companyName, setupLink string, expiryHours int, supportEmail, websiteURL string) (subject, body string) {
+	subject = "Lời mời thiết lập tài khoản CoBo Portal"
+	supportEmail = strings.TrimSpace(supportEmail)
+	if supportEmail == "" {
+		supportEmail = "support@cobo.vn"
+	}
+	websiteURL = strings.TrimSpace(strings.TrimRight(websiteURL, "/"))
+	if websiteURL == "" {
+		websiteURL = "http://localhost:5173"
+	}
+	companyName = strings.TrimSpace(companyName)
+	if companyName != "" {
+		body = fmt.Sprintf(`Xin chào %s,
+
+Quý khách đã được mời sử dụng CoBo Portal bởi:
+
+Công ty: %s
+
+Tài khoản của Quý khách đã được tạo trên hệ thống. Vui lòng nhấn vào liên kết bên dưới để thiết lập mật khẩu và hoàn tất quá trình kích hoạt tài khoản:
+
+%s
+
+Liên kết này có hiệu lực trong khoảng %d giờ kể từ thời điểm email được gửi. Vì lý do bảo mật, vui lòng không chia sẻ liên kết này với bất kỳ ai.
+
+Nếu Quý khách không mong đợi lời mời này hoặc cho rằng email được gửi nhầm, vui lòng bỏ qua email này. Tài khoản sẽ không được kích hoạt nếu Quý khách không thực hiện thao tác thiết lập mật khẩu.
+
+Trân trọng,
+Đội ngũ CoBo Portal
+Email hỗ trợ: %s
+Website: %s
+`, displayName, companyName, setupLink, expiryHours, supportEmail, websiteURL)
+	} else {
+		body = fmt.Sprintf(`Xin chào %s,
+
+Tài khoản của Quý khách đã được tạo trên CoBo Portal.
+
+Vui lòng nhấn vào liên kết bên dưới để thiết lập mật khẩu và hoàn tất quá trình kích hoạt tài khoản:
+
+%s
+
+Liên kết này có hiệu lực trong khoảng %d giờ kể từ thời điểm email được gửi. Vì lý do bảo mật, vui lòng không chia sẻ liên kết này với bất kỳ ai.
+
+Nếu Quý khách không mong đợi lời mời này hoặc cho rằng email được gửi nhầm, vui lòng bỏ qua email này. Tài khoản sẽ không được kích hoạt nếu Quý khách không thực hiện thao tác thiết lập mật khẩu.
+
+Trân trọng,
+Đội ngũ CoBo Portal
+Email hỗ trợ: %s
+Website: %s
+`, displayName, setupLink, expiryHours, supportEmail, websiteURL)
+	}
+	return subject, body
+}
+
+func passwordResetUserEmailContent(customerName, resetLink string, expiryMinutes int, supportEmail, websiteURL string) (subject, body string) {
+	subject = "Yêu cầu đặt lại mật khẩu CoBo Portal"
+	supportEmail = strings.TrimSpace(supportEmail)
+	if supportEmail == "" {
+		supportEmail = "support@cobo.vn"
+	}
+	websiteURL = strings.TrimSpace(strings.TrimRight(websiteURL, "/"))
+	if websiteURL == "" {
+		websiteURL = "http://localhost:5173"
+	}
+	body = fmt.Sprintf(`Xin chào %s,
+
+Chúng tôi đã nhận được yêu cầu đặt lại mật khẩu cho tài khoản của Quý khách trên CoBo Portal.
+
+Vui lòng nhấn vào liên kết bên dưới để đặt lại mật khẩu:
+
+%s
+
+Liên kết này có hiệu lực trong %d phút kể từ thời điểm email được gửi. Vì lý do bảo mật, vui lòng không chia sẻ liên kết này với bất kỳ ai.
+
+Nếu Quý khách không yêu cầu đặt lại mật khẩu, vui lòng bỏ qua email này. Mật khẩu hiện tại của Quý khách sẽ không bị thay đổi nếu Quý khách không thực hiện thao tác đặt lại.
+
+Trân trọng,
+Đội ngũ CoBo Portal
+Email hỗ trợ: %s
+Website: %s
+`, customerName, resetLink, expiryMinutes, supportEmail, websiteURL)
+	return subject, body
 }
 
 func registrationOTPEmailContent(otpCode string, expiryMinutes int, supportEmail, websiteURL string) (subject, body string) {

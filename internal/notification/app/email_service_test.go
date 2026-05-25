@@ -186,7 +186,7 @@ func TestDispatchEmail_SanitisesAllSensitiveVars(t *testing.T) {
 	svc, repo := newTestEmailService()
 	req := notificationapp.DispatchEmailRequest{
 		To:             "user@example.com",
-		TemplateKey:    "auth.user_invitation.new_user",
+		TemplateKey:    "auth.user_invitation.new_user_company",
 		Locale:         "vi",
 		IdempotencyKey: "invite-001",
 		Variables: map[string]any{

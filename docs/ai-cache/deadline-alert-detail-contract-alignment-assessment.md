@@ -13,7 +13,7 @@
 | **~20% cần làm rõ** | «Đánh dấu hoàn thành» HC-1 phải map **lifecycle hồ sơ + workflow task**, không API alert riêng. |
 | **~10% lệch / cắt** | Toggle bước kiểu mock; ẩn bước 4 công bố; API ghi chú chưa có trong contract gốc. |
 
-**Verdict:** Plan Phase 5 + PO decisions **bám phần data & navigation** đã chốt; **chưa đủ** bám **semantics workflow & publish** nếu implement HC-1 literal (toggle + POST complete mới) mà không gắn API hiện có.
+**Verdict (cập nhật sau PO chốt §0):** Plan Phase 5 + PO decisions **bám contract** khi implement theo quy tắc: *«Hoàn tất trên màn cảnh báo = hoàn tất workflow + công bố hồ sơ (có bằng chứng)»* (`deadline-alert-detail-po-decisions-summary.md` §0).
 
 ---
 
@@ -99,7 +99,7 @@
 2. **Sửa FE-DA-D15/D03:** Toggle = trạng thái task, không PATCH step giả.
 3. **FE-DA-D19:** Permission + chỉ hiện CTA khi user có quyền ad-hoc; copy contract «chỉ bất thường».
 4. **Cập nhật** `deadline-alerts-real-data-implementation-plan.md` §1.4: CTA header = «Tạo cảnh báo bất thường» → ad-hoc (theo PO).
-5. **PO xác nhận một dòng:** «Đánh dấu hoàn thành trên detail» = **hoàn tất workflow + publish hồ sơ**, không nút độc lập trên entity alert.
+5. ~~PO xác nhận~~ **Đã chốt (§0 po-decisions-summary):** Hoàn tất trên màn cảnh báo = hoàn tất workflow + công bố hồ sơ (có bằng chứng).
 
 ---
 

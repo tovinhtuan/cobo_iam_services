@@ -1,7 +1,16 @@
-Xin chao {{.full_name}},
+Xin chào {{.full_name}},
 
-Quan tri vien da yeu cau dat lai mat khau.
+Chúng tôi đã nhận được yêu cầu đặt lại mật khẩu cho tài khoản của Quý khách trên CoBo Portal.
+
+Vui lòng nhấn vào liên kết bên dưới để đặt lại mật khẩu:
+
 {{.reset_link}}
 
-Link het han sau {{.expiry_minutes}} phut.
+Liên kết này có hiệu lực trong {{.expiry_minutes}} phút kể từ thời điểm email được gửi. Vì lý do bảo mật, vui lòng không chia sẻ liên kết này với bất kỳ ai.
 
+Nếu Quý khách không yêu cầu đặt lại mật khẩu, vui lòng bỏ qua email này. Mật khẩu hiện tại của Quý khách sẽ không bị thay đổi nếu Quý khách không thực hiện thao tác đặt lại.
+
+Trân trọng,
+Đội ngũ CoBo Portal
+Email hỗ trợ: {{.support_email}}
+Website: {{.website_url}}

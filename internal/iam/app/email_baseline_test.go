@@ -63,11 +63,12 @@ func TestEmailService_EmbedFlows_BaselineSubjectsAndStructure(t *testing.T) {
 			fixture:       "auth.password_reset.user",
 			wantEventType: "auth.password_reset_requested",
 			wantBodyContains: []string{
-				"Xin chao Nguyen Van A,",
-				"Vui long dat lai mat khau qua link sau:",
+				"Xin chào Nguyen Van A,",
+				"trên CoBo Portal",
 				"https://app.example.com/reset-password?token=",
-				"Link het han sau",
-				"phut.",
+				"Liên kết này có hiệu lực trong 30 phút",
+				"Email hỗ trợ: support@cobo.vn",
+				"Website: https://app.example.com",
 			},
 			trigger: func(t *testing.T, svc iamapp.Service, _ *captureOutboxPublisher) {
 				t.Helper()
@@ -81,15 +82,12 @@ func TestEmailService_EmbedFlows_BaselineSubjectsAndStructure(t *testing.T) {
 			fixture:       "auth.password_reset.admin",
 			wantEventType: "auth.admin_password_reset_requested",
 			wantBodyContains: []string{
-				"Xin chao Nguyen Van A,",
-				"Quan tri vien da yeu cau dat lai mat khau.",
+				"Xin chào Nguyen Van A,",
+				"trên CoBo Portal",
 				"https://app.example.com/reset-password?token=",
-				"Link het han sau",
-				"phut.",
-			},
-			// Admin reset body must NOT contain the user-self-service copy.
-			wantBodyExcludes: []string{
-				"Vui long dat lai mat khau qua link sau:",
+				"Liên kết này có hiệu lực trong 30 phút",
+				"Email hỗ trợ: support@cobo.vn",
+				"Website: https://app.example.com",
 			},
 			trigger: func(t *testing.T, svc iamapp.Service, _ *captureOutboxPublisher) {
 				t.Helper()

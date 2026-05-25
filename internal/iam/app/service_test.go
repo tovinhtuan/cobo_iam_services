@@ -3,6 +3,7 @@ package app_test
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -407,12 +408,58 @@ func TestPublishUserInvitationEmail_EmbedUsesTemplate(t *testing.T) {
 	if publisher.last.EventType != "auth.user_invitation_sent" {
 		t.Fatalf("event_type = %q", publisher.last.EventType)
 	}
-	if got := publisher.last.Payload["subject"]; got != "Thiet lap mat khau tai khoan" {
+	if got := publisher.last.Payload["subject"]; got != "Lời mời thiết lập tài khoản CoBo Portal" {
 		t.Fatalf("subject = %v", got)
 	}
-	wantBody := "Xin chao Nguyen Van A,\n\nCong ty: COBO\n\nTai khoan da duoc tao. Thiet lap mat khau qua link sau:\nhttps://app.example.com/accept-invitation?token=token-123\n\nLink het han sau khoang 72 gio. Neu ban khong yeu cau, bo qua email nay.\n"
-	if got := publisher.last.Payload["body"]; got != wantBody {
-		t.Fatalf("body mismatch\nwant: %q\ngot:  %q", wantBody, got)
+	body, _ := publisher.last.Payload["body"].(string)
+	for _, snippet := range []string{
+		"Xin chào Nguyen Van A,",
+		"Quý khách đã được mời sử dụng CoBo Portal bởi:",
+		"Công ty: COBO",
+		"https://app.example.com/accept-invitation?token=token-123",
+		"72 giờ",
+		"Email hỗ trợ:",
+		"Website: https://app.example.com",
+	} {
+		if !strings.Contains(body, snippet) {
+			t.Fatalf("body missing %q\nbody: %q", snippet, body)
+		}
+	}
+}
+
+func TestPublishUserInvitationEmail_EmbedNoCompany(t *testing.T) {
+	ctx := context.Background()
+	publisher := &captureOutboxPublisher{}
+	svc := newTestIAMService(t, testIAMDeps{
+		cred:    testCred(),
+		members: cainmem.NewMembershipQueryService(),
+		opts: []iamapp.ServiceOption{
+			iamapp.WithOutboxPublisher(publisher),
+			iamapp.WithAuthFlowConfig(iamapp.AuthFlowConfig{
+				WebBaseURL:             "https://app.example.com",
+				SupportEmail:           "support@cobo.vn",
+				UserInvitationTokenTTL: 72 * time.Hour,
+				EmailTemplateSource:    "embed",
+				EmailTemplateRegistry:  notificationregistry.NewEmbedRegistry(),
+				EmailRenderer:          notificationapp.NewEmailRenderer(),
+			}),
+		},
+	})
+
+	if err := svc.PublishUserInvitationEmail(ctx, "u_123", "invitee@example.com", "Nguyen Van A", "invitee@example.com", "token-456", ""); err != nil {
+		t.Fatalf("PublishUserInvitationEmail error = %v", err)
+	}
+	body, _ := publisher.last.Payload["body"].(string)
+	if strings.Contains(body, "Công ty:") {
+		t.Fatalf("no-company body must not contain company block: %q", body)
+	}
+	for _, snippet := range []string{
+		"Tài khoản của Quý khách đã được tạo trên CoBo Portal",
+		"accept-invitation?token=token-456",
+	} {
+		if !strings.Contains(body, snippet) {
+			t.Fatalf("body missing %q", snippet)
+		}
 	}
 }
 
