@@ -43,6 +43,7 @@ type Repository interface {
 
 type TypeCatalog interface {
 	GetTemplateCategory(ctx context.Context, companyID, typeID string) (string, error)
+	GetTypeDisplayName(ctx context.Context, companyID, typeID string) (string, error)
 }
 
 // RecordCreator is the cross-module interface the ad-hoc service uses to submit a disclosure record.

@@ -1645,10 +1645,12 @@ func (r *Repository) UpsertPeriodicCycle(ctx context.Context, in disclosureapp.P
 func (r *Repository) ListPendingCycles(ctx context.Context, asOf time.Time, bufferDays int) ([]disclosureapp.PeriodicCycleRow, error) {
 	cutoff := asOf.AddDate(0, 0, bufferDays).Format("2006-01-02")
 	const q = `
-		SELECT cycle_id, type_id, company_id, cycle_label, due_date
-		FROM periodic_cycles
-		WHERE record_id IS NULL AND due_date <= ?
-		ORDER BY due_date ASC
+		SELECT pc.cycle_id, pc.type_id, COALESCE(dtv.name, ''), pc.company_id, pc.cycle_label, pc.due_date
+		FROM periodic_cycles pc
+		INNER JOIN disclosure_types dt ON dt.type_id = pc.type_id
+		INNER JOIN disclosure_type_versions dtv ON dtv.type_id = dt.type_id AND dtv.version_no = dt.active_version_no
+		WHERE pc.record_id IS NULL AND pc.due_date <= ?
+		ORDER BY pc.due_date ASC
 		LIMIT 200`
 	rows, err := r.db.QueryContext(ctx, q, cutoff)
 	if err != nil {
@@ -1659,7 +1661,7 @@ func (r *Repository) ListPendingCycles(ctx context.Context, asOf time.Time, buff
 	for rows.Next() {
 		var row disclosureapp.PeriodicCycleRow
 		var dueDateStr string
-		if err := rows.Scan(&row.CycleID, &row.TypeID, &row.CompanyID, &row.CycleLabel, &dueDateStr); err != nil {
+		if err := rows.Scan(&row.CycleID, &row.TypeID, &row.TypeName, &row.CompanyID, &row.CycleLabel, &dueDateStr); err != nil {
 			return nil, fmt.Errorf("scan pending cycle: %w", err)
 		}
 		row.DueDate, _ = time.Parse("2006-01-02", dueDateStr)

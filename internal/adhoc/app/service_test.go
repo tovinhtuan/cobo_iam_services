@@ -93,11 +93,13 @@ type fakeRecordCreator struct {
 	callCount  int
 	recordID   string
 	workflowID string
+	lastTitle  string
 }
 
 func (f *fakeRecordCreator) CreateAndSubmitRecord(ctx context.Context, companyID, typeID, createdByMembershipID, title string, t0Date *time.Time) (string, string, error) {
 	f.callCount++
 	f.t0Date = t0Date
+	f.lastTitle = title
 	return f.recordID, f.workflowID, nil
 }
 
@@ -126,10 +128,11 @@ func (f *fakeAuthService) GetEffectiveAccess(_ context.Context, _, _ string) (*a
 }
 
 type fakeTypeCatalog struct {
-	category  string
-	err       error
-	callCount int
-	lastType  string
+	category    string
+	displayName string
+	err         error
+	callCount   int
+	lastType    string
 }
 
 func (f *fakeTypeCatalog) GetTemplateCategory(_ context.Context, _ string, typeID string) (string, error) {
@@ -139,6 +142,10 @@ func (f *fakeTypeCatalog) GetTemplateCategory(_ context.Context, _ string, typeI
 		return "", f.err
 	}
 	return f.category, nil
+}
+
+func (f *fakeTypeCatalog) GetTypeDisplayName(_ context.Context, _ string, _ string) (string, error) {
+	return f.displayName, nil
 }
 
 // fakeMembershipValidator always returns active=true and hasPerm=true unless overridden.
@@ -406,6 +413,32 @@ func TestAdminApprovePersistsFinalOverrideFields(t *testing.T) {
 	}
 	if resp.Proposal.FinalDeadlineDate == nil || *resp.Proposal.FinalDeadlineDate != "2026-06-30" {
 		t.Fatalf("expected response to include final deadline date, got %#v", resp.Proposal.FinalDeadlineDate)
+	}
+}
+
+func TestAdminApproveUsesProposalTitleLineForRecord(t *testing.T) {
+	repo := &fakeRepository{proposal: &ProposalDTO{
+		ProposalID:          "prop-002",
+		CompanyID:           "company-001",
+		TypeID:              "dt-001",
+		Status:              StatusPendingAdminApproval,
+		ChangeNote:          "Tiêu đề cảnh báo bất thường\nMô tả chi tiết không vào title",
+		ProcessControllerID: "member-admin",
+	}}
+	recordCreator := &fakeRecordCreator{recordID: "record-002", workflowID: "wf-002"}
+	auth := &fakeAuthService{decision: authapp.DecisionAllow}
+	svc := newTestService(repo, recordCreator, &fakeTypeCatalog{category: "irregular", displayName: "Template fallback"}, auth)
+
+	_, err := svc.AdminApprove(context.Background(), AdminApproveRequest{
+		Subject:        Subject{CompanyID: "company-001", MembershipID: "member-admin", UserID: "user-admin"},
+		ProposalID:     "prop-002",
+		IdempotencyKey: "idem-002",
+	})
+	if err != nil {
+		t.Fatalf("AdminApprove() error = %v", err)
+	}
+	if recordCreator.lastTitle != "Tiêu đề cảnh báo bất thường" {
+		t.Fatalf("record title = %q want proposal title line only", recordCreator.lastTitle)
 	}
 }
 

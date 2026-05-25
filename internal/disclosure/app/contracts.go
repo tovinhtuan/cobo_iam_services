@@ -878,6 +878,7 @@ type PeriodicTypeRow struct {
 type PeriodicCycleRow struct {
 	CycleID    string
 	TypeID     string
+	TypeName   string
 	CompanyID  string
 	CycleLabel string
 	DueDate    time.Time

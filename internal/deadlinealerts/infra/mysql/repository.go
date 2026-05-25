@@ -25,6 +25,16 @@ func (r *Repository) ListRows(ctx context.Context, companyID string) ([]deadline
 			dr.record_id,
 			COALESCE(dr.type_id, ''),
 			dr.title,
+			COALESCE(dtv.name, ''),
+			COALESCE((
+				SELECT TRIM(SUBSTRING_INDEX(ah.change_note, '\n', 1))
+				FROM ad_hoc_proposals ah
+				WHERE ah.company_id = dr.company_id
+				  AND ah.record_id = dr.record_id
+				  AND ah.status = 'approved'
+				ORDER BY ah.updated_at DESC
+				LIMIT 1
+			), ''),
 			dr.status,
 			COALESCE(DATE_FORMAT(dr.planned_date, '%Y-%m-%d'), ''),
 			COALESCE(wi.workflow_instance_id, ''),
@@ -89,6 +99,8 @@ func (r *Repository) ListRows(ctx context.Context, companyID string) ([]deadline
 			&row.RecordID,
 			&row.TypeID,
 			&row.Title,
+			&row.TypeName,
+			&row.AdHocTitleLine,
 			&row.RecordStatus,
 			&row.PlannedDate,
 			&row.WorkflowInstanceID,

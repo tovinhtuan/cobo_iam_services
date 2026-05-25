@@ -50,6 +50,8 @@ type AlertRow struct {
 	RecordID           string
 	TypeID             string
 	Title              string
+	TypeName           string
+	AdHocTitleLine     string
 	RecordStatus       string
 	PlannedDate        string
 	WorkflowInstanceID string

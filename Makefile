@@ -91,6 +91,10 @@ fe-test: ## Chạy FE tests
 	@$(ensure_fe_env)
 	cd $(FE_DIR) && npm test
 
+fe-check-mojibake: ## Chặn chuỗi tiếng Việt bị mojibake trong FE src
+	@$(ensure_fe_env)
+	cd $(FE_DIR) && npm run check:mojibake
+
 fe-clean: ## Xóa dist/
 	@$(ensure_fe_env)
 	cd $(FE_DIR) && npm run clean

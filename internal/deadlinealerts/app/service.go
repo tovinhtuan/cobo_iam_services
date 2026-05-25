@@ -78,7 +78,7 @@ func (s *service) ListDeadlineAlerts(ctx context.Context, req ListDeadlineAlerts
 			RecordID:           row.RecordID,
 			WorkflowInstanceID: strings.TrimSpace(row.WorkflowInstanceID),
 			TypeID:             row.TypeID,
-			Title:              row.Title,
+			Title:              DisplayAlertTitle(row),
 			DueDate:            dueDate,
 			Status:             alertStatus,
 			ActiveDepartments:  ActiveDepartmentsFromSnapshot(row.CurrentStepCode, row.SnapshotJSON),

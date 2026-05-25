@@ -78,6 +78,7 @@ seed_dev_identity_authorization.sql
 0072_fix_display_groups_vietnamese_labels.up.sql
 0073_self_reg_company_profile_permissions.up.sql
 0074_deadline_view_permission.up.sql
+0075_fix_unicode_mojibake_disclosure_text.up.sql
 "
 
 mysql_exec() {

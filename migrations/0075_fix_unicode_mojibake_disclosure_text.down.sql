@@ -1,0 +1,1 @@
+-- 0075 down: no-op (Mojibake repair is not safely reversible).

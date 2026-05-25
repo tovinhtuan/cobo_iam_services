@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/cobo/cobo_iam_services/internal/platform/idgen"
@@ -101,5 +102,13 @@ func computeCycleLabelAndStart(t PeriodicTypeRow, now time.Time) (label string, 
 }
 
 func autoRecordTitle(c PeriodicCycleRow) string {
-	return fmt.Sprintf("[Tự động] %s — %s", c.TypeID, c.CycleLabel)
+	name := strings.TrimSpace(c.TypeName)
+	if name == "" {
+		name = strings.TrimSpace(c.TypeID)
+	}
+	cycle := strings.TrimSpace(c.CycleLabel)
+	if cycle == "" {
+		return name
+	}
+	return fmt.Sprintf("%s — %s", name, cycle)
 }

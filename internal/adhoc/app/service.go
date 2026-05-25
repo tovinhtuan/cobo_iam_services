@@ -200,10 +200,8 @@ func (s *service) AdminApprove(ctx context.Context, req AdminApproveRequest) (*A
 	adjustmentNote := strings.TrimSpace(req.AdjustmentNote)
 
 	// Auto-create and submit the disclosure record synchronously.
-	title := "Ad-hoc: " + cur.TypeID
-	if cur.ChangeNote != "" {
-		title = "Ad-hoc: " + cur.ChangeNote
-	}
+	typeDisplayName, _ := s.typeCatalog.GetTypeDisplayName(ctx, cur.CompanyID, cur.TypeID)
+	title := ResolveAdHocRecordTitle(cur.ChangeNote, typeDisplayName, cur.TypeID)
 	recordID := reservation.ProgressRecordID
 	workflowInstanceID := reservation.ProgressWorkflowID
 	if strings.TrimSpace(recordID) == "" {
