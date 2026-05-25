@@ -29,7 +29,10 @@ var GoldenFlows = []GoldenFlow{
 	{
 		Name:    "email verification",
 		Key:     "auth.email_verification",
-		Vars:    map[string]any{"full_name": "Nguyen Van A", "otp_code": "123456", "expiry_minutes": 15},
+		Vars: map[string]any{
+			"otp_code": "123456", "expiry_minutes": 15,
+			"support_email": "support@cobo.vn", "website_url": "https://app.example.com",
+		},
 		Fixture: "auth.email_verification",
 	},
 	{

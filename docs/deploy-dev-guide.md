@@ -428,3 +428,5 @@ make deploy-all
 # 5. Apply toàn bộ migrations
 sh deploy-dev.sh migrate
 ```
+
+pass: uNf5pfg1Pu7etvp

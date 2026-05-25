@@ -42,7 +42,10 @@ func validOTPRequest() notificationapp.DispatchEmailRequest {
 		To:                  "nguyen@example.com",
 		TemplateKey:         "auth.email_verification",
 		Locale:              "vi",
-		Variables:           map[string]any{"full_name": "Nguyen Van A", "otp_code": "123456", "expiry_minutes": 15},
+		Variables: map[string]any{
+			"otp_code": "123456", "expiry_minutes": 15,
+			"support_email": "support@cobo.vn", "website_url": "https://app.example.com",
+		},
 		IdempotencyKey:      "auth.email_verification:u_123:otp_001",
 		TriggeredByUserID:   "u_123",
 		SourceEventType:     "auth.email_verification_requested",
@@ -96,7 +99,10 @@ func TestDispatchEmail_DuplicateIdempotencyReturnsExisting(t *testing.T) {
 		To:             validOTPRequest().To,
 		TemplateKey:    validOTPRequest().TemplateKey,
 		Locale:         "vi",
-		Variables:      map[string]any{"full_name": "Nguyen Van A", "otp_code": "999999", "expiry_minutes": 15},
+		Variables: map[string]any{
+			"otp_code": "999999", "expiry_minutes": 15,
+			"support_email": "support@cobo.vn", "website_url": "https://app.example.com",
+		},
 		IdempotencyKey: validOTPRequest().IdempotencyKey,
 	})
 	if err != nil {
@@ -212,14 +218,15 @@ func TestDispatchEmail_SanitisesAllSensitiveVars(t *testing.T) {
 func TestPreviewEmail_RendersWithoutPersisting(t *testing.T) {
 	svc, repo := newTestEmailService()
 	rendered, err := svc.PreviewEmail(context.Background(), "auth.email_verification", "vi", map[string]any{
-		"full_name":      "Nguyen Van A",
 		"otp_code":       "111111",
 		"expiry_minutes": 15,
+		"support_email":  "support@cobo.vn",
+		"website_url":    "https://app.example.com",
 	})
 	if err != nil {
 		t.Fatalf("PreviewEmail error = %v", err)
 	}
-	if rendered.Subject != "Verify your email" {
+	if rendered.Subject != "Mã xác thực đăng ký tài khoản CoBo Portal" {
 		t.Fatalf("preview subject = %q", rendered.Subject)
 	}
 	if !strings.Contains(rendered.TextBody, "111111") {

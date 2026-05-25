@@ -1,6 +1,16 @@
-Xin chao {{.full_name}},
+Xin chào Quý khách,
 
-Ma xac thuc email cua ban la: {{.otp_code}}
-Ma het han sau {{.expiry_minutes}} phut.
+Cảm ơn Quý khách đã đăng ký tài khoản trên CoBo Portal.
 
-Neu ban khong yeu cau ma nay, hay bo qua email nay.
+Mã xác thực OTP của Quý khách là:
+
+{{.otp_code}}
+
+Mã OTP này có hiệu lực trong {{.expiry_minutes}} phút. Vui lòng không chia sẻ mã này với bất kỳ ai để đảm bảo an toàn cho tài khoản của Quý khách.
+
+Nếu Quý khách không thực hiện yêu cầu đăng ký tài khoản, vui lòng bỏ qua email này hoặc liên hệ với bộ phận hỗ trợ của chúng tôi.
+
+Trân trọng,
+Đội ngũ CoBo Portal
+Email hỗ trợ: {{.support_email}}
+Website: {{.website_url}}

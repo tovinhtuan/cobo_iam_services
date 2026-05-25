@@ -173,6 +173,7 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 	emailRenderer := notificationapp.NewEmailRenderer()
 	iamOpts = append(iamOpts, iamapp.WithAuthFlowConfig(iamapp.AuthFlowConfig{
 		WebBaseURL:              cfg.PublicWebBaseURL,
+		SupportEmail:            cfg.SupportEmail,
 		UserInvitationTokenTTL:  cfg.UserInvitationTokenTTL,
 		EmailVerificationOTPTTL: cfg.EmailVerificationOTPTTL,
 		EmailTemplateSource:     cfg.EmailTemplateSource,

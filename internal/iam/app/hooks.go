@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"time"
 
 	notificationapp "github.com/cobo/cobo_iam_services/internal/notification/app"
@@ -49,6 +50,8 @@ func WithOutboxPublisher(p outbox.Publisher) ServiceOption {
 
 type AuthFlowConfig struct {
 	WebBaseURL                string
+	// SupportEmail shown in registration OTP email footer (SUPPORT_EMAIL).
+	SupportEmail string
 	PasswordResetTokenTTL     time.Duration
 	EmailVerificationTokenTTL time.Duration
 	// EmailVerificationOTPTTL expiry for numeric email OTP (register/resend).
@@ -64,6 +67,9 @@ func WithAuthFlowConfig(cfg AuthFlowConfig) ServiceOption {
 	return func(s *service) {
 		if cfg.WebBaseURL != "" {
 			s.webBaseURL = cfg.WebBaseURL
+		}
+		if strings.TrimSpace(cfg.SupportEmail) != "" {
+			s.supportEmail = strings.TrimSpace(cfg.SupportEmail)
 		}
 		if cfg.PasswordResetTokenTTL > 0 {
 			s.passwordResetTTL = cfg.PasswordResetTokenTTL

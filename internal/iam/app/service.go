@@ -38,6 +38,7 @@ type service struct {
 	regDB                 *sql.DB
 	registrationDisabled  bool
 	webBaseURL            string
+	supportEmail          string
 	passwordResetTTL      time.Duration
 	emailVerifyTTL        time.Duration
 	emailOTPTTL           time.Duration
@@ -50,7 +51,8 @@ type service struct {
 func NewService(cred CredentialVerifier, sessions SessionRepository, tokens TokenIssuer, memberships ca.MembershipQueryService, idgen idgen.Generator, opts ...ServiceOption) Service {
 	s := &service{
 		cred: cred, sessions: sessions, tokens: tokens, memberships: memberships, idgen: idgen,
-		webBaseURL: "http://localhost:5173", passwordResetTTL: 30 * time.Minute, emailVerifyTTL: 24 * time.Hour,
+		webBaseURL: "http://localhost:5173", supportEmail: "support@cobo.vn",
+		passwordResetTTL: 30 * time.Minute, emailVerifyTTL: 24 * time.Hour,
 		emailOTPTTL:         15 * time.Minute,
 		invitationTTL:       72 * time.Hour,
 		emailTemplateSource: "legacy",
@@ -148,6 +150,7 @@ func (s *service) Login(ctx context.Context, req LoginRequest) (*LoginResponse, 
 			return nil, fmt.Errorf("create session: %w", err)
 		}
 		s.recordLoginAttempt(ctx, req, user, true, nil)
+		s.enrichLoginVerification(ctx, resp)
 		return resp, nil
 	}
 
@@ -195,15 +198,42 @@ func (s *service) Login(ctx context.Context, req LoginRequest) (*LoginResponse, 
 }
 
 func (s *service) enrichLoginVerification(ctx context.Context, resp *LoginResponse) {
-	if s.regDB == nil || resp == nil || resp.CurrentContext == nil {
+	if resp == nil || strings.TrimSpace(resp.User.UserID) == "" {
 		return
 	}
-	ev, cs, err := iamregmysql.VerificationSnapshot(ctx, s.regDB, resp.User.UserID, resp.CurrentContext.CompanyID)
-	if err != nil {
+	if resp.CurrentContext != nil && s.regDB != nil {
+		ev, cs, err := iamregmysql.VerificationSnapshot(ctx, s.regDB, resp.User.UserID, resp.CurrentContext.CompanyID)
+		if err != nil {
+			return
+		}
+		resp.EmailVerified = ev
+		resp.CompanyVerificationStatus = cs
 		return
 	}
-	resp.EmailVerified = ev
-	resp.CompanyVerificationStatus = cs
+	s.enrichEmailVerifiedFlag(ctx, resp)
+}
+
+func (s *service) enrichEmailVerifiedFlag(ctx context.Context, resp *LoginResponse) {
+	if resp == nil || strings.TrimSpace(resp.User.UserID) == "" {
+		return
+	}
+	uid := resp.User.UserID
+	if s.recovery != nil {
+		ev, err := s.recovery.IsEmailVerified(ctx, uid)
+		if err == nil {
+			resp.EmailVerified = ev
+			return
+		}
+	}
+	if s.regDB != nil {
+		ev, err := iamregmysql.EmailVerifiedSnapshot(ctx, s.regDB, uid)
+		if err == nil {
+			resp.EmailVerified = ev
+			return
+		}
+	}
+	// No persistence wired (dev/inmemory): treat as verified to match legacy clients.
+	resp.EmailVerified = true
 }
 
 func randomDigits6() string {
@@ -258,12 +288,13 @@ func (s *service) issueEmailVerificationOTP(ctx context.Context, userID string) 
 	if minutes < 1 {
 		minutes = 1
 	}
+	legacySubject, legacyBody := registrationOTPEmailContent(code, minutes, s.supportEmail, s.webBaseURL)
 	subject, body := s.renderEmailContent(ctx, "auth.email_verification", map[string]any{
-		"full_name":      coalesce(u.FullName, u.LoginID),
 		"otp_code":       code,
 		"expiry_minutes": minutes,
-	}, "Verify your email", fmt.Sprintf("Xin chao %s,\n\nMa xac thuc email cua ban la: %s\nMa het han sau %d phut.\n\nNeu ban khong yeu cau ma nay, hay bo qua email nay.",
-		coalesce(u.FullName, u.LoginID), code, minutes))
+		"support_email":  s.supportEmail,
+		"website_url":    strings.TrimRight(s.webBaseURL, "/"),
+	}, legacySubject, legacyBody)
 	s.publishEmail(ctx, "auth.email_verification_requested", userID, map[string]any{
 		"to":      to,
 		"subject": subject,
@@ -836,6 +867,36 @@ func coalesce(a, b string) string {
 		return a
 	}
 	return b
+}
+
+func registrationOTPEmailContent(otpCode string, expiryMinutes int, supportEmail, websiteURL string) (subject, body string) {
+	subject = "Mã xác thực đăng ký tài khoản CoBo Portal"
+	supportEmail = strings.TrimSpace(supportEmail)
+	if supportEmail == "" {
+		supportEmail = "support@cobo.vn"
+	}
+	websiteURL = strings.TrimSpace(strings.TrimRight(websiteURL, "/"))
+	if websiteURL == "" {
+		websiteURL = "http://localhost:5173"
+	}
+	body = fmt.Sprintf(`Xin chào Quý khách,
+
+Cảm ơn Quý khách đã đăng ký tài khoản trên CoBo Portal.
+
+Mã xác thực OTP của Quý khách là:
+
+%s
+
+Mã OTP này có hiệu lực trong %d phút. Vui lòng không chia sẻ mã này với bất kỳ ai để đảm bảo an toàn cho tài khoản của Quý khách.
+
+Nếu Quý khách không thực hiện yêu cầu đăng ký tài khoản, vui lòng bỏ qua email này hoặc liên hệ với bộ phận hỗ trợ của chúng tôi.
+
+Trân trọng,
+Đội ngũ CoBo Portal
+Email hỗ trợ: %s
+Website: %s
+`, otpCode, expiryMinutes, supportEmail, websiteURL)
+	return subject, body
 }
 
 func (s *service) SelectCompany(ctx context.Context, req SelectCompanyRequest) (*SelectCompanyResponse, error) {

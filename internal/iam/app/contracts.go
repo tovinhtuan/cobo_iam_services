@@ -219,7 +219,8 @@ type LoginResponse struct {
 	PlatformAccessHint bool                     `json:"platform_access_hint,omitempty"`
 	NextAction         string                   `json:"next_action"`
 	// EmailVerified false when users.email_verified_at is NULL (snapshot at login).
-	EmailVerified bool `json:"email_verified,omitempty"`
+	// Must not use omitempty: false must serialize so clients can gate verify-email UX.
+	EmailVerified bool `json:"email_verified"`
 	// CompanyVerificationStatus from companies.verification_status for current context (e.g. unverified for self-reg).
 	CompanyVerificationStatus string `json:"company_verification_status,omitempty"`
 }

@@ -1,6 +1,16 @@
-Xin chao Nguyen Van A,
+Xin chào Quý khách,
 
-Ma xac thuc email cua ban la: 123456
-Ma het han sau 15 phut.
+Cảm ơn Quý khách đã đăng ký tài khoản trên CoBo Portal.
 
-Neu ban khong yeu cau ma nay, hay bo qua email nay.
+Mã xác thực OTP của Quý khách là:
+
+123456
+
+Mã OTP này có hiệu lực trong 15 phút. Vui lòng không chia sẻ mã này với bất kỳ ai để đảm bảo an toàn cho tài khoản của Quý khách.
+
+Nếu Quý khách không thực hiện yêu cầu đăng ký tài khoản, vui lòng bỏ qua email này hoặc liên hệ với bộ phận hỗ trợ của chúng tôi.
+
+Trân trọng,
+Đội ngũ CoBo Portal
+Email hỗ trợ: support@cobo.vn
+Website: https://app.example.com

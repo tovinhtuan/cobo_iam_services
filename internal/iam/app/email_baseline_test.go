@@ -42,11 +42,14 @@ func TestEmailService_EmbedFlows_BaselineSubjectsAndStructure(t *testing.T) {
 			fixture:       "auth.email_verification",
 			wantEventType: "auth.email_verification_requested",
 			wantBodyContains: []string{
-				"Xin chao Nguyen Van A,",
-				"Ma xac thuc email cua ban la:",
-				"Ma het han sau",
-				"phut.",
-				"Neu ban khong yeu cau ma nay, hay bo qua email nay.",
+				"Xin chào Quý khách,",
+				"đăng ký tài khoản trên CoBo Portal",
+				"Mã xác thực OTP của Quý khách là:",
+				"hiệu lực trong",
+				"phút.",
+				"Đội ngũ CoBo Portal",
+				"Email hỗ trợ:",
+				"Website:",
 			},
 			trigger: func(t *testing.T, svc iamapp.Service, _ *captureOutboxPublisher) {
 				t.Helper()
@@ -116,6 +119,7 @@ func TestEmailService_EmbedFlows_BaselineSubjectsAndStructure(t *testing.T) {
 					iamapp.WithAuthRecoveryRepository(recovery),
 					iamapp.WithAuthFlowConfig(iamapp.AuthFlowConfig{
 						WebBaseURL:              "https://app.example.com",
+						SupportEmail:            "support@cobo.vn",
 						PasswordResetTokenTTL:   30 * time.Minute,
 						EmailVerificationOTPTTL: 15 * time.Minute,
 						EmailTemplateSource:     "embed",

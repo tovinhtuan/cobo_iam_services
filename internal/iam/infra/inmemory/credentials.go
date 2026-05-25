@@ -111,6 +111,15 @@ func (v *StaticCredentialVerifier) UpdatePasswordHash(_ context.Context, userID 
 	return nil
 }
 
+func (v *StaticCredentialVerifier) IsEmailVerified(_ context.Context, userID string) (bool, error) {
+	for _, u := range v.Users {
+		if u.UserID == userID {
+			return u.EmailVerifiedAt != nil, nil
+		}
+	}
+	return false, nil
+}
+
 func (v *StaticCredentialVerifier) MarkEmailVerified(_ context.Context, userID string, verifiedAt time.Time) error {
 	for k, u := range v.Users {
 		if u.UserID == userID {

@@ -69,7 +69,7 @@ func newHandlerFixture(t *testing.T, maxAttempts int) handlerFixture {
 		Locale:                 "vi",
 		Status:                 notificationapp.EmailStatusPending,
 		IdempotencyKey:         "idem-handler",
-		VariablesJSONSanitized: `{"full_name":"Nguyen Van A","otp_code":"[REDACTED]","expiry_minutes":15}`,
+		VariablesJSONSanitized: `{"expiry_minutes":15,"otp_code":"[REDACTED]","support_email":"support@cobo.vn","website_url":"https://app.example.com"}`,
 		CreatedAt:              now,
 		UpdatedAt:              now,
 	}
@@ -91,7 +91,7 @@ func mustPayload(t *testing.T, id string, vars map[string]any) []byte {
 func TestEmailDispatchHandler_HappyPath(t *testing.T) {
 	f := newHandlerFixture(t, 0)
 	err := f.handler.Handle(context.Background(), mustPayload(t, "n-handler", map[string]any{
-		"full_name": "Nguyen Van A", "otp_code": "123456", "expiry_minutes": 15,
+		"otp_code": "123456", "expiry_minutes": 15, "support_email": "support@cobo.vn", "website_url": "https://app.example.com",
 	}))
 	if err != nil {
 		t.Fatalf("Handle err = %v", err)
@@ -127,14 +127,14 @@ func TestEmailDispatchHandler_IdempotentReplayAfterSent(t *testing.T) {
 	f := newHandlerFixture(t, 0)
 	// First send succeeds.
 	_ = f.handler.Handle(context.Background(), mustPayload(t, "n-handler", map[string]any{
-		"full_name": "A", "otp_code": "111111", "expiry_minutes": 15,
+		"otp_code": "111111", "expiry_minutes": 15, "support_email": "support@cobo.vn", "website_url": "https://app.example.com",
 	}))
 	if got := len(f.adapter.calls); got != 1 {
 		t.Fatalf("first run calls = %d", got)
 	}
 	// Replay must NOT call adapter again.
 	if err := f.handler.Handle(context.Background(), mustPayload(t, "n-handler", map[string]any{
-		"full_name": "A", "otp_code": "111111", "expiry_minutes": 15,
+		"otp_code": "111111", "expiry_minutes": 15, "support_email": "support@cobo.vn", "website_url": "https://app.example.com",
 	})); err != nil {
 		t.Fatalf("replay err = %v", err)
 	}
@@ -147,7 +147,7 @@ func TestEmailDispatchHandler_TransientErrorSchedulesRetry(t *testing.T) {
 	f := newHandlerFixture(t, 0)
 	f.adapter.results = []fakeAdapterResult{{err: errors.New("421 service not available")}}
 	err := f.handler.Handle(context.Background(), mustPayload(t, "n-handler", map[string]any{
-		"full_name": "A", "otp_code": "1", "expiry_minutes": 1,
+		"otp_code": "1", "expiry_minutes": 1, "support_email": "support@cobo.vn", "website_url": "https://app.example.com",
 	}))
 	if err == nil {
 		t.Fatalf("expected error to trigger outbox retry")
@@ -172,7 +172,7 @@ func TestEmailDispatchHandler_PermanentErrorMarksFailedAndDropsEvent(t *testing.
 	f := newHandlerFixture(t, 0)
 	f.adapter.results = []fakeAdapterResult{{err: errors.New("550 mailbox unavailable")}}
 	err := f.handler.Handle(context.Background(), mustPayload(t, "n-handler", map[string]any{
-		"full_name": "A", "otp_code": "1", "expiry_minutes": 1,
+		"otp_code": "1", "expiry_minutes": 1, "support_email": "support@cobo.vn", "website_url": "https://app.example.com",
 	}))
 	// Permanent failures return nil so the outbox processor drops the event.
 	if err != nil {
@@ -198,7 +198,7 @@ func TestEmailDispatchHandler_AuthFailureClassifiedDistinctly(t *testing.T) {
 	f := newHandlerFixture(t, 0)
 	f.adapter.results = []fakeAdapterResult{{err: errors.New("535 authentication failed")}}
 	_ = f.handler.Handle(context.Background(), mustPayload(t, "n-handler", map[string]any{
-		"full_name": "A", "otp_code": "1", "expiry_minutes": 1,
+		"otp_code": "1", "expiry_minutes": 1, "support_email": "support@cobo.vn", "website_url": "https://app.example.com",
 	}))
 	stored, _ := f.notifRepo.GetByID(context.Background(), "n-handler")
 	if stored.LastErrorCode != "permanent_smtp_auth" {
@@ -246,7 +246,7 @@ func TestEmailDispatchHandler_MaxAttemptsConvertsTransientToPermanent(t *testing
 	}
 	f.adapter.results = []fakeAdapterResult{{err: errors.New("421 still busy")}}
 	err := f.handler.Handle(context.Background(), mustPayload(t, "n-handler", map[string]any{
-		"full_name": "A", "otp_code": "1", "expiry_minutes": 1,
+		"otp_code": "1", "expiry_minutes": 1, "support_email": "support@cobo.vn", "website_url": "https://app.example.com",
 	}))
 	if err != nil {
 		t.Fatalf("attempt past cap should drop event (nil err), got %v", err)

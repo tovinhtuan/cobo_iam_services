@@ -50,6 +50,8 @@ type Config struct {
 
 	// Public web app base URL used in email action links.
 	PublicWebBaseURL string
+	// SupportEmail footer in registration OTP emails (SUPPORT_EMAIL).
+	SupportEmail string
 
 	// UserInvitationTokenTTL TTL for CMS user-invitation links (user_invitations.expires_at).
 	UserInvitationTokenTTL time.Duration
@@ -148,6 +150,7 @@ func Load() (Config, error) {
 		JWTVerifyPublicKeys:           os.Getenv("JWT_VERIFY_PUBLIC_KEYS_JSON"),
 		JWTClockSkewSec:               intEnv("JWT_CLOCK_SKEW_SEC", 60),
 		PublicWebBaseURL:              getenv("PUBLIC_WEB_BASE_URL", "http://localhost:5173"),
+		SupportEmail:                  getenv("SUPPORT_EMAIL", "support@cobo.vn"),
 		PublicAPIBaseURL:              getenv("PUBLIC_API_BASE_URL", "http://localhost:8080"),
 		UserInvitationTokenTTL:        durationEnv("USER_INVITATION_TOKEN_TTL", 72*time.Hour),
 		EmailVerificationOTPTTL:       durationEnv("EMAIL_VERIFICATION_OTP_TTL", 15*time.Minute),

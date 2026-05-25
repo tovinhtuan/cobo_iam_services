@@ -138,6 +138,70 @@ func TestLogin_noActiveMembership(t *testing.T) {
 	}
 }
 
+func TestLogin_noActiveMembership_setsEmailVerifiedWhenRecoveryWired(t *testing.T) {
+	ctx := context.Background()
+	recovery := &stubRecoveryEmailFlag{verified: false}
+	svc := newTestIAMService(t, testIAMDeps{
+		cred: testCred(),
+		members: &cainmem.MembershipQueryService{ByUser: map[string][]caapp.MembershipView{
+			"u_123": {{MembershipID: "m1", UserID: "u_123", CompanyID: "c1", Status: "suspended"}},
+		}},
+		opts: []iamapp.ServiceOption{iamapp.WithAuthRecoveryRepository(recovery)},
+	})
+
+	resp, err := svc.Login(ctx, iamapp.LoginRequest{LoginID: "user@example.com", Password: "secret"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.EmailVerified {
+		t.Fatalf("expected email_verified=false, got %+v", resp)
+	}
+}
+
+type stubRecoveryEmailFlag struct {
+	verified bool
+}
+
+func (s *stubRecoveryEmailFlag) FindUserByEmail(context.Context, string) (*iamapp.RecoveryUser, error) {
+	return nil, nil
+}
+func (s *stubRecoveryEmailFlag) FindUserByUserID(context.Context, string) (*iamapp.RecoveryUser, error) {
+	return nil, nil
+}
+func (s *stubRecoveryEmailFlag) StorePasswordResetToken(context.Context, iamapp.RecoveryTokenRecord) error {
+	return nil
+}
+func (s *stubRecoveryEmailFlag) ConsumePasswordResetToken(context.Context, string, time.Time) (string, error) {
+	return "", nil
+}
+func (s *stubRecoveryEmailFlag) StoreEmailVerificationToken(context.Context, iamapp.RecoveryTokenRecord) error {
+	return nil
+}
+func (s *stubRecoveryEmailFlag) ConsumeEmailVerificationToken(context.Context, string, time.Time) (string, error) {
+	return "", nil
+}
+func (s *stubRecoveryEmailFlag) UpdatePasswordHash(context.Context, string, string, time.Time) error {
+	return nil
+}
+func (s *stubRecoveryEmailFlag) MarkEmailVerified(context.Context, string, time.Time) error {
+	return nil
+}
+func (s *stubRecoveryEmailFlag) IsEmailVerified(context.Context, string) (bool, error) {
+	return s.verified, nil
+}
+func (s *stubRecoveryEmailFlag) InvalidatePendingEmailVerificationOTPs(context.Context, string) error {
+	return nil
+}
+func (s *stubRecoveryEmailFlag) StoreEmailVerificationOTP(context.Context, iamapp.EmailOTPRecord) error {
+	return nil
+}
+func (s *stubRecoveryEmailFlag) CountEmailVerificationOTPsSince(context.Context, string, time.Time) (int, error) {
+	return 0, nil
+}
+func (s *stubRecoveryEmailFlag) TryConsumeEmailVerificationOTP(context.Context, string, string, time.Time) (iamapp.EmailOTPConsumeOutcome, error) {
+	return iamapp.EmailOTPNotFound, nil
+}
+
 func TestLogin_accountNotActive(t *testing.T) {
 	ctx := context.Background()
 	svc := newTestIAMService(t, testIAMDeps{
