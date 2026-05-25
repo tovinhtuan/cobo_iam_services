@@ -245,6 +245,8 @@ func legacyPolicy(action string) *authapp.ActionPolicy {
 		required = "alert.channels.manage"
 	case "admin.account.settings.read", "admin.account.settings.update":
 		required = "system.settings"
+	case "deadline.view":
+		required = "deadline.view"
 	case "dashboard.view":
 		required = "dashboard.view"
 	case "company.view":

@@ -22,8 +22,13 @@ DEV_PATH  := /root/cobo_project
 FE_DIR    := ../cobo_web_design
 ARTIFACTS := ./deploy-artifacts
 
+ifdef SSHPASS
+SSH := sshpass -e ssh -p $(DEV_PORT) -o StrictHostKeyChecking=accept-new $(DEV_USER)@$(DEV_HOST)
+SCP := sshpass -e scp -P $(DEV_PORT) -o StrictHostKeyChecking=accept-new
+else
 SSH := ssh -p $(DEV_PORT) $(DEV_USER)@$(DEV_HOST)
 SCP := scp -P $(DEV_PORT)
+endif
 
 ensure_fe_env = if [ "$$(id -u)" -eq 0 ]; then \
 	echo "FE targets must not run with sudo/root."; \

@@ -76,6 +76,8 @@ seed_dev_identity_authorization.sql
 0070_prune_legacy_display_groups.up.sql
 0071_cms_template_write_from_platform_cms_view.up.sql
 0072_fix_display_groups_vietnamese_labels.up.sql
+0073_self_reg_company_profile_permissions.up.sql
+0074_deadline_view_permission.up.sql
 "
 
 mysql_exec() {

@@ -430,3 +430,12 @@ sh deploy-dev.sh migrate
 ```
 
 pass: uNf5pfg1Pu7etvp
+
+> **Deploy với password (không dùng SSH key):** cần `sshpass` trên máy local.
+>
+> ```bash
+> export SSHPASS="$(grep '^pass:' docs/deploy-dev-guide.md | sed 's/^pass:[[:space:]]*//')"
+> sh deploy-dev.sh
+> ```
+>
+> Hoặc: `SSHPASS='...' make deploy-all`

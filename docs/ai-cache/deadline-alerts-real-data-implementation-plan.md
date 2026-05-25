@@ -195,29 +195,29 @@ Theo `deadline-alerts-tab-plan-review-summary.md` tickets 1–3:
 
 ### Phase 2 — BE aggregated endpoint (blocker cho dữ liệu thật)
 
-**Repo:** `cobo_iam_services`
+**Repo:** `cobo_iam_services` — **đã implement 2026-05-25**
 
 | Ticket | Việc | AC |
 |--------|------|-----|
-| BE-DA-01 | Module read `company/deadline-alerts` (handler + service + repo query join `disclosure_records` + `workflow_instances` + optional `ad_hoc_proposals`); **exclude `draft`** (P2) | Integration test: record sau ad-hoc approve có trong list |
-| BE-DA-02 | Compute `active_departments` từ `current_step_code` + `snapshot` (Option C) | Unit test snapshot mapping |
-| BE-DA-03 | Compute `due_date` + `status` theo thứ tự §5; reuse `DeadlineCalculator` | Test OVERDUE/DUE_SOON/UPCOMING |
-| BE-DA-04 | AuthZ `deadline.view`; company scope | 403 khi thiếu quyền |
-| BE-DA-05 | Pagination + filter `status`, `q`, date range | Parity với FE filter bar |
+| BE-DA-01 | Module `GET /api/v1/company/deadline-alerts` (`internal/deadlinealerts/*`); join `disclosure_records` + `workflow_instances` + `ad_hoc_proposals`; **exclude `draft`** (P2) | Manual/DB verify ad-hoc approved record; integration test DB tùy chọn |
+| BE-DA-02 | `ActiveDepartmentsFromSnapshot` (Option C) | `active_department_test.go` |
+| BE-DA-03 | `due_date` + `status` theo §5; `DeadlineCalculator` | `status_test.go`, `service_test.go` |
+| BE-DA-04 | AuthZ `deadline.view` + `legacyPolicy` | `service_test.go` forbidden case |
+| BE-DA-05 | Pagination + filter `status`, `q`, `start_date`, `end_date` | Handler query params wired |
 
 **Không làm trong BE-DA:** thay đổi ad-hoc state machine; thay đổi `AdminApprove` semantics.
 
 ### Phase 3 — FE wire dữ liệu thật
 
-**Repo:** `cobo_web_design`
+**Repo:** `cobo_web_design` — **đã implement 2026-05-25**
 
 | Ticket | Việc | AC |
 |--------|------|-----|
-| FE-DA-01 | `deadlineAlertsApi.ts` + normalizer | Map BE status → `DeadlineStatus` |
-| FE-DA-02 | `DeadlineList.tsx` tab Deadlines: fetch thay `mockDeadlines` | Ad-hoc approved record hiển thị |
-| FE-DA-03 | `toDeadlineAlertCardVM` dùng `active_departments` từ API, bỏ template mock derivation | Card đúng 3 field §4.2 plan |
-| FE-DA-04 | `DeadlineDetail.tsx`: `useParams().id` = **`record_id`** (P4); `GET /disclosures/{record_id}` + workflow instance nếu có | Bỏ hardcoded phòng (GAP-6) |
-| FE-DA-05 | Tab History: `GET /api/v1/disclosures` + map status → `DisclosureStatus` FE | Không dùng `mockDisclosures` |
+| FE-DA-01 | `deadlineAlertsApi.ts` + normalizer | `deadlineAlertsApi.test.ts` |
+| FE-DA-02 | `DeadlineList.tsx` tab Deadlines: fetch API | Loading/error/empty states |
+| FE-DA-03 | `toDeadlineAlertCardVM` ← `active_departments` API | `deadlineAlertViewModels.test.ts` |
+| FE-DA-04 | `DeadlineDetail.tsx` `record_id` + disclosure + alert | Link `/app/history/{id}` |
+| FE-DA-05 | Tab History: `GET /disclosures` + `listTypes` | Bỏ `mockDisclosures` |
 
 ### Phase 4 — Periodic job (P1 = bắt buộc job — đã có code)
 

@@ -72,15 +72,31 @@ log_warn()  { printf "${YELLOW}    ⚠ %s${RESET}\n" "$1"; }
 log_error() { printf "${RED}    ✗ %s${RESET}\n" "$1"; }
 log_info()  { printf "    %s\n" "$1"; }
 
-# ── SSH helper ────────────────────────────────────────────────────────────────
+# ── SSH helper (SSHPASS + sshpass khi không dùng key) ─────────────────────────
+ssh_cmd() {
+  if [ -n "${SSHPASS:-}" ] && command -v sshpass >/dev/null 2>&1; then
+    sshpass -e ssh -p "$DEV_PORT" -o StrictHostKeyChecking=accept-new "${DEV_USER}@${DEV_HOST}" "$@"
+  else
+    ssh -p "$DEV_PORT" "${DEV_USER}@${DEV_HOST}" "$@"
+  fi
+}
+
+scp_cmd() {
+  if [ -n "${SSHPASS:-}" ] && command -v sshpass >/dev/null 2>&1; then
+    sshpass -e scp -P "$DEV_PORT" -o StrictHostKeyChecking=accept-new "$@"
+  else
+    scp -P "$DEV_PORT" "$@"
+  fi
+}
+
 ssh_exec() {
-  ssh -p "$DEV_PORT" "${DEV_USER}@${DEV_HOST}" "$@"
+  ssh_cmd "$@"
 }
 
 sync_migrations_dir() {
   log_step "Migrations: đồng bộ thư mục migrations lên dev server"
   ssh_exec "mkdir -p ${DEV_PATH} && rm -rf ${DEV_PATH}/migrations"
-  scp -P "$DEV_PORT" -r "$MIGRATIONS_DIR" "${DEV_USER}@${DEV_HOST}:${DEV_PATH}/"
+  scp_cmd -r "$MIGRATIONS_DIR" "${DEV_USER}@${DEV_HOST}:${DEV_PATH}/"
   log_ok "Đã đồng bộ migrations/"
 }
 
@@ -96,8 +112,7 @@ preflight_check() {
   log_step "Pre-flight: kiểm tra kết nối SSH tới dev server"
   log_info "SSH có thể yêu cầu nhập password nếu SSH key chưa sẵn sàng"
 
-  if ! ssh -p "$DEV_PORT" -o ConnectTimeout=8 \
-       "${DEV_USER}@${DEV_HOST}" "echo ok" >/dev/null 2>&1; then
+  if ! ssh_cmd -o ConnectTimeout=8 "echo ok" >/dev/null 2>&1; then
     log_error "Không kết nối được SSH tới ${DEV_USER}@${DEV_HOST}:${DEV_PORT}"
     printf "    Kiểm tra:\n"
     printf "      1. Password hoặc SSH key có đúng không?\n"

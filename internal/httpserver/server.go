@@ -28,6 +28,10 @@ import (
 	cainmem "github.com/cobo/cobo_iam_services/internal/companyaccess/infra/inmemory"
 	camysql "github.com/cobo/cobo_iam_services/internal/companyaccess/infra/mysql"
 	companyaccesshttp "github.com/cobo/cobo_iam_services/internal/companyaccess/transport/http"
+	deadlinealertsapp "github.com/cobo/cobo_iam_services/internal/deadlinealerts/app"
+	deadlinealertsinmem "github.com/cobo/cobo_iam_services/internal/deadlinealerts/infra/inmemory"
+	deadlinealertsmysql "github.com/cobo/cobo_iam_services/internal/deadlinealerts/infra/mysql"
+	deadlinealertshttp "github.com/cobo/cobo_iam_services/internal/deadlinealerts/transport/http"
 	disclosureapp "github.com/cobo/cobo_iam_services/internal/disclosure/app"
 	disclosureinmem "github.com/cobo/cobo_iam_services/internal/disclosure/infra/inmemory"
 	disclosuremysql "github.com/cobo/cobo_iam_services/internal/disclosure/infra/mysql"
@@ -239,6 +243,7 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 		}
 	}
 	fileHoliday := disclosureapp.NewHolidayCalendarFileProvider(filepath.Join("configs", "non_trading_days"))
+	holidayProvider := disclosureapp.HolidayCalendarProvider(fileHoliday)
 	var disclosureOpts []disclosureapp.ServiceOption
 	disclosureOpts = append(disclosureOpts, disclosureapp.WithWorkflowGroupsEnabled(cfg.WorkflowGroupsEnabled))
 	if identity != nil {
@@ -260,9 +265,21 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 			File: fileHoliday,
 		}
 		disclosureOpts = append(disclosureOpts, disclosureapp.WithHolidayCalendarProvider(composite))
+		holidayProvider = composite
 		holidaySvc = holidayapp.NewService(holidayRepo, dbHoliday, id)
 	}
 	disclosureSvc := disclosureapp.NewService(disclosureRepo, authSvc, id, disclosureOpts...)
+	deadlineCalc := disclosureapp.NewDeadlineCalculator(holidayProvider)
+	var deadlineAlertsRepo deadlinealertsapp.Repository
+	if pool != nil {
+		deadlineAlertsRepo = deadlinealertsmysql.NewRepository(pool)
+	} else if dr, ok := disclosureRepo.(*disclosureinmem.Repository); ok {
+		deadlineAlertsRepo = deadlinealertsinmem.NewRepository(dr)
+	} else {
+		deadlineAlertsRepo = deadlinealertsinmem.NewRepository(disclosureinmem.NewRepository())
+	}
+	deadlineAlertsSvc := deadlinealertsapp.NewService(deadlineAlertsRepo, authSvc, deadlineCalc)
+	deadlineAlertsHandler := deadlinealertshttp.NewHandler(log, deadlineAlertsSvc, tokenManager)
 	var idemStore idempotency.Store
 	if pool != nil {
 		idemStore = idempotencymysql.NewStore(pool)
@@ -353,7 +370,7 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 		log.Info("ad-hoc proposal module enabled")
 	}
 
-	return muxRegisterHealthAndIAM(mux, log, sqlDB, iamHandler, meHandler, authHandler, disclosureHandler, workflowHandler, notificationHandler, reminderHandler, adminHandler, platformCMSHandler, adhocHandler)
+	return muxRegisterHealthAndIAM(mux, log, sqlDB, iamHandler, meHandler, authHandler, disclosureHandler, workflowHandler, notificationHandler, reminderHandler, adminHandler, platformCMSHandler, adhocHandler, deadlineAlertsHandler)
 }
 
 func muxRegisterHealthAndIAM(
@@ -370,6 +387,7 @@ func muxRegisterHealthAndIAM(
 	adminHandler *companyaccesshttp.AdminHandler,
 	platformCMSHandler *platformcmshttp.Handler,
 	adhocHandler *adhochttp.Handler,
+	deadlineAlertsHandler *deadlinealertshttp.Handler,
 ) error {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		httpx.WriteJSON(w, http.StatusOK, map[string]any{"status": "ok"})
@@ -402,6 +420,7 @@ func muxRegisterHealthAndIAM(
 	if adhocHandler != nil {
 		adhocHandler.Register(mux)
 	}
+	deadlineAlertsHandler.Register(mux)
 	return nil
 }
 

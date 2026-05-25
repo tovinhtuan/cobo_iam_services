@@ -42,7 +42,7 @@ type CompanyBootstrapProfile struct {
 	RepresentativeName string
 }
 
-// grantRoleCompanyProfilePermissionsTx ensures company.view and company.edit on a role (idempotent).
+// grantRoleCompanyProfilePermissionsTx ensures company profile + deadline alerts read perms (idempotent).
 func grantRoleCompanyProfilePermissionsTx(ctx context.Context, tx *sql.Tx, roleID string) error {
 	roleID = strings.TrimSpace(roleID)
 	if roleID == "" {
@@ -52,11 +52,11 @@ func grantRoleCompanyProfilePermissionsTx(ctx context.Context, tx *sql.Tx, roleI
 		INSERT INTO role_permissions (role_id, permission_id, status)
 		SELECT ?, p.permission_id, 'active'
 		FROM permissions p
-		WHERE p.permission_code IN ('company.view', 'company.edit')
+		WHERE p.permission_code IN ('company.view', 'company.edit', 'deadline.view')
 		  AND p.status = 'active'
 		ON DUPLICATE KEY UPDATE status = VALUES(status)
 	`, roleID); err != nil {
-		return fmt.Errorf("grant company profile permissions on role %s: %w", roleID, err)
+		return fmt.Errorf("grant company portal permissions on role %s: %w", roleID, err)
 	}
 	return nil
 }
