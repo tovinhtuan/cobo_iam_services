@@ -247,6 +247,8 @@ func legacyPolicy(action string) *authapp.ActionPolicy {
 		required = "system.settings"
 	case "deadline.view":
 		required = "deadline.view"
+	case "deadline.confirm":
+		required = "deadline.manage"
 	case "dashboard.view":
 		required = "dashboard.view"
 	case "company.view":

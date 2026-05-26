@@ -1,6 +1,9 @@
 package http
 
 import (
+	"encoding/json"
+	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -23,6 +26,7 @@ func NewHandler(log *slog.Logger, svc deadlinealertsapp.Service, inspector iamap
 
 func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/company/deadline-alerts", h.listDeadlineAlerts)
+	mux.HandleFunc("POST /api/v1/company/deadline-alerts/{id}/confirm", h.confirmDeadlineAlert)
 }
 
 func (h *Handler) listDeadlineAlerts(w http.ResponseWriter, r *http.Request) {
@@ -48,6 +52,52 @@ func (h *Handler) listDeadlineAlerts(w http.ResponseWriter, r *http.Request) {
 	}
 	if resp.Items == nil {
 		resp.Items = []deadlinealertsapp.DeadlineAlertDTO{}
+	}
+	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+type confirmDeadlineAlertBody struct {
+	Note           string `json:"note"`
+	IdempotencyKey string `json:"idempotency_key"`
+}
+
+func (h *Handler) confirmDeadlineAlert(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subjectFromToken(r)
+	if err != nil {
+		httpx.WriteError(w, h.log, err)
+		return
+	}
+	recordID := strings.TrimSpace(r.PathValue("id"))
+	if recordID == "" {
+		httpx.WriteJSON(w, http.StatusBadRequest, map[string]any{
+			"error": map[string]any{
+				"code":    "invalid_request",
+				"message": "record_id is required",
+			},
+		})
+		return
+	}
+	var body confirmDeadlineAlertBody
+	if r.Body != nil {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+			httpx.WriteJSON(w, http.StatusBadRequest, map[string]any{
+				"error": map[string]any{
+					"code":    "invalid_request",
+					"message": "invalid JSON body",
+				},
+			})
+			return
+		}
+	}
+	resp, err := h.svc.ConfirmDeadlineAlert(r.Context(), deadlinealertsapp.ConfirmDeadlineAlertRequest{
+		Subject:        sub,
+		RecordID:       recordID,
+		Note:           strings.TrimSpace(body.Note),
+		IdempotencyKey: strings.TrimSpace(body.IdempotencyKey),
+	})
+	if err != nil {
+		httpx.WriteError(w, h.log, err)
+		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, resp)
 }

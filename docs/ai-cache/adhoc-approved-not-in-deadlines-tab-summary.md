@@ -1,45 +1,80 @@
-# Ad-hoc approved proposal không hiện ở tab "Cảnh báo thời hạn"
+# Ad-hoc approval -> deadline alert confirm flow (2026-05-26)
 
-## Câu hỏi
+## Mục tiêu đã chốt
 
-Sau khi tạo + phê duyệt cảnh báo bất thường (ad-hoc proposal), vì sao không thấy trong `/app/deadlines` → tab **Cảnh báo thời hạn**?
+- `approve` ad-hoc proposal **không** được làm alert thành `DONE`.
+- Trạng thái mới `PENDING_CONFIRM` dùng cho record terminal (`Published/Completed`) nhưng chưa có xác nhận kết thúc.
+- `DONE` chỉ khi gọi API confirm bằng quyền `deadline.manage`.
 
-## Nguyên nhân hiện tại (2026-05-25)
+## Thay đổi BE đã triển khai
 
-### 1. Hai luồng tách biệt — không có bridge
+1. **Contract deadline alerts**
+   - `internal/deadlinealerts/app/contracts.go`
+   - Bổ sung status `PENDING_CONFIRM`.
+   - Thêm API service `ConfirmDeadlineAlert(...)`.
 
-| Luồng | Màn FE | Nguồn dữ liệu | Sau approve |
-|-------|--------|----------------|-------------|
-| Ad-hoc proposal | `/app/ad-hoc-proposals` | `GET /api/v1/company/ad-hoc-proposals` | `status=approved`, `record_id`, `workflow_instance_id` |
-| Cảnh báo thời hạn | `/app/deadlines` (tab Deadlines) | **`mockDeadlines`** (mockData.ts) | **Không đọc BE** |
+2. **Status resolver**
+   - `internal/deadlinealerts/app/service.go`
+   - `resolveDueDateAndStatus`:
+     - có bản ghi xác nhận -> `DONE`
+     - terminal nhưng chưa xác nhận -> `PENDING_CONFIRM`
+     - còn lại -> `UPCOMING/DUE_SOON/OVERDUE`
 
-BE `AdminApprove` tạo disclosure record + workflow instance; **không** ghi vào bảng/API "deadline alerts" cho tab deadlines (endpoint list deadline alerts **chưa có** trên BE).
+3. **Filter status**
+   - `internal/deadlinealerts/app/status.go`
+   - `normalizeStatusFilter` hỗ trợ `PENDING_CONFIRM`.
 
-### 2. FE tab "Cảnh báo thời hạn" chưa tích hợp API
+4. **Persistence confirmation**
+   - Migration mới:
+     - `migrations/0076_deadline_alert_confirmations.up.sql`
+     - `migrations/0076_deadline_alert_confirmations.down.sql`
+   - Bảng mới: `deadline_alert_confirmations`.
+   - `internal/deadlinealerts/infra/mysql/repository.go`:
+     - join `deadline_alert_confirmations` trong `ListRows`
+     - thêm `HasDisclosureRecord`
+     - thêm `ConfirmDeadlineAlert` (idempotency key support)
 
-`DeadlineList.tsx` filter `mockDeadlines` — không gọi ad-hoc API, không gọi disclosures/deadline API.
+5. **HTTP endpoint confirm**
+   - `internal/deadlinealerts/transport/http/handler.go`
+   - Route mới: `POST /api/v1/company/deadline-alerts/{id}/confirm`
 
-Tab **Lịch sử CBTT** cùng màn cũng dùng `mockDisclosures` — record thật sau approve cũng không hiện ở đây.
+6. **Authorization mapping**
+   - `internal/authorization/infra/mysql/repository.go`
+   - action `deadline.confirm` -> required permission `deadline.manage`.
 
-### 3. Nơi user *nên* thấy kết quả hôm nay
+## Thay đổi FE đã triển khai
 
-- Danh sách đề xuất: `/app/ad-hoc-proposals` (filter `approved`)
-- Chi tiết đề xuất: `/app/ad-hoc-proposals/:proposalId` (có `record_id` → mở hồ sơ CBTT nếu có route)
-- Không phải tab Cảnh báo thời hạn cho đến khi có deadline-alerts API + wire FE
+1. **Status mới**
+   - `cobo_web_design/src/types.ts`:
+   - `DeadlineStatus` thêm `Pending Confirm`.
 
-## Không phải bug đơn lẻ "approve fail"
+2. **API client**
+   - `src/services/deadlineAlertsApi.ts`
+   - map `PENDING_CONFIRM <-> Pending Confirm`.
+   - thêm method `confirm(recordId, { note, idempotencyKey })`.
 
-Nếu API approve trả OK và proposal có `record_id`, luồng BE ad-hoc đã chạy đúng phạm vi hiện tại; gap là **product/implementation chưa nối** ad-hoc output → màn deadline list.
+3. **UI list/detail**
+   - `src/pages/portal/DeadlineList.tsx`: badge/icon/label cho `Pending Confirm`.
+   - `src/pages/portal/deadlines/DeadlineListFilterBar.tsx`: thêm filter option.
+   - `src/pages/portal/DeadlineDetail.tsx` + `.../DeadlineAlertDetailSidebar.tsx`:
+     - khi `Pending Confirm` dùng action confirm done thay vì publish modal.
+     - kiểm tra quyền `deadline.manage`.
 
-## Hướng xử lý (khi implement)
+4. **Publish readiness**
+   - `src/services/deadlinePublishReadiness.ts`
+   - chặn mở publish modal khi alert ở `Pending Confirm`.
 
-1. BE: contract `GET /api/v1/.../deadline-alerts` (hoặc derive từ disclosures + workflow + due dates) gồm cả nguồn ad-hoc đã approved.
-2. FE: thay `mockDeadlines` bằng API; map `record_id` / `workflow_instance_id`.
-3. Tùy chọn UX: link từ proposal approved → deadline card hoặc disclosure detail.
+## Test đã chạy
 
-## Tham chiếu code
+- BE: `go test ./internal/deadlinealerts/...` -> pass.
+- FE: `vitest` cho:
+  - `src/services/deadlineAlertsApi.test.ts`
+  - `src/services/deadlinePublishReadiness.test.ts`
+  - `src/pages/portal/deadlines/DeadlineListFilterBar.test.tsx`
+  -> pass.
 
-- FE: `cobo_web_design/src/pages/portal/DeadlineList.tsx` (mockDeadlines)
-- FE ad-hoc: `AdHocProposalListPage.tsx`, `adHocAlertsApi.ts`
-- BE approve: `cobo_iam_services/internal/adhoc/app/service.go` → `AdminApprove`
-- Audit doc: `adhoc-alert-crud-current-state-business-audit-summary.md` (scope không gồm tab deadlines)
+## Ghi chú rollout
+
+- Cần chạy migration `0076` trước khi bật endpoint confirm trên môi trường dùng MySQL.
+- Tương thích ngược:
+  - Nếu chưa có bản ghi trong `deadline_alert_confirmations`, alert terminal sẽ hiện `PENDING_CONFIRM` thay vì `DONE`.

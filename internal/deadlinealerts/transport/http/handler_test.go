@@ -32,6 +32,15 @@ func (fakeSvc) ListDeadlineAlerts(_ context.Context, _ deadlinealertsapp.ListDea
 	}, nil
 }
 
+func (fakeSvc) ConfirmDeadlineAlert(_ context.Context, req deadlinealertsapp.ConfirmDeadlineAlertRequest) (*deadlinealertsapp.ConfirmDeadlineAlertResponse, error) {
+	return &deadlinealertsapp.ConfirmDeadlineAlertResponse{
+		RecordID:    req.RecordID,
+		CompanyID:   req.Subject.CompanyID,
+		ConfirmedBy: req.Subject.MembershipID,
+		ConfirmedAt: "2026-05-26T00:00:00Z",
+	}, nil
+}
+
 func TestListDeadlineAlerts_route(t *testing.T) {
 	mux := http.NewServeMux()
 	h := NewHandler(nil, fakeSvc{}, fakeInspector{})
@@ -50,6 +59,28 @@ func TestListDeadlineAlerts_route(t *testing.T) {
 		t.Fatal(err)
 	}
 	if resp.Total != 1 || resp.Items[0].RecordID != "r1" {
+		t.Fatalf("got %+v", resp)
+	}
+}
+
+func TestConfirmDeadlineAlert_route(t *testing.T) {
+	mux := http.NewServeMux()
+	h := NewHandler(nil, fakeSvc{}, fakeInspector{})
+	h.Register(mux)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/company/deadline-alerts/r1/confirm", nil)
+	req.Header.Set("Authorization", "Bearer test-token")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status %d body %s", w.Code, w.Body.String())
+	}
+	var resp deadlinealertsapp.ConfirmDeadlineAlertResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.RecordID != "r1" || resp.CompanyID != "c1" {
 		t.Fatalf("got %+v", resp)
 	}
 }

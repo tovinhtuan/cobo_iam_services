@@ -15,6 +15,8 @@ func normalizeStatusFilter(raw string) string {
 		return "DUE_SOON"
 	case "OVERDUE":
 		return "OVERDUE"
+	case "PENDING_CONFIRM", "PENDING CONFIRM":
+		return "PENDING_CONFIRM"
 	case "DONE":
 		return "DONE"
 	default:

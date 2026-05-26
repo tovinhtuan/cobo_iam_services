@@ -42,6 +42,12 @@ func TestIsTerminalRecordStatus_includesPublished(t *testing.T) {
 	}
 }
 
+func TestNormalizeStatusFilter_pendingConfirm(t *testing.T) {
+	if got := normalizeStatusFilter("pending_confirm"); got != "PENDING_CONFIRM" {
+		t.Fatalf("got %s", got)
+	}
+}
+
 func TestRemainingDaysFromDue(t *testing.T) {
 	loc, _ := time.LoadLocation("Asia/Ho_Chi_Minh")
 	now := time.Date(2026, 5, 25, 12, 0, 0, 0, loc)

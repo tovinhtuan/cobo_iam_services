@@ -17,7 +17,7 @@ func (s *service) ListDeadlineAlerts(ctx context.Context, req ListDeadlineAlerts
 	if strings.TrimSpace(req.Subject.CompanyID) == "" {
 		return nil, perr.NewHTTPError(http.StatusUnprocessableEntity, perr.CodeCompanyContextRequired, "company_id is required", nil)
 	}
-	if err := s.authorize(ctx, req.Subject); err != nil {
+	if err := s.authorizeView(ctx, req.Subject); err != nil {
 		return nil, err
 	}
 
@@ -106,6 +106,10 @@ func (s *service) ListDeadlineAlerts(ctx context.Context, req ListDeadlineAlerts
 }
 
 func (s *service) authorize(ctx context.Context, sub Subject) error {
+	return s.authorizeView(ctx, sub)
+}
+
+func (s *service) authorizeView(ctx context.Context, sub Subject) error {
 	decision, err := s.auth.Authorize(ctx, authapp.AuthorizeRequest{
 		Subject: authapp.SubjectRef{
 			UserID:       sub.UserID,
@@ -130,6 +134,69 @@ func (s *service) authorize(ctx context.Context, sub Subject) error {
 	return nil
 }
 
+func (s *service) authorizeConfirm(ctx context.Context, sub Subject, recordID string) error {
+	decision, err := s.auth.Authorize(ctx, authapp.AuthorizeRequest{
+		Subject: authapp.SubjectRef{
+			UserID:       sub.UserID,
+			MembershipID: sub.MembershipID,
+			CompanyID:    sub.CompanyID,
+		},
+		Action: "deadline.confirm",
+		Resource: authapp.ResourceRef{
+			Type: "disclosure_record",
+			ID:   strings.TrimSpace(recordID),
+			Attributes: map[string]any{
+				"workflow_state": "*",
+			},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("authorize deadline.confirm: %w", err)
+	}
+	if decision.Decision != authapp.DecisionAllow {
+		return perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "deadline.manage permission required", nil)
+	}
+	return nil
+}
+
+func (s *service) ConfirmDeadlineAlert(ctx context.Context, req ConfirmDeadlineAlertRequest) (*ConfirmDeadlineAlertResponse, error) {
+	if strings.TrimSpace(req.Subject.CompanyID) == "" {
+		return nil, perr.NewHTTPError(http.StatusUnprocessableEntity, perr.CodeCompanyContextRequired, "company_id is required", nil)
+	}
+	recordID := strings.TrimSpace(req.RecordID)
+	if recordID == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "record_id is required", nil)
+	}
+	if err := s.authorizeConfirm(ctx, req.Subject, recordID); err != nil {
+		return nil, err
+	}
+	exists, err := s.repo.HasDisclosureRecord(ctx, req.Subject.CompanyID, recordID)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "record not found", nil)
+	}
+	confirmedAt := s.now().UTC()
+	if err := s.repo.ConfirmDeadlineAlert(
+		ctx,
+		req.Subject.CompanyID,
+		recordID,
+		req.Subject.MembershipID,
+		strings.TrimSpace(req.Note),
+		strings.TrimSpace(req.IdempotencyKey),
+		confirmedAt,
+	); err != nil {
+		return nil, err
+	}
+	return &ConfirmDeadlineAlertResponse{
+		RecordID:    recordID,
+		CompanyID:   req.Subject.CompanyID,
+		ConfirmedBy: req.Subject.MembershipID,
+		ConfirmedAt: confirmedAt.Format(time.RFC3339),
+	}, nil
+}
+
 func (s *service) resolveDueDateAndStatus(
 	ctx context.Context,
 	row AlertRow,
@@ -137,13 +204,20 @@ func (s *service) resolveDueDateAndStatus(
 	now time.Time,
 	typeConfigCache map[string]*disclosureapp.TemplateDeadlineConfig,
 ) (dueDate string, alertStatus string, err error) {
+	if row.ConfirmedAt != nil {
+		due := firstNonEmpty(row.PlannedDate, row.AdHocDeadlineDate)
+		if due == "" {
+			due = now.In(s.calculatorLocation()).Format("2006-01-02")
+		}
+		return due, "DONE", nil
+	}
 	terminal := isTerminalRecordStatus(row.RecordStatus)
 	if terminal {
 		due := firstNonEmpty(row.PlannedDate, row.AdHocDeadlineDate)
 		if due == "" {
 			due = now.In(s.calculatorLocation()).Format("2006-01-02")
 		}
-		return due, "DONE", nil
+		return due, "PENDING_CONFIRM", nil
 	}
 
 	due := strings.TrimSpace(row.PlannedDate)

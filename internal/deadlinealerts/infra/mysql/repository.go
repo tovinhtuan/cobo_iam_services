@@ -3,10 +3,14 @@ package mysql
 import (
 	"context"
 	"database/sql"
+	"net/http"
+	"strings"
+	"time"
 
 	deadlinealertsapp "github.com/cobo/cobo_iam_services/internal/deadlinealerts/app"
 	disclosureapp "github.com/cobo/cobo_iam_services/internal/disclosure/app"
 	disclosuremysql "github.com/cobo/cobo_iam_services/internal/disclosure/infra/mysql"
+	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 )
 
 type Repository struct {
@@ -68,7 +72,9 @@ func (r *Repository) ListRows(ctx context.Context, companyID string) ([]deadline
 				LIMIT 1
 			), ''),
 			COALESCE(JSON_UNQUOTE(JSON_EXTRACT(dtv.deadline_config_json, '$.template_category')), ''),
-			COALESCE(dtv.deadline_config_json, JSON_OBJECT())
+			COALESCE(dtv.deadline_config_json, JSON_OBJECT()),
+			COALESCE(dac.confirmed_by, ''),
+			dac.confirmed_at
 		FROM disclosure_records dr
 		LEFT JOIN workflow_instances wi ON wi.company_id = dr.company_id
 			AND wi.workflow_instance_id = (
@@ -80,6 +86,8 @@ func (r *Repository) ListRows(ctx context.Context, companyID string) ([]deadline
 			)
 		LEFT JOIN disclosure_types dt ON dt.type_id = dr.type_id
 		LEFT JOIN disclosure_type_versions dtv ON dtv.type_id = dt.type_id AND dtv.version_no = dt.active_version_no
+		LEFT JOIN deadline_alert_confirmations dac ON dac.company_id = dr.company_id
+			AND dac.record_id = dr.record_id
 		WHERE dr.company_id = ?
 		  AND LOWER(TRIM(dr.status)) <> 'draft'
 		ORDER BY dr.created_at DESC
@@ -94,6 +102,8 @@ func (r *Repository) ListRows(ctx context.Context, companyID string) ([]deadline
 		var row deadlinealertsapp.AlertRow
 		var snapshot sql.NullString
 		var deadlineConfig sql.NullString
+		var confirmedBy sql.NullString
+		var confirmedAt sql.NullTime
 		if err := rows.Scan(
 			&row.CompanyID,
 			&row.RecordID,
@@ -109,6 +119,8 @@ func (r *Repository) ListRows(ctx context.Context, companyID string) ([]deadline
 			&row.AdHocDeadlineDate,
 			&row.TemplateCategory,
 			&deadlineConfig,
+			&confirmedBy,
+			&confirmedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -117,6 +129,13 @@ func (r *Repository) ListRows(ctx context.Context, companyID string) ([]deadline
 		}
 		if deadlineConfig.Valid && deadlineConfig.String != "" && deadlineConfig.String != "null" {
 			row.DeadlineConfigJSON = []byte(deadlineConfig.String)
+		}
+		if confirmedBy.Valid {
+			row.ConfirmedBy = strings.TrimSpace(confirmedBy.String)
+		}
+		if confirmedAt.Valid {
+			ts := confirmedAt.Time.UTC()
+			row.ConfirmedAt = &ts
 		}
 		out = append(out, row)
 	}
@@ -131,4 +150,64 @@ func (r *Repository) GetTypeDeadlineConfig(ctx context.Context, companyID, typeI
 	_ = companyID
 	_, cfg, err := r.disclosure.GetActiveVersionDeadlineConfig(ctx, typeID)
 	return cfg, err
+}
+
+func (r *Repository) HasDisclosureRecord(ctx context.Context, companyID, recordID string) (bool, error) {
+	var exists int
+	if err := r.db.QueryRowContext(
+		ctx,
+		`SELECT 1 FROM disclosure_records WHERE company_id = ? AND record_id = ? LIMIT 1`,
+		companyID,
+		recordID,
+	).Scan(&exists); err != nil {
+		if err == sql.ErrNoRows {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+func (r *Repository) ConfirmDeadlineAlert(
+	ctx context.Context,
+	companyID,
+	recordID,
+	confirmedBy,
+	note,
+	idempotencyKey string,
+	at time.Time,
+) error {
+	note = strings.TrimSpace(note)
+	idempotencyKey = strings.TrimSpace(idempotencyKey)
+	if idempotencyKey != "" {
+		var existingRecordID string
+		err := r.db.QueryRowContext(
+			ctx,
+			`SELECT record_id FROM deadline_alert_confirmations WHERE company_id = ? AND idempotency_key = ? LIMIT 1`,
+			companyID,
+			idempotencyKey,
+		).Scan(&existingRecordID)
+		if err == nil {
+			if strings.TrimSpace(existingRecordID) == recordID {
+				return nil
+			}
+			return perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "idempotency key conflict", nil)
+		}
+		if err != sql.ErrNoRows {
+			return err
+		}
+	}
+
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO deadline_alert_confirmations
+			(company_id, record_id, confirmed_by, confirmed_at, confirm_note, idempotency_key)
+		VALUES (?, ?, ?, ?, NULLIF(?, ''), NULLIF(?, ''))
+		ON DUPLICATE KEY UPDATE
+			confirmed_by = VALUES(confirmed_by),
+			confirmed_at = VALUES(confirmed_at),
+			confirm_note = VALUES(confirm_note),
+			idempotency_key = COALESCE(deadline_alert_confirmations.idempotency_key, VALUES(idempotency_key)),
+			updated_at = CURRENT_TIMESTAMP(3)
+	`, companyID, recordID, confirmedBy, at.UTC(), note, idempotencyKey)
+	return err
 }

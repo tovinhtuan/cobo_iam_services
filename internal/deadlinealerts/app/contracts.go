@@ -16,7 +16,7 @@ type Subject struct {
 
 type ListDeadlineAlertsRequest struct {
 	Subject   Subject
-	Status    string // UPCOMING|DUE_SOON|OVERDUE|DONE or FE labels
+	Status    string // UPCOMING|DUE_SOON|OVERDUE|PENDING_CONFIRM|DONE or FE labels
 	Query     string
 	StartDate string // YYYY-MM-DD
 	EndDate   string // YYYY-MM-DD
@@ -31,7 +31,7 @@ type DeadlineAlertDTO struct {
 	TypeID             string   `json:"type_id"`
 	Title              string   `json:"title"`
 	DueDate            string   `json:"due_date"`
-	Status             string   `json:"status"` // UPCOMING|DUE_SOON|OVERDUE|DONE
+	Status             string   `json:"status"` // UPCOMING|DUE_SOON|OVERDUE|PENDING_CONFIRM|DONE
 	ActiveDepartments  []string `json:"active_departments"`
 	Source             string   `json:"source"`
 	TemplateCategory   string   `json:"template_category,omitempty"`
@@ -42,6 +42,20 @@ type ListDeadlineAlertsResponse struct {
 	Page     int                `json:"page"`
 	PageSize int                `json:"page_size"`
 	Total    int                `json:"total"`
+}
+
+type ConfirmDeadlineAlertRequest struct {
+	Subject        Subject
+	RecordID       string
+	Note           string
+	IdempotencyKey string
+}
+
+type ConfirmDeadlineAlertResponse struct {
+	RecordID    string `json:"record_id"`
+	CompanyID   string `json:"company_id"`
+	ConfirmedBy string `json:"confirmed_by"`
+	ConfirmedAt string `json:"confirmed_at"`
 }
 
 // AlertRow is a DB read model before due-date enrichment.
@@ -60,16 +74,21 @@ type AlertRow struct {
 	AdHocDeadlineDate  string
 	TemplateCategory   string
 	DeadlineConfigJSON []byte
+	ConfirmedBy        string
+	ConfirmedAt        *time.Time
 }
 
 type Repository interface {
 	ListRows(ctx context.Context, companyID string) ([]AlertRow, error)
 	GetCompanyDeadlineContext(ctx context.Context, companyID string) (disclosureapp.CompanyDeadlineContext, error)
 	GetTypeDeadlineConfig(ctx context.Context, companyID, typeID string) (*disclosureapp.TemplateDeadlineConfig, error)
+	HasDisclosureRecord(ctx context.Context, companyID, recordID string) (bool, error)
+	ConfirmDeadlineAlert(ctx context.Context, companyID, recordID, confirmedBy, note, idempotencyKey string, at time.Time) error
 }
 
 type Service interface {
 	ListDeadlineAlerts(ctx context.Context, req ListDeadlineAlertsRequest) (*ListDeadlineAlertsResponse, error)
+	ConfirmDeadlineAlert(ctx context.Context, req ConfirmDeadlineAlertRequest) (*ConfirmDeadlineAlertResponse, error)
 }
 
 type service struct {

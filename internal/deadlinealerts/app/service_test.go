@@ -26,6 +26,14 @@ func (s *stubRepo) GetTypeDeadlineConfig(_ context.Context, _, _ string) (*discl
 	return nil, nil
 }
 
+func (s *stubRepo) HasDisclosureRecord(_ context.Context, _, _ string) (bool, error) {
+	return true, nil
+}
+
+func (s *stubRepo) ConfirmDeadlineAlert(_ context.Context, _, _, _, _, _ string, _ time.Time) error {
+	return nil
+}
+
 func allowAuthSvc() authapp.Service {
 	authRepo := authinmem.NewRepository()
 	return authapp.NewService(authinmem.NewResolver(authRepo), authinmem.NewChecker(), authRepo)
@@ -70,7 +78,30 @@ func TestListDeadlineAlerts_usesAdHocProposedDueDate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(resp.Items) != 1 || resp.Items[0].DueDate != "2026-05-27" || resp.Items[0].Status != "DONE" {
+	if len(resp.Items) != 1 || resp.Items[0].DueDate != "2026-05-27" || resp.Items[0].Status != "PENDING_CONFIRM" {
+		t.Fatalf("got %+v", resp)
+	}
+}
+
+func TestListDeadlineAlerts_confirmedRecordBecomesDone(t *testing.T) {
+	confirmedAt := time.Date(2026, 5, 26, 0, 0, 0, 0, time.UTC)
+	repo := &stubRepo{rows: []AlertRow{
+		{
+			CompanyID: "c1", RecordID: "r1", Title: "Ad-hoc BCTC",
+			RecordStatus: "published", AdHocDeadlineDate: "2026-05-27",
+			ConfirmedBy: "m_admin_001", ConfirmedAt: &confirmedAt,
+		},
+	}}
+	svc := NewService(repo, allowAuthSvc(), disclosureapp.NewDeadlineCalculator(disclosureapp.NewHolidayCalendarFileProvider("configs/non_trading_days")))
+	svc.(*service).now = func() time.Time { return time.Date(2026, 5, 25, 0, 0, 0, 0, time.UTC) }
+
+	resp, err := svc.ListDeadlineAlerts(context.Background(), ListDeadlineAlertsRequest{
+		Subject: Subject{UserID: "u1", MembershipID: "m_admin_001", CompanyID: "c_001"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Items) != 1 || resp.Items[0].Status != "DONE" {
 		t.Fatalf("got %+v", resp)
 	}
 }
