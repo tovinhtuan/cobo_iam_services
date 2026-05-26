@@ -244,7 +244,8 @@ func legacyPolicy(action string) *authapp.ActionPolicy {
 	case "notification.resolve_recipients":
 		required = "alert.channels.manage"
 	case "admin.account.settings.read", "admin.account.settings.update":
-		required = "system.settings"
+		// Tenant admin self-profile (PO Account tab); aligns with rbac.manage, not platform system.settings.
+		required = "rbac.manage"
 	case "deadline.view":
 		required = "deadline.view"
 	case "deadline.confirm":

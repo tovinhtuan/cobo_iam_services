@@ -36,6 +36,17 @@ func TestLegacyPolicyMembershipInvite(t *testing.T) {
 	}
 }
 
+func TestLegacyPolicyAdminAccountSettings(t *testing.T) {
+	read := legacyPolicy("admin.account.settings.read")
+	if read.RequiredPermission != "rbac.manage" {
+		t.Fatalf("read required = %q want rbac.manage", read.RequiredPermission)
+	}
+	patch := legacyPolicy("admin.account.settings.update")
+	if patch.RequiredPermission != "rbac.manage" {
+		t.Fatalf("update required = %q want rbac.manage", patch.RequiredPermission)
+	}
+}
+
 func TestLegacyPolicyCompanyProfile(t *testing.T) {
 	view := legacyPolicy("company.view")
 	if view.RequiredPermission != "company.view" {

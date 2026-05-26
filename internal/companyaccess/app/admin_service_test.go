@@ -400,6 +400,36 @@ func TestAdminService_CreateUser_Denied(t *testing.T) {
 	}
 }
 
+func TestAdminService_AccountSettings_RbacManageWithoutSystemSettings(t *testing.T) {
+	repo := cainmem.NewAdminRepository()
+	svc := caapp.NewAdminService(
+		repo,
+		fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{"rbac.manage"}},
+		fixedIDGen("u_tenant"),
+	)
+	sub := caapp.AdminSubject{UserID: "u_tenant", MembershipID: "m_tenant", CompanyID: "c_001"}
+
+	_, err := svc.CreateUser(context.Background(), caapp.CreateUserRequest{
+		Subject:   sub,
+		LoginID:   "tenant.admin@example.com",
+		Password:  "StrongPass123!",
+		FullName:  "Tenant Admin",
+		Email:     "tenant.admin@example.com",
+		CompanyID: "c_001",
+	})
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+
+	acct, err := svc.GetAdminAccountSettings(context.Background(), caapp.GetAdminAccountSettingsRequest{Subject: sub})
+	if err != nil {
+		t.Fatalf("GetAdminAccountSettings: %v", err)
+	}
+	if acct.LoginID != "tenant.admin@example.com" {
+		t.Fatalf("login_id=%q", acct.LoginID)
+	}
+}
+
 func TestAdminService_NotificationRulesListPatchDelete_and_AccountSettings(t *testing.T) {
 	repo := cainmem.NewAdminRepository()
 	svc := caapp.NewAdminService(
