@@ -6,6 +6,64 @@
 
 ---
 
+## Windows 10 (PowerShell) — khuyến nghị
+
+### Yêu cầu
+
+| Công cụ | Cách cài |
+|---------|----------|
+| **OpenSSH Client** | Settings → Apps → Optional features → OpenSSH Client |
+| **Go** | https://go.dev/dl/ |
+| **Node.js** | LTS ^18 / ^20 / ≥22 — https://nodejs.org/ |
+
+### Cấu hình một lần
+
+```powershell
+cd cobo_iam_services
+copy deploy-dev.local.env.example deploy-dev.local.env
+# (Tùy chọn) Sửa deploy-dev.local.env — đặc biệt DEV_SSH_IDENTITY_FILE nếu dùng SSH key
+```
+
+**SSH key (khuyến nghị):** thêm public key lên server (xem [Bước 0.2](#02-fix-ssh--authorize-key-lên-server)), rồi trong `deploy-dev.local.env`:
+
+```ini
+DEV_SSH_IDENTITY_FILE=C:\Users\<you>\.ssh\id_rsa
+```
+
+**Không** lưu mật khẩu SSH trong file cấu hình hoặc repo.
+
+### Deploy
+
+```powershell
+cd cobo_iam_services
+
+# Đầy đủ: migrations + BE + FE + verify
+.\deploy-dev.ps1
+
+# Hoặc double-click / cmd
+deploy-dev.cmd
+
+# Chỉ BE / FE / migrate
+.\deploy-dev.ps1 -Mode be
+.\deploy-dev.ps1 -Mode fe
+.\deploy-dev.ps1 -Mode migrate
+.\deploy-dev.ps1 -Mode verify
+
+# Nhanh hơn (bỏ go build + npm lint)
+.\deploy-dev.ps1 -SkipTests
+```
+
+### Push một migration (Windows)
+
+```powershell
+cd cobo_iam_services\deploy-artifacts
+.\push-migration.ps1 -File 0076_deadline_alert_confirmations.up.sql
+```
+
+Script tương đương `deploy-dev.sh` trên Linux/Git Bash.
+
+---
+
 ## Tổng quan flow
 
 ```
@@ -357,7 +415,7 @@ Mở: **`http://88.216.208.0:3000`**
 
 | Mục đích | Lệnh |
 |---|---|
-| Deploy đầy đủ (BE + FE + migrate) | `sh deploy-dev.sh` |
+| Deploy đầy đủ (BE + FE + migrate) | `sh deploy-dev.sh` hoặc `.\deploy-dev.ps1` (Windows) |
 | Chỉ deploy BE | `make deploy-be` |
 | Chỉ deploy FE | `make deploy-fe` |
 | Chỉ apply migrations mới | `sh deploy-dev.sh migrate` |
@@ -446,18 +504,11 @@ make deploy-all
 sh deploy-dev.sh migrate
 ```
 
-pass: uNf5pfg1Pu7etvp
+> **Deploy với password (không dùng SSH key):** tạo `deploy-dev.local.env` (gitignored) với `DEV_SSH_PASSWORD=...`.  
+> Windows: `.\deploy-dev.ps1` dùng PuTTY `plink`/`pscp` khi có biến này.  
+> Linux/Git Bash: `export SSHPASS='...'` rồi `sh deploy-dev.sh`.
 
-> **Deploy với password (không dùng SSH key):** cần `sshpass` trên máy local.
->
-> ```bash
-> export SSHPASS="$(grep '^pass:' docs/deploy-dev-guide.md | sed 's/^pass:[[:space:]]*//')"
-> sh deploy-dev.sh
-> ```
->
-> Hoặc: `SSHPASS='...' make deploy-all`
-
-# Deploy thủ công
+# Deploy thủ công (Git Bash)
 cd cobo_iam_services
 export SSHPASS='your-password'   # hoặc dùng SSH key
 sh deploy-dev.sh all --skip-tests

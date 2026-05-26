@@ -44,7 +44,7 @@ node -e "const major = Number(process.versions.node.split('.')[0]); const ok = (
     fe-install fe-dev fe-build fe-test fe-clean \
     dc-up dc-down dc-build dc-rebuild dc-logs dc-ps dc-restart \
     deploy-init deploy-be deploy-fe deploy-all push-migration \
-    deploy-dev deploy-dev-be deploy-dev-fe deploy-dev-migrate \
+    deploy-dev deploy-dev-be deploy-dev-fe deploy-dev-migrate deploy-dev-win \
     dev-up dev-down dev-ps dev-logs dev-restart dev-ssh dev-fix-web-perms
 
 # ─────────────────────────────────────────────────────────────────────
@@ -150,14 +150,15 @@ deploy-be: be-build-linux ## [dev] Build Linux binary, SCP bin/ + configs/, rest
 	    cd $(DEV_PATH) && \
 	    docker compose -f docker-compose.artifacts.yml up -d --force-recreate --no-deps api worker"
 
-deploy-fe: fe-build ## [dev] Build FE, copy dist + nginx.conf, SCP, restart web
+deploy-fe: fe-build ## [dev] Build FE, copy dist + nginx.conf, SCP, recreate web (bind-mount safe)
 	rm -rf $(ARTIFACTS)/web/dist
 	cp -r $(FE_DIR)/dist $(ARTIFACTS)/web/dist
+	$(SSH) "cd $(DEV_PATH) && docker compose -f docker-compose.artifacts.yml stop web 2>/dev/null || true"
 	$(SSH) "mkdir -p $(DEV_PATH)/web && rm -rf $(DEV_PATH)/web/dist && mkdir -p $(DEV_PATH)/web/dist"
 	$(SCP) -r $(ARTIFACTS)/web/dist/*   $(DEV_USER)@$(DEV_HOST):$(DEV_PATH)/web/dist/
 	$(SCP)    $(ARTIFACTS)/web/nginx.conf $(DEV_USER)@$(DEV_HOST):$(DEV_PATH)/web/nginx.conf
 	$(SCP) scripts/fix-dev-web-perms.sh $(DEV_USER)@$(DEV_HOST):$(DEV_PATH)/fix-dev-web-perms.sh
-	$(SSH) "chmod +x $(DEV_PATH)/fix-dev-web-perms.sh && sh $(DEV_PATH)/fix-dev-web-perms.sh $(DEV_PATH)"
+	$(SSH) "sed -i 's/\r$$//' $(DEV_PATH)/fix-dev-web-perms.sh && chmod +x $(DEV_PATH)/fix-dev-web-perms.sh && sh $(DEV_PATH)/fix-dev-web-perms.sh $(DEV_PATH)"
 
 deploy-all: deploy-be deploy-fe ## [dev] Deploy cả BE + FE lên dev
 
@@ -172,6 +173,9 @@ deploy-dev-fe: ## [dev] Chỉ deploy FE lên dev
 
 deploy-dev-migrate: ## [dev] Chỉ push + apply migrations mới lên dev
 	sh deploy-dev.sh migrate
+
+deploy-dev-win: ## [dev][Windows] PowerShell deploy: make deploy-dev-win MODE=all
+	powershell -NoProfile -ExecutionPolicy Bypass -File deploy-dev.ps1 -Mode $(if $(MODE),$(MODE),all)
 
 push-migration: ## [dev] Push + apply một migration: make push-migration FILE=0007_foo.up.sql
 	@test -n "$(FILE)" || { echo "Usage: make push-migration FILE=0007_foo.up.sql"; exit 1; }

@@ -51,7 +51,7 @@
 | `/app/ad-hoc-proposals/new` | create proposal | `GET /api/v1/company/ad-hoc-proposals/eligible-controllers`, `POST /api/v1/company/ad-hoc-proposals` | Implemented |
 | `/app/ad-hoc-proposals/:proposalId` | proposal detail/actions | `GET /api/v1/company/ad-hoc-proposals/{proposal_id}`, `POST /submit`, `POST /focal-approve`, `POST /admin-approve`, `POST /reject`, `POST /cancel` | Implemented |
 | `/app/alert-channels` | channel/rule management | `POST /api/v1/notifications/resolve-recipients`, `POST /api/v1/notifications/enqueue`, `POST /api/v1/notifications/dispatch` plus portal notification settings contracts | Partial |
-| `/app/profile` | user profile | `GET /api/v1/me`, `GET /api/v1/me/profile` | Implemented |
+| `/app/profile` | user profile (identity hub) | `GET /api/v1/me`, `GET /api/v1/me/profile`, `GET /api/v1/me/companies`, `PATCH /api/v1/me/profile`, `POST /api/v1/me/change-password` | Implemented |
 | `/app/settings` | user settings shell | current route exists; backend shape not explicitly isolated | Partial |
 
 ## Enterprise Admin Routes

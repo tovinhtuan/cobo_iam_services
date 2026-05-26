@@ -102,6 +102,16 @@ func (r *SessionRepository) RevokeBySessionID(_ context.Context, userID, session
 	return nil
 }
 
+func (r *SessionRepository) AssertSessionActive(_ context.Context, sessionID string) error {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	ss, ok := r.bySessionID[sessionID]
+	if !ok || ss.Revoked {
+		return perr.NewHTTPError(http.StatusUnauthorized, perr.CodeSessionExpired, "session expired", nil)
+	}
+	return nil
+}
+
 func (r *SessionRepository) RevokeAllByUser(_ context.Context, userID, _ string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

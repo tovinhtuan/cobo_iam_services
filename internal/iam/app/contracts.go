@@ -73,6 +73,8 @@ type SessionRepository interface {
 	ListByUser(ctx context.Context, userID string) ([]SessionState, error)
 	RevokeBySessionID(ctx context.Context, userID, sessionID string) error
 	RevokeAllByUser(ctx context.Context, userID, reason string) error
+	// AssertSessionActive ensures the session row exists and is not revoked/expired.
+	AssertSessionActive(ctx context.Context, sessionID string) error
 }
 
 type AuthRecoveryRepository interface {

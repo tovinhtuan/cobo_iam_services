@@ -246,6 +246,12 @@ Public, **khong** can Bearer. Tra JSON `status` (xem `internal/httpserver`).
     "subscription_tier": "Premium",
     "subscription_expires_at": "2027-01-01T00:00:00Z"
   },
+  "contact": {
+    "email": "user@example.com",
+    "phone": "+84901234567",
+    "email_verified": true
+  },
+  "profile_schema_version": 1,
   "current_context": {
     "company_id": "c_001",
     "membership_id": "m_001"
@@ -256,7 +262,21 @@ Public, **khong** can Bearer. Tra JSON `status` (xem `internal/httpserver`).
 
 `subscription_expires_at` is `null` when the active tier row has no `effective_to`.
 
+`contact.email` / `contact.phone` are profile contact fields (distinct from `login_id`).
+
 **Alias:** `GET /api/v1/me/profile` cung phan hoi nhu tren.
+
+### PATCH /api/v1/me/profile
+
+Self-service profile update (Bearer access token; no `rbac.manage`). Body: optional `full_name`, `email`, `phone` (at least one field).
+
+**Response 200:** `{ "ok": true }`
+
+Reject when account is locked/suspended/disabled. Audit action `user.profile.update`.
+
+### POST /api/v1/me/change-password
+
+Same semantics as admin change-password (RSA cipher, min 12, revoke sessions). Request/response shape identical to `POST /api/v1/admin/account/change-password`.
 
 ### POST /api/v1/admin/account/change-password
 
@@ -284,7 +304,10 @@ Public, **khong** can Bearer. Tra JSON `status` (xem `internal/httpserver`).
       "company_id": "c_001",
       "membership_id": "m_001",
       "company_name": "Company X",
-      "membership_status": "active"
+      "membership_status": "active",
+      "roles": ["admin_doanh_nghiep"],
+      "titles": ["Giam doc Phap che"],
+      "address": "123 Street, District 1"
     },
     {
       "company_id": "c_002",

@@ -1,6 +1,7 @@
 package http
 
 import (
+	"database/sql"
 	"net/http"
 	"sort"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	authapp "github.com/cobo/cobo_iam_services/internal/authorization/app"
 	caapp "github.com/cobo/cobo_iam_services/internal/companyaccess/app"
 	iamapp "github.com/cobo/cobo_iam_services/internal/iam/app"
+	"github.com/cobo/cobo_iam_services/internal/iam/loginpassword"
 	"github.com/cobo/cobo_iam_services/internal/platform/httpx"
 )
 
@@ -17,10 +19,32 @@ type MeHandler struct {
 	identities iamapp.IdentityQueryService
 	members    caapp.MembershipQueryService
 	authorizer authapp.Service
+	profiles   userAccountProfileRepo
+	regDB      *sql.DB
+	iamSvc     iamapp.Service
+	loginPWD   *loginpassword.Service
 }
 
-func NewMeHandler(base *Handler, identities iamapp.IdentityQueryService, members caapp.MembershipQueryService, authorizer authapp.Service) *MeHandler {
-	return &MeHandler{h: base, identities: identities, members: members, authorizer: authorizer}
+func NewMeHandler(
+	base *Handler,
+	identities iamapp.IdentityQueryService,
+	members caapp.MembershipQueryService,
+	authorizer authapp.Service,
+	profiles userAccountProfileRepo,
+	regDB *sql.DB,
+	iamSvc iamapp.Service,
+	loginPWD *loginpassword.Service,
+) *MeHandler {
+	return &MeHandler{
+		h:          base,
+		identities: identities,
+		members:    members,
+		authorizer: authorizer,
+		profiles:   profiles,
+		regDB:      regDB,
+		iamSvc:     iamSvc,
+		loginPWD:   loginPWD,
+	}
 }
 
 func (m *MeHandler) Register(mux *http.ServeMux) {
@@ -33,6 +57,8 @@ func (m *MeHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/me/effective-access", m.effectiveAccess)
 	mux.HandleFunc("GET /api/v1/me/capabilities", m.capabilities)
 	mux.HandleFunc("GET /api/v1/me/membership", m.membership)
+	mux.HandleFunc("PATCH /api/v1/me/profile", m.patchProfile)
+	mux.HandleFunc("POST /api/v1/me/change-password", m.changePassword)
 }
 
 func (m *MeHandler) me(w http.ResponseWriter, r *http.Request) {
@@ -78,7 +104,9 @@ func (m *MeHandler) me(w http.ResponseWriter, r *http.Request) {
 		userPayload["subscription_expires_at"] = nil
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{
-		"user": userPayload,
+		"user":                    userPayload,
+		"contact":                 m.loadContactBlock(r.Context(), claims.Sub),
+		"profile_schema_version":  1,
 		"current_context": map[string]any{
 			"company_id":    claims.CompanyID,
 			"membership_id": claims.MembershipID,
@@ -104,12 +132,22 @@ func (m *MeHandler) companies(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]map[string]any, 0, len(items))
 	for _, it := range items {
-		out = append(out, map[string]any{
+		entry := map[string]any{
 			"company_id":        it.CompanyID,
 			"membership_id":     it.MembershipID,
 			"company_name":      it.CompanyName,
 			"membership_status": it.Status,
-		})
+			"roles":             []string{},
+			"titles":            []string{},
+			"address":           m.companyAddress(r.Context(), it.CompanyID),
+		}
+		if roles, err := m.members.GetMembershipRoles(r.Context(), it.MembershipID); err == nil {
+			entry["roles"] = roles
+		}
+		if titles, err := m.members.GetMembershipTitles(r.Context(), it.MembershipID); err == nil {
+			entry["titles"] = titles
+		}
+		out = append(out, entry)
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"items": out})
 }

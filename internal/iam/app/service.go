@@ -137,6 +137,10 @@ func (s *service) Login(ctx context.Context, req LoginRequest) (*LoginResponse, 
 
 	if len(active) == 0 {
 		// User has no active membership — allowed to login but restricted to non-enterprise modules.
+		if err := s.sessions.Create(ctx, CreateSessionParams{SessionID: sid, UserID: user.UserID, RefreshToken: refresh, IP: req.IP, UserAgent: req.UserAgent}); err != nil {
+			s.recordLoginAttempt(ctx, req, user, false, err)
+			return nil, fmt.Errorf("create session: %w", err)
+		}
 		access, exp, err := s.tokens.IssueAccessToken(ctx, AccessTokenClaims{Sub: user.UserID, SessionID: sid})
 		if err != nil {
 			s.recordLoginAttempt(ctx, req, user, false, err)
@@ -145,10 +149,6 @@ func (s *service) Login(ctx context.Context, req LoginRequest) (*LoginResponse, 
 		resp.Session.AccessToken = access
 		resp.Session.ExpiresIn = exp
 		resp.NextAction = "no_company_onboarding"
-		if err := s.sessions.Create(ctx, CreateSessionParams{SessionID: sid, UserID: user.UserID, RefreshToken: refresh, IP: req.IP, UserAgent: req.UserAgent}); err != nil {
-			s.recordLoginAttempt(ctx, req, user, false, err)
-			return nil, fmt.Errorf("create session: %w", err)
-		}
 		s.recordLoginAttempt(ctx, req, user, true, nil)
 		s.enrichLoginVerification(ctx, resp)
 		return resp, nil
@@ -158,6 +158,10 @@ func (s *service) Login(ctx context.Context, req LoginRequest) (*LoginResponse, 
 
 	if len(active) == 1 {
 		m := active[0]
+		if err := s.sessions.Create(ctx, CreateSessionParams{SessionID: sid, UserID: user.UserID, MembershipID: m.MembershipID, CompanyID: m.CompanyID, RefreshToken: refresh, IP: req.IP, UserAgent: req.UserAgent}); err != nil {
+			s.recordLoginAttempt(ctx, req, user, false, err)
+			return nil, fmt.Errorf("create session: %w", err)
+		}
 		access, exp, err := s.tokens.IssueAccessToken(ctx, AccessTokenClaims{Sub: user.UserID, SessionID: sid, MembershipID: m.MembershipID, CompanyID: m.CompanyID})
 		if err != nil {
 			s.recordLoginAttempt(ctx, req, user, false, err)
@@ -167,15 +171,15 @@ func (s *service) Login(ctx context.Context, req LoginRequest) (*LoginResponse, 
 		resp.Session.ExpiresIn = exp
 		resp.CurrentContext = &LoginCurrentContext{CompanyID: m.CompanyID, MembershipID: m.MembershipID, AutoSelected: true}
 		resp.NextAction = "load_effective_access"
-		if err := s.sessions.Create(ctx, CreateSessionParams{SessionID: sid, UserID: user.UserID, MembershipID: m.MembershipID, CompanyID: m.CompanyID, RefreshToken: refresh, IP: req.IP, UserAgent: req.UserAgent}); err != nil {
-			s.recordLoginAttempt(ctx, req, user, false, err)
-			return nil, fmt.Errorf("create session: %w", err)
-		}
 		s.recordLoginAttempt(ctx, req, user, true, nil)
 		s.enrichLoginVerification(ctx, resp)
 		return resp, nil
 	}
 
+	if err := s.sessions.Create(ctx, CreateSessionParams{SessionID: sid, UserID: user.UserID, RefreshToken: refresh, IP: req.IP, UserAgent: req.UserAgent}); err != nil {
+		s.recordLoginAttempt(ctx, req, user, false, err)
+		return nil, fmt.Errorf("create session: %w", err)
+	}
 	pre, exp, err := s.tokens.IssuePreCompanyToken(ctx, user.UserID, sid)
 	if err != nil {
 		s.recordLoginAttempt(ctx, req, user, false, err)
@@ -187,10 +191,6 @@ func (s *service) Login(ctx context.Context, req LoginRequest) (*LoginResponse, 
 	resp.Memberships = make([]LoginMembershipSummary, 0, len(active))
 	for _, m := range active {
 		resp.Memberships = append(resp.Memberships, LoginMembershipSummary{CompanyID: m.CompanyID, CompanyName: m.CompanyName, MembershipID: m.MembershipID})
-	}
-	if err := s.sessions.Create(ctx, CreateSessionParams{SessionID: sid, UserID: user.UserID, RefreshToken: refresh, IP: req.IP, UserAgent: req.UserAgent}); err != nil {
-		s.recordLoginAttempt(ctx, req, user, false, err)
-		return nil, fmt.Errorf("create session: %w", err)
 	}
 	s.recordLoginAttempt(ctx, req, user, true, nil)
 	s.enrichLoginVerification(ctx, resp)

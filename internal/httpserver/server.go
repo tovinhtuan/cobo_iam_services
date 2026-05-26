@@ -131,10 +131,6 @@ type pingDB interface {
 
 func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr TokenManager, sqlDB pingDB, projectionStore authprojection.SnapshotStore, outboxRepo platformoutbox.Repository, pool *sql.DB, outboxSQL *outboxmysql.Repository) error {
 	id := idgen.UUIDv7Generator{}
-	tokenManager := tokenMgr
-	if tokenManager == nil {
-		tokenManager = buildTokenManager(log, cfg, id)
-	}
 	var auditRepo auditapp.Repository = auditinmem.NewRepository()
 	if pool != nil {
 		auditRepo = auditmysql.NewRepository(pool)
@@ -171,6 +167,10 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 		}
 		credVerifier = static
 		identity = static
+	}
+	tokenManager := tokenMgr
+	if tokenManager == nil {
+		tokenManager = buildTokenManager(log, cfg, id, sessionRepo)
 	}
 	var iamOpts []iamapp.ServiceOption
 	emailTemplateRegistry := notificationregistry.NewEmbedRegistry()
@@ -228,7 +228,12 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 	authChecker := authinmem.NewChecker()
 	authSvc := authapp.NewService(authResolver, authChecker, authRepo)
 	authHandler := authhttp.NewHandler(authSvc, tokenManager)
-	meHandler := iamhttp.NewMeHandler(iamHandler, identity, memberQuery, authSvc)
+	var adminRepo companyaccessapp.AdminRepository = cainmem.NewAdminRepository()
+	if pool != nil {
+		adminRepo = camysql.NewAdminRepository(pool)
+		log.Info("admin access APIs using MySQL")
+	}
+	meHandler := iamhttp.NewMeHandler(iamHandler, identity, memberQuery, authSvc, adminRepo, pool, iamSvc, loginPWD)
 
 	var disclosureRepo disclosureapp.Repository = disclosureinmem.NewRepository()
 	var workflowRepo workflowapp.Repository = workflowinmem.NewRepository()
@@ -329,11 +334,6 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 	)
 	reminderSvc := reminderapp.NewService(reminderConfigRepo, reminderOccurrenceRepo, reminderAttemptRepo, reminderSvcOpts...)
 	reminderHandler := reminderhttp.NewHandler(reminderSvc, tokenManager, "", cfg.Env)
-	var adminRepo companyaccessapp.AdminRepository = cainmem.NewAdminRepository()
-	if pool != nil {
-		adminRepo = camysql.NewAdminRepository(pool)
-		log.Info("admin access APIs using MySQL")
-	}
 	var adminOpts []companyaccessapp.AdminOption
 	adminOpts = append(adminOpts, companyaccessapp.WithInviteDefaultRoleCode(cfg.InviteDefaultRoleCode))
 	if pool != nil {

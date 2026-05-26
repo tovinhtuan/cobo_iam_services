@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	iamapp "github.com/cobo/cobo_iam_services/internal/iam/app"
@@ -176,6 +177,31 @@ func (r *SessionRepository) RevokeBySessionID(ctx context.Context, userID, sessi
 	n, _ := res.RowsAffected()
 	if n == 0 {
 		return perr.NewHTTPError(http.StatusNotFound, perr.CodeMembershipNotFound, "session not found", nil)
+	}
+	return nil
+}
+
+func (r *SessionRepository) AssertSessionActive(ctx context.Context, sessionID string) error {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return perr.NewHTTPError(http.StatusUnauthorized, perr.CodeSessionExpired, "invalid session token", nil)
+	}
+	row := r.db.QueryRowContext(ctx, `
+		SELECT revoked_at, refresh_expires_at FROM sessions WHERE session_id = ?
+	`, sessionID)
+	var revoked sql.NullTime
+	var exp sql.NullTime
+	if err := row.Scan(&revoked, &exp); err != nil {
+		if err == sql.ErrNoRows {
+			return perr.NewHTTPError(http.StatusUnauthorized, perr.CodeSessionExpired, "session expired", nil)
+		}
+		return err
+	}
+	if revoked.Valid {
+		return perr.NewHTTPError(http.StatusUnauthorized, perr.CodeSessionExpired, "session expired", nil)
+	}
+	if exp.Valid && r.now().After(exp.Time) {
+		return perr.NewHTTPError(http.StatusUnauthorized, perr.CodeSessionExpired, "session expired", nil)
 	}
 	return nil
 }

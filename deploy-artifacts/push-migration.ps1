@@ -27,29 +27,56 @@ if (-not (Test-Path $localFile)) {
   throw "Migration not found: $localFile"
 }
 
-foreach ($cmd in @("scp", "ssh")) {
-  if (-not (Get-Command $cmd -ErrorAction SilentlyContinue)) {
-    throw "Missing '$cmd'. Install OpenSSH Client: Settings → Apps → Optional features → OpenSSH Client."
+$plink = 'C:\Program Files\PuTTY\plink.exe'
+$pscp = 'C:\Program Files\PuTTY\pscp.exe'
+$pw = $env:DEV_SSH_PASSWORD
+if (-not $pw) { $pw = $env:SSHPASS }
+$usePlink = $pw -and (Test-Path $plink) -and (Test-Path $pscp)
+
+if (-not $usePlink) {
+  foreach ($cmd in @('scp', 'ssh')) {
+    if (-not (Get-Command $cmd -ErrorAction SilentlyContinue)) {
+      throw "Missing '$cmd'. Install OpenSSH Client or set DEV_SSH_PASSWORD with PuTTY."
+    }
   }
 }
 
 $remote = "${DevUser}@${DevHost}"
+$remoteDest = "${remote}:$DevPath/migrations/"
 
 Write-Host "==> Copying $File to dev server..."
-& scp -P $DevPort $localFile "${remote}:$DevPath/migrations/"
+if ($usePlink) {
+  & $pscp -batch -P $DevPort -pw $pw $localFile $remoteDest
+} else {
+  & scp -P $DevPort $localFile $remoteDest
+}
+if ($LASTEXITCODE -ne 0) { throw "SCP failed for $File" }
 
-Write-Host "==> Applying migration in MySQL container (from server file — preserves UTF-8)..."
+Write-Host "==> Applying migration in MySQL container..."
 $remoteFile = "$DevPath/migrations/$File"
-& ssh -p $DevPort $remote "cat $remoteFile | docker exec -i cobo-iam-mysql mysql --default-character-set=utf8mb4 -uroot -proot cobo_iam"
+$applyCmd = "cat $remoteFile | docker exec -i cobo-iam-mysql mysql --default-character-set=utf8mb4 -uroot -proot cobo_iam"
+if ($usePlink) {
+  & $plink -batch -P $DevPort -pw $pw $remote $applyCmd
+} else {
+  & ssh -p $DevPort $remote $applyCmd
+}
 if ($LASTEXITCODE -ne 0) { throw "Failed to apply migration $File" }
 
 Write-Host "==> Recording schema_migrations..."
 $sqlTrack = "INSERT IGNORE INTO schema_migrations(file_name) VALUES ('$File');"
-$sqlTrack | & ssh -p $DevPort $remote "docker exec -i cobo-iam-mysql mysql -uroot -proot cobo_iam"
+if ($usePlink) {
+  $sqlTrack | & $plink -batch -P $DevPort -pw $pw $remote "docker exec -i cobo-iam-mysql mysql -uroot -proot cobo_iam"
+} else {
+  $sqlTrack | & ssh -p $DevPort $remote "docker exec -i cobo-iam-mysql mysql -uroot -proot cobo_iam"
+}
 if ($LASTEXITCODE -ne 0) { throw "Failed to record schema_migrations for $File" }
 
 Write-Host "==> Verifying..."
 $sqlVerify = "SELECT file_name, executed_at FROM schema_migrations WHERE file_name='$File';"
-& ssh -p $DevPort $remote "docker exec cobo-iam-mysql mysql -uroot -proot cobo_iam -e ""$sqlVerify"""
+if ($usePlink) {
+  & $plink -batch -P $DevPort -pw $pw $remote "docker exec cobo-iam-mysql mysql -uroot -proot cobo_iam -e ""$sqlVerify"""
+} else {
+  & ssh -p $DevPort $remote "docker exec cobo-iam-mysql mysql -uroot -proot cobo_iam -e ""$sqlVerify"""
+}
 
 Write-Host "Done: $File"
