@@ -265,10 +265,10 @@ func legacyPolicy(action string) *authapp.ActionPolicy {
 		required = "ad_hoc_alert.focal_review"
 	case "ad_hoc_alert.admin_review":
 		required = "ad_hoc_alert.admin_review"
-	case "admin.membership.create",
-		"admin.membership.update",
+	case "admin.membership.create", "admin.membership.list":
+		required = "admin.membership.invite"
+	case "admin.membership.update",
 		"admin.membership.delete",
-		"admin.membership.list",
 		"admin.membership.role.assign",
 		"admin.membership.role.remove",
 		"admin.membership.department.assign",

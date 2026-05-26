@@ -21,6 +21,21 @@ func TestGetActionPolicy_PrefersLegacyOverMisseededSystemSettings(t *testing.T) 
 	}
 }
 
+func TestLegacyPolicyMembershipInvite(t *testing.T) {
+	create := legacyPolicy("admin.membership.create")
+	if create.RequiredPermission != "admin.membership.invite" {
+		t.Fatalf("create required = %q want admin.membership.invite", create.RequiredPermission)
+	}
+	list := legacyPolicy("admin.membership.list")
+	if list.RequiredPermission != "admin.membership.invite" {
+		t.Fatalf("list required = %q want admin.membership.invite", list.RequiredPermission)
+	}
+	del := legacyPolicy("admin.membership.delete")
+	if del.RequiredPermission != "rbac.manage" {
+		t.Fatalf("delete required = %q want rbac.manage", del.RequiredPermission)
+	}
+}
+
 func TestLegacyPolicyCompanyProfile(t *testing.T) {
 	view := legacyPolicy("company.view")
 	if view.RequiredPermission != "company.view" {

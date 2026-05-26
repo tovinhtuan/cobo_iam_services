@@ -182,9 +182,18 @@ func (s *adminService) SetPlatformCompanyStatus(ctx context.Context, req SetPlat
 }
 
 func (s *adminService) InviteUser(ctx context.Context, req InviteUserRequest) (*InviteUserResponse, error) {
-	if err := s.authorize(ctx, req.Subject, "admin.membership.create", req.Subject.CompanyID); err != nil {
+	if err := s.authorizeMembershipInvite(ctx, req.Subject, req.Subject.CompanyID); err != nil {
 		return nil, err
 	}
+	scope, err := s.resolveInviteScope(ctx, req.Subject)
+	if err != nil {
+		return nil, err
+	}
+	deptID, err := s.pickInviteDepartmentID(scope, req.DepartmentID)
+	if err != nil {
+		return nil, err
+	}
+	req.DepartmentID = deptID
 	isWebAdmin, err := s.hasPermission(ctx, req.Subject, "rbac.manage")
 	if err != nil {
 		return nil, err
@@ -210,7 +219,7 @@ func (s *adminService) InviteUser(ctx context.Context, req InviteUserRequest) (*
 	if req.CompanyID == "" {
 		return s.inviteUserWithoutCompany(ctx, req)
 	}
-	return s.inviteUserWithCompany(ctx, req)
+	return s.inviteUserWithCompany(ctx, req, scope)
 }
 
 // inviteUserWithoutCompany creates a user + invitation with no membership.
@@ -289,7 +298,8 @@ func (s *adminService) inviteUserWithoutCompany(ctx context.Context, req InviteU
 }
 
 // inviteUserWithCompany is the original invite flow (with company + membership creation).
-func (s *adminService) inviteUserWithCompany(ctx context.Context, req InviteUserRequest) (*InviteUserResponse, error) {
+func (s *adminService) inviteUserWithCompany(ctx context.Context, req InviteUserRequest, scope inviteScope) (*InviteUserResponse, error) {
+	_ = scope
 	if req.MembershipStatus == "" {
 		req.MembershipStatus = "active"
 	}
@@ -339,6 +349,9 @@ func (s *adminService) inviteUserWithCompany(ctx context.Context, req InviteUser
 			}
 		}
 		if err := s.grantDefaultPermissions(ctx, m.MembershipID, req.CompanyID, req.CreatedByUserID); err != nil {
+			return nil, err
+		}
+		if err := s.assignInviteDepartment(ctx, m.MembershipID, req.DepartmentID); err != nil {
 			return nil, err
 		}
 		companyDisplay := ""
@@ -418,6 +431,9 @@ func (s *adminService) inviteUserWithCompany(ctx context.Context, req InviteUser
 	if err := s.grantDefaultPermissions(ctx, opts.MembershipID, req.CompanyID, createdBy); err != nil {
 		return nil, err
 	}
+	if err := s.assignInviteDepartment(ctx, opts.MembershipID, req.DepartmentID); err != nil {
+		return nil, err
+	}
 	if s.invMailer != nil {
 		if err := s.invMailer.SendInvitationEmail(ctx, InvitationMailPayload{
 			UserID: out.UserID, ToEmail: out.Email, FullName: out.FullName, LoginID: out.LoginID, RawToken: rawTok,
@@ -440,7 +456,7 @@ func (s *adminService) inviteUserWithCompany(ctx context.Context, req InviteUser
 }
 
 func (s *adminService) ListInviteRoles(ctx context.Context, req ListInviteRolesRequest) ([]InviteRoleOption, error) {
-	if err := s.authorize(ctx, req.Subject, "admin.membership.create", req.Subject.CompanyID); err != nil {
+	if err := s.authorizeMembershipInvite(ctx, req.Subject, req.Subject.CompanyID); err != nil {
 		return nil, err
 	}
 	isWebAdmin, err := s.hasPermission(ctx, req.Subject, "rbac.manage")
@@ -461,7 +477,11 @@ func (s *adminService) ListInviteRoles(ctx context.Context, req ListInviteRolesR
 }
 
 func (s *adminService) ResendUserInvitation(ctx context.Context, req ResendUserInvitationRequest) error {
-	if err := s.authorize(ctx, req.Subject, "admin.membership.create", req.Subject.CompanyID); err != nil {
+	if err := s.authorizeMembershipInvite(ctx, req.Subject, req.Subject.CompanyID); err != nil {
+		return err
+	}
+	scope, err := s.resolveInviteScope(ctx, req.Subject)
+	if err != nil {
 		return err
 	}
 	userID := strings.TrimSpace(req.UserID)
@@ -520,6 +540,9 @@ func (s *adminService) ResendUserInvitation(ctx context.Context, req ResendUserI
 	}
 	if !ok {
 		return perr.NewHTTPError(http.StatusNotFound, perr.CodeMembershipNotFound, "membership not found for user in company", nil)
+	}
+	if err := s.assertResendInInviteScope(ctx, scope, userID, cid); err != nil {
+		return err
 	}
 	loginID, email, fullName, acctStatus, err := s.repo.GetUserProfile(ctx, userID)
 	if err != nil {
@@ -839,16 +862,24 @@ func (s *adminService) ListCompanyMemberships(ctx context.Context, req ListCompa
 		if !isWebAdmin {
 			return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "listing users without company requires rbac.manage", nil)
 		}
-		if err := s.authorize(ctx, req.Subject, "admin.membership.list", req.Subject.CompanyID); err != nil {
+		if err := s.authorizeMembershipInvite(ctx, req.Subject, req.Subject.CompanyID); err != nil {
 			return nil, err
 		}
 		return s.repo.ListUsersWithNoMembership(ctx)
 	}
 	cid := strings.TrimSpace(req.CompanyID)
-	if err := s.authorize(ctx, req.Subject, "admin.membership.list", cid); err != nil {
+	if err := s.authorizeMembershipInvite(ctx, req.Subject, cid); err != nil {
 		return nil, err
 	}
-	return s.repo.ListMembershipsByCompany(ctx, cid)
+	scope, err := s.resolveInviteScope(ctx, req.Subject)
+	if err != nil {
+		return nil, err
+	}
+	items, err := s.repo.ListMembershipsByCompany(ctx, cid)
+	if err != nil {
+		return nil, err
+	}
+	return s.filterMembershipsByInviteScope(items, scope)
 }
 func (s *adminService) AssignRole(ctx context.Context, req AssignRoleRequest) error {
 	if err := s.authorize(ctx, req.Subject, "admin.membership.role.assign", req.MembershipID); err != nil {
@@ -999,7 +1030,11 @@ func (s *adminService) PatchOwnCompany(ctx context.Context, req PatchOwnCompanyR
 }
 
 func (s *adminService) AddDirectPermission(ctx context.Context, req AddDirectPermissionRequest) error {
-	if err := s.authorize(ctx, req.Subject, "rbac.manage", ""); err != nil {
+	if strings.TrimSpace(req.PermissionCode) == permissionInvite {
+		if err := s.assertCanGrantInvitePermission(ctx, req.Subject); err != nil {
+			return err
+		}
+	} else if err := s.authorize(ctx, req.Subject, "rbac.manage", ""); err != nil {
 		return err
 	}
 	if !isGrantable(req.PermissionCode) {
@@ -1009,7 +1044,11 @@ func (s *adminService) AddDirectPermission(ctx context.Context, req AddDirectPer
 }
 
 func (s *adminService) RemoveDirectPermission(ctx context.Context, req RemoveDirectPermissionRequest) error {
-	if err := s.authorize(ctx, req.Subject, "rbac.manage", ""); err != nil {
+	if strings.TrimSpace(req.PermissionCode) == permissionInvite {
+		if err := s.assertCanGrantInvitePermission(ctx, req.Subject); err != nil {
+			return err
+		}
+	} else if err := s.authorize(ctx, req.Subject, "rbac.manage", ""); err != nil {
 		return err
 	}
 	return s.repo.RevokeDirectPermission(ctx, req.MembershipID, req.PermissionCode, req.Subject.UserID)

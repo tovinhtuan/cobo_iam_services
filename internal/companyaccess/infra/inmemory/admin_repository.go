@@ -35,6 +35,8 @@ type AdminRepository struct {
 	invitationsByUser map[string][]string // stacked token hashes for in-mem sanity (minimal)
 	directPermissions map[string]caapp.DirectPermissionView // key: membershipID:permCode
 
+	departments map[string]caapp.DepartmentView // department_id -> view
+
 	companies map[string]*caapp.PlatformCompanyDetail
 }
 
@@ -55,8 +57,16 @@ func NewAdminRepository() *AdminRepository {
 		notificationRules:       []map[string]any{},
 		invitationsByUser:       map[string][]string{},
 		directPermissions:       map[string]caapp.DirectPermissionView{},
+		departments:             map[string]caapp.DepartmentView{},
 		companies:               map[string]*caapp.PlatformCompanyDetail{},
 	}
+}
+
+// SeedDepartment registers a department for invite-scope tests.
+func (r *AdminRepository) SeedDepartment(d caapp.DepartmentView) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.departments[d.DepartmentID] = d
 }
 
 // SeedCompany adds a company to the in-memory store for testing.
@@ -699,6 +709,63 @@ func (r *AdminRepository) ListActiveDirectPermissions(_ context.Context, members
 		out = []caapp.DirectPermissionView{}
 	}
 	return out, nil
+}
+
+func (r *AdminRepository) MembershipHasPermissionFromRole(_ context.Context, membershipID, _ string, permissionCode string) (bool, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for roleID := range r.rolesByMembership[membershipID] {
+		if perms, ok := r.rolePermissions[roleID]; ok {
+			if _, has := perms[permissionCode]; has {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
+func (r *AdminRepository) HasActiveDirectPermission(_ context.Context, membershipID, permissionCode string) (bool, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	_, ok := r.directPermissions[membershipID+":"+permissionCode]
+	return ok, nil
+}
+
+func (r *AdminRepository) ListDepartmentIDsByHeadMembership(_ context.Context, companyID, headMembershipID string) ([]string, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var out []string
+	for id, d := range r.departments {
+		_ = companyID
+		if d.HeadMembershipID != nil && *d.HeadMembershipID == headMembershipID {
+			out = append(out, id)
+		}
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+func (r *AdminRepository) MembershipInAnyDepartment(_ context.Context, membershipID string, departmentIDs []string) (bool, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	depts := r.departmentsByMembership[membershipID]
+	for _, want := range departmentIDs {
+		if _, ok := depts[want]; ok {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (r *AdminRepository) GetMembershipIDForUserCompany(_ context.Context, userID, companyID string) (string, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for id, m := range r.memberships {
+		if m.UserID == userID && m.CompanyID == companyID {
+			return id, nil
+		}
+	}
+	return "", nil
 }
 
 // Department CRUD — in-memory stubs (used by unit tests; MySQL impl is the production path).

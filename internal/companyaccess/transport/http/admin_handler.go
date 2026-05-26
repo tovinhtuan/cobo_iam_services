@@ -57,6 +57,7 @@ func (h *AdminHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/admin/company", h.getOwnCompany)
 	mux.HandleFunc("PATCH /api/v1/admin/company", h.patchOwnCompany)
 	mux.HandleFunc("POST /api/v1/admin/users/invite", h.inviteUser)
+	mux.HandleFunc("GET /api/v1/admin/users/invite-scope", h.getInviteScope)
 	mux.HandleFunc("GET /api/v1/admin/invite-roles", h.listInviteRoles)
 	mux.HandleFunc("POST /api/v1/admin/users/{user_id}/resend-invitation", h.resendInvitation)
 	mux.HandleFunc("POST /api/v1/admin/memberships/{membership_id}/permissions", h.addMemberPermission)
@@ -632,11 +633,12 @@ func (h *AdminHandler) inviteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var p struct {
-		Email       string   `json:"email"`
-		FullName    string   `json:"full_name"`
-		RoleID      string   `json:"role_id"`
-		RoleCode    string   `json:"role_code"`
-		Permissions []string `json:"permissions"`
+		Email        string   `json:"email"`
+		FullName     string   `json:"full_name"`
+		RoleID       string   `json:"role_id"`
+		RoleCode     string   `json:"role_code"`
+		Permissions  []string `json:"permissions"`
+		DepartmentID string   `json:"department_id"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&p)
 	resp, err := h.svc.InviteUser(r.Context(), caapp.InviteUserRequest{
@@ -648,6 +650,7 @@ func (h *AdminHandler) inviteUser(w http.ResponseWriter, r *http.Request) {
 		RoleID:          p.RoleID,
 		RoleCode:        p.RoleCode,
 		Permissions:     p.Permissions,
+		DepartmentID:    p.DepartmentID,
 	})
 	if err != nil {
 		httpx.WriteError(w, nil, err)
@@ -655,6 +658,20 @@ func (h *AdminHandler) inviteUser(w http.ResponseWriter, r *http.Request) {
 	}
 	h.auditLog(r, "admin.user.invite", "user", resp.UserID)
 	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+func (h *AdminHandler) getInviteScope(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	out, err := h.svc.GetInviteScope(r.Context(), caapp.GetInviteScopeRequest{Subject: sub})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, out)
 }
 
 func (h *AdminHandler) listInviteRoles(w http.ResponseWriter, r *http.Request) {

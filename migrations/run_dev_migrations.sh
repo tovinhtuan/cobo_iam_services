@@ -79,6 +79,8 @@ seed_dev_identity_authorization.sql
 0073_self_reg_company_profile_permissions.up.sql
 0074_deadline_view_permission.up.sql
 0075_fix_unicode_mojibake_disclosure_text.up.sql
+0076_deadline_alert_confirmations.up.sql
+0077_admin_membership_invite_permission.up.sql
 "
 
 mysql_exec() {

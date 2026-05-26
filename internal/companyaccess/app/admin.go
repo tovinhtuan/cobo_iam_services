@@ -16,6 +16,7 @@ type AdminService interface {
 	InviteUser(ctx context.Context, req InviteUserRequest) (*InviteUserResponse, error)
 	// ListInviteRoles returns assignable roles for a target company (global + company-scoped), same resolution as invite.
 	ListInviteRoles(ctx context.Context, req ListInviteRolesRequest) ([]InviteRoleOption, error)
+	GetInviteScope(ctx context.Context, req GetInviteScopeRequest) (*InviteScopeView, error)
 	ResendUserInvitation(ctx context.Context, req ResendUserInvitationRequest) error
 	// AssignUserToCompany links an existing user (active or invited) to a company.
 	// For invited users it also re-issues the invitation with company context.
@@ -104,6 +105,7 @@ type AdminRepository interface {
 	LookupUserByLoginID(ctx context.Context, loginID string) (userID string, accountStatus string, found bool, err error)
 	GetUserProfile(ctx context.Context, userID string) (loginID, email, fullName, accountStatus string, err error)
 	MembershipExistsForUserCompany(ctx context.Context, userID, companyID string) (bool, error)
+	GetMembershipIDForUserCompany(ctx context.Context, userID, companyID string) (string, error)
 	// GetCompanyName returns companies.company_name for a valid company_id.
 	GetCompanyName(ctx context.Context, companyID string) (string, error)
 	// CreateStandaloneCompany inserts companies + seeded tenant roles (no users).
@@ -135,6 +137,14 @@ type AdminRepository interface {
 	RevokeDirectPermission(ctx context.Context, membershipID, permCode, revokedBy string) error
 	// ListActiveDirectPermissions returns all non-revoked direct grants for a membership.
 	ListActiveDirectPermissions(ctx context.Context, membershipID string) ([]DirectPermissionView, error)
+	// MembershipHasPermissionFromRole is true when any assigned role grants permissionCode.
+	MembershipHasPermissionFromRole(ctx context.Context, membershipID, companyID, permissionCode string) (bool, error)
+	// HasActiveDirectPermission is true when membership has a non-revoked direct grant for permissionCode.
+	HasActiveDirectPermission(ctx context.Context, membershipID, permissionCode string) (bool, error)
+	// ListDepartmentIDsByHeadMembership returns department IDs where head_membership_id matches.
+	ListDepartmentIDsByHeadMembership(ctx context.Context, companyID, headMembershipID string) ([]string, error)
+	// MembershipInAnyDepartment is true when membership belongs to at least one of departmentIDs.
+	MembershipInAnyDepartment(ctx context.Context, membershipID string, departmentIDs []string) (bool, error)
 
 	AddRole(ctx context.Context, membershipID, roleID string) error
 	RemoveRole(ctx context.Context, membershipID, roleID string) error
@@ -249,6 +259,8 @@ type InviteUserRequest struct {
 	RoleCode string `json:"role_code,omitempty"`
 	// Permissions is a subset of GrantablePermissions to apply as direct grants after membership creation.
 	Permissions []string `json:"permissions,omitempty"`
+	// DepartmentID is required when inviter is dept-scoped (direct grant only) and heads multiple departments.
+	DepartmentID string `json:"department_id,omitempty"`
 }
 
 type InviteUserResponse struct {
@@ -265,6 +277,7 @@ type InviteUserResponse struct {
 // GrantablePermissions is the whitelist of permissions that enterprise admin can grant/revoke directly
 // on individual memberships. Validated by AddDirectPermission and InviteUser.
 var GrantablePermissions = []string{
+	"admin.membership.invite",
 	"template.workflow.override.write",
 	"template.workflow.override.read",
 	"template.workflow.override.approve",
@@ -286,6 +299,21 @@ type InviteRoleOption struct {
 type ListInviteRolesRequest struct {
 	Subject   AdminSubject
 	CompanyID string
+}
+
+type GetInviteScopeRequest struct {
+	Subject AdminSubject
+}
+
+// InviteScopeView describes company-wide vs department-scoped invite for the current subject.
+type InviteScopeView struct {
+	Scope       string              `json:"scope"` // company | department
+	Departments []InviteScopeDept   `json:"departments,omitempty"`
+}
+
+type InviteScopeDept struct {
+	DepartmentID   string `json:"department_id"`
+	DepartmentName string `json:"department_name"`
 }
 
 type ResendUserInvitationRequest struct {

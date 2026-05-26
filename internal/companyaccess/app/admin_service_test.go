@@ -21,8 +21,21 @@ type fakeAuthService struct {
 	permissions []string
 }
 
-func (f fakeAuthService) Authorize(_ context.Context, _ authapp.AuthorizeRequest) (*authapp.AuthorizeDecision, error) {
-	return &authapp.AuthorizeDecision{Decision: f.decision}, nil
+func (f fakeAuthService) Authorize(_ context.Context, req authapp.AuthorizeRequest) (*authapp.AuthorizeDecision, error) {
+	if f.decision != authapp.DecisionAllow {
+		return &authapp.AuthorizeDecision{Decision: f.decision}, nil
+	}
+	switch req.Action {
+	case "admin.membership.create", "admin.membership.list":
+		for _, p := range f.permissions {
+			if p == "admin.membership.invite" || p == "rbac.manage" || p == "system.settings" {
+				return &authapp.AuthorizeDecision{Decision: authapp.DecisionAllow}, nil
+			}
+		}
+		return &authapp.AuthorizeDecision{Decision: authapp.DecisionDeny}, nil
+	default:
+		return &authapp.AuthorizeDecision{Decision: authapp.DecisionAllow}, nil
+	}
 }
 
 func (f fakeAuthService) AuthorizeBatch(_ context.Context, _ authapp.AuthorizeBatchRequest) (*authapp.AuthorizeBatchResponse, error) {
