@@ -81,6 +81,7 @@ seed_dev_identity_authorization.sql
 0075_fix_unicode_mojibake_disclosure_text.up.sql
 0076_deadline_alert_confirmations.up.sql
 0077_admin_membership_invite_permission.up.sql
+0078_dev_subscription_expiry_seed.up.sql
 "
 
 mysql_exec() {

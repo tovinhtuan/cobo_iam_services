@@ -242,16 +242,34 @@ Public, **khong** can Bearer. Tra JSON `status` (xem `internal/httpserver`).
   "user": {
     "user_id": "u_123",
     "login_id": "user_a",
-    "full_name": "Nguyen Van A"
+    "full_name": "Nguyen Van A",
+    "subscription_tier": "Premium",
+    "subscription_expires_at": "2027-01-01T00:00:00Z"
   },
   "current_context": {
     "company_id": "c_001",
     "membership_id": "m_001"
-  }
+  },
+  "company_context": { "has_company": true, "active_company_id": "c_001", "companies": [] }
 }
 ```
 
+`subscription_expires_at` is `null` when the active tier row has no `effective_to`.
+
 **Alias:** `GET /api/v1/me/profile` cung phan hoi nhu tren.
+
+### POST /api/v1/admin/account/change-password
+
+**Request** (RSA required when `LOGIN_PASSWORD_RSA_PRIVATE_KEY_PEM` is set):
+
+```json
+{
+  "current_password_cipher": { "alg": "RSA-OAEP-256", "kid": "default", "ciphertext_b64": "..." },
+  "new_password_cipher": { "alg": "RSA-OAEP-256", "kid": "default", "ciphertext_b64": "..." }
+}
+```
+
+**Response 200:** `{ "success": true }` — revokes all sessions for the user (re-login required).
 
 ---
 

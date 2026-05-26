@@ -345,6 +345,7 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 	adminSvc := companyaccessapp.NewAdminService(adminRepo, authSvc, id, adminOpts...)
 	adminHandler := companyaccesshttp.NewAdminHandler(adminSvc, tokenManager, auditSvc)
 	adminHandler.WithTokenIssuer(tokenManager, sessionRepo)
+	adminHandler.WithAccountPasswordChange(iamSvc, loginPWD)
 	platformCMSHandler := platformcmshttp.NewHandler(tokenManager, authSvc, adminSvc, iamSvc, auditSvc, auditRepo, disclosureSvc, disclosureRepo, holidaySvc, platformcmshttp.MediaOptions{
 		DB:                  pool,
 		UploadSigningSecret: cfg.CMSMediaUploadSigningSecret,

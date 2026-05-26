@@ -19,6 +19,7 @@ type Service interface {
 	ForgotPassword(ctx context.Context, req ForgotPasswordRequest) (*ForgotPasswordResponse, error)
 	ResendVerificationEmail(ctx context.Context, req ResendVerificationEmailRequest) (*ResendVerificationEmailResponse, error)
 	ResetPassword(ctx context.Context, req ResetPasswordRequest) (*ResetPasswordResponse, error)
+	ChangeAccountPassword(ctx context.Context, req ChangeAccountPasswordRequest) (*ChangeAccountPasswordResponse, error)
 	VerifyEmail(ctx context.Context, req VerifyEmailRequest) (*VerifyEmailResponse, error)
 	ListSessions(ctx context.Context, req ListSessionsRequest) (*ListSessionsResponse, error)
 	RevokeSession(ctx context.Context, req RevokeSessionRequest) (*RevokeSessionResponse, error)
@@ -32,6 +33,7 @@ type Service interface {
 // CredentialVerifier verifies login credentials.
 type CredentialVerifier interface {
 	Verify(ctx context.Context, loginID, plainPassword string) (*AuthenticatedUser, error)
+	VerifyPasswordForUser(ctx context.Context, userID, plainPassword string) error
 }
 
 // IdentityQueryService returns authenticated identity profile data.
@@ -122,11 +124,12 @@ type TokenInspector interface {
 }
 
 type AuthenticatedUser struct {
-	UserID           string
-	LoginID          string
-	FullName         string
-	Status           string
-	SubscriptionTier string
+	UserID                string
+	LoginID               string
+	FullName              string
+	Status                string
+	SubscriptionTier      string
+	SubscriptionExpiresAt *time.Time // nil = no fixed expiry on active tier row
 }
 
 type AccessTokenClaims struct {
@@ -292,6 +295,16 @@ type ResetPasswordRequest struct {
 }
 
 type ResetPasswordResponse struct {
+	Success bool `json:"success"`
+}
+
+type ChangeAccountPasswordRequest struct {
+	UserID          string `json:"-"`
+	CurrentPassword string `json:"current_password"`
+	NewPassword     string `json:"new_password"`
+}
+
+type ChangeAccountPasswordResponse struct {
 	Success bool `json:"success"`
 }
 

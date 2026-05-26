@@ -8,6 +8,7 @@ import (
 
 	iamapp "github.com/cobo/cobo_iam_services/internal/iam/app"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // StaticCredentialVerifier is bootstrap-only verifier for P0.
@@ -38,6 +39,25 @@ func (v *StaticCredentialVerifier) Verify(_ context.Context, loginID, plainPassw
 		Status:           u.Status,
 		SubscriptionTier: coalesce(strings.TrimSpace(u.SubscriptionTier), "Free"),
 	}, nil
+}
+
+func (v *StaticCredentialVerifier) VerifyPasswordForUser(_ context.Context, userID, plainPassword string) error {
+	for _, u := range v.Users {
+		if u.UserID != userID {
+			continue
+		}
+		if strings.HasPrefix(u.Password, "$2a$") || strings.HasPrefix(u.Password, "$2b$") {
+			if err := bcrypt.CompareHashAndPassword([]byte(u.Password), []byte(plainPassword)); err != nil {
+				return perr.NewHTTPError(http.StatusUnauthorized, perr.CodeInvalidCredentials, "invalid credentials", nil)
+			}
+			return nil
+		}
+		if u.Password != plainPassword {
+			return perr.NewHTTPError(http.StatusUnauthorized, perr.CodeInvalidCredentials, "invalid credentials", nil)
+		}
+		return nil
+	}
+	return perr.NewHTTPError(http.StatusUnauthorized, perr.CodeInvalidCredentials, "invalid credentials", nil)
 }
 
 func (v *StaticCredentialVerifier) GetByUserID(_ context.Context, userID string) (*iamapp.AuthenticatedUser, error) {

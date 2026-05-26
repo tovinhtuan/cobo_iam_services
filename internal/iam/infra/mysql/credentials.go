@@ -44,13 +44,38 @@ func (v *CredentialVerifier) Verify(ctx context.Context, loginID, plainPassword 
 	if err := bcrypt.CompareHashAndPassword(hash, []byte(plainPassword)); err != nil {
 		return nil, perr.NewHTTPError(http.StatusUnauthorized, perr.CodeInvalidCredentials, "invalid credentials", nil)
 	}
+	sub := loadUserSubscription(ctx, v.db, userID, time.Now().UTC())
 	return &iamapp.AuthenticatedUser{
-		UserID:           userID,
-		LoginID:          lid,
-		FullName:         fullName,
-		Status:           status,
-		SubscriptionTier: loadUserSubscriptionTier(ctx, v.db, userID, time.Now().UTC()),
+		UserID:                userID,
+		LoginID:               lid,
+		FullName:              fullName,
+		Status:                status,
+		SubscriptionTier:      sub.Tier,
+		SubscriptionExpiresAt: sub.ExpiresAt,
 	}, nil
+}
+
+func (v *CredentialVerifier) VerifyPasswordForUser(ctx context.Context, userID, plainPassword string) error {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "user_id required", nil)
+	}
+	row := v.db.QueryRowContext(ctx, `
+		SELECT c.password_hash
+		FROM credentials c
+		WHERE c.user_id = ? AND c.credential_type = 'password' AND c.status = 'active'
+	`, userID)
+	var hash []byte
+	if err := row.Scan(&hash); err != nil {
+		if err == sql.ErrNoRows {
+			return perr.NewHTTPError(http.StatusUnauthorized, perr.CodeInvalidCredentials, "invalid credentials", nil)
+		}
+		return err
+	}
+	if err := bcrypt.CompareHashAndPassword(hash, []byte(plainPassword)); err != nil {
+		return perr.NewHTTPError(http.StatusUnauthorized, perr.CodeInvalidCredentials, "invalid credentials", nil)
+	}
+	return nil
 }
 
 func (v *CredentialVerifier) GetByUserID(ctx context.Context, userID string) (*iamapp.AuthenticatedUser, error) {
@@ -64,13 +89,20 @@ func (v *CredentialVerifier) GetByUserID(ctx context.Context, userID string) (*i
 		}
 		return nil, err
 	}
-	u.SubscriptionTier = loadUserSubscriptionTier(ctx, v.db, u.UserID, time.Now().UTC())
+	sub := loadUserSubscription(ctx, v.db, u.UserID, time.Now().UTC())
+	u.SubscriptionTier = sub.Tier
+	u.SubscriptionExpiresAt = sub.ExpiresAt
 	return &u, nil
 }
 
-func loadUserSubscriptionTier(ctx context.Context, db *sql.DB, userID string, now time.Time) string {
+type userSubscription struct {
+	Tier      string
+	ExpiresAt *time.Time
+}
+
+func loadUserSubscription(ctx context.Context, db *sql.DB, userID string, now time.Time) userSubscription {
 	row := db.QueryRowContext(ctx, `
-		SELECT subscription_tier
+		SELECT subscription_tier, effective_to
 		FROM user_subscription_tiers
 		WHERE user_id = ?
 			AND (effective_from IS NULL OR effective_from <= ?)
@@ -79,12 +111,18 @@ func loadUserSubscriptionTier(ctx context.Context, db *sql.DB, userID string, no
 	`, userID, now, now)
 
 	var tier string
-	if err := row.Scan(&tier); err != nil {
-		return "Free"
+	var effectiveTo sql.NullTime
+	if err := row.Scan(&tier, &effectiveTo); err != nil {
+		return userSubscription{Tier: "Free"}
 	}
 	tier = strings.TrimSpace(tier)
 	if tier == "" {
-		return "Free"
+		tier = "Free"
 	}
-	return tier
+	var expiresAt *time.Time
+	if effectiveTo.Valid {
+		t := effectiveTo.Time.UTC()
+		expiresAt = &t
+	}
+	return userSubscription{Tier: tier, ExpiresAt: expiresAt}
 }

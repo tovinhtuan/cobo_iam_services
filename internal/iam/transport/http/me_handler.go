@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 
 	authapp "github.com/cobo/cobo_iam_services/internal/authorization/app"
 	caapp "github.com/cobo/cobo_iam_services/internal/companyaccess/app"
@@ -65,13 +66,19 @@ func (m *MeHandler) me(w http.ResponseWriter, r *http.Request) {
 	if claims.CompanyID != "" {
 		activeCompanyID = claims.CompanyID
 	}
+	userPayload := map[string]any{
+		"user_id":           user.UserID,
+		"login_id":          user.LoginID,
+		"full_name":         user.FullName,
+		"subscription_tier": user.SubscriptionTier,
+	}
+	if user.SubscriptionExpiresAt != nil {
+		userPayload["subscription_expires_at"] = user.SubscriptionExpiresAt.UTC().Format(time.RFC3339)
+	} else {
+		userPayload["subscription_expires_at"] = nil
+	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{
-		"user": map[string]any{
-			"user_id":           user.UserID,
-			"login_id":          user.LoginID,
-			"full_name":         user.FullName,
-			"subscription_tier": user.SubscriptionTier,
-		},
+		"user": userPayload,
 		"current_context": map[string]any{
 			"company_id":    claims.CompanyID,
 			"membership_id": claims.MembershipID,

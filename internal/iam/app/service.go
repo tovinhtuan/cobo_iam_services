@@ -542,6 +542,32 @@ func (s *service) ResetPassword(ctx context.Context, req ResetPasswordRequest) (
 	return &ResetPasswordResponse{Success: true}, nil
 }
 
+func (s *service) ChangeAccountPassword(ctx context.Context, req ChangeAccountPasswordRequest) (*ChangeAccountPasswordResponse, error) {
+	userID := strings.TrimSpace(req.UserID)
+	if userID == "" || strings.TrimSpace(req.CurrentPassword) == "" || strings.TrimSpace(req.NewPassword) == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "current_password and new_password are required", nil)
+	}
+	if len(strings.TrimSpace(req.NewPassword)) < 12 {
+		return nil, perr.NewHTTPError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, "new_password must be at least 12 characters", nil)
+	}
+	if s.recovery == nil {
+		return nil, perr.NewHTTPError(http.StatusServiceUnavailable, perr.CodeInternal, "password change not configured", nil)
+	}
+	if err := s.cred.VerifyPasswordForUser(ctx, userID, req.CurrentPassword); err != nil {
+		return nil, err
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, fmt.Errorf("hash password: %w", err)
+	}
+	now := time.Now().UTC()
+	if err := s.recovery.UpdatePasswordHash(ctx, userID, string(hash), now); err != nil {
+		return nil, fmt.Errorf("update password hash: %w", err)
+	}
+	_ = s.sessions.RevokeAllByUser(ctx, userID, "password_change")
+	return &ChangeAccountPasswordResponse{Success: true}, nil
+}
+
 func (s *service) VerifyEmail(ctx context.Context, req VerifyEmailRequest) (*VerifyEmailResponse, error) {
 	code := strings.TrimSpace(req.Code)
 	token := strings.TrimSpace(req.Token)

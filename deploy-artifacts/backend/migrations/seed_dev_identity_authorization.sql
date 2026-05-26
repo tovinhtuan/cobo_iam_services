@@ -28,7 +28,7 @@ INSERT INTO user_subscription_tiers (user_id, subscription_tier, source, effecti
   ('u_123', 'Free', 'seed', NULL, NULL),
   ('u_single', 'Free', 'seed', NULL, NULL),
   ('u_admin_web', 'Premium', 'seed', NULL, NULL),
-  ('u_admin_dn', 'Enterprise', 'seed', NULL, NULL),
+  ('u_admin_dn', 'Enterprise', 'seed', NULL, '2027-12-31 00:00:00'),
   ('u_cms_operator', 'Enterprise', 'seed', NULL, NULL),
   ('u_truong_phong', 'Premium', 'seed', NULL, NULL),
   ('u_truong_nhom', 'Premium', 'seed', NULL, NULL),

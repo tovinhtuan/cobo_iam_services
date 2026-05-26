@@ -8,6 +8,7 @@ import (
 	auditapp "github.com/cobo/cobo_iam_services/internal/audit/app"
 	caapp "github.com/cobo/cobo_iam_services/internal/companyaccess/app"
 	iamapp "github.com/cobo/cobo_iam_services/internal/iam/app"
+	"github.com/cobo/cobo_iam_services/internal/iam/loginpassword"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 	"github.com/cobo/cobo_iam_services/internal/platform/httpx"
 )
@@ -18,6 +19,8 @@ type AdminHandler struct {
 	tokenIssuer iamapp.TokenIssuer
 	sessions    iamapp.SessionRepository
 	audit       auditapp.Service
+	iamSvc      iamapp.Service
+	loginPWD    *loginpassword.Service
 }
 
 func NewAdminHandler(svc caapp.AdminService, inspector iamapp.TokenInspector, audit auditapp.Service) *AdminHandler {
@@ -28,6 +31,12 @@ func NewAdminHandler(svc caapp.AdminService, inspector iamapp.TokenInspector, au
 func (h *AdminHandler) WithTokenIssuer(t iamapp.TokenIssuer, s iamapp.SessionRepository) {
 	h.tokenIssuer = t
 	h.sessions = s
+}
+
+// WithAccountPasswordChange wires IAM change-password (RSA cipher required when loginPWD set).
+func (h *AdminHandler) WithAccountPasswordChange(iam iamapp.Service, lp *loginpassword.Service) {
+	h.iamSvc = iam
+	h.loginPWD = lp
 }
 
 func (h *AdminHandler) Register(mux *http.ServeMux) {
@@ -54,6 +63,7 @@ func (h *AdminHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/v1/admin/notification-rules/{notification_rule_id}", h.deleteNotificationRule)
 	mux.HandleFunc("GET /api/v1/admin/account/settings", h.getAdminAccountSettings)
 	mux.HandleFunc("PATCH /api/v1/admin/account/settings", h.patchAdminAccountSettings)
+	mux.HandleFunc("POST /api/v1/admin/account/change-password", h.changeAccountPassword)
 	mux.HandleFunc("GET /api/v1/admin/company", h.getOwnCompany)
 	mux.HandleFunc("PATCH /api/v1/admin/company", h.patchOwnCompany)
 	mux.HandleFunc("POST /api/v1/admin/users/invite", h.inviteUser)
@@ -560,6 +570,68 @@ func (h *AdminHandler) patchAdminAccountSettings(w http.ResponseWriter, r *http.
 	}
 	h.auditLog(r, "admin.account.settings.patch", "user", sub.UserID)
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (h *AdminHandler) changeAccountPassword(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	if h.iamSvc == nil {
+		httpx.WriteError(w, nil, perr.NewHTTPError(http.StatusServiceUnavailable, perr.CodeInternal, "password change not configured", nil))
+		return
+	}
+	if h.loginPWD == nil {
+		httpx.WriteError(w, nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "password_cipher is required (RSA not configured)", nil))
+		return
+	}
+	var body struct {
+		CurrentPasswordCipher *iamapp.LoginPasswordCipher `json:"current_password_cipher"`
+		NewPasswordCipher     *iamapp.LoginPasswordCipher `json:"new_password_cipher"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		httpx.WriteError(w, nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "invalid json body", err))
+		return
+	}
+	current, err := h.decryptPasswordCipher(body.CurrentPasswordCipher)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	newPwd, err := h.decryptPasswordCipher(body.NewPasswordCipher)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	if _, err := h.iamSvc.ChangeAccountPassword(r.Context(), iamapp.ChangeAccountPasswordRequest{
+		UserID:          sub.UserID,
+		CurrentPassword: current,
+		NewPassword:     newPwd,
+	}); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	h.auditLog(r, "admin.account.password_change", "user", sub.UserID)
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"success": true})
+}
+
+func (h *AdminHandler) decryptPasswordCipher(c *iamapp.LoginPasswordCipher) (string, error) {
+	if c == nil || strings.TrimSpace(c.CiphertextB64) == "" {
+		return "", perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "password_cipher required", nil)
+	}
+	alg := strings.TrimSpace(c.Alg)
+	if alg != loginpassword.AlgRSAOAEP256 {
+		return "", perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "unsupported password_cipher.alg", nil)
+	}
+	if strings.TrimSpace(c.KID) != "" && c.KID != h.loginPWD.KeyID() {
+		return "", perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "unknown password_cipher.kid", nil)
+	}
+	plain, err := h.loginPWD.DecryptOAEP256(c.CiphertextB64)
+	if err != nil {
+		return "", perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "invalid password_cipher", err)
+	}
+	return plain, nil
 }
 
 func (h *AdminHandler) createRule(w http.ResponseWriter, r *http.Request, action string, fn func(sub caapp.AdminSubject, payload map[string]any) error) {
