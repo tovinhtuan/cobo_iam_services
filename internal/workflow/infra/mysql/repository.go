@@ -48,13 +48,26 @@ func (r *Repository) CreateInstance(ctx context.Context, in workflowapp.Workflow
 func (r *Repository) FindInstance(ctx context.Context, companyID, workflowInstanceID string) (*workflowapp.WorkflowInstanceDTO, error) {
 	row := r.db.QueryRowContext(ctx, `
 		SELECT workflow_instance_id, company_id, record_id, status, current_step_code, created_by,
-		       t0_date, t0_policy
+		       t0_date, t0_policy, workflow_source, snapshot_json
 		FROM workflow_instances WHERE company_id = ? AND workflow_instance_id = ?
 	`, companyID, workflowInstanceID)
 	var in workflowapp.WorkflowInstanceDTO
 	var t0Date sql.NullTime
 	var t0Policy sql.NullString
-	if err := row.Scan(&in.WorkflowInstanceID, &in.CompanyID, &in.RecordID, &in.Status, &in.CurrentStepCode, &in.CreatedBy, &t0Date, &t0Policy); err != nil {
+	var workflowSource sql.NullString
+	var snapshotJSON sql.NullString
+	if err := row.Scan(
+		&in.WorkflowInstanceID,
+		&in.CompanyID,
+		&in.RecordID,
+		&in.Status,
+		&in.CurrentStepCode,
+		&in.CreatedBy,
+		&t0Date,
+		&t0Policy,
+		&workflowSource,
+		&snapshotJSON,
+	); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, perr.NewHTTPError(404, perr.CodeInvalidRequest, "workflow instance not found", nil)
 		}
@@ -66,6 +79,14 @@ func (r *Repository) FindInstance(ctx context.Context, companyID, workflowInstan
 	}
 	if t0Policy.Valid {
 		in.T0Policy = t0Policy.String
+	}
+	if workflowSource.Valid {
+		in.WorkflowSource = workflowSource.String
+	}
+	if snapshotJSON.Valid && snapshotJSON.String != "" && snapshotJSON.String != "null" {
+		if err := json.Unmarshal([]byte(snapshotJSON.String), &in.Snapshot); err != nil {
+			return nil, fmt.Errorf("unmarshal snapshot_json: %w", err)
+		}
 	}
 	return &in, nil
 }
