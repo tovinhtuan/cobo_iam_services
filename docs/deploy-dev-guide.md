@@ -456,3 +456,10 @@ pass: uNf5pfg1Pu7etvp
 > ```
 >
 > Hoặc: `SSHPASS='...' make deploy-all`
+
+# Deploy thủ công
+cd cobo_iam_services
+export SSHPASS='your-password'   # hoặc dùng SSH key
+sh deploy-dev.sh all --skip-tests
+sh deploy-artifacts/push-migration.sh 0078_dev_subscription_expiry_seed.up.sql
+BASE_URL=http://88.216.208.0:8080 LOGIN_ID=admin.dn@example.com sh scripts/qa-account-settings-smoke.sh
