@@ -15,14 +15,16 @@ import (
 )
 
 type MeHandler struct {
-	h          *Handler
-	identities iamapp.IdentityQueryService
-	members    caapp.MembershipQueryService
-	authorizer authapp.Service
-	profiles   userAccountProfileRepo
-	regDB      *sql.DB
-	iamSvc     iamapp.Service
-	loginPWD   *loginpassword.Service
+	h                *Handler
+	identities       iamapp.IdentityQueryService
+	members          caapp.MembershipQueryService
+	authorizer       authapp.Service
+	profiles         userAccountProfileRepo
+	regDB            *sql.DB
+	iamSvc           iamapp.Service
+	loginPWD         *loginpassword.Service
+	avatars          *iamapp.AvatarService
+	publicAPIBaseURL string
 }
 
 func NewMeHandler(
@@ -34,16 +36,20 @@ func NewMeHandler(
 	regDB *sql.DB,
 	iamSvc iamapp.Service,
 	loginPWD *loginpassword.Service,
+	avatars *iamapp.AvatarService,
+	publicAPIBaseURL string,
 ) *MeHandler {
 	return &MeHandler{
-		h:          base,
-		identities: identities,
-		members:    members,
-		authorizer: authorizer,
-		profiles:   profiles,
-		regDB:      regDB,
-		iamSvc:     iamSvc,
-		loginPWD:   loginPWD,
+		h:                base,
+		identities:       identities,
+		members:          members,
+		authorizer:       authorizer,
+		profiles:         profiles,
+		regDB:            regDB,
+		iamSvc:           iamSvc,
+		loginPWD:         loginPWD,
+		avatars:          avatars,
+		publicAPIBaseURL: strings.TrimSpace(publicAPIBaseURL),
 	}
 }
 
@@ -59,6 +65,11 @@ func (m *MeHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/me/membership", m.membership)
 	mux.HandleFunc("PATCH /api/v1/me/profile", m.patchProfile)
 	mux.HandleFunc("POST /api/v1/me/change-password", m.changePassword)
+	mux.HandleFunc("POST /api/v1/me/avatar/upload-intent", m.avatarUploadIntent)
+	mux.HandleFunc("PUT /api/v1/me/avatar/upload/{asset_id}", m.avatarUploadBinary)
+	mux.HandleFunc("POST /api/v1/me/avatar/{asset_id}/complete", m.avatarComplete)
+	mux.HandleFunc("DELETE /api/v1/me/avatar", m.avatarDelete)
+	mux.HandleFunc("GET /api/v1/me/avatar/content", m.avatarContent)
 }
 
 func (m *MeHandler) me(w http.ResponseWriter, r *http.Request) {
@@ -102,6 +113,21 @@ func (m *MeHandler) me(w http.ResponseWriter, r *http.Request) {
 		userPayload["subscription_expires_at"] = user.SubscriptionExpiresAt.UTC().Format(time.RFC3339)
 	} else {
 		userPayload["subscription_expires_at"] = nil
+	}
+	userPayload["avatar_url"] = nil
+	userPayload["avatar_updated_at"] = nil
+	if m.avatars != nil {
+		baseURL := m.publicAPIBaseURL
+		if baseURL == "" {
+			baseURL = resolveMeRequestBaseURL(r)
+		}
+		avatarURL, avatarUpdatedAt, err := m.avatars.MeAvatarFields(r.Context(), claims.Sub, baseURL)
+		if err != nil {
+			httpx.WriteError(w, m.h.log, err)
+			return
+		}
+		userPayload["avatar_url"] = avatarURL
+		userPayload["avatar_updated_at"] = avatarUpdatedAt
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"user":                    userPayload,

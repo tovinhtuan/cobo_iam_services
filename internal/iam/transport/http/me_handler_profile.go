@@ -57,7 +57,7 @@ func (m *MeHandler) patchProfile(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, m.h.log, err)
 		return
 	}
-	m.auditLog(r, claims, "user.profile.update", "user", claims.Sub)
+	m.auditLog(r, claims, "user.profile.update", "user", claims.Sub, nil)
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
@@ -101,7 +101,7 @@ func (m *MeHandler) changePassword(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, m.h.log, err)
 		return
 	}
-	m.auditLog(r, claims, "user.password_change", "user", claims.Sub)
+	m.auditLog(r, claims, "user.password_change", "user", claims.Sub, nil)
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"success": true})
 }
 
@@ -123,9 +123,12 @@ func (m *MeHandler) decryptPasswordCipher(c *iamapp.LoginPasswordCipher) (string
 	return plain, nil
 }
 
-func (m *MeHandler) auditLog(r *http.Request, claims *iamapp.AccessTokenClaims, action, resourceType, resourceID string) {
+func (m *MeHandler) auditLog(r *http.Request, claims *iamapp.AccessTokenClaims, action, resourceType, resourceID string, metadata map[string]any) {
 	if m.h.audit == nil {
 		return
+	}
+	if metadata == nil {
+		metadata = map[string]any{}
 	}
 	_ = m.h.audit.AppendAuditLog(r.Context(), auditapp.AppendAuditLogRequest{
 		ActorUserID:       claims.Sub,
@@ -138,6 +141,7 @@ func (m *MeHandler) auditLog(r *http.Request, claims *iamapp.AccessTokenClaims, 
 		RequestID:         httpx.RequestIDFromContext(r.Context()),
 		IP:                r.RemoteAddr,
 		UserAgent:         r.UserAgent(),
+		Metadata:          metadata,
 	})
 }
 

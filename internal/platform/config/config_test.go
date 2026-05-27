@@ -1,7 +1,10 @@
 package config
 
 import (
+	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestNormalizeMySQLDSN(t *testing.T) {
@@ -98,5 +101,74 @@ func TestLoad_EmailFormatInvalid(t *testing.T) {
 	t.Setenv("EMAIL_FORMAT", "rtf")
 	if _, err := Load(); err == nil {
 		t.Fatal("expected error for invalid EMAIL_FORMAT")
+	}
+}
+
+func TestLoad_UserAvatarDefaults(t *testing.T) {
+	t.Setenv("ENV", "development")
+	t.Setenv("USER_AVATAR_UPLOAD_SIGNING_SECRET", "")
+	t.Setenv("USER_AVATAR_STORAGE_DIR", "")
+	t.Setenv("USER_AVATAR_MAX_BYTES", "")
+	t.Setenv("USER_AVATAR_ALLOWED_TYPES", "")
+	t.Setenv("USER_AVATAR_SIGNED_URL_TTL", "")
+	t.Setenv("USER_AVATAR_SIGNED_URL_TTL_SECONDS", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.UserAvatarMaxBytes != 2097152 {
+		t.Fatalf("UserAvatarMaxBytes = %d, want 2097152", cfg.UserAvatarMaxBytes)
+	}
+	if len(cfg.UserAvatarAllowedTypes) != 3 {
+		t.Fatalf("UserAvatarAllowedTypes len = %d, want 3", len(cfg.UserAvatarAllowedTypes))
+	}
+	if cfg.UserAvatarUploadSigningSecret != "dev-user-avatar-secret" {
+		t.Fatalf("dev signing secret = %q", cfg.UserAvatarUploadSigningSecret)
+	}
+	if cfg.UserAvatarSignedURLTTL != 900*time.Second {
+		t.Fatalf("UserAvatarSignedURLTTL = %v, want 900s", cfg.UserAvatarSignedURLTTL)
+	}
+	wantRoot := "var/cms-media/user-avatars"
+	got := cfg.ResolveUserAvatarStorageDir()
+	if !strings.HasSuffix(filepath.ToSlash(got), wantRoot) {
+		t.Fatalf("ResolveUserAvatarStorageDir() = %q, want suffix %q", got, wantRoot)
+	}
+}
+
+func TestLoad_UserAvatarEnvOverride(t *testing.T) {
+	t.Setenv("ENV", "development")
+	t.Setenv("USER_AVATAR_UPLOAD_SIGNING_SECRET", "custom-secret")
+	t.Setenv("USER_AVATAR_MAX_BYTES", "1048576")
+	t.Setenv("USER_AVATAR_ALLOWED_TYPES", "image/png")
+	t.Setenv("USER_AVATAR_STORAGE_DIR", "/tmp/avatar-root")
+	t.Setenv("USER_AVATAR_SIGNED_URL_TTL", "30m")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.UserAvatarUploadSigningSecret != "custom-secret" {
+		t.Fatalf("secret = %q", cfg.UserAvatarUploadSigningSecret)
+	}
+	if cfg.UserAvatarMaxBytes != 1048576 {
+		t.Fatalf("max bytes = %d", cfg.UserAvatarMaxBytes)
+	}
+	if len(cfg.UserAvatarAllowedTypes) != 1 || cfg.UserAvatarAllowedTypes[0] != "image/png" {
+		t.Fatalf("allowed types = %v", cfg.UserAvatarAllowedTypes)
+	}
+	if cfg.ResolveUserAvatarStorageDir() != "/tmp/avatar-root" {
+		t.Fatalf("storage dir = %q", cfg.ResolveUserAvatarStorageDir())
+	}
+	if cfg.UserAvatarSignedURLTTL != 30*time.Minute {
+		t.Fatalf("ttl = %v", cfg.UserAvatarSignedURLTTL)
+	}
+}
+
+func TestLoad_UserAvatarSigningSecretRequiredOutsideDevelopment(t *testing.T) {
+	t.Setenv("ENV", "production")
+	t.Setenv("USER_AVATAR_UPLOAD_SIGNING_SECRET", "")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected error when signing secret missing in production")
 	}
 }

@@ -57,6 +57,7 @@ import (
 	"github.com/cobo/cobo_iam_services/internal/platform/idempotency"
 	idempotencymysql "github.com/cobo/cobo_iam_services/internal/platform/idempotency/mysql"
 	"github.com/cobo/cobo_iam_services/internal/platform/idgen"
+	"github.com/cobo/cobo_iam_services/internal/platform/mediaupload"
 	platformoutbox "github.com/cobo/cobo_iam_services/internal/platform/outbox"
 	outboxinmem "github.com/cobo/cobo_iam_services/internal/platform/outbox/inmemory"
 	outboxmysql "github.com/cobo/cobo_iam_services/internal/platform/outbox/mysql"
@@ -263,7 +264,25 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 		adminRepo = camysql.NewAdminRepository(pool)
 		log.Info("admin access APIs using MySQL")
 	}
-	meHandler := iamhttp.NewMeHandler(iamHandler, identity, memberQuery, authSvc, adminRepo, pool, iamSvc, loginPWD)
+	avatarDisk, err := mediaupload.NewDiskStorage(cfg.ResolveUserAvatarStorageDir())
+	if err != nil {
+		return fmt.Errorf("user avatar storage: %w", err)
+	}
+	avatarSigner := mediaupload.NewSigner(cfg.UserAvatarUploadSigningSecret, cfg.UserAvatarSignedURLTTL)
+	var avatarRepo iamapp.AvatarRepository = iaminmem.NewAvatarRepository()
+	if pool != nil {
+		avatarRepo = iammysql.NewAvatarRepository(pool)
+	}
+	avatarSvc := iamapp.NewAvatarService(iamapp.AvatarServiceConfig{
+		Repo:          avatarRepo,
+		Storage:       avatarDisk,
+		Signer:        avatarSigner,
+		MaxBytes:      cfg.UserAvatarMaxBytes,
+		AllowedTypes:  cfg.UserAvatarAllowedContentTypesSet(),
+		UploadTTL:     cfg.UserAvatarSignedURLTTL,
+		PublicBaseURL: cfg.PublicAPIBaseURL,
+	})
+	meHandler := iamhttp.NewMeHandler(iamHandler, identity, memberQuery, authSvc, adminRepo, pool, iamSvc, loginPWD, avatarSvc, cfg.PublicAPIBaseURL)
 
 	var disclosureRepo disclosureapp.Repository = disclosureinmem.NewRepository()
 	var workflowRepo workflowapp.Repository = workflowinmem.NewRepository()

@@ -110,6 +110,13 @@ type Config struct {
 	CMSMediaUploadURLTTL        time.Duration
 	CMSMediaStorageDir          string
 
+	// User avatar (self-service /me/avatar; separate signing secret and storage subdir).
+	UserAvatarMaxBytes            int64
+	UserAvatarAllowedTypes        []string
+	UserAvatarStorageDir          string
+	UserAvatarUploadSigningSecret string
+	UserAvatarSignedURLTTL        time.Duration
+
 	// ── Customize-Workflow feature flags ─────────────────────────────────────
 	// WORKFLOW_GROUPS_ENABLED: expose groups array on effective workflow response.
 	WorkflowGroupsEnabled bool
@@ -177,6 +184,11 @@ func Load() (Config, error) {
 		CMSMediaUploadSigningSecret:   getenv("CMS_MEDIA_UPLOAD_SIGNING_SECRET", "dev-cms-media-secret"),
 		CMSMediaUploadURLTTL:          durationEnv("CMS_MEDIA_UPLOAD_URL_TTL", 10*time.Minute),
 		CMSMediaStorageDir:            getenv("CMS_MEDIA_STORAGE_DIR", "./var/cms-media"),
+		UserAvatarMaxBytes:            int64(intEnv("USER_AVATAR_MAX_BYTES", 2*1024*1024)),
+		UserAvatarAllowedTypes:        parseCommaSeparatedList(getenv("USER_AVATAR_ALLOWED_TYPES", "image/png,image/jpeg,image/webp")),
+		UserAvatarStorageDir:          strings.TrimSpace(os.Getenv("USER_AVATAR_STORAGE_DIR")),
+		UserAvatarUploadSigningSecret: resolveUserAvatarSigningSecret(os.Getenv("USER_AVATAR_UPLOAD_SIGNING_SECRET"), getenv("ENV", "development")),
+		UserAvatarSignedURLTTL:        userAvatarSignedURLTTL(),
 
 		WorkflowGroupsEnabled:           boolEnv("WORKFLOW_GROUPS_ENABLED", false),
 		WorkflowDraftEtagMode:           getenv("WORKFLOW_DRAFT_ETAG_MODE", "off"),
@@ -192,6 +204,18 @@ func Load() (Config, error) {
 	}
 	if cfg.CMSMediaUploadURLTTL < time.Minute {
 		return Config{}, fmt.Errorf("CMS_MEDIA_UPLOAD_URL_TTL too small")
+	}
+	if cfg.UserAvatarMaxBytes <= 0 {
+		return Config{}, fmt.Errorf("USER_AVATAR_MAX_BYTES must be positive")
+	}
+	if cfg.UserAvatarSignedURLTTL < time.Minute {
+		return Config{}, fmt.Errorf("USER_AVATAR_SIGNED_URL_TTL too small")
+	}
+	if len(cfg.UserAvatarAllowedTypes) == 0 {
+		return Config{}, fmt.Errorf("USER_AVATAR_ALLOWED_TYPES must not be empty")
+	}
+	if !strings.EqualFold(strings.TrimSpace(cfg.Env), "development") && strings.TrimSpace(cfg.UserAvatarUploadSigningSecret) == "" {
+		return Config{}, fmt.Errorf("USER_AVATAR_UPLOAD_SIGNING_SECRET is required when ENV is not development")
 	}
 	switch cfg.AccessTokenMode {
 	case "opaque", "jwt", "dual":
@@ -298,6 +322,27 @@ func devAwareBoolEnv(key string, prodDefault, devDefault bool) bool {
 		return devDefault
 	}
 	return prodDefault
+}
+
+func userAvatarSignedURLTTL() time.Duration {
+	if d := durationEnv("USER_AVATAR_SIGNED_URL_TTL", 0); d > 0 {
+		return d
+	}
+	sec := intEnv("USER_AVATAR_SIGNED_URL_TTL_SECONDS", 900)
+	if sec <= 0 {
+		sec = 900
+	}
+	return time.Duration(sec) * time.Second
+}
+
+func resolveUserAvatarSigningSecret(raw, env string) string {
+	if v := strings.TrimSpace(raw); v != "" {
+		return v
+	}
+	if strings.EqualFold(strings.TrimSpace(env), "development") {
+		return "dev-user-avatar-secret"
+	}
+	return ""
 }
 
 func normalizeMySQLDSN(dsn string) string {
