@@ -1130,23 +1130,27 @@ func (s *service) MaterializePeriodicDisclosures(ctx context.Context, now time.T
 // GetCompanyTypePreference returns auto_create preference for a (company, type) pair.
 // Defaults to enabled when no row exists.
 func (s *service) GetCompanyTypePreference(ctx context.Context, req GetCompanyTypePreferenceRequest) (*CompanyTypePreferenceDTO, error) {
+	if err := s.authorize(ctx, req.Subject, "disclosure.view", authapp.ResourceRef{
+		Type: "disclosure_type",
+		ID:   req.TypeID,
+	}); err != nil {
+		return nil, err
+	}
 	pref, err := s.repo.GetCompanyTypePreference(ctx, req.Subject.CompanyID, req.TypeID)
 	if err != nil {
 		return nil, err
 	}
-	dto := &CompanyTypePreferenceDTO{
-		TypeID:            req.TypeID,
-		CompanyID:         req.Subject.CompanyID,
-		AutoCreateEnabled: true, // default
-	}
-	if pref != nil {
-		dto.AutoCreateEnabled = pref.AutoCreateEnabled
-	}
-	return dto, nil
+	return companyTypePreferenceDTO(req.Subject.CompanyID, req.TypeID, pref), nil
 }
 
 // UpsertCompanyTypePreference sets auto_create_enabled for a (company, type) pair.
 func (s *service) UpsertCompanyTypePreference(ctx context.Context, req UpsertCompanyTypePreferenceRequest) (*CompanyTypePreferenceDTO, error) {
+	if err := s.authorize(ctx, req.Subject, "disclosure.auto_create.manage", authapp.ResourceRef{
+		Type: "disclosure_type",
+		ID:   req.TypeID,
+	}); err != nil {
+		return nil, err
+	}
 	if err := s.repo.UpsertCompanyTypePreference(ctx, CompanyTypePreference{
 		CompanyID:         req.Subject.CompanyID,
 		TypeID:            req.TypeID,
@@ -1155,10 +1159,23 @@ func (s *service) UpsertCompanyTypePreference(ctx context.Context, req UpsertCom
 	}); err != nil {
 		return nil, err
 	}
-	return s.GetCompanyTypePreference(ctx, GetCompanyTypePreferenceRequest{
-		Subject: req.Subject,
-		TypeID:  req.TypeID,
-	})
+	return companyTypePreferenceDTO(req.Subject.CompanyID, req.TypeID, &CompanyTypePreference{
+		CompanyID:         req.Subject.CompanyID,
+		TypeID:            req.TypeID,
+		AutoCreateEnabled: req.AutoCreateEnabled,
+	}), nil
+}
+
+func companyTypePreferenceDTO(companyID, typeID string, pref *CompanyTypePreference) *CompanyTypePreferenceDTO {
+	dto := &CompanyTypePreferenceDTO{
+		TypeID:            typeID,
+		CompanyID:         companyID,
+		AutoCreateEnabled: true, // default when no row
+	}
+	if pref != nil {
+		dto.AutoCreateEnabled = pref.AutoCreateEnabled
+	}
+	return dto
 }
 
 // companyTemplateLifecycleTransitions defines valid (from → to) pairs.

@@ -57,3 +57,13 @@ func TestLegacyPolicyCompanyProfile(t *testing.T) {
 		t.Fatalf("company.edit required permission = %q, want company.edit", edit.RequiredPermission)
 	}
 }
+
+func TestLegacyPolicyDisclosureAutoCreateManage(t *testing.T) {
+	p := legacyPolicy("disclosure.auto_create.manage")
+	if p.RequiredPermission != "disclosure.auto_create.manage" {
+		t.Fatalf("required = %q want disclosure.auto_create.manage", p.RequiredPermission)
+	}
+	if p.RequiredPermission == "system.settings" {
+		t.Fatal("must not fall back to system.settings")
+	}
+}

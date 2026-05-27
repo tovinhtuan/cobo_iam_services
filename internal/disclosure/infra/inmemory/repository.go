@@ -759,6 +759,14 @@ func (r *Repository) ListPendingCycles(_ context.Context, _ time.Time, _ int) ([
 	return nil, nil
 }
 
+func (r *Repository) TryClaimPeriodicCycle(_ context.Context, _ string) (bool, error) {
+	return true, nil
+}
+
+func (r *Repository) ReleasePeriodicCycleClaim(_ context.Context, _ string) error {
+	return nil
+}
+
 func (r *Repository) UpdateCycleRecord(_ context.Context, _, _ string) error {
 	return nil
 }

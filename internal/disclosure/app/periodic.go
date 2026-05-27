@@ -3,10 +3,12 @@ package app
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/cobo/cobo_iam_services/internal/platform/idgen"
+	workflowerrs "github.com/cobo/cobo_iam_services/internal/workflow/errs"
 )
 
 // seedPeriodicCycles computes expected cycles for the current tick and upserts them.
@@ -39,6 +41,7 @@ func seedPeriodicCycles(ctx context.Context, now time.Time, repo Repository, idg
 				TypeID:     t.TypeID,
 				CompanyID:  companyID,
 				CycleLabel: label,
+				CycleStart: cycleStart,
 				DueDate:    dueDate,
 			}); err != nil {
 				continue
@@ -50,8 +53,8 @@ func seedPeriodicCycles(ctx context.Context, now time.Time, repo Repository, idg
 }
 
 // materializePeriodicDisclosures picks up pending cycles whose due_date <= now+buffer
-// and creates the actual disclosure records.
-func materializePeriodicDisclosures(ctx context.Context, now time.Time, repo Repository, creator PeriodicRecordCreator) (int, error) {
+// and creates the actual disclosure records with workflow (WF-A).
+func materializePeriodicDisclosures(ctx context.Context, now time.Time, repo PeriodicMaterializeRepository, creator PeriodicRecordCreator) (int, error) {
 	const bufferDays = 7
 	cycles, err := repo.ListPendingCycles(ctx, now, bufferDays)
 	if err != nil {
@@ -59,13 +62,42 @@ func materializePeriodicDisclosures(ctx context.Context, now time.Time, repo Rep
 	}
 	materialized := 0
 	for _, c := range cycles {
-		t0 := now
-		recordID, _, err := creator.CreateAndSubmitRecord(ctx, c.CompanyID, c.TypeID, "m_system_worker", autoRecordTitle(c), &t0)
-		if err != nil {
-			// log-only: cycle stays pending, retry on next tick
+		if c.CycleStart.IsZero() {
+			slog.WarnContext(ctx, "periodic cycle missing cycle_start; skip materialize",
+				slog.String("cycle_id", c.CycleID))
 			continue
 		}
-		_ = repo.UpdateCycleRecord(ctx, c.CycleID, recordID)
+		claimed, err := repo.TryClaimPeriodicCycle(ctx, c.CycleID)
+		if err != nil {
+			return materialized, fmt.Errorf("claim periodic cycle %s: %w", c.CycleID, err)
+		}
+		if !claimed {
+			continue
+		}
+		t0 := c.CycleStart
+		recordID, workflowInstanceID, err := creator.CreateAndSubmitRecord(ctx, c.CompanyID, c.TypeID, "m_system_worker", autoRecordTitle(c), &t0)
+		if err != nil {
+			_ = repo.ReleasePeriodicCycleClaim(ctx, c.CycleID)
+			if workflowerrs.IsEmptyEffectiveWorkflow(err) {
+				slog.WarnContext(ctx, "periodic materialize skipped: empty effective workflow",
+					slog.String("cycle_id", c.CycleID),
+					slog.String("type_id", c.TypeID),
+					slog.String("company_id", c.CompanyID))
+			}
+			continue
+		}
+		if recordID == "" || workflowInstanceID == "" {
+			_ = repo.ReleasePeriodicCycleClaim(ctx, c.CycleID)
+			slog.WarnContext(ctx, "periodic materialize failed: missing record or workflow instance",
+				slog.String("cycle_id", c.CycleID),
+				slog.String("record_id", recordID),
+				slog.String("workflow_instance_id", workflowInstanceID))
+			continue
+		}
+		if err := repo.UpdateCycleRecord(ctx, c.CycleID, recordID); err != nil {
+			_ = repo.ReleasePeriodicCycleClaim(ctx, c.CycleID)
+			return materialized, fmt.Errorf("complete periodic cycle %s: %w", c.CycleID, err)
+		}
 		materialized++
 	}
 	return materialized, nil

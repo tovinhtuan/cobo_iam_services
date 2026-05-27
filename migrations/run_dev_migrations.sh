@@ -82,6 +82,8 @@ seed_dev_identity_authorization.sql
 0076_deadline_alert_confirmations.up.sql
 0077_admin_membership_invite_permission.up.sql
 0078_dev_subscription_expiry_seed.up.sql
+0079_disclosure_auto_create_manage_permission.up.sql
+0080_periodic_cycles_cycle_start.up.sql
 "
 
 mysql_exec() {

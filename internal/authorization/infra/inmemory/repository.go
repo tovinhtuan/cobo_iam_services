@@ -151,6 +151,7 @@ func key(membershipID, companyID string) string { return membershipID + "@" + co
 func defaultPolicies() map[string]authapp.ActionPolicy {
 	return map[string]authapp.ActionPolicy{
 		"disclosure.view":                    {ActionCode: "disclosure.view", RequiredPermission: "disclosure.view", ScopeType: "org_unit_subtree|assigned_only|owner_only|company_wide", WorkflowState: "*", EligibleActor: "*", EffectType: "allow", DenyReasonCode: "scope_denied"},
+		"disclosure.auto_create.manage":      {ActionCode: "disclosure.auto_create.manage", RequiredPermission: "disclosure.auto_create.manage", ScopeType: "*", WorkflowState: "*", EligibleActor: "*", EffectType: "allow", DenyReasonCode: "permission_denied"},
 		"disclosure.create":                  {ActionCode: "disclosure.create", RequiredPermission: "disclosure.create", ScopeType: "*", WorkflowState: "*", EligibleActor: "*", EffectType: "allow", DenyReasonCode: "permission_denied"},
 		"disclosure.update":                  {ActionCode: "disclosure.update", RequiredPermission: "disclosure.edit", ScopeType: "*", WorkflowState: "*", EligibleActor: "*", EffectType: "allow", DenyReasonCode: "permission_denied"},
 		"disclosure.submit":                  {ActionCode: "disclosure.submit", RequiredPermission: "disclosure.publish", ScopeType: "*", WorkflowState: "*", EligibleActor: "*", EffectType: "allow", DenyReasonCode: "permission_denied"},

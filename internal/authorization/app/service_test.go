@@ -58,6 +58,38 @@ func TestAuthorize_deny_permissionMissing(t *testing.T) {
 	}
 }
 
+func TestAuthorize_disclosureAutoCreateManage(t *testing.T) {
+	ctx := context.Background()
+	repo := authinmem.NewRepository()
+	repo.Permissions["m_manage@c_001"] = []string{"disclosure.auto_create.manage"}
+	repo.Permissions["m_viewonly@c_001"] = []string{"disclosure.view"}
+	svc := authapp.NewService(authinmem.NewResolver(repo), authinmem.NewChecker(), repo)
+
+	allow, err := svc.Authorize(ctx, authapp.AuthorizeRequest{
+		Subject:  authapp.SubjectRef{UserID: "u", MembershipID: "m_manage", CompanyID: "c_001"},
+		Action:   "disclosure.auto_create.manage",
+		Resource: authapp.ResourceRef{Type: "disclosure_type", ID: "type-1"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if allow.Decision != authapp.DecisionAllow {
+		t.Fatalf("decision=%s", allow.Decision)
+	}
+
+	deny, err := svc.Authorize(ctx, authapp.AuthorizeRequest{
+		Subject:  authapp.SubjectRef{UserID: "u", MembershipID: "m_viewonly", CompanyID: "c_001"},
+		Action:   "disclosure.auto_create.manage",
+		Resource: authapp.ResourceRef{Type: "disclosure_type", ID: "type-1"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deny.Decision != authapp.DecisionDeny {
+		t.Fatalf("decision=%s want deny", deny.Decision)
+	}
+}
+
 func TestAuthorizeBatch_twoChecks(t *testing.T) {
 	ctx := context.Background()
 	svc := newAuthService(t)

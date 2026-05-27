@@ -205,8 +205,13 @@ func (s *service) AdminApprove(ctx context.Context, req AdminApproveRequest) (*A
 	recordID := reservation.ProgressRecordID
 	workflowInstanceID := reservation.ProgressWorkflowID
 	if strings.TrimSpace(recordID) == "" {
-		recordID, workflowInstanceID, err = s.recordCreator.CreateAndSubmitRecord(ctx, cur.CompanyID, cur.TypeID, req.Subject.MembershipID, title, finalT0Time)
+		recordID, workflowInstanceID, err = s.recordCreator.CreateAndSubmitRecordWithOpts(ctx, cur.CompanyID, cur.TypeID, req.Subject.MembershipID, title, finalT0Time, CreateRecordOpts{
+			StepOverrides: cur.StepOverrides,
+		})
 		if err != nil {
+			if httpErr, ok := perr.AsHTTPError(err); ok {
+				return nil, httpErr
+			}
 			return nil, perr.NewHTTPError(http.StatusInternalServerError, perr.CodeInternal, "failed to create disclosure record", err)
 		}
 		if err := s.repo.SaveAdminApprovalProgress(ctx, req.Subject.CompanyID, req.ProposalID, strings.TrimSpace(req.IdempotencyKey), recordID, workflowInstanceID, ""); err != nil {

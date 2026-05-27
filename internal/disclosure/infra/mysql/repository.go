@@ -1609,7 +1609,7 @@ func (r *Repository) ListActivePeriodicTypes(ctx context.Context) ([]disclosurea
 		       COALESCE(JSON_EXTRACT(dtv.deadline_config_json, '$.cycle_anchor_day'), 0)                AS anchor_day,
 		       COALESCE(JSON_EXTRACT(dtv.deadline_config_json, '$.cycle_anchor_month'), 0)              AS anchor_month
 		FROM disclosure_types dt
-		JOIN disclosure_type_versions dtv ON dtv.type_id = dt.type_id AND dtv.is_active = 1
+		JOIN disclosure_type_versions dtv ON dtv.type_id = dt.type_id AND dtv.version_no = dt.active_version_no
 		WHERE JSON_UNQUOTE(JSON_EXTRACT(dtv.deadline_config_json, '$.template_category')) IN ('periodic', 'custom')
 		  AND JSON_UNQUOTE(JSON_EXTRACT(dtv.deadline_config_json, '$.frequency_unit'))    IN ('monthly', 'quarterly', 'yearly')
 		  AND dt.status = 'active'`
@@ -1631,11 +1631,15 @@ func (r *Repository) ListActivePeriodicTypes(ctx context.Context) ([]disclosurea
 }
 
 func (r *Repository) UpsertPeriodicCycle(ctx context.Context, in disclosureapp.PeriodicCycleRow) error {
+	var cycleStart any
+	if !in.CycleStart.IsZero() {
+		cycleStart = in.CycleStart.Format("2006-01-02")
+	}
 	const q = `
-		INSERT INTO periodic_cycles (cycle_id, type_id, company_id, cycle_label, due_date)
-		VALUES (?, ?, ?, ?, ?)
+		INSERT INTO periodic_cycles (cycle_id, type_id, company_id, cycle_label, cycle_start, due_date)
+		VALUES (?, ?, ?, ?, ?, ?)
 		ON DUPLICATE KEY UPDATE cycle_id = cycle_id`
-	_, err := r.db.ExecContext(ctx, q, in.CycleID, in.TypeID, in.CompanyID, in.CycleLabel, in.DueDate.Format("2006-01-02"))
+	_, err := r.db.ExecContext(ctx, q, in.CycleID, in.TypeID, in.CompanyID, in.CycleLabel, cycleStart, in.DueDate.Format("2006-01-02"))
 	if err != nil {
 		return fmt.Errorf("upsert periodic cycle: %w", err)
 	}
@@ -1645,11 +1649,12 @@ func (r *Repository) UpsertPeriodicCycle(ctx context.Context, in disclosureapp.P
 func (r *Repository) ListPendingCycles(ctx context.Context, asOf time.Time, bufferDays int) ([]disclosureapp.PeriodicCycleRow, error) {
 	cutoff := asOf.AddDate(0, 0, bufferDays).Format("2006-01-02")
 	const q = `
-		SELECT pc.cycle_id, pc.type_id, COALESCE(dtv.name, ''), pc.company_id, pc.cycle_label, pc.due_date
+		SELECT pc.cycle_id, pc.type_id, COALESCE(dtv.name, ''), pc.company_id, pc.cycle_label,
+		       pc.cycle_start, pc.due_date
 		FROM periodic_cycles pc
 		INNER JOIN disclosure_types dt ON dt.type_id = pc.type_id
 		INNER JOIN disclosure_type_versions dtv ON dtv.type_id = dt.type_id AND dtv.version_no = dt.active_version_no
-		WHERE pc.record_id IS NULL AND pc.due_date <= ?
+		WHERE pc.record_id IS NULL AND pc.materialized_at IS NULL AND pc.due_date <= ?
 		ORDER BY pc.due_date ASC
 		LIMIT 200`
 	rows, err := r.db.QueryContext(ctx, q, cutoff)
@@ -1660,21 +1665,66 @@ func (r *Repository) ListPendingCycles(ctx context.Context, asOf time.Time, buff
 	var out []disclosureapp.PeriodicCycleRow
 	for rows.Next() {
 		var row disclosureapp.PeriodicCycleRow
-		var dueDateStr string
-		if err := rows.Scan(&row.CycleID, &row.TypeID, &row.TypeName, &row.CompanyID, &row.CycleLabel, &dueDateStr); err != nil {
+		var cycleStart, dueDate sql.NullTime
+		if err := rows.Scan(&row.CycleID, &row.TypeID, &row.TypeName, &row.CompanyID, &row.CycleLabel, &cycleStart, &dueDate); err != nil {
 			return nil, fmt.Errorf("scan pending cycle: %w", err)
 		}
-		row.DueDate, _ = time.Parse("2006-01-02", dueDateStr)
+		if cycleStart.Valid {
+			row.CycleStart = dateOnlyUTC(cycleStart.Time)
+		}
+		if dueDate.Valid {
+			row.DueDate = dateOnlyUTC(dueDate.Time)
+		}
 		out = append(out, row)
 	}
 	return out, rows.Err()
 }
 
+// TryClaimPeriodicCycle sets materialized_at as an optimistic claim (single-winner).
+func (r *Repository) TryClaimPeriodicCycle(ctx context.Context, cycleID string) (bool, error) {
+	const q = `
+		UPDATE periodic_cycles
+		SET materialized_at = NOW(3)
+		WHERE cycle_id = ? AND record_id IS NULL AND materialized_at IS NULL`
+	res, err := r.db.ExecContext(ctx, q, cycleID)
+	if err != nil {
+		return false, fmt.Errorf("claim periodic cycle: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("claim periodic cycle rows affected: %w", err)
+	}
+	return n == 1, nil
+}
+
+// ReleasePeriodicCycleClaim clears the claim when materialize fails before record_id is set.
+func (r *Repository) ReleasePeriodicCycleClaim(ctx context.Context, cycleID string) error {
+	const q = `
+		UPDATE periodic_cycles
+		SET materialized_at = NULL
+		WHERE cycle_id = ? AND record_id IS NULL`
+	_, err := r.db.ExecContext(ctx, q, cycleID)
+	if err != nil {
+		return fmt.Errorf("release periodic cycle claim: %w", err)
+	}
+	return nil
+}
+
 func (r *Repository) UpdateCycleRecord(ctx context.Context, cycleID, recordID string) error {
-	const q = `UPDATE periodic_cycles SET record_id = ?, materialized_at = NOW(3) WHERE cycle_id = ?`
-	_, err := r.db.ExecContext(ctx, q, recordID, cycleID)
+	const q = `
+		UPDATE periodic_cycles
+		SET record_id = ?, materialized_at = NOW(3)
+		WHERE cycle_id = ? AND record_id IS NULL`
+	res, err := r.db.ExecContext(ctx, q, recordID, cycleID)
 	if err != nil {
 		return fmt.Errorf("update cycle record: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("update cycle record rows affected: %w", err)
+	}
+	if n != 1 {
+		return fmt.Errorf("update cycle record: cycle %s not pending", cycleID)
 	}
 	return nil
 }

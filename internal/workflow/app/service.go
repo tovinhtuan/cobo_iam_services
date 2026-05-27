@@ -61,12 +61,16 @@ func (s *service) CreateWorkflowInstanceInternal(ctx context.Context, req Create
 }
 
 func (s *service) createWorkflowInstance(ctx context.Context, req CreateWorkflowInstanceRequest) (*WorkflowInstanceDTO, error) {
+	firstStepCode := "review"
+	if code := FirstStepCode(req.Snapshot); code != "" {
+		firstStepCode = code
+	}
 	inst := WorkflowInstanceDTO{
 		WorkflowInstanceID: s.idg.NewUUID(),
 		CompanyID:          req.Subject.CompanyID,
 		RecordID:           req.RecordID,
 		Status:             "in_progress",
-		CurrentStepCode:    "review",
+		CurrentStepCode:    firstStepCode,
 		CreatedBy:          req.Subject.UserID,
 	}
 	inst.T0Date = req.T0Date
@@ -84,7 +88,7 @@ func (s *service) createWorkflowInstance(ctx context.Context, req CreateWorkflow
 		TaskID:               s.idg.NewUUID(),
 		CompanyID:            req.Subject.CompanyID,
 		WorkflowInstanceID:   created.WorkflowInstanceID,
-		StepCode:             "review",
+		StepCode:             firstStepCode,
 		AssigneeMembershipID: req.Subject.MembershipID,
 		Status:               "pending",
 	})

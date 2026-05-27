@@ -2,6 +2,9 @@
 
 **Ngày:** 2026-05-26  
 **Repos:** `cobo_iam_services` (BE), `cobo_web_design` (FE)  
+
+**Canonical contract:** [business-contract-workflow-deadline-final.md](./business-contract-workflow-deadline-final.md) (v1.1 — §2.1 PO locked)  
+**E2E rollout (tickets + QA):** [workflow-deadline-e2e-implementation-plan.md](./workflow-deadline-e2e-implementation-plan.md) (v1.1)
 **PO decisions (canonical):**
 
 | ID | Chốt |

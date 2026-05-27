@@ -46,13 +46,22 @@ type TypeCatalog interface {
 	GetTypeDisplayName(ctx context.Context, companyID, typeID string) (string, error)
 }
 
+// CreateRecordOpts carries optional inputs for record + workflow creation (WF5-B, periodic T0 in Batch 2).
+type CreateRecordOpts struct {
+	StepOverrides []WorkflowStepOverride // ad-hoc only
+	CycleStart    *time.Time             // periodic materialize (Batch 2)
+}
+
 // RecordCreator is the cross-module interface the ad-hoc service uses to submit a disclosure record.
 // Implemented by disclosureapp.Service.SubmitRecord — injected to avoid circular imports.
 type RecordCreator interface {
 	// CreateAndSubmitRecord creates a Draft record for the proposal and immediately submits it.
 	// When workflow is enabled, also creates a workflow instance for the record.
 	// Returns record_id and workflow_instance_id (may be empty when workflow is disabled).
+	// Periodic worker uses this entrypoint with empty opts (see disclosure.PeriodicRecordCreator).
 	CreateAndSubmitRecord(ctx context.Context, companyID, typeID, createdByMembershipID, title string, t0Date *time.Time) (recordID, workflowInstanceID string, err error)
+	// CreateAndSubmitRecordWithOpts is the ad-hoc path with step overrides and future periodic options.
+	CreateAndSubmitRecordWithOpts(ctx context.Context, companyID, typeID, createdByMembershipID, title string, t0Date *time.Time, opts CreateRecordOpts) (recordID, workflowInstanceID string, err error)
 }
 
 // EligibleController is a membership that has the ad_hoc_alert.process_control permission

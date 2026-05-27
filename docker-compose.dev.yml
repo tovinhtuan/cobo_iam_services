@@ -81,6 +81,9 @@ services:
       WORKER_TICK_INTERVAL: 5s
       WORKFLOW_GROUPS_ENABLED: "true"
       WORKFLOW_DRAFT_ETAG_MODE: enforce
+      WORKFLOW_SNAPSHOT_ENABLED: "true"
+      WORKFLOW_ADHOC_ENABLED: "true"
+      PERIODIC_SEEDING_ENABLED: "true"
       LOGIN_PASSWORD_RSA_PRIVATE_KEY_PEM_FILE: /app/configs/login_password_rsa_dev.pem
       LOGIN_PASSWORD_RSA_KEY_ID: dev
     ports:
@@ -127,6 +130,9 @@ services:
       LOG_LEVEL: info
       MYSQL_DSN: cobo:cobo@tcp(mysql:3306)/cobo_iam?parseTime=true&loc=UTC&tls=false
       WORKER_TICK_INTERVAL: 5s
+      WORKFLOW_SNAPSHOT_ENABLED: "true"
+      WORKFLOW_ADHOC_ENABLED: "true"
+      PERIODIC_SEEDING_ENABLED: "true"
       ACCESS_TOKEN_MODE: opaque
       ACCESS_TOKEN_TTL: 15m
       PUBLIC_WEB_BASE_URL: http://localhost:3000

@@ -209,6 +209,8 @@ func legacyPolicy(action string) *authapp.ActionPolicy {
 		required = "disclosure.approve"
 	case "disclosure.view":
 		required = "disclosure.view"
+	case "disclosure.auto_create.manage":
+		required = "disclosure.auto_create.manage"
 	case "disclosure.create":
 		required = "disclosure.create"
 	case "disclosure.update", "disclosure.edit":

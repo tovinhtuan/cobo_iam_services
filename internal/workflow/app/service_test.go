@@ -8,6 +8,7 @@ import (
 
 type fakeWorkflowRepository struct {
 	createdInstance WorkflowInstanceDTO
+	createdTask     TaskDTO
 }
 
 func (f *fakeWorkflowRepository) CreateInstance(ctx context.Context, in WorkflowInstanceDTO) (*WorkflowInstanceDTO, error) {
@@ -26,6 +27,7 @@ func (f *fakeWorkflowRepository) UpdateInstance(ctx context.Context, in Workflow
 }
 
 func (f *fakeWorkflowRepository) CreateTask(ctx context.Context, task TaskDTO) (*TaskDTO, error) {
+	f.createdTask = task
 	cp := task
 	return &cp, nil
 }
@@ -76,5 +78,36 @@ func TestCreateWorkflowInstanceInternalPersistsT0WithoutSnapshotFlag(t *testing.
 	}
 	if repo.createdInstance.T0Policy != "user_defined" {
 		t.Fatalf("expected repository insert to receive T0Policy, got %q", repo.createdInstance.T0Policy)
+	}
+}
+
+func TestCreateWorkflowInstanceInternalUsesFirstSnapshotStep(t *testing.T) {
+	repo := &fakeWorkflowRepository{}
+	svc := NewService(repo, nil, fakeWorkflowIDGen{}, WithFlags(Flags{SnapshotEnabled: true}))
+
+	_, err := svc.CreateWorkflowInstanceInternal(context.Background(), CreateWorkflowInstanceRequest{
+		Subject: Subject{
+			UserID:       "user-001",
+			MembershipID: "member-001",
+			CompanyID:    "company-001",
+		},
+		RecordID: "record-001",
+		Snapshot: []StepSnapshot{
+			{StepID: "step_b", StepCode: "review", DisplayOrder: 2},
+			{StepID: "step_a", StepCode: "prepare", DisplayOrder: 1},
+		},
+		WorkflowSource: "global_template",
+	})
+	if err != nil {
+		t.Fatalf("CreateWorkflowInstanceInternal() error = %v", err)
+	}
+	if repo.createdInstance.CurrentStepCode != "prepare" {
+		t.Fatalf("CurrentStepCode = %q, want prepare", repo.createdInstance.CurrentStepCode)
+	}
+	if repo.createdTask.StepCode != "prepare" {
+		t.Fatalf("task StepCode = %q, want prepare", repo.createdTask.StepCode)
+	}
+	if len(repo.createdInstance.Snapshot) != 2 {
+		t.Fatalf("snapshot len = %d, want 2", len(repo.createdInstance.Snapshot))
 	}
 }

@@ -99,6 +99,8 @@ type Repository interface {
 	ListActivePeriodicTypes(ctx context.Context) ([]PeriodicTypeRow, error)
 	UpsertPeriodicCycle(ctx context.Context, in PeriodicCycleRow) error
 	ListPendingCycles(ctx context.Context, asOf time.Time, bufferDays int) ([]PeriodicCycleRow, error)
+	TryClaimPeriodicCycle(ctx context.Context, cycleID string) (bool, error)
+	ReleasePeriodicCycleClaim(ctx context.Context, cycleID string) error
 	UpdateCycleRecord(ctx context.Context, cycleID, recordID string) error
 	ListAllActiveCompanyIDs(ctx context.Context) ([]string, error)
 	GetCompanyTypePreference(ctx context.Context, companyID, typeID string) (*CompanyTypePreference, error)
@@ -857,6 +859,14 @@ type RecordDTO struct {
 	UpdatedAt          time.Time       `json:"updated_at"`
 }
 
+// PeriodicMaterializeRepository is the repository surface used during materialize.
+type PeriodicMaterializeRepository interface {
+	ListPendingCycles(ctx context.Context, asOf time.Time, bufferDays int) ([]PeriodicCycleRow, error)
+	TryClaimPeriodicCycle(ctx context.Context, cycleID string) (bool, error)
+	ReleasePeriodicCycleClaim(ctx context.Context, cycleID string) error
+	UpdateCycleRecord(ctx context.Context, cycleID, recordID string) error
+}
+
 // PeriodicRecordCreator is the cross-module interface used by periodic auto-creation.
 // Implemented by disclosureapp.service itself; injected into MaterializePeriodicDisclosures
 // to allow worker to pass a system-actor creator without circular imports.
@@ -880,9 +890,10 @@ type PeriodicCycleRow struct {
 	TypeID     string
 	TypeName   string
 	CompanyID  string
-	CycleLabel string
-	DueDate    time.Time
-	RecordID   string // empty = pending
+	CycleLabel  string
+	CycleStart  time.Time // DATE at seed; materialize T0 (AC-9)
+	DueDate     time.Time
+	RecordID    string // empty = pending
 }
 
 // CompanyTypePreference is used by the repository layer.

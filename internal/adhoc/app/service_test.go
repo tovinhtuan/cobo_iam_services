@@ -89,17 +89,27 @@ func (f *fakeRepository) List(ctx context.Context, companyID string, statusFilte
 }
 
 type fakeRecordCreator struct {
-	t0Date     *time.Time
-	callCount  int
-	recordID   string
-	workflowID string
-	lastTitle  string
+	t0Date        *time.Time
+	callCount     int
+	recordID      string
+	workflowID    string
+	lastTitle     string
+	lastOverrides []WorkflowStepOverride
+	err           error
 }
 
 func (f *fakeRecordCreator) CreateAndSubmitRecord(ctx context.Context, companyID, typeID, createdByMembershipID, title string, t0Date *time.Time) (string, string, error) {
+	return f.CreateAndSubmitRecordWithOpts(ctx, companyID, typeID, createdByMembershipID, title, t0Date, CreateRecordOpts{})
+}
+
+func (f *fakeRecordCreator) CreateAndSubmitRecordWithOpts(ctx context.Context, companyID, typeID, createdByMembershipID, title string, t0Date *time.Time, opts CreateRecordOpts) (string, string, error) {
 	f.callCount++
 	f.t0Date = t0Date
 	f.lastTitle = title
+	f.lastOverrides = append([]WorkflowStepOverride(nil), opts.StepOverrides...)
+	if f.err != nil {
+		return "", "", f.err
+	}
 	return f.recordID, f.workflowID, nil
 }
 
@@ -374,6 +384,7 @@ func TestAdminApprovePersistsFinalOverrideFields(t *testing.T) {
 		Status:              StatusPendingAdminApproval,
 		ChangeNote:          "Urgent approval",
 		ProcessControllerID: "member-admin",
+		StepOverrides:       []WorkflowStepOverride{{StepID: "step-1", ProcessingDays: 7}},
 	}}
 	recordCreator := &fakeRecordCreator{recordID: "record-001", workflowID: "wf-001"}
 	auth := &fakeAuthService{decision: authapp.DecisionAllow}
@@ -392,6 +403,9 @@ func TestAdminApprovePersistsFinalOverrideFields(t *testing.T) {
 	}
 	if recordCreator.callCount != 1 {
 		t.Fatalf("expected record creator to be called once, got %d", recordCreator.callCount)
+	}
+	if len(recordCreator.lastOverrides) != 1 || recordCreator.lastOverrides[0].StepID != "step-1" || recordCreator.lastOverrides[0].ProcessingDays != 7 {
+		t.Fatalf("step overrides = %#v", recordCreator.lastOverrides)
 	}
 	if recordCreator.t0Date == nil || recordCreator.t0Date.Format("2006-01-02") != "2026-06-01" {
 		t.Fatalf("expected t0Date 2026-06-01, got %#v", recordCreator.t0Date)

@@ -17,6 +17,8 @@ import (
 	adhocrecord "github.com/cobo/cobo_iam_services/internal/adhoc/infra/disclosure"
 	disclosureapp "github.com/cobo/cobo_iam_services/internal/disclosure/app"
 	disclosuremysql "github.com/cobo/cobo_iam_services/internal/disclosure/infra/mysql"
+	workflowapp "github.com/cobo/cobo_iam_services/internal/workflow/app"
+	workflowmysql "github.com/cobo/cobo_iam_services/internal/workflow/infra/mysql"
 	notificationapp "github.com/cobo/cobo_iam_services/internal/notification/app"
 	notificationregistry "github.com/cobo/cobo_iam_services/internal/notification/infra/registry"
 	"github.com/cobo/cobo_iam_services/internal/platform/config"
@@ -96,7 +98,21 @@ func main() {
 	if sqlDB != nil && cfg.PeriodicSeedingEnabled {
 		disclosureRepo := disclosuremysql.NewRepository(sqlDB)
 		disclosureSvc = disclosureapp.NewService(disclosureRepo, nil /* no auth: worker mode */, idgen.UUIDv7Generator{})
-		periodicCreator = adhocrecord.NewRecordCreatorAdapter(disclosureSvc, nil /* workflow disabled in worker */, false)
+		var workflowSvc workflowapp.Service
+		if cfg.WorkflowSnapshotEnabled {
+			workflowRepo := workflowmysql.NewRepository(sqlDB)
+			workflowOpts := []workflowapp.ServiceOption{
+				workflowapp.WithFlags(workflowapp.Flags{
+					SnapshotEnabled: true,
+					TimelineEnabled: cfg.WorkflowTimelineEnabled,
+				}),
+			}
+			if cfg.WorkflowTimelineEnabled {
+				workflowOpts = append(workflowOpts, workflowapp.WithMilestoneRepository(workflowmysql.NewMilestoneRepository(sqlDB)))
+			}
+			workflowSvc = workflowapp.NewService(workflowRepo, nil, idgen.UUIDv7Generator{}, workflowOpts...)
+		}
+		periodicCreator = adhocrecord.NewRecordCreatorAdapter(disclosureSvc, workflowSvc, workflowSvc != nil)
 	}
 
 	var reminderScheduler reminderapp.Service
