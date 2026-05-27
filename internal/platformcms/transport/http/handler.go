@@ -17,6 +17,7 @@ import (
 	disclosureapp "github.com/cobo/cobo_iam_services/internal/disclosure/app"
 	holidayapp "github.com/cobo/cobo_iam_services/internal/holiday/app"
 	iamapp "github.com/cobo/cobo_iam_services/internal/iam/app"
+	marketapp "github.com/cobo/cobo_iam_services/internal/marketreference/app"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 	"github.com/cobo/cobo_iam_services/internal/platform/httpx"
 )
@@ -31,6 +32,7 @@ type Handler struct {
 	disclosureSvc      disclosureapp.Service
 	disclosures        disclosureapp.Repository
 	holidaySvc         holidayapp.Service
+	listedCompanies    *marketapp.Service
 	mediaRepo          cmsMediaRepository
 	mediaSigner        *cmsMediaSigner
 	mediaStorage       *cmsMediaDiskStorage
@@ -46,7 +48,7 @@ type MediaOptions struct {
 	PublicAPIBaseURL    string
 }
 
-func NewHandler(inspector iamapp.TokenInspector, authorizer authapp.Service, adminSvc companyaccessapp.AdminService, iamSvc iamapp.Service, auditSvc auditapp.Service, auditRepo auditapp.Repository, disclosureSvc disclosureapp.Service, disclosures disclosureapp.Repository, holidaySvc holidayapp.Service, mediaOpts MediaOptions) *Handler {
+func NewHandler(inspector iamapp.TokenInspector, authorizer authapp.Service, adminSvc companyaccessapp.AdminService, iamSvc iamapp.Service, auditSvc auditapp.Service, auditRepo auditapp.Repository, disclosureSvc disclosureapp.Service, disclosures disclosureapp.Repository, holidaySvc holidayapp.Service, listedCompanies *marketapp.Service, mediaOpts MediaOptions) *Handler {
 	mediaStorage, err := newCMSMediaDiskStorage(mediaOpts.StorageDir)
 	if err != nil {
 		panic(err)
@@ -61,6 +63,7 @@ func NewHandler(inspector iamapp.TokenInspector, authorizer authapp.Service, adm
 		disclosureSvc:      disclosureSvc,
 		disclosures:        disclosures,
 		holidaySvc:         holidaySvc,
+		listedCompanies:    ensureListedCompaniesService(listedCompanies),
 		mediaRepo:          newCMSMediaRepository(mediaOpts.DB),
 		mediaSigner:        newCMSMediaSigner(mediaOpts.UploadSigningSecret, mediaOpts.UploadURLTTL),
 		mediaStorage:       mediaStorage,
@@ -114,6 +117,15 @@ func (h *Handler) Register(mux *http.ServeMux) {
 		mux.HandleFunc("POST /api/v1/platform/cms/holiday-calendars/{year}/preview", h.observe("cms.holiday.preview", h.holidayCalendarPreview))
 		mux.HandleFunc("PUT /api/v1/platform/cms/holiday-calendars/{year}", h.observe("cms.holiday.replace", h.holidayCalendarReplace))
 	}
+	mux.HandleFunc("GET /api/v1/platform/cms/market/listed-companies", h.observe("cms.market.listed_companies.list", h.listListedCompanies))
+	mux.HandleFunc("GET /api/v1/platform/cms/market/listed-companies/{symbol}", h.observe("cms.market.listed_companies.get", h.getListedCompany))
+}
+
+func ensureListedCompaniesService(svc *marketapp.Service) *marketapp.Service {
+	if svc == nil {
+		return marketapp.NewDisabledService()
+	}
+	return svc
 }
 
 type statusRecorder struct {

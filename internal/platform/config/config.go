@@ -25,6 +25,10 @@ type Config struct {
 	// Data
 	MySQLDSN string
 
+	// Vnstock read-only market reference (CMS listed companies; separate from cobo_iam DB).
+	VnstockMySQLDSN     string
+	VnstockMarketEnabled bool
+
 	// Redis (optional; P2.2 effective-access projection cache)
 	RedisAddr     string
 	RedisPassword string
@@ -136,6 +140,8 @@ func Load() (Config, error) {
 		HTTPIdleTimeout:               durationEnv("HTTP_IDLE_TIMEOUT", 60*time.Second),
 		WorkerTickInterval:            durationEnv("WORKER_TICK_INTERVAL", 5*time.Second),
 		MySQLDSN:                      normalizeMySQLDSN(os.Getenv("MYSQL_DSN")),
+		VnstockMySQLDSN:               normalizeMySQLDSN(os.Getenv("VNSTOCK_MYSQL_DSN")),
+		VnstockMarketEnabled:          boolEnv("VNSTOCK_MARKET_ENABLED", false),
 		RedisAddr:                     os.Getenv("REDIS_ADDR"),
 		RedisPassword:                 os.Getenv("REDIS_PASSWORD"),
 		RedisDB:                       intEnv("REDIS_DB", 0),

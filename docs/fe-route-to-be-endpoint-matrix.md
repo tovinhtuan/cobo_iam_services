@@ -1,6 +1,6 @@
 # FE Route To BE Endpoint Matrix
 
-> Updated: 2026-05-22
+> Updated: 2026-05-27
 > Scope: `cobo_web_design` routes mapped to current `cobo_iam_services` HTTP surfaces
 
 ## Status Legend
@@ -93,6 +93,8 @@
 | `/cms/ops/health` | health view | `GET /api/v1/platform/cms/ops/health`, `GET /api/v1/platform/cms/ops/metrics` | Implemented |
 | `/cms/settings/general` | general settings | FE route/spec exists; matching backend settings endpoints are not currently visible in `platformcms` handler list | Partial |
 | `/cms/settings/holiday-calendar` | holiday calendar | `GET /api/v1/platform/cms/holiday-calendars/{year}`, `POST /preview`, `PUT /api/v1/platform/cms/holiday-calendars/{year}` | Implemented |
+| `/cms/reference/listed-companies` | listed companies reference list (vnstock, read-only) | `GET /api/v1/platform/cms/market/listed-companies` | Implemented |
+| `/cms/reference/listed-companies/:symbol` | listed company detail (vnstock profile / partial) | `GET /api/v1/platform/cms/market/listed-companies/{symbol}` | Implemented |
 | `/cms/settings/localization` | localization settings | FE route/spec exists; backend endpoint not currently visible | Partial |
 | `/cms/settings/integrations` | integration settings | FE route/spec exists; backend endpoint not currently visible | Partial |
 

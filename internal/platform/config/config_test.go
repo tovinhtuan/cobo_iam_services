@@ -71,6 +71,22 @@ func TestLoad_EmailFlagDefaults(t *testing.T) {
 	}
 }
 
+func TestLoad_VnstockMarketFlags(t *testing.T) {
+	t.Setenv("VNSTOCK_MYSQL_DSN", "vnstock:secret@tcp(mysql:3306)/vnstock?parseTime=true&loc=UTC&tls=false")
+	t.Setenv("VNSTOCK_MARKET_ENABLED", "true")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if !cfg.VnstockMarketEnabled {
+		t.Fatal("VnstockMarketEnabled want true")
+	}
+	want := "vnstock:secret@tcp(mysql:3306)/vnstock?parseTime=true&loc=UTC&tls=false&charset=utf8mb4&collation=utf8mb4_unicode_ci"
+	if cfg.VnstockMySQLDSN != want {
+		t.Fatalf("VnstockMySQLDSN = %q, want %q", cfg.VnstockMySQLDSN, want)
+	}
+}
+
 func TestLoad_EmailDeliveryPathInvalid(t *testing.T) {
 	t.Setenv("EMAIL_DELIVERY_PATH", "bogus")
 	if _, err := Load(); err == nil {

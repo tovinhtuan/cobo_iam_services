@@ -38,6 +38,8 @@ import (
 	disclosurehttp "github.com/cobo/cobo_iam_services/internal/disclosure/transport/http"
 	holidayapp "github.com/cobo/cobo_iam_services/internal/holiday/app"
 	holidaymysql "github.com/cobo/cobo_iam_services/internal/holiday/infra/mysql"
+	marketapp "github.com/cobo/cobo_iam_services/internal/marketreference/app"
+	marketmysql "github.com/cobo/cobo_iam_services/internal/marketreference/infra/mysql"
 	iamapp "github.com/cobo/cobo_iam_services/internal/iam/app"
 	iaminmem "github.com/cobo/cobo_iam_services/internal/iam/infra/inmemory"
 	iammysql "github.com/cobo/cobo_iam_services/internal/iam/infra/mysql"
@@ -48,8 +50,9 @@ import (
 	notificationmysql "github.com/cobo/cobo_iam_services/internal/notification/infra/mysql"
 	notificationregistry "github.com/cobo/cobo_iam_services/internal/notification/infra/registry"
 	notificationhttp "github.com/cobo/cobo_iam_services/internal/notification/transport/http"
-	platformclock "github.com/cobo/cobo_iam_services/internal/platform/clock"
+	platformclock 	"github.com/cobo/cobo_iam_services/internal/platform/clock"
 	"github.com/cobo/cobo_iam_services/internal/platform/config"
+	"github.com/cobo/cobo_iam_services/internal/platform/db"
 	"github.com/cobo/cobo_iam_services/internal/platform/httpx"
 	"github.com/cobo/cobo_iam_services/internal/platform/idempotency"
 	idempotencymysql "github.com/cobo/cobo_iam_services/internal/platform/idempotency/mysql"
@@ -85,6 +88,23 @@ type Deps struct {
 func New(ctx context.Context, d Deps) (http.Handler, func(), error) {
 	cleanup := func() {}
 
+	var vnstockDB *sql.DB
+	if d.Config.VnstockMarketEnabled && d.Config.VnstockMySQLDSN != "" {
+		pool, err := db.OpenMySQL(ctx, d.Config.VnstockMySQLDSN)
+		if err != nil {
+			return nil, nil, fmt.Errorf("vnstock mysql: %w", err)
+		}
+		vnstockDB = pool
+		prev := cleanup
+		cleanup = func() {
+			prev()
+			_ = vnstockDB.Close()
+		}
+		d.Log.Info("vnstock market MySQL read-only pool enabled")
+	} else if d.Config.VnstockMarketEnabled {
+		d.Log.Warn("VNSTOCK_MARKET_ENABLED=true but VNSTOCK_MYSQL_DSN empty; listed-companies API will return 503 until configured")
+	}
+
 	projectionStore := authprojection.NewInMemoryStore(d.Config.EffectiveAccessCacheTTL)
 	if d.Config.RedisAddr != "" {
 		rdb, err := redispkg.Open(ctx, d.Config)
@@ -118,7 +138,7 @@ func New(ctx context.Context, d Deps) (http.Handler, func(), error) {
 	}
 
 	mux := http.NewServeMux()
-	if err := register(mux, d.Log, d.Config, d.TokenManager, sqlPing, projectionStore, outboxRepo, d.DB, outboxSQL); err != nil {
+	if err := register(mux, d.Log, d.Config, d.TokenManager, sqlPing, projectionStore, outboxRepo, d.DB, outboxSQL, vnstockDB); err != nil {
 		return nil, nil, err
 	}
 
@@ -129,7 +149,17 @@ type pingDB interface {
 	PingContext(context.Context) error
 }
 
-func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr TokenManager, sqlDB pingDB, projectionStore authprojection.SnapshotStore, outboxRepo platformoutbox.Repository, pool *sql.DB, outboxSQL *outboxmysql.Repository) error {
+func buildListedCompaniesService(cfg config.Config, vnstockDB *sql.DB, log *slog.Logger) *marketapp.Service {
+	if cfg.VnstockMarketEnabled && cfg.VnstockMySQLDSN != "" && vnstockDB != nil {
+		repo := marketmysql.NewRepository(vnstockDB)
+		log.Info("cms listed companies market reference enabled")
+		return marketapp.NewService(repo, vnstockDB.PingContext)
+	}
+	return marketapp.NewDisabledService()
+}
+
+func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr TokenManager, sqlDB pingDB, projectionStore authprojection.SnapshotStore, outboxRepo platformoutbox.Repository, pool *sql.DB, outboxSQL *outboxmysql.Repository, vnstockDB *sql.DB) error {
+	listedCompaniesSvc := buildListedCompaniesService(cfg, vnstockDB, log)
 	id := idgen.UUIDv7Generator{}
 	var auditRepo auditapp.Repository = auditinmem.NewRepository()
 	if pool != nil {
@@ -346,7 +376,7 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 	adminHandler := companyaccesshttp.NewAdminHandler(adminSvc, tokenManager, auditSvc)
 	adminHandler.WithTokenIssuer(tokenManager, sessionRepo)
 	adminHandler.WithAccountPasswordChange(iamSvc, loginPWD)
-	platformCMSHandler := platformcmshttp.NewHandler(tokenManager, authSvc, adminSvc, iamSvc, auditSvc, auditRepo, disclosureSvc, disclosureRepo, holidaySvc, platformcmshttp.MediaOptions{
+	platformCMSHandler := platformcmshttp.NewHandler(tokenManager, authSvc, adminSvc, iamSvc, auditSvc, auditRepo, disclosureSvc, disclosureRepo, holidaySvc, listedCompaniesSvc, platformcmshttp.MediaOptions{
 		DB:                  pool,
 		UploadSigningSecret: cfg.CMSMediaUploadSigningSecret,
 		UploadURLTTL:        cfg.CMSMediaUploadURLTTL,

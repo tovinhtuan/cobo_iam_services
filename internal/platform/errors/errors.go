@@ -32,6 +32,8 @@ const (
 	CodeSelfApprovalNotAllowed Code = "SELF_APPROVAL_NOT_ALLOWED"
 	CodeFeatureNotEnabled      Code = "FEATURE_NOT_ENABLED"
 	CodeGroupNotInDepartment   Code = "GROUP_NOT_IN_DEPARTMENT"
+	CodeNotFound               Code = "NOT_FOUND"
+	CodeServiceUnavailable     Code = "SERVICE_UNAVAILABLE"
 )
 
 // HTTPError is returned to clients as JSON { "error": { ... } }.
