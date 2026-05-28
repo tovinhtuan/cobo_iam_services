@@ -516,6 +516,101 @@ func TestAdminService_NotificationRulesListPatchDelete_and_AccountSettings(t *te
 }
 
 
+func TestAdminService_DirectPermissions_RbacManageWithoutSystemSettings(t *testing.T) {
+	repo := cainmem.NewAdminRepository()
+	svc := caapp.NewAdminService(
+		repo,
+		fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{"rbac.manage"}},
+		fixedIDGen("u_target"),
+	)
+	sub := caapp.AdminSubject{UserID: "u_admin", MembershipID: "m_admin", CompanyID: "c_dp"}
+
+	out, err := svc.CreateUser(context.Background(), caapp.CreateUserRequest{
+		Subject:   sub,
+		LoginID:   "target.dp@example.com",
+		Password:  "StrongPass123!",
+		FullName:  "Target DP",
+		CompanyID: "c_dp",
+	})
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+
+	items, err := svc.ListDirectPermissions(context.Background(), caapp.ListDirectPermissionsRequest{
+		Subject:      sub,
+		MembershipID: out.MembershipID,
+	})
+	if err != nil {
+		t.Fatalf("ListDirectPermissions: %v", err)
+	}
+	if items == nil {
+		t.Fatal("expected non-nil slice")
+	}
+
+	if err := svc.AddDirectPermission(context.Background(), caapp.AddDirectPermissionRequest{
+		Subject:        sub,
+		MembershipID:   out.MembershipID,
+		PermissionCode: "template.workflow.override.read",
+	}); err != nil {
+		t.Fatalf("AddDirectPermission: %v", err)
+	}
+
+	items2, err := svc.ListDirectPermissions(context.Background(), caapp.ListDirectPermissionsRequest{
+		Subject:      sub,
+		MembershipID: out.MembershipID,
+	})
+	if err != nil {
+		t.Fatalf("ListDirectPermissions after add: %v", err)
+	}
+	if len(items2) != 1 || items2[0].PermissionCode != "template.workflow.override.read" {
+		t.Fatalf("after add items=%+v", items2)
+	}
+
+	if err := svc.RemoveDirectPermission(context.Background(), caapp.RemoveDirectPermissionRequest{
+		Subject:        sub,
+		MembershipID:   out.MembershipID,
+		PermissionCode: "template.workflow.override.read",
+	}); err != nil {
+		t.Fatalf("RemoveDirectPermission: %v", err)
+	}
+}
+
+func TestAdminService_DirectPermissions_DeniedWithoutRbacManage(t *testing.T) {
+	repo := cainmem.NewAdminRepository()
+	svc := caapp.NewAdminService(
+		repo,
+		fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{"system.settings"}},
+		fixedIDGen("u_target2"),
+	)
+	sub := caapp.AdminSubject{UserID: "u_admin", MembershipID: "m_admin", CompanyID: "c_dp2"}
+
+	out, err := svc.CreateUser(context.Background(), caapp.CreateUserRequest{
+		Subject:   sub,
+		LoginID:   "target2.dp@example.com",
+		Password:  "StrongPass123!",
+		FullName:  "Target DP2",
+		CompanyID: "c_dp2",
+	})
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+
+	_, err = svc.ListDirectPermissions(context.Background(), caapp.ListDirectPermissionsRequest{
+		Subject:      sub,
+		MembershipID: out.MembershipID,
+	})
+	if err == nil {
+		t.Fatal("expected ListDirectPermissions to be denied without rbac.manage")
+	}
+	he, ok := perr.AsHTTPError(err)
+	if !ok {
+		t.Fatalf("expected HTTPError got %T", err)
+	}
+	if he.HTTPStatus != http.StatusForbidden {
+		t.Fatalf("status=%d want 403", he.HTTPStatus)
+	}
+}
+
 func TestListCompanyMemberships_RolesEnriched(t *testing.T) {
 	repo := cainmem.NewAdminRepository()
 	svc := caapp.NewAdminService(

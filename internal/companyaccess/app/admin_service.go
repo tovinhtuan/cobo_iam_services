@@ -1034,7 +1034,7 @@ func (s *adminService) AddDirectPermission(ctx context.Context, req AddDirectPer
 		if err := s.assertCanGrantInvitePermission(ctx, req.Subject); err != nil {
 			return err
 		}
-	} else if err := s.authorize(ctx, req.Subject, "rbac.manage", ""); err != nil {
+	} else if err := s.requireRbacManage(ctx, req.Subject); err != nil {
 		return err
 	}
 	if !isGrantable(req.PermissionCode) {
@@ -1048,14 +1048,14 @@ func (s *adminService) RemoveDirectPermission(ctx context.Context, req RemoveDir
 		if err := s.assertCanGrantInvitePermission(ctx, req.Subject); err != nil {
 			return err
 		}
-	} else if err := s.authorize(ctx, req.Subject, "rbac.manage", ""); err != nil {
+	} else if err := s.requireRbacManage(ctx, req.Subject); err != nil {
 		return err
 	}
 	return s.repo.RevokeDirectPermission(ctx, req.MembershipID, req.PermissionCode, req.Subject.UserID)
 }
 
 func (s *adminService) ListDirectPermissions(ctx context.Context, req ListDirectPermissionsRequest) ([]DirectPermissionView, error) {
-	if err := s.authorize(ctx, req.Subject, "rbac.manage", ""); err != nil {
+	if err := s.requireRbacManage(ctx, req.Subject); err != nil {
 		return nil, err
 	}
 	return s.repo.ListActiveDirectPermissions(ctx, req.MembershipID)
