@@ -377,6 +377,79 @@ Khi da dang nhap, doi context — phat hanh access token moi; khong dung token c
 
 ---
 
+## C2. Company self-service provision
+
+> Contract: `cobo_web_design/docs/contracts/company-self-service-create-nth.md`  
+> Migration: `0082_companies_self_service_provisioning` (`founder_user_id`, `provisioning_source`)
+
+### Feature flags (BE)
+
+| Env | Default | Effect |
+|-----|---------|--------|
+| `COMPANY_SELF_CREATE_ENABLED` | `false` | When false, `POST /company/create` → **404** `FEATURE_DISABLED` |
+| `COMPANY_PROVISION_IDEMPOTENCY_REQUIRED` | `false` | When true, `Idempotency-Key` header required on initialize/create |
+
+### Feature flags (FE)
+
+| Env | Default | Effect |
+|-----|---------|--------|
+| `VITE_COMPANY_SELF_CREATE_ENABLED` | unset/false | Hides Portal switcher CTA + profile “Tạo doanh nghiệp mới” |
+
+### POST /api/v1/company/initialize
+
+First company for user with **zero** eligible memberships (`active` + `invited`).
+
+**Headers:** `Authorization: Bearer <access_token>`, optional/required `Idempotency-Key` (see flag).
+
+**Request**
+
+```json
+{
+  "company_name": "Demo Co",
+  "tax_code": "0101234567",
+  "registration_number": "",
+  "address": "",
+  "phone": "",
+  "contact_email": ""
+}
+```
+
+**Response 201**
+
+```json
+{
+  "company_id": "c_uuid",
+  "company_code": "co_xxx",
+  "company_name": "Demo Co",
+  "membership_id": "m_uuid",
+  "session": {
+    "access_token": "jwt-with-new-company",
+    "refresh_token": "refresh",
+    "expires_in": 3600
+  }
+}
+```
+
+**Errors:** `409` `COMPANY_ALREADY_EXISTS` (already has eligible membership), `403` `EMAIL_VERIFICATION_REQUIRED`, `409` `IDEMPOTENCY_CONFLICT`, `500` `SESSION_CONTEXT_UPDATE_FAILED`.
+
+**Audit:** `company.initialize` — actor context uses **new** `company_id` / `membership_id`.
+
+### POST /api/v1/company/create
+
+Additional self-service company when user has **≥1** eligible membership and quota allows.
+
+Same request/response shape as initialize. `provisioning_source = self_service_create`.
+
+**Errors (additional):** `404` `FEATURE_DISABLED`, `402` `QUOTA_EXCEEDED` with `details: { "limit": 1, "current": 1, "tier": "Free" }`.
+
+**Quota (self-provisioned count):** Free=1, Premium=3, Enterprise=unlimited (`limit` 0).
+
+**Audit:** `company.create_self_service`.
+
+**Idempotency scopes:** `company.initialize` | `company.create` (handler-level store, TTL 24h).
+
+---
+
 ## D. Effective access APIs
 
 ### GET /api/v1/me/effective-access

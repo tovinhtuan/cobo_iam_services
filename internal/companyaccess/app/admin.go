@@ -94,6 +94,10 @@ type AdminService interface {
 	// InitializeCompany creates a new company for a user with no existing membership (self-service onboarding).
 	// Caller is responsible for issuing new session tokens after this returns.
 	InitializeCompany(ctx context.Context, req InitializeCompanyRequest) (*InitializeCompanyResult, error)
+	// CreateSelfServiceCompany creates an additional company for a user with at least one eligible membership (within quota).
+	CreateSelfServiceCompany(ctx context.Context, req CreateSelfServiceCompanyRequest) (*InitializeCompanyResult, error)
+	// RollbackSelfServiceBootstrap removes a freshly created self-service company after session failure.
+	RollbackSelfServiceBootstrap(ctx context.Context, companyID, userID string) error
 }
 
 type AdminRepository interface {
@@ -123,6 +127,14 @@ type AdminRepository interface {
 	ListUsersWithNoMembership(ctx context.Context) ([]MembershipView, error)
 	// CountMembershipsForUser counts memberships for a user (any company).
 	CountMembershipsForUser(ctx context.Context, userID string) (int, error)
+	// CountEligibleMembershipsForUser counts memberships with status active or invited.
+	CountEligibleMembershipsForUser(ctx context.Context, userID string) (int, error)
+	// GetUserProvisioningGate returns account_status and whether email is verified.
+	GetUserProvisioningGate(ctx context.Context, userID string) (accountStatus string, emailVerified bool, err error)
+	// BootstrapSelfServiceCompanyTx provisions company + membership in one transaction (initialize or create mode).
+	BootstrapSelfServiceCompanyTx(ctx context.Context, in BootstrapSelfServiceInput) (*BootstrapSelfServiceResult, error)
+	// RollbackBootstrapSelfServiceCompany removes a freshly provisioned tenant when session update fails.
+	RollbackBootstrapSelfServiceCompany(ctx context.Context, companyID, userID string) error
 
 	// LookupRoleIDForInvite resolves an assignable role for a new membership: explicit role_id,
 	// or role_code / defaultRoleCode against companies.roles (company-specific overrides global).
@@ -600,11 +612,59 @@ type InitializeCompanyRequest struct {
 	ContactEmail       string
 }
 
+// CreateSelfServiceCompanyRequest is the service input for POST /api/v1/company/create.
+type CreateSelfServiceCompanyRequest struct {
+	UserID             string
+	CompanyName        string
+	TaxCode            string
+	RegistrationNumber string
+	Address            string
+	Phone              string
+	ContactEmail       string
+}
+
 type InitializeCompanyResult struct {
 	CompanyID    string `json:"company_id"`
 	CompanyCode  string `json:"company_code"`
 	CompanyName  string `json:"company_name"`
 	MembershipID string `json:"membership_id"`
+}
+
+const (
+	ProvisioningSourceSelfServiceInitialize = "self_service_initialize"
+	ProvisioningSourceSelfServiceCreate     = "self_service_create"
+)
+
+type BootstrapSelfServiceMode string
+
+const (
+	BootstrapModeInitialize BootstrapSelfServiceMode = "initialize"
+	BootstrapModeCreate     BootstrapSelfServiceMode = "create"
+)
+
+type BootstrapSelfServiceInput struct {
+	Mode               BootstrapSelfServiceMode
+	UserID             string
+	MembershipID       string
+	CompanyName        string
+	TaxCode            string
+	RegistrationNumber string
+	Address            string
+	Phone              string
+	ContactEmail       string
+	// QuotaLimit is max self-provisioned companies allowed for create mode; 0 means unlimited (Enterprise).
+	QuotaLimit int
+	// QuotaTier is echoed in QUOTA_EXCEEDED details (empty tier is reported as Free).
+	QuotaTier string
+}
+
+type BootstrapSelfServiceResult struct {
+	CompanyID    string
+	CompanyCode  string
+	CompanyName  string
+	MembershipID string
+	// SelfProvisionedCount is the number of self-provisioned companies for the founder after this bootstrap (create mode logging).
+	SelfProvisionedCount int
 }
 
 type ListDepartmentsRequest struct {

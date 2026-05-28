@@ -152,6 +152,7 @@ Use it when tracing where a behavior lives in backend code, what FE surfaces con
 - `DELETE /api/v1/admin/company/admins/{membership_id}`
 - `POST /api/v1/admin/company/transfer-ownership`
 - `POST /api/v1/company/initialize`
+- `POST /api/v1/company/create` (self-service Nth company; `COMPANY_SELF_CREATE_ENABLED`)
 
 ### Flow ownership
 

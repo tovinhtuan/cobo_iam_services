@@ -134,6 +134,11 @@ type Config struct {
 	WorkflowAdhocAutoApproveEnabled bool
 	// PERIODIC_SEEDING_ENABLED: worker seeds + materializes periodic/custom disclosure records.
 	PeriodicSeedingEnabled bool
+
+	// COMPANY_PROVISION_IDEMPOTENCY_REQUIRED: require Idempotency-Key on POST /company/initialize (and /company/create when enabled).
+	CompanyProvisionIdempotencyRequired bool
+	// COMPANY_SELF_CREATE_ENABLED: expose POST /api/v1/company/create for Nth self-service company.
+	CompanySelfCreateEnabled bool
 }
 
 // Load reads configuration from the environment with safe defaults for local dev.
@@ -198,6 +203,8 @@ func Load() (Config, error) {
 		WorkflowAdhocEnabled:            devAwareBoolEnv("WORKFLOW_ADHOC_ENABLED", false, true),
 		WorkflowAdhocAutoApproveEnabled: boolEnv("WORKFLOW_ADHOC_AUTOAPPROVE_ENABLED", false),
 		PeriodicSeedingEnabled:          boolEnv("PERIODIC_SEEDING_ENABLED", false),
+		CompanyProvisionIdempotencyRequired: boolEnv("COMPANY_PROVISION_IDEMPOTENCY_REQUIRED", false),
+		CompanySelfCreateEnabled:            boolEnv("COMPANY_SELF_CREATE_ENABLED", false),
 	}
 	if cfg.WorkerTickInterval < time.Second {
 		return Config{}, fmt.Errorf("WORKER_TICK_INTERVAL too small")

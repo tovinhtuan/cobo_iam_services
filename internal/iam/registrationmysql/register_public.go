@@ -40,6 +40,8 @@ type CompanyBootstrapProfile struct {
 	Phone              string
 	ContactEmail       string
 	RepresentativeName string
+	FounderUserID      string
+	ProvisioningSource string
 }
 
 // grantRoleCompanyProfilePermissionsTx ensures company profile + deadline alerts read perms (idempotent).
@@ -84,18 +86,24 @@ func InsertCompanyWithDefaultRolesTx(ctx context.Context, tx *sql.Tx, companyID,
 	email := strings.TrimSpace(profile.ContactEmail)
 	rep := strings.TrimSpace(profile.RepresentativeName)
 
+	founder := strings.TrimSpace(profile.FounderUserID)
+	provSource := strings.TrimSpace(profile.ProvisioningSource)
+
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO companies (
 			company_id, company_code, company_name,
+			founder_user_id, provisioning_source,
 			tax_code, registration_number, address, phone, contact_email, representative_name,
 			status, verification_status
 		)
 		VALUES (
 			?, ?, ?,
+			NULLIF(?, ''), NULLIF(?, ''),
 			NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
 			'active', ?
 		)
 	`, companyID, companyCode, companyDisplayName,
+		founder, provSource,
 		tax, reg, addr, phone, email, rep,
 		vStatus,
 	); err != nil {
@@ -179,6 +187,11 @@ func isMySQLDuplicateCompany(err error) bool {
 	}
 	msg := strings.ToLower(err.Error())
 	return strings.Contains(msg, "duplicate") && (strings.Contains(msg, "tax_code") || strings.Contains(msg, "uk_companies"))
+}
+
+// IsDuplicateCompanyError reports unique violations on company tax_code or uk_companies.
+func IsDuplicateCompanyError(err error) bool {
+	return isMySQLDuplicateCompany(err)
 }
 
 // RegisterPublicAccount creates an active user, active company, membership, and assigns:

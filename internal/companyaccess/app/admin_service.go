@@ -23,6 +23,7 @@ type adminService struct {
 	invMailer             InvitationMailer
 	inviteTTL             time.Duration
 	inviteDefaultRoleCode string
+	tierLookup            func(ctx context.Context, userID string) string
 }
 
 func NewAdminService(repo AdminRepository, auth authapp.Service, idg idgen.Generator, opts ...AdminOption) AdminService {
@@ -1090,45 +1091,93 @@ func (s *adminService) InitializeCompany(ctx context.Context, req InitializeComp
 	if len([]rune(name)) < 2 || len(name) > 255 {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "company_name must be 2-255 characters", nil)
 	}
-	n, err := s.repo.CountMembershipsForUser(ctx, req.UserID)
+
+	accountStatus, emailVerified, err := s.repo.GetUserProvisioningGate(ctx, req.UserID)
 	if err != nil {
 		return nil, err
 	}
-	if n > 0 {
-		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "COMPANY_ALREADY_EXISTS", nil)
+	if !emailVerified {
+		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodeEmailVerificationRequired, "email verification required", nil)
 	}
-	companyID, companyCode, err := s.repo.CreateStandaloneCompany(ctx, name, CreateCompanyBootstrap{
-		TaxCode:            strings.TrimSpace(req.TaxCode),
-		RegistrationNumber: strings.TrimSpace(req.RegistrationNumber),
-		Address:            strings.TrimSpace(req.Address),
-		Phone:              strings.TrimSpace(req.Phone),
-		ContactEmail:       strings.TrimSpace(req.ContactEmail),
+	if strings.TrimSpace(accountStatus) != "active" {
+		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodeAccountLocked, "account is not active", nil)
+	}
+
+	membershipID := s.idg.NewUUID()
+	boot, err := s.repo.BootstrapSelfServiceCompanyTx(ctx, BootstrapSelfServiceInput{
+		Mode:               BootstrapModeInitialize,
+		UserID:             req.UserID,
+		MembershipID:       membershipID,
+		CompanyName:        name,
+		TaxCode:            req.TaxCode,
+		RegistrationNumber: req.RegistrationNumber,
+		Address:            req.Address,
+		Phone:              req.Phone,
+		ContactEmail:       req.ContactEmail,
 	})
 	if err != nil {
 		return nil, err
 	}
-	membershipID := s.idg.NewUUID()
-	if _, err = s.repo.CreateMembership(ctx, MembershipView{
-		MembershipID: membershipID,
-		UserID:       req.UserID,
-		CompanyID:    companyID,
-		Status:       "active",
-	}); err != nil {
-		return nil, err
-	}
-	if err := s.repo.SetMembershipPrimaryAdmin(ctx, membershipID); err != nil {
-		return nil, err
-	}
-	if roleID, err := s.repo.LookupRoleIDForInvite(ctx, companyID, "", "company_admin", "user_thuong"); err == nil && roleID != "" {
-		_ = s.repo.AddRole(ctx, membershipID, roleID)
-	}
-	_ = s.grantDefaultPermissions(ctx, membershipID, companyID, req.UserID)
 	return &InitializeCompanyResult{
-		CompanyID:    companyID,
-		CompanyCode:  companyCode,
-		CompanyName:  name,
-		MembershipID: membershipID,
+		CompanyID:    boot.CompanyID,
+		CompanyCode:  boot.CompanyCode,
+		CompanyName:  boot.CompanyName,
+		MembershipID: boot.MembershipID,
 	}, nil
+}
+
+func (s *adminService) CreateSelfServiceCompany(ctx context.Context, req CreateSelfServiceCompanyRequest) (*InitializeCompanyResult, error) {
+	name := strings.TrimSpace(req.CompanyName)
+	if len([]rune(name)) < 2 || len(name) > 255 {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "company_name must be 2-255 characters", nil)
+	}
+
+	accountStatus, emailVerified, err := s.repo.GetUserProvisioningGate(ctx, req.UserID)
+	if err != nil {
+		return nil, err
+	}
+	if !emailVerified {
+		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodeEmailVerificationRequired, "email verification required", nil)
+	}
+	if strings.TrimSpace(accountStatus) != "active" {
+		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodeAccountLocked, "account is not active", nil)
+	}
+
+	tier := s.subscriptionTier(ctx, req.UserID)
+	limit := selfServiceCompanyQuotaLimit(tier)
+	displayTier := displaySubscriptionTier(tier)
+
+	membershipID := s.idg.NewUUID()
+	boot, err := s.repo.BootstrapSelfServiceCompanyTx(ctx, BootstrapSelfServiceInput{
+		Mode:               BootstrapModeCreate,
+		UserID:             req.UserID,
+		MembershipID:       membershipID,
+		CompanyName:        name,
+		TaxCode:            req.TaxCode,
+		RegistrationNumber: req.RegistrationNumber,
+		Address:            req.Address,
+		Phone:              req.Phone,
+		ContactEmail:       req.ContactEmail,
+		QuotaLimit:         limit,
+		QuotaTier:          displayTier,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	logCreateSelfServiceSuccess(ctx, req.UserID, boot, limit, tier)
+
+	return &InitializeCompanyResult{
+		CompanyID:    boot.CompanyID,
+		CompanyCode:  boot.CompanyCode,
+		CompanyName:  boot.CompanyName,
+		MembershipID: boot.MembershipID,
+	}, nil
+}
+
+// RollbackSelfServiceBootstrap compensates a committed bootstrap when session/token update fails.
+func (s *adminService) RollbackSelfServiceBootstrap(ctx context.Context, companyID, userID string) error {
+	return s.repo.RollbackBootstrapSelfServiceCompany(ctx, companyID, userID)
 }
 
 func (s *adminService) authorize(ctx context.Context, sub AdminSubject, action, resourceID string) error {

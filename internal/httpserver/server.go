@@ -300,14 +300,18 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 	holidayProvider := disclosureapp.HolidayCalendarProvider(fileHoliday)
 	var disclosureOpts []disclosureapp.ServiceOption
 	disclosureOpts = append(disclosureOpts, disclosureapp.WithWorkflowGroupsEnabled(cfg.WorkflowGroupsEnabled))
+	tierLookup := func(ctx context.Context, userID string) string {
+		if identity == nil {
+			return ""
+		}
+		u, err := identity.GetByUserID(ctx, userID)
+		if err != nil || u == nil {
+			return ""
+		}
+		return u.SubscriptionTier
+	}
 	if identity != nil {
-		disclosureOpts = append(disclosureOpts, disclosureapp.WithSubscriptionTierLookup(func(ctx context.Context, userID string) string {
-			u, err := identity.GetByUserID(ctx, userID)
-			if err != nil || u == nil {
-				return ""
-			}
-			return u.SubscriptionTier
-		}))
+		disclosureOpts = append(disclosureOpts, disclosureapp.WithSubscriptionTierLookup(tierLookup))
 	}
 	var holidaySvc holidayapp.Service
 	if pool != nil {
@@ -391,10 +395,15 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 			companyaccessapp.WithInvitationTTL(cfg.UserInvitationTokenTTL),
 		)
 	}
+	adminOpts = append(adminOpts, companyaccessapp.WithSubscriptionTierLookup(tierLookup))
 	adminSvc := companyaccessapp.NewAdminService(adminRepo, authSvc, id, adminOpts...)
 	adminHandler := companyaccesshttp.NewAdminHandler(adminSvc, tokenManager, auditSvc)
 	adminHandler.WithTokenIssuer(tokenManager, sessionRepo)
 	adminHandler.WithAccountPasswordChange(iamSvc, loginPWD)
+	if idemStore != nil {
+		adminHandler.WithIdempotency(idemStore, cfg.CompanyProvisionIdempotencyRequired)
+	}
+	adminHandler.WithSelfCreateEnabled(cfg.CompanySelfCreateEnabled)
 	platformCMSHandler := platformcmshttp.NewHandler(tokenManager, authSvc, adminSvc, iamSvc, auditSvc, auditRepo, disclosureSvc, disclosureRepo, holidaySvc, listedCompaniesSvc, platformcmshttp.MediaOptions{
 		DB:                  pool,
 		UploadSigningSecret: cfg.CMSMediaUploadSigningSecret,

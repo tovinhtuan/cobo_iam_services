@@ -11,6 +11,7 @@ import (
 	"github.com/cobo/cobo_iam_services/internal/iam/loginpassword"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 	"github.com/cobo/cobo_iam_services/internal/platform/httpx"
+	"github.com/cobo/cobo_iam_services/internal/platform/idempotency"
 )
 
 type AdminHandler struct {
@@ -21,6 +22,9 @@ type AdminHandler struct {
 	audit       auditapp.Service
 	iamSvc      iamapp.Service
 	loginPWD    *loginpassword.Service
+	idem        idempotency.Store
+	requireProvisionIdempotency bool
+	selfCreateEnabled           bool
 }
 
 func NewAdminHandler(svc caapp.AdminService, inspector iamapp.TokenInspector, audit auditapp.Service) *AdminHandler {
@@ -37,6 +41,17 @@ func (h *AdminHandler) WithTokenIssuer(t iamapp.TokenIssuer, s iamapp.SessionRep
 func (h *AdminHandler) WithAccountPasswordChange(iam iamapp.Service, lp *loginpassword.Service) {
 	h.iamSvc = iam
 	h.loginPWD = lp
+}
+
+// WithIdempotency wires idempotency store for company self-service provision.
+func (h *AdminHandler) WithIdempotency(store idempotency.Store, requireProvisionIdempotency bool) {
+	h.idem = store
+	h.requireProvisionIdempotency = requireProvisionIdempotency
+}
+
+// WithSelfCreateEnabled gates POST /api/v1/company/create (COMPANY_SELF_CREATE_ENABLED).
+func (h *AdminHandler) WithSelfCreateEnabled(enabled bool) {
+	h.selfCreateEnabled = enabled
 }
 
 func (h *AdminHandler) Register(mux *http.ServeMux) {
@@ -103,8 +118,9 @@ func (h *AdminHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/v1/admin/company/admins/{membership_id}", h.revokeCompanyAdmin)
 	mux.HandleFunc("POST /api/v1/admin/company/transfer-ownership", h.transferOwnership)
 
-	// Company self-service initialization (no rbac.manage required)
+	// Company self-service provision (no rbac.manage required)
 	mux.HandleFunc("POST /api/v1/company/initialize", h.initializeCompany)
+	mux.HandleFunc("POST /api/v1/company/create", h.createSelfServiceCompany)
 }
 
 func (h *AdminHandler) createUser(w http.ResponseWriter, r *http.Request) {
@@ -218,58 +234,52 @@ func (h *AdminHandler) deleteMembership(w http.ResponseWriter, r *http.Request) 
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"success": true})
 }
 
-func (h *AdminHandler) initializeCompany(w http.ResponseWriter, r *http.Request) {
-	claims, err := h.inspector.InspectAccessToken(r.Context(), bearerToken(r.Header.Get("Authorization")))
-	if err != nil {
-		httpx.WriteError(w, nil, err)
-		return
+func (h *AdminHandler) issueProvisionSession(r *http.Request, claims *iamapp.AccessTokenClaims, membershipID, companyID string) (map[string]any, error) {
+	resp := map[string]any{}
+	if h.tokenIssuer == nil || h.sessions == nil || claims.SessionID == "" {
+		return nil, perr.NewHTTPError(http.StatusInternalServerError, perr.CodeSessionContextUpdateFailed, "session services not configured", nil)
 	}
-	var p struct {
-		CompanyName        string `json:"company_name"`
-		TaxCode            string `json:"tax_code"`
-		RegistrationNumber string `json:"registration_number"`
-		Address            string `json:"address"`
-		Phone              string `json:"phone"`
-		ContactEmail       string `json:"contact_email"`
+	if err := h.sessions.UpdateContext(r.Context(), claims.SessionID, membershipID, companyID); err != nil {
+		return nil, perr.NewHTTPError(http.StatusInternalServerError, perr.CodeSessionContextUpdateFailed, "failed to update session context", err)
 	}
-	_ = json.NewDecoder(r.Body).Decode(&p)
-	result, err := h.svc.InitializeCompany(r.Context(), caapp.InitializeCompanyRequest{
-		UserID:             claims.Sub,
-		CompanyName:        p.CompanyName,
-		TaxCode:            p.TaxCode,
-		RegistrationNumber: p.RegistrationNumber,
-		Address:            p.Address,
-		Phone:              p.Phone,
-		ContactEmail:       p.ContactEmail,
+	access, exp, err := h.tokenIssuer.IssueAccessToken(r.Context(), iamapp.AccessTokenClaims{
+		Sub: claims.Sub, SessionID: claims.SessionID,
+		MembershipID: membershipID, CompanyID: companyID,
 	})
 	if err != nil {
-		httpx.WriteError(w, nil, err)
+		return nil, perr.NewHTTPError(http.StatusInternalServerError, perr.CodeSessionContextUpdateFailed, "failed to issue access token", err)
+	}
+	if strings.TrimSpace(access) == "" {
+		return nil, perr.NewHTTPError(http.StatusInternalServerError, perr.CodeSessionContextUpdateFailed, "empty access token", nil)
+	}
+	refresh, _ := h.tokenIssuer.IssueRefreshToken(r.Context(), claims.SessionID, claims.Sub)
+	if refresh != "" {
+		_ = h.sessions.RotateRefreshToken(r.Context(), claims.SessionID, refresh)
+	}
+	resp["session"] = map[string]any{
+		"access_token":  access,
+		"refresh_token": refresh,
+		"expires_in":    exp,
+	}
+	return resp, nil
+}
+
+func (h *AdminHandler) auditProvision(r *http.Request, actorUserID, membershipID, companyID, action string) {
+	if h.audit == nil {
 		return
 	}
-	resp := map[string]any{
-		"company_id":    result.CompanyID,
-		"company_code":  result.CompanyCode,
-		"company_name":  result.CompanyName,
-		"membership_id": result.MembershipID,
-	}
-	if h.tokenIssuer != nil && h.sessions != nil && claims.SessionID != "" {
-		_ = h.sessions.UpdateContext(r.Context(), claims.SessionID, result.MembershipID, result.CompanyID)
-		access, exp, _ := h.tokenIssuer.IssueAccessToken(r.Context(), iamapp.AccessTokenClaims{
-			Sub: claims.Sub, SessionID: claims.SessionID,
-			MembershipID: result.MembershipID, CompanyID: result.CompanyID,
-		})
-		refresh, _ := h.tokenIssuer.IssueRefreshToken(r.Context(), claims.SessionID, claims.Sub)
-		if refresh != "" {
-			_ = h.sessions.RotateRefreshToken(r.Context(), claims.SessionID, refresh)
-		}
-		resp["session"] = map[string]any{
-			"access_token":  access,
-			"refresh_token": refresh,
-			"expires_in":    exp,
-		}
-	}
-	h.auditLog(r, "company.initialize", "company", result.CompanyID)
-	httpx.WriteJSON(w, http.StatusCreated, resp)
+	_ = h.audit.AppendAuditLog(r.Context(), auditapp.AppendAuditLogRequest{
+		ActorUserID:         actorUserID,
+		ActorMembershipID:   membershipID,
+		CompanyID:           companyID,
+		Action:              action,
+		ResourceType:        "company",
+		ResourceID:          companyID,
+		Decision:            "allow",
+		RequestID:           httpx.RequestIDFromContext(r.Context()),
+		IP:                  r.RemoteAddr,
+		UserAgent:           r.UserAgent(),
+	})
 }
 
 func (h *AdminHandler) listMemberships(w http.ResponseWriter, r *http.Request) {

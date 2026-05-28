@@ -28,7 +28,9 @@
 | FE route | Main purpose | BE endpoint(s) | Status |
 |---|---|---|---|
 | auth company selection flow | choose active company after login | `POST /api/v1/auth/select-company`, `POST /api/v1/auth/switch-company`, `POST /api/v1/me/active-company`, `GET /api/v1/me/companies` | Implemented |
-| `/app/no-company` | no-membership holding page | `GET /api/v1/me`, `GET /api/v1/me/companies` | Partial |
+| `/app/no-company` | first company self-service bootstrap | `POST /api/v1/company/initialize` (Bearer), `GET /api/v1/me`, `GET /api/v1/me/companies` | Implemented |
+| Portal company switcher CTA | create Nth company (feature flag) | `POST /api/v1/company/create` (Bearer + `Idempotency-Key`) | Implemented |
+| `/app/profile` (create nth link) | same as switcher CTA when `VITE_COMPANY_SELF_CREATE_ENABLED` | `POST /api/v1/company/create` | Implemented |
 | `/app/verify-email` | verify account email | `POST /api/v1/auth/verify-email`, `POST /api/v1/auth/resend-verification-email` | Implemented |
 | global portal bootstrap | current user/company/permissions | `GET /api/v1/me`, `GET /api/v1/me/profile`, `GET /api/v1/me/companies`, `GET /api/v1/me/authorized-companies`, `GET /api/v1/me/effective-access`, `GET /api/v1/me/capabilities`, `GET /api/v1/me/membership` | Implemented |
 

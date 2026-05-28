@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"strings"
 	"time"
 )
@@ -28,5 +29,12 @@ func WithInvitationTTL(d time.Duration) AdminOption {
 func WithInviteDefaultRoleCode(roleCode string) AdminOption {
 	return func(s *adminService) {
 		s.inviteDefaultRoleCode = strings.TrimSpace(roleCode)
+	}
+}
+
+// WithSubscriptionTierLookup returns subscription tier for self-service company quota (Free default when nil or empty).
+func WithSubscriptionTierLookup(fn func(ctx context.Context, userID string) string) AdminOption {
+	return func(s *adminService) {
+		s.tierLookup = fn
 	}
 }

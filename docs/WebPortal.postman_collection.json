@@ -218,16 +218,39 @@
           "name": "Initialize Company",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{idempotency_key}}" }
+            ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"company_name\": \"Demo Co\",\n  \"company_code\": \"DEMO\",\n  \"tax_code\": \"1234567890\"\n}"
+              "raw": "{\n  \"company_name\": \"Demo Co\",\n  \"tax_code\": \"0101234567\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/api/v1/company/initialize",
               "host": ["{{base_url}}"],
               "path": ["api", "v1", "company", "initialize"]
             }
+          }
+        },
+        {
+          "name": "Create Company (Nth self-service)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{idempotency_key}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"company_name\": \"Second Demo Co\",\n  \"tax_code\": \"0109876543\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/company/create",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "company", "create"]
+            },
+            "description": "Requires COMPANY_SELF_CREATE_ENABLED=true on API. User must have >=1 eligible membership. Quota by subscription tier."
           }
         },
         {

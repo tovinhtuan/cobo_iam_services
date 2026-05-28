@@ -38,6 +38,10 @@ type AdminRepository struct {
 	departments map[string]caapp.DepartmentView // department_id -> view
 
 	companies map[string]*caapp.PlatformCompanyDetail
+
+	companyFounder    map[string]string
+	companyProvSource map[string]string
+	companyTaxCodes   map[string]string
 }
 
 func NewAdminRepository() *AdminRepository {
@@ -59,6 +63,9 @@ func NewAdminRepository() *AdminRepository {
 		directPermissions:       map[string]caapp.DirectPermissionView{},
 		departments:             map[string]caapp.DepartmentView{},
 		companies:               map[string]*caapp.PlatformCompanyDetail{},
+		companyFounder:          map[string]string{},
+		companyProvSource:       map[string]string{},
+		companyTaxCodes:         map[string]string{},
 	}
 }
 
@@ -295,6 +302,156 @@ func (r *AdminRepository) CountMembershipsForUser(_ context.Context, userID stri
 		}
 	}
 	return n, nil
+}
+
+func (r *AdminRepository) CountEligibleMembershipsForUser(_ context.Context, userID string) (int, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	n := 0
+	for _, m := range r.memberships {
+		if m.UserID != userID {
+			continue
+		}
+		st := strings.TrimSpace(m.Status)
+		if st == "active" || st == "invited" {
+			n++
+		}
+	}
+	return n, nil
+}
+
+func (r *AdminRepository) GetUserProvisioningGate(_ context.Context, userID string) (string, bool, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	u, ok := r.users[userID]
+	if !ok {
+		return "", false, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "user not found", nil)
+	}
+	verified := !strings.Contains(strings.ToLower(u.LoginID), "unverified")
+	return u.AccountStatus, verified, nil
+}
+
+func (r *AdminRepository) countSelfProvisionedLocked(userID string) int {
+	n := 0
+	for cid, founder := range r.companyFounder {
+		if founder != userID {
+			continue
+		}
+		src := r.companyProvSource[cid]
+		if src == caapp.ProvisioningSourceSelfServiceInitialize || src == caapp.ProvisioningSourceSelfServiceCreate {
+			n++
+		}
+	}
+	return n
+}
+
+func (r *AdminRepository) BootstrapSelfServiceCompanyTx(_ context.Context, in caapp.BootstrapSelfServiceInput) (*caapp.BootstrapSelfServiceResult, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	eligible := 0
+	for _, m := range r.memberships {
+		if m.UserID != in.UserID {
+			continue
+		}
+		st := strings.TrimSpace(m.Status)
+		if st == "active" || st == "invited" {
+			eligible++
+		}
+	}
+	switch in.Mode {
+	case caapp.BootstrapModeInitialize:
+		if eligible > 0 {
+			return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "COMPANY_ALREADY_EXISTS", nil)
+		}
+	case caapp.BootstrapModeCreate:
+		if eligible < 1 {
+			return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "COMPANY_MEMBERSHIP_REQUIRED", nil)
+		}
+		if in.QuotaLimit > 0 {
+			count := r.countSelfProvisionedLocked(in.UserID)
+			if count >= in.QuotaLimit {
+				he := perr.NewHTTPError(http.StatusPaymentRequired, perr.CodeQuotaExceeded, "subscription quota exceeded", nil)
+				he.Details = map[string]any{
+					"limit":   in.QuotaLimit,
+					"current": count,
+					"tier":    in.QuotaTier,
+				}
+				return nil, he
+			}
+		}
+	default:
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "invalid bootstrap mode", nil)
+	}
+
+	name := strings.TrimSpace(in.CompanyName)
+	if name == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "company_name is required", nil)
+	}
+	tax := strings.TrimSpace(in.TaxCode)
+	if tax != "" {
+		if _, exists := r.companyTaxCodes[tax]; exists {
+			return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "COMPANY_ALREADY_EXISTS", nil)
+		}
+	}
+
+	selfBefore := r.countSelfProvisionedLocked(in.UserID)
+	provSource := caapp.ProvisioningSourceSelfServiceInitialize
+	if in.Mode == caapp.BootstrapModeCreate {
+		provSource = caapp.ProvisioningSourceSelfServiceCreate
+	}
+
+	companyID := "c_" + in.MembershipID
+	companyCode := "co_" + in.MembershipID
+	r.companies[companyID] = &caapp.PlatformCompanyDetail{
+		CompanyID: companyID, CompanyCode: companyCode, CompanyName: name, Status: "active",
+	}
+	r.companyFounder[companyID] = in.UserID
+	r.companyProvSource[companyID] = provSource
+	if tax != "" {
+		r.companyTaxCodes[tax] = companyID
+	}
+	r.memberships[in.MembershipID] = caapp.MembershipView{
+		MembershipID: in.MembershipID,
+		UserID:       in.UserID,
+		CompanyID:    companyID,
+		CompanyName:  name,
+		Status:       "active",
+		IsPrimaryAdmin: true,
+	}
+	return &caapp.BootstrapSelfServiceResult{
+		CompanyID:            companyID,
+		CompanyCode:          companyCode,
+		CompanyName:          name,
+		MembershipID:         in.MembershipID,
+		SelfProvisionedCount: selfBefore + 1,
+	}, nil
+}
+
+func (r *AdminRepository) RollbackBootstrapSelfServiceCompany(_ context.Context, companyID, userID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	memCount := 0
+	var memID string
+	for id, m := range r.memberships {
+		if m.CompanyID == companyID {
+			memCount++
+			memID = id
+		}
+	}
+	if memCount != 1 {
+		return perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "rollback not allowed: unexpected membership count", nil)
+	}
+	delete(r.memberships, memID)
+	delete(r.companies, companyID)
+	delete(r.companyFounder, companyID)
+	delete(r.companyProvSource, companyID)
+	for tax, cid := range r.companyTaxCodes {
+		if cid == companyID {
+			delete(r.companyTaxCodes, tax)
+		}
+	}
+	return nil
 }
 
 func (r *AdminRepository) ListUsersWithNoMembership(_ context.Context) ([]caapp.MembershipView, error) {
