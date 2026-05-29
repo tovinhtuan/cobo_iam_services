@@ -706,7 +706,6 @@ type DisclosureTypeDTO struct {
 	Format                string                  `json:"format"`
 	LegalRisksText        string                  `json:"legal_risks_text"`
 	GeneralInfo           string                  `json:"general_info"`
-	ReminderMilestones    []string                `json:"reminder_milestones"`
 	DeadlineConfig        *TemplateDeadlineConfig `json:"deadline_config,omitempty"`
 	DeadlineSummary       *DeadlineSummaryDTO     `json:"deadline_summary,omitempty"`
 	LegalBases            []LegalBasisDTO         `json:"legal_bases"`
