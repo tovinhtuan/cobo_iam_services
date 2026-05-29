@@ -81,6 +81,9 @@ type AlertRow struct {
 type Repository interface {
 	ListRows(ctx context.Context, companyID string) ([]AlertRow, error)
 	GetCompanyDeadlineContext(ctx context.Context, companyID string) (disclosureapp.CompanyDeadlineContext, error)
+	// GetCompanyTypeDeadlineContext returns company context enriched with
+	// per-company cycle anchor override for the given type.
+	GetCompanyTypeDeadlineContext(ctx context.Context, companyID, typeID string) (disclosureapp.CompanyDeadlineContext, error)
 	GetTypeDeadlineConfig(ctx context.Context, companyID, typeID string) (*disclosureapp.TemplateDeadlineConfig, error)
 	HasDisclosureRecord(ctx context.Context, companyID, recordID string) (bool, error)
 	ConfirmDeadlineAlert(ctx context.Context, companyID, recordID, confirmedBy, note, idempotencyKey string, at time.Time) error

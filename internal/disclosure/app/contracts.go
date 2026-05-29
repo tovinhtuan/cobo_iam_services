@@ -84,6 +84,9 @@ type Repository interface {
 	ListCompanyWorkflowOverrideVersions(ctx context.Context, companyID, typeID string, page, pageSize int) ([]CompanyWorkflowOverrideVersionDTO, int, error)
 	GetEffectiveWorkflow(ctx context.Context, companyID, typeID string) (*EffectiveWorkflowDTO, error)
 	GetCompanyDeadlineContext(ctx context.Context, companyID string) (CompanyDeadlineContext, error)
+	// GetCompanyTypeDeadlineContext returns CompanyDeadlineContext enriched with
+	// per-company cycle anchor override from company_type_preferences.
+	GetCompanyTypeDeadlineContext(ctx context.Context, companyID, typeID string) (CompanyDeadlineContext, error)
 	GetActiveVersionDeadlineConfig(ctx context.Context, typeID string) (versionNo int, cfg *TemplateDeadlineConfig, err error)
 	UpdateActiveVersionDeadlineConfig(ctx context.Context, typeID string, cfg TemplateDeadlineConfig, updatedBy string) error
 	ListCompanyGroups(ctx context.Context, companyID, departmentID string, isActive *bool) ([]CompanyGroupDTO, error)
@@ -909,6 +912,10 @@ type CompanyTypePreference struct {
 	TypeID            string
 	AutoCreateEnabled bool
 	UpdatedBy         string
+	// Per-company fiscal year start override for PERIODIC deadline mode.
+	// 0 = use template default (CycleAnchorMonth/CycleAnchorDay in TemplateDeadlineConfig).
+	CycleAnchorMonth int
+	CycleAnchorDay   int
 }
 
 // CompanyTypePreferenceDTO is the API-facing representation.
@@ -917,6 +924,9 @@ type CompanyTypePreferenceDTO struct {
 	CompanyID         string    `json:"company_id"`
 	AutoCreateEnabled bool      `json:"auto_create_enabled"`
 	UpdatedAt         time.Time `json:"updated_at"`
+	// Per-company fiscal year start override for PERIODIC deadline mode. 0 = use template default.
+	CycleAnchorMonth int `json:"cycle_anchor_month,omitempty"`
+	CycleAnchorDay   int `json:"cycle_anchor_day,omitempty"`
 }
 
 type GetCompanyTypePreferenceRequest struct {
@@ -928,6 +938,9 @@ type UpsertCompanyTypePreferenceRequest struct {
 	Subject           Subject
 	TypeID            string
 	AutoCreateEnabled bool
+	// Per-company cycle anchor override. 0 = keep/use template default.
+	CycleAnchorMonth int `json:"cycle_anchor_month,omitempty"`
+	CycleAnchorDay   int `json:"cycle_anchor_day,omitempty"`
 }
 
 // ─── CMS System Template Management ──────────────────────────────────────────

@@ -22,6 +22,10 @@ func (s *stubRepo) GetCompanyDeadlineContext(_ context.Context, companyID string
 	return disclosureapp.CompanyDeadlineContext{CompanyID: companyID, CurrentYear: 2026}, nil
 }
 
+func (s *stubRepo) GetCompanyTypeDeadlineContext(_ context.Context, companyID, _ string) (disclosureapp.CompanyDeadlineContext, error) {
+	return disclosureapp.CompanyDeadlineContext{CompanyID: companyID, CurrentYear: 2026}, nil
+}
+
 func (s *stubRepo) GetTypeDeadlineConfig(_ context.Context, _, _ string) (*disclosureapp.TemplateDeadlineConfig, error) {
 	return nil, nil
 }

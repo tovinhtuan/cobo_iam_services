@@ -337,7 +337,7 @@ func (s *service) GetTypeDetail(ctx context.Context, req GetTypeDetailRequest) (
 	if item.DeadlineConfig == nil {
 		return item, nil
 	}
-	companyCtx, err := s.repo.GetCompanyDeadlineContext(ctx, req.Subject.CompanyID)
+	companyCtx, err := s.repo.GetCompanyTypeDeadlineContext(ctx, req.Subject.CompanyID, req.TypeID)
 	if err != nil {
 		item.DeadlineSummary = &DeadlineSummaryDTO{
 			DeadlineMode:    item.DeadlineConfig.DeadlineMode,
@@ -1160,6 +1160,8 @@ func (s *service) UpsertCompanyTypePreference(ctx context.Context, req UpsertCom
 		TypeID:            req.TypeID,
 		AutoCreateEnabled: req.AutoCreateEnabled,
 		UpdatedBy:         req.Subject.MembershipID,
+		CycleAnchorMonth:  req.CycleAnchorMonth,
+		CycleAnchorDay:    req.CycleAnchorDay,
 	}); err != nil {
 		return nil, err
 	}
@@ -1167,6 +1169,8 @@ func (s *service) UpsertCompanyTypePreference(ctx context.Context, req UpsertCom
 		CompanyID:         req.Subject.CompanyID,
 		TypeID:            req.TypeID,
 		AutoCreateEnabled: req.AutoCreateEnabled,
+		CycleAnchorMonth:  req.CycleAnchorMonth,
+		CycleAnchorDay:    req.CycleAnchorDay,
 	}), nil
 }
 
@@ -1178,6 +1182,8 @@ func companyTypePreferenceDTO(companyID, typeID string, pref *CompanyTypePrefere
 	}
 	if pref != nil {
 		dto.AutoCreateEnabled = pref.AutoCreateEnabled
+		dto.CycleAnchorMonth = pref.CycleAnchorMonth
+		dto.CycleAnchorDay = pref.CycleAnchorDay
 	}
 	return dto
 }

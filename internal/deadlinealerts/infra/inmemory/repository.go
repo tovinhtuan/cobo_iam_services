@@ -25,6 +25,10 @@ func (r *Repository) GetCompanyDeadlineContext(ctx context.Context, companyID st
 	return r.disclosure.GetCompanyDeadlineContext(ctx, companyID)
 }
 
+func (r *Repository) GetCompanyTypeDeadlineContext(ctx context.Context, companyID, typeID string) (disclosureapp.CompanyDeadlineContext, error) {
+	return r.disclosure.GetCompanyTypeDeadlineContext(ctx, companyID, typeID)
+}
+
 func (r *Repository) GetTypeDeadlineConfig(ctx context.Context, companyID, typeID string) (*disclosureapp.TemplateDeadlineConfig, error) {
 	_ = companyID
 	_, cfg, err := r.disclosure.GetActiveVersionDeadlineConfig(ctx, typeID)

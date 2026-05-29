@@ -799,6 +799,8 @@ func (h *Handler) upsertCompanyTypePreference(w http.ResponseWriter, r *http.Req
 	typeID := strings.TrimSpace(r.PathValue("type_id"))
 	var body struct {
 		AutoCreateEnabled bool `json:"auto_create_enabled"`
+		CycleAnchorMonth  int  `json:"cycle_anchor_month,omitempty"`
+		CycleAnchorDay    int  `json:"cycle_anchor_day,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		httpx.WriteError(w, nil, err)
@@ -808,6 +810,8 @@ func (h *Handler) upsertCompanyTypePreference(w http.ResponseWriter, r *http.Req
 		Subject:           sub,
 		TypeID:            typeID,
 		AutoCreateEnabled: body.AutoCreateEnabled,
+		CycleAnchorMonth:  body.CycleAnchorMonth,
+		CycleAnchorDay:    body.CycleAnchorDay,
 	})
 	if err != nil {
 		httpx.WriteError(w, nil, err)

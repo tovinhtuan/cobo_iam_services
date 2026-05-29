@@ -1748,10 +1748,13 @@ func (r *Repository) ListAllActiveCompanyIDs(ctx context.Context) ([]string, err
 }
 
 func (r *Repository) GetCompanyTypePreference(ctx context.Context, companyID, typeID string) (*disclosureapp.CompanyTypePreference, error) {
-	const q = `SELECT auto_create_enabled, COALESCE(updated_by, '') FROM company_type_preferences WHERE company_id = ? AND type_id = ?`
+	const q = `SELECT auto_create_enabled, COALESCE(updated_by, ''),
+	           COALESCE(cycle_anchor_month, 0), COALESCE(cycle_anchor_day, 0)
+	           FROM company_type_preferences WHERE company_id = ? AND type_id = ?`
 	var pref disclosureapp.CompanyTypePreference
 	var enabled int
-	err := r.db.QueryRowContext(ctx, q, companyID, typeID).Scan(&enabled, &pref.UpdatedBy)
+	err := r.db.QueryRowContext(ctx, q, companyID, typeID).Scan(
+		&enabled, &pref.UpdatedBy, &pref.CycleAnchorMonth, &pref.CycleAnchorDay)
 	if err == sql.ErrNoRows {
 		return nil, nil // no row = default enabled
 	}
@@ -1770,14 +1773,39 @@ func (r *Repository) UpsertCompanyTypePreference(ctx context.Context, in disclos
 		enabled = 1
 	}
 	const q = `
-		INSERT INTO company_type_preferences (company_id, type_id, auto_create_enabled, updated_by)
-		VALUES (?, ?, ?, ?)
-		ON DUPLICATE KEY UPDATE auto_create_enabled = VALUES(auto_create_enabled), updated_by = VALUES(updated_by)`
-	_, err := r.db.ExecContext(ctx, q, in.CompanyID, in.TypeID, enabled, in.UpdatedBy)
+		INSERT INTO company_type_preferences (company_id, type_id, auto_create_enabled, updated_by, cycle_anchor_month, cycle_anchor_day)
+		VALUES (?, ?, ?, ?, NULLIF(?, 0), NULLIF(?, 0))
+		ON DUPLICATE KEY UPDATE
+		  auto_create_enabled = VALUES(auto_create_enabled),
+		  updated_by = VALUES(updated_by),
+		  cycle_anchor_month = COALESCE(VALUES(cycle_anchor_month), cycle_anchor_month),
+		  cycle_anchor_day   = COALESCE(VALUES(cycle_anchor_day),   cycle_anchor_day)`
+	_, err := r.db.ExecContext(ctx, q, in.CompanyID, in.TypeID, enabled, in.UpdatedBy,
+		in.CycleAnchorMonth, in.CycleAnchorDay)
 	if err != nil {
 		return fmt.Errorf("upsert company type preference: %w", err)
 	}
 	return nil
+}
+
+// GetCompanyTypeDeadlineContext returns CompanyDeadlineContext enriched with
+// per-company cycle anchor override from company_type_preferences (if set).
+func (r *Repository) GetCompanyTypeDeadlineContext(ctx context.Context, companyID, typeID string) (disclosureapp.CompanyDeadlineContext, error) {
+	base, err := r.GetCompanyDeadlineContext(ctx, companyID)
+	if err != nil {
+		return base, err
+	}
+	pref, err := r.GetCompanyTypePreference(ctx, companyID, typeID)
+	if err != nil || pref == nil {
+		return base, err // no preference or error → use base context
+	}
+	if pref.CycleAnchorMonth > 0 {
+		base.CycleAnchorMonth = pref.CycleAnchorMonth
+	}
+	if pref.CycleAnchorDay > 0 {
+		base.CycleAnchorDay = pref.CycleAnchorDay
+	}
+	return base, nil
 }
 
 func (r *Repository) CountCompanyTemplatesByCompanyID(ctx context.Context, companyID string) (int, error) {

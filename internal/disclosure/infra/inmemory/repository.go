@@ -783,6 +783,10 @@ func (r *Repository) UpsertCompanyTypePreference(_ context.Context, _ disclosure
 	return nil
 }
 
+func (r *Repository) GetCompanyTypeDeadlineContext(ctx context.Context, companyID, _ string) (disclosureapp.CompanyDeadlineContext, error) {
+	return r.GetCompanyDeadlineContext(ctx, companyID)
+}
+
 func (r *Repository) CountCompanyTemplatesByCompanyID(_ context.Context, companyID string) (int, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
