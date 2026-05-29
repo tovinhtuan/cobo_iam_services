@@ -118,6 +118,8 @@ services:
       WORKFLOW_DRAFT_ETAG_MODE: enforce
       COMPANY_SELF_CREATE_ENABLED: "true"
       COMPANY_PROVISION_IDEMPOTENCY_REQUIRED: "true"
+      VNSTOCK_MARKET_ENABLED: "true"
+      VNSTOCK_MYSQL_DSN: vnstock:vnstock2024@tcp(mysql:3306)/vnstock?parseTime=true&loc=UTC&tls=false
       LOGIN_PASSWORD_RSA_PRIVATE_KEY_PEM_FILE: /app/configs/login_password_rsa_dev.pem
       LOGIN_PASSWORD_RSA_KEY_ID: dev
     ports:
