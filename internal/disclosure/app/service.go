@@ -813,8 +813,12 @@ func (s *service) GetCompanyWorkflowOverrideDraftReminderPreview(
 	t0Local = time.Date(t0Local.Year(), t0Local.Month(), t0Local.Day(), 0, 0, 0, 0, loc)
 
 	typeDefaultDays := 1
-	if _, cfg, cfgErr := s.repo.GetActiveVersionDeadlineConfig(ctx, req.TypeID); cfgErr == nil && cfg != nil && cfg.ProcessingDays > 0 {
-		typeDefaultDays = cfg.ProcessingDays
+	if _, cfg, cfgErr := s.repo.GetActiveVersionDeadlineConfig(ctx, req.TypeID); cfgErr == nil && cfg != nil {
+		if cfg.StepDefaultSlaDays > 0 {
+			typeDefaultDays = cfg.StepDefaultSlaDays
+		} else if cfg.ProcessingDays > 0 {
+			typeDefaultDays = cfg.ProcessingDays // legacy fallback
+		}
 	}
 
 	timelines, err := ComputeStepTimelines(t0Local, defaultCompanyTimezone, steps, typeDefaultDays)

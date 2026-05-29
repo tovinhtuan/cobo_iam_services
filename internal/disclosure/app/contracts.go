@@ -752,11 +752,14 @@ type TemplateDeadlineConfig struct {
 	// ProcessingDays is the default per-step duration in calendar days.
 	ProcessingDays int `json:"processing_days,omitempty"`
 	// Portal/CMS template config extensions (stored in deadline_config_json).
-	TemplateCategory  string `json:"template_category,omitempty"`
-	FrequencyInterval int    `json:"frequency_interval,omitempty"`
-	FrequencyUnit     string `json:"frequency_unit,omitempty"`
-	AllowT0Override   *bool  `json:"allow_t0_override,omitempty"`
-	ReportInfoLocked  *bool  `json:"report_info_locked,omitempty"`
+	TemplateCategory   string `json:"template_category,omitempty"`
+	FrequencyInterval  int    `json:"frequency_interval,omitempty"`
+	FrequencyUnit      string `json:"frequency_unit,omitempty"`
+	AllowT0Override    *bool  `json:"allow_t0_override,omitempty"`
+	ReportInfoLocked   *bool  `json:"report_info_locked,omitempty"`
+	// StepDefaultSlaDays is the per-step workflow SLA fallback (calendar days).
+	// Intentionally separate from DeadlineDays (total SLA) to prevent timeline blow-up.
+	StepDefaultSlaDays int `json:"step_default_sla_days,omitempty"`
 	// CycleAnchorDay/Month define the fiscal year start for yearly periodic templates.
 	// 0 = unset (defaults to 01/01). Not needed for monthly/quarterly.
 	CycleAnchorDay   int `json:"cycle_anchor_day,omitempty"`
