@@ -11,6 +11,7 @@ const (
 	DeadlineModeNone        = "NONE"
 	DeadlineModeFixedDate   = "FIXED_DATE"
 	DeadlineModeDynamicRule = "DYNAMIC_RULE"
+	DeadlineModePeriodic    = "PERIODIC"
 
 	NonTradingPolicyWarnOnlyKeepDate = "WARN_ONLY_KEEP_DATE"
 	NonTradingPolicyMoveNextWorking  = "MOVE_TO_NEXT_WORKING_DAY"
@@ -39,6 +40,10 @@ type CompanyDeadlineContext struct {
 	// Optional month/day source when absolute date is unavailable.
 	EstablishedMonth int
 	EstablishedDay   int
+	// Per-company cycle anchor override for PERIODIC deadline mode.
+	// 0 = use template default (CycleAnchorMonth/CycleAnchorDay in TemplateDeadlineConfig).
+	CycleAnchorMonth int
+	CycleAnchorDay   int
 }
 
 type HolidayCalendarProvider interface {
@@ -78,6 +83,8 @@ func (c *DeadlineCalculator) CalculateDeadlineSummary(
 		return c.calculateFixedDate(ctx, config.FixedDeadline, now)
 	case DeadlineModeDynamicRule:
 		return c.calculateDynamicRule(ctx, config.DynamicRule, company, now)
+	case DeadlineModePeriodic:
+		return c.calculatePeriodic(ctx, config, company, now)
 	default:
 		return nil, fmt.Errorf("%w: %s", ErrUnsupportedDeadlineMode, config.DeadlineMode)
 	}
@@ -291,3 +298,99 @@ func stripTime(t time.Time) time.Time {
 
 func ptrString(v string) *string { return &v }
 func ptrBool(v bool) *bool       { return &v }
+
+// calculatePeriodic computes the deadline as cycleStart + DeadlineDays working days,
+// where cycleStart is derived from the template's frequency and cycle anchor.
+// Per-company CycleAnchorMonth/Day (CompanyDeadlineContext) takes precedence over template defaults.
+// Returns nil when DeadlineDays <= 0 (no deadline configured).
+func (c *DeadlineCalculator) calculatePeriodic(
+	ctx context.Context,
+	config *TemplateDeadlineConfig,
+	company CompanyDeadlineContext,
+	now time.Time,
+) (*DeadlineSummaryDTO, error) {
+	if config.DeadlineDays <= 0 {
+		return nil, nil
+	}
+	cycleStart := c.computeCycleStart(config, company, now)
+	deadline, err := c.addDurationInclusive(ctx, cycleStart, config.DeadlineDays, DurationTypeWorkingDays)
+	if err != nil {
+		return nil, err
+	}
+	remainingDays := int(deadline.Sub(stripTime(now)).Hours() / 24)
+	status := deriveSummaryStatus(remainingDays)
+	ruleDesc := fmt.Sprintf("T0 ngày %s + %d ngày làm việc", cycleStart.Format("2006-01-02"), config.DeadlineDays)
+	return &DeadlineSummaryDTO{
+		DeadlineMode:      DeadlineModePeriodic,
+		StartDate:         ptrString(cycleStart.Format("2006-01-02")),
+		TentativeDeadline: ptrString(deadline.Format("2006-01-02")),
+		ActualDeadline:    ptrString(deadline.Format("2006-01-02")),
+		DeadlineDate:      ptrString(deadline.Format("2006-01-02")),
+		Duration:          &config.DeadlineDays,
+		DurationType:      ptrString(DurationTypeWorkingDays),
+		RemainingDays:     &remainingDays,
+		Status:            status,
+		RuleDescription:   ptrString(ruleDesc),
+		Timezone:          ptrString(c.location.String()),
+	}, nil
+}
+
+// computeCycleStart returns the start date of the current period for periodic templates.
+// Priority: company.CycleAnchorMonth/Day (if non-zero) overrides config.CycleAnchorMonth/Day.
+// Confirmed behaviour (per business contract 2026-05-29):
+//   - monthly: anchor_day of the current calendar month (always current month)
+//   - quarterly: first day of the current fiscal quarter based on anchor_month
+//   - yearly: most recent past occurrence of anchor_month/anchor_day
+func (c *DeadlineCalculator) computeCycleStart(config *TemplateDeadlineConfig, company CompanyDeadlineContext, now time.Time) time.Time {
+	// Determine effective anchor — company preference overrides template default.
+	anchorMonth := config.CycleAnchorMonth
+	anchorDay := config.CycleAnchorDay
+	if company.CycleAnchorMonth > 0 {
+		anchorMonth = company.CycleAnchorMonth
+	}
+	if company.CycleAnchorDay > 0 {
+		anchorDay = company.CycleAnchorDay
+	}
+	if anchorMonth <= 0 || anchorMonth > 12 {
+		anchorMonth = 1
+	}
+	if anchorDay <= 0 || anchorDay > 28 {
+		anchorDay = 1
+	}
+
+	switch config.FrequencyUnit {
+	case "monthly":
+		// cycleStart = anchor_day of current month (per confirmed business contract)
+		return time.Date(now.Year(), now.Month(), anchorDay, 0, 0, 0, 0, c.location)
+
+	case "quarterly":
+		// Compute which fiscal quarter we are in, based on anchorMonth.
+		// monthOffset: how many months since the last fiscal year start
+		monthOffset := (int(now.Month()) - anchorMonth + 12) % 12
+		quarterIndex := monthOffset / 3 // 0-based fiscal quarter index
+		cycleStartMonth := anchorMonth + quarterIndex*3
+		year := now.Year()
+		if cycleStartMonth > 12 {
+			cycleStartMonth -= 12
+			// No year decrement: roll-over within same calendar year
+			// (e.g. anchor=4, Q4 starts Jan → cycleStartMonth=1 ≤ now.Month is checked below)
+		}
+		// If computed start month is ahead of current month in the calendar year,
+		// the cycle started in the previous calendar year.
+		if cycleStartMonth > int(now.Month()) {
+			year--
+		}
+		return time.Date(year, time.Month(cycleStartMonth), 1, 0, 0, 0, 0, c.location)
+
+	case "yearly":
+		// Most recent past occurrence of anchor_month/anchor_day.
+		anchorThisYear := time.Date(now.Year(), time.Month(anchorMonth), anchorDay, 0, 0, 0, 0, c.location)
+		if anchorThisYear.After(now) {
+			return time.Date(now.Year()-1, time.Month(anchorMonth), anchorDay, 0, 0, 0, 0, c.location)
+		}
+		return anchorThisYear
+
+	default:
+		return stripTime(now)
+	}
+}
