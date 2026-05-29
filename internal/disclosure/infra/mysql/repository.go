@@ -404,7 +404,6 @@ func (r *Repository) GetTypeDetail(ctx context.Context, companyID, typeID string
 			COALESCE(v.special_cases, ''), COALESCE(v.report_content, ''), COALESCE(v.required_docs, ''),
 			COALESCE(v.deadline_rule, ''), COALESCE(v.periodicity, ''), COALESCE(v.channels_text, ''), COALESCE(v.beneficiaries, ''),
 			COALESCE(v.receiving_authorities, ''), COALESCE(v.format, ''), COALESCE(v.legal_risks_text, ''), COALESCE(v.general_info, ''),
-			COALESCE(v.reminder_milestones_json, JSON_ARRAY()),
 			COALESCE(v.deadline_config_json, JSON_OBJECT()),
 			COALESCE(v.legal_bases_json, JSON_ARRAY()),
 			COALESCE(v.checklist_json, JSON_ARRAY()),
@@ -415,7 +414,6 @@ func (r *Repository) GetTypeDetail(ctx context.Context, companyID, typeID string
 	`, typeID, companyID)
 	var item disclosureapp.DisclosureTypeDTO
 	var ownerCompanyID sql.NullString
-	var reminderMilestonesRaw []byte
 	var deadlineConfigRaw []byte
 	var legalBasesRaw []byte
 	var checklistRaw []byte
@@ -428,7 +426,6 @@ func (r *Repository) GetTypeDetail(ctx context.Context, companyID, typeID string
 		&item.SpecialCases, &item.ReportContent, &item.RequiredDocs,
 		&item.DeadlineRule, &item.Periodicity, &item.ChannelsText, &item.Beneficiaries,
 		&item.ReceivingAuthorities, &item.Format, &item.LegalRisksText, &item.GeneralInfo,
-		&reminderMilestonesRaw,
 		&deadlineConfigRaw,
 		&legalBasesRaw,
 		&checklistRaw,
@@ -447,9 +444,6 @@ func (r *Repository) GetTypeDetail(ctx context.Context, companyID, typeID string
 		item.Scope = "global"
 	} else {
 		item.Scope = "company"
-	}
-	if err := decodeStringListJSON(reminderMilestonesRaw, &item.ReminderMilestones); err != nil {
-		return nil, err
 	}
 	if err := decodeDeadlineConfigJSON(deadlineConfigRaw, &item.DeadlineConfig); err != nil {
 		return nil, err
@@ -488,7 +482,6 @@ func (r *Repository) GetTypeVersionDetail(ctx context.Context, companyID, typeID
 			COALESCE(v.special_cases, ''), COALESCE(v.report_content, ''), COALESCE(v.required_docs, ''),
 			COALESCE(v.deadline_rule, ''), COALESCE(v.periodicity, ''), COALESCE(v.channels_text, ''), COALESCE(v.beneficiaries, ''),
 			COALESCE(v.receiving_authorities, ''), COALESCE(v.format, ''), COALESCE(v.legal_risks_text, ''), COALESCE(v.general_info, ''),
-			COALESCE(v.reminder_milestones_json, JSON_ARRAY()),
 			COALESCE(v.deadline_config_json, JSON_OBJECT()),
 			COALESCE(v.legal_bases_json, JSON_ARRAY()),
 			COALESCE(v.checklist_json, JSON_ARRAY()),
@@ -499,7 +492,6 @@ func (r *Repository) GetTypeVersionDetail(ctx context.Context, companyID, typeID
 	`, typeID, versionNo, companyID)
 	var item disclosureapp.DisclosureTypeDTO
 	var ownerCompanyID sql.NullString
-	var reminderMilestonesRaw []byte
 	var deadlineConfigRaw []byte
 	var legalBasesRaw []byte
 	var checklistRaw []byte
@@ -511,7 +503,6 @@ func (r *Repository) GetTypeVersionDetail(ctx context.Context, companyID, typeID
 		&item.SpecialCases, &item.ReportContent, &item.RequiredDocs,
 		&item.DeadlineRule, &item.Periodicity, &item.ChannelsText, &item.Beneficiaries,
 		&item.ReceivingAuthorities, &item.Format, &item.LegalRisksText, &item.GeneralInfo,
-		&reminderMilestonesRaw,
 		&deadlineConfigRaw,
 		&legalBasesRaw,
 		&checklistRaw,
@@ -530,9 +521,6 @@ func (r *Repository) GetTypeVersionDetail(ctx context.Context, companyID, typeID
 		item.Scope = "global"
 	} else {
 		item.Scope = "company"
-	}
-	if err := decodeStringListJSON(reminderMilestonesRaw, &item.ReminderMilestones); err != nil {
-		return nil, err
 	}
 	if err := decodeDeadlineConfigJSON(deadlineConfigRaw, &item.DeadlineConfig); err != nil {
 		return nil, err
@@ -621,10 +609,6 @@ func (r *Repository) UpsertTypeVersion(ctx context.Context, req disclosureapp.Up
 	if err != nil {
 		return nil, fmt.Errorf("marshal tags: %w", err)
 	}
-	reminderMilestonesJSON, err := json.Marshal(req.ReminderMilestones)
-	if err != nil {
-		return nil, fmt.Errorf("marshal reminder milestones: %w", err)
-	}
 	legalBasesJSON, err := json.Marshal(req.LegalBases)
 	if err != nil {
 		return nil, fmt.Errorf("marshal legal bases: %w", err)
@@ -647,14 +631,14 @@ func (r *Repository) UpsertTypeVersion(ctx context.Context, req disclosureapp.Up
 		INSERT INTO disclosure_type_versions (
 			type_id, version_no, name, category, template_category, deadline_strategy, description, legal_basis, applicability, implementation_content,
 			implementation_notes, special_cases, report_content, required_docs, deadline_rule, periodicity, channels_text,
-			beneficiaries, receiving_authorities, format, legal_risks_text, general_info, reminder_milestones_json, deadline_config_json, legal_bases_json, checklist_json, tags_json, change_note, updated_by, activated_at
+			beneficiaries, receiving_authorities, format, legal_risks_text, general_info, deadline_config_json, legal_bases_json, checklist_json, tags_json, change_note, updated_by, activated_at
 		) VALUES (?, ?, ?, ?, ?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
 		          NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
-		          NULLIF(?, ''), NULLIF(?, ''), CAST(? AS JSON), CAST(? AS JSON), CAST(? AS JSON), CAST(? AS JSON), CAST(? AS JSON), NULLIF(?, ''), ?, ?)
+		          NULLIF(?, ''), NULLIF(?, ''), CAST(? AS JSON), CAST(? AS JSON), CAST(? AS JSON), CAST(? AS JSON), NULLIF(?, ''), ?, ?)
 	`, req.TypeID, nextVersion, req.Name, req.Category, req.TemplateCategory, req.DeadlineStrategy, req.Description,
 		req.LegalBasis, req.Applicability, req.ImplementationContent, req.ImplementationNotes, req.SpecialCases, req.ReportContent,
 		req.RequiredDocs, req.DeadlineRule, req.Periodicity, req.ChannelsText, req.Beneficiaries, req.ReceivingAuthorities,
-		req.Format, req.LegalRisksText, req.GeneralInfo, string(reminderMilestonesJSON), string(deadlineConfigJSON), string(legalBasesJSON), string(checklistJSON), string(tagsJSON), changeNote, req.Subject.UserID, now)
+		req.Format, req.LegalRisksText, req.GeneralInfo, string(deadlineConfigJSON), string(legalBasesJSON), string(checklistJSON), string(tagsJSON), changeNote, req.Subject.UserID, now)
 	if err != nil {
 		return nil, err
 	}

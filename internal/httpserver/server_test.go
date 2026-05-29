@@ -1653,7 +1653,6 @@ func TestIntegration_disclosureTypeCatalog_adminUpsertAndVersioning(t *testing.T
 		"description":         "Updated template description",
 		"deadline_rule":       "Theo cấu hình admin phiên bản 2",
 		"periodicity":         "monthly",
-		"reminder_milestones": []string{"Trước 5 ngày", "Trước 3 ngày", "Trước 1 ngày"},
 		"legal_bases": []map[string]any{
 			{
 				"id":         "lb-001",
@@ -1732,11 +1731,10 @@ func TestIntegration_disclosureTypeCatalog_adminUpsertAndVersioning(t *testing.T
 		t.Fatalf("detail status=%d body=%s", detailRes.StatusCode, readBody(t, detailRes.Body))
 	}
 	var detailOut struct {
-		VersionNo          int      `json:"version_no"`
-		Name               string   `json:"name"`
-		Tags               []string `json:"tags"`
-		ReminderMilestones []string `json:"reminder_milestones"`
-		LegalBases         []struct {
+		VersionNo  int      `json:"version_no"`
+		Name       string   `json:"name"`
+		Tags       []string `json:"tags"`
+		LegalBases []struct {
 			ID    string `json:"id"`
 			Title string `json:"title"`
 		} `json:"legal_bases"`
@@ -1766,9 +1764,6 @@ func TestIntegration_disclosureTypeCatalog_adminUpsertAndVersioning(t *testing.T
 	mustDecodeJSON(t, detailRes.Body, &detailOut)
 	if detailOut.VersionNo != upsertOut.VersionNo || detailOut.Name != "Template nghĩa vụ tùy chỉnh V2" {
 		t.Fatalf("unexpected detail after upsert: %+v", detailOut)
-	}
-	if len(detailOut.ReminderMilestones) != 3 || detailOut.ReminderMilestones[0] != "Trước 5 ngày" {
-		t.Fatalf("unexpected reminder_milestones after upsert: %+v", detailOut.ReminderMilestones)
 	}
 	if len(detailOut.LegalBases) != 1 || detailOut.LegalBases[0].ID != "lb-001" {
 		t.Fatalf("unexpected legal_bases after upsert: %+v", detailOut.LegalBases)
@@ -1814,8 +1809,7 @@ func TestIntegration_disclosureTypeCatalog_adminUpsertAndVersioning(t *testing.T
 	var versionDetailOut struct {
 		VersionNo          int      `json:"version_no"`
 		Name               string   `json:"name"`
-		ReminderMilestones []string `json:"reminder_milestones"`
-		LegalBases         []struct {
+		LegalBases []struct {
 			ID string `json:"id"`
 		} `json:"legal_bases"`
 		Checklist []struct {
@@ -1828,9 +1822,6 @@ func TestIntegration_disclosureTypeCatalog_adminUpsertAndVersioning(t *testing.T
 	mustDecodeJSON(t, versionDetailRes.Body, &versionDetailOut)
 	if versionDetailOut.VersionNo != upsertOut.VersionNo || len(versionDetailOut.Blocks) != 8 {
 		t.Fatalf("unexpected admin version detail: %+v", versionDetailOut)
-	}
-	if len(versionDetailOut.ReminderMilestones) != 3 || versionDetailOut.ReminderMilestones[2] != "Trước 1 ngày" {
-		t.Fatalf("unexpected version reminder_milestones: %+v", versionDetailOut.ReminderMilestones)
 	}
 	if len(versionDetailOut.LegalBases) != 1 || versionDetailOut.LegalBases[0].ID != "lb-001" {
 		t.Fatalf("unexpected version legal_bases: %+v", versionDetailOut.LegalBases)

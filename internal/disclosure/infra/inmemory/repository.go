@@ -253,7 +253,6 @@ func (r *Repository) GetTypeDetail(_ context.Context, companyID, typeID string) 
 		cp.OwnerCompanyID = r.catalogScope[typeID]
 	}
 	cp.Tags = slices.Clone(item.Tags)
-	cp.ReminderMilestones = slices.Clone(item.ReminderMilestones)
 	cp.LegalBases = slices.Clone(item.LegalBases)
 	cp.Checklist = slices.Clone(item.Checklist)
 	cp.Blocks = cloneTemplateBlocks(item.Blocks)
@@ -300,7 +299,6 @@ func (r *Repository) GetTypeVersionDetail(_ context.Context, companyID, typeID s
 		cp.OwnerCompanyID = r.catalogScope[typeID]
 	}
 	cp.Tags = slices.Clone(item.Tags)
-	cp.ReminderMilestones = slices.Clone(item.ReminderMilestones)
 	cp.LegalBases = slices.Clone(item.LegalBases)
 	cp.Checklist = slices.Clone(item.Checklist)
 	cp.Blocks = cloneTemplateBlocks(item.Blocks)
@@ -350,7 +348,6 @@ func (r *Repository) UpsertTypeVersion(_ context.Context, req disclosureapp.Upse
 		LegalRisksText:        req.LegalRisksText,
 		GeneralInfo:           req.GeneralInfo,
 		DeadlineConfig:        req.DeadlineConfig,
-		ReminderMilestones:    slices.Clone(req.ReminderMilestones),
 		LegalBases:            slices.Clone(req.LegalBases),
 		Checklist:             slices.Clone(req.Checklist),
 		Tags:                  slices.Clone(req.Tags),

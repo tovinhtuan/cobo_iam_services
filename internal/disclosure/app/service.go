@@ -431,7 +431,6 @@ func (s *service) UpsertTypeVersion(ctx context.Context, req UpsertTypeVersionRe
 	req.DeadlineStrategy = strings.TrimSpace(req.DeadlineStrategy)
 	req.DeadlineRule = strings.TrimSpace(req.DeadlineRule)
 	req.Periodicity = strings.TrimSpace(req.Periodicity)
-	req.ReminderMilestones = sanitizeStringList(req.ReminderMilestones)
 	req.LegalBases = sanitizeLegalBases(req.LegalBases)
 	req.Checklist = sanitizeChecklist(req.Checklist)
 	if req.TypeID == "" {

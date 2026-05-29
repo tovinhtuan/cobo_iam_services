@@ -262,7 +262,6 @@ type UpsertTypeVersionRequest struct {
 	Format                string                  `json:"format"`
 	LegalRisksText        string                  `json:"legal_risks_text"`
 	GeneralInfo           string                  `json:"general_info"`
-	ReminderMilestones    []string                `json:"reminder_milestones"`
 	LegalBases            []LegalBasisDTO         `json:"legal_bases"`
 	Checklist             []ChecklistItemDTO      `json:"checklist"`
 	Tags                  []string                `json:"tags"`
