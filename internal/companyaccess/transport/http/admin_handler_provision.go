@@ -38,11 +38,12 @@ func (h *AdminHandler) initializeCompany(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *AdminHandler) createSelfServiceCompany(w http.ResponseWriter, r *http.Request) {
+	// Business rule: verified+active users can create a new company.
+	// Access gate (emailVerified + accountStatus='active') is enforced in the service layer.
 	h.handleSelfServiceProvision(w, r, provisionRouteConfig{
-		requireSelfCreateEnabled: true,
-		idemScope:                "company.create",
-		idemHashOp:               "create",
-		auditAction:              "company.create_self_service",
+		idemScope:   "company.create",
+		idemHashOp:  "create",
+		auditAction: "company.create_self_service",
 		invoke: func(ctx context.Context, p companyProvisionBody, userID string) (*caapp.InitializeCompanyResult, error) {
 			return h.svc.CreateSelfServiceCompany(ctx, caapp.CreateSelfServiceCompanyRequest{
 				UserID: userID, CompanyName: p.CompanyName, TaxCode: p.TaxCode,
