@@ -96,12 +96,24 @@ type fakePeriodicCreator struct {
 	workflowInstanceID string
 	err                error
 	lastT0             *time.Time
+	lastPlannedDate    string
 	calls              int
 }
 
 func (f *fakePeriodicCreator) CreateAndSubmitRecord(_ context.Context, _, _, _, _ string, t0Date *time.Time) (string, string, error) {
 	f.calls++
 	f.lastT0 = t0Date
+	f.lastPlannedDate = ""
+	if f.err != nil {
+		return "", "", f.err
+	}
+	return f.recordID, f.workflowInstanceID, nil
+}
+
+func (f *fakePeriodicCreator) CreateAndSubmitRecordWithPlannedDate(_ context.Context, _, _, _, _ string, t0Date *time.Time, plannedDate string) (string, string, error) {
+	f.calls++
+	f.lastT0 = t0Date
+	f.lastPlannedDate = plannedDate
 	if f.err != nil {
 		return "", "", f.err
 	}
@@ -110,13 +122,14 @@ func (f *fakePeriodicCreator) CreateAndSubmitRecord(_ context.Context, _, _, _, 
 
 func TestMaterializePeriodicUsesCycleStartAsT0(t *testing.T) {
 	cycleStart := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+	dueDate := cycleStart.AddDate(0, 0, 7)
 	repo := newFakePeriodicRepo([]PeriodicCycleRow{{
 		CycleID:    "cycle-1",
 		TypeID:     "type-1",
 		CompanyID:  "co-1",
 		CycleLabel: "2026-05",
 		CycleStart: cycleStart,
-		DueDate:    cycleStart.AddDate(0, 0, 7),
+		DueDate:    dueDate,
 	}})
 	creator := &fakePeriodicCreator{recordID: "rec-1", workflowInstanceID: "wf-1"}
 
@@ -130,8 +143,58 @@ func TestMaterializePeriodicUsesCycleStartAsT0(t *testing.T) {
 	if creator.lastT0 == nil || !creator.lastT0.Equal(cycleStart) {
 		t.Fatalf("t0=%v want %v", creator.lastT0, cycleStart)
 	}
+	wantPlannedDate := dueDate.Format("2006-01-02")
+	if creator.lastPlannedDate != wantPlannedDate {
+		t.Fatalf("planned_date=%q want %q", creator.lastPlannedDate, wantPlannedDate)
+	}
 	if repo.completed["cycle-1"] != "rec-1" {
 		t.Fatalf("completed record=%q", repo.completed["cycle-1"])
+	}
+}
+
+func TestMaterializePeriodicSetsPlannedDateFromDueDate(t *testing.T) {
+	cycleStart := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
+	dueDate := time.Date(2026, 4, 29, 0, 0, 0, 0, time.UTC)
+	repo := newFakePeriodicRepo([]PeriodicCycleRow{{
+		CycleID:    "cycle-q2",
+		TypeID:     "type-qreport",
+		CompanyID:  "co-1",
+		CycleLabel: "2026-Q2",
+		CycleStart: cycleStart,
+		DueDate:    dueDate,
+	}})
+	creator := &fakePeriodicCreator{recordID: "rec-q2", workflowInstanceID: "wf-q2"}
+
+	n, err := materializePeriodicDisclosures(context.Background(), time.Now(), repo, creator)
+	if err != nil {
+		t.Fatalf("materialize: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("materialized=%d want 1", n)
+	}
+	if creator.lastPlannedDate != "2026-04-29" {
+		t.Fatalf("planned_date=%q want %q", creator.lastPlannedDate, "2026-04-29")
+	}
+}
+
+func TestMaterializePeriodicZeroDueDateEmptyPlannedDate(t *testing.T) {
+	cycleStart := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
+	repo := newFakePeriodicRepo([]PeriodicCycleRow{{
+		CycleID:    "cycle-zero",
+		TypeID:     "type-1",
+		CompanyID:  "co-1",
+		CycleLabel: "2026-Q2",
+		CycleStart: cycleStart,
+		DueDate:    time.Time{}, // zero: no due_date calculated
+	}})
+	creator := &fakePeriodicCreator{recordID: "rec-1", workflowInstanceID: "wf-1"}
+
+	_, err := materializePeriodicDisclosures(context.Background(), time.Now(), repo, creator)
+	if err != nil {
+		t.Fatalf("materialize: %v", err)
+	}
+	if creator.lastPlannedDate != "" {
+		t.Fatalf("expected empty planned_date for zero DueDate, got %q", creator.lastPlannedDate)
 	}
 }
 

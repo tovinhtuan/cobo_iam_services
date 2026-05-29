@@ -872,6 +872,10 @@ type PeriodicMaterializeRepository interface {
 // to allow worker to pass a system-actor creator without circular imports.
 type PeriodicRecordCreator interface {
 	CreateAndSubmitRecord(ctx context.Context, companyID, typeID, createdByMembershipID, title string, t0Date *time.Time) (recordID, workflowInstanceID string, err error)
+	// CreateAndSubmitRecordWithPlannedDate is the periodic materialize path that also sets
+	// disclosure_records.planned_date from the cycle's due_date.
+	// plannedDate must be YYYY-MM-DD (from periodic_cycles.due_date) or empty string (no-op).
+	CreateAndSubmitRecordWithPlannedDate(ctx context.Context, companyID, typeID, createdByMembershipID, title string, t0Date *time.Time, plannedDate string) (recordID, workflowInstanceID string, err error)
 }
 
 // PeriodicTypeRow is returned by ListActivePeriodicTypes.

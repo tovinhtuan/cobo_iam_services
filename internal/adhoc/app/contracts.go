@@ -50,6 +50,7 @@ type TypeCatalog interface {
 type CreateRecordOpts struct {
 	StepOverrides []WorkflowStepOverride // ad-hoc only
 	CycleStart    *time.Time             // periodic materialize (Batch 2)
+	PlannedDate   string                 // periodic: cycle due_date → disclosure_records.planned_date (YYYY-MM-DD); empty = not set
 }
 
 // RecordCreator is the cross-module interface the ad-hoc service uses to submit a disclosure record.

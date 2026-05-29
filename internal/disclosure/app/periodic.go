@@ -75,7 +75,11 @@ func materializePeriodicDisclosures(ctx context.Context, now time.Time, repo Per
 			continue
 		}
 		t0 := c.CycleStart
-		recordID, workflowInstanceID, err := creator.CreateAndSubmitRecord(ctx, c.CompanyID, c.TypeID, "m_system_worker", autoRecordTitle(c), &t0)
+		plannedDate := ""
+		if !c.DueDate.IsZero() {
+			plannedDate = c.DueDate.Format("2006-01-02")
+		}
+		recordID, workflowInstanceID, err := creator.CreateAndSubmitRecordWithPlannedDate(ctx, c.CompanyID, c.TypeID, "m_system_worker", autoRecordTitle(c), &t0, plannedDate)
 		if err != nil {
 			_ = repo.ReleasePeriodicCycleClaim(ctx, c.CycleID)
 			if workflowerrs.IsEmptyEffectiveWorkflow(err) {

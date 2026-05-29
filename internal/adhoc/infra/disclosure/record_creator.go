@@ -20,12 +20,24 @@ type RecordCreatorAdapter struct {
 	workflowOn bool
 }
 
-func NewRecordCreatorAdapter(svc disclosureapp.Service, workflowSvc workflowapp.Service, workflowEnabled bool) adhocapp.RecordCreator {
+// NewRecordCreatorAdapter returns *RecordCreatorAdapter, which satisfies both
+// adhocapp.RecordCreator and disclosureapp.PeriodicRecordCreator interfaces.
+func NewRecordCreatorAdapter(svc disclosureapp.Service, workflowSvc workflowapp.Service, workflowEnabled bool) *RecordCreatorAdapter {
 	return &RecordCreatorAdapter{svc: svc, workflow: workflowSvc, workflowOn: workflowEnabled && workflowSvc != nil}
 }
 
 func (a *RecordCreatorAdapter) CreateAndSubmitRecord(ctx context.Context, companyID, typeID, createdByMembershipID, title string, t0Date *time.Time) (string, string, error) {
 	return a.CreateAndSubmitRecordWithOpts(ctx, companyID, typeID, createdByMembershipID, title, t0Date, adhocapp.CreateRecordOpts{})
+}
+
+// CreateAndSubmitRecordWithPlannedDate is the periodic materialize path.
+// It sets disclosure_records.planned_date from the cycle's due_date so that
+// DeadlineAlert.dueDate can use Priority 1 (planned_date) instead of falling
+// back to DynamicRule (which uses COMPANY_ESTABLISHED_DATE — wrong for periodic).
+func (a *RecordCreatorAdapter) CreateAndSubmitRecordWithPlannedDate(ctx context.Context, companyID, typeID, createdByMembershipID, title string, t0Date *time.Time, plannedDate string) (string, string, error) {
+	return a.CreateAndSubmitRecordWithOpts(ctx, companyID, typeID, createdByMembershipID, title, t0Date, adhocapp.CreateRecordOpts{
+		PlannedDate: plannedDate,
+	})
 }
 
 func (a *RecordCreatorAdapter) CreateAndSubmitRecordWithOpts(ctx context.Context, companyID, typeID, createdByMembershipID, title string, t0Date *time.Time, opts adhocapp.CreateRecordOpts) (string, string, error) {
@@ -56,9 +68,10 @@ func (a *RecordCreatorAdapter) CreateAndSubmitRecordWithOpts(ctx context.Context
 	rec, err := a.svc.CreateRecord(ctx, disclosureapp.CreateRecordRequest{
 		Subject: sub,
 		Payload: disclosureapp.RecordPayload{
-			TypeID:  typeID,
-			Title:   title,
-			Content: title,
+			TypeID:      typeID,
+			Title:       title,
+			Content:     title,
+			PlannedDate: opts.PlannedDate, // set from cycle.due_date for periodic; empty for ad-hoc
 		},
 	})
 	if err != nil {
