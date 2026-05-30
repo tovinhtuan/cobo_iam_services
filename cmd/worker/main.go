@@ -137,6 +137,7 @@ func main() {
 			}, reminderemail.WithTemplateRendering(cfg.EmailTemplateSource, emailTemplateRegistry, emailRenderer))),
 			reminderapp.WithAlertConfigRepo(alertCfgRepo),
 			reminderapp.WithRecipientResolver(recipientResolver),
+			reminderapp.WithPublicWebBaseURL(cfg.PublicWebBaseURL),
 			reminderapp.WithMetrics(reminderobserve.NewPromMetrics()),
 			reminderapp.WithAlertHook(reminderobserve.AlertLogger{Log: log}),
 		)

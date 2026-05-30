@@ -22,6 +22,7 @@ type service struct {
 	alertHook         AlertHook
 	alertConfigRepo   AlertConfigRepository
 	recipientResolver RecipientResolver
+	publicWebBaseURL  string
 }
 
 type EmailSender interface {
@@ -63,6 +64,12 @@ func WithMilestoneScanner(ms MilestoneScanner) ServiceOption {
 func WithAlertConfigRepo(repo AlertConfigRepository) ServiceOption {
 	return func(s *service) {
 		s.alertConfigRepo = repo
+	}
+}
+
+func WithPublicWebBaseURL(url string) ServiceOption {
+	return func(s *service) {
+		s.publicWebBaseURL = strings.TrimRight(strings.TrimSpace(url), "/")
 	}
 }
 
@@ -324,10 +331,15 @@ func (s *service) prepareDispatch(ctx context.Context, c DispatchCandidate) (tem
 			payload["disclosure_title"] = title
 		}
 	}
-	// Map portal_url from existing "action_url" field (backward compat alias for new templates).
+	// Map portal_url from existing "action_url" field, prefixed with PUBLIC_WEB_BASE_URL.
 	if _, ok := payload["portal_url"]; !ok {
 		if actionURL, ok2 := payload["action_url"]; ok2 {
-			payload["portal_url"] = actionURL
+			relative := fmt.Sprint(actionURL)
+			if s.publicWebBaseURL != "" {
+				payload["portal_url"] = s.publicWebBaseURL + relative
+			} else {
+				payload["portal_url"] = relative
+			}
 		}
 	}
 
