@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head><meta charset="UTF-8"></head>
+<body style="font-family:sans-serif;color:#1a1a1a;line-height:1.6;max-width:600px;margin:0 auto;padding:24px">
+  <p>Kính gửi,</p>
+  <p>Đây là thông báo nhắc nhở tự động từ hệ thống CoBo Portal.</p>
+  <table style="border-collapse:collapse;width:100%;margin:16px 0">
+    <tr>
+      <td style="padding:8px 12px;background:#f5f5f5;font-weight:600;width:40%">Công ty</td>
+      <td style="padding:8px 12px;border:1px solid #e0e0e0">{{.company_name}}</td>
+    </tr>
+    <tr>
+      <td style="padding:8px 12px;background:#f5f5f5;font-weight:600">Nghĩa vụ công bố</td>
+      <td style="padding:8px 12px;border:1px solid #e0e0e0">{{.disclosure_title}}</td>
+    </tr>
+    <tr>
+      <td style="padding:8px 12px;background:#fff3cd;font-weight:600">Hạn nộp</td>
+      <td style="padding:8px 12px;border:1px solid #e0e0e0;font-weight:600;color:#b45309">{{.due_date}}</td>
+    </tr>
+  </table>
+  <p>Vui lòng truy cập hệ thống để hoàn thành nghĩa vụ công bố thông tin trước thời hạn:</p>
+  <p><a href="{{.portal_url}}" style="color:#2563eb">{{.portal_url}}</a></p>
+  <hr style="border:none;border-top:1px solid #e0e0e0;margin:24px 0">
+  <p style="font-size:12px;color:#6b7280">Email này được gửi tự động, vui lòng không trả lời trực tiếp.</p>
+</body>
+</html>

@@ -1,0 +1,19 @@
+Kính gửi,
+
+Đây là thông báo tự động từ hệ thống CoBo Portal.
+
+Một bước trong quy trình xử lý công bố thông tin cần được hoàn thành:
+
+Công ty: {{.company_name}}
+Nghĩa vụ công bố: {{.disclosure_title}}
+Bước cần xử lý: {{.step_name}}
+Hạn xử lý: {{.due_date}}
+
+Vui lòng truy cập hệ thống để xử lý bước này:
+
+{{.portal_url}}
+
+Lưu ý: Email này được gửi tự động, vui lòng không trả lời trực tiếp.
+
+Trân trọng,
+Hệ thống CoBo Portal

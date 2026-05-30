@@ -1,0 +1,16 @@
+Kính gửi,
+
+Đây là thông báo nhắc nhở tự động từ hệ thống CoBo Portal.
+
+Công ty: {{.company_name}}
+Nghĩa vụ công bố: {{.disclosure_title}}
+Hạn nộp: {{.due_date}}
+
+Vui lòng truy cập hệ thống để hoàn thành nghĩa vụ công bố thông tin trước thời hạn:
+
+{{.portal_url}}
+
+Lưu ý: Email này được gửi tự động, vui lòng không trả lời trực tiếp.
+
+Trân trọng,
+Hệ thống CoBo Portal
