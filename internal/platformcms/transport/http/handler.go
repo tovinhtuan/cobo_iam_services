@@ -18,6 +18,7 @@ import (
 	holidayapp "github.com/cobo/cobo_iam_services/internal/holiday/app"
 	iamapp "github.com/cobo/cobo_iam_services/internal/iam/app"
 	marketapp "github.com/cobo/cobo_iam_services/internal/marketreference/app"
+	platformcmsapp "github.com/cobo/cobo_iam_services/internal/platformcms/app"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 	"github.com/cobo/cobo_iam_services/internal/platform/httpx"
 )
@@ -33,6 +34,7 @@ type Handler struct {
 	disclosures        disclosureapp.Repository
 	holidaySvc         holidayapp.Service
 	listedCompanies    *marketapp.Service
+	alertConfigSvc     platformcmsapp.AlertConfigService
 	mediaRepo          cmsMediaRepository
 	mediaSigner        *cmsMediaSigner
 	mediaStorage       *cmsMediaDiskStorage
@@ -48,7 +50,7 @@ type MediaOptions struct {
 	PublicAPIBaseURL    string
 }
 
-func NewHandler(inspector iamapp.TokenInspector, authorizer authapp.Service, adminSvc companyaccessapp.AdminService, iamSvc iamapp.Service, auditSvc auditapp.Service, auditRepo auditapp.Repository, disclosureSvc disclosureapp.Service, disclosures disclosureapp.Repository, holidaySvc holidayapp.Service, listedCompanies *marketapp.Service, mediaOpts MediaOptions) *Handler {
+func NewHandler(inspector iamapp.TokenInspector, authorizer authapp.Service, adminSvc companyaccessapp.AdminService, iamSvc iamapp.Service, auditSvc auditapp.Service, auditRepo auditapp.Repository, disclosureSvc disclosureapp.Service, disclosures disclosureapp.Repository, holidaySvc holidayapp.Service, listedCompanies *marketapp.Service, alertConfigSvc platformcmsapp.AlertConfigService, mediaOpts MediaOptions) *Handler {
 	mediaStorage, err := newCMSMediaDiskStorage(mediaOpts.StorageDir)
 	if err != nil {
 		panic(err)
@@ -64,6 +66,7 @@ func NewHandler(inspector iamapp.TokenInspector, authorizer authapp.Service, adm
 		disclosures:        disclosures,
 		holidaySvc:         holidaySvc,
 		listedCompanies:    ensureListedCompaniesService(listedCompanies),
+		alertConfigSvc:     alertConfigSvc,
 		mediaRepo:          newCMSMediaRepository(mediaOpts.DB),
 		mediaSigner:        newCMSMediaSigner(mediaOpts.UploadSigningSecret, mediaOpts.UploadURLTTL),
 		mediaStorage:       mediaStorage,
@@ -119,6 +122,8 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	}
 	mux.HandleFunc("GET /api/v1/platform/cms/market/listed-companies", h.observe("cms.market.listed_companies.list", h.listListedCompanies))
 	mux.HandleFunc("GET /api/v1/platform/cms/market/listed-companies/{symbol}", h.observe("cms.market.listed_companies.get", h.getListedCompany))
+	mux.HandleFunc("GET /api/v1/platform/cms/templates/{typeId}/alert-config", h.observe("cms.templates.alert_config.get", h.getAlertConfig))
+	mux.HandleFunc("PUT /api/v1/platform/cms/templates/{typeId}/alert-config", h.observe("cms.templates.alert_config.put", h.putAlertConfig))
 }
 
 func ensureListedCompaniesService(svc *marketapp.Service) *marketapp.Service {

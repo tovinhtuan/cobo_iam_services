@@ -62,7 +62,9 @@ import (
 	outboxinmem "github.com/cobo/cobo_iam_services/internal/platform/outbox/inmemory"
 	outboxmysql "github.com/cobo/cobo_iam_services/internal/platform/outbox/mysql"
 	redispkg "github.com/cobo/cobo_iam_services/internal/platform/redis"
+	platformcmsapp "github.com/cobo/cobo_iam_services/internal/platformcms/app"
 	platformcmshttp "github.com/cobo/cobo_iam_services/internal/platformcms/transport/http"
+	reminderalertmysql "github.com/cobo/cobo_iam_services/internal/reminder/infra/mysql"
 	reminderapp "github.com/cobo/cobo_iam_services/internal/reminder/app"
 	reminderemail "github.com/cobo/cobo_iam_services/internal/reminder/infra/email"
 	reminderinmem "github.com/cobo/cobo_iam_services/internal/reminder/infra/inmemory"
@@ -404,7 +406,15 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 		adminHandler.WithIdempotency(idemStore, cfg.CompanyProvisionIdempotencyRequired)
 	}
 	adminHandler.WithSelfCreateEnabled(cfg.CompanySelfCreateEnabled)
-	platformCMSHandler := platformcmshttp.NewHandler(tokenManager, authSvc, adminSvc, iamSvc, auditSvc, auditRepo, disclosureSvc, disclosureRepo, holidaySvc, listedCompaniesSvc, platformcmshttp.MediaOptions{
+	var alertConfigSvc platformcmsapp.AlertConfigService
+	if pool != nil {
+		alertConfigSvc = platformcmsapp.NewAlertConfigService(
+			reminderalertmysql.NewAlertConfigRepository(pool),
+			notificationregistry.NewEmbedRegistry(),
+			pool,
+		)
+	}
+	platformCMSHandler := platformcmshttp.NewHandler(tokenManager, authSvc, adminSvc, iamSvc, auditSvc, auditRepo, disclosureSvc, disclosureRepo, holidaySvc, listedCompaniesSvc, alertConfigSvc, platformcmshttp.MediaOptions{
 		DB:                  pool,
 		UploadSigningSecret: cfg.CMSMediaUploadSigningSecret,
 		UploadURLTTL:        cfg.CMSMediaUploadURLTTL,
