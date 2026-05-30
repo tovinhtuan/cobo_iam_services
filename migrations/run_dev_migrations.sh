@@ -86,6 +86,8 @@ seed_dev_identity_authorization.sql
 0080_periodic_cycles_cycle_start.up.sql
 0081_user_avatar.up.sql
 0082_companies_self_service_provisioning.up.sql
+0083_company_type_preference_cycle_anchor.up.sql
+0084_alert_template_configs.up.sql
 "
 
 mysql_exec() {
