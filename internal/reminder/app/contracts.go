@@ -225,3 +225,29 @@ type DispatchResultInput struct {
 	ProviderMessageID string
 	IncrementAttempt  bool
 }
+
+// AlertTemplateConfig maps a (disclosure type, alert kind) pair to an email template key.
+// alert_kind values: "deadline" | "workflow_step"
+type AlertTemplateConfig struct {
+	ID          int64
+	TypeID      string
+	AlertKind   string
+	TemplateKey string
+	Enabled     bool
+	CreatedBy   string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+// AlertKind constants for AlertTemplateConfig.AlertKind.
+const (
+	AlertKindDeadline     = "deadline"
+	AlertKindWorkflowStep = "workflow_step"
+)
+
+// AlertConfigRepository persists alert_template_configs rows.
+type AlertConfigRepository interface {
+	GetByTypeID(ctx context.Context, typeID string) ([]AlertTemplateConfig, error)
+	GetByTypeAndKind(ctx context.Context, typeID, alertKind string) (*AlertTemplateConfig, error)
+	Upsert(ctx context.Context, in AlertTemplateConfig) error
+}

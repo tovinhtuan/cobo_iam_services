@@ -38,6 +38,8 @@ const (
 	CodeGroupNotInDepartment   Code = "GROUP_NOT_IN_DEPARTMENT"
 	CodeNotFound               Code = "NOT_FOUND"
 	CodeServiceUnavailable     Code = "SERVICE_UNAVAILABLE"
+	CodeTemplateKeyNotFound    Code = "TEMPLATE_KEY_NOT_FOUND"
+	CodeDisclosureTypeNotFound Code = "DISCLOSURE_TYPE_NOT_FOUND"
 )
 
 // HTTPError is returned to clients as JSON { "error": { ... } }.
