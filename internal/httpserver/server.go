@@ -387,6 +387,16 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 		reminderapp.WithAuditor(reminderobserve.AuditRecorder{Svc: auditSvc, IDG: id}),
 		reminderapp.WithAlertHook(reminderobserve.AlertLogger{Log: log}),
 	)
+	if pool != nil {
+		alertCfgRepo := reminderalertmysql.NewAlertConfigRepository(pool)
+		membershipQuerier := reminderalertmysql.NewMembershipEmailQuerier(pool)
+		stepReader := reminderalertmysql.NewGlobalWorkflowStepReader(pool)
+		resolver := reminderapp.NewRecipientResolver(reminderConfigRepo, stepReader, membershipQuerier, log)
+		reminderSvcOpts = append(reminderSvcOpts,
+			reminderapp.WithAlertConfigRepo(alertCfgRepo),
+			reminderapp.WithRecipientResolver(resolver),
+		)
+	}
 	reminderSvc := reminderapp.NewService(reminderConfigRepo, reminderOccurrenceRepo, reminderAttemptRepo, reminderSvcOpts...)
 	reminderHandler := reminderhttp.NewHandler(reminderSvc, tokenManager, "", cfg.Env)
 	var adminOpts []companyaccessapp.AdminOption

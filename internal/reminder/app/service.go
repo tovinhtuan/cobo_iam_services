@@ -12,14 +12,16 @@ import (
 )
 
 type service struct {
-	configRepo      ConfigRepository
-	occurrenceRepo  OccurrenceRepository
-	attemptRepo     AttemptRepository
-	milestoneScanner MilestoneScanner
-	emailSender     EmailSender
-	metrics         Metrics
-	auditor         Auditor
-	alertHook       AlertHook
+	configRepo        ConfigRepository
+	occurrenceRepo    OccurrenceRepository
+	attemptRepo       AttemptRepository
+	milestoneScanner  MilestoneScanner
+	emailSender       EmailSender
+	metrics           Metrics
+	auditor           Auditor
+	alertHook         AlertHook
+	alertConfigRepo   AlertConfigRepository
+	recipientResolver RecipientResolver
 }
 
 type EmailSender interface {
@@ -55,6 +57,18 @@ func WithAlertHook(hook AlertHook) ServiceOption {
 func WithMilestoneScanner(ms MilestoneScanner) ServiceOption {
 	return func(s *service) {
 		s.milestoneScanner = ms
+	}
+}
+
+func WithAlertConfigRepo(repo AlertConfigRepository) ServiceOption {
+	return func(s *service) {
+		s.alertConfigRepo = repo
+	}
+}
+
+func WithRecipientResolver(r RecipientResolver) ServiceOption {
+	return func(s *service) {
+		s.recipientResolver = r
 	}
 }
 
@@ -211,19 +225,26 @@ func (s *service) DispatchDueOccurrences(ctx context.Context, now time.Time, lim
 		if !c.ScheduledAt.IsZero() && now.UTC().Sub(c.ScheduledAt.UTC()) > 10*time.Minute {
 			s.metrics.IncCounter("reminder_sla_breach_total", map[string]string{"window": "10m"})
 			s.alertHook.Notify(ctx, "REMINDER_SLA_BREACH", map[string]string{
-				"window":       "10m",
+				"window":        "10m",
 				"occurrence_id": c.OccurrenceID,
 			}, map[string]any{
 				"scheduled_at": c.ScheduledAt.UTC().Format(time.RFC3339),
 				"now":          now.UTC().Format(time.RFC3339),
 			})
 		}
+
+		templateCode, recipients, payload, skip := s.prepareDispatch(ctx, c)
+		if skip {
+			result.Skipped++
+			continue
+		}
+
 		resp, dispatchErr := s.DispatchOccurrence(ctx, DispatchOccurrenceRequest{
-			OccurrenceID:   c.OccurrenceID,
-			IdempotencyKey: c.IdempotencyKey,
-			TemplateCode:   c.TemplateCode,
-			TemplatePayload: c.TemplatePayload,
-			RecipientEmails: c.RecipientEmails,
+			OccurrenceID:    c.OccurrenceID,
+			IdempotencyKey:  c.IdempotencyKey,
+			TemplateCode:    templateCode,
+			TemplatePayload: payload,
+			RecipientEmails: recipients,
 		})
 		if dispatchErr != nil {
 			result.Failed++
@@ -240,6 +261,71 @@ func (s *service) DispatchDueOccurrences(ctx context.Context, now time.Time, lim
 	}
 	s.metrics.ObserveLatency("reminder_dispatch_due_ms", time.Since(start).Milliseconds(), map[string]string{"status": "done"})
 	return result, nil
+}
+
+// prepareDispatch resolves the template key, recipients, and payload for a candidate.
+// Returns skip=true if the occurrence should be skipped without dispatching.
+// Never panics; all errors are handled gracefully.
+func (s *service) prepareDispatch(ctx context.Context, c DispatchCandidate) (templateCode string, recipients []string, payload map[string]any, skip bool) {
+	templateCode = c.TemplateCode
+	recipients = c.RecipientEmails
+	payload = c.TemplatePayload
+	if payload == nil {
+		payload = map[string]any{}
+	}
+
+	// Step 1: Lookup alert config when available.
+	if s.alertConfigRepo != nil && c.DisclosureTypeID != "" {
+		alertKind := AlertKindDeadline
+		if c.ScopeType == ScopeTypeWorkflowStep {
+			alertKind = AlertKindWorkflowStep
+		}
+		cfg, err := s.alertConfigRepo.GetByTypeAndKind(ctx, c.DisclosureTypeID, alertKind)
+		if err == nil && cfg != nil {
+			if !cfg.Enabled {
+				// Admin explicitly disabled alert for this type → skip.
+				return "", nil, nil, true
+			}
+			if cfg.TemplateKey != "" {
+				templateCode = cfg.TemplateKey
+			}
+		}
+		// cfg == nil (no config) → fall through with original TemplateCode (backward compat).
+		// err != nil (DB error) → fall through, log nothing (don't mask existing behavior).
+	}
+
+	// Step 2: Resolve recipients when not pre-populated.
+	if len(recipients) == 0 && s.recipientResolver != nil && c.CompanyID != "" {
+		var resolveErr error
+		if c.ScopeType == ScopeTypeWorkflowStep {
+			recipients, resolveErr = s.recipientResolver.ResolveForWorkflowStep(ctx, c.CompanyID, c.ScopeID)
+		} else {
+			recipients, resolveErr = s.recipientResolver.ResolveForDeadline(ctx, c.CompanyID, c.ScopeID)
+		}
+		if resolveErr != nil || len(recipients) == 0 {
+			// No recipients resolved → skip (DispatchOccurrence would fail with PERMANENT error).
+			return "", nil, nil, true
+		}
+	}
+
+	// Step 3: Augment payload with fields required by new templates (additive, backward-safe).
+	if c.CompanyName != "" {
+		payload["company_name"] = c.CompanyName
+	}
+	payload["due_date"] = c.ScheduledAt.UTC().Format("02/01/2006")
+	if c.ScopeType == ScopeTypeWorkflowStep && c.ScopeID != "" {
+		if _, ok := payload["step_name"]; !ok {
+			payload["step_name"] = c.ScopeID
+		}
+	}
+	// Map disclosure_title from existing "title" field in payload (backward compat alias).
+	if _, ok := payload["disclosure_title"]; !ok {
+		if title, ok2 := payload["title"]; ok2 {
+			payload["disclosure_title"] = title
+		}
+	}
+
+	return templateCode, recipients, payload, false
 }
 
 func (s *service) dispatchClaimedOccurrence(ctx context.Context, occurrence *ReminderOccurrenceDTO, req DispatchOccurrenceRequest) (*DispatchOccurrenceResponse, error) {

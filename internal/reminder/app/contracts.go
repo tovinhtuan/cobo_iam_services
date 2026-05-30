@@ -171,6 +171,7 @@ type DispatchDueResult struct {
 	Sent      int `json:"sent"`
 	Retried   int `json:"retried"`
 	Failed    int `json:"failed"`
+	Skipped   int `json:"skipped"`
 }
 
 type SeedOccurrenceRequest struct {

@@ -107,6 +107,10 @@ func reminderTemplateKey(templateCode string) (string, bool) {
 	case "REMINDER_DISCLOSURE_DUE":
 		return "reminder.disclosure_deadline", true
 	default:
+		// Pass-through: treat non-legacy codes as direct template keys (e.g. reminder.deadline_approaching).
+		if key := strings.TrimSpace(templateCode); key != "" {
+			return key, true
+		}
 		return "", false
 	}
 }
