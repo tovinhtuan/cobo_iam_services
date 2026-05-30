@@ -120,6 +120,10 @@ func main() {
 		emailTemplateRegistry := notificationregistry.NewEmbedRegistry()
 		emailRenderer := notificationapp.NewEmailRenderer()
 		reminderRepo := remindermysql.NewRepository(sqlDB)
+		alertCfgRepo := remindermysql.NewAlertConfigRepository(sqlDB)
+		membershipQuerier := remindermysql.NewMembershipEmailQuerier(sqlDB)
+		stepReader := remindermysql.NewGlobalWorkflowStepReader(sqlDB)
+		recipientResolver := reminderapp.NewRecipientResolver(reminderRepo, stepReader, membershipQuerier, log)
 		reminderScheduler = reminderapp.NewService(
 			reminderRepo,
 			reminderRepo,
@@ -131,6 +135,8 @@ func main() {
 				Pass: cfg.SMTPPassword,
 				From: cfg.SMTPFrom,
 			}, reminderemail.WithTemplateRendering(cfg.EmailTemplateSource, emailTemplateRegistry, emailRenderer))),
+			reminderapp.WithAlertConfigRepo(alertCfgRepo),
+			reminderapp.WithRecipientResolver(recipientResolver),
 			reminderapp.WithMetrics(reminderobserve.NewPromMetrics()),
 			reminderapp.WithAlertHook(reminderobserve.AlertLogger{Log: log}),
 		)

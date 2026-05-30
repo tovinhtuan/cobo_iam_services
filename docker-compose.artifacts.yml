@@ -177,6 +177,7 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM: ${SMTP_FROM:-no-reply@cobo.local}
+      EMAIL_TEMPLATE_SOURCE: embed
     volumes:
       - ./bin:/app/bin:ro
       - ./configs:/app/configs:ro

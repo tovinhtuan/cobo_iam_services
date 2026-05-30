@@ -324,6 +324,12 @@ func (s *service) prepareDispatch(ctx context.Context, c DispatchCandidate) (tem
 			payload["disclosure_title"] = title
 		}
 	}
+	// Map portal_url from existing "action_url" field (backward compat alias for new templates).
+	if _, ok := payload["portal_url"]; !ok {
+		if actionURL, ok2 := payload["action_url"]; ok2 {
+			payload["portal_url"] = actionURL
+		}
+	}
 
 	return templateCode, recipients, payload, false
 }
