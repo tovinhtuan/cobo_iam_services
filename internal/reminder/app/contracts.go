@@ -126,13 +126,38 @@ type DispatchOccurrenceRequest struct {
 }
 
 type DispatchCandidate struct {
-	OccurrenceID      string
-	IdempotencyKey    string
-	TemplateCode      string
-	TemplatePayload   map[string]any
-	RecipientEmails   []string
-	CurrentAttempt    int
-	ScheduledAt       time.Time
+	OccurrenceID    string
+	IdempotencyKey  string
+	TemplateCode    string
+	TemplatePayload map[string]any
+	RecipientEmails []string
+	CurrentAttempt  int
+	ScheduledAt     time.Time
+	// Fields added for alert dispatch (Phase 4):
+	ScopeType        ScopeType // "DISCLOSURE" | "WORKFLOW_STEP"
+	ScopeID          string    // disclosure_id for DISCLOSURE; step_id for WORKFLOW_STEP
+	CompanyID        string    // company_id from disclosure_records or workflow_instances
+	CompanyName      string    // company_name from companies
+	DisclosureTypeID string    // type_id from disclosure_types (via disclosure_records)
+}
+
+// RecipientResolver resolves the email recipient list for a dispatch candidate.
+// Implementations must enforce tenant isolation: only return emails belonging to companyID.
+type RecipientResolver interface {
+	ResolveForDeadline(ctx context.Context, companyID, scopeID string) ([]string, error)
+	ResolveForWorkflowStep(ctx context.Context, companyID, stepID string) ([]string, error)
+}
+
+// MembershipEmailQuerier performs low-level membership → email lookups.
+// All methods must filter by companyID to enforce tenant isolation.
+type MembershipEmailQuerier interface {
+	EmailsByDepartments(ctx context.Context, companyID string, departmentIDs []string) ([]string, error)
+	EmailsByRoles(ctx context.Context, companyID string, roleIDs []string, departmentID string) ([]string, error)
+}
+
+// WorkflowStepReader looks up global workflow step config by step_id.
+type WorkflowStepReader interface {
+	GetStepByID(ctx context.Context, stepID string) (*WorkflowStepConfig, error)
 }
 
 type DispatchOccurrenceResponse struct {

@@ -369,6 +369,10 @@ func (r *Repository) ListDispatchCandidates(ctx context.Context, now time.Time, 
 	if limit <= 0 {
 		limit = 50
 	}
+	// JOIN strategy for cross-scope type_id and company resolution:
+	//  - DISCLOSURE scope:   o.disclosure_id = disclosure_records.record_id  → dr
+	//  - WORKFLOW_STEP scope: o.disclosure_id = workflow_instances.workflow_instance_id → wi → dr2
+	// reminder_configs is LEFT JOIN so workflow_step occurrences without a config still appear.
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT o.occurrence_id, o.idempotency_key, o.attempt_count, o.scheduled_at,
 		       c.recipients_json,
@@ -378,12 +382,20 @@ func (r *Repository) ListDispatchCandidates(ctx context.Context, now time.Time, 
 		       COALESCE(dr.title, ''),
 		       COALESCE(dr.planned_date, DATE(o.scheduled_at)),
 		       COALESCE(dr.status, ''),
-		       COALESCE(dr.company_id, '')
+		       COALESCE(dr.company_id, wi.company_id, ''),
+		       COALESCE(dr.type_id, dr2.type_id, ''),
+		       COALESCE(comp.company_name, '')
 		FROM reminder_occurrences o
-		INNER JOIN reminder_configs c
+		LEFT JOIN reminder_configs c
 		  ON c.scope_type = o.scope_type AND c.scope_id = o.scope_id
 		LEFT JOIN disclosure_records dr
 		  ON dr.record_id = o.disclosure_id
+		LEFT JOIN workflow_instances wi
+		  ON wi.workflow_instance_id = o.disclosure_id
+		LEFT JOIN disclosure_records dr2
+		  ON dr2.record_id = wi.record_id
+		LEFT JOIN companies comp
+		  ON comp.company_id = COALESCE(dr.company_id, wi.company_id)
 		WHERE (
 		    o.status = 'PENDING' AND o.scheduled_at <= ?
 		) OR (
@@ -403,6 +415,7 @@ func (r *Repository) ListDispatchCandidates(ctx context.Context, now time.Time, 
 		var recipientsJSON []byte
 		var disclosureID, scopeType, scopeID, title, status, companyID string
 		var deadlineDate time.Time
+		var disclosureTypeID, companyName string
 		if err := rows.Scan(
 			&c.OccurrenceID,
 			&c.IdempotencyKey,
@@ -416,12 +429,20 @@ func (r *Repository) ListDispatchCandidates(ctx context.Context, now time.Time, 
 			&deadlineDate,
 			&status,
 			&companyID,
+			&disclosureTypeID,
+			&companyName,
 		); err != nil {
 			return nil, fmt.Errorf("scan dispatch candidate: %w", err)
 		}
 		_ = json.Unmarshal(recipientsJSON, &c.RecipientEmails)
 		c.TemplateCode = "REMINDER_DISCLOSURE_DUE"
 		c.TemplatePayload = buildReminderTemplatePayload(disclosureID, scopeType, scopeID, title, deadlineDate, c.ScheduledAt, status, companyID)
+		// Populate new Phase 4 fields.
+		c.ScopeType = reminderapp.ScopeType(scopeType)
+		c.ScopeID = scopeID
+		c.CompanyID = companyID
+		c.CompanyName = companyName
+		c.DisclosureTypeID = disclosureTypeID
 		out = append(out, c)
 	}
 	if err := rows.Err(); err != nil {
