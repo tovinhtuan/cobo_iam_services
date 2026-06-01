@@ -316,7 +316,6 @@ func (r *AdminRepository) ListUsersWithNoMembership(ctx context.Context) ([]caap
 		FROM users u
 		WHERE NOT EXISTS (SELECT 1 FROM memberships m WHERE m.user_id = u.user_id)
 		ORDER BY u.created_at DESC
-		LIMIT 500
 	`)
 	if err != nil {
 		return nil, err

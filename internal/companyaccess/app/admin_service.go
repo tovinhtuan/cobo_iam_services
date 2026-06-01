@@ -854,33 +854,66 @@ func (s *adminService) TransferOwnership(ctx context.Context, req TransferOwners
 	}
 	return s.repo.SetMembershipPrimaryAdmin(ctx, req.TargetMembershipID)
 }
-func (s *adminService) ListCompanyMemberships(ctx context.Context, req ListCompanyMembershipsRequest) ([]MembershipView, error) {
+func (s *adminService) ListCompanyMemberships(ctx context.Context, req ListCompanyMembershipsRequest) (ListCompanyMembershipsResult, error) {
+	page := req.Page
+	if page < 1 {
+		page = 1
+	}
+	pageSize := req.PageSize
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+
+	var all []MembershipView
 	if req.ListWithoutCompany {
 		isWebAdmin, err := s.hasPermission(ctx, req.Subject, "rbac.manage")
 		if err != nil {
-			return nil, err
+			return ListCompanyMembershipsResult{}, err
 		}
 		if !isWebAdmin {
-			return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "listing users without company requires rbac.manage", nil)
+			return ListCompanyMembershipsResult{}, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "listing users without company requires rbac.manage", nil)
 		}
 		if err := s.authorizeMembershipInvite(ctx, req.Subject, req.Subject.CompanyID); err != nil {
-			return nil, err
+			return ListCompanyMembershipsResult{}, err
 		}
-		return s.repo.ListUsersWithNoMembership(ctx)
+		items, err := s.repo.ListUsersWithNoMembership(ctx)
+		if err != nil {
+			return ListCompanyMembershipsResult{}, err
+		}
+		all = items
+	} else {
+		cid := strings.TrimSpace(req.CompanyID)
+		if err := s.authorizeMembershipInvite(ctx, req.Subject, cid); err != nil {
+			return ListCompanyMembershipsResult{}, err
+		}
+		scope, err := s.resolveInviteScope(ctx, req.Subject)
+		if err != nil {
+			return ListCompanyMembershipsResult{}, err
+		}
+		items, err := s.repo.ListMembershipsByCompany(ctx, cid)
+		if err != nil {
+			return ListCompanyMembershipsResult{}, err
+		}
+		filtered, err := s.filterMembershipsByInviteScope(items, scope)
+		if err != nil {
+			return ListCompanyMembershipsResult{}, err
+		}
+		all = filtered
 	}
-	cid := strings.TrimSpace(req.CompanyID)
-	if err := s.authorizeMembershipInvite(ctx, req.Subject, cid); err != nil {
-		return nil, err
+
+	total := len(all)
+	start := (page - 1) * pageSize
+	if start >= total {
+		return ListCompanyMembershipsResult{Items: []MembershipView{}, Total: total, Page: page, PageSize: pageSize}, nil
 	}
-	scope, err := s.resolveInviteScope(ctx, req.Subject)
-	if err != nil {
-		return nil, err
+	end := start + pageSize
+	if end > total {
+		end = total
 	}
-	items, err := s.repo.ListMembershipsByCompany(ctx, cid)
-	if err != nil {
-		return nil, err
-	}
-	return s.filterMembershipsByInviteScope(items, scope)
+	return ListCompanyMembershipsResult{Items: all[start:end], Total: total, Page: page, PageSize: pageSize}, nil
 }
 func (s *adminService) AssignRole(ctx context.Context, req AssignRoleRequest) error {
 	if err := s.authorize(ctx, req.Subject, "admin.membership.role.assign", req.MembershipID); err != nil {

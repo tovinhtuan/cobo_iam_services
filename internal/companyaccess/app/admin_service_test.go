@@ -223,11 +223,11 @@ func TestAdminService_ListCompanyMemberships_ListWithoutCompany(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListCompanyMemberships: %v", err)
 	}
-	if len(items) != 1 {
-		t.Fatalf("len(items)=%d want 1", len(items))
+	if len(items.Items) != 1 {
+		t.Fatalf("len(items)=%d want 1", len(items.Items))
 	}
-	if items[0].UserID != "orphan-user" {
-		t.Fatalf("user_id=%q", items[0].UserID)
+	if items.Items[0].UserID != "orphan-user" {
+		t.Fatalf("user_id=%q", items.Items[0].UserID)
 	}
 }
 
@@ -649,10 +649,10 @@ func TestListCompanyMemberships_RolesEnriched(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListCompanyMemberships: %v", err)
 	}
-	if len(items) == 0 {
+	if len(items.Items) == 0 {
 		t.Fatal("expected at least 1 membership")
 	}
-	member := items[0]
+	member := items.Items[0]
 	if len(member.Roles) == 0 {
 		t.Fatalf("expected Roles to be enriched, got empty. MembershipID=%q", member.MembershipID)
 	}

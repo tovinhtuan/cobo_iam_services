@@ -1255,8 +1255,11 @@ func (h *Handler) adminUsers(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, nil, err)
 		return
 	}
-	companyID, listWithout := cmsQueryCompanyScope(r.URL.Query(), sub.CompanyID)
-	items, err := h.adminSvc.ListCompanyMemberships(r.Context(), companyaccessapp.ListCompanyMembershipsRequest{
+	q := r.URL.Query()
+	companyID, listWithout := cmsQueryCompanyScope(q, sub.CompanyID)
+	page, _ := strconv.Atoi(strings.TrimSpace(q.Get("page")))
+	pageSize, _ := strconv.Atoi(strings.TrimSpace(q.Get("page_size")))
+	result, err := h.adminSvc.ListCompanyMemberships(r.Context(), companyaccessapp.ListCompanyMembershipsRequest{
 		Subject: companyaccessapp.AdminSubject{
 			UserID:       sub.Sub,
 			MembershipID: sub.MembershipID,
@@ -1264,12 +1267,16 @@ func (h *Handler) adminUsers(w http.ResponseWriter, r *http.Request) {
 		},
 		CompanyID:          companyID,
 		ListWithoutCompany: listWithout,
+		Page:               page,
+		PageSize:           pageSize,
 	})
 	if err != nil {
 		httpx.WriteError(w, nil, err)
 		return
 	}
-	writeEnvelope(w, http.StatusOK, map[string]any{"items": items}, map[string]any{"total": len(items)})
+	writeEnvelope(w, http.StatusOK, map[string]any{"items": result.Items}, map[string]any{
+		"total": result.Total, "page": result.Page, "page_size": result.PageSize,
+	})
 }
 
 func (h *Handler) createAdminUser(w http.ResponseWriter, r *http.Request) {

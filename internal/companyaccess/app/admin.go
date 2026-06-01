@@ -24,7 +24,7 @@ type AdminService interface {
 	CreateMembership(ctx context.Context, req CreateMembershipRequest) (*MembershipView, error)
 	UpdateMembership(ctx context.Context, req UpdateMembershipRequest) (*MembershipView, error)
 	DeleteMembership(ctx context.Context, req DeleteMembershipRequest) error
-	ListCompanyMemberships(ctx context.Context, req ListCompanyMembershipsRequest) ([]MembershipView, error)
+	ListCompanyMemberships(ctx context.Context, req ListCompanyMembershipsRequest) (ListCompanyMembershipsResult, error)
 
 	AssignRole(ctx context.Context, req AssignRoleRequest) error
 	RemoveRole(ctx context.Context, req RemoveRoleRequest) error
@@ -410,6 +410,18 @@ type ListCompanyMembershipsRequest struct {
 	// ListWithoutCompany is true when the client sent an explicit empty company_id (e.g. ?company_id=):
 	// list users that have no membership rows (platform rbac.manage only).
 	ListWithoutCompany bool
+	// Page is 1-indexed. Zero or negative values default to 1.
+	Page int
+	// PageSize is the number of items per page. Zero or negative values default to 20; max 100.
+	PageSize int
+}
+
+// ListCompanyMembershipsResult holds a paginated membership list.
+type ListCompanyMembershipsResult struct {
+	Items    []MembershipView
+	Total    int
+	Page     int
+	PageSize int
 }
 
 type AssignRoleRequest struct {
