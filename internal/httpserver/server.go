@@ -64,6 +64,9 @@ import (
 	redispkg "github.com/cobo/cobo_iam_services/internal/platform/redis"
 	platformcmsapp "github.com/cobo/cobo_iam_services/internal/platformcms/app"
 	platformcmshttp "github.com/cobo/cobo_iam_services/internal/platformcms/transport/http"
+	inappapp "github.com/cobo/cobo_iam_services/internal/inappnotification/app"
+	inappmysql "github.com/cobo/cobo_iam_services/internal/inappnotification/infra/mysql"
+	inappmem "github.com/cobo/cobo_iam_services/internal/inappnotification/infra/inmemory"
 	reminderalertmysql "github.com/cobo/cobo_iam_services/internal/reminder/infra/mysql"
 	reminderapp "github.com/cobo/cobo_iam_services/internal/reminder/app"
 	reminderemail "github.com/cobo/cobo_iam_services/internal/reminder/infra/email"
@@ -284,7 +287,22 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 		UploadTTL:     cfg.UserAvatarSignedURLTTL,
 		PublicBaseURL: cfg.PublicAPIBaseURL,
 	})
+	// In-app notification service
+	var inAppRepo inappapp.Repository = inappmem.NewRepository()
+	var inAppUserIDQuerier inappapp.UserIDQuerier
+	if pool != nil {
+		inAppRepo = inappmysql.NewRepository(pool)
+		inAppUserIDQuerier = inappmysql.NewUserIDQuerier(pool)
+	}
+	inAppSvc := inappapp.NewService(inAppRepo, inAppUserIDQuerier, log)
+
+	// Wire in-app notifier into IAM service after both are created.
+	if n, ok := iamSvc.(iamapp.InAppNotifierSetter); ok {
+		n.SetInAppNotifier(inAppSvc)
+	}
+
 	meHandler := iamhttp.NewMeHandler(iamHandler, identity, memberQuery, authSvc, adminRepo, pool, iamSvc, loginPWD, avatarSvc, cfg.PublicAPIBaseURL)
+	meHandler.WithInAppNotifications(inAppSvc)
 
 	var disclosureRepo disclosureapp.Repository = disclosureinmem.NewRepository()
 	var workflowRepo workflowapp.Repository = workflowinmem.NewRepository()
@@ -397,6 +415,7 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 			reminderapp.WithRecipientResolver(resolver),
 		)
 	}
+	reminderSvcOpts = append(reminderSvcOpts, reminderapp.WithInAppCreator(&reminderInAppBridge{svc: inAppSvc}))
 	reminderSvc := reminderapp.NewService(reminderConfigRepo, reminderOccurrenceRepo, reminderAttemptRepo, reminderSvcOpts...)
 	reminderHandler := reminderhttp.NewHandler(reminderSvc, tokenManager, "", cfg.Env)
 	var adminOpts []companyaccessapp.AdminOption
@@ -501,6 +520,52 @@ func muxRegisterHealthAndIAM(
 	}
 	deadlineAlertsHandler.Register(mux)
 	return nil
+}
+
+// reminderInAppBridge adapts inappapp.Service to reminderapp.InAppNotificationCreator.
+type reminderInAppBridge struct {
+	svc inappapp.Service
+}
+
+func (b *reminderInAppBridge) CreateForReminderDispatch(ctx context.Context, c reminderapp.DispatchCandidate) error {
+	kind := inappapp.KindReminderDeadline
+	if c.ScopeType == reminderapp.ScopeTypeWorkflowStep {
+		kind = inappapp.KindReminderWorkflow
+	}
+	title := "Nhắc nhở CBTT"
+	if v, ok := c.TemplatePayload["disclosure_title"].(string); ok && v != "" {
+		if c.ScopeType == reminderapp.ScopeTypeWorkflowStep {
+			step := ""
+			if s, ok2 := c.TemplatePayload["step_name"].(string); ok2 && s != "" {
+				step = s
+			}
+			if step != "" {
+				title = "Bước phê duyệt đến hạn: " + step
+			} else {
+				title = "Bước phê duyệt đến hạn: " + v
+			}
+		} else {
+			title = "Sắp đến hạn CBTT: " + v
+		}
+	}
+	body := ""
+	if v, ok := c.TemplatePayload["due_date"].(string); ok && v != "" {
+		body = "Deadline: " + v
+	}
+	// resource_id is disclosure_id for DISCLOSURE scope; empty for WORKFLOW_STEP (no direct link)
+	resourceID := ""
+	if c.ScopeType == reminderapp.ScopeTypeDisclosure {
+		resourceID = c.ScopeID
+	}
+	return b.svc.CreateForReminder(ctx, inappapp.ReminderInAppRequest{
+		CompanyID:       c.CompanyID,
+		Kind:            kind,
+		Title:           title,
+		Body:            body,
+		ResourceType:    inappapp.ResourceTypeDisclosure,
+		ResourceID:      resourceID,
+		RecipientEmails: c.RecipientEmails,
+	})
 }
 
 func requestIDMiddleware(_ *slog.Logger, next http.Handler) http.Handler {

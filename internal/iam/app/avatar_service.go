@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -15,27 +14,10 @@ import (
 	"github.com/google/uuid"
 )
 
-// AvatarUploadIntentRequest is the body for POST /me/avatar/upload-intent.
-type AvatarUploadIntentRequest struct {
-	FileName    string
-	ContentType string
-	SizeBytes   int64
-}
-
-// AvatarUploadIntentResult is returned after a successful upload intent.
-type AvatarUploadIntentResult struct {
-	AssetID   string
-	UploadURL string
-	ExpiresAt time.Time
-}
-
-// AvatarCompleteResult is returned after finalize.
-type AvatarCompleteResult struct {
-	AssetID     string
-	ObjectKey   string
-	ContentType string
-	SizeBytes   int64
-	State       string
+// AvatarUploadMultipartResult is returned after a successful multipart upload.
+type AvatarUploadMultipartResult struct {
+	AvatarURL       string
+	AvatarUpdatedAt time.Time
 }
 
 // AvatarServiceConfig wires avatar upload dependencies.
@@ -77,28 +59,22 @@ func NewAvatarService(cfg AvatarServiceConfig) *AvatarService {
 	}
 }
 
-// CreateUploadIntent validates input, creates a pending asset, and returns a signed PUT URL.
-// baseURL is the public API origin (no trailing slash), used to build upload_url.
-func (s *AvatarService) CreateUploadIntent(ctx context.Context, userID, baseURL string, req AvatarUploadIntentRequest) (*AvatarUploadIntentResult, error) {
-	if s == nil || s.repo == nil || s.signer == nil {
+// UploadMultipart validates, writes binary to storage, and updates the user's active avatar in one step.
+// baseURL is the public API origin (no trailing slash), used to build the signed content URL returned in the result.
+func (s *AvatarService) UploadMultipart(ctx context.Context, userID, baseURL, contentType string, body io.Reader, sizeBytes int64) (*AvatarUploadMultipartResult, error) {
+	if s == nil || s.repo == nil || s.storage == nil || s.signer == nil {
 		return nil, perr.NewHTTPError(http.StatusServiceUnavailable, perr.CodeInternal, "avatar upload not configured", nil)
 	}
 	userID = strings.TrimSpace(userID)
 	if userID == "" {
 		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "user required", nil)
 	}
-	contentType := strings.ToLower(strings.TrimSpace(req.ContentType))
-	if contentType == "" || req.SizeBytes <= 0 {
-		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "content_type and size_bytes are required", nil)
-	}
+	contentType = strings.ToLower(strings.TrimSpace(contentType))
 	if err := s.validateContentType(contentType); err != nil {
 		return nil, err
 	}
-	if err := s.validateSize(req.SizeBytes); err != nil {
+	if err := s.validateSize(sizeBytes); err != nil {
 		return nil, err
-	}
-	if sanitizeAvatarFileName(req.FileName) == "" {
-		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "file_name is required", nil)
 	}
 
 	assetID := "asset_" + strings.ReplaceAll(uuid.NewString(), "-", "")
@@ -108,50 +84,35 @@ func (s *AvatarService) CreateUploadIntent(ctx context.Context, userID, baseURL 
 		return nil, err
 	}
 
-	now := time.Now().UTC()
-	exp := now.Add(s.uploadTTL)
-	uploadPath := avatarUploadPath(assetID)
-	signIn := mediaupload.SignInput{
-		Purpose:     mediaupload.PurposeUserAvatarUpload,
-		OwnerID:     userID,
-		AssetID:     assetID,
-		Method:      http.MethodPut,
-		Path:        uploadPath,
-		ContentType: contentType,
-		SizeBytes:   req.SizeBytes,
-		ExpiresAt:   exp,
-	}
-	sig := s.signer.Sign(signIn)
-	uploadURL := s.buildSignedURL(strings.TrimRight(strings.TrimSpace(baseURL), "/"), uploadPath, map[string]string{
-		"exp":          fmt.Sprintf("%d", exp.Unix()),
-		"sig":          sig,
-		"user_id":      userID,
-		"method":       http.MethodPut,
-		"content_type": contentType,
-		"size_bytes":   fmt.Sprintf("%d", req.SizeBytes),
-	})
+	prev, _ := s.repo.GetUserAvatar(ctx, userID)
 
-	asset := UserMediaAsset{
-		AssetID:     assetID,
-		UserID:      userID,
-		ObjectKey:   objectKey,
-		ContentType: contentType,
-		SizeBytes:   req.SizeBytes,
-		State:       "pending_upload",
-		ExpiresAt:   exp,
-		CreatedAt:   now,
+	written, err := s.storage.Write(objectKey, io.LimitReader(body, sizeBytes+1))
+	if err != nil {
+		return nil, perr.NewHTTPError(http.StatusInternalServerError, perr.CodeInternal, "failed to persist avatar", err)
 	}
-	if err := s.repo.CreatePendingAsset(ctx, asset); err != nil {
+	if written > sizeBytes {
+		_ = s.storage.Delete(objectKey)
+		return nil, perr.NewHTTPError(http.StatusRequestEntityTooLarge, perr.CodeInvalidRequest, "file too large", nil)
+	}
+
+	if err := s.repo.SetUserAvatar(ctx, userID, objectKey, contentType); err != nil {
+		_ = s.storage.Delete(objectKey)
 		return nil, err
 	}
-	return &AvatarUploadIntentResult{
-		AssetID:   assetID,
-		UploadURL: uploadURL,
-		ExpiresAt: exp,
+	if prev != nil && prev.ObjectKey != "" && prev.ObjectKey != objectKey {
+		_ = s.storage.Delete(prev.ObjectKey)
+	}
+
+	now := time.Now().UTC()
+	exp := now.Add(s.uploadTTL)
+	avatarURL := s.BuildSignedContentURL(userID, baseURL, exp)
+	return &AvatarUploadMultipartResult{
+		AvatarURL:       avatarURL,
+		AvatarUpdatedAt: now,
 	}, nil
 }
 
-// VerifySignature checks the HMAC for a signed upload or content URL.
+// VerifySignature checks the HMAC for a signed content URL.
 func (s *AvatarService) VerifySignature(sig string, in mediaupload.SignInput) bool {
 	if s == nil || s.signer == nil {
 		return false
@@ -160,104 +121,6 @@ func (s *AvatarService) VerifySignature(sig string, in mediaupload.SignInput) bo
 		return false
 	}
 	return s.signer.Verify(sig, in)
-}
-
-// GetAssetForSignedUpload loads a pending asset for the authenticated upload path.
-func (s *AvatarService) GetAssetForSignedUpload(ctx context.Context, userID, assetID string) (*UserMediaAsset, error) {
-	asset, err := s.getOwnedAsset(ctx, userID, assetID)
-	if err != nil {
-		return nil, err
-	}
-	if asset.State != "pending_upload" {
-		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeInvalidRequest, "avatar asset is not pending upload", nil)
-	}
-	if time.Now().UTC().After(asset.ExpiresAt) {
-		return nil, perr.NewHTTPError(http.StatusUnauthorized, perr.CodeSessionExpired, "signed upload url expired", nil)
-	}
-	return asset, nil
-}
-
-// WriteSignedUpload persists the binary for a pending asset.
-func (s *AvatarService) WriteSignedUpload(ctx context.Context, asset *UserMediaAsset, contentType string, maxSize int64, body io.Reader) error {
-	if s == nil || s.storage == nil {
-		return perr.NewHTTPError(http.StatusServiceUnavailable, perr.CodeInternal, "avatar storage not configured", nil)
-	}
-	if asset == nil {
-		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "asset required", nil)
-	}
-	contentType = strings.ToLower(strings.TrimSpace(contentType))
-	if err := s.validateContentType(contentType); err != nil {
-		return err
-	}
-	if asset.ContentType != contentType {
-		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "content_type mismatch", nil)
-	}
-	limit := asset.SizeBytes
-	if maxSize > 0 && maxSize < limit {
-		limit = maxSize
-	}
-	if limit <= 0 || limit > s.maxBytes {
-		return perr.NewHTTPError(http.StatusRequestEntityTooLarge, perr.CodeInvalidRequest, "file too large", nil)
-	}
-	if err := validateAvatarObjectKey(asset.ObjectKey, asset.UserID); err != nil {
-		return err
-	}
-	written, err := s.storage.Write(asset.ObjectKey, io.LimitReader(body, limit+1))
-	if err != nil {
-		return perr.NewHTTPError(http.StatusInternalServerError, perr.CodeInternal, "failed to persist avatar upload", err)
-	}
-	if written > limit {
-		_ = s.storage.Delete(asset.ObjectKey)
-		return perr.NewHTTPError(http.StatusRequestEntityTooLarge, perr.CodeInvalidRequest, "file too large", nil)
-	}
-	if written != asset.SizeBytes {
-		_ = s.storage.Delete(asset.ObjectKey)
-		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "uploaded payload size mismatch", nil)
-	}
-	_ = ctx
-	return nil
-}
-
-// Complete marks the asset ready and updates the user's active avatar.
-func (s *AvatarService) Complete(ctx context.Context, userID, assetID string) (*AvatarCompleteResult, error) {
-	if s == nil || s.repo == nil || s.storage == nil {
-		return nil, perr.NewHTTPError(http.StatusServiceUnavailable, perr.CodeInternal, "avatar upload not configured", nil)
-	}
-	asset, err := s.getOwnedAsset(ctx, userID, assetID)
-	if err != nil {
-		return nil, err
-	}
-	if asset.State != "pending_upload" {
-		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeInvalidRequest, "avatar asset is not pending upload", nil)
-	}
-	if time.Now().UTC().After(asset.ExpiresAt) {
-		return nil, perr.NewHTTPError(http.StatusUnauthorized, perr.CodeSessionExpired, "upload intent expired", nil)
-	}
-	if !s.storage.Exists(asset.ObjectKey) {
-		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeInvalidRequest, "avatar binary not uploaded yet", nil)
-	}
-
-	prev, _ := s.repo.GetUserAvatar(ctx, userID)
-	if err := s.repo.MarkAssetReady(ctx, userID, assetID); err != nil {
-		return nil, err
-	}
-	if err := s.repo.MarkUserReadyAssetsDeleted(ctx, userID, assetID); err != nil {
-		return nil, err
-	}
-	if err := s.repo.SetUserAvatar(ctx, userID, asset.ObjectKey, asset.ContentType); err != nil {
-		return nil, err
-	}
-	if prev != nil && prev.ObjectKey != "" && prev.ObjectKey != asset.ObjectKey {
-		_ = s.storage.Delete(prev.ObjectKey)
-	}
-
-	return &AvatarCompleteResult{
-		AssetID:     asset.AssetID,
-		ObjectKey:   asset.ObjectKey,
-		ContentType: asset.ContentType,
-		SizeBytes:   asset.SizeBytes,
-		State:       "ready",
-	}, nil
 }
 
 // Delete removes the user's avatar (idempotent).
@@ -356,17 +219,6 @@ func (s *AvatarService) BuildSignedContentURL(userID, baseURL string, exp time.T
 	})
 }
 
-func (s *AvatarService) getOwnedAsset(ctx context.Context, userID, assetID string) (*UserMediaAsset, error) {
-	asset, err := s.repo.GetAssetByUser(ctx, userID, assetID)
-	if err != nil {
-		return nil, err
-	}
-	if asset.UserID != userID {
-		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "avatar asset access denied", nil)
-	}
-	return asset, nil
-}
-
 func (s *AvatarService) validateContentType(contentType string) error {
 	if len(s.allowedTypes) == 0 {
 		return nil
@@ -401,10 +253,6 @@ func (s *AvatarService) buildSignedURL(baseURL, path string, query map[string]st
 	return u.String()
 }
 
-func avatarUploadPath(assetID string) string {
-	return "/api/v1/me/avatar/upload/" + url.PathEscape(strings.TrimSpace(assetID))
-}
-
 func extFromContentType(contentType string) string {
 	switch strings.ToLower(strings.TrimSpace(contentType)) {
 	case "image/png":
@@ -416,16 +264,6 @@ func extFromContentType(contentType string) string {
 	default:
 		return "bin"
 	}
-}
-
-func sanitizeAvatarFileName(name string) string {
-	base := strings.TrimSpace(filepath.Base(name))
-	base = strings.ReplaceAll(base, " ", "_")
-	base = strings.ReplaceAll(base, "..", "")
-	if base == "." || base == "/" || base == `\` {
-		return ""
-	}
-	return base
 }
 
 func validateAvatarObjectKey(objectKey, userID string) error {

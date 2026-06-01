@@ -59,11 +59,11 @@ func (s *MembershipQueryService) GetActiveMembership(ctx context.Context, userID
 
 func (s *MembershipQueryService) GetMembershipRoles(ctx context.Context, membershipID string) ([]string, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT r.role_code
+		SELECT r.role_name
 		FROM membership_roles mr
 		INNER JOIN roles r ON r.role_id = mr.role_id
 		WHERE mr.membership_id = ? AND mr.status = 'active' AND r.status = 'active'
-		ORDER BY r.role_code
+		ORDER BY r.role_name
 	`, membershipID)
 	if err != nil {
 		return nil, err

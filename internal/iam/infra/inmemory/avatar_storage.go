@@ -62,3 +62,14 @@ func (s *AvatarStorage) Bytes(objectKey string) []byte {
 func (s *AvatarStorage) WriteBytes(objectKey string, data []byte) {
 	_, _ = s.Write(objectKey, bytes.NewReader(data))
 }
+
+// Keys returns all stored object keys (test helper).
+func (s *AvatarStorage) Keys() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	keys := make([]string, 0, len(s.files))
+	for k := range s.files {
+		keys = append(keys, k)
+	}
+	return keys
+}

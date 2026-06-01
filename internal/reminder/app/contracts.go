@@ -271,6 +271,12 @@ const (
 	AlertKindWorkflowStep = "workflow_step"
 )
 
+// InAppNotificationCreator creates in-app notifications after a reminder is dispatched.
+// Implementations must be safe to call fire-and-forget; errors must not propagate to caller.
+type InAppNotificationCreator interface {
+	CreateForReminderDispatch(ctx context.Context, candidate DispatchCandidate) error
+}
+
 // AlertConfigRepository persists alert_template_configs rows.
 type AlertConfigRepository interface {
 	GetByTypeID(ctx context.Context, typeID string) ([]AlertTemplateConfig, error)

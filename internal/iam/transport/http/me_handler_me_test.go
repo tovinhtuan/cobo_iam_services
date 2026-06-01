@@ -1,11 +1,15 @@
 package http
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/textproto"
 	"strings"
 	"testing"
 	"time"
@@ -103,17 +107,13 @@ func TestMeHandler_GET_me_noAvatar(t *testing.T) {
 }
 
 func TestMeHandler_GET_me_withAvatar_signedURL(t *testing.T) {
-	me, svc, store := newMeHandlerForGETMe(t, auditinmem.NewRepository())
+	me, svc, _ := newMeHandlerForGETMe(t, auditinmem.NewRepository())
 	mux := http.NewServeMux()
 	me.Register(mux)
 	ctx := context.Background()
 
-	out, _ := svc.CreateUploadIntent(ctx, "u_me", "http://api.test", iamapp.AvatarUploadIntentRequest{
-		FileName: "a.png", ContentType: "image/png", SizeBytes: 3,
-	})
-	asset, _ := svc.GetAssetForSignedUpload(ctx, "u_me", out.AssetID)
-	store.WriteBytes(asset.ObjectKey, []byte("xyz"))
-	_, _ = svc.Complete(ctx, "u_me", out.AssetID)
+	payload := []byte("xyz")
+	_, _ = svc.UploadMultipart(ctx, "u_me", "http://api.test", "image/png", strings.NewReader(string(payload)), int64(len(payload)))
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
 	req.Header.Set("Authorization", "Bearer test")
@@ -142,17 +142,13 @@ func TestMeHandler_GET_me_withAvatar_signedURL(t *testing.T) {
 }
 
 func TestMeHandler_GET_me_afterDelete_clearsAvatar(t *testing.T) {
-	me, svc, store := newMeHandlerForGETMe(t, auditinmem.NewRepository())
+	me, svc, _ := newMeHandlerForGETMe(t, auditinmem.NewRepository())
 	mux := http.NewServeMux()
 	me.Register(mux)
 	ctx := context.Background()
 
-	out, _ := svc.CreateUploadIntent(ctx, "u_me", "http://api.test", iamapp.AvatarUploadIntentRequest{
-		FileName: "a.png", ContentType: "image/png", SizeBytes: 3,
-	})
-	asset, _ := svc.GetAssetForSignedUpload(ctx, "u_me", out.AssetID)
-	store.WriteBytes(asset.ObjectKey, []byte("xyz"))
-	_, _ = svc.Complete(ctx, "u_me", out.AssetID)
+	payload := []byte("xyz")
+	_, _ = svc.UploadMultipart(ctx, "u_me", "http://api.test", "image/png", strings.NewReader(string(payload)), int64(len(payload)))
 	_ = svc.Delete(ctx, "u_me")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
@@ -171,26 +167,22 @@ func TestMeHandler_avatarAuditEvents(t *testing.T) {
 	mux := http.NewServeMux()
 	me.Register(mux)
 
-	intentReq := httptest.NewRequest(http.MethodPost, "/api/v1/me/avatar/upload-intent", strings.NewReader(`{"file_name":"a.png","content_type":"image/png","size_bytes":3}`))
-	intentReq.Header.Set("Authorization", "Bearer test")
-	intentReq.Header.Set("Content-Type", "application/json")
-	intentRec := httptest.NewRecorder()
-	mux.ServeHTTP(intentRec, intentReq)
-	var intentOut struct {
-		AssetID   string `json:"asset_id"`
-		UploadURL string `json:"upload_url"`
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	ph := make(textproto.MIMEHeader)
+	ph.Set("Content-Disposition", fmt.Sprintf(`form-data; name="avatar"; filename="%s"`, "a.png"))
+	ph.Set("Content-Type", "image/png")
+	fw, _ := mw.CreatePart(ph)
+	_, _ = fw.Write([]byte("abc"))
+	_ = mw.Close()
+	uploadReq := httptest.NewRequest(http.MethodPost, "/api/v1/me/avatar", &buf)
+	uploadReq.Header.Set("Authorization", "Bearer test")
+	uploadReq.Header.Set("Content-Type", mw.FormDataContentType())
+	uploadRec := httptest.NewRecorder()
+	mux.ServeHTTP(uploadRec, uploadReq)
+	if uploadRec.Code != http.StatusOK {
+		t.Fatalf("upload status=%d body=%s", uploadRec.Code, uploadRec.Body.String())
 	}
-	_ = json.NewDecoder(intentRec.Body).Decode(&intentOut)
-
-	putReq, _ := http.NewRequest(http.MethodPut, intentOut.UploadURL, strings.NewReader("abc"))
-	putReq.Header.Set("Content-Type", "image/png")
-	putRec := httptest.NewRecorder()
-	mux.ServeHTTP(putRec, putReq)
-
-	completeReq := httptest.NewRequest(http.MethodPost, "/api/v1/me/avatar/"+intentOut.AssetID+"/complete", nil)
-	completeReq.Header.Set("Authorization", "Bearer test")
-	completeRec := httptest.NewRecorder()
-	mux.ServeHTTP(completeRec, completeReq)
 
 	delReq := httptest.NewRequest(http.MethodDelete, "/api/v1/me/avatar", nil)
 	delReq.Header.Set("Authorization", "Bearer test")
@@ -204,19 +196,8 @@ func TestMeHandler_avatarAuditEvents(t *testing.T) {
 	actions := make(map[string]bool)
 	for _, e := range entries {
 		actions[e.Action] = true
-		if e.Action == "user.avatar.upload.intent" {
-			if e.Metadata["asset_id"] != intentOut.AssetID {
-				t.Fatalf("intent metadata=%v", e.Metadata)
-			}
-			if _, ok := e.Metadata["upload_url"]; ok {
-				t.Fatal("audit must not log signed upload_url")
-			}
-			if _, ok := e.Metadata["sig"]; ok {
-				t.Fatal("audit must not log sig")
-			}
-		}
 	}
-	for _, want := range []string{"user.avatar.upload.intent", "user.avatar.upload.complete", "user.avatar.delete"} {
+	for _, want := range []string{"user.avatar.upload", "user.avatar.delete"} {
 		if !actions[want] {
 			t.Fatalf("missing audit action %q; got %v", want, actions)
 		}

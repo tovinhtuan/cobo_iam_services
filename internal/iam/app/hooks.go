@@ -116,6 +116,25 @@ func WithRegistrationDisabled(disabled bool) ServiceOption {
 	}
 }
 
+// InAppNotifier creates in-app notifications for auth events (invitation, email verification).
+// Implementations must be safe to call fire-and-forget; nil = disabled.
+type InAppNotifier interface {
+	CreateForUser(ctx context.Context, userID, companyID, kind, title, body string, resourceType, resourceID *string) error
+}
+
+// InAppNotifierSetter is implemented by the concrete IAM service to allow late-wiring
+// of the InAppNotifier after both services are constructed.
+type InAppNotifierSetter interface {
+	SetInAppNotifier(n InAppNotifier)
+}
+
+// WithInAppNotifier wires in-app notification creation for auth events.
+func WithInAppNotifier(n InAppNotifier) ServiceOption {
+	return func(s *service) {
+		s.inAppNotifier = n
+	}
+}
+
 // MFACheck verifies second factor (TOTP, WebAuthn callback, etc.) before membership enumeration and session issuance.
 // Return nil to allow login to continue; return *perr.HTTPError (or wrapped) to block with a stable code.
 type MFACheck interface {

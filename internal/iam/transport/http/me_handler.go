@@ -9,6 +9,7 @@ import (
 
 	authapp "github.com/cobo/cobo_iam_services/internal/authorization/app"
 	caapp "github.com/cobo/cobo_iam_services/internal/companyaccess/app"
+	inappapp "github.com/cobo/cobo_iam_services/internal/inappnotification/app"
 	iamapp "github.com/cobo/cobo_iam_services/internal/iam/app"
 	"github.com/cobo/cobo_iam_services/internal/iam/loginpassword"
 	"github.com/cobo/cobo_iam_services/internal/platform/httpx"
@@ -24,6 +25,7 @@ type MeHandler struct {
 	iamSvc           iamapp.Service
 	loginPWD         *loginpassword.Service
 	avatars          *iamapp.AvatarService
+	inAppNotifSvc    inappapp.Service
 	publicAPIBaseURL string
 }
 
@@ -53,6 +55,11 @@ func NewMeHandler(
 	}
 }
 
+// WithInAppNotifications wires the in-app notification service into MeHandler.
+func (m *MeHandler) WithInAppNotifications(svc inappapp.Service) {
+	m.inAppNotifSvc = svc
+}
+
 func (m *MeHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/me", m.me)
 	// Alias for frontend contract compatibility.
@@ -65,11 +72,13 @@ func (m *MeHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/me/membership", m.membership)
 	mux.HandleFunc("PATCH /api/v1/me/profile", m.patchProfile)
 	mux.HandleFunc("POST /api/v1/me/change-password", m.changePassword)
-	mux.HandleFunc("POST /api/v1/me/avatar/upload-intent", m.avatarUploadIntent)
-	mux.HandleFunc("PUT /api/v1/me/avatar/upload/{asset_id}", m.avatarUploadBinary)
-	mux.HandleFunc("POST /api/v1/me/avatar/{asset_id}/complete", m.avatarComplete)
+	mux.HandleFunc("POST /api/v1/me/avatar", m.avatarUploadMultipart)
 	mux.HandleFunc("DELETE /api/v1/me/avatar", m.avatarDelete)
 	mux.HandleFunc("GET /api/v1/me/avatar/content", m.avatarContent)
+	mux.HandleFunc("GET /api/v1/me/in-app-notifications", m.notificationList)
+	mux.HandleFunc("GET /api/v1/me/in-app-notifications/unread-count", m.notificationUnreadCount)
+	mux.HandleFunc("POST /api/v1/me/in-app-notifications/{id}/read", m.notificationMarkRead)
+	mux.HandleFunc("POST /api/v1/me/in-app-notifications/read-all", m.notificationMarkAllRead)
 }
 
 func (m *MeHandler) me(w http.ResponseWriter, r *http.Request) {

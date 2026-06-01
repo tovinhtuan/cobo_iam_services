@@ -1,22 +1,20 @@
 package http
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
-	iamapp "github.com/cobo/cobo_iam_services/internal/iam/app"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 	"github.com/cobo/cobo_iam_services/internal/platform/httpx"
-	"github.com/cobo/cobo_iam_services/internal/platform/mediaupload"
 )
 
-func (m *MeHandler) avatarUploadIntent(w http.ResponseWriter, r *http.Request) {
+const avatarMultipartMaxBytes = int64(2<<20) + 4096 // 2 MB + form overhead
+
+func (m *MeHandler) avatarUploadMultipart(w http.ResponseWriter, r *http.Request) {
 	claims, err := m.h.inspector.InspectAccessToken(r.Context(), bearerToken(r.Header.Get("Authorization")))
 	if err != nil {
 		httpx.WriteError(w, m.h.log, err)
@@ -30,134 +28,51 @@ func (m *MeHandler) avatarUploadIntent(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, m.h.log, err)
 		return
 	}
-	var body struct {
-		FileName    string `json:"file_name"`
-		ContentType string `json:"content_type"`
-		SizeBytes   int64  `json:"size_bytes"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		httpx.WriteError(w, m.h.log, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "invalid json body", err))
+
+	r.Body = http.MaxBytesReader(w, r.Body, avatarMultipartMaxBytes)
+	if err := r.ParseMultipartForm(avatarMultipartMaxBytes); err != nil {
+		if strings.Contains(err.Error(), "too large") {
+			httpx.WriteError(w, m.h.log, perr.NewHTTPError(http.StatusRequestEntityTooLarge, perr.CodeInvalidRequest, "file too large", err))
+		} else {
+			httpx.WriteError(w, m.h.log, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "invalid multipart form", err))
+		}
 		return
 	}
+
+	file, header, err := r.FormFile("avatar")
+	if err != nil {
+		httpx.WriteError(w, m.h.log, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "avatar field required", err))
+		return
+	}
+	defer file.Close()
+
+	contentType := strings.ToLower(strings.TrimSpace(header.Header.Get("Content-Type")))
+	if contentType == "" {
+		// sniff from first 512 bytes
+		buf := make([]byte, 512)
+		n, _ := file.Read(buf)
+		contentType = strings.ToLower(http.DetectContentType(buf[:n]))
+		// seek back — multipart.File implements io.ReadSeeker
+		if s, ok := file.(io.ReadSeeker); ok {
+			_, _ = s.Seek(0, io.SeekStart)
+		}
+	}
+
 	baseURL := strings.TrimSpace(m.publicAPIBaseURL)
 	if baseURL == "" {
 		baseURL = resolveMeRequestBaseURL(r)
 	}
-	out, err := m.avatars.CreateUploadIntent(r.Context(), claims.Sub, baseURL, iamapp.AvatarUploadIntentRequest{
-		FileName:    body.FileName,
-		ContentType: body.ContentType,
-		SizeBytes:   body.SizeBytes,
-	})
-	if err != nil {
-		httpx.WriteError(w, m.h.log, err)
-		return
-	}
-	m.auditLog(r, claims, "user.avatar.upload.intent", "user", claims.Sub, map[string]any{
-		"asset_id": out.AssetID,
-	})
-	httpx.WriteJSON(w, http.StatusCreated, map[string]any{
-		"asset_id":   out.AssetID,
-		"upload_url": out.UploadURL,
-		"expires_at": out.ExpiresAt.UTC().Format(time.RFC3339),
-	})
-}
 
-func (m *MeHandler) avatarUploadBinary(w http.ResponseWriter, r *http.Request) {
-	if m.avatars == nil {
-		httpx.WriteError(w, m.h.log, perr.NewHTTPError(http.StatusServiceUnavailable, perr.CodeInternal, "avatar upload not configured", nil))
-		return
-	}
-	assetID := strings.TrimSpace(r.PathValue("asset_id"))
-	if assetID == "" {
-		httpx.WriteError(w, m.h.log, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "asset_id is required", nil))
-		return
-	}
-	q := r.URL.Query()
-	expUnix, err := strconv.ParseInt(strings.TrimSpace(q.Get("exp")), 10, 64)
-	if err != nil || expUnix <= 0 {
-		httpx.WriteError(w, m.h.log, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "invalid exp query", nil))
-		return
-	}
-	userID := strings.TrimSpace(q.Get("user_id"))
-	expectedMethod := strings.ToUpper(strings.TrimSpace(q.Get("method")))
-	contentType := strings.ToLower(strings.TrimSpace(q.Get("content_type")))
-	sizeBytes, err := strconv.ParseInt(strings.TrimSpace(q.Get("size_bytes")), 10, 64)
-	if err != nil || sizeBytes <= 0 {
-		httpx.WriteError(w, m.h.log, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "invalid size_bytes query", nil))
-		return
-	}
-	sig := strings.TrimSpace(q.Get("sig"))
-	if userID == "" || expectedMethod == "" || contentType == "" || sig == "" {
-		httpx.WriteError(w, m.h.log, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "missing signed query fields", nil))
-		return
-	}
-	if expectedMethod != http.MethodPut || r.Method != http.MethodPut {
-		httpx.WriteError(w, m.h.log, perr.NewHTTPError(http.StatusMethodNotAllowed, perr.CodeInvalidRequest, "method not allowed for signed upload", nil))
-		return
-	}
-	exp := time.Unix(expUnix, 0).UTC()
-	signIn := mediaupload.SignInput{
-		Purpose:     mediaupload.PurposeUserAvatarUpload,
-		OwnerID:     userID,
-		AssetID:     assetID,
-		Method:      http.MethodPut,
-		Path:        "/api/v1/me/avatar/upload/" + url.PathEscape(assetID),
-		ContentType: contentType,
-		SizeBytes:   sizeBytes,
-		ExpiresAt:   exp,
-	}
-	if !m.avatars.VerifySignature(sig, signIn) {
-		httpx.WriteError(w, m.h.log, perr.NewHTTPError(http.StatusUnauthorized, perr.CodeSessionExpired, "invalid upload signature", nil))
-		return
-	}
-	asset, err := m.avatars.GetAssetForSignedUpload(r.Context(), userID, assetID)
+	out, err := m.avatars.UploadMultipart(r.Context(), claims.Sub, baseURL, contentType, file, header.Size)
 	if err != nil {
 		httpx.WriteError(w, m.h.log, err)
 		return
 	}
-	if asset.ContentType != contentType || asset.SizeBytes != sizeBytes {
-		httpx.WriteError(w, m.h.log, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "signed upload metadata mismatch", nil))
-		return
-	}
-	body := http.MaxBytesReader(w, r.Body, sizeBytes+1)
-	defer body.Close()
-	if err := m.avatars.WriteSignedUpload(r.Context(), asset, contentType, sizeBytes, body); err != nil {
-		httpx.WriteError(w, m.h.log, err)
-		return
-	}
-	w.WriteHeader(http.StatusOK)
-	_, _ = io.WriteString(w, "ok")
-}
 
-func (m *MeHandler) avatarComplete(w http.ResponseWriter, r *http.Request) {
-	claims, err := m.h.inspector.InspectAccessToken(r.Context(), bearerToken(r.Header.Get("Authorization")))
-	if err != nil {
-		httpx.WriteError(w, m.h.log, err)
-		return
-	}
-	if m.avatars == nil {
-		httpx.WriteError(w, m.h.log, perr.NewHTTPError(http.StatusServiceUnavailable, perr.CodeInternal, "avatar upload not configured", nil))
-		return
-	}
-	assetID := strings.TrimSpace(r.PathValue("asset_id"))
-	if assetID == "" {
-		httpx.WriteError(w, m.h.log, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "asset_id is required", nil))
-		return
-	}
-	out, err := m.avatars.Complete(r.Context(), claims.Sub, assetID)
-	if err != nil {
-		httpx.WriteError(w, m.h.log, err)
-		return
-	}
-	m.auditLog(r, claims, "user.avatar.upload.complete", "user_avatar_asset", out.AssetID, map[string]any{
-		"user_id": claims.Sub,
-	})
+	m.auditLog(r, claims, "user.avatar.upload", "user", claims.Sub, nil)
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{
-		"asset_id":     out.AssetID,
-		"object_key":   out.ObjectKey,
-		"content_type": out.ContentType,
-		"size_bytes":   out.SizeBytes,
-		"state":        out.State,
+		"avatar_url":        out.AvatarURL,
+		"avatar_updated_at": out.AvatarUpdatedAt.UTC().Format(time.RFC3339),
 	})
 }
 
@@ -260,3 +175,4 @@ func resolveMeRequestBaseURL(r *http.Request) string {
 	}
 	return fmt.Sprintf("%s://%s", scheme, host)
 }
+

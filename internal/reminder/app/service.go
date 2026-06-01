@@ -23,6 +23,7 @@ type service struct {
 	alertConfigRepo   AlertConfigRepository
 	recipientResolver RecipientResolver
 	publicWebBaseURL  string
+	inAppCreator      InAppNotificationCreator // optional, nil = disabled
 }
 
 type EmailSender interface {
@@ -76,6 +77,12 @@ func WithPublicWebBaseURL(url string) ServiceOption {
 func WithRecipientResolver(r RecipientResolver) ServiceOption {
 	return func(s *service) {
 		s.recipientResolver = r
+	}
+}
+
+func WithInAppCreator(c InAppNotificationCreator) ServiceOption {
+	return func(s *service) {
+		s.inAppCreator = c
 	}
 }
 
@@ -260,6 +267,14 @@ func (s *service) DispatchDueOccurrences(ctx context.Context, now time.Time, lim
 		switch resp.Status {
 		case ReminderStatusSent:
 			result.Sent++
+			if s.inAppCreator != nil {
+				cc := c
+				cc.RecipientEmails = recipients
+				cc.TemplatePayload = payload
+				go func(candidate DispatchCandidate) {
+					_ = s.inAppCreator.CreateForReminderDispatch(context.Background(), candidate)
+				}(cc)
+			}
 		case ReminderStatusRetryScheduled:
 			result.Retried++
 		case ReminderStatusFailed:

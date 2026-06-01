@@ -46,6 +46,12 @@ type service struct {
 	emailTemplateSource   string
 	emailTemplateRegistry notificationapp.TemplateRegistry
 	emailRenderer         notificationapp.EmailRenderer
+	inAppNotifier         InAppNotifier // optional, nil = disabled
+}
+
+// SetInAppNotifier implements InAppNotifierSetter for late-wiring after construction.
+func (s *service) SetInAppNotifier(n InAppNotifier) {
+	s.inAppNotifier = n
 }
 
 func NewService(cred CredentialVerifier, sessions SessionRepository, tokens TokenIssuer, memberships ca.MembershipQueryService, idgen idgen.Generator, opts ...ServiceOption) Service {
@@ -300,6 +306,12 @@ func (s *service) issueEmailVerificationOTP(ctx context.Context, userID string) 
 		"subject": subject,
 		"body":    body,
 	})
+	if s.inAppNotifier != nil && strings.TrimSpace(userID) != "" {
+		go func() {
+			_ = s.inAppNotifier.CreateForUser(ctx, userID, "", "auth.email_verification_requested",
+				"Xác thực email của bạn", "Kiểm tra hộp thư và nhập mã OTP.", nil, nil)
+		}()
+	}
 	return nil
 }
 
@@ -783,6 +795,16 @@ func (s *service) PublishUserInvitationEmail(ctx context.Context, userID, toEmai
 			"subject": subject,
 			"body":    body,
 		})
+		// In-app: existing user already has a user_id — notify them.
+		if s.inAppNotifier != nil && strings.TrimSpace(userID) != "" {
+			title := "Bạn được mời tham gia công ty"
+			if companyName != "" {
+				title = "Bạn được mời tham gia: " + companyName
+			}
+			go func() {
+				_ = s.inAppNotifier.CreateForUser(ctx, userID, "", "auth.user_invitation_sent", title, "", nil, nil)
+			}()
+		}
 		return nil
 	}
 
