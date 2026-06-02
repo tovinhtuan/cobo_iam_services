@@ -6,11 +6,13 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/http"
 	"regexp"
 	"strings"
 
+	"github.com/go-sql-driver/mysql"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 	"github.com/google/uuid"
 )
@@ -139,6 +141,47 @@ func InsertCompanyWithDefaultRolesTx(ctx context.Context, tx *sql.Tx, companyID,
 	if err := grantRoleCompanyProfilePermissionsTx(ctx, tx, roleAdminID); err != nil {
 		return "", "", err
 	}
+
+	// Explicitly grant the tenant admin permission pack into role_permissions.
+	// INSERT IGNORE is safe for retry (idempotent) — it silently skips existing rows.
+	// If migration 0044 has not run, no permission_code rows will match and the
+	// INSERT will affect 0 rows; the verify step below will catch this and fail-fast.
+	if _, err := tx.ExecContext(ctx, `
+		INSERT IGNORE INTO role_permissions (role_id, permission_id, status)
+		SELECT ?, p.permission_id, 'active'
+		FROM permissions p
+		WHERE p.permission_code IN (
+			'disclosure_type.manage',
+			'template.workflow.override.read',
+			'template.workflow.override.write',
+			'template.workflow.override.approve',
+			'template.workflow.override.reset',
+			'ad_hoc_alert.propose'
+		) AND p.status = 'active'
+	`, roleAdminID); err != nil {
+		return "", "", fmt.Errorf("grant tenant admin permission pack: %w", err)
+	}
+
+	// Fail-fast verify: disclosure_type.manage must be present after INSERT.
+	// If 0 rows → migration 0044 has not run or permission row is missing.
+	// This prevents silent grant failure from propagating to production.
+	var grantCount int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM role_permissions rp
+		JOIN permissions p ON p.permission_id = rp.permission_id
+		WHERE rp.role_id = ? AND p.permission_code = 'disclosure_type.manage'
+	`, roleAdminID).Scan(&grantCount); err != nil {
+		return "", "", fmt.Errorf("verify tenant admin permission pack: %w", err)
+	}
+	if grantCount == 0 {
+		return "", "", fmt.Errorf(
+			"bootstrap: disclosure_type.manage not granted to role %s — verify migration 0044 has run",
+			roleAdminID,
+		)
+	}
+
+	// Populate invite-UI hint table (pre-checked checkboxes at invite time).
+	// This is distinct from role_permissions and does NOT affect effective access.
 	for _, permCode := range []string{
 		"template.workflow.override.write",
 		"template.workflow.override.read",
@@ -194,6 +237,21 @@ func IsDuplicateCompanyError(err error) bool {
 	return isMySQLDuplicateCompany(err)
 }
 
+// isMySQLDuplicateUser returns true when INSERT INTO users fails due to duplicate login_id.
+// Checks MySQL error number 1062 (ER_DUP_ENTRY) + constraint name to avoid masking
+// duplicate errors on unrelated unique keys in the same table.
+func isMySQLDuplicateUser(err error) bool {
+	if err == nil {
+		return false
+	}
+	var me *mysql.MySQLError
+	if errors.As(err, &me) && me.Number == 1062 {
+		msg := strings.ToLower(me.Message)
+		return strings.Contains(msg, "login_id") || strings.Contains(msg, "uk_users")
+	}
+	return false
+}
+
 // RegisterPublicAccount creates an active user, active company, membership, and assigns:
 // - global self_reg_company_owner (with company profile permissions ensured at register time)
 // - tenant admin_doanh_nghiep for the new company (registering user is company admin while unverified).
@@ -234,6 +292,9 @@ func RegisterPublicAccount(ctx context.Context, db *sql.DB, email, fullName, com
 		INSERT INTO users (user_id, login_id, full_name, email, phone, account_status)
 		VALUES (?, ?, ?, ?, NULL, 'active')
 	`, userID, email, fullName, email); err != nil {
+		if isMySQLDuplicateUser(err) {
+			return "", "", "", perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "email already registered", nil)
+		}
 		return "", "", "", fmt.Errorf("insert user: %w", err)
 	}
 
@@ -252,8 +313,8 @@ func RegisterPublicAccount(ctx context.Context, db *sql.DB, email, fullName, com
 	}
 
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO memberships (membership_id, user_id, company_id, membership_status)
-		VALUES (?, ?, ?, 'active')
+		INSERT INTO memberships (membership_id, user_id, company_id, membership_status, is_primary_admin)
+		VALUES (?, ?, ?, 'active', TRUE)
 	`, membershipID, userID, companyID); err != nil {
 		return "", "", "", fmt.Errorf("insert membership: %w", err)
 	}
