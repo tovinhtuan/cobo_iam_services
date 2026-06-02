@@ -338,11 +338,14 @@ func (r *Repository) batchLoadActiveWorkflowFlags(ctx context.Context, typeIDs [
 		placeholders[i] = "?"
 		args[i] = id
 	}
+	ph := strings.Join(placeholders, ",")
+
+	// Nhánh 1: CMS template — block must contain at least one actual step.
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT b.type_id, b.config_json
 		FROM disclosure_template_blocks b
 		INNER JOIN disclosure_types t ON t.type_id = b.type_id AND t.active_version_no = b.version_no
-		WHERE b.block_key = 'enterprise_workflow' AND b.type_id IN (`+strings.Join(placeholders, ",")+`)
+		WHERE b.block_key = 'enterprise_workflow' AND b.type_id IN (`+ph+`)
 	`, args...)
 	if err != nil {
 		return nil, err
@@ -364,7 +367,30 @@ func (r *Repository) batchLoadActiveWorkflowFlags(ctx context.Context, typeIDs [
 			Config:   cfg,
 		}})) > 0
 	}
-	return result, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Nhánh 2: Company-defined template — approved workflow-override satisfies the gate.
+	// active_version_no INT NOT NULL DEFAULT 0: draft/archived=0, approved=version_no>0.
+	oRows, err := r.db.QueryContext(ctx, `
+		SELECT type_id
+		FROM company_template_workflow_overrides
+		WHERE active_version_no > 0
+		  AND type_id IN (`+ph+`)
+	`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer oRows.Close()
+	for oRows.Next() {
+		var typeID string
+		if err := oRows.Scan(&typeID); err != nil {
+			return nil, err
+		}
+		result[typeID] = true
+	}
+	return result, oRows.Err()
 }
 
 func (r *Repository) HasActiveEnterpriseWorkflow(ctx context.Context, typeID string) (bool, error) {
