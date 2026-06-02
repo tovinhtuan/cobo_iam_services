@@ -89,6 +89,7 @@ seed_dev_identity_authorization.sql
 0083_company_type_preference_cycle_anchor.up.sql
 0084_alert_template_configs.up.sql
 0085_user_in_app_notifications.up.sql
+0086_reminder_scope_id_expand.up.sql
 "
 
 mysql_exec() {

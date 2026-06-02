@@ -7,9 +7,10 @@ import (
 	"strings"
 )
 
-// WorkflowStepConfig is the minimal step data needed for recipient resolution.
+// WorkflowStepConfig is the minimal step data needed for recipient resolution and email templating.
 type WorkflowStepConfig struct {
 	StepID          string
+	StageName       string
 	AssigneeRoleIDs []string
 	DepartmentID    string
 }

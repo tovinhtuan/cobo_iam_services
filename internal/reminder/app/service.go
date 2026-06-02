@@ -22,6 +22,7 @@ type service struct {
 	alertHook         AlertHook
 	alertConfigRepo   AlertConfigRepository
 	recipientResolver RecipientResolver
+	stepReader        WorkflowStepReader
 	publicWebBaseURL  string
 	inAppCreator      InAppNotificationCreator // optional, nil = disabled
 }
@@ -77,6 +78,12 @@ func WithPublicWebBaseURL(url string) ServiceOption {
 func WithRecipientResolver(r RecipientResolver) ServiceOption {
 	return func(s *service) {
 		s.recipientResolver = r
+	}
+}
+
+func WithStepReader(r WorkflowStepReader) ServiceOption {
+	return func(s *service) {
+		s.stepReader = r
 	}
 }
 
@@ -337,7 +344,18 @@ func (s *service) prepareDispatch(ctx context.Context, c DispatchCandidate) (tem
 	payload["due_date"] = c.ScheduledAt.UTC().Format("02/01/2006")
 	if c.ScopeType == ScopeTypeWorkflowStep && c.ScopeID != "" {
 		if _, ok := payload["step_name"]; !ok {
-			payload["step_name"] = c.ScopeID
+			// scope_id may be "disclosureID:stepID" (config path) or just "stepID" (milestone path).
+			stepID := c.ScopeID
+			if idx := strings.LastIndex(c.ScopeID, ":"); idx >= 0 {
+				stepID = c.ScopeID[idx+1:]
+			}
+			stepName := stepID
+			if s.stepReader != nil {
+				if step, err := s.stepReader.GetStepByID(ctx, stepID); err == nil && step != nil && step.StageName != "" {
+					stepName = step.StageName
+				}
+			}
+			payload["step_name"] = stepName
 		}
 	}
 	// Map disclosure_title from existing "title" field in payload (backward compat alias).

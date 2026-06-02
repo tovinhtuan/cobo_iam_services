@@ -123,16 +123,17 @@ func NewGlobalWorkflowStepReader(db *sql.DB) *GlobalWorkflowStepReader {
 	return &GlobalWorkflowStepReader{db: db}
 }
 
-// GetStepByID looks up a global_workflow_step by step_id and returns the assignee role IDs
-// and optional department_id.
+// GetStepByID looks up a global_workflow_step by step_id and returns stage name,
+// assignee role IDs and optional department_id.
 func (r *GlobalWorkflowStepReader) GetStepByID(ctx context.Context, stepID string) (*reminderapp.WorkflowStepConfig, error) {
+	var stageName sql.NullString
 	var assigneeRoleIDsJSON []byte
 	var deptID sql.NullString
 	err := r.db.QueryRowContext(ctx, `
-		SELECT assignee_role_ids, NULLIF(department_id, '')
+		SELECT NULLIF(stage, ''), assignee_role_ids, NULLIF(department_id, '')
 		FROM global_workflow_steps
 		WHERE step_id = ?
-	`, stepID).Scan(&assigneeRoleIDsJSON, &deptID)
+	`, stepID).Scan(&stageName, &assigneeRoleIDsJSON, &deptID)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -141,6 +142,7 @@ func (r *GlobalWorkflowStepReader) GetStepByID(ctx context.Context, stepID strin
 	}
 	return &reminderapp.WorkflowStepConfig{
 		StepID:          stepID,
+		StageName:       stageName.String,
 		AssigneeRoleIDs: reminderapp.ParseAssigneeRoleIDs(assigneeRoleIDsJSON),
 		DepartmentID:    deptID.String,
 	}, nil
