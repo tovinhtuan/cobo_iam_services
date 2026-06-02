@@ -127,6 +127,7 @@ services:
     volumes:
       - ./bin:/app/bin:ro
       - ./configs:/app/configs:ro
+      - ./var:/app/var          # CMS media storage (user avatars, uploads) — must persist across restarts
     restart: unless-stopped
 
   web:
