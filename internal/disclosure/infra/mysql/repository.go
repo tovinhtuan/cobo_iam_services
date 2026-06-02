@@ -485,7 +485,13 @@ func (r *Repository) GetTypeDetail(ctx context.Context, companyID, typeID string
 		return nil, err
 	}
 	item.Blocks = blocks
-	item.HasWorkflow = disclosureapp.TemplateHasWorkflow(item.Blocks)
+	// batchLoadActiveWorkflowFlags checks both CMS enterprise_workflow blocks and
+	// approved company_template_workflow_overrides (nhánh 2 — active_version_no > 0).
+	if wfFlags, err2 := r.batchLoadActiveWorkflowFlags(ctx, []string{typeID}); err2 == nil {
+		item.HasWorkflow = wfFlags[typeID]
+	} else {
+		item.HasWorkflow = disclosureapp.TemplateHasWorkflow(item.Blocks)
+	}
 	// Load display_group_codes from junction table (migration 0053).
 	groupsByType, err := r.batchLoadDisplayGroupCodes(ctx, []string{typeID})
 	if err != nil {
@@ -562,7 +568,11 @@ func (r *Repository) GetTypeVersionDetail(ctx context.Context, companyID, typeID
 		return nil, err
 	}
 	item.Blocks = blocks
-	item.HasWorkflow = disclosureapp.TemplateHasWorkflow(item.Blocks)
+	if wfFlags, err2 := r.batchLoadActiveWorkflowFlags(ctx, []string{typeID}); err2 == nil {
+		item.HasWorkflow = wfFlags[typeID]
+	} else {
+		item.HasWorkflow = disclosureapp.TemplateHasWorkflow(item.Blocks)
+	}
 	// Load display_group_codes from junction table (same as GetTypeDetail).
 	groupsByType, err := r.batchLoadDisplayGroupCodes(ctx, []string{typeID})
 	if err != nil {
