@@ -1331,8 +1331,7 @@ func (s *service) TransitionCompanyTemplateLifecycle(ctx context.Context, req Tr
 // active version must have ≥1 step in enterprise_workflow block.
 // global_workflows does not satisfy the gate (PO D6-B).
 func (s *service) enforceHasWorkflowGate(ctx context.Context, companyID, typeID string) error {
-	_ = companyID
-	hasWorkflow, err := s.repo.HasActiveEnterpriseWorkflow(ctx, typeID)
+	hasWorkflow, err := s.repo.HasActiveEnterpriseWorkflow(ctx, companyID, typeID)
 	if err != nil {
 		// Workflow lookup failure must not silently block disclosure creation.
 		return nil

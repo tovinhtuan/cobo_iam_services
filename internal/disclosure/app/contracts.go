@@ -72,7 +72,7 @@ type Repository interface {
 	ListTypes(ctx context.Context, params ListTypesParams) ([]DisclosureTypeSummaryDTO, int, error)
 	GetTypeDetail(ctx context.Context, companyID, typeID string) (*DisclosureTypeDTO, error)
 	GetTypeVersionDetail(ctx context.Context, companyID, typeID string, versionNo int) (*DisclosureTypeDTO, error)
-	HasActiveEnterpriseWorkflow(ctx context.Context, typeID string) (bool, error)
+	HasActiveEnterpriseWorkflow(ctx context.Context, companyID, typeID string) (bool, error)
 	UpsertTypeVersion(ctx context.Context, req UpsertTypeVersionRequest) (*UpsertTypeVersionResponse, error)
 	ListTypeVersions(ctx context.Context, companyID, typeID string) ([]DisclosureTypeVersionDTO, error)
 	ActivateTypeVersion(ctx context.Context, req ActivateTypeVersionRequest) (*ActivateTypeVersionResponse, error)

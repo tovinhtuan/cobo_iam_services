@@ -281,7 +281,7 @@ func (r *Repository) ListTypes(ctx context.Context, params disclosureapp.ListTyp
 		if err != nil {
 			return nil, 0, err
 		}
-		workflowFlags, err := r.batchLoadActiveWorkflowFlags(ctx, typeIDs)
+		workflowFlags, err := r.batchLoadActiveWorkflowFlags(ctx, companyID, typeIDs)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -328,7 +328,10 @@ func (r *Repository) batchLoadDisplayGroupCodes(ctx context.Context, typeIDs []s
 	return result, rows.Err()
 }
 
-func (r *Repository) batchLoadActiveWorkflowFlags(ctx context.Context, typeIDs []string) (map[string]bool, error) {
+// batchLoadActiveWorkflowFlags checks both CMS enterprise_workflow blocks (nhánh 1) and
+// company-specific workflow overrides (nhánh 2). companyID scopes nhánh 2 so that
+// Company B cannot inherit has_workflow=true from Company A's approved override.
+func (r *Repository) batchLoadActiveWorkflowFlags(ctx context.Context, companyID string, typeIDs []string) (map[string]bool, error) {
 	if len(typeIDs) == 0 {
 		return map[string]bool{}, nil
 	}
@@ -371,14 +374,16 @@ func (r *Repository) batchLoadActiveWorkflowFlags(ctx context.Context, typeIDs [
 		return nil, err
 	}
 
-	// Nhánh 2: Company-defined template — approved workflow-override satisfies the gate.
+	// Nhánh 2: Company-defined template — approved workflow-override for THIS company only.
 	// active_version_no INT NOT NULL DEFAULT 0: draft/archived=0, approved=version_no>0.
+	// company_id filter prevents Company B from inheriting Company A's approved override.
 	oRows, err := r.db.QueryContext(ctx, `
 		SELECT type_id
 		FROM company_template_workflow_overrides
 		WHERE active_version_no > 0
+		  AND company_id = ?
 		  AND type_id IN (`+ph+`)
-	`, args...)
+	`, append([]any{companyID}, args...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -393,8 +398,8 @@ func (r *Repository) batchLoadActiveWorkflowFlags(ctx context.Context, typeIDs [
 	return result, oRows.Err()
 }
 
-func (r *Repository) HasActiveEnterpriseWorkflow(ctx context.Context, typeID string) (bool, error) {
-	flags, err := r.batchLoadActiveWorkflowFlags(ctx, []string{typeID})
+func (r *Repository) HasActiveEnterpriseWorkflow(ctx context.Context, companyID, typeID string) (bool, error) {
+	flags, err := r.batchLoadActiveWorkflowFlags(ctx, companyID, []string{typeID})
 	if err != nil {
 		return false, err
 	}
@@ -487,7 +492,8 @@ func (r *Repository) GetTypeDetail(ctx context.Context, companyID, typeID string
 	item.Blocks = blocks
 	// batchLoadActiveWorkflowFlags checks both CMS enterprise_workflow blocks and
 	// approved company_template_workflow_overrides (nhánh 2 — active_version_no > 0).
-	if wfFlags, err2 := r.batchLoadActiveWorkflowFlags(ctx, []string{typeID}); err2 == nil {
+	// companyID scopes nhánh 2 to this company's overrides only.
+	if wfFlags, err2 := r.batchLoadActiveWorkflowFlags(ctx, companyID, []string{typeID}); err2 == nil {
 		item.HasWorkflow = wfFlags[typeID]
 	} else {
 		item.HasWorkflow = disclosureapp.TemplateHasWorkflow(item.Blocks)
@@ -568,7 +574,7 @@ func (r *Repository) GetTypeVersionDetail(ctx context.Context, companyID, typeID
 		return nil, err
 	}
 	item.Blocks = blocks
-	if wfFlags, err2 := r.batchLoadActiveWorkflowFlags(ctx, []string{typeID}); err2 == nil {
+	if wfFlags, err2 := r.batchLoadActiveWorkflowFlags(ctx, companyID, []string{typeID}); err2 == nil {
 		item.HasWorkflow = wfFlags[typeID]
 	} else {
 		item.HasWorkflow = disclosureapp.TemplateHasWorkflow(item.Blocks)

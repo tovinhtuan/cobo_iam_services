@@ -266,7 +266,7 @@ func (r *Repository) GetTypeDetail(_ context.Context, companyID, typeID string) 
 	return &cp, nil
 }
 
-func (r *Repository) HasActiveEnterpriseWorkflow(_ context.Context, typeID string) (bool, error) {
+func (r *Repository) HasActiveEnterpriseWorkflow(_ context.Context, _ string, typeID string) (bool, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	item, ok := r.catalog[typeID]

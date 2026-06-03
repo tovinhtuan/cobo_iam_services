@@ -16,6 +16,18 @@ func TestHasWorkflow_CompanyTemplateWithApprovedOverride_ReturnsTrue(t *testing.
 	}
 }
 
+// TestHasWorkflow_Nhánh2_MustFilterByCompanyID ensures that nhánh 2 of
+// batchLoadActiveWorkflowFlags scopes the override lookup to the requesting
+// company. Without this filter, Company B can inherit Company A's approved
+// override and create disclosures using Company A's proprietary templates.
+func TestHasWorkflow_Nhanh2_MustFilterByCompanyID(t *testing.T) {
+	src := readRepositorySrc(t)
+	// nhánh 2 query must include company_id = ? condition
+	if !strings.Contains(src, "company_id = ?") {
+		t.Fatal("batchLoadActiveWorkflowFlags nhánh 2 must filter by company_id to prevent cross-company template usage (security: Company B must not inherit Company A's approved override)")
+	}
+}
+
 // TestHasWorkflow_CompanyTemplateDraftOverride_ReturnsFalse and
 // TestHasWorkflow_CompanyTemplateArchivedOverride_ReturnsFalse both rely on the
 // condition active_version_no > 0 (draft and archived both have active_version_no=0).
