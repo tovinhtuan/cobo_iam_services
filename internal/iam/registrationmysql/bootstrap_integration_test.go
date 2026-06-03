@@ -148,14 +148,44 @@ func TestIntegration_RegisterPublicAccount_GrantsDisclosureTypeManage(t *testing
 		t.Error("SECURITY FAIL: platform.cms.view found in tenantAdminRole — privilege escalation!")
 	}
 
-	// --- Verify 3: Full permission pack present ---
+	// --- Verify 3: Full permission pack present (mirrors the explicit grant list in InsertCompanyWithDefaultRolesTx) ---
 	requiredPerms := []string{
+		// Disclosure domain
+		"disclosure.view",
+		"disclosure.create",
+		"disclosure.edit",
+		"disclosure.approve",
+		"disclosure.publish",
+		"disclosure.auto_create.manage",
 		"disclosure_type.manage",
+		// Template / workflow override
 		"template.workflow.override.read",
 		"template.workflow.override.write",
 		"template.workflow.override.approve",
 		"template.workflow.override.reset",
+		// Workflow execution
+		"workflow.read",
+		"workflow.review",
+		"workflow.approve",
+		"workflow.confirm",
+		"workflow.step.override",
+		// Ad-hoc alerts
+		"ad_hoc_alert.read",
 		"ad_hoc_alert.propose",
+		"ad_hoc_alert.focal_review",
+		"ad_hoc_alert.admin_review",
+		"ad_hoc_alert.process_control",
+		// Deadline / calendar
+		"deadline.view",
+		"deadline.create",
+		"deadline.assign",
+		"deadline.manage",
+		// Admin operations (company-scoped)
+		"rbac.manage",
+		"admin.membership.invite",
+		"alert.channels.manage",
+		// Dashboard
+		"dashboard.view",
 	}
 	for _, perm := range requiredPerms {
 		if !hasPermissionInRolePermissions(t, db, tenantAdminRoleID, perm) {
@@ -180,7 +210,8 @@ func TestIntegration_RegisterPublicAccount_GrantsDisclosureTypeManage(t *testing
 }
 
 // TestIntegration_RegisterPublicAccount_NoPlatformPermissions is a dedicated security regression test.
-// Founding admin must NOT have any platform.* permissions after bootstrap.
+// Founding admin must NOT have any platform.* or cms.template.* permissions after bootstrap.
+// Business contract: platform.* is platform-admin-only; cms.template.* requires platform.cms.view gate.
 func TestIntegration_RegisterPublicAccount_NoPlatformPermissions(t *testing.T) {
 	db := openIntegrationDB(t)
 	defer db.Close()
@@ -220,7 +251,6 @@ func TestIntegration_RegisterPublicAccount_NoPlatformPermissions(t *testing.T) {
 		t.Fatalf("query platform permissions: %v", err)
 	}
 	if platformPermCount > 0 {
-		// Query which ones to report them
 		rows, _ := db.QueryContext(context.Background(), `
 			SELECT p.permission_code FROM role_permissions rp
 			JOIN permissions p ON p.permission_id = rp.permission_id
@@ -236,6 +266,21 @@ func TestIntegration_RegisterPublicAccount_NoPlatformPermissions(t *testing.T) {
 			}
 		}
 		t.Errorf("SECURITY FAIL: Found %d platform.* permission(s) in tenantAdminRole: %s", platformPermCount, strings.Join(codes, ", "))
+	}
+
+	// Query for cms.template.* — enterprise admin must not hold these.
+	// cms.template.* is CMS-only (gated behind platform.cms.view); migration 0088 revokes them
+	// from any role without platform.cms.view. Verify the bootstrap does not re-grant them.
+	forbiddenCMSPerms := []string{
+		"cms.template.write",
+		"cms.template.activate",
+		"cms.template.archive",
+		"cms.template.config.write",
+	}
+	for _, perm := range forbiddenCMSPerms {
+		if hasPermissionInRolePermissions(t, db, tenantAdminRoleID, perm) {
+			t.Errorf("SECURITY FAIL: enterprise admin role must not have %s (CMS-only permission)", perm)
+		}
 	}
 }
 

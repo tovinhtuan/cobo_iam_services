@@ -90,6 +90,8 @@ seed_dev_identity_authorization.sql
 0084_alert_template_configs.up.sql
 0085_user_in_app_notifications.up.sql
 0086_reminder_scope_id_expand.up.sql
+0087_backfill_admin_role_disclosure_type_manage.up.sql
+0088_revoke_cms_template_perms_from_enterprise_admin.up.sql
 "
 
 mysql_exec() {

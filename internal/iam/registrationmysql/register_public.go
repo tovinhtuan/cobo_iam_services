@@ -142,41 +142,88 @@ func InsertCompanyWithDefaultRolesTx(ctx context.Context, tx *sql.Tx, companyID,
 		return "", "", err
 	}
 
-	// Explicitly grant the tenant admin permission pack into role_permissions.
-	// INSERT IGNORE is safe for retry (idempotent) — it silently skips existing rows.
-	// If migration 0044 has not run, no permission_code rows will match and the
-	// INSERT will affect 0 rows; the verify step below will catch this and fail-fast.
+	// Explicitly grant the full tenant admin permission pack into role_permissions.
+	// This is the authoritative grant — it makes bootstrap independent of the seed template
+	// being current. INSERT IGNORE is idempotent (safe to retry and safe when seed template
+	// copy already inserted a row). Permissions that haven't been created yet (missing migration)
+	// produce 0 rows silently; the fail-fast verify below catches critical gaps.
+	//
+	// Permission group annotations:
+	//   [0009]  in original seed template (safe baseline, kept for explicitness)
+	//   [0044]  disclosure_type.manage — explicit pack origin
+	//   [0021]  template.workflow.override.*
+	//   [0033]  workflow.* + ad_hoc_alert.read/focal_review/admin_review
+	//   [0062]  ad_hoc_alert.process_control
+	//   [0074]  deadline.view (also in grantRoleCompanyProfilePermissionsTx)
+	//   [0077]  admin.membership.invite
+	//   [0079]  disclosure.auto_create.manage
 	if _, err := tx.ExecContext(ctx, `
 		INSERT IGNORE INTO role_permissions (role_id, permission_id, status)
 		SELECT ?, p.permission_id, 'active'
 		FROM permissions p
 		WHERE p.permission_code IN (
+			-- Disclosure domain
+			'disclosure.view',
+			'disclosure.create',
+			'disclosure.edit',
+			'disclosure.approve',
+			'disclosure.publish',
+			'disclosure.auto_create.manage',
 			'disclosure_type.manage',
+			-- Template / workflow override
 			'template.workflow.override.read',
 			'template.workflow.override.write',
 			'template.workflow.override.approve',
 			'template.workflow.override.reset',
-			'ad_hoc_alert.propose'
+			-- Workflow execution
+			'workflow.read',
+			'workflow.review',
+			'workflow.approve',
+			'workflow.confirm',
+			'workflow.step.override',
+			-- Ad-hoc alerts
+			'ad_hoc_alert.read',
+			'ad_hoc_alert.propose',
+			'ad_hoc_alert.focal_review',
+			'ad_hoc_alert.admin_review',
+			'ad_hoc_alert.process_control',
+			-- Deadline / calendar
+			'deadline.view',
+			'deadline.create',
+			'deadline.assign',
+			'deadline.manage',
+			-- Admin operations (company-scoped)
+			'rbac.manage',
+			'admin.membership.invite',
+			'alert.channels.manage',
+			-- Dashboard
+			'dashboard.view'
 		) AND p.status = 'active'
 	`, roleAdminID); err != nil {
 		return "", "", fmt.Errorf("grant tenant admin permission pack: %w", err)
 	}
 
-	// Fail-fast verify: disclosure_type.manage must be present after INSERT.
-	// If 0 rows → migration 0044 has not run or permission row is missing.
-	// This prevents silent grant failure from propagating to production.
+	// Fail-fast verify: check that the core permissions are present after INSERT.
+	// If count < expected → a required migration has not run on this DB.
+	// This prevents silent under-provisioning from reaching production.
+	const minRequiredPerms = 3
 	var grantCount int
 	if err := tx.QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM role_permissions rp
 		JOIN permissions p ON p.permission_id = rp.permission_id
-		WHERE rp.role_id = ? AND p.permission_code = 'disclosure_type.manage'
+		WHERE rp.role_id = ?
+		  AND p.permission_code IN (
+		      'disclosure_type.manage',
+		      'ad_hoc_alert.propose',
+		      'admin.membership.invite'
+		  )
 	`, roleAdminID).Scan(&grantCount); err != nil {
 		return "", "", fmt.Errorf("verify tenant admin permission pack: %w", err)
 	}
-	if grantCount == 0 {
+	if grantCount < minRequiredPerms {
 		return "", "", fmt.Errorf(
-			"bootstrap: disclosure_type.manage not granted to role %s — verify migration 0044 has run",
-			roleAdminID,
+			"bootstrap: only %d/%d required permissions granted to role %s — verify migrations 0044, 0077 have run",
+			grantCount, minRequiredPerms, roleAdminID,
 		)
 	}
 
