@@ -92,6 +92,8 @@ seed_dev_identity_authorization.sql
 0086_reminder_scope_id_expand.up.sql
 0087_backfill_admin_role_disclosure_type_manage.up.sql
 0088_revoke_cms_template_perms_from_enterprise_admin.up.sql
+0089_expand_override_id_varchar.up.sql
+0090_company_template_publish_permission.up.sql
 "
 
 mysql_exec() {
