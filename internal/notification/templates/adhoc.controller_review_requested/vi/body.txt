@@ -1,0 +1,16 @@
+Kính gửi,
+
+Bạn được chỉ định là người kiểm soát quy trình và cần phê duyệt đề xuất công bố thông tin đột xuất sau.
+
+Công ty: {{.company_name}}
+Người đề xuất: {{.creator_name}}
+Nội dung: {{.change_note}}
+
+Vui lòng truy cập hệ thống để xem chi tiết và phê duyệt cuối:
+
+{{.portal_url}}/app/ad-hoc-proposals/{{.proposal_id}}
+
+Lưu ý: Email này được gửi tự động, vui lòng không trả lời trực tiếp.
+
+Trân trọng,
+Hệ thống CoBo Portal

@@ -72,6 +72,12 @@ const (
 	KindAuthInvitation      = "auth.user_invitation_sent"
 	KindAuthEmailVerif      = "auth.email_verification_requested"
 	ResourceTypeDisclosure  = "disclosure"
+
+	KindAdhocFocalReviewRequested      = "adhoc.focal_review_requested"
+	KindAdhocControllerReviewRequested = "adhoc.controller_review_requested"
+	KindAdhocProposalApproved          = "adhoc.proposal_approved"
+	KindAdhocProposalRejected          = "adhoc.proposal_rejected"
+	ResourceTypeAdHocProposal          = "ad_hoc_proposal"
 )
 
 const listLimit = 20

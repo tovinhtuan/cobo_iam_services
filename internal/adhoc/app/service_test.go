@@ -179,9 +179,15 @@ func (f *fakeMembershipValidator) HasActiveRoleCode(_ context.Context, _, _, rol
 func (f *fakeMembershipValidator) ListMembersWithPermission(_ context.Context, _, _, _ string) ([]EligibleController, error) {
 	return []EligibleController{}, nil
 }
+func (f *fakeMembershipValidator) ResolveMembership(_ context.Context, _, _ string) (*MemberInfo, error) {
+	return nil, nil
+}
+func (f *fakeMembershipValidator) ListMembersWithPermissionFull(_ context.Context, _, _ string) ([]MemberInfo, error) {
+	return []MemberInfo{}, nil
+}
 
 func newTestService(repo *fakeRepository, recordCreator *fakeRecordCreator, typeCatalog *fakeTypeCatalog, auth *fakeAuthService) Service {
-	return NewService(repo, recordCreator, typeCatalog, fakeIDGen{}, false, auth, newAllowValidator())
+	return NewService(repo, recordCreator, typeCatalog, fakeIDGen{}, false, auth, newAllowValidator(), nil)
 }
 
 func TestCreateProposalRequiresPermission(t *testing.T) {
@@ -302,7 +308,7 @@ func TestSubmitProposalAutoApproveSkipsFocalMetadata(t *testing.T) {
 		CreatedBy:  "member-creator",
 	}}
 	auth := &fakeAuthService{decision: authapp.DecisionAllow}
-	svc := NewService(repo, &fakeRecordCreator{}, &fakeTypeCatalog{category: "irregular"}, fakeIDGen{}, true, auth, nil)
+	svc := NewService(repo, &fakeRecordCreator{}, &fakeTypeCatalog{category: "irregular"}, fakeIDGen{}, true, auth, nil, nil)
 
 	resp, err := svc.SubmitProposal(context.Background(), ProposalActionRequest{
 		Subject:    Subject{CompanyID: "company-001", MembershipID: "member-creator", UserID: "user-001"},
@@ -572,7 +578,7 @@ func TestCreateProposal_ControllerIsSelf_AdminDoanhNghiep_Allowed(t *testing.T) 
 	repo := &fakeRepository{}
 	auth := &fakeAuthService{decision: authapp.DecisionAllow}
 	mv := &fakeMembershipValidator{active: true, hasPerm: true, hasAdminRole: true}
-	svc := NewService(repo, &fakeRecordCreator{}, &fakeTypeCatalog{category: "irregular"}, fakeIDGen{}, false, auth, mv)
+	svc := NewService(repo, &fakeRecordCreator{}, &fakeTypeCatalog{category: "irregular"}, fakeIDGen{}, false, auth, mv, nil)
 
 	resp, err := svc.CreateProposal(context.Background(), CreateProposalRequest{
 		Subject:                       Subject{CompanyID: "company-001", MembershipID: "member-001", UserID: "user-001"},
@@ -591,7 +597,7 @@ func TestCreateProposal_ControllerNoPermission(t *testing.T) {
 	repo := &fakeRepository{}
 	auth := &fakeAuthService{decision: authapp.DecisionAllow}
 	mv := &fakeMembershipValidator{active: true, hasPerm: false}
-	svc := NewService(repo, &fakeRecordCreator{}, &fakeTypeCatalog{category: "irregular"}, fakeIDGen{}, false, auth, mv)
+	svc := NewService(repo, &fakeRecordCreator{}, &fakeTypeCatalog{category: "irregular"}, fakeIDGen{}, false, auth, mv, nil)
 
 	_, err := svc.CreateProposal(context.Background(), CreateProposalRequest{
 		Subject:                       Subject{CompanyID: "company-001", MembershipID: "member-001", UserID: "user-001"},
@@ -611,7 +617,7 @@ func TestCreateProposal_ControllerInactive(t *testing.T) {
 	repo := &fakeRepository{}
 	auth := &fakeAuthService{decision: authapp.DecisionAllow}
 	mv := &fakeMembershipValidator{active: false, hasPerm: true}
-	svc := NewService(repo, &fakeRecordCreator{}, &fakeTypeCatalog{category: "irregular"}, fakeIDGen{}, false, auth, mv)
+	svc := NewService(repo, &fakeRecordCreator{}, &fakeTypeCatalog{category: "irregular"}, fakeIDGen{}, false, auth, mv, nil)
 
 	_, err := svc.CreateProposal(context.Background(), CreateProposalRequest{
 		Subject:                       Subject{CompanyID: "company-001", MembershipID: "member-001", UserID: "user-001"},

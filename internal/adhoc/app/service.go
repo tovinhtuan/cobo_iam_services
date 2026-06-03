@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -20,10 +21,27 @@ type service struct {
 	autoApprove          bool // WORKFLOW_ADHOC_AUTOAPPROVE_ENABLED: skip focal step
 	auth                 authapp.Service
 	membershipValidator  MembershipValidator
+	notifier             ProposalNotifier // nil = notifications disabled
 }
 
-func NewService(repo Repository, recordCreator RecordCreator, typeCatalog TypeCatalog, idg idgen.Generator, autoApprove bool, auth authapp.Service, mv MembershipValidator) Service {
-	return &service{repo: repo, recordCreator: recordCreator, typeCatalog: typeCatalog, idg: idg, autoApprove: autoApprove, auth: auth, membershipValidator: mv}
+func NewService(repo Repository, recordCreator RecordCreator, typeCatalog TypeCatalog, idg idgen.Generator, autoApprove bool, auth authapp.Service, mv MembershipValidator, notifier ProposalNotifier) Service {
+	return &service{repo: repo, recordCreator: recordCreator, typeCatalog: typeCatalog, idg: idg, autoApprove: autoApprove, auth: auth, membershipValidator: mv, notifier: notifier}
+}
+
+// dispatchNotificationAsync runs fn in a goroutine if notifications are configured.
+// Errors inside fn must be handled by the caller (typically logged and swallowed).
+func (s *service) dispatchNotificationAsync(fn func(ctx context.Context)) {
+	if s.notifier == nil || s.membershipValidator == nil {
+		return
+	}
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				slog.Error("adhoc: notification goroutine panic", slog.Any("panic", r))
+			}
+		}()
+		fn(context.Background())
+	}()
 }
 
 func (s *service) CreateProposal(ctx context.Context, req CreateProposalRequest) (*ProposalDTO, error) {
@@ -121,7 +139,7 @@ func (s *service) SubmitProposal(ctx context.Context, req ProposalActionRequest)
 	if s.autoApprove {
 		nextStatus = StatusPendingAdminApproval
 	}
-	return s.repo.UpdateStatus(ctx, StatusUpdate{
+	updated, err := s.repo.UpdateStatus(ctx, StatusUpdate{
 		ProposalID:               req.ProposalID,
 		CompanyID:                req.Subject.CompanyID,
 		Status:                   nextStatus,
@@ -129,6 +147,22 @@ func (s *service) SubmitProposal(ctx context.Context, req ProposalActionRequest)
 		ActorUserID:              req.Subject.UserID,
 		SetFocalApprovalMetadata: false,
 	})
+	if err != nil {
+		return nil, err
+	}
+	snap := *updated
+	s.dispatchNotificationAsync(func(ctx context.Context) {
+		if s.autoApprove {
+			if ctrl, err := s.membershipValidator.ResolveMembership(ctx, snap.CompanyID, snap.ProcessControllerID); err == nil && ctrl != nil {
+				s.notifier.NotifyControllerForReview(ctx, snap, *ctrl)
+			}
+		} else {
+			if focals, err := s.membershipValidator.ListMembersWithPermissionFull(ctx, snap.CompanyID, "ad_hoc_alert.focal_review"); err == nil {
+				s.notifier.NotifyFocalsForReview(ctx, snap, focals)
+			}
+		}
+	})
+	return updated, nil
 }
 
 func (s *service) FocalApprove(ctx context.Context, req ProposalActionRequest) (*ProposalDTO, error) {
@@ -145,7 +179,7 @@ func (s *service) FocalApprove(ctx context.Context, req ProposalActionRequest) (
 	if cur.Status != StatusPendingFocalApproval {
 		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "proposal is not pending focal approval", nil)
 	}
-	return s.repo.UpdateStatus(ctx, StatusUpdate{
+	focalUpdated, err := s.repo.UpdateStatus(ctx, StatusUpdate{
 		ProposalID:               req.ProposalID,
 		CompanyID:                req.Subject.CompanyID,
 		Status:                   StatusPendingAdminApproval,
@@ -153,6 +187,16 @@ func (s *service) FocalApprove(ctx context.Context, req ProposalActionRequest) (
 		ActorUserID:              req.Subject.UserID,
 		SetFocalApprovalMetadata: true,
 	})
+	if err != nil {
+		return nil, err
+	}
+	snap := *focalUpdated
+	s.dispatchNotificationAsync(func(ctx context.Context) {
+		if ctrl, err := s.membershipValidator.ResolveMembership(ctx, snap.CompanyID, snap.ProcessControllerID); err == nil && ctrl != nil {
+			s.notifier.NotifyControllerForReview(ctx, snap, *ctrl)
+		}
+	})
+	return focalUpdated, nil
 }
 
 func (s *service) AdminApprove(ctx context.Context, req AdminApproveRequest) (*AdminApproveResponse, error) {
@@ -234,6 +278,12 @@ func (s *service) AdminApprove(ctx context.Context, req AdminApproveRequest) (*A
 	if err != nil {
 		return nil, err
 	}
+	snap := *updated
+	s.dispatchNotificationAsync(func(ctx context.Context) {
+		if creator, err := s.membershipValidator.ResolveMembership(ctx, snap.CompanyID, snap.CreatedBy); err == nil && creator != nil {
+			s.notifier.NotifyCreatorApproved(ctx, snap, *creator)
+		}
+	})
 	return &AdminApproveResponse{
 		Proposal:           *updated,
 		RecordID:           recordID,
@@ -265,7 +315,7 @@ func (s *service) Reject(ctx context.Context, req RejectRequest) (*ProposalDTO, 
 	if reason == "" {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "reject_reason is required", nil)
 	}
-	return s.repo.UpdateStatus(ctx, StatusUpdate{
+	rejected, err := s.repo.UpdateStatus(ctx, StatusUpdate{
 		ProposalID:        req.ProposalID,
 		CompanyID:         req.Subject.CompanyID,
 		Status:            StatusRejected,
@@ -273,6 +323,16 @@ func (s *service) Reject(ctx context.Context, req RejectRequest) (*ProposalDTO, 
 		ActorUserID:       req.Subject.UserID,
 		RejectReason:      reason,
 	})
+	if err != nil {
+		return nil, err
+	}
+	snap := *rejected
+	s.dispatchNotificationAsync(func(ctx context.Context) {
+		if creator, err := s.membershipValidator.ResolveMembership(ctx, snap.CompanyID, snap.CreatedBy); err == nil && creator != nil {
+			s.notifier.NotifyCreatorRejected(ctx, snap, *creator)
+		}
+	})
+	return rejected, nil
 }
 
 func (s *service) Cancel(ctx context.Context, req ProposalActionRequest) (*ProposalDTO, error) {

@@ -1,0 +1,15 @@
+Kính gửi,
+
+Đề xuất công bố thông tin đột xuất của bạn đã được phê duyệt. Hệ thống đã tự động tạo hồ sơ công bố chính thức.
+
+Công ty: {{.company_name}}
+Nội dung: {{.change_note}}
+
+Vui lòng truy cập hệ thống để tiếp tục xử lý hồ sơ công bố:
+
+{{.portal_url}}/app/disclosures/{{.record_id}}
+
+Lưu ý: Email này được gửi tự động, vui lòng không trả lời trực tiếp.
+
+Trân trọng,
+Hệ thống CoBo Portal

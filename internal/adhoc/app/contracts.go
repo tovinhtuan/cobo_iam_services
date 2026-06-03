@@ -73,6 +73,24 @@ type EligibleController struct {
 	Email        string `json:"email"`
 }
 
+// MemberInfo carries resolved identity fields needed for notification dispatch.
+// Distinct from EligibleController to avoid exposing UserID in the HTTP API response.
+type MemberInfo struct {
+	UserID       string
+	MembershipID string
+	Email        string
+	FullName     string
+}
+
+// ProposalNotifier dispatches in-app and email notifications after proposal state transitions.
+// All methods are fire-and-forget: implementations log errors but must never propagate them.
+type ProposalNotifier interface {
+	NotifyFocalsForReview(ctx context.Context, proposal ProposalDTO, focals []MemberInfo)
+	NotifyControllerForReview(ctx context.Context, proposal ProposalDTO, controller MemberInfo)
+	NotifyCreatorApproved(ctx context.Context, proposal ProposalDTO, creator MemberInfo)
+	NotifyCreatorRejected(ctx context.Context, proposal ProposalDTO, creator MemberInfo)
+}
+
 // MembershipValidator lets the adhoc service validate a target membership
 // without coupling to the authorization module's internal implementation.
 type MembershipValidator interface {
@@ -80,6 +98,12 @@ type MembershipValidator interface {
 	HasPermission(ctx context.Context, companyID, membershipID, permissionCode string) (bool, error)
 	HasActiveRoleCode(ctx context.Context, companyID, membershipID, roleCode string) (bool, error)
 	ListMembersWithPermission(ctx context.Context, companyID, permissionCode, excludeMembershipID string) ([]EligibleController, error)
+	// ResolveMembership returns identity fields for a single active membership.
+	// Returns nil, nil when the membership does not exist or is inactive.
+	ResolveMembership(ctx context.Context, companyID, membershipID string) (*MemberInfo, error)
+	// ListMembersWithPermissionFull returns all active members holding permissionCode,
+	// including their UserID for in-app notification dispatch.
+	ListMembersWithPermissionFull(ctx context.Context, companyID, permissionCode string) ([]MemberInfo, error)
 }
 
 // RoleCodeAdminDoanhNghiep is the tenant company-admin role that may self-assign as process controller.

@@ -1,0 +1,12 @@
+default_locale: vi
+variables:
+  - name: proposal_id
+    required: true
+  - name: change_note
+    required: true
+  - name: company_name
+    required: true
+  - name: creator_name
+    required: true
+  - name: portal_url
+    required: true

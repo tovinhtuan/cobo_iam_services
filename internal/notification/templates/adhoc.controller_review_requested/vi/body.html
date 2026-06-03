@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head><meta charset="UTF-8"></head>
+<body style="font-family:sans-serif;color:#1e293b;max-width:600px;margin:auto;padding:24px">
+  <h2 style="color:#2563eb">Phê duyệt đề xuất công bố bất thường</h2>
+  <p>Kính gửi,</p>
+  <p>Bạn được chỉ định là người kiểm soát quy trình và cần phê duyệt đề xuất công bố thông tin đột xuất sau.</p>
+  <table style="border-collapse:collapse;width:100%;margin:16px 0">
+    <tr><td style="padding:8px;font-weight:bold;width:160px">Công ty</td><td style="padding:8px">{{.company_name}}</td></tr>
+    <tr style="background:#f8fafc"><td style="padding:8px;font-weight:bold">Người đề xuất</td><td style="padding:8px">{{.creator_name}}</td></tr>
+    <tr><td style="padding:8px;font-weight:bold">Nội dung</td><td style="padding:8px">{{.change_note}}</td></tr>
+  </table>
+  <a href="{{.portal_url}}/app/ad-hoc-proposals/{{.proposal_id}}"
+     style="display:inline-block;background:#2563eb;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:600;margin-top:8px">
+    Xem và phê duyệt cuối
+  </a>
+  <p style="color:#94a3b8;font-size:12px;margin-top:24px">Email này được gửi tự động từ CoBo Portal. Vui lòng không trả lời trực tiếp.</p>
+</body>
+</html>

@@ -14,6 +14,7 @@ import (
 	adhocapp "github.com/cobo/cobo_iam_services/internal/adhoc/app"
 	adhocrecord "github.com/cobo/cobo_iam_services/internal/adhoc/infra/disclosure"
 	adhocmysql "github.com/cobo/cobo_iam_services/internal/adhoc/infra/mysql"
+	adhocnotif "github.com/cobo/cobo_iam_services/internal/adhoc/infra/notification"
 	adhochttp "github.com/cobo/cobo_iam_services/internal/adhoc/transport/http"
 	auditapp "github.com/cobo/cobo_iam_services/internal/audit/app"
 	auditappimpl "github.com/cobo/cobo_iam_services/internal/audit/appimpl"
@@ -49,6 +50,7 @@ import (
 	notificationinmem "github.com/cobo/cobo_iam_services/internal/notification/infra/inmemory"
 	notificationmysql "github.com/cobo/cobo_iam_services/internal/notification/infra/mysql"
 	notificationregistry "github.com/cobo/cobo_iam_services/internal/notification/infra/registry"
+	notificationsmtp "github.com/cobo/cobo_iam_services/internal/notification/infra/smtp"
 	notificationhttp "github.com/cobo/cobo_iam_services/internal/notification/transport/http"
 	platformclock 	"github.com/cobo/cobo_iam_services/internal/platform/clock"
 	"github.com/cobo/cobo_iam_services/internal/platform/config"
@@ -463,7 +465,20 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 		recordCreator := adhocrecord.NewRecordCreatorAdapter(disclosureSvc, workflowSvc, true)
 		typeCatalog := adhocrecord.NewTypeCatalogAdapter(disclosureRepo)
 		membershipValidator := adhocmysql.NewMembershipValidator(pool)
-		adhocSvc := adhocapp.NewService(adhocRepo, recordCreator, typeCatalog, id, cfg.WorkflowAdhocAutoApproveEnabled, authSvc, membershipValidator)
+
+		// Build SMTP delivery adapter for adhoc email notifications (same SMTP config as reminder module).
+		smtpDelivery := notificationsmtp.NewAdapter(notificationsmtp.Config{
+			Host: cfg.SMTPHost,
+			Port: cfg.SMTPPort,
+			User: cfg.SMTPUser,
+			Pass: cfg.SMTPPassword,
+			From: cfg.SMTPFrom,
+		}, nil)
+		var proposalNotifier adhocapp.ProposalNotifier = adhocnotif.New(
+			inAppSvc, smtpDelivery, emailTemplateRegistry, emailRenderer, cfg.PublicWebBaseURL, log,
+		)
+
+		adhocSvc := adhocapp.NewService(adhocRepo, recordCreator, typeCatalog, id, cfg.WorkflowAdhocAutoApproveEnabled, authSvc, membershipValidator, proposalNotifier)
 		adhocHandler = adhochttp.NewHandler(log, adhocSvc, tokenManager, idemStore)
 		log.Info("ad-hoc proposal module enabled")
 	}

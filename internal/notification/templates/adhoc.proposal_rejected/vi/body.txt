@@ -1,0 +1,16 @@
+Kính gửi,
+
+Đề xuất công bố thông tin đột xuất của bạn đã bị từ chối.
+
+Công ty: {{.company_name}}
+Nội dung: {{.change_note}}
+Lý do từ chối: {{.reject_reason}}
+
+Bạn có thể tạo đề xuất mới sau khi xem xét lại nội dung:
+
+{{.portal_url}}/app/ad-hoc-proposals
+
+Lưu ý: Email này được gửi tự động, vui lòng không trả lời trực tiếp.
+
+Trân trọng,
+Hệ thống CoBo Portal
