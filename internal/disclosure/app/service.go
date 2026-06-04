@@ -467,6 +467,9 @@ func (s *service) UpsertTypeVersion(ctx context.Context, req UpsertTypeVersionRe
 	if err := validateFn(&req); err != nil {
 		return nil, err
 	}
+	if err := validatePortalDeadlineRule(req.DeadlineRule, s.loadDeadlineRuleCatalog(ctx)); err != nil {
+		return nil, err
+	}
 	req.DisplayGroupCodes = normalizeDisplayGroupCodes(req.DisplayGroupCodes)
 	if len(req.DisplayGroupCodes) == 0 {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "display_group_codes is required (at least one Portal catalog group)", nil)
@@ -560,6 +563,9 @@ func (s *service) ActivateTypeVersion(ctx context.Context, req ActivateTypeVersi
 				"field_errors": map[string]string{"enterprise_workflow": err.Error()},
 			},
 		}
+	}
+	if err := validatePortalDeadlineRule(versionDetail.DeadlineRule, s.loadDeadlineRuleCatalog(ctx)); err != nil {
+		return nil, err
 	}
 	return s.repo.ActivateTypeVersion(ctx, req)
 }
