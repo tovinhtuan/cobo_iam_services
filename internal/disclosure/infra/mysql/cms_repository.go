@@ -250,11 +250,14 @@ func (r *Repository) DeleteGlobalWorkflow(ctx context.Context, typeID string) er
 
 // ─── System Template Archive ──────────────────────────────────────────────────
 
-func (r *Repository) ArchiveGlobalTemplate(ctx context.Context, typeID, updatedBy string) error {
+func (r *Repository) ArchiveGlobalTemplate(ctx context.Context, typeID, _ string) error {
+	// company_id IS NULL identifies global (platform-managed) templates.
+	// active_version_no = 0 ensures the template is hidden from Portal's ListTypes JOIN.
 	res, err := r.db.ExecContext(ctx, `
-		UPDATE disclosure_types SET status = 'archived', updated_by = ?, updated_at = NOW()
-		WHERE type_id = ? AND scope = 'global'
-	`, updatedBy, typeID)
+		UPDATE disclosure_types
+		SET status = 'archived', active_version_no = 0, updated_at = NOW()
+		WHERE type_id = ? AND company_id IS NULL
+	`, typeID)
 	if err != nil {
 		return fmt.Errorf("archive global template: %w", err)
 	}
