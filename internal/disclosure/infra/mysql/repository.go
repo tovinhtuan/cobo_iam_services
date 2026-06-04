@@ -231,7 +231,8 @@ func (r *Repository) ListTypes(ctx context.Context, params disclosureapp.ListTyp
 	// Data query — LIMIT/OFFSET applied only when page > 0.
 	dataSQL := `SELECT t.type_id, t.group_id, COALESCE(t.display_group_code, ''), t.company_id,
 		       COALESCE(t.is_mandatory, 0), COALESCE(t.review_status, ''),
-		       v.name, v.category, v.template_category, v.description, v.deadline_rule, v.tags_json
+		       v.name, v.category, v.template_category, v.description, v.deadline_rule, v.tags_json,
+		       COALESCE(v.periodicity, '')
 		` + baseSQL + `
 		ORDER BY ` + sortCol + ` ` + sortDir
 	dataArgs := args
@@ -256,6 +257,7 @@ func (r *Repository) ListTypes(ctx context.Context, params disclosureapp.ListTyp
 			&item.TypeID, &item.GroupID, &item.DisplayGroupCode, &ownerCompanyID,
 			&item.IsMandatory, &item.ReviewStatus,
 			&item.Name, &item.Category, &item.TemplateCategory, &item.Description, &item.DeadlineRule, &tagsRaw,
+			&item.Periodicity,
 		); err != nil {
 			return nil, 0, err
 		}

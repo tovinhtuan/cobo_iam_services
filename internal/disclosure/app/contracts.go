@@ -672,6 +672,7 @@ type DisclosureTypeSummaryDTO struct {
 	Name              string   `json:"name"`
 	Category          string   `json:"category"`
 	TemplateCategory  string   `json:"template_category"`
+	Periodicity       string   `json:"periodicity"`
 	Description       string   `json:"description"`
 	DeadlineRule      string   `json:"deadline_rule"`
 	IsMandatory       bool     `json:"is_mandatory"`
