@@ -189,13 +189,12 @@ func (r *Repository) UpsertGlobalWorkflow(ctx context.Context, req disclosureapp
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	// Archive any existing active workflow for this type.
-	_, err = tx.ExecContext(ctx, `
-		UPDATE global_workflows SET status = 'archived', updated_by = ?, updated_at = ?
-		WHERE type_id = ? AND status = 'active'
-	`, req.Subject.UserID, now, req.TypeID)
+	// Delete any existing workflow for this type (all statuses).
+	// FK CASCADE deletes associated steps, preventing step_id primary key collisions
+	// on the next upsert. "Upsert" semantics: exactly one workflow per type at all times.
+	_, err = tx.ExecContext(ctx, `DELETE FROM global_workflows WHERE type_id = ?`, req.TypeID)
 	if err != nil {
-		return nil, fmt.Errorf("archive existing workflow: %w", err)
+		return nil, fmt.Errorf("delete existing workflow: %w", err)
 	}
 
 	// Insert new active workflow.
@@ -208,17 +207,14 @@ func (r *Repository) UpsertGlobalWorkflow(ctx context.Context, req disclosureapp
 		return nil, fmt.Errorf("insert global workflow: %w", err)
 	}
 
-	// Insert steps.
+	// Insert steps with server-generated IDs to prevent caller-supplied step_id collisions.
 	for i, step := range req.Steps {
 		roleIDsJSON, _ := json.Marshal(step.AssigneeRoleIds)
 		displayOrder := step.DisplayOrder
 		if displayOrder <= 0 {
 			displayOrder = i + 1
 		}
-		stepID := step.StepID
-		if stepID == "" {
-			stepID = fmt.Sprintf("%s-step-%d", workflowID, i+1)
-		}
+		stepID := fmt.Sprintf("%s-step-%d", workflowID, i+1)
 		_, err = tx.ExecContext(ctx, `
 			INSERT INTO global_workflow_steps (step_id, workflow_id, stage, department_id, assignee_role_ids, due_rule, processing_days, display_order, created_at)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
