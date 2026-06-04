@@ -132,7 +132,7 @@ func (h *Handler) cmsCreateDisplayGroup(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	h.auditLog(r, sub, "cms_display_group.create", "display_group", resp.DisplayGroupCode, nil)
-	httpx.WriteJSON(w, http.StatusCreated, resp)
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"data": resp})
 }
 
 func (h *Handler) cmsUpdateDisplayGroup(w http.ResponseWriter, r *http.Request) {
@@ -155,7 +155,7 @@ func (h *Handler) cmsUpdateDisplayGroup(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	h.auditLog(r, sub, "cms_display_group.update", "display_group", code, nil)
-	httpx.WriteJSON(w, http.StatusOK, resp)
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": resp})
 }
 
 func (h *Handler) cmsDeleteDisplayGroup(w http.ResponseWriter, r *http.Request) {
@@ -210,7 +210,7 @@ func (h *Handler) cmsCreateDeadlineRule(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	h.auditLog(r, sub, "cms_deadline_rule.create", "deadline_rule", resp.RuleID, nil)
-	httpx.WriteJSON(w, http.StatusCreated, resp)
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"data": resp})
 }
 
 func (h *Handler) cmsUpdateDeadlineRule(w http.ResponseWriter, r *http.Request) {
@@ -233,7 +233,7 @@ func (h *Handler) cmsUpdateDeadlineRule(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	h.auditLog(r, sub, "cms_deadline_rule.update", "deadline_rule", ruleID, nil)
-	httpx.WriteJSON(w, http.StatusOK, resp)
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": resp})
 }
 
 func (h *Handler) cmsDeleteDeadlineRule(w http.ResponseWriter, r *http.Request) {
