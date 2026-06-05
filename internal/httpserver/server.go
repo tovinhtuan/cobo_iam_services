@@ -437,6 +437,7 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 		adminHandler.WithIdempotency(idemStore, cfg.CompanyProvisionIdempotencyRequired)
 	}
 	adminHandler.WithSelfCreateEnabled(cfg.CompanySelfCreateEnabled)
+	adminHandler.WithListedCompaniesLookup(listedCompaniesSvc)
 	var alertConfigSvc platformcmsapp.AlertConfigService
 	if pool != nil {
 		alertConfigSvc = platformcmsapp.NewAlertConfigService(

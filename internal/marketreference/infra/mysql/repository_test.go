@@ -151,6 +151,48 @@ func TestNormalizeListParams_defaultsAndMaxLimit(t *testing.T) {
 	}
 }
 
+// TestNormalizeBusinessCode verifies whitespace trimming for business code lookups.
+func TestNormalizeBusinessCode(t *testing.T) {
+	cases := []struct {
+		input string
+		want  string
+	}{
+		{"0101234567", "0101234567"},
+		{"  0101234567  ", "0101234567"},
+		{"\t0101234567\n", "0101234567"},
+		{"", ""},
+		{"   ", ""},
+	}
+	for _, tc := range cases {
+		got := NormalizeBusinessCode(tc.input)
+		if got != tc.want {
+			t.Errorf("NormalizeBusinessCode(%q) = %q, want %q", tc.input, got, tc.want)
+		}
+	}
+}
+
+// TestBuildGetByBusinessCodeQuery verifies the SQL query constant is well-formed.
+func TestBuildGetByBusinessCodeQuery(t *testing.T) {
+	q := getByBusinessCodeQuery
+	mustContain := []string{
+		"equity_list e",
+		"JOIN company_profiles p",
+		"p.source",
+		"JSON_EXTRACT",
+		"business_code",
+		"LIMIT 1",
+	}
+	for _, s := range mustContain {
+		if !strings.Contains(q, s) {
+			t.Errorf("query missing %q:\n%s", s, q)
+		}
+	}
+	// Must be JOIN not LEFT JOIN — business_code only exists in profiles.
+	if strings.Contains(q, "LEFT JOIN") {
+		t.Error("query must use JOIN not LEFT JOIN for business_code lookup")
+	}
+}
+
 func fullProfileFixture() []byte {
 	payload := map[string]any{
 		"company_type":          "Công ty Cổ phần",

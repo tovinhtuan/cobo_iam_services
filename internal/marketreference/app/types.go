@@ -23,6 +23,9 @@ var (
 type ListedCompanyReader interface {
 	List(ctx context.Context, p ListParams) (ListResult, error)
 	GetBySymbol(ctx context.Context, symbol string) (ListedCompanyDetail, error)
+	// GetByBusinessCode looks up a listed company by its business registration code (mã ĐKKD).
+	// Returns ErrNotFound when no company_profiles row matches. Trims whitespace from businessCode.
+	GetByBusinessCode(ctx context.Context, businessCode string) (ListedCompanyDetail, error)
 }
 
 // ListParams filters and paginates listed companies from vnstock.

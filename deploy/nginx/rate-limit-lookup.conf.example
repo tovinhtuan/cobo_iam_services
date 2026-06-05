@@ -1,0 +1,41 @@
+# Rate limiting for GET /api/v1/company/listed-lookup
+#
+# This endpoint is public (no auth) and triggers a DB scan on cache miss.
+# Rate limiting prevents enumeration, scraping, and DoS amplification.
+#
+# HOW TO USE:
+# 1. Add the limit_req_zone directive to the `http {}` block in nginx.conf (or an included http-level file):
+#
+#    limit_req_zone $binary_remote_addr zone=listed_lookup:10m rate=10r/m;
+#
+# 2. Add the location block below into the server {} block that proxies the API.
+#    The path must match the API path after any prefix rewrite.
+#    If the API is served at /public/ with rewrite, adjust accordingly.
+#
+# TUNING:
+#   rate=10r/m  — 10 requests/minute per IP (normal use: user types ĐKKD, pauses, retries)
+#   burst=3     — allows 3 rapid requests before limiting (handles FE debounce behavior)
+#   nodelay     — return 429 immediately rather than queuing burst requests
+#   limit_req_status 429 — explicit 429 (default is 503 in older Nginx)
+#   Retry-After — tells clients how long to wait
+#
+# If legitimate users report 429 errors (e.g., marketing campaigns driving high onboarding volume):
+#   - Increase burst first (e.g., burst=5) before raising rate
+#   - Minimum safe production values: rate=5r/m burst=2
+
+# --- Place in http {} context ---
+# limit_req_zone $binary_remote_addr zone=listed_lookup:10m rate=10r/m;
+
+# --- Place in server {} context ---
+location = /api/v1/company/listed-lookup {
+    limit_req       zone=listed_lookup burst=3 nodelay;
+    limit_req_status 429;
+    add_header      Retry-After 60 always;
+
+    proxy_pass         http://cobo_iam_api;
+    proxy_http_version 1.1;
+    proxy_set_header   Host              $host;
+    proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+    proxy_set_header   X-Forwarded-Proto $scheme;
+    proxy_set_header   Connection        "";
+}

@@ -238,6 +238,67 @@ func BuildListWhere(p app.ListParams) (string, []any) {
 	return buildListWhere(p)
 }
 
+// NormalizeBusinessCode trims whitespace from a business registration code. Exported for tests.
+func NormalizeBusinessCode(s string) string {
+	return strings.TrimSpace(s)
+}
+
+// getByBusinessCodeQuery is the SQL for GetByBusinessCode. Exported as a constant for test verification.
+//
+// Uses JOIN (not LEFT JOIN): business_code lives in company_profiles.info, so a row without a profile
+// cannot match. TRIM+JSON_UNQUOTE handles KBS data that may have surrounding whitespace.
+const getByBusinessCodeQuery = `
+	SELECT
+		e.symbol,
+		e.company_name,
+		e.exchange,
+		p.info,
+		p.updated_at
+	FROM equity_list e
+	JOIN company_profiles p ON p.symbol = e.symbol AND p.source = ?
+	WHERE TRIM(JSON_UNQUOTE(JSON_EXTRACT(p.info, '$.business_code'))) = ?
+	LIMIT 1
+`
+
+// GetByBusinessCode looks up a listed company by its business registration code (mã ĐKKD / số ĐKKD).
+// Returns app.ErrNotFound when no company_profiles row has a matching business_code.
+// Returns app.ErrInvalidRequest when businessCode is empty after trimming.
+func (r *Repository) GetByBusinessCode(ctx context.Context, businessCode string) (app.ListedCompanyDetail, error) {
+	businessCode = NormalizeBusinessCode(businessCode)
+	if businessCode == "" {
+		return app.ListedCompanyDetail{}, app.ErrInvalidRequest
+	}
+
+	var (
+		rowSymbol, companyName string
+		equityExchange         sql.NullString
+		infoJSON               []byte
+		profileUpdatedAt       sql.NullTime
+	)
+	err := r.db.QueryRowContext(ctx, getByBusinessCodeQuery, profileSourceKBS, businessCode).Scan(
+		&rowSymbol, &companyName, &equityExchange, &infoJSON, &profileUpdatedAt,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return app.ListedCompanyDetail{}, app.ErrNotFound
+	}
+	if err != nil {
+		return app.ListedCompanyDetail{}, fmt.Errorf("marketreference business_code lookup: %w", err)
+	}
+
+	var profileAt *time.Time
+	if profileUpdatedAt.Valid {
+		t := profileUpdatedAt.Time.UTC()
+		profileAt = &t
+	}
+
+	info, err := parseProfileInfo(infoJSON)
+	if err != nil {
+		return app.ListedCompanyDetail{}, fmt.Errorf("marketreference business_code info json: %w", err)
+	}
+	// JOIN guarantees has_profile=true — profile row exists by definition.
+	return mapDetailFromProfile(rowSymbol, companyName, nullString(equityExchange), info, profileAt), nil
+}
+
 // SearchUsesSymbolPrefix reports whether q triggers symbol-prefix search.
 func SearchUsesSymbolPrefix(q string) bool {
 	q = strings.TrimSpace(q)

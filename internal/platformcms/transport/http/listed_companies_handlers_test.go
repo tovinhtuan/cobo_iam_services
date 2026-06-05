@@ -40,8 +40,9 @@ func (a listedFakeAuthorizer) GetEffectiveAccess(context.Context, string, string
 }
 
 type listedFakeRepo struct {
-	listFn func(context.Context, marketapp.ListParams) (marketapp.ListResult, error)
-	getFn  func(context.Context, string) (marketapp.ListedCompanyDetail, error)
+	listFn              func(context.Context, marketapp.ListParams) (marketapp.ListResult, error)
+	getFn               func(context.Context, string) (marketapp.ListedCompanyDetail, error)
+	getByBusinessCodeFn func(context.Context, string) (marketapp.ListedCompanyDetail, error)
 }
 
 func (f *listedFakeRepo) List(ctx context.Context, p marketapp.ListParams) (marketapp.ListResult, error) {
@@ -56,6 +57,13 @@ func (f *listedFakeRepo) GetBySymbol(ctx context.Context, symbol string) (market
 		return f.getFn(ctx, symbol)
 	}
 	return marketapp.ListedCompanyDetail{}, nil
+}
+
+func (f *listedFakeRepo) GetByBusinessCode(ctx context.Context, businessCode string) (marketapp.ListedCompanyDetail, error) {
+	if f.getByBusinessCodeFn != nil {
+		return f.getByBusinessCodeFn(ctx, businessCode)
+	}
+	return marketapp.ListedCompanyDetail{}, marketapp.ErrNotFound
 }
 
 func newListedCompaniesTestHandler(t *testing.T, perms []string, svc *marketapp.Service) *Handler {

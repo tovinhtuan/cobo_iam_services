@@ -9,6 +9,7 @@ import (
 	caapp "github.com/cobo/cobo_iam_services/internal/companyaccess/app"
 	iamapp "github.com/cobo/cobo_iam_services/internal/iam/app"
 	"github.com/cobo/cobo_iam_services/internal/iam/loginpassword"
+	marketapp "github.com/cobo/cobo_iam_services/internal/marketreference/app"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 	"github.com/cobo/cobo_iam_services/internal/platform/httpx"
 	"github.com/cobo/cobo_iam_services/internal/platform/idempotency"
@@ -25,6 +26,7 @@ type AdminHandler struct {
 	idem        idempotency.Store
 	requireProvisionIdempotency bool
 	selfCreateEnabled           bool
+	listedLookup                *marketapp.Service // nil → 503 on lookup endpoint
 }
 
 func NewAdminHandler(svc caapp.AdminService, inspector iamapp.TokenInspector, audit auditapp.Service) *AdminHandler {
@@ -52,6 +54,12 @@ func (h *AdminHandler) WithIdempotency(store idempotency.Store, requireProvision
 // WithSelfCreateEnabled gates POST /api/v1/company/create (COMPANY_SELF_CREATE_ENABLED).
 func (h *AdminHandler) WithSelfCreateEnabled(enabled bool) {
 	h.selfCreateEnabled = enabled
+}
+
+// WithListedCompaniesLookup wires the vnstock lookup service for GET /api/v1/company/listed-lookup.
+// When nil or not called, the endpoint returns 503.
+func (h *AdminHandler) WithListedCompaniesLookup(svc *marketapp.Service) {
+	h.listedLookup = svc
 }
 
 func (h *AdminHandler) Register(mux *http.ServeMux) {
@@ -121,6 +129,9 @@ func (h *AdminHandler) Register(mux *http.ServeMux) {
 	// Company self-service provision (no rbac.manage required)
 	mux.HandleFunc("POST /api/v1/company/initialize", h.initializeCompany)
 	mux.HandleFunc("POST /api/v1/company/create", h.createSelfServiceCompany)
+
+	// Public lookup — no auth required
+	mux.HandleFunc("GET /api/v1/company/listed-lookup", h.listedLookupByBusinessCode)
 }
 
 func (h *AdminHandler) createUser(w http.ResponseWriter, r *http.Request) {
