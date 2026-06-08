@@ -40,20 +40,23 @@ import (
 	disclosurehttp "github.com/cobo/cobo_iam_services/internal/disclosure/transport/http"
 	holidayapp "github.com/cobo/cobo_iam_services/internal/holiday/app"
 	holidaymysql "github.com/cobo/cobo_iam_services/internal/holiday/infra/mysql"
-	marketapp "github.com/cobo/cobo_iam_services/internal/marketreference/app"
-	marketmysql "github.com/cobo/cobo_iam_services/internal/marketreference/infra/mysql"
 	iamapp "github.com/cobo/cobo_iam_services/internal/iam/app"
 	iaminmem "github.com/cobo/cobo_iam_services/internal/iam/infra/inmemory"
 	iammysql "github.com/cobo/cobo_iam_services/internal/iam/infra/mysql"
 	"github.com/cobo/cobo_iam_services/internal/iam/loginpassword"
 	iamhttp "github.com/cobo/cobo_iam_services/internal/iam/transport/http"
+	inappapp "github.com/cobo/cobo_iam_services/internal/inappnotification/app"
+	inappmem "github.com/cobo/cobo_iam_services/internal/inappnotification/infra/inmemory"
+	inappmysql "github.com/cobo/cobo_iam_services/internal/inappnotification/infra/mysql"
+	marketapp "github.com/cobo/cobo_iam_services/internal/marketreference/app"
+	marketmysql "github.com/cobo/cobo_iam_services/internal/marketreference/infra/mysql"
 	notificationapp "github.com/cobo/cobo_iam_services/internal/notification/app"
 	notificationinmem "github.com/cobo/cobo_iam_services/internal/notification/infra/inmemory"
 	notificationmysql "github.com/cobo/cobo_iam_services/internal/notification/infra/mysql"
 	notificationregistry "github.com/cobo/cobo_iam_services/internal/notification/infra/registry"
 	notificationsmtp "github.com/cobo/cobo_iam_services/internal/notification/infra/smtp"
 	notificationhttp "github.com/cobo/cobo_iam_services/internal/notification/transport/http"
-	platformclock 	"github.com/cobo/cobo_iam_services/internal/platform/clock"
+	platformclock "github.com/cobo/cobo_iam_services/internal/platform/clock"
 	"github.com/cobo/cobo_iam_services/internal/platform/config"
 	"github.com/cobo/cobo_iam_services/internal/platform/db"
 	"github.com/cobo/cobo_iam_services/internal/platform/httpx"
@@ -67,13 +70,10 @@ import (
 	redispkg "github.com/cobo/cobo_iam_services/internal/platform/redis"
 	platformcmsapp "github.com/cobo/cobo_iam_services/internal/platformcms/app"
 	platformcmshttp "github.com/cobo/cobo_iam_services/internal/platformcms/transport/http"
-	inappapp "github.com/cobo/cobo_iam_services/internal/inappnotification/app"
-	inappmysql "github.com/cobo/cobo_iam_services/internal/inappnotification/infra/mysql"
-	inappmem "github.com/cobo/cobo_iam_services/internal/inappnotification/infra/inmemory"
-	reminderalertmysql "github.com/cobo/cobo_iam_services/internal/reminder/infra/mysql"
 	reminderapp "github.com/cobo/cobo_iam_services/internal/reminder/app"
 	reminderemail "github.com/cobo/cobo_iam_services/internal/reminder/infra/email"
 	reminderinmem "github.com/cobo/cobo_iam_services/internal/reminder/infra/inmemory"
+	reminderalertmysql "github.com/cobo/cobo_iam_services/internal/reminder/infra/mysql"
 	remindermysql "github.com/cobo/cobo_iam_services/internal/reminder/infra/mysql"
 	reminderobserve "github.com/cobo/cobo_iam_services/internal/reminder/infra/observe"
 	reminderhttp "github.com/cobo/cobo_iam_services/internal/reminder/transport/http"
@@ -476,14 +476,30 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 			Pass: cfg.SMTPPassword,
 			From: cfg.SMTPFrom,
 		}, nil)
-		var proposalNotifier adhocapp.ProposalNotifier = adhocnotif.New(
-			inAppSvc, smtpDelivery, emailTemplateRegistry, emailRenderer, cfg.PublicWebBaseURL, log,
-		)
 
+		// Durable email pipeline (Batch 2 cutover): only constructible when a DB +
+		// outbox repo are available. nil notificationService disables the durable
+		// branch in adhocnotif (it falls back to legacy-only, matching Case A).
+		var adhocEmailNotificationService *notificationapp.EmailNotificationService
+		if pool != nil && outboxSQL != nil {
+			adhocEmailNotificationService = notificationapp.NewEmailNotificationService(
+				notificationmysql.NewEmailNotificationRepository(pool),
+				emailTemplateRegistry,
+				emailRenderer,
+				id,
+				nil,
+				notificationapp.WithTransactionalDispatch(pool, outboxSQL),
+			)
+		}
 		var adhocMetrics adhocapp.Metrics = adhocapp.NewNoopMetrics()
 		if cfg.AdhocEmailMetricsEnabled {
 			adhocMetrics = adhocobserve.NewPromMetrics()
 		}
+		var proposalNotifier adhocapp.ProposalNotifier = adhocnotif.New(
+			inAppSvc, smtpDelivery, emailTemplateRegistry, emailRenderer, adhocEmailNotificationService,
+			cfg.PublicWebBaseURL, cfg.EmailShadowMode, cfg.AdhocEmailOutboxEnabled, cfg.AdhocEmailShadowRecipient,
+			adhocMetrics, log,
+		)
 		adhocSvc := adhocapp.NewService(adhocRepo, recordCreator, typeCatalog, id, cfg.WorkflowAdhocAutoApproveEnabled, authSvc, membershipValidator, proposalNotifier, adhocMetrics)
 		adhocHandler = adhochttp.NewHandler(log, adhocSvc, tokenManager, idemStore)
 		log.Info("ad-hoc proposal module enabled")

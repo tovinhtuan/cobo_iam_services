@@ -20,7 +20,9 @@ import (
 	workflowapp "github.com/cobo/cobo_iam_services/internal/workflow/app"
 	workflowmysql "github.com/cobo/cobo_iam_services/internal/workflow/infra/mysql"
 	notificationapp "github.com/cobo/cobo_iam_services/internal/notification/app"
+	notificationmysql "github.com/cobo/cobo_iam_services/internal/notification/infra/mysql"
 	notificationregistry "github.com/cobo/cobo_iam_services/internal/notification/infra/registry"
+	notificationsmtp "github.com/cobo/cobo_iam_services/internal/notification/infra/smtp"
 	"github.com/cobo/cobo_iam_services/internal/platform/config"
 	"github.com/cobo/cobo_iam_services/internal/platform/db"
 	"github.com/cobo/cobo_iam_services/internal/platform/idgen"
@@ -87,6 +89,32 @@ func main() {
 	processor.Register("auth.email_verification_requested", platformoutbox.HandlerFunc(func(ctx context.Context, event platformoutbox.QueuedEvent) error {
 		return deliverAuthEmailEvent(ctx, cfg, log, event)
 	}))
+	if sqlDB != nil {
+		emailTemplateRegistry := notificationregistry.NewEmbedRegistry()
+		emailRenderer := notificationapp.NewEmailRenderer()
+		emailNotificationRepo := notificationmysql.NewEmailNotificationRepository(sqlDB)
+		emailAttemptRepo := notificationmysql.NewEmailDeliveryAttemptRepository(sqlDB)
+		emailDeliveryAdapter := notificationsmtp.NewAdapter(notificationsmtp.Config{
+			Host: cfg.SMTPHost,
+			Port: cfg.SMTPPort,
+			User: cfg.SMTPUser,
+			Pass: cfg.SMTPPassword,
+			From: cfg.SMTPFrom,
+		}, nil)
+		emailDispatchHandler := notificationapp.NewEmailDispatchHandler(
+			emailNotificationRepo,
+			emailAttemptRepo,
+			emailTemplateRegistry,
+			emailRenderer,
+			emailDeliveryAdapter,
+			idgen.UUIDv7Generator{},
+			nil,
+			0,
+		)
+		processor.Register(notificationapp.EmailDispatchOutboxEventType, platformoutbox.HandlerFunc(func(ctx context.Context, event platformoutbox.QueuedEvent) error {
+			return emailDispatchHandler.Handle(ctx, event.PayloadJSON)
+		}))
+	}
 
 	runCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

@@ -24,34 +24,32 @@ var adhocRecordIDNamespace = uuid.MustParse("6f1e9b2a-6c1d-4f3e-9a8b-2d4c5e6f708
 
 type service struct {
 	repo                Repository
-	recordCreator        RecordCreator
-	typeCatalog          TypeCatalog
-	idg                  idgen.Generator
-	autoApprove          bool // WORKFLOW_ADHOC_AUTOAPPROVE_ENABLED: skip focal step
-	auth                 authapp.Service
-	membershipValidator  MembershipValidator
-	notifier             ProposalNotifier // nil = notifications disabled
-	metrics              Metrics          // metrics emission; supplied as a no-op when ADHOC_EMAIL_METRICS_ENABLED=false
+	recordCreator       RecordCreator
+	typeCatalog         TypeCatalog
+	idg                 idgen.Generator
+	autoApprove         bool // WORKFLOW_ADHOC_AUTOAPPROVE_ENABLED: skip focal step
+	auth                authapp.Service
+	membershipValidator MembershipValidator
+	notifier            ProposalNotifier // nil = notifications disabled
+	metrics             Metrics          // metrics emission; supplied as a no-op when ADHOC_EMAIL_METRICS_ENABLED=false
 }
 
 func NewService(repo Repository, recordCreator RecordCreator, typeCatalog TypeCatalog, idg idgen.Generator, autoApprove bool, auth authapp.Service, mv MembershipValidator, notifier ProposalNotifier, metrics Metrics) Service {
 	return &service{repo: repo, recordCreator: recordCreator, typeCatalog: typeCatalog, idg: idg, autoApprove: autoApprove, auth: auth, membershipValidator: mv, notifier: notifier, metrics: metrics}
 }
 
-// dispatchNotificationAsync runs fn in a goroutine if notifications are configured.
-// Errors inside fn must be handled by the caller (typically logged and swallowed).
-func (s *service) dispatchNotificationAsync(fn func(ctx context.Context)) {
-	if s.notifier == nil || s.membershipValidator == nil {
-		return
-	}
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				slog.Error("adhoc: notification goroutine panic", slog.Any("panic", r))
-			}
-		}()
-		fn(context.Background())
+// safeNotify calls fn with the live request-scoped ctx captured by the closure
+// and recovers any panic the notifier raises. Notification failures never
+// roll back a committed proposal transition (fire-and-forget semantic) — R-2.
+func safeNotify(proposalID string, fn func()) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("adhoc: notification panic recovered",
+				slog.String("proposal_id", proposalID),
+				slog.Any("panic", r))
+		}
 	}()
+	fn()
 }
 
 func (s *service) CreateProposal(ctx context.Context, req CreateProposalRequest) (*ProposalDTO, error) {
@@ -165,17 +163,19 @@ func (s *service) SubmitProposal(ctx context.Context, req ProposalActionRequest)
 		s.metrics.RecordTransition(updated.CompanyID, cur.Status, nextStatus)
 	}
 	snap := *updated
-	s.dispatchNotificationAsync(func(ctx context.Context) {
-		if s.autoApprove {
-			if ctrl, err := s.membershipValidator.ResolveMembership(ctx, snap.CompanyID, snap.ProcessControllerID); err == nil && ctrl != nil {
-				s.notifier.NotifyControllerForReview(ctx, snap, *ctrl)
+	if s.notifier != nil && s.membershipValidator != nil {
+		safeNotify(snap.ProposalID, func() {
+			if s.autoApprove {
+				if ctrl, err := s.membershipValidator.ResolveMembership(ctx, snap.CompanyID, snap.ProcessControllerID); err == nil && ctrl != nil {
+					s.notifier.NotifyControllerForReview(ctx, snap, *ctrl)
+				}
+			} else {
+				if focals, err := s.membershipValidator.ListMembersWithPermissionFull(ctx, snap.CompanyID, "ad_hoc_alert.focal_review"); err == nil {
+					s.notifier.NotifyFocalsForReview(ctx, snap, focals)
+				}
 			}
-		} else {
-			if focals, err := s.membershipValidator.ListMembersWithPermissionFull(ctx, snap.CompanyID, "ad_hoc_alert.focal_review"); err == nil {
-				s.notifier.NotifyFocalsForReview(ctx, snap, focals)
-			}
-		}
-	})
+		})
+	}
 	return updated, nil
 }
 
@@ -209,11 +209,13 @@ func (s *service) FocalApprove(ctx context.Context, req ProposalActionRequest) (
 		s.metrics.RecordTransition(focalUpdated.CompanyID, cur.Status, StatusPendingAdminApproval)
 	}
 	snap := *focalUpdated
-	s.dispatchNotificationAsync(func(ctx context.Context) {
-		if ctrl, err := s.membershipValidator.ResolveMembership(ctx, snap.CompanyID, snap.ProcessControllerID); err == nil && ctrl != nil {
-			s.notifier.NotifyControllerForReview(ctx, snap, *ctrl)
-		}
-	})
+	if s.notifier != nil && s.membershipValidator != nil {
+		safeNotify(snap.ProposalID, func() {
+			if ctrl, err := s.membershipValidator.ResolveMembership(ctx, snap.CompanyID, snap.ProcessControllerID); err == nil && ctrl != nil {
+				s.notifier.NotifyControllerForReview(ctx, snap, *ctrl)
+			}
+		})
+	}
 	return focalUpdated, nil
 }
 
@@ -317,11 +319,13 @@ func (s *service) AdminApprove(ctx context.Context, req AdminApproveRequest) (*A
 		s.metrics.RecordTransition(updated.CompanyID, StatusPendingAdminApproval, StatusApproved)
 	}
 	snap := *updated
-	s.dispatchNotificationAsync(func(ctx context.Context) {
-		if creator, err := s.membershipValidator.ResolveMembership(ctx, snap.CompanyID, snap.CreatedBy); err == nil && creator != nil {
-			s.notifier.NotifyCreatorApproved(ctx, snap, *creator)
-		}
-	})
+	if s.notifier != nil && s.membershipValidator != nil {
+		safeNotify(snap.ProposalID, func() {
+			if creator, err := s.membershipValidator.ResolveMembership(ctx, snap.CompanyID, snap.CreatedBy); err == nil && creator != nil {
+				s.notifier.NotifyCreatorApproved(ctx, snap, *creator)
+			}
+		})
+	}
 	return &AdminApproveResponse{
 		Proposal:           *updated,
 		RecordID:           recordID,
@@ -370,11 +374,13 @@ func (s *service) Reject(ctx context.Context, req RejectRequest) (*ProposalDTO, 
 		s.metrics.RecordTransition(rejected.CompanyID, cur.Status, StatusRejected)
 	}
 	snap := *rejected
-	s.dispatchNotificationAsync(func(ctx context.Context) {
-		if creator, err := s.membershipValidator.ResolveMembership(ctx, snap.CompanyID, snap.CreatedBy); err == nil && creator != nil {
-			s.notifier.NotifyCreatorRejected(ctx, snap, *creator)
-		}
-	})
+	if s.notifier != nil && s.membershipValidator != nil {
+		safeNotify(snap.ProposalID, func() {
+			if creator, err := s.membershipValidator.ResolveMembership(ctx, snap.CompanyID, snap.CreatedBy); err == nil && creator != nil {
+				s.notifier.NotifyCreatorRejected(ctx, snap, *creator)
+			}
+		})
+	}
 	return rejected, nil
 }
 

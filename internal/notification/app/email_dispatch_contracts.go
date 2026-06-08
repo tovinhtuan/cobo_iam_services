@@ -2,8 +2,11 @@ package app
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"time"
+
+	"github.com/cobo/cobo_iam_services/internal/platform/events"
 )
 
 // Email notification lifecycle status values. The phase-2 service writes
@@ -84,6 +87,23 @@ type EmailNotificationRepository interface {
 	MarkSent(ctx context.Context, notificationID string, sentAt time.Time) error
 	MarkRetry(ctx context.Context, notificationID, errorCode, errorMessageRedacted string, nextRetryAt time.Time) error
 	MarkFailedPermanent(ctx context.Context, notificationID, errorCode, errorMessageRedacted string, failedAt time.Time) error
+}
+
+// OutboxPublisher is the narrow outbox-publish contract the transactional
+// dispatch path depends on. Satisfied structurally by *outboxmysql.Repository
+// without this package importing it concretely — keeps the
+// transport -> app -> infra layering intact, mirroring how notificationapp.service
+// depends on its own narrow TxJobRepository/outbox abstractions.
+type OutboxPublisher interface {
+	PublishEventTx(ctx context.Context, tx *sql.Tx, event events.Event) error
+}
+
+// TxEmailNotificationRepository is implemented by MySQL storage to insert an
+// email_notifications row and publish its email.dispatch outbox event in one
+// transaction. Mirrors TxJobRepository's shape exactly.
+type TxEmailNotificationRepository interface {
+	EmailNotificationRepository
+	InsertNotificationTx(ctx context.Context, tx *sql.Tx, n *EmailNotification) error
 }
 
 // Errors surfaced by DispatchEmail. Callers in business modules map these to

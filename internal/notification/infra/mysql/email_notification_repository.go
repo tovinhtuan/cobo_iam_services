@@ -21,16 +21,34 @@ type EmailNotificationRepository struct {
 }
 
 var _ notificationapp.EmailNotificationRepository = (*EmailNotificationRepository)(nil)
+var _ notificationapp.TxEmailNotificationRepository = (*EmailNotificationRepository)(nil)
 
 func NewEmailNotificationRepository(db *sql.DB) *EmailNotificationRepository {
 	return &EmailNotificationRepository{db: db}
 }
 
+// emailExecer is satisfied by both *sql.DB and *sql.Tx, letting
+// insertNotification run identically inside or outside a transaction —
+// the same execer-seam shape used by notification/infra/mysql.Repository.createJob.
+type emailExecer interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
 func (r *EmailNotificationRepository) InsertNotification(ctx context.Context, n *notificationapp.EmailNotification) error {
+	return r.insertNotification(ctx, r.db, n)
+}
+
+// InsertNotificationTx persists the row inside an existing transaction
+// (transactional dispatch + outbox publish). Mirrors CreateJobTx's shape.
+func (r *EmailNotificationRepository) InsertNotificationTx(ctx context.Context, tx *sql.Tx, n *notificationapp.EmailNotification) error {
+	return r.insertNotification(ctx, tx, n)
+}
+
+func (r *EmailNotificationRepository) insertNotification(ctx context.Context, ex emailExecer, n *notificationapp.EmailNotification) error {
 	if n == nil {
 		return notificationapp.ErrRepositoryPersist
 	}
-	_, err := r.db.ExecContext(ctx, `
+	_, err := ex.ExecContext(ctx, `
 		INSERT INTO email_notifications (
 			email_notification_id, company_id, recipient_email, template_key, locale, status,
 			idempotency_key, triggered_by_user_id, source_event_type, source_aggregate_type,

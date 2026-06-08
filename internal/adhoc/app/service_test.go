@@ -1,4 +1,4 @@
-﻿package app
+package app
 
 import (
 	"context"
@@ -175,7 +175,9 @@ type fakeMembershipValidator struct {
 	hasAdminRole bool
 }
 
-func newAllowValidator() *fakeMembershipValidator { return &fakeMembershipValidator{active: true, hasPerm: true} }
+func newAllowValidator() *fakeMembershipValidator {
+	return &fakeMembershipValidator{active: true, hasPerm: true}
+}
 
 func (f *fakeMembershipValidator) IsActiveMembership(_ context.Context, _, _ string) (bool, error) {
 	return f.active, nil
@@ -265,9 +267,9 @@ func TestCreateProposalAllowsIrregularTemplate(t *testing.T) {
 	svc := newTestService(repo, &fakeRecordCreator{}, typeCatalog, auth)
 
 	resp, err := svc.CreateProposal(context.Background(), CreateProposalRequest{
-		Subject:                        Subject{CompanyID: "company-001", MembershipID: "member-001", UserID: "user-001"},
-		TypeID:                         "dt-irregular",
-		ProcessControllerMembershipID:  "member-controller",
+		Subject:                       Subject{CompanyID: "company-001", MembershipID: "member-001", UserID: "user-001"},
+		TypeID:                        "dt-irregular",
+		ProcessControllerMembershipID: "member-controller",
 	})
 	if err != nil {
 		t.Fatalf("CreateProposal() error = %v", err)
@@ -495,6 +497,153 @@ func TestAdminApproveRejectsInvalidFinalDate(t *testing.T) {
 	}
 	if recordCreator.callCount != 0 {
 		t.Fatalf("expected record creator to not be called, got %d", recordCreator.callCount)
+	}
+}
+
+// ---- R-2: safeNotify recovers panics in all 4 Notify* call sites ---------------
+
+// panicNotifier panics on every method, simulating a buggy notifier
+// implementation. Used to prove safeNotify prevents the panic from propagating
+// to the service caller (R-2 fix).
+type panicNotifier struct{}
+
+func (panicNotifier) NotifyFocalsForReview(_ context.Context, _ ProposalDTO, _ []MemberInfo) {
+	panic("R-2 test: NotifyFocalsForReview panic")
+}
+func (panicNotifier) NotifyControllerForReview(_ context.Context, _ ProposalDTO, _ MemberInfo) {
+	panic("R-2 test: NotifyControllerForReview panic")
+}
+func (panicNotifier) NotifyCreatorApproved(_ context.Context, _ ProposalDTO, _ MemberInfo) {
+	panic("R-2 test: NotifyCreatorApproved panic")
+}
+func (panicNotifier) NotifyCreatorRejected(_ context.Context, _ ProposalDTO, _ MemberInfo) {
+	panic("R-2 test: NotifyCreatorRejected panic")
+}
+
+// memberAwareFakeMembershipValidator overrides ResolveMembership and
+// ListMembersWithPermissionFull so they return non-nil/non-empty results.
+// This ensures the notifier IS actually called (triggering the R-2 panic),
+// rather than being skipped by the `ctrl != nil` guard.
+type memberAwareFakeMembershipValidator struct {
+	*fakeMembershipValidator
+	member MemberInfo
+}
+
+func (m *memberAwareFakeMembershipValidator) ResolveMembership(_ context.Context, _, _ string) (*MemberInfo, error) {
+	return &m.member, nil
+}
+
+func (m *memberAwareFakeMembershipValidator) ListMembersWithPermissionFull(_ context.Context, _, _ string) ([]MemberInfo, error) {
+	return []MemberInfo{m.member}, nil
+}
+
+func newMemberAwareValidator() *memberAwareFakeMembershipValidator {
+	return &memberAwareFakeMembershipValidator{
+		fakeMembershipValidator: newAllowValidator(),
+		member: MemberInfo{
+			UserID:       "user-r2",
+			MembershipID: "member-r2",
+			Email:        "r2@example.com",
+			FullName:     "R2 Member",
+		},
+	}
+}
+
+func TestR2_NotifyPanicRecovered_SubmitProposal(t *testing.T) {
+	repo := &fakeRepository{proposal: &ProposalDTO{
+		ProposalID:          "prop-r2-submit",
+		CompanyID:           "company-r2",
+		TypeID:              "dt-001",
+		Status:              StatusDraft,
+		CreatedBy:           "member-creator",
+		ProcessControllerID: "member-ctrl",
+	}}
+	auth := &fakeAuthService{decision: authapp.DecisionAllow}
+	// autoApprove=false: calls NotifyFocalsForReview, which panics; safeNotify must recover.
+	svc := NewService(repo, &fakeRecordCreator{}, &fakeTypeCatalog{category: "irregular"}, fakeIDGen{}, false, auth, newMemberAwareValidator(), panicNotifier{}, noopMetrics{})
+
+	_, err := svc.SubmitProposal(context.Background(), ProposalActionRequest{
+		Subject:    Subject{CompanyID: "company-r2", MembershipID: "member-creator", UserID: "user-001"},
+		ProposalID: "prop-r2-submit",
+	})
+	if err != nil {
+		t.Fatalf("SubmitProposal must succeed despite notifier panic (R-2 safeNotify); got %v", err)
+	}
+}
+
+func TestR2_NotifyPanicRecovered_FocalApprove(t *testing.T) {
+	repo := &fakeRepository{proposal: &ProposalDTO{
+		ProposalID:          "prop-r2-focal",
+		CompanyID:           "company-r2",
+		TypeID:              "dt-001",
+		Status:              StatusPendingFocalApproval,
+		ProcessControllerID: "member-ctrl",
+	}}
+	auth := &fakeAuthService{decision: authapp.DecisionAllow}
+	// autoApprove=false: calls NotifyControllerForReview (ctrl != nil guaranteed by
+	// memberAwareValidator), which panics; safeNotify must recover.
+	svc := NewService(repo, &fakeRecordCreator{}, &fakeTypeCatalog{category: "irregular"}, fakeIDGen{}, false, auth, newMemberAwareValidator(), panicNotifier{}, noopMetrics{})
+
+	_, err := svc.FocalApprove(context.Background(), ProposalActionRequest{
+		Subject:    Subject{CompanyID: "company-r2", MembershipID: "member-focal", UserID: "user-focal"},
+		ProposalID: "prop-r2-focal",
+	})
+	if err != nil {
+		t.Fatalf("FocalApprove must succeed despite notifier panic (R-2 safeNotify); got %v", err)
+	}
+}
+
+func TestR2_NotifyPanicRecovered_AdminApprove(t *testing.T) {
+	repo := &fakeRepository{
+		proposal: &ProposalDTO{
+			ProposalID:          "prop-r2-admin",
+			CompanyID:           "company-r2",
+			TypeID:              "dt-001",
+			Status:              StatusPendingAdminApproval,
+			ChangeNote:          "Admin approve panic test",
+			ProcessControllerID: "member-ctrl",
+			CreatedBy:           "member-creator",
+		},
+	}
+	recordCreator := &fakeRecordCreator{recordID: "record-r2", workflowID: "wf-r2"}
+	auth := &fakeAuthService{decision: authapp.DecisionAllow}
+	// ProcessControllerID == Subject.MembershipID passes the identity gate; then
+	// NotifyCreatorApproved panics (creator != nil via memberAwareValidator);
+	// safeNotify must recover without rolling back the approved transition.
+	svc := NewService(repo, recordCreator, &fakeTypeCatalog{category: "irregular"}, fakeIDGen{}, false, auth, newMemberAwareValidator(), panicNotifier{}, noopMetrics{})
+
+	_, err := svc.AdminApprove(context.Background(), AdminApproveRequest{
+		Subject:        Subject{CompanyID: "company-r2", MembershipID: "member-ctrl", UserID: "user-ctrl"},
+		ProposalID:     "prop-r2-admin",
+		IdempotencyKey: "idem-r2-admin",
+	})
+	if err != nil {
+		t.Fatalf("AdminApprove must succeed despite notifier panic (R-2 safeNotify); got %v", err)
+	}
+}
+
+func TestR2_NotifyPanicRecovered_Reject(t *testing.T) {
+	repo := &fakeRepository{proposal: &ProposalDTO{
+		ProposalID:          "prop-r2-reject",
+		CompanyID:           "company-r2",
+		TypeID:              "dt-001",
+		Status:              StatusPendingAdminApproval,
+		ProcessControllerID: "member-ctrl",
+		CreatedBy:           "member-creator",
+	}}
+	auth := &fakeAuthService{decision: authapp.DecisionAllow}
+	// admin-stage reject uses identity check only (no s.authorize call);
+	// NotifyCreatorRejected panics (creator != nil via memberAwareValidator);
+	// safeNotify must recover.
+	svc := NewService(repo, &fakeRecordCreator{}, &fakeTypeCatalog{category: "irregular"}, fakeIDGen{}, false, auth, newMemberAwareValidator(), panicNotifier{}, noopMetrics{})
+
+	_, err := svc.Reject(context.Background(), RejectRequest{
+		Subject:      Subject{CompanyID: "company-r2", MembershipID: "member-ctrl", UserID: "user-ctrl"},
+		ProposalID:   "prop-r2-reject",
+		RejectReason: "Rejected for R-2 panic test",
+	})
+	if err != nil {
+		t.Fatalf("Reject must succeed despite notifier panic (R-2 safeNotify); got %v", err)
 	}
 }
 
@@ -1251,6 +1400,8 @@ func (s *spyMetrics) RecordTransition(companyID, fromStatus, toStatus string) {
 	s.calls = append(s.calls, metricsCall{companyID: companyID, fromStatus: fromStatus, toStatus: toStatus})
 }
 
+func (s *spyMetrics) RecordEmailShadowOutcome(string, string) {}
+
 func (s *spyMetrics) snapshot() []metricsCall {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1326,11 +1477,11 @@ func TestProposalActions_EmitTransitionMetricWithExactLabels(t *testing.T) {
 	const proposalID = "prop-001"
 
 	tests := []struct {
-		name           string
-		startStatus    string
-		wantFrom       string
-		wantTo         string
-		run            func(t *testing.T, svc Service)
+		name        string
+		startStatus string
+		wantFrom    string
+		wantTo      string
+		run         func(t *testing.T, svc Service)
 	}{
 		{
 			name:        "SubmitProposal: draft -> pending_focal_approval",

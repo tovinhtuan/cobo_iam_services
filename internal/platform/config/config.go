@@ -104,6 +104,16 @@ type Config struct {
 	// EmailShadowMode mirrors dispatch into the new pipeline without taking over delivery (phases 2-4).
 	// Shadow failures must never break the legacy path.
 	EmailShadowMode bool
+	// AdhocEmailOutboxEnabled routes AdhocProposalNotifier's email dispatch through
+	// the durable EmailNotificationService pipeline as the sole authoritative
+	// sender (Batch 2 cutover flag). When false, the legacy DeliveryAdapter.Send
+	// path remains authoritative.
+	AdhocEmailOutboxEnabled bool
+	// AdhocEmailShadowRecipient is the sink address durable-path shadow dispatches
+	// rewrite "to" into while EmailShadowMode is on (and AdhocEmailOutboxEnabled is
+	// off), so real users never receive a duplicate adhoc email. Empty disables the
+	// shadow dispatch (logged as a warning at startup, never a crash).
+	AdhocEmailShadowRecipient string
 
 	// CMS media signed-upload/storage settings.
 	CMSMediaUploadSigningSecret string
@@ -189,6 +199,8 @@ func Load() (Config, error) {
 		EmailDeliveryPath:             getenv("EMAIL_DELIVERY_PATH", "legacy"),
 		EmailFormat:                   getenv("EMAIL_FORMAT", "text"),
 		EmailShadowMode:               boolEnv("EMAIL_SHADOW_MODE", false),
+		AdhocEmailOutboxEnabled:       boolEnv("ADHOC_EMAIL_OUTBOX_ENABLED", false),
+		AdhocEmailShadowRecipient:     getenv("ADHOC_EMAIL_SHADOW_RECIPIENT", ""),
 		CMSMediaUploadSigningSecret:   getenv("CMS_MEDIA_UPLOAD_SIGNING_SECRET", "dev-cms-media-secret"),
 		CMSMediaUploadURLTTL:          durationEnv("CMS_MEDIA_UPLOAD_URL_TTL", 10*time.Minute),
 		CMSMediaStorageDir:            getenv("CMS_MEDIA_STORAGE_DIR", "./var/cms-media"),

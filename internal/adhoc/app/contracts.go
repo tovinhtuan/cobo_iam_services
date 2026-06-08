@@ -115,20 +115,33 @@ type MembershipValidator interface {
 	ListMembersWithPermissionFull(ctx context.Context, companyID, permissionCode string) ([]MemberInfo, error)
 }
 
-// Metrics records ad-hoc proposal lifecycle observability signals (Batch 5(a) /
-// AK.3 — minimum-viable instrumentation: exactly one counter,
-// cobo_adhoc_proposal_transition_total). Implementations must be safe for
-// concurrent use. RecordTransition must be called only for transitions that
-// were actually applied by this request (ADR-2 EV-1) — never for idempotent
-// replays (EV-2) — to avoid corrupting rate()-based alerting in Batch 6.
+// Metrics records ad-hoc proposal lifecycle observability signals. Implementations
+// must be safe for concurrent use.
+//
+// RecordTransition (Batch 5(a) / AK.3 — cobo_adhoc_proposal_transition_total)
+// must be called only for transitions that were actually applied by this request
+// (ADR-2 EV-1) — never for idempotent replays (EV-2) — to avoid corrupting
+// rate()-based alerting in Batch 6.
+//
+// RecordEmailShadowOutcome (Batch 2 / §AK.5 L657 — cobo_adhoc_email_shadow_total)
+// reproduces the spec's "duplicate idempotency_key" detection: emit "match" when
+// the durable dispatch's persisted record carries the content this caller sent
+// (fresh insert or a genuine identical-content idempotent replay), or "mismatch"
+// when the idempotency key resolved to a record with different content (a real
+// collision — the literal condition `COUNT(*) GROUP BY idempotency_key HAVING
+// COUNT(*) > 1` exists to catch, observed at the dispatch site since the unique
+// constraint on email_notifications.idempotency_key makes it unobservable via a
+// post-hoc row count). Called only from the Shadow Mode comparison branch.
 type Metrics interface {
 	RecordTransition(companyID, fromStatus, toStatus string)
+	RecordEmailShadowOutcome(companyID, outcome string)
 }
 
 // noopMetrics is the zero-cost default used when ADHOC_EMAIL_METRICS_ENABLED=false.
 type noopMetrics struct{}
 
 func (noopMetrics) RecordTransition(string, string, string) {}
+func (noopMetrics) RecordEmailShadowOutcome(string, string) {}
 
 // NewNoopMetrics returns a no-op Metrics implementation. Exported because the
 // wiring decision (ADHOC_EMAIL_METRICS_ENABLED) lives in httpserver, outside
@@ -152,14 +165,14 @@ type WorkflowStepOverride struct {
 }
 
 type CreateProposalRequest struct {
-	Subject                      Subject
-	TypeID                       string                 `json:"type_id"`
-	StepOverrides                []WorkflowStepOverride `json:"step_overrides"`
-	ProposedT0Date               string                 `json:"proposed_t0_date,omitempty"` // YYYY-MM-DD
-	ProposedDeadlineDays         int                    `json:"proposed_deadline_days,omitempty"`
-	ProposedDeadline             string                 `json:"proposed_deadline_date,omitempty"` // YYYY-MM-DD or legacy day count string
-	ChangeNote                   string                 `json:"change_note,omitempty"`
-	ProcessControllerMembershipID string                `json:"process_controller_membership_id,omitempty"`
+	Subject                       Subject
+	TypeID                        string                 `json:"type_id"`
+	StepOverrides                 []WorkflowStepOverride `json:"step_overrides"`
+	ProposedT0Date                string                 `json:"proposed_t0_date,omitempty"` // YYYY-MM-DD
+	ProposedDeadlineDays          int                    `json:"proposed_deadline_days,omitempty"`
+	ProposedDeadline              string                 `json:"proposed_deadline_date,omitempty"` // YYYY-MM-DD or legacy day count string
+	ChangeNote                    string                 `json:"change_note,omitempty"`
+	ProcessControllerMembershipID string                 `json:"process_controller_membership_id,omitempty"`
 }
 
 type ProposalActionRequest struct {
@@ -224,31 +237,31 @@ type ListProposalsResponse struct {
 }
 
 type ProposalDTO struct {
-	ProposalID              string                 `json:"proposal_id"`
-	CompanyID               string                 `json:"company_id"`
-	TypeID                  string                 `json:"type_id"`
-	Status                  string                 `json:"status"`
-	StepOverrides           []WorkflowStepOverride `json:"step_overrides"`
-	ProposedT0Date          *string                `json:"proposed_t0_date,omitempty"`
-	FinalT0Date             *string                `json:"final_t0_date,omitempty"`
-	FinalDeadlineDate       *string                `json:"final_deadline_date,omitempty"`
-	AdjustmentNote          string                 `json:"adjustment_note,omitempty"`
-	ProposedDeadlineDays    *int                   `json:"proposed_deadline_days,omitempty"`
-	ProposedDeadlineDate    *string                `json:"proposed_deadline_date,omitempty"` // calendar date when set explicitly
-	ChangeNote              string                 `json:"change_note,omitempty"`
-	FocalApprovedBy         string                 `json:"focal_approved_by,omitempty"`
-	FocalApprovedAt         *time.Time             `json:"focal_approved_at,omitempty"`
-	AdminApprovedBy         string                 `json:"admin_approved_by,omitempty"`
-	AdminApprovedAt         *time.Time             `json:"admin_approved_at,omitempty"`
-	RejectedBy              string                 `json:"rejected_by,omitempty"`
-	RejectedAt              *time.Time             `json:"rejected_at,omitempty"`
-	RejectReason            string                 `json:"reject_reason,omitempty"`
-	RecordID                string                 `json:"record_id,omitempty"`
-	WorkflowInstanceID      string                 `json:"workflow_instance_id,omitempty"`
-	CreatedBy               string                 `json:"created_by"`
-	ProcessControllerID     string                 `json:"process_controller_id,omitempty"`
-	CreatedAt               time.Time              `json:"created_at"`
-	UpdatedAt               time.Time              `json:"updated_at"`
+	ProposalID           string                 `json:"proposal_id"`
+	CompanyID            string                 `json:"company_id"`
+	TypeID               string                 `json:"type_id"`
+	Status               string                 `json:"status"`
+	StepOverrides        []WorkflowStepOverride `json:"step_overrides"`
+	ProposedT0Date       *string                `json:"proposed_t0_date,omitempty"`
+	FinalT0Date          *string                `json:"final_t0_date,omitempty"`
+	FinalDeadlineDate    *string                `json:"final_deadline_date,omitempty"`
+	AdjustmentNote       string                 `json:"adjustment_note,omitempty"`
+	ProposedDeadlineDays *int                   `json:"proposed_deadline_days,omitempty"`
+	ProposedDeadlineDate *string                `json:"proposed_deadline_date,omitempty"` // calendar date when set explicitly
+	ChangeNote           string                 `json:"change_note,omitempty"`
+	FocalApprovedBy      string                 `json:"focal_approved_by,omitempty"`
+	FocalApprovedAt      *time.Time             `json:"focal_approved_at,omitempty"`
+	AdminApprovedBy      string                 `json:"admin_approved_by,omitempty"`
+	AdminApprovedAt      *time.Time             `json:"admin_approved_at,omitempty"`
+	RejectedBy           string                 `json:"rejected_by,omitempty"`
+	RejectedAt           *time.Time             `json:"rejected_at,omitempty"`
+	RejectReason         string                 `json:"reject_reason,omitempty"`
+	RecordID             string                 `json:"record_id,omitempty"`
+	WorkflowInstanceID   string                 `json:"workflow_instance_id,omitempty"`
+	CreatedBy            string                 `json:"created_by"`
+	ProcessControllerID  string                 `json:"process_controller_id,omitempty"`
+	CreatedAt            time.Time              `json:"created_at"`
+	UpdatedAt            time.Time              `json:"updated_at"`
 }
 
 // StatusUpdate carries fields for a state transition update.
