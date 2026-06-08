@@ -110,8 +110,12 @@ func (s *service) CreateRecord(ctx context.Context, req CreateRecordRequest) (*R
 			return nil, err
 		}
 	}
+	recordID := strings.TrimSpace(req.RecordID)
+	if recordID == "" {
+		recordID = s.idg.NewUUID()
+	}
 	rec := RecordDTO{
-		RecordID:     s.idg.NewUUID(),
+		RecordID:     recordID,
 		CompanyID:    req.Subject.CompanyID,
 		TypeID:       strings.TrimSpace(req.Payload.TypeID),
 		DepartmentID: departmentID,

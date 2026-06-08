@@ -15,6 +15,7 @@ import (
 	adhocrecord "github.com/cobo/cobo_iam_services/internal/adhoc/infra/disclosure"
 	adhocmysql "github.com/cobo/cobo_iam_services/internal/adhoc/infra/mysql"
 	adhocnotif "github.com/cobo/cobo_iam_services/internal/adhoc/infra/notification"
+	adhocobserve "github.com/cobo/cobo_iam_services/internal/adhoc/observability"
 	adhochttp "github.com/cobo/cobo_iam_services/internal/adhoc/transport/http"
 	auditapp "github.com/cobo/cobo_iam_services/internal/audit/app"
 	auditappimpl "github.com/cobo/cobo_iam_services/internal/audit/appimpl"
@@ -479,7 +480,11 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 			inAppSvc, smtpDelivery, emailTemplateRegistry, emailRenderer, cfg.PublicWebBaseURL, log,
 		)
 
-		adhocSvc := adhocapp.NewService(adhocRepo, recordCreator, typeCatalog, id, cfg.WorkflowAdhocAutoApproveEnabled, authSvc, membershipValidator, proposalNotifier)
+		var adhocMetrics adhocapp.Metrics = adhocapp.NewNoopMetrics()
+		if cfg.AdhocEmailMetricsEnabled {
+			adhocMetrics = adhocobserve.NewPromMetrics()
+		}
+		adhocSvc := adhocapp.NewService(adhocRepo, recordCreator, typeCatalog, id, cfg.WorkflowAdhocAutoApproveEnabled, authSvc, membershipValidator, proposalNotifier, adhocMetrics)
 		adhocHandler = adhochttp.NewHandler(log, adhocSvc, tokenManager, idemStore)
 		log.Info("ad-hoc proposal module enabled")
 	}

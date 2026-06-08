@@ -2,8 +2,15 @@ package app
 
 import (
 	"context"
+	"errors"
 	"time"
 )
+
+// ErrDuplicateRecordID is returned when CreateRecord is called with an explicit
+// RecordID that already exists (unique-key conflict on disclosure_records.record_id).
+// Callers that pre-allocate deterministic record IDs (e.g. ad-hoc approval) treat
+// this as an idempotent-replay signal rather than a hard failure.
+var ErrDuplicateRecordID = errors.New("disclosure record id already exists")
 
 type Service interface {
 	CreateRecord(ctx context.Context, req CreateRecordRequest) (*RecordDTO, error)
@@ -131,6 +138,11 @@ type Repository interface {
 type CreateRecordRequest struct {
 	Subject Subject
 	Payload RecordPayload
+	// RecordID, when non-empty, is used as the explicit primary key instead of
+	// generating a new one. Used by callers that pre-allocate deterministic IDs
+	// (e.g. ad-hoc admin approval, ADR-1B) so retries are idempotent rather than
+	// creating orphaned/duplicate records.
+	RecordID string
 }
 
 type UpdateRecordRequest struct {

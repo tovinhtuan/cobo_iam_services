@@ -4,20 +4,45 @@ import (
 	"context"
 )
 
+// hasProposedDeadlineDaysColumn detects (once, then caches) whether
+// ad_hoc_proposals.proposed_deadline_days exists.
+//
+// CF-16: a sync.Once-based cache permanently poisons every future caller if the
+// very first information_schema lookup hits a transient error (context
+// cancellation, connection blip) — there is no self-healing. Instead, only a
+// *successful* lookup is cached; a failed attempt is retried on the next call.
+// Guarded by a mutex so concurrent callers neither race on the cached fields
+// nor issue redundant queries once a result is cached.
 func (r *Repository) hasProposedDeadlineDaysColumn(ctx context.Context) (bool, error) {
-	r.deadlineDaysColOnce.Do(func() {
-		var count int
-		err := r.db.QueryRowContext(ctx, `
-			SELECT COUNT(1)
-			FROM information_schema.columns
-			WHERE table_schema = DATABASE()
-			  AND table_name = 'ad_hoc_proposals'
-			  AND column_name = 'proposed_deadline_days'
-		`).Scan(&count)
-		r.deadlineDaysColErr = err
-		r.deadlineDaysColOK = count > 0
-	})
-	return r.deadlineDaysColOK, r.deadlineDaysColErr
+	r.deadlineDaysColMu.RLock()
+	if r.deadlineDaysColCached {
+		ok := r.deadlineDaysColOK
+		r.deadlineDaysColMu.RUnlock()
+		return ok, nil
+	}
+	r.deadlineDaysColMu.RUnlock()
+
+	r.deadlineDaysColMu.Lock()
+	defer r.deadlineDaysColMu.Unlock()
+	if r.deadlineDaysColCached {
+		return r.deadlineDaysColOK, nil
+	}
+
+	var count int
+	err := r.db.QueryRowContext(ctx, `
+		SELECT COUNT(1)
+		FROM information_schema.columns
+		WHERE table_schema = DATABASE()
+		  AND table_name = 'ad_hoc_proposals'
+		  AND column_name = 'proposed_deadline_days'
+	`).Scan(&count)
+	if err != nil {
+		// Transient failure: do not cache, allow the next caller to retry.
+		return false, err
+	}
+	r.deadlineDaysColOK = count > 0
+	r.deadlineDaysColCached = true
+	return r.deadlineDaysColOK, nil
 }
 
 func (r *Repository) proposalDetailColumns(ctx context.Context) (cols string, includeDeadlineDays bool, err error) {

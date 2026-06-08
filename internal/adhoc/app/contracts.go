@@ -34,10 +34,15 @@ type ListEligibleControllersRequest struct {
 type Repository interface {
 	Insert(ctx context.Context, p ProposalDTO) (*ProposalDTO, error)
 	FindByID(ctx context.Context, companyID, proposalID string) (*ProposalDTO, error)
-	UpdateStatus(ctx context.Context, upd StatusUpdate) (*ProposalDTO, error)
+	// The bool return ("applied") is true only when this call's own guarded UPDATE
+	// matched and applied the transition (ADR-2 EV-1); false on idempotent replay
+	// (EV-2) or any non-success outcome — callers must use it to avoid
+	// double-emitting transition metrics.
+	UpdateStatus(ctx context.Context, upd StatusUpdate) (*ProposalDTO, bool, error)
 	ReserveAdminApproval(ctx context.Context, in ReserveAdminApprovalInput) (*AdminApprovalReservation, error)
 	SaveAdminApprovalProgress(ctx context.Context, companyID, proposalID, idemKey, recordID, workflowID, lastError string) error
-	CompleteAdminApproval(ctx context.Context, upd StatusUpdate, idemKey string) (*ProposalDTO, error)
+	// The bool return ("applied") follows the same EV-1/EV-2 contract as UpdateStatus.
+	CompleteAdminApproval(ctx context.Context, upd StatusUpdate, idemKey string) (*ProposalDTO, bool, error)
 	List(ctx context.Context, companyID string, statusFilter []string, page, pageSize int) ([]ProposalDTO, int, error)
 }
 
@@ -51,6 +56,10 @@ type CreateRecordOpts struct {
 	StepOverrides []WorkflowStepOverride // ad-hoc only
 	CycleStart    *time.Time             // periodic materialize (Batch 2)
 	PlannedDate   string                 // periodic: cycle due_date → disclosure_records.planned_date (YYYY-MM-DD); empty = not set
+	// RecordID, when non-empty, is the deterministic record ID (ADR-1B) the
+	// caller pre-allocated; passed through to disclosureapp.CreateRecordRequest
+	// so retries are idempotent instead of creating orphaned/duplicate records.
+	RecordID string
 }
 
 // RecordCreator is the cross-module interface the ad-hoc service uses to submit a disclosure record.
@@ -105,6 +114,26 @@ type MembershipValidator interface {
 	// including their UserID for in-app notification dispatch.
 	ListMembersWithPermissionFull(ctx context.Context, companyID, permissionCode string) ([]MemberInfo, error)
 }
+
+// Metrics records ad-hoc proposal lifecycle observability signals (Batch 5(a) /
+// AK.3 — minimum-viable instrumentation: exactly one counter,
+// cobo_adhoc_proposal_transition_total). Implementations must be safe for
+// concurrent use. RecordTransition must be called only for transitions that
+// were actually applied by this request (ADR-2 EV-1) — never for idempotent
+// replays (EV-2) — to avoid corrupting rate()-based alerting in Batch 6.
+type Metrics interface {
+	RecordTransition(companyID, fromStatus, toStatus string)
+}
+
+// noopMetrics is the zero-cost default used when ADHOC_EMAIL_METRICS_ENABLED=false.
+type noopMetrics struct{}
+
+func (noopMetrics) RecordTransition(string, string, string) {}
+
+// NewNoopMetrics returns a no-op Metrics implementation. Exported because the
+// wiring decision (ADHOC_EMAIL_METRICS_ENABLED) lives in httpserver, outside
+// this package, and the constructor's metrics argument must never be a literal nil.
+func NewNoopMetrics() Metrics { return noopMetrics{} }
 
 // RoleCodeAdminDoanhNghiep is the tenant company-admin role that may self-assign as process controller.
 const RoleCodeAdminDoanhNghiep = "admin_doanh_nghiep"
@@ -224,9 +253,13 @@ type ProposalDTO struct {
 
 // StatusUpdate carries fields for a state transition update.
 type StatusUpdate struct {
-	ProposalID               string
-	CompanyID                string
-	Status                   string
+	ProposalID string
+	CompanyID  string
+	Status     string
+	// FromStatus is the expected current status (ADR-2 lost-update guard).
+	// The repository binds it as `AND status = ?` on the transition UPDATE so a
+	// concurrent winner cannot be silently overwritten by a stale transition.
+	FromStatus               string
 	ActorMembershipID        string
 	ActorUserID              string
 	SetFocalApprovalMetadata bool

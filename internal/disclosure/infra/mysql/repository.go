@@ -4,14 +4,33 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
+	sqldriver "github.com/go-sql-driver/mysql"
+
 	disclosureapp "github.com/cobo/cobo_iam_services/internal/disclosure/app"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 )
+
+// isDuplicateRecordIDError reports whether err is a MySQL duplicate-key error
+// (1062 / ER_DUP_ENTRY) on disclosure_records' primary key (record_id is the
+// table's only unique constraint — see migration 0004_p1_business_tables).
+// Scoped to the key name so unrelated duplicate-key errors are not swallowed.
+func isDuplicateRecordIDError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var me *sqldriver.MySQLError
+	if errors.As(err, &me) && me.Number == 1062 {
+		msg := strings.ToLower(me.Message)
+		return strings.Contains(msg, "primary") || strings.Contains(msg, "record_id")
+	}
+	return false
+}
 
 type Repository struct {
 	db *sql.DB
@@ -32,6 +51,9 @@ func (r *Repository) Create(ctx context.Context, rec disclosureapp.RecordDTO) (*
 		) VALUES (?, ?, NULLIF(?, ''), ?, ?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), ?, CAST(? AS JSON), NULLIF(?, ''), ?, ?)
 	`, rec.RecordID, rec.CompanyID, rec.TypeID, rec.DepartmentID, rec.Title, rec.Summary, rec.Content, rec.PlannedDate, rec.PublishedDate, rec.Status, string(attachmentsJSON), rec.EvidenceLink, rec.CreatedBy, rec.UpdatedBy)
 	if err != nil {
+		if isDuplicateRecordIDError(err) {
+			return nil, disclosureapp.ErrDuplicateRecordID
+		}
 		return nil, fmt.Errorf("disclosure insert: %w", err)
 	}
 	return r.FindByID(ctx, rec.CompanyID, rec.RecordID)

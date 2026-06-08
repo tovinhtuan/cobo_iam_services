@@ -8,10 +8,19 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+
 	authapp "github.com/cobo/cobo_iam_services/internal/authorization/app"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 	"github.com/cobo/cobo_iam_services/internal/platform/idgen"
 )
+
+// adhocRecordIDNamespace is the fixed UUID namespace for ADR-1B deterministic
+// record-ID derivation. Pre-allocating a stable RecordID per (company, proposal)
+// makes AdminApprove's record-creation step idempotent under retry: a repeat
+// attempt computes the same ID and is detected as a duplicate-key replay
+// instead of creating an orphaned second disclosure_records row (CF-01).
+var adhocRecordIDNamespace = uuid.MustParse("6f1e9b2a-6c1d-4f3e-9a8b-2d4c5e6f7081")
 
 type service struct {
 	repo                Repository
@@ -22,10 +31,11 @@ type service struct {
 	auth                 authapp.Service
 	membershipValidator  MembershipValidator
 	notifier             ProposalNotifier // nil = notifications disabled
+	metrics              Metrics          // metrics emission; supplied as a no-op when ADHOC_EMAIL_METRICS_ENABLED=false
 }
 
-func NewService(repo Repository, recordCreator RecordCreator, typeCatalog TypeCatalog, idg idgen.Generator, autoApprove bool, auth authapp.Service, mv MembershipValidator, notifier ProposalNotifier) Service {
-	return &service{repo: repo, recordCreator: recordCreator, typeCatalog: typeCatalog, idg: idg, autoApprove: autoApprove, auth: auth, membershipValidator: mv, notifier: notifier}
+func NewService(repo Repository, recordCreator RecordCreator, typeCatalog TypeCatalog, idg idgen.Generator, autoApprove bool, auth authapp.Service, mv MembershipValidator, notifier ProposalNotifier, metrics Metrics) Service {
+	return &service{repo: repo, recordCreator: recordCreator, typeCatalog: typeCatalog, idg: idg, autoApprove: autoApprove, auth: auth, membershipValidator: mv, notifier: notifier, metrics: metrics}
 }
 
 // dispatchNotificationAsync runs fn in a goroutine if notifications are configured.
@@ -139,16 +149,20 @@ func (s *service) SubmitProposal(ctx context.Context, req ProposalActionRequest)
 	if s.autoApprove {
 		nextStatus = StatusPendingAdminApproval
 	}
-	updated, err := s.repo.UpdateStatus(ctx, StatusUpdate{
+	updated, applied, err := s.repo.UpdateStatus(ctx, StatusUpdate{
 		ProposalID:               req.ProposalID,
 		CompanyID:                req.Subject.CompanyID,
 		Status:                   nextStatus,
+		FromStatus:               cur.Status, // ADR-2: cur.Status == StatusDraft (checked above)
 		ActorMembershipID:        req.Subject.MembershipID,
 		ActorUserID:              req.Subject.UserID,
 		SetFocalApprovalMetadata: false,
 	})
 	if err != nil {
 		return nil, err
+	}
+	if applied {
+		s.metrics.RecordTransition(updated.CompanyID, cur.Status, nextStatus)
 	}
 	snap := *updated
 	s.dispatchNotificationAsync(func(ctx context.Context) {
@@ -179,16 +193,20 @@ func (s *service) FocalApprove(ctx context.Context, req ProposalActionRequest) (
 	if cur.Status != StatusPendingFocalApproval {
 		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "proposal is not pending focal approval", nil)
 	}
-	focalUpdated, err := s.repo.UpdateStatus(ctx, StatusUpdate{
+	focalUpdated, applied, err := s.repo.UpdateStatus(ctx, StatusUpdate{
 		ProposalID:               req.ProposalID,
 		CompanyID:                req.Subject.CompanyID,
 		Status:                   StatusPendingAdminApproval,
+		FromStatus:               cur.Status, // ADR-2: cur.Status == StatusPendingFocalApproval (checked above)
 		ActorMembershipID:        req.Subject.MembershipID,
 		ActorUserID:              req.Subject.UserID,
 		SetFocalApprovalMetadata: true,
 	})
 	if err != nil {
 		return nil, err
+	}
+	if applied {
+		s.metrics.RecordTransition(focalUpdated.CompanyID, cur.Status, StatusPendingAdminApproval)
 	}
 	snap := *focalUpdated
 	s.dispatchNotificationAsync(func(ctx context.Context) {
@@ -249,7 +267,18 @@ func (s *service) AdminApprove(ctx context.Context, req AdminApproveRequest) (*A
 	recordID := reservation.ProgressRecordID
 	workflowInstanceID := reservation.ProgressWorkflowID
 	if strings.TrimSpace(recordID) == "" {
-		recordID, workflowInstanceID, err = s.recordCreator.CreateAndSubmitRecordWithOpts(ctx, cur.CompanyID, cur.TypeID, req.Subject.MembershipID, title, finalT0Time, CreateRecordOpts{
+		// ADR-1B: derive a deterministic RecordID from (company, proposal) so a
+		// retried creation attempt is recognized as a replay (idempotent) instead
+		// of inserting a second, orphaned disclosure_records row (CF-01).
+		deterministicRecordID := uuid.NewSHA1(
+			adhocRecordIDNamespace,
+			[]byte(fmt.Sprintf("%s:%s", cur.CompanyID, cur.ProposalID)),
+		).String()
+		// CF-15: the disclosure record's creator must be the proposal's original
+		// creator (cur.CreatedBy), not the approving admin (req.Subject.MembershipID).
+		// req.Subject remains the acting/authorizing actor for this request.
+		recordID, workflowInstanceID, err = s.recordCreator.CreateAndSubmitRecordWithOpts(ctx, cur.CompanyID, cur.TypeID, cur.CreatedBy, title, finalT0Time, CreateRecordOpts{
+			RecordID:      deterministicRecordID,
 			StepOverrides: cur.StepOverrides,
 		})
 		if err != nil {
@@ -263,10 +292,16 @@ func (s *service) AdminApprove(ctx context.Context, req AdminApproveRequest) (*A
 		}
 	}
 
-	updated, err := s.repo.CompleteAdminApproval(ctx, StatusUpdate{
-		ProposalID:         req.ProposalID,
-		CompanyID:          req.Subject.CompanyID,
-		Status:             StatusApproved,
+	updated, applied, err := s.repo.CompleteAdminApproval(ctx, StatusUpdate{
+		ProposalID: req.ProposalID,
+		CompanyID:  req.Subject.CompanyID,
+		Status:     StatusApproved,
+		// ADR-2: pending_admin_approval -> approved. CompleteAdminApproval already
+		// guards with `AND status = ? AND (approval_idempotency_key = ? OR ...)`
+		// (a stronger, idempotency-key-aware guard than the generic FromStatus
+		// predicate) — FromStatus is set here for contract-completeness/documentation
+		// and is intentionally not consumed by CompleteAdminApproval's SQL.
+		FromStatus:         StatusPendingAdminApproval,
 		ActorMembershipID:  req.Subject.MembershipID,
 		ActorUserID:        req.Subject.UserID,
 		RecordID:           recordID,
@@ -277,6 +312,9 @@ func (s *service) AdminApprove(ctx context.Context, req AdminApproveRequest) (*A
 	}, strings.TrimSpace(req.IdempotencyKey))
 	if err != nil {
 		return nil, err
+	}
+	if applied {
+		s.metrics.RecordTransition(updated.CompanyID, StatusPendingAdminApproval, StatusApproved)
 	}
 	snap := *updated
 	s.dispatchNotificationAsync(func(ctx context.Context) {
@@ -315,16 +353,21 @@ func (s *service) Reject(ctx context.Context, req RejectRequest) (*ProposalDTO, 
 	if reason == "" {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "reject_reason is required", nil)
 	}
-	rejected, err := s.repo.UpdateStatus(ctx, StatusUpdate{
-		ProposalID:        req.ProposalID,
-		CompanyID:         req.Subject.CompanyID,
-		Status:            StatusRejected,
+	rejected, applied, err := s.repo.UpdateStatus(ctx, StatusUpdate{
+		ProposalID: req.ProposalID,
+		CompanyID:  req.Subject.CompanyID,
+		Status:     StatusRejected,
+		// ADR-2: cur.Status is one of {StatusPendingFocalApproval, StatusPendingAdminApproval} (checked above).
+		FromStatus:        cur.Status,
 		ActorMembershipID: req.Subject.MembershipID,
 		ActorUserID:       req.Subject.UserID,
 		RejectReason:      reason,
 	})
 	if err != nil {
 		return nil, err
+	}
+	if applied {
+		s.metrics.RecordTransition(rejected.CompanyID, cur.Status, StatusRejected)
 	}
 	snap := *rejected
 	s.dispatchNotificationAsync(func(ctx context.Context) {
@@ -351,13 +394,22 @@ func (s *service) Cancel(ctx context.Context, req ProposalActionRequest) (*Propo
 	if cur.CreatedBy != req.Subject.MembershipID {
 		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "only the creator can cancel the proposal", nil)
 	}
-	return s.repo.UpdateStatus(ctx, StatusUpdate{
-		ProposalID:        req.ProposalID,
-		CompanyID:         req.Subject.CompanyID,
-		Status:            StatusCancelled,
+	updated, applied, err := s.repo.UpdateStatus(ctx, StatusUpdate{
+		ProposalID: req.ProposalID,
+		CompanyID:  req.Subject.CompanyID,
+		Status:     StatusCancelled,
+		// ADR-2: cur.Status is one of {StatusDraft, StatusPendingFocalApproval, StatusPendingAdminApproval} (checked above).
+		FromStatus:        cur.Status,
 		ActorMembershipID: req.Subject.MembershipID,
 		ActorUserID:       req.Subject.UserID,
 	})
+	if err != nil {
+		return nil, err
+	}
+	if applied {
+		s.metrics.RecordTransition(updated.CompanyID, cur.Status, StatusCancelled)
+	}
+	return updated, nil
 }
 
 func (s *service) GetProposal(ctx context.Context, req GetProposalRequest) (*ProposalDTO, error) {

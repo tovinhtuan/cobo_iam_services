@@ -16,9 +16,14 @@ import (
 type Repository struct {
 	db *sql.DB
 
-	deadlineDaysColOnce sync.Once
-	deadlineDaysColOK   bool
-	deadlineDaysColErr  error
+	// CF-16: deadlineDaysCol* cache the result of detecting whether
+	// ad_hoc_proposals.proposed_deadline_days exists. Only a *successful*
+	// information_schema lookup is cached (deadlineDaysColCached=true);
+	// a transient failure must not permanently poison subsequent callers.
+	// See hasProposedDeadlineDaysColumn in schema_caps.go.
+	deadlineDaysColMu     sync.RWMutex
+	deadlineDaysColCached bool
+	deadlineDaysColOK     bool
 }
 
 func NewRepository(db *sql.DB) *Repository {
@@ -78,45 +83,70 @@ func (r *Repository) FindByID(ctx context.Context, companyID, proposalID string)
 	return scanProposalRow(row, includeDays)
 }
 
-func (r *Repository) UpdateStatus(ctx context.Context, upd adhocapp.StatusUpdate) (*adhocapp.ProposalDTO, error) {
+func (r *Repository) UpdateStatus(ctx context.Context, upd adhocapp.StatusUpdate) (*adhocapp.ProposalDTO, bool, error) {
 	now := time.Now().UTC()
 	var q string
 	var args []any
 
 	switch upd.Status {
 	case adhocapp.StatusPendingFocalApproval, adhocapp.StatusPendingAdminApproval, adhocapp.StatusCancelled:
-		q = `UPDATE ad_hoc_proposals SET status = ?, updated_at = ? WHERE proposal_id = ? AND company_id = ?`
-		args = []any{upd.Status, now, upd.ProposalID, upd.CompanyID}
+		q = `UPDATE ad_hoc_proposals SET status = ?, updated_at = ? WHERE proposal_id = ? AND company_id = ? AND status = ?`
+		args = []any{upd.Status, now, upd.ProposalID, upd.CompanyID, upd.FromStatus}
 	case adhocapp.StatusRejected:
 		q = `UPDATE ad_hoc_proposals SET status = ?, rejected_by = ?, rejected_at = ?, reject_reason = ?, updated_at = ?
-		     WHERE proposal_id = ? AND company_id = ?`
-		args = []any{upd.Status, upd.ActorMembershipID, now, upd.RejectReason, now, upd.ProposalID, upd.CompanyID}
+		     WHERE proposal_id = ? AND company_id = ? AND status = ?`
+		args = []any{upd.Status, upd.ActorMembershipID, now, upd.RejectReason, now, upd.ProposalID, upd.CompanyID, upd.FromStatus}
 	case adhocapp.StatusApproved:
 		q = `UPDATE ad_hoc_proposals SET status = ?, admin_approved_by = ?, admin_approved_at = ?,
 		     record_id = NULLIF(?, ''), workflow_instance_id = NULLIF(?, ''),
 		     final_t0_date = ?, final_deadline_date = ?, adjustment_note = ?, updated_at = ?
-		     WHERE proposal_id = ? AND company_id = ?`
-		args = []any{upd.Status, upd.ActorMembershipID, now, upd.RecordID, upd.WorkflowInstanceID, nullableStr(upd.FinalT0Date), nullableStr(upd.FinalDeadlineDate), nullIfBlank(upd.AdjustmentNote), now, upd.ProposalID, upd.CompanyID}
+		     WHERE proposal_id = ? AND company_id = ? AND status = ?`
+		args = []any{upd.Status, upd.ActorMembershipID, now, upd.RecordID, upd.WorkflowInstanceID, nullableStr(upd.FinalT0Date), nullableStr(upd.FinalDeadlineDate), nullIfBlank(upd.AdjustmentNote), now, upd.ProposalID, upd.CompanyID, upd.FromStatus}
 	default:
-		return nil, fmt.Errorf("unknown status transition: %s", upd.Status)
+		return nil, false, fmt.Errorf("unknown status transition: %s", upd.Status)
 	}
 
 	// Only persist focal approval metadata when the transition came from a real focal review.
 	if upd.Status == adhocapp.StatusPendingAdminApproval && upd.SetFocalApprovalMetadata {
 		q = `UPDATE ad_hoc_proposals SET status = ?, focal_approved_by = ?, focal_approved_at = ?, updated_at = ?
-		     WHERE proposal_id = ? AND company_id = ?`
-		args = []any{upd.Status, upd.ActorMembershipID, now, now, upd.ProposalID, upd.CompanyID}
+		     WHERE proposal_id = ? AND company_id = ? AND status = ?`
+		args = []any{upd.Status, upd.ActorMembershipID, now, now, upd.ProposalID, upd.CompanyID, upd.FromStatus}
 	}
 
 	res, err := r.db.ExecContext(ctx, q, args...)
 	if err != nil {
-		return nil, fmt.Errorf("update ad_hoc_proposal status: %w", err)
+		return nil, false, fmt.Errorf("update ad_hoc_proposal status: %w", err)
 	}
 	n, _ := res.RowsAffected()
-	if n == 0 {
-		return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "proposal not found", nil)
+	applied := n == 1
+	if applied {
+		dto, err := r.FindByID(ctx, upd.CompanyID, upd.ProposalID)
+		return dto, true, err
 	}
-	return r.FindByID(ctx, upd.CompanyID, upd.ProposalID)
+
+	// ADR-2 RowsAffected decision tree (n == 0): the WHERE ... AND status = ?
+	// guard matched no row. Re-read by proposal_id to disambiguate:
+	//   - row not found            -> 404 CodeNotFound
+	//   - current_status == target -> idempotent replay success (EV-2)
+	//   - otherwise                -> 409 CodeStateConflict (lost-update guard, CF-02)
+	cur, findErr := r.FindByID(ctx, upd.CompanyID, upd.ProposalID)
+	if findErr != nil {
+		if httpErr, ok := perr.AsHTTPError(findErr); ok && httpErr.HTTPStatus == http.StatusNotFound {
+			return nil, false, perr.NewHTTPError(http.StatusNotFound, perr.CodeNotFound, "proposal not found", nil)
+		}
+		return nil, false, findErr
+	}
+	if cur.Status == upd.Status {
+		return cur, false, nil
+	}
+	conflictErr := perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "proposal status changed concurrently", nil)
+	conflictErr.Details = map[string]any{
+		"proposal_id":             upd.ProposalID,
+		"current_status":          cur.Status,
+		"expected_from_status":    upd.FromStatus,
+		"attempted_target_status": upd.Status,
+	}
+	return nil, false, conflictErr
 }
 
 func (r *Repository) ReserveAdminApproval(ctx context.Context, in adhocapp.ReserveAdminApprovalInput) (*adhocapp.AdminApprovalReservation, error) {
@@ -202,7 +232,7 @@ func (r *Repository) SaveAdminApprovalProgress(ctx context.Context, companyID, p
 	return nil
 }
 
-func (r *Repository) CompleteAdminApproval(ctx context.Context, upd adhocapp.StatusUpdate, idemKey string) (*adhocapp.ProposalDTO, error) {
+func (r *Repository) CompleteAdminApproval(ctx context.Context, upd adhocapp.StatusUpdate, idemKey string) (*adhocapp.ProposalDTO, bool, error) {
 	now := time.Now().UTC()
 	res, err := r.db.ExecContext(ctx, `
 		UPDATE ad_hoc_proposals
@@ -217,20 +247,24 @@ func (r *Repository) CompleteAdminApproval(ctx context.Context, upd adhocapp.Sta
 		nullableStr(upd.FinalT0Date), nullableStr(upd.FinalDeadlineDate), nullIfBlank(upd.AdjustmentNote), now,
 		upd.ProposalID, upd.CompanyID, adhocapp.StatusPendingAdminApproval, idemKey, idemKey)
 	if err != nil {
-		return nil, fmt.Errorf("complete admin approval: %w", err)
+		return nil, false, fmt.Errorf("complete admin approval: %w", err)
 	}
 	n, _ := res.RowsAffected()
-	if n == 0 {
+	applied := n != 0
+	if !applied {
+		// EV-2/EV-3 disambiguation: the guarded UPDATE matched no row — re-read to
+		// distinguish an idempotent replay (already approved) from a genuine conflict.
 		cur, findErr := r.FindByID(ctx, upd.CompanyID, upd.ProposalID)
 		if findErr != nil {
-			return nil, findErr
+			return nil, false, findErr
 		}
 		if cur.Status == adhocapp.StatusApproved {
-			return cur, nil
+			return cur, false, nil
 		}
-		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "proposal cannot be approved in current state", nil)
+		return nil, false, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "proposal cannot be approved in current state", nil)
 	}
-	return r.FindByID(ctx, upd.CompanyID, upd.ProposalID)
+	dto, err := r.FindByID(ctx, upd.CompanyID, upd.ProposalID)
+	return dto, true, err
 }
 
 func (r *Repository) List(ctx context.Context, companyID string, statusFilter []string, page, pageSize int) ([]adhocapp.ProposalDTO, int, error) {

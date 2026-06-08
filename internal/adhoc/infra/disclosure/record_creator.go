@@ -3,6 +3,7 @@ package disclosure
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -66,7 +67,8 @@ func (a *RecordCreatorAdapter) CreateAndSubmitRecordWithOpts(ctx context.Context
 	}
 
 	rec, err := a.svc.CreateRecord(ctx, disclosureapp.CreateRecordRequest{
-		Subject: sub,
+		Subject:  sub,
+		RecordID: opts.RecordID, // ADR-1B: deterministic pre-allocated ID, empty = let the service generate one
 		Payload: disclosureapp.RecordPayload{
 			TypeID:      typeID,
 			Title:       title,
@@ -75,6 +77,20 @@ func (a *RecordCreatorAdapter) CreateAndSubmitRecordWithOpts(ctx context.Context
 		},
 	})
 	if err != nil {
+		if opts.RecordID != "" && errors.Is(err, disclosureapp.ErrDuplicateRecordID) {
+			// ADR-1B idempotent replay: a prior attempt already created (and possibly
+			// submitted/wired-up) the record under this deterministic ID. Fetch the
+			// existing record — including its linked workflow instance — instead of
+			// creating a second record or a duplicate workflow instance.
+			existing, getErr := a.svc.GetRecord(ctx, disclosureapp.GetRecordRequest{
+				Subject:  sub,
+				RecordID: opts.RecordID,
+			})
+			if getErr != nil {
+				return "", "", fmt.Errorf("fetch existing record after duplicate id: %w", getErr)
+			}
+			return existing.RecordID, existing.WorkflowInstanceID, nil
+		}
 		return "", "", fmt.Errorf("create record: %w", err)
 	}
 	if _, err := a.svc.SubmitRecord(ctx, disclosureapp.SubmitRecordRequest{
