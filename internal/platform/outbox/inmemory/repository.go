@@ -80,6 +80,19 @@ func (r *Repository) MarkRetry(_ context.Context, eventID string, retryCount int
 	return nil
 }
 
+func (r *Repository) RequeueStaleProcessing(_ context.Context, olderThan time.Time) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	n := 0
+	for _, it := range r.events {
+		if it.Status == "processing" && it.AvailableAt.Before(olderThan) {
+			it.Status = "pending"
+			n++
+		}
+	}
+	return n, nil
+}
+
 func (r *Repository) MarkFailedPermanent(_ context.Context, eventID string, at time.Time, lastErr string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

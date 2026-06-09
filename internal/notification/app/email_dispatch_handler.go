@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -32,14 +33,16 @@ type EmailDispatchOutboxPayload struct {
 // unit-testable in isolation (no MySQL, no SMTP) using fake repositories +
 // adapter.
 type EmailDispatchHandler struct {
-	notifRepo    EmailNotificationRepository
-	attemptRepo  EmailDeliveryAttemptRepository
-	registry     TemplateRegistry
-	renderer     EmailRenderer
-	adapter      DeliveryAdapter
-	idg          idgen.Generator
-	clock        func() time.Time
-	maxAttempts  int
+	notifRepo   EmailNotificationRepository
+	attemptRepo EmailDeliveryAttemptRepository
+	registry    TemplateRegistry
+	renderer    EmailRenderer
+	adapter     DeliveryAdapter
+	idg         idgen.Generator
+	clock       func() time.Time
+	maxAttempts int
+	metrics     DeliveryMetrics
+	log         *slog.Logger
 }
 
 // NewEmailDispatchHandler wires the worker handler. maxAttempts can be 0 to
@@ -73,7 +76,28 @@ func NewEmailDispatchHandler(
 		idg:         idg,
 		clock:       clock,
 		maxAttempts: maxAttempts,
+		metrics:     NewNoopDeliveryMetrics(),
+		log:         slog.Default(),
 	}
+}
+
+// WithMetrics injects the delivery-outcome metrics sink. nil is ignored (the
+// no-op default is kept). Returns the receiver for chaining.
+func (h *EmailDispatchHandler) WithMetrics(m DeliveryMetrics) *EmailDispatchHandler {
+	if m != nil {
+		h.metrics = m
+	}
+	return h
+}
+
+// WithLogger injects the structured logger used for alert-grade delivery events
+// (notably failed_permanent — the silent-drop condition Batch 2B closes). nil is
+// ignored. Returns the receiver for chaining.
+func (h *EmailDispatchHandler) WithLogger(l *slog.Logger) *EmailDispatchHandler {
+	if l != nil {
+		h.log = l
+	}
+	return h
 }
 
 // Handle is called per outbox event. The handler is idempotent: redelivering
@@ -160,6 +184,7 @@ func (h *EmailDispatchHandler) Handle(ctx context.Context, payloadJSON []byte) e
 		if err := h.notifRepo.MarkSent(ctx, notifID, finishedAt); err != nil {
 			return fmt.Errorf("mark sent %s: %w", notifID, err)
 		}
+		h.metrics.RecordDelivery(DeliveryOutcomeSent, notif.TemplateKey)
 		return nil
 	}
 
@@ -194,15 +219,31 @@ func (h *EmailDispatchHandler) Handle(ctx context.Context, payloadJSON []byte) e
 		if err := h.notifRepo.MarkRetry(ctx, notifID, errCode, redacted, next); err != nil {
 			return fmt.Errorf("mark retry %s: %w", notifID, err)
 		}
-		// Returning an error tells the outbox processor to redeliver; the
-		// processor uses its own backoff which our application backoff is
-		// composed on top of.
-		return fmt.Errorf("transient delivery failure attempt %d: %w", attemptNo, sendErr)
+		h.metrics.RecordDelivery(DeliveryOutcomeRetryScheduled, notif.TemplateKey)
+		// Returning a retryAfterError tells the outbox processor to redeliver AT
+		// `next` — pinning available_at to the application retry budget
+		// (1m/5m/15m/1h/6h) instead of the processor's seconds-scale exponential
+		// backoff that previously exhausted all attempts in ~20s (Batch 2B RCA).
+		return &retryAfterError{
+			at:  next,
+			err: fmt.Errorf("transient delivery failure attempt %d: %w", attemptNo, sendErr),
+		}
 	}
 
 	if err := h.notifRepo.MarkFailedPermanent(ctx, notifID, errCode, redacted, finishedAt); err != nil {
 		return fmt.Errorf("mark failed_permanent %s: %w", notifID, err)
 	}
+	h.metrics.RecordDelivery(DeliveryOutcomeFailedPermanent, notif.TemplateKey)
+	// Alert-grade: a failed_permanent is a real, non-retried email drop. Emit a
+	// structured error so it is observable today (docker logs / log alerting)
+	// even before the worker exposes a /metrics endpoint.
+	h.log.Error("email delivery failed permanently",
+		slog.String("notification_id", notifID),
+		slog.String("template_key", notif.TemplateKey),
+		slog.Int("attempt_no", attemptNo),
+		slog.String("error_class", string(class)),
+		slog.String("error_code", errCode),
+	)
 	// Returning nil here drops the outbox event — permanent failures are
 	// terminal and must not loop. The audit row in email_delivery_attempts
 	// keeps the full breadcrumb.
@@ -229,8 +270,28 @@ func (h *EmailDispatchHandler) recordRenderFailure(ctx context.Context, notif *E
 	if err := h.notifRepo.MarkFailedPermanent(ctx, notif.EmailNotificationID, errCode, RedactErrorMessage(cause), finishedAt); err != nil {
 		return fmt.Errorf("mark render failure permanent %s: %w", notif.EmailNotificationID, err)
 	}
+	h.metrics.RecordDelivery(DeliveryOutcomeRenderError, notif.TemplateKey)
+	h.log.Error("email delivery failed permanently (render)",
+		slog.String("notification_id", notif.EmailNotificationID),
+		slog.String("template_key", notif.TemplateKey),
+		slog.Int("attempt_no", attemptNo),
+		slog.String("error_code", errCode),
+	)
 	return nil
 }
+
+// retryAfterError wraps a transient delivery failure with the absolute time the
+// outbox should next attempt the event. It implements outbox.RetryScheduler
+// structurally (Error + RetryAt), so the processor honours the application's
+// retry schedule without this package importing platform/outbox.
+type retryAfterError struct {
+	at  time.Time
+	err error
+}
+
+func (e *retryAfterError) Error() string      { return e.err.Error() }
+func (e *retryAfterError) Unwrap() error      { return e.err }
+func (e *retryAfterError) RetryAt() time.Time { return e.at }
 
 func attemptStatusForOutcome(canRetry bool, class ErrorClass) string {
 	if canRetry {

@@ -20,6 +20,11 @@ type Repository interface {
 	MarkRetry(ctx context.Context, eventID string, retryCount int, nextAt time.Time, lastErr string) error
 	// MarkFailedPermanent stops retries (status failed_permanent); used after max retry budget.
 	MarkFailedPermanent(ctx context.Context, eventID string, at time.Time, lastErr string) error
+	// RequeueStaleProcessing flips rows stuck in `processing` (available_at <
+	// olderThan) back to `pending` and returns how many were requeued. Used by
+	// the worker reaper to recover events orphaned by a crashed/restarted worker.
+	// No schema change: only status + available_at participate.
+	RequeueStaleProcessing(ctx context.Context, olderThan time.Time) (int, error)
 }
 
 type InsertParams struct {

@@ -3,6 +3,7 @@ package httpserver
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -53,6 +54,7 @@ import (
 	notificationapp "github.com/cobo/cobo_iam_services/internal/notification/app"
 	notificationinmem "github.com/cobo/cobo_iam_services/internal/notification/infra/inmemory"
 	notificationmysql "github.com/cobo/cobo_iam_services/internal/notification/infra/mysql"
+	notificationobserve "github.com/cobo/cobo_iam_services/internal/notification/infra/observe"
 	notificationregistry "github.com/cobo/cobo_iam_services/internal/notification/infra/registry"
 	notificationsmtp "github.com/cobo/cobo_iam_services/internal/notification/infra/smtp"
 	notificationhttp "github.com/cobo/cobo_iam_services/internal/notification/transport/http"
@@ -81,6 +83,7 @@ import (
 	workflowinmem "github.com/cobo/cobo_iam_services/internal/workflow/infra/inmemory"
 	workflowmysql "github.com/cobo/cobo_iam_services/internal/workflow/infra/mysql"
 	workflowhttp "github.com/cobo/cobo_iam_services/internal/workflow/transport/http"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -503,6 +506,25 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 		adhocSvc := adhocapp.NewService(adhocRepo, recordCreator, typeCatalog, id, cfg.WorkflowAdhocAutoApproveEnabled, authSvc, membershipValidator, proposalNotifier, adhocMetrics)
 		adhocHandler = adhochttp.NewHandler(log, adhocSvc, tokenManager, idemStore)
 		log.Info("ad-hoc proposal module enabled")
+	}
+
+	// Batch 2B Observability (Option B): expose DB-derived email-pipeline gauges
+	// on the API's existing /metrics. The worker (where EmailDispatchHandler runs)
+	// has no metrics endpoint; the API + shared MySQL are the authoritative alert
+	// source for failed_permanent / backlog / stale-processing. Scrape-driven, so
+	// no new poller/scheduler. prometheus.Register (not MustRegister) tolerates
+	// repeated New() builds in tests without panicking.
+	if pool != nil {
+		collector := notificationobserve.NewEmailDeliveryCollector(
+			notificationobserve.NewDBCountSource(pool), cfg.OutboxVisibilityTimeout)
+		if err := prometheus.Register(collector); err != nil {
+			var already prometheus.AlreadyRegisteredError
+			if !errors.As(err, &already) {
+				log.Warn("email delivery metrics collector registration failed", slog.String("err", err.Error()))
+			}
+		} else {
+			log.Info("email delivery metrics collector registered")
+		}
 	}
 
 	return muxRegisterHealthAndIAM(mux, log, sqlDB, iamHandler, meHandler, authHandler, disclosureHandler, workflowHandler, notificationHandler, reminderHandler, adminHandler, platformCMSHandler, adhocHandler, deadlineAlertsHandler)

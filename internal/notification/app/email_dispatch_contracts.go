@@ -89,6 +89,32 @@ type EmailNotificationRepository interface {
 	MarkFailedPermanent(ctx context.Context, notificationID, errorCode, errorMessageRedacted string, failedAt time.Time) error
 }
 
+// Delivery outcome labels emitted to DeliveryMetrics. Stable strings — they are
+// the `outcome` label of cobo_email_delivery_total and any alert keys off them.
+const (
+	DeliveryOutcomeSent            = "sent"
+	DeliveryOutcomeRetryScheduled  = "retry_scheduled"
+	DeliveryOutcomeFailedPermanent = "failed_permanent"
+	DeliveryOutcomeRenderError     = "render_error"
+)
+
+// DeliveryMetrics is the observability seam the worker-side dispatch handler
+// emits to. It is intentionally tiny so the app package stays free of a
+// Prometheus dependency; the worker injects a Prometheus-backed implementation
+// (internal/notification/observability) and tests inject a recorder or the
+// no-op. RecordDelivery is called exactly once per terminal-for-this-attempt
+// outcome (sent / retry_scheduled / failed_permanent / render_error).
+type DeliveryMetrics interface {
+	RecordDelivery(outcome, templateKey string)
+}
+
+type noopDeliveryMetrics struct{}
+
+func (noopDeliveryMetrics) RecordDelivery(string, string) {}
+
+// NewNoopDeliveryMetrics returns a DeliveryMetrics that drops all samples.
+func NewNoopDeliveryMetrics() DeliveryMetrics { return noopDeliveryMetrics{} }
+
 // OutboxPublisher is the narrow outbox-publish contract the transactional
 // dispatch path depends on. Satisfied structurally by *outboxmysql.Repository
 // without this package importing it concretely — keeps the
@@ -110,9 +136,9 @@ type TxEmailNotificationRepository interface {
 // their own error envelope (HTTP / service) — shadow mode in the iam/reminder
 // layer swallows them so the legacy path always wins.
 var (
-	ErrDispatchValidation   = errors.New("email dispatch: request validation failed")
-	ErrTemplateNotResolved  = errors.New("email dispatch: template could not be resolved")
-	ErrTemplateRender       = errors.New("email dispatch: template render failed")
-	ErrRepositoryPersist    = errors.New("email dispatch: persistence failed")
-	ErrAlreadyDispatched    = errors.New("email dispatch: notification with idempotency key already exists")
+	ErrDispatchValidation  = errors.New("email dispatch: request validation failed")
+	ErrTemplateNotResolved = errors.New("email dispatch: template could not be resolved")
+	ErrTemplateRender      = errors.New("email dispatch: template render failed")
+	ErrRepositoryPersist   = errors.New("email dispatch: persistence failed")
+	ErrAlreadyDispatched   = errors.New("email dispatch: notification with idempotency key already exists")
 )

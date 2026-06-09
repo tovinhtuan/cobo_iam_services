@@ -2,6 +2,7 @@ package outbox
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/rand/v2"
 	"time"
@@ -38,6 +39,24 @@ func (p *Processor) Register(eventType string, h Handler) {
 	p.handlers[eventType] = h
 }
 
+// WithClock overrides the time source used for locking and retry scheduling.
+// Tests inject a controllable clock so retry timing can be asserted without
+// time.Sleep. A nil clock is ignored. Returns the receiver for chaining.
+func (p *Processor) WithClock(now func() time.Time) *Processor {
+	if now != nil {
+		p.now = now
+	}
+	return p
+}
+
+// RequeueStaleProcessing flips outbox rows stuck in `processing` (whose
+// available_at predates olderThan) back to `pending` so a crashed/restarted
+// worker's in-flight events are re-picked instead of stranded. It delegates to
+// the repository; no schema change is involved (status + available_at only).
+func (p *Processor) RequeueStaleProcessing(ctx context.Context, olderThan time.Time) (int, error) {
+	return p.repo.RequeueStaleProcessing(ctx, olderThan)
+}
+
 func (p *Processor) Tick(ctx context.Context) error {
 	events, err := p.repo.LockPendingBatch(ctx, p.batchSize, p.now())
 	if err != nil {
@@ -57,6 +76,17 @@ func (p *Processor) Tick(ctx context.Context) error {
 				continue
 			}
 			next := p.now().Add(backoffWithJitter(nextCount))
+			// A handler may pin the next attempt time (e.g. the email pipeline's
+			// 1m/5m/15m/1h/6h budget). When present and non-zero it overrides the
+			// processor's default exponential backoff so available_at reflects the
+			// application's intended schedule instead of exhausting retries in
+			// seconds.
+			var rs RetryScheduler
+			if errors.As(err, &rs) {
+				if at := rs.RetryAt(); !at.IsZero() {
+					next = at.UTC()
+				}
+			}
 			_ = p.repo.MarkRetry(ctx, e.EventID, nextCount, next, err.Error())
 			continue
 		}

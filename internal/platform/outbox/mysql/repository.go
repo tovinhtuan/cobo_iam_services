@@ -176,6 +176,31 @@ func (r *Repository) MarkRetry(ctx context.Context, eventID string, retryCount i
 	return nil
 }
 
+// RequeueStaleProcessing recovers events orphaned by a crashed/restarted worker
+// (status stuck at `processing`) by flipping them back to `pending`. available_at
+// is left untouched: a stale row's available_at is already in the past, so the
+// row becomes immediately eligible on the next LockPendingBatch. retry_count is
+// NOT consumed — a worker crash is not a delivery failure. Uses the
+// idx_outbox_status_available index.
+func (r *Repository) RequeueStaleProcessing(ctx context.Context, olderThan time.Time) (int, error) {
+	if r.db == nil {
+		return 0, fmt.Errorf("outbox mysql: nil db")
+	}
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE outbox_events
+		SET status = 'pending'
+		WHERE status = 'processing' AND available_at < ?
+	`, olderThan)
+	if err != nil {
+		return 0, fmt.Errorf("outbox requeue stale processing: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("outbox requeue stale rows affected: %w", err)
+	}
+	return int(n), nil
+}
+
 func placeholders(n int) string {
 	if n <= 0 {
 		return ""

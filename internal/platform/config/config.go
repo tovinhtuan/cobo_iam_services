@@ -21,12 +21,17 @@ type Config struct {
 
 	// Worker
 	WorkerTickInterval time.Duration
+	// OutboxVisibilityTimeout is how long an outbox row may stay in `processing`
+	// before the worker reaper assumes the prior worker crashed and requeues it
+	// to `pending` (Batch 2B). Must comfortably exceed the longest single Handle
+	// (SMTP send), not the full retry budget.
+	OutboxVisibilityTimeout time.Duration
 
 	// Data
 	MySQLDSN string
 
 	// Vnstock read-only market reference (CMS listed companies; separate from cobo_iam DB).
-	VnstockMySQLDSN     string
+	VnstockMySQLDSN      string
 	VnstockMarketEnabled bool
 
 	// Redis (optional; P2.2 effective-access projection cache)
@@ -164,6 +169,7 @@ func Load() (Config, error) {
 		HTTPWriteTimeout:              durationEnv("HTTP_WRITE_TIMEOUT", 15*time.Second),
 		HTTPIdleTimeout:               durationEnv("HTTP_IDLE_TIMEOUT", 60*time.Second),
 		WorkerTickInterval:            durationEnv("WORKER_TICK_INTERVAL", 5*time.Second),
+		OutboxVisibilityTimeout:       durationEnv("OUTBOX_VISIBILITY_TIMEOUT", 5*time.Minute),
 		MySQLDSN:                      normalizeMySQLDSN(os.Getenv("MYSQL_DSN")),
 		VnstockMySQLDSN:               normalizeMySQLDSN(os.Getenv("VNSTOCK_MYSQL_DSN")),
 		VnstockMarketEnabled:          boolEnv("VNSTOCK_MARKET_ENABLED", false),
@@ -187,7 +193,7 @@ func Load() (Config, error) {
 		EmailVerificationOTPTTL:       durationEnv("EMAIL_VERIFICATION_OTP_TTL", 15*time.Minute),
 		InviteDefaultRoleCode:         getenv("INVITE_DEFAULT_ROLE_CODE", "user_thuong"),
 		RegistrationDisabled:          strings.EqualFold(strings.TrimSpace(os.Getenv("REGISTRATION_DISABLED")), "true"),
-		LoginPasswordRSAKeyID: getenv("LOGIN_PASSWORD_RSA_KEY_ID", "default"),
+		LoginPasswordRSAKeyID:         getenv("LOGIN_PASSWORD_RSA_KEY_ID", "default"),
 		CORSAllowedOrigins:            os.Getenv("CORS_ALLOWED_ORIGINS"),
 		SMTPHost:                      os.Getenv("SMTP_HOST"),
 		SMTPPort:                      intEnv("SMTP_PORT", 587),
@@ -210,20 +216,23 @@ func Load() (Config, error) {
 		UserAvatarUploadSigningSecret: resolveUserAvatarSigningSecret(os.Getenv("USER_AVATAR_UPLOAD_SIGNING_SECRET"), getenv("ENV", "development")),
 		UserAvatarSignedURLTTL:        userAvatarSignedURLTTL(),
 
-		WorkflowGroupsEnabled:           boolEnv("WORKFLOW_GROUPS_ENABLED", false),
-		WorkflowDraftEtagMode:           getenv("WORKFLOW_DRAFT_ETAG_MODE", "off"),
-		WorkflowSnapshotEnabled:         boolEnv("WORKFLOW_SNAPSHOT_ENABLED", false),
-		WorkflowTimelineEnabled:         boolEnv("WORKFLOW_TIMELINE_ENABLED", false),
-		WorkflowRemindersEnabled:        boolEnv("WORKFLOW_REMINDERS_ENABLED", false),
-		WorkflowAdhocEnabled:            devAwareBoolEnv("WORKFLOW_ADHOC_ENABLED", false, true),
-		WorkflowAdhocAutoApproveEnabled: boolEnv("WORKFLOW_ADHOC_AUTOAPPROVE_ENABLED", false),
-		AdhocEmailMetricsEnabled:        boolEnv("ADHOC_EMAIL_METRICS_ENABLED", true),
-		PeriodicSeedingEnabled:          boolEnv("PERIODIC_SEEDING_ENABLED", false),
+		WorkflowGroupsEnabled:               boolEnv("WORKFLOW_GROUPS_ENABLED", false),
+		WorkflowDraftEtagMode:               getenv("WORKFLOW_DRAFT_ETAG_MODE", "off"),
+		WorkflowSnapshotEnabled:             boolEnv("WORKFLOW_SNAPSHOT_ENABLED", false),
+		WorkflowTimelineEnabled:             boolEnv("WORKFLOW_TIMELINE_ENABLED", false),
+		WorkflowRemindersEnabled:            boolEnv("WORKFLOW_REMINDERS_ENABLED", false),
+		WorkflowAdhocEnabled:                devAwareBoolEnv("WORKFLOW_ADHOC_ENABLED", false, true),
+		WorkflowAdhocAutoApproveEnabled:     boolEnv("WORKFLOW_ADHOC_AUTOAPPROVE_ENABLED", false),
+		AdhocEmailMetricsEnabled:            boolEnv("ADHOC_EMAIL_METRICS_ENABLED", true),
+		PeriodicSeedingEnabled:              boolEnv("PERIODIC_SEEDING_ENABLED", false),
 		CompanyProvisionIdempotencyRequired: boolEnv("COMPANY_PROVISION_IDEMPOTENCY_REQUIRED", false),
 		CompanySelfCreateEnabled:            boolEnv("COMPANY_SELF_CREATE_ENABLED", false),
 	}
 	if cfg.WorkerTickInterval < time.Second {
 		return Config{}, fmt.Errorf("WORKER_TICK_INTERVAL too small")
+	}
+	if cfg.OutboxVisibilityTimeout < 30*time.Second {
+		return Config{}, fmt.Errorf("OUTBOX_VISIBILITY_TIMEOUT too small (min 30s)")
 	}
 	if cfg.CMSMediaUploadURLTTL < time.Minute {
 		return Config{}, fmt.Errorf("CMS_MEDIA_UPLOAD_URL_TTL too small")

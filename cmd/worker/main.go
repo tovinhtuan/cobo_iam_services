@@ -17,10 +17,9 @@ import (
 	adhocrecord "github.com/cobo/cobo_iam_services/internal/adhoc/infra/disclosure"
 	disclosureapp "github.com/cobo/cobo_iam_services/internal/disclosure/app"
 	disclosuremysql "github.com/cobo/cobo_iam_services/internal/disclosure/infra/mysql"
-	workflowapp "github.com/cobo/cobo_iam_services/internal/workflow/app"
-	workflowmysql "github.com/cobo/cobo_iam_services/internal/workflow/infra/mysql"
 	notificationapp "github.com/cobo/cobo_iam_services/internal/notification/app"
 	notificationmysql "github.com/cobo/cobo_iam_services/internal/notification/infra/mysql"
+	notificationobserve "github.com/cobo/cobo_iam_services/internal/notification/infra/observe"
 	notificationregistry "github.com/cobo/cobo_iam_services/internal/notification/infra/registry"
 	notificationsmtp "github.com/cobo/cobo_iam_services/internal/notification/infra/smtp"
 	"github.com/cobo/cobo_iam_services/internal/platform/config"
@@ -34,6 +33,8 @@ import (
 	reminderemail "github.com/cobo/cobo_iam_services/internal/reminder/infra/email"
 	remindermysql "github.com/cobo/cobo_iam_services/internal/reminder/infra/mysql"
 	reminderobserve "github.com/cobo/cobo_iam_services/internal/reminder/infra/observe"
+	workflowapp "github.com/cobo/cobo_iam_services/internal/workflow/app"
+	workflowmysql "github.com/cobo/cobo_iam_services/internal/workflow/infra/mysql"
 )
 
 func main() {
@@ -110,7 +111,7 @@ func main() {
 			idgen.UUIDv7Generator{},
 			nil,
 			0,
-		)
+		).WithMetrics(notificationobserve.NewPromDeliveryMetrics()).WithLogger(log)
 		processor.Register(notificationapp.EmailDispatchOutboxEventType, platformoutbox.HandlerFunc(func(ctx context.Context, event platformoutbox.QueuedEvent) error {
 			return emailDispatchHandler.Handle(ctx, event.PayloadJSON)
 		}))
@@ -183,7 +184,7 @@ func main() {
 			case <-runCtx.Done():
 				return
 			case <-t.C:
-				tick(runCtx, log, sqlDB, processor, reminderScheduler, disclosureSvc, periodicCreator)
+				tick(runCtx, log, sqlDB, processor, reminderScheduler, disclosureSvc, periodicCreator, cfg.OutboxVisibilityTimeout)
 			}
 		}
 	}()
@@ -194,7 +195,7 @@ func main() {
 	log.Info("worker stopped")
 }
 
-func tick(ctx context.Context, log *slog.Logger, sqlDB *sql.DB, processor *platformoutbox.Processor, reminderScheduler reminderapp.Service, disclosureSvc disclosureapp.Service, periodicCreator disclosureapp.PeriodicRecordCreator) {
+func tick(ctx context.Context, log *slog.Logger, sqlDB *sql.DB, processor *platformoutbox.Processor, reminderScheduler reminderapp.Service, disclosureSvc disclosureapp.Service, periodicCreator disclosureapp.PeriodicRecordCreator, outboxVisibilityTimeout time.Duration) {
 	if sqlDB != nil {
 		if err := sqlDB.PingContext(ctx); err != nil {
 			log.Warn("worker tick ping failed", slog.String("err", err.Error()))
@@ -202,6 +203,20 @@ func tick(ctx context.Context, log *slog.Logger, sqlDB *sql.DB, processor *platf
 		}
 	}
 	now := time.Now().UTC()
+	// Reaper (Batch 2B): recover outbox rows orphaned in `processing` by a
+	// crashed/restarted worker before the processor locks the next batch, so the
+	// requeued rows are picked up in the same tick. Cheap indexed UPDATE; usually
+	// matches 0 rows. A non-zero count is alert-grade (worker instability).
+	if outboxVisibilityTimeout > 0 {
+		if requeued, err := processor.RequeueStaleProcessing(ctx, now.Add(-outboxVisibilityTimeout)); err != nil {
+			log.Warn("outbox reaper failed", slog.String("err", err.Error()))
+		} else if requeued > 0 {
+			log.Warn("outbox reaper requeued stale processing events",
+				slog.Int("requeued", requeued),
+				slog.Duration("visibility_timeout", outboxVisibilityTimeout),
+			)
+		}
+	}
 	if disclosureSvc != nil {
 		seeded, err := disclosureSvc.SeedPeriodicCycles(ctx, now)
 		if err != nil {
