@@ -3,7 +3,10 @@ Kính gửi,
 Đề xuất công bố thông tin đột xuất của bạn đã được phê duyệt. Hệ thống đã tự động tạo hồ sơ công bố chính thức.
 
 Công ty: {{.company_name}}
-Nội dung: {{.change_note}}
+Tiêu đề: {{.proposal_title}}
+{{- if .proposal_content}}
+Nội dung: {{.proposal_content}}
+{{- end}}
 
 Vui lòng truy cập hệ thống để tiếp tục xử lý hồ sơ công bố:
 

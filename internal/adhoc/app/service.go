@@ -162,7 +162,7 @@ func (s *service) SubmitProposal(ctx context.Context, req ProposalActionRequest)
 	if applied {
 		s.metrics.RecordTransition(updated.CompanyID, cur.Status, nextStatus)
 	}
-	snap := *updated
+	snap := s.enrichProposalForNotification(ctx, *updated)
 	if s.notifier != nil && s.membershipValidator != nil {
 		safeNotify(snap.ProposalID, func() {
 			if s.autoApprove {
@@ -208,7 +208,7 @@ func (s *service) FocalApprove(ctx context.Context, req ProposalActionRequest) (
 	if applied {
 		s.metrics.RecordTransition(focalUpdated.CompanyID, cur.Status, StatusPendingAdminApproval)
 	}
-	snap := *focalUpdated
+	snap := s.enrichProposalForNotification(ctx, *focalUpdated)
 	if s.notifier != nil && s.membershipValidator != nil {
 		safeNotify(snap.ProposalID, func() {
 			if ctrl, err := s.membershipValidator.ResolveMembership(ctx, snap.CompanyID, snap.ProcessControllerID); err == nil && ctrl != nil {
@@ -318,7 +318,7 @@ func (s *service) AdminApprove(ctx context.Context, req AdminApproveRequest) (*A
 	if applied {
 		s.metrics.RecordTransition(updated.CompanyID, StatusPendingAdminApproval, StatusApproved)
 	}
-	snap := *updated
+	snap := s.enrichProposalForNotification(ctx, *updated)
 	if s.notifier != nil && s.membershipValidator != nil {
 		safeNotify(snap.ProposalID, func() {
 			if creator, err := s.membershipValidator.ResolveMembership(ctx, snap.CompanyID, snap.CreatedBy); err == nil && creator != nil {
@@ -373,7 +373,7 @@ func (s *service) Reject(ctx context.Context, req RejectRequest) (*ProposalDTO, 
 	if applied {
 		s.metrics.RecordTransition(rejected.CompanyID, cur.Status, StatusRejected)
 	}
-	snap := *rejected
+	snap := s.enrichProposalForNotification(ctx, *rejected)
 	if s.notifier != nil && s.membershipValidator != nil {
 		safeNotify(snap.ProposalID, func() {
 			if creator, err := s.membershipValidator.ResolveMembership(ctx, snap.CompanyID, snap.CreatedBy); err == nil && creator != nil {
@@ -487,6 +487,27 @@ func (s *service) authorize(ctx context.Context, sub Subject, action string, res
 		return perr.NewHTTPError(http.StatusForbidden, code, "access denied", nil)
 	}
 	return nil
+}
+
+// enrichProposalForNotification populates CompanyName and CreatorName on a
+// ProposalDTO copy so email templates receive human-readable display fields
+// instead of UUIDs. Errors are swallowed with safe fallbacks — notification
+// enrichment must never block the primary business flow.
+func (s *service) enrichProposalForNotification(ctx context.Context, p ProposalDTO) ProposalDTO {
+	p.ProposalTitle, p.ProposalContent = splitChangeNote(p.ChangeNote)
+	if s.membershipValidator == nil {
+		p.CompanyName = "Công ty của bạn"
+		return p
+	}
+	if name, err := s.membershipValidator.ResolveCompanyName(ctx, p.CompanyID); err == nil && name != "" {
+		p.CompanyName = name
+	} else {
+		p.CompanyName = "Công ty của bạn"
+	}
+	if info, err := s.membershipValidator.ResolveMembership(ctx, p.CompanyID, p.CreatedBy); err == nil && info != nil && info.FullName != "" {
+		p.CreatorName = info.FullName
+	}
+	return p
 }
 
 func parseOptionalISODate(raw, field string) (*time.Time, *string, error) {

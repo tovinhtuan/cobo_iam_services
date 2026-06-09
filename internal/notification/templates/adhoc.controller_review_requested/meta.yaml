@@ -2,8 +2,10 @@ default_locale: vi
 variables:
   - name: proposal_id
     required: true
-  - name: change_note
+  - name: proposal_title
     required: true
+  - name: proposal_content
+    required: false
   - name: company_name
     required: true
   - name: creator_name

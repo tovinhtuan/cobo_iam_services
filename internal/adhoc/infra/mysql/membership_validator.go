@@ -149,6 +149,24 @@ func (v *MembershipValidator) ResolveMembership(ctx context.Context, companyID, 
 	return &m, nil
 }
 
+// ResolveCompanyName returns the display name of a company.
+// Returns "", nil when the company is not found — callers fall back to a safe
+// placeholder rather than surfacing the UUID in user-facing content.
+func (v *MembershipValidator) ResolveCompanyName(ctx context.Context, companyID string) (string, error) {
+	var name string
+	err := v.db.QueryRowContext(ctx,
+		`SELECT company_name FROM companies WHERE company_id = ? LIMIT 1`,
+		companyID,
+	).Scan(&name)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("resolve company name: %w", err)
+	}
+	return name, nil
+}
+
 // ListMembersWithPermissionFull returns all active members holding permissionCode,
 // including UserID for in-app notification dispatch.
 func (v *MembershipValidator) ListMembersWithPermissionFull(ctx context.Context, companyID, permissionCode string) ([]adhocapp.MemberInfo, error) {

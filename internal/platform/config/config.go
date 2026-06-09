@@ -288,12 +288,32 @@ func Load() (Config, error) {
 	default:
 		return Config{}, fmt.Errorf("EMAIL_FORMAT invalid: %s", cfg.EmailFormat)
 	}
+	if err := validatePublicWebBaseURL(cfg.Env, cfg.PublicWebBaseURL); err != nil {
+		return Config{}, err
+	}
 	pem, err := loadLoginPasswordRSAPEM()
 	if err != nil {
 		return Config{}, err
 	}
 	cfg.LoginPasswordRSAPrivateKeyPEM = pem
 	return cfg, nil
+}
+
+// validatePublicWebBaseURL rejects localhost/empty URLs in non-development
+// environments so email action links are never silently broken in production.
+func validatePublicWebBaseURL(env, rawURL string) error {
+	isDev := strings.EqualFold(strings.TrimSpace(env), "development")
+	url := strings.TrimSpace(rawURL)
+	if !isDev {
+		if url == "" {
+			return fmt.Errorf("PUBLIC_WEB_BASE_URL is required when ENV is not development")
+		}
+		lower := strings.ToLower(url)
+		if strings.Contains(lower, "localhost") || strings.Contains(lower, "127.0.0.1") {
+			return fmt.Errorf("PUBLIC_WEB_BASE_URL must not point to localhost when ENV=%q (got %q) — set a real HTTPS URL", env, url)
+		}
+	}
+	return nil
 }
 
 // loadLoginPasswordRSAPEM reads RSA private key PEM from LOGIN_PASSWORD_RSA_PRIVATE_KEY_PEM

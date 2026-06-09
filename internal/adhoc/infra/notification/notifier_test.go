@@ -522,6 +522,256 @@ func TestR1_ConstructorWarnsWhenOutboxEnabledNilService(t *testing.T) {
 	}
 }
 
+// ---- Fix 1+2: company_name must not be UUID; creator_name must be proposal creator ----
+
+// capturingRenderer records every Render call's vars so tests can assert on
+// the fields that reach the template without depending on template text format.
+type capturingRenderer struct {
+	mu   sync.Mutex
+	seen []map[string]any
+}
+
+func (r *capturingRenderer) Render(t notifapp.ResolvedTemplate, vars map[string]any) (notifapp.RenderedEmail, error) {
+	r.mu.Lock()
+	cp := make(map[string]any, len(vars))
+	for k, v := range vars {
+		cp[k] = v
+	}
+	r.seen = append(r.seen, cp)
+	r.mu.Unlock()
+	return notifapp.RenderedEmail{Subject: t.Subject, TextBody: t.TextBody, HTMLBody: t.HTMLBody}, nil
+}
+
+func (r *capturingRenderer) snapshot() []map[string]any {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]map[string]any, len(r.seen))
+	copy(out, r.seen)
+	return out
+}
+
+// buildWithCapturingRenderer returns a notifier wired to a capturingRenderer so
+// tests can inspect the template variables rather than the rendered output.
+func buildWithCapturingRenderer(cr *capturingRenderer, portalURL string) adhocapp.ProposalNotifier {
+	repo := inmemory.NewEmailNotificationRepository()
+	registry := &staticRegistry{}
+	notifSvc := notifapp.NewEmailNotificationService(
+		repo, registry, cr, &seqIDGen{},
+		fixedClock(time.Date(2026, 6, 8, 9, 0, 0, 0, time.UTC)),
+	)
+	return adhocnotif.New(
+		noopInApp{}, &recordingDeliveryAdapter{}, registry, cr, notifSvc,
+		portalURL, false, false, "", &spyMetrics{}, nil,
+	)
+}
+
+// TestFix1_CompanyNameNotUUID asserts that company_name delivered to the
+// template is the human-readable name from ProposalDTO.CompanyName, not the
+// raw CompanyID UUID. Both focal and controller email paths are checked.
+func TestFix1_CompanyNameNotUUID(t *testing.T) {
+	cr := &capturingRenderer{}
+	notifier := buildWithCapturingRenderer(cr, "https://portal.cobo.vn")
+
+	proposal := adhocapp.ProposalDTO{
+		ProposalID:  "prop-fix1",
+		CompanyID:   "company-uuid-9f4b2c1a",
+		CompanyName: "ACME Vietnam JSC",
+		CreatorName: "Nguyễn Thị Tâm",
+		ChangeNote:  "Điều chỉnh kỳ hạn",
+	}
+	focal := adhocapp.MemberInfo{
+		UserID: "u1", MembershipID: "m1", Email: "focal@example.com", FullName: "Trần Văn Focal",
+	}
+	controller := adhocapp.MemberInfo{
+		UserID: "u2", MembershipID: "m2", Email: "ctrl@example.com", FullName: "Lê Thị Controller",
+	}
+
+	notifier.NotifyFocalsForReview(context.Background(), proposal, []adhocapp.MemberInfo{focal})
+	notifier.NotifyControllerForReview(context.Background(), proposal, controller)
+
+	for _, vars := range cr.snapshot() {
+		name, _ := vars["company_name"].(string)
+		if name == "" {
+			t.Fatalf("company_name is empty in template vars; want %q", proposal.CompanyName)
+		}
+		if name == proposal.CompanyID {
+			t.Fatalf("company_name = %q is the raw CompanyID UUID — Fix 1 requires the human-readable name", name)
+		}
+		if name != proposal.CompanyName {
+			t.Fatalf("company_name = %q, want %q", name, proposal.CompanyName)
+		}
+	}
+}
+
+// TestFix1_CompanyNameFallbackNotUUID asserts that when CompanyName is empty
+// (e.g. DB lookup failed at dispatch time), the template receives the safe
+// Vietnamese placeholder rather than the CompanyID UUID.
+func TestFix1_CompanyNameFallbackNotUUID(t *testing.T) {
+	cr := &capturingRenderer{}
+	notifier := buildWithCapturingRenderer(cr, "https://portal.cobo.vn")
+
+	proposal := adhocapp.ProposalDTO{
+		ProposalID:  "prop-fix1-fallback",
+		CompanyID:   "company-uuid-deadbeef",
+		CompanyName: "", // empty → must fall back to safe label, never UUID
+		ChangeNote:  "Điều chỉnh",
+	}
+	focal := adhocapp.MemberInfo{
+		UserID: "u1", MembershipID: "m1", Email: "focal@example.com", FullName: "Focal",
+	}
+
+	notifier.NotifyFocalsForReview(context.Background(), proposal, []adhocapp.MemberInfo{focal})
+
+	for _, vars := range cr.snapshot() {
+		name, _ := vars["company_name"].(string)
+		if name == "" {
+			t.Fatalf("company_name is empty; fallback must return a non-empty placeholder")
+		}
+		if name == proposal.CompanyID {
+			t.Fatalf("company_name = %q is the raw CompanyID UUID — fallback must never surface UUID", name)
+		}
+	}
+}
+
+// TestFix2_CreatorNameNotRecipientName asserts that creator_name in focal and
+// controller email vars is the proposal creator's name (from ProposalDTO.CreatorName),
+// NOT the name of the recipient (focal / controller). This prevents a reviewer
+// seeing their own name as the "proposer".
+func TestFix2_CreatorNameNotRecipientName(t *testing.T) {
+	cr := &capturingRenderer{}
+	notifier := buildWithCapturingRenderer(cr, "https://portal.cobo.vn")
+
+	proposal := adhocapp.ProposalDTO{
+		ProposalID:  "prop-fix2",
+		CompanyID:   "company-001",
+		CompanyName: "Demo Corp",
+		CreatorName: "Nguyễn Thị Tâm", // the actual proposal submitter
+		ChangeNote:  "Điều chỉnh kỳ hạn",
+	}
+	focal := adhocapp.MemberInfo{
+		UserID: "u1", MembershipID: "m1", Email: "focal@example.com",
+		FullName: "Trần Văn Focal", // recipient — must NOT appear as creator_name
+	}
+	controller := adhocapp.MemberInfo{
+		UserID: "u2", MembershipID: "m2", Email: "ctrl@example.com",
+		FullName: "Lê Thị Controller", // recipient — must NOT appear as creator_name
+	}
+
+	notifier.NotifyFocalsForReview(context.Background(), proposal, []adhocapp.MemberInfo{focal})
+	notifier.NotifyControllerForReview(context.Background(), proposal, controller)
+
+	recipientNames := map[string]bool{focal.FullName: true, controller.FullName: true}
+	for i, vars := range cr.snapshot() {
+		creatorName, _ := vars["creator_name"].(string)
+		if creatorName == "" {
+			// creator_name is optional (not all templates require it); skip if absent.
+			continue
+		}
+		if recipientNames[creatorName] {
+			t.Fatalf("vars[%d]: creator_name = %q matches the recipient's name — Fix 2 requires creator_name to be the proposal submitter, not the reviewer", i, creatorName)
+		}
+		if creatorName != proposal.CreatorName {
+			t.Fatalf("vars[%d]: creator_name = %q, want %q (the proposal submitter)", i, creatorName, proposal.CreatorName)
+		}
+	}
+}
+
+// ---- Email UX Fix: proposal_title and proposal_content must be separate vars --
+
+// TestEmailUX_TitleAndContentAreSeparateVars asserts that when change_note has
+// title + content (newline-separated), the template vars carry distinct
+// proposal_title and proposal_content fields — never one merged change_note.
+func TestEmailUX_TitleAndContentAreSeparateVars(t *testing.T) {
+	cr := &capturingRenderer{}
+	notifier := buildWithCapturingRenderer(cr, "https://portal.cobo.vn")
+
+	proposal := adhocapp.ProposalDTO{
+		ProposalID:      "prop-ux-001",
+		CompanyID:       "c-001",
+		CompanyName:     "Công ty ABC",
+		CreatorName:     "Nguyễn Văn A",
+		ProposalTitle:   "Báo cáo sự cố hệ thống test",
+		ProposalContent: "Báo cáo sự cố hệ thống test content",
+	}
+	focal := adhocapp.MemberInfo{
+		UserID: "u1", MembershipID: "m1", Email: "focal@example.com", FullName: "Focal",
+	}
+	controller := adhocapp.MemberInfo{
+		UserID: "u2", MembershipID: "m2", Email: "ctrl@example.com", FullName: "Controller",
+	}
+
+	notifier.NotifyFocalsForReview(context.Background(), proposal, []adhocapp.MemberInfo{focal})
+	notifier.NotifyControllerForReview(context.Background(), proposal, controller)
+	notifier.NotifyCreatorApproved(context.Background(), proposal, focal)
+	notifier.NotifyCreatorRejected(context.Background(), proposal, focal)
+
+	for i, vars := range cr.snapshot() {
+		// proposal_title must be present and match.
+		title, _ := vars["proposal_title"].(string)
+		if title == "" {
+			t.Errorf("vars[%d]: proposal_title is empty", i)
+			continue
+		}
+		if title != proposal.ProposalTitle {
+			t.Errorf("vars[%d]: proposal_title = %q, want %q", i, title, proposal.ProposalTitle)
+		}
+		// proposal_content must be present and match.
+		content, _ := vars["proposal_content"].(string)
+		if content != proposal.ProposalContent {
+			t.Errorf("vars[%d]: proposal_content = %q, want %q", i, content, proposal.ProposalContent)
+		}
+		// change_note must not appear in template vars (old field removed).
+		if _, exists := vars["change_note"]; exists {
+			t.Errorf("vars[%d]: change_note must not be present in template vars (replaced by proposal_title/proposal_content)", i)
+		}
+		// title + content must not be concatenated in a single string.
+		concat := proposal.ProposalTitle + " " + proposal.ProposalContent
+		if title == concat {
+			t.Errorf("vars[%d]: proposal_title = %q is the concatenation of title+content — separation fix not applied", i, title)
+		}
+	}
+}
+
+// TestEmailUX_SingleLineNoteHasNoContent asserts that when change_note is a
+// single line (no newline), proposal_content is absent from template vars.
+func TestEmailUX_SingleLineNoteHasNoContent(t *testing.T) {
+	cr := &capturingRenderer{}
+	notifier := buildWithCapturingRenderer(cr, "https://portal.cobo.vn")
+
+	proposal := adhocapp.ProposalDTO{
+		ProposalID:    "prop-ux-002",
+		CompanyID:     "c-001",
+		CompanyName:   "Công ty ABC",
+		ProposalTitle: "P0 Email Test Rejection - Strategy Change",
+		// ProposalContent intentionally empty: single-line change_note
+	}
+	focal := adhocapp.MemberInfo{
+		UserID: "u1", MembershipID: "m1", Email: "focal@example.com", FullName: "Focal",
+	}
+
+	notifier.NotifyFocalsForReview(context.Background(), proposal, []adhocapp.MemberInfo{focal})
+
+	for i, vars := range cr.snapshot() {
+		if content, exists := vars["proposal_content"]; exists && content != "" {
+			t.Errorf("vars[%d]: proposal_content = %q, want absent or empty for single-line note", i, content)
+		}
+		title, _ := vars["proposal_title"].(string)
+		if title == "" {
+			t.Errorf("vars[%d]: proposal_title is empty for single-line note", i)
+		}
+	}
+}
+
+// TestEmailUX_CTALabelDoesNotContainCuoi asserts that the template text for
+// the controller review CTA does not contain the phrase "phê duyệt cuối"
+// (replaced with business-readable "xem chi tiết và phê duyệt").
+func TestEmailUX_CTALabelDoesNotContainCuoi(t *testing.T) {
+	src := readSourceFile(t, "../../../../internal/notification/templates/adhoc.controller_review_requested/vi/body.txt")
+	if strings.Contains(src, "phê duyệt cuối") {
+		t.Fatal("adhoc.controller_review_requested body still contains 'phê duyệt cuối' — must be replaced with business-readable CTA label")
+	}
+}
+
 func readSourceFile(t *testing.T, relPath string) string {
 	t.Helper()
 	b, err := os.ReadFile(relPath)

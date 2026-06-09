@@ -87,7 +87,7 @@ var GoldenFlows = []GoldenFlow{
 			"deadline_date": "2026-05-10",
 			"disclosure_id": "disc-001",
 			"status":        "draft",
-			"action_url":    "/app/disclosures/disc-001",
+			"portal_url":    "https://portal.cobo.vn/app/disclosures/disc-001",
 		},
 		Fixture: "reminder.disclosure_deadline",
 	},

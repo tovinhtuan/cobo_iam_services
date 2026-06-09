@@ -3,7 +3,10 @@ Kính gửi,
 Đề xuất công bố thông tin đột xuất của bạn đã bị từ chối.
 
 Công ty: {{.company_name}}
-Nội dung: {{.change_note}}
+Tiêu đề: {{.proposal_title}}
+{{- if .proposal_content}}
+Nội dung: {{.proposal_content}}
+{{- end}}
 Lý do từ chối: {{.reject_reason}}
 
 Bạn có thể tạo đề xuất mới sau khi xem xét lại nội dung:

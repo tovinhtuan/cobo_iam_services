@@ -4,9 +4,12 @@ Bạn được chỉ định là người kiểm soát quy trình và cần phê
 
 Công ty: {{.company_name}}
 Người đề xuất: {{.creator_name}}
-Nội dung: {{.change_note}}
+Tiêu đề: {{.proposal_title}}
+{{- if .proposal_content}}
+Nội dung: {{.proposal_content}}
+{{- end}}
 
-Vui lòng truy cập hệ thống để xem chi tiết và phê duyệt cuối:
+Vui lòng truy cập hệ thống để xem chi tiết và phê duyệt:
 
 {{.portal_url}}/app/ad-hoc-proposals/{{.proposal_id}}
 

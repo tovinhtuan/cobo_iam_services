@@ -1,1 +1,1 @@
-[CoBo] Yêu cầu duyệt đề xuất công bố bất thường: {{.change_note}}
+[CoBo] Yêu cầu duyệt đề xuất công bố bất thường: {{.proposal_title}}

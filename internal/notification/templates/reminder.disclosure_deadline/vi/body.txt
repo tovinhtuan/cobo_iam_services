@@ -8,8 +8,8 @@ Deadline: {{.deadline_date}}
 {{- if .status }}
 Current status: {{.status}}
 {{- end }}
-{{- if .action_url }}
-Action link: {{.action_url}}
+{{- if .portal_url }}
+Action link: {{.portal_url}}
 {{- end }}
 
 Please review and complete the required action before the deadline.

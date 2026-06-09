@@ -15,7 +15,7 @@ func TestRenderReminderEmailDisclosureDue(t *testing.T) {
 		"deadline_date": "2026-05-10",
 		"disclosure_id": "disc-001",
 		"status":        "draft",
-		"action_url":    "/app/disclosures/disc-001",
+		"portal_url":    "https://portal.cobo.vn/app/disclosures/disc-001",
 	})
 	if err != nil {
 		t.Fatalf("renderReminderEmail error = %v", err)
@@ -28,7 +28,7 @@ func TestRenderReminderEmailDisclosureDue(t *testing.T) {
 		"Disclosure ID: disc-001",
 		"Deadline: 2026-05-10",
 		"Current status: draft",
-		"Action link: /app/disclosures/disc-001",
+		"Action link: https://portal.cobo.vn/app/disclosures/disc-001",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("body missing %q:\n%s", want, body)
@@ -51,7 +51,7 @@ func TestSender_RenderReminderEmailContentEmbedMatchesLegacy(t *testing.T) {
 		"deadline_date": "2026-05-10",
 		"disclosure_id": "disc-001",
 		"status":        "draft",
-		"action_url":    "/app/disclosures/disc-001",
+		"portal_url":    "https://portal.cobo.vn/app/disclosures/disc-001",
 	}
 	legacySubject, legacyBody, err := renderReminderEmail("REMINDER_DISCLOSURE_DUE", payload)
 	if err != nil {

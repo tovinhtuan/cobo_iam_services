@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	adhocapp "github.com/cobo/cobo_iam_services/internal/adhoc/app"
 	inappapp "github.com/cobo/cobo_iam_services/internal/inappnotification/app"
@@ -283,44 +284,72 @@ func (n *AdhocProposalNotifier) dispatchDurable(ctx context.Context, to, templat
 	return notif, nil
 }
 
-func (n *AdhocProposalNotifier) focalReviewVars(p adhocapp.ProposalDTO, creator adhocapp.MemberInfo) map[string]any {
-	return map[string]any{
-		"proposal_id":  p.ProposalID,
-		"change_note":  p.ChangeNote,
-		"company_name": p.CompanyID,
-		"creator_name": creator.FullName,
-		"portal_url":   n.portalURL,
+func (n *AdhocProposalNotifier) focalReviewVars(p adhocapp.ProposalDTO, focal adhocapp.MemberInfo) map[string]any {
+	_ = focal // focal is the recipient; their name is not displayed in the template
+	vars := map[string]any{
+		"proposal_id":     p.ProposalID,
+		"proposal_title":  p.ProposalTitle,
+		"company_name":    companyDisplayName(p.CompanyName),
+		"creator_name":    p.CreatorName,
+		"portal_url":      n.portalURL,
 	}
+	if p.ProposalContent != "" {
+		vars["proposal_content"] = p.ProposalContent
+	}
+	return vars
 }
 
-func (n *AdhocProposalNotifier) controllerReviewVars(p adhocapp.ProposalDTO, creator adhocapp.MemberInfo) map[string]any {
-	return map[string]any{
-		"proposal_id":  p.ProposalID,
-		"change_note":  p.ChangeNote,
-		"company_name": p.CompanyID,
-		"creator_name": creator.FullName,
-		"portal_url":   n.portalURL,
+func (n *AdhocProposalNotifier) controllerReviewVars(p adhocapp.ProposalDTO, controller adhocapp.MemberInfo) map[string]any {
+	_ = controller // controller is the recipient; their name is not displayed in the template
+	vars := map[string]any{
+		"proposal_id":     p.ProposalID,
+		"proposal_title":  p.ProposalTitle,
+		"company_name":    companyDisplayName(p.CompanyName),
+		"creator_name":    p.CreatorName,
+		"portal_url":      n.portalURL,
 	}
+	if p.ProposalContent != "" {
+		vars["proposal_content"] = p.ProposalContent
+	}
+	return vars
 }
 
 func (n *AdhocProposalNotifier) approvedVars(p adhocapp.ProposalDTO) map[string]any {
-	return map[string]any{
-		"proposal_id":  p.ProposalID,
-		"change_note":  p.ChangeNote,
-		"company_name": p.CompanyID,
-		"record_id":    p.RecordID,
-		"portal_url":   n.portalURL,
+	vars := map[string]any{
+		"proposal_id":     p.ProposalID,
+		"proposal_title":  p.ProposalTitle,
+		"company_name":    companyDisplayName(p.CompanyName),
+		"record_id":       p.RecordID,
+		"portal_url":      n.portalURL,
 	}
+	if p.ProposalContent != "" {
+		vars["proposal_content"] = p.ProposalContent
+	}
+	return vars
 }
 
 func (n *AdhocProposalNotifier) rejectedVars(p adhocapp.ProposalDTO) map[string]any {
-	return map[string]any{
-		"proposal_id":   p.ProposalID,
-		"change_note":   p.ChangeNote,
-		"company_name":  p.CompanyID,
-		"reject_reason": p.RejectReason,
-		"portal_url":    n.portalURL,
+	vars := map[string]any{
+		"proposal_id":     p.ProposalID,
+		"proposal_title":  p.ProposalTitle,
+		"company_name":    companyDisplayName(p.CompanyName),
+		"reject_reason":   p.RejectReason,
+		"portal_url":      n.portalURL,
 	}
+	if p.ProposalContent != "" {
+		vars["proposal_content"] = p.ProposalContent
+	}
+	return vars
+}
+
+// companyDisplayName returns the company's human-readable name, falling back to
+// a safe Vietnamese placeholder when the name could not be resolved at dispatch
+// time. Ensures UUIDs never reach the user-facing email body.
+func companyDisplayName(name string) string {
+	if strings.TrimSpace(name) != "" {
+		return name
+	}
+	return "Công ty của bạn"
 }
 
 func shortNote(note string) string {

@@ -21,3 +21,22 @@ func ResolveAdHocRecordTitle(changeNote, typeDisplayName, typeID string) string 
 	}
 	return strings.TrimSpace(typeID)
 }
+
+const proposalContentMaxLen = 300
+
+// splitChangeNote extracts proposal title (first line) and content (remaining
+// lines) from the change_note field. Convention: line 1 = human-readable
+// title; lines 2+ = description/content, truncated to 300 chars.
+func splitChangeNote(changeNote string) (title, content string) {
+	changeNote = strings.TrimSpace(changeNote)
+	idx := strings.IndexByte(changeNote, '\n')
+	if idx < 0 {
+		return changeNote, ""
+	}
+	title = strings.TrimSpace(changeNote[:idx])
+	content = strings.TrimSpace(changeNote[idx+1:])
+	if len(content) > proposalContentMaxLen {
+		content = content[:proposalContentMaxLen-3] + "..."
+	}
+	return title, content
+}

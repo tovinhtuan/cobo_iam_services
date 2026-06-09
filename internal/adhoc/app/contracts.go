@@ -113,6 +113,10 @@ type MembershipValidator interface {
 	// ListMembersWithPermissionFull returns all active members holding permissionCode,
 	// including their UserID for in-app notification dispatch.
 	ListMembersWithPermissionFull(ctx context.Context, companyID, permissionCode string) ([]MemberInfo, error)
+	// ResolveCompanyName returns the display name of a company. Returns empty
+	// string (not an error) when the company is not found — callers use the
+	// fallback label "Công ty của bạn" rather than surfacing UUID.
+	ResolveCompanyName(ctx context.Context, companyID string) (string, error)
 }
 
 // Metrics records ad-hoc proposal lifecycle observability signals. Implementations
@@ -239,6 +243,15 @@ type ListProposalsResponse struct {
 type ProposalDTO struct {
 	ProposalID           string                 `json:"proposal_id"`
 	CompanyID            string                 `json:"company_id"`
+	// Display-only fields populated before notification dispatch.
+	// Never persisted to ad_hoc_proposals; omitted from JSON when empty.
+	CompanyName     string `json:"company_name,omitempty"`
+	CreatorName     string `json:"creator_name,omitempty"`
+	// ProposalTitle is the first line of ChangeNote; ProposalContent is the
+	// remainder (truncated at 300 chars). Used by email templates to render
+	// title and content as separate labeled fields.
+	ProposalTitle   string `json:"proposal_title,omitempty"`
+	ProposalContent string `json:"proposal_content,omitempty"`
 	TypeID               string                 `json:"type_id"`
 	Status               string                 `json:"status"`
 	StepOverrides        []WorkflowStepOverride `json:"step_overrides"`

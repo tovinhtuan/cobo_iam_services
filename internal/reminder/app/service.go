@@ -395,6 +395,29 @@ func (s *service) prepareDispatch(ctx context.Context, c DispatchCandidate) (tem
 			}
 		}
 	}
+	// Fallback: derive portal_url from scope when neither portal_url nor action_url was in
+	// the payload. Guarantees a deep-link rather than the bare portal homepage.
+	// DISCLOSURE scope → /app/disclosures/{scopeID}
+	// WORKFLOW_STEP scope → /app/disclosures/{disclosureID} (extracted from payload or scopeID)
+	if _, ok := payload["portal_url"]; !ok && s.publicWebBaseURL != "" {
+		switch c.ScopeType {
+		case ScopeTypeDisclosure:
+			if c.ScopeID != "" {
+				payload["portal_url"] = s.publicWebBaseURL + "/app/disclosures/" + c.ScopeID
+			}
+		case ScopeTypeWorkflowStep:
+			disclosureID, _ := payload["disclosure_id"].(string)
+			if disclosureID == "" {
+				// scope_id may be "disclosureID:stepID" on the config path
+				if idx := strings.LastIndex(c.ScopeID, ":"); idx >= 0 {
+					disclosureID = c.ScopeID[:idx]
+				}
+			}
+			if disclosureID != "" {
+				payload["portal_url"] = s.publicWebBaseURL + "/app/disclosures/" + disclosureID
+			}
+		}
+	}
 
 	return templateCode, recipients, payload, false
 }

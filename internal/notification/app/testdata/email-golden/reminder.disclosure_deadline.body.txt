@@ -6,7 +6,7 @@ Disclosure: Annual disclosure report
 Disclosure ID: disc-001
 Deadline: 2026-05-10
 Current status: draft
-Action link: /app/disclosures/disc-001
+Action link: https://portal.cobo.vn/app/disclosures/disc-001
 
 Please review and complete the required action before the deadline.
 

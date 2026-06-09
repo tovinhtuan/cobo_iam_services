@@ -209,7 +209,10 @@ func renderReminderEmail(templateCode string, payload map[string]any) (string, s
 		title := requiredString(payload, "title")
 		deadline := requiredString(payload, "deadline_date")
 		disclosureID := requiredString(payload, "disclosure_id")
-		actionURL := optionalString(payload, "action_url")
+		actionURL := optionalString(payload, "portal_url")
+		if actionURL == "" {
+			actionURL = optionalString(payload, "action_url")
+		}
 		if title == "" || deadline == "" || disclosureID == "" {
 			return "", "", fmt.Errorf("missing required reminder template fields")
 		}

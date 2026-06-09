@@ -197,6 +197,9 @@ func (f *fakeMembershipValidator) ResolveMembership(_ context.Context, _, _ stri
 func (f *fakeMembershipValidator) ListMembersWithPermissionFull(_ context.Context, _, _ string) ([]MemberInfo, error) {
 	return []MemberInfo{}, nil
 }
+func (f *fakeMembershipValidator) ResolveCompanyName(_ context.Context, _ string) (string, error) {
+	return "", nil
+}
 
 func newTestService(repo *fakeRepository, recordCreator *fakeRecordCreator, typeCatalog *fakeTypeCatalog, auth *fakeAuthService) Service {
 	return NewService(repo, recordCreator, typeCatalog, fakeIDGen{}, false, auth, newAllowValidator(), nil, noopMetrics{})

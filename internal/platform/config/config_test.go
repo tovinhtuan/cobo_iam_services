@@ -188,6 +188,62 @@ func TestLoad_ReminderHardeningDefaults(t *testing.T) {
 	}
 }
 
+func TestValidatePublicWebBaseURL(t *testing.T) {
+	cases := []struct {
+		env     string
+		url     string
+		wantErr bool
+		desc    string
+	}{
+		{"development", "http://localhost:5173", false, "dev allows localhost"},
+		{"development", "", false, "dev allows empty"},
+		{"production", "https://portal.cobo.vn", false, "prod valid HTTPS URL"},
+		{"production", "", true, "prod rejects empty"},
+		{"production", "http://localhost:5173", true, "prod rejects localhost"},
+		{"production", "http://127.0.0.1:3000", true, "prod rejects 127.0.0.1"},
+		{"staging", "https://staging.cobo.vn", false, "staging valid URL"},
+		{"staging", "http://localhost:3000", true, "staging rejects localhost"},
+		{"staging", "", true, "staging rejects empty"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.desc, func(t *testing.T) {
+			err := validatePublicWebBaseURL(tc.env, tc.url)
+			if tc.wantErr && err == nil {
+				t.Fatalf("validatePublicWebBaseURL(%q, %q) want error, got nil", tc.env, tc.url)
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("validatePublicWebBaseURL(%q, %q) want nil, got %v", tc.env, tc.url, err)
+			}
+		})
+	}
+}
+
+func TestLoad_PublicWebBaseURLGuard(t *testing.T) {
+	t.Run("production_localhost_rejected", func(t *testing.T) {
+		t.Setenv("ENV", "production")
+		t.Setenv("PUBLIC_WEB_BASE_URL", "http://localhost:5173")
+		t.Setenv("USER_AVATAR_UPLOAD_SIGNING_SECRET", "secret")
+		if _, err := Load(); err == nil {
+			t.Fatal("expected error for localhost URL in production")
+		}
+	})
+	t.Run("production_empty_rejected", func(t *testing.T) {
+		t.Setenv("ENV", "production")
+		t.Setenv("PUBLIC_WEB_BASE_URL", "")
+		t.Setenv("USER_AVATAR_UPLOAD_SIGNING_SECRET", "secret")
+		if _, err := Load(); err == nil {
+			t.Fatal("expected error for empty URL in production")
+		}
+	})
+	t.Run("development_localhost_allowed", func(t *testing.T) {
+		t.Setenv("ENV", "development")
+		t.Setenv("PUBLIC_WEB_BASE_URL", "http://localhost:5173")
+		if _, err := Load(); err != nil {
+			t.Fatalf("unexpected error in development: %v", err)
+		}
+	})
+}
+
 func TestLoad_ReminderDispatchFlagOff(t *testing.T) {
 	t.Setenv("REMINDER_DISPATCH_ENABLED", "false")
 	cfg, err := Load()
