@@ -7,6 +7,39 @@ import (
 	"time"
 )
 
+func TestService_RequeueStaleDispatching_ReturnsCountAndPassesCutoff(t *testing.T) {
+	occRepo := &fakeOccurrenceRepo{requeued: 3}
+	svc := NewService(fakeConfigRepo{}, occRepo, &fakeAttemptRepo{})
+
+	cutoff := time.Date(2026, 6, 9, 12, 0, 0, 0, time.UTC)
+	n, err := svc.RequeueStaleDispatching(context.Background(), cutoff)
+	if err != nil {
+		t.Fatalf("RequeueStaleDispatching: %v", err)
+	}
+	if n != 3 {
+		t.Fatalf("count = %d, want 3", n)
+	}
+	if !occRepo.requeueCalled {
+		t.Fatalf("repo RequeueStaleDispatching not called")
+	}
+	if !occRepo.requeueOlder.Equal(cutoff) {
+		t.Fatalf("cutoff = %s, want %s", occRepo.requeueOlder, cutoff)
+	}
+}
+
+func TestService_RequeueStaleDispatching_PropagatesError(t *testing.T) {
+	occRepo := &fakeOccurrenceRepo{requeueErr: errors.New("db down")}
+	svc := NewService(fakeConfigRepo{}, occRepo, &fakeAttemptRepo{})
+
+	n, err := svc.RequeueStaleDispatching(context.Background(), time.Now().UTC())
+	if err == nil {
+		t.Fatalf("expected error, got nil")
+	}
+	if n != 0 {
+		t.Fatalf("count on error = %d, want 0", n)
+	}
+}
+
 type fakeConfigRepo struct{}
 
 func (fakeConfigRepo) UpsertByScope(context.Context, ReminderConfigDTO) (*ReminderConfigDTO, error) {
@@ -17,9 +50,13 @@ func (fakeConfigRepo) GetByScope(context.Context, ScopeType, string) (*ReminderC
 }
 
 type fakeOccurrenceRepo struct {
-	occ        ReminderOccurrenceDTO
-	candidates []DispatchCandidate
-	updates    []DispatchResultInput
+	occ          ReminderOccurrenceDTO
+	candidates   []DispatchCandidate
+	updates      []DispatchResultInput
+	requeued      int
+	requeueErr    error
+	requeueOlder  time.Time
+	requeueCalled bool
 }
 
 func (f *fakeOccurrenceRepo) ListHistoryByDisclosure(context.Context, string, HistoryQuery) (*ReminderHistoryPage, error) {
@@ -43,6 +80,14 @@ func (f *fakeOccurrenceRepo) MaterializeDueOccurrences(context.Context, time.Tim
 }
 func (f *fakeOccurrenceRepo) ListDispatchCandidates(context.Context, time.Time, int) ([]DispatchCandidate, error) {
 	return f.candidates, nil
+}
+func (f *fakeOccurrenceRepo) RequeueStaleDispatching(_ context.Context, olderThan time.Time) (int, error) {
+	f.requeueCalled = true
+	f.requeueOlder = olderThan
+	if f.requeueErr != nil {
+		return 0, f.requeueErr
+	}
+	return f.requeued, nil
 }
 
 type fakeAttemptRepo struct {

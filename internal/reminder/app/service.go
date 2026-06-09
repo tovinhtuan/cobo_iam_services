@@ -228,6 +228,26 @@ func (s *service) DispatchOccurrence(ctx context.Context, req DispatchOccurrence
 	return resp, nil
 }
 
+// RequeueStaleDispatching is the worker reaper: requeue reminder occurrences stuck in
+// DISPATCHING past olderThan (worker crashed between ClaimForDispatch and
+// UpdateDispatchResult) back to PENDING so the next tick re-dispatches them. A non-zero
+// count is alert-grade (worker instability), surfaced via the reminder_stale_dispatching
+// counter and logged by the caller. Errors are returned (never panic) so the worker tick
+// logs a warning and continues.
+func (s *service) RequeueStaleDispatching(ctx context.Context, olderThan time.Time) (int, error) {
+	if olderThan.IsZero() {
+		olderThan = time.Now().UTC()
+	}
+	n, err := s.occurrenceRepo.RequeueStaleDispatching(ctx, olderThan.UTC())
+	if err != nil {
+		return 0, err
+	}
+	if n > 0 {
+		s.metrics.IncCounter("reminder_stale_dispatching_requeued_total", map[string]string{})
+	}
+	return n, nil
+}
+
 func (s *service) DispatchDueOccurrences(ctx context.Context, now time.Time, limit int) (*DispatchDueResult, error) {
 	start := time.Now()
 	if now.IsZero() {

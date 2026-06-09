@@ -527,6 +527,22 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 		}
 	}
 
+	// Reminder Reliability Hardening — Observability: same Option B pattern for the
+	// reminder pipeline. DB-derived gauges (backlog / failed / stuck-dispatching) on
+	// the API /metrics; the worker reminder loop has no metrics endpoint.
+	if pool != nil {
+		reminderCollector := reminderobserve.NewReminderObservabilityCollector(
+			reminderobserve.NewDBCountSource(pool), cfg.ReminderVisibilityTimeout)
+		if err := prometheus.Register(reminderCollector); err != nil {
+			var already prometheus.AlreadyRegisteredError
+			if !errors.As(err, &already) {
+				log.Warn("reminder metrics collector registration failed", slog.String("err", err.Error()))
+			}
+		} else {
+			log.Info("reminder metrics collector registered")
+		}
+	}
+
 	return muxRegisterHealthAndIAM(mux, log, sqlDB, iamHandler, meHandler, authHandler, disclosureHandler, workflowHandler, notificationHandler, reminderHandler, adminHandler, platformCMSHandler, adhocHandler, deadlineAlertsHandler)
 }
 

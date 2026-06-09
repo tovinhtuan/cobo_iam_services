@@ -184,7 +184,7 @@ func main() {
 			case <-runCtx.Done():
 				return
 			case <-t.C:
-				tick(runCtx, log, sqlDB, processor, reminderScheduler, disclosureSvc, periodicCreator, cfg.OutboxVisibilityTimeout)
+				tick(runCtx, log, sqlDB, processor, reminderScheduler, disclosureSvc, periodicCreator, cfg.OutboxVisibilityTimeout, cfg.ReminderDispatchEnabled, cfg.ReminderVisibilityTimeout)
 			}
 		}
 	}()
@@ -195,7 +195,7 @@ func main() {
 	log.Info("worker stopped")
 }
 
-func tick(ctx context.Context, log *slog.Logger, sqlDB *sql.DB, processor *platformoutbox.Processor, reminderScheduler reminderapp.Service, disclosureSvc disclosureapp.Service, periodicCreator disclosureapp.PeriodicRecordCreator, outboxVisibilityTimeout time.Duration) {
+func tick(ctx context.Context, log *slog.Logger, sqlDB *sql.DB, processor *platformoutbox.Processor, reminderScheduler reminderapp.Service, disclosureSvc disclosureapp.Service, periodicCreator disclosureapp.PeriodicRecordCreator, outboxVisibilityTimeout time.Duration, reminderDispatchEnabled bool, reminderVisibilityTimeout time.Duration) {
 	if sqlDB != nil {
 		if err := sqlDB.PingContext(ctx); err != nil {
 			log.Warn("worker tick ping failed", slog.String("err", err.Error()))
@@ -246,16 +246,34 @@ func tick(ctx context.Context, log *slog.Logger, sqlDB *sql.DB, processor *platf
 		} else if inserted > 0 {
 			log.Info("reminder occurrences materialized", slog.Int("inserted", inserted))
 		}
-		dispatchRes, err := reminderScheduler.DispatchDueOccurrences(ctx, time.Now().UTC(), 50)
-		if err != nil {
-			log.Warn("reminder dispatch tick failed", slog.String("err", err.Error()))
-		} else if dispatchRes != nil && dispatchRes.Processed > 0 {
-			log.Info("reminder dispatch tick summary",
-				slog.Int("processed", dispatchRes.Processed),
-				slog.Int("sent", dispatchRes.Sent),
-				slog.Int("retried", dispatchRes.Retried),
-				slog.Int("failed", dispatchRes.Failed),
-			)
+		// Rollback switch (Reminder Reliability Hardening): when disabled, Seed +
+		// Materialize above still run so occurrences accrue accurately, but no email
+		// is sent and the reaper is skipped — a no-data-loss kill switch.
+		if reminderDispatchEnabled {
+			dispatchRes, err := reminderScheduler.DispatchDueOccurrences(ctx, time.Now().UTC(), 50)
+			if err != nil {
+				log.Warn("reminder dispatch tick failed", slog.String("err", err.Error()))
+			} else if dispatchRes != nil && dispatchRes.Processed > 0 {
+				log.Info("reminder dispatch tick summary",
+					slog.Int("processed", dispatchRes.Processed),
+					slog.Int("sent", dispatchRes.Sent),
+					slog.Int("retried", dispatchRes.Retried),
+					slog.Int("failed", dispatchRes.Failed),
+				)
+			}
+			// Reaper: recover occurrences orphaned in DISPATCHING by a crashed worker
+			// so they re-dispatch this/next tick. Mirrors the outbox reaper above;
+			// usually matches 0 rows, a non-zero count is alert-grade.
+			if reminderVisibilityTimeout > 0 {
+				if requeued, err := reminderScheduler.RequeueStaleDispatching(ctx, time.Now().UTC().Add(-reminderVisibilityTimeout)); err != nil {
+					log.Warn("reminder reaper failed", slog.String("err", err.Error()))
+				} else if requeued > 0 {
+					log.Warn("reminder reaper requeued stale dispatching occurrences",
+						slog.Int("requeued", requeued),
+						slog.Duration("visibility_timeout", reminderVisibilityTimeout),
+					)
+				}
+			}
 		}
 	}
 	if err := processor.Tick(ctx); err != nil {

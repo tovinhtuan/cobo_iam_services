@@ -122,6 +122,15 @@ services:
       VNSTOCK_MYSQL_DSN: vnstock:vnstock2024@tcp(mysql:3306)/vnstock?parseTime=true&loc=UTC&tls=false
       LOGIN_PASSWORD_RSA_PRIVATE_KEY_PEM_FILE: /app/configs/login_password_rsa_dev.pem
       LOGIN_PASSWORD_RSA_KEY_ID: dev
+      # SMTP: ad-hoc proposal approval emails are dispatched synchronously by the
+      # API process (not the worker), so the api service must also have SMTP set —
+      # otherwise NewAdapter falls back to LogOnlyAdapter and emails never reach Mailpit.
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-no-reply@cobo.local}
+      EMAIL_TEMPLATE_SOURCE: embed
     ports:
       - "8080:8080"
     volumes:

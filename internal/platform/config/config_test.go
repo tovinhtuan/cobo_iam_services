@@ -172,3 +172,36 @@ func TestLoad_UserAvatarSigningSecretRequiredOutsideDevelopment(t *testing.T) {
 		t.Fatal("expected error when signing secret missing in production")
 	}
 }
+
+func TestLoad_ReminderHardeningDefaults(t *testing.T) {
+	t.Setenv("REMINDER_DISPATCH_ENABLED", "")
+	t.Setenv("REMINDER_VISIBILITY_TIMEOUT", "")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if !cfg.ReminderDispatchEnabled {
+		t.Fatalf("ReminderDispatchEnabled must default to true")
+	}
+	if cfg.ReminderVisibilityTimeout != 5*time.Minute {
+		t.Fatalf("ReminderVisibilityTimeout = %v, want 5m", cfg.ReminderVisibilityTimeout)
+	}
+}
+
+func TestLoad_ReminderDispatchFlagOff(t *testing.T) {
+	t.Setenv("REMINDER_DISPATCH_ENABLED", "false")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.ReminderDispatchEnabled {
+		t.Fatalf("ReminderDispatchEnabled = true, want false (rollback switch)")
+	}
+}
+
+func TestLoad_ReminderVisibilityTimeoutTooSmall(t *testing.T) {
+	t.Setenv("REMINDER_VISIBILITY_TIMEOUT", "10s")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected error for REMINDER_VISIBILITY_TIMEOUT below 30s minimum")
+	}
+}

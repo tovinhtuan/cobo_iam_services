@@ -15,6 +15,9 @@ type Service interface {
 	SeedOccurrence(ctx context.Context, req SeedOccurrenceRequest) (*ReminderOccurrenceDTO, error)
 	MaterializeDueOccurrences(ctx context.Context, now time.Time) (int, error)
 	DispatchDueOccurrences(ctx context.Context, now time.Time, limit int) (*DispatchDueResult, error)
+	// RequeueStaleDispatching is the worker reaper entry point: requeue occurrences
+	// stuck in DISPATCHING past olderThan back to PENDING. Returns count requeued.
+	RequeueStaleDispatching(ctx context.Context, olderThan time.Time) (int, error)
 	// SeedOccurrencesFromDueMilestones scans workflow_step_milestones for rows whose
 	// scheduled_date <= DATE(now) and reminder_sent=0, seeds reminder_occurrences, and
 	// marks each milestone sent. Returns count of occurrences seeded.
@@ -49,6 +52,10 @@ type OccurrenceRepository interface {
 	SeedOccurrence(ctx context.Context, in ReminderOccurrenceDTO) (*ReminderOccurrenceDTO, error)
 	MaterializeDueOccurrences(ctx context.Context, now time.Time) (int, error)
 	ListDispatchCandidates(ctx context.Context, now time.Time, limit int) ([]DispatchCandidate, error)
+	// RequeueStaleDispatching requeues occurrences stuck in DISPATCHING past olderThan
+	// (worker crashed mid-dispatch) back to PENDING so the next tick re-dispatches them.
+	// Returns the number of rows requeued. No schema change.
+	RequeueStaleDispatching(ctx context.Context, olderThan time.Time) (int, error)
 }
 
 type AttemptRepository interface {

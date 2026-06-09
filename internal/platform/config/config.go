@@ -26,6 +26,15 @@ type Config struct {
 	// to `pending` (Batch 2B). Must comfortably exceed the longest single Handle
 	// (SMTP send), not the full retry budget.
 	OutboxVisibilityTimeout time.Duration
+	// ReminderDispatchEnabled gates the worker reminder send-path (DispatchDue +
+	// stale-dispatching reaper). Default true (preserve current behavior). When
+	// false, Seed/Materialize keep running so occurrences stay accurate while no
+	// email is sent — a no-data-loss rollback switch.
+	ReminderDispatchEnabled bool
+	// ReminderVisibilityTimeout is how long a reminder_occurrence may stay in
+	// DISPATCHING before the reaper assumes a crashed worker and requeues it to
+	// PENDING. Mirrors OutboxVisibilityTimeout for the reminder pipeline.
+	ReminderVisibilityTimeout time.Duration
 
 	// Data
 	MySQLDSN string
@@ -170,6 +179,8 @@ func Load() (Config, error) {
 		HTTPIdleTimeout:               durationEnv("HTTP_IDLE_TIMEOUT", 60*time.Second),
 		WorkerTickInterval:            durationEnv("WORKER_TICK_INTERVAL", 5*time.Second),
 		OutboxVisibilityTimeout:       durationEnv("OUTBOX_VISIBILITY_TIMEOUT", 5*time.Minute),
+		ReminderDispatchEnabled:       boolEnv("REMINDER_DISPATCH_ENABLED", true),
+		ReminderVisibilityTimeout:     durationEnv("REMINDER_VISIBILITY_TIMEOUT", 5*time.Minute),
 		MySQLDSN:                      normalizeMySQLDSN(os.Getenv("MYSQL_DSN")),
 		VnstockMySQLDSN:               normalizeMySQLDSN(os.Getenv("VNSTOCK_MYSQL_DSN")),
 		VnstockMarketEnabled:          boolEnv("VNSTOCK_MARKET_ENABLED", false),
@@ -233,6 +244,9 @@ func Load() (Config, error) {
 	}
 	if cfg.OutboxVisibilityTimeout < 30*time.Second {
 		return Config{}, fmt.Errorf("OUTBOX_VISIBILITY_TIMEOUT too small (min 30s)")
+	}
+	if cfg.ReminderVisibilityTimeout < 30*time.Second {
+		return Config{}, fmt.Errorf("REMINDER_VISIBILITY_TIMEOUT too small (min 30s)")
 	}
 	if cfg.CMSMediaUploadURLTTL < time.Minute {
 		return Config{}, fmt.Errorf("CMS_MEDIA_UPLOAD_URL_TTL too small")

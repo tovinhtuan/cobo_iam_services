@@ -1,0 +1,52 @@
+# Reminder Reliability Hardening — Prometheus alert rules.
+#
+# Source of truth for the reminder pipeline alerts. The gauges/counter are emitted by the
+# API /metrics ReminderObservabilityCollector (DB-derived, Option B). Merge this group
+# into the live Prometheus rule_files (alongside the adhoc email rules). All series are
+# zero/absent on a healthy idle system, so these rules do not fire on normal operation.
+#
+# NOTE on cobo_reminder_failed_recent: it is a GAUGE that already counts FAILED occurrences
+# within the recent (15m) window, so the alert tests the gauge directly (> 0). The scrape
+# error series IS a counter, so it correctly uses increase().
+groups:
+  - name: reminder_reliability
+    rules:
+      - alert: ReminderFailedRecent
+        expr: cobo_reminder_failed_recent > 0
+        for: 1m
+        labels:
+          severity: warning
+          pipeline: reminder
+        annotations:
+          summary: "Reminder occurrences permanently FAILED in the last 15m"
+          description: "cobo_reminder_failed_recent={{ $value }} — a reminder exhausted its retry budget and was dropped. Inspect reminder_delivery_attempts for the failing occurrence."
+
+      - alert: ReminderBacklogHigh
+        expr: cobo_reminder_backlog > 50
+        for: 10m
+        labels:
+          severity: warning
+          pipeline: reminder
+        annotations:
+          summary: "Reminder dispatch backlog is high"
+          description: "cobo_reminder_backlog={{ $value }} due occurrences (PENDING/RETRY_SCHEDULED) for >10m — the worker may be stalled or REMINDER_DISPATCH_ENABLED is false."
+
+      - alert: ReminderStuckDispatching
+        expr: cobo_reminder_stuck_dispatching > 0
+        for: 5m
+        labels:
+          severity: critical
+          pipeline: reminder
+        annotations:
+          summary: "Reminder occurrences stuck in DISPATCHING"
+          description: "cobo_reminder_stuck_dispatching={{ $value }} occurrences exceeded the visibility timeout — a worker likely crashed mid-dispatch. The reaper should requeue them; persistent non-zero indicates the reaper is disabled or the worker is unhealthy."
+
+      - alert: ReminderCollectorUnhealthy
+        expr: increase(cobo_reminder_metrics_scrape_errors_total[15m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          pipeline: reminder
+        annotations:
+          summary: "Reminder metrics collector query failures"
+          description: "cobo_reminder_metrics_scrape_errors_total increased — the API could not read reminder pipeline counts from MySQL. Reminder gauges may be stale; investigate DB health/latency."

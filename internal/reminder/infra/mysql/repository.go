@@ -241,6 +241,27 @@ func (r *Repository) UpdateDispatchResult(ctx context.Context, in reminderapp.Di
 	return nil
 }
 
+// RequeueStaleDispatching requeues occurrences stuck in DISPATCHING (worker crashed
+// between ClaimForDispatch and UpdateDispatchResult) back to PENDING. Index-backed UPDATE
+// on (status, updated_at); usually matches 0 rows. No schema change.
+func (r *Repository) RequeueStaleDispatching(ctx context.Context, olderThan time.Time) (int, error) {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE reminder_occurrences
+		SET status = 'PENDING',
+		    updated_at = CURRENT_TIMESTAMP(3)
+		WHERE status = 'DISPATCHING'
+		  AND updated_at < ?
+	`, olderThan.UTC())
+	if err != nil {
+		return 0, fmt.Errorf("requeue stale dispatching occurrences: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("requeue stale dispatching rows affected: %w", err)
+	}
+	return int(n), nil
+}
+
 func (r *Repository) InsertAttempt(ctx context.Context, in reminderapp.ReminderDeliveryAttemptDTO) error {
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO reminder_delivery_attempts (

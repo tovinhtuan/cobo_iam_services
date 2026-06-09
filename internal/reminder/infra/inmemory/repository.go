@@ -17,6 +17,9 @@ type Repository struct {
 	configs     map[string]reminderapp.ReminderConfigDTO
 	occurrences map[string]reminderapp.ReminderOccurrenceDTO
 	attempts    map[string][]reminderapp.ReminderDeliveryAttemptDTO
+	// updatedAt mirrors the persistent `updated_at` column so the reaper predicate
+	// (DISPATCHING older than X) is testable in-memory. Keyed by occurrence ID.
+	updatedAt map[string]time.Time
 }
 
 func NewRepository() *Repository {
@@ -24,6 +27,7 @@ func NewRepository() *Repository {
 		configs:     make(map[string]reminderapp.ReminderConfigDTO),
 		occurrences: make(map[string]reminderapp.ReminderOccurrenceDTO),
 		attempts:    make(map[string][]reminderapp.ReminderDeliveryAttemptDTO),
+		updatedAt:   make(map[string]time.Time),
 	}
 }
 
@@ -136,6 +140,7 @@ func (r *Repository) ClaimForDispatch(_ context.Context, occurrenceID string) (*
 	}
 	occ.Status = reminderapp.ReminderStatusDispatching
 	r.occurrences[occurrenceID] = occ
+	r.updatedAt[occurrenceID] = time.Now().UTC()
 	out := occ
 	return &out, nil
 }
@@ -157,7 +162,31 @@ func (r *Repository) UpdateDispatchResult(_ context.Context, in reminderapp.Disp
 	occ.LastErrorCode = strings.TrimSpace(in.LastErrorCode)
 	occ.ProviderMessageID = strings.TrimSpace(in.ProviderMessageID)
 	r.occurrences[in.OccurrenceID] = occ
+	r.updatedAt[in.OccurrenceID] = time.Now().UTC()
 	return nil
+}
+
+// RequeueStaleDispatching requeues DISPATCHING occurrences last touched before olderThan
+// back to PENDING, mirroring the MySQL reaper predicate. Returns count requeued.
+func (r *Repository) RequeueStaleDispatching(_ context.Context, olderThan time.Time) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	n := 0
+	for id, occ := range r.occurrences {
+		if occ.Status != reminderapp.ReminderStatusDispatching {
+			continue
+		}
+		ts, ok := r.updatedAt[id]
+		if ok && !ts.Before(olderThan.UTC()) {
+			continue
+		}
+		occ.Status = reminderapp.ReminderStatusPending
+		r.occurrences[id] = occ
+		r.updatedAt[id] = time.Now().UTC()
+		n++
+	}
+	return n, nil
 }
 
 func (r *Repository) InsertAttempt(_ context.Context, in reminderapp.ReminderDeliveryAttemptDTO) error {
@@ -177,6 +206,7 @@ func (r *Repository) SeedOccurrence(_ context.Context, in reminderapp.ReminderOc
 		occ.OccurrenceID = occ.IdempotencyKey
 	}
 	r.occurrences[occ.OccurrenceID] = occ
+	r.updatedAt[occ.OccurrenceID] = time.Now().UTC()
 	out := occ
 	return &out, nil
 }
