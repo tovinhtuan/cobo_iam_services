@@ -9,9 +9,9 @@ Nội dung: {{.proposal_content}}
 {{- end}}
 Lý do từ chối: {{.reject_reason}}
 
-Bạn có thể tạo đề xuất mới sau khi xem xét lại nội dung:
+Bạn có thể xem chi tiết đề xuất tại:
 
-{{.portal_url}}/app/ad-hoc-proposals
+{{.portal_url}}/app/ad-hoc-proposals/{{.proposal_id}}
 
 Lưu ý: Email này được gửi tự động, vui lòng không trả lời trực tiếp.
 

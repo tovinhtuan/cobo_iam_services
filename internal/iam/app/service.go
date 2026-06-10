@@ -781,15 +781,21 @@ func (s *service) PublishUserInvitationEmail(ctx context.Context, userID, toEmai
 	displayName := coalesce(fullName, loginID)
 
 	if rawToken == "" {
-		legacyBody := fmt.Sprintf("Xin chao %s,\n\n", displayName)
+		websiteURL := strings.TrimRight(s.webBaseURL, "/")
+		legacyBody := fmt.Sprintf("Xin chào %s,\n\n", displayName)
 		if companyName != "" {
-			legacyBody += fmt.Sprintf("Cong ty: %s\n\n", companyName)
+			legacyBody += fmt.Sprintf("Bạn đã được thêm vào công ty \"%s\" trên hệ thống CoBo Portal.\n\n", companyName)
+		} else {
+			legacyBody += "Bạn đã được thêm vào một công ty trên hệ thống CoBo Portal.\n\n"
 		}
-		legacyBody += "Ban da duoc them vao tai khoan cong ty tren he thong. Vui long dang nhap bang email va mat khau hien tai cua ban.\n\nNeu ban khong cho doi thao tac nay, hay lien he quan tri vien.\n"
+		legacyBody += "Vui lòng đăng nhập bằng email và mật khẩu hiện tại của bạn để truy cập:\n\n"
+		legacyBody += websiteURL + "\n\n"
+		legacyBody += "Nếu bạn không mong đợi thao tác này, vui lòng liên hệ quản trị viên của công ty.\n\nTrân trọng,\nĐội ngũ CoBo Portal\n"
 		subject, body := s.renderEmailContent(ctx, "auth.user_invitation.existing_user", map[string]any{
 			"display_name": displayName,
 			"company_name": companyName,
-		}, "Tham gia cong ty", legacyBody)
+			"portal_url":   websiteURL,
+		}, "[CoBo] Bạn được mời tham gia CoBo Portal", legacyBody)
 		s.publishEmail(ctx, "auth.user_invitation_sent", userID, map[string]any{
 			"to":      to,
 			"subject": subject,

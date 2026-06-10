@@ -484,7 +484,7 @@ func TestPublishUserInvitationEmail_EmbedFallsBackToLegacy(t *testing.T) {
 	if err := svc.PublishUserInvitationEmail(ctx, "u_123", "invitee@example.com", "Nguyen Van A", "invitee@example.com", "", "COBO"); err != nil {
 		t.Fatalf("PublishUserInvitationEmail error = %v", err)
 	}
-	wantBody := "Xin chao Nguyen Van A,\n\nCong ty: COBO\n\nBan da duoc them vao tai khoan cong ty tren he thong. Vui long dang nhap bang email va mat khau hien tai cua ban.\n\nNeu ban khong cho doi thao tac nay, hay lien he quan tri vien.\n"
+	wantBody := "Xin chào Nguyen Van A,\n\nBạn đã được thêm vào công ty \"COBO\" trên hệ thống CoBo Portal.\n\nVui lòng đăng nhập bằng email và mật khẩu hiện tại của bạn để truy cập:\n\nhttps://app.example.com\n\nNếu bạn không mong đợi thao tác này, vui lòng liên hệ quản trị viên của công ty.\n\nTrân trọng,\nĐội ngũ CoBo Portal\n"
 	if got := publisher.last.Payload["body"]; got != wantBody {
 		t.Fatalf("legacy fallback body mismatch\nwant: %q\ngot:  %q", wantBody, got)
 	}

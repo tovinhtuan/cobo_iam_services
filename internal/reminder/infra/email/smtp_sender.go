@@ -206,37 +206,51 @@ func reminderTemplateKey(templateCode string) (string, bool) {
 func renderReminderEmail(templateCode string, payload map[string]any) (string, string, error) {
 	switch strings.TrimSpace(templateCode) {
 	case "REMINDER_DISCLOSURE_DUE":
-		title := requiredString(payload, "title")
-		deadline := requiredString(payload, "deadline_date")
-		disclosureID := requiredString(payload, "disclosure_id")
+		// Title/deadline prefer the augmented human-readable keys (disclosure_title,
+		// due_date in dd/mm/yyyy); fall back to the raw payload keys for safety. The
+		// disclosure_id (UUID) and status enum are intentionally NOT surfaced to the
+		// recipient — this is a business communication, not a debug record.
+		title := requiredString(payload, "disclosure_title")
+		if title == "" {
+			title = requiredString(payload, "title")
+		}
+		deadline := requiredString(payload, "due_date")
+		if deadline == "" {
+			deadline = requiredString(payload, "deadline_date")
+		}
+		companyName := optionalString(payload, "company_name")
 		actionURL := optionalString(payload, "portal_url")
 		if actionURL == "" {
 			actionURL = optionalString(payload, "action_url")
 		}
-		if title == "" || deadline == "" || disclosureID == "" {
+		if title == "" || deadline == "" {
 			return "", "", fmt.Errorf("missing required reminder template fields")
 		}
-		subject := fmt.Sprintf("[COBO] Reminder: %s is due on %s", title, deadline)
+		subject := fmt.Sprintf("[CoBo] Nhắc nhở: %s sắp đến hạn vào %s", title, deadline)
 		lines := []string{
-			"Hello,",
+			"Kính gửi,",
 			"",
-			"This is an automated reminder for a disclosure task.",
+			"Đây là thông báo nhắc nhở tự động từ hệ thống CoBo Portal.",
 			"",
-			"Disclosure: " + title,
-			"Disclosure ID: " + disclosureID,
-			"Deadline: " + deadline,
 		}
-		if status := optionalString(payload, "status"); status != "" {
-			lines = append(lines, "Current status: "+status)
+		if companyName != "" {
+			lines = append(lines, "Công ty: "+companyName)
 		}
+		lines = append(lines,
+			"Nghĩa vụ công bố: "+title,
+			"Hạn nộp: "+deadline,
+			"",
+			"Vui lòng truy cập hệ thống để hoàn thành nghĩa vụ công bố thông tin trước thời hạn:",
+		)
 		if actionURL != "" {
-			lines = append(lines, "Action link: "+actionURL)
+			lines = append(lines, "", actionURL)
 		}
 		lines = append(lines,
 			"",
-			"Please review and complete the required action before the deadline.",
+			"Lưu ý: Email này được gửi tự động, vui lòng không trả lời trực tiếp.",
 			"",
-			"COBO Notification System",
+			"Trân trọng,",
+			"Hệ thống CoBo Portal",
 		)
 		return subject, strings.Join(lines, "\r\n"), nil
 	default:

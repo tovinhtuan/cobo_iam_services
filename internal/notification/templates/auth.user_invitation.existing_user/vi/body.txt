@@ -1,7 +1,14 @@
-Xin chao {{.display_name}},
-
-{{if .company_name}}Cong ty: {{.company_name}}
+Xin chào {{.display_name}},
+{{if .company_name}}
+Bạn đã được thêm vào công ty "{{.company_name}}" trên hệ thống CoBo Portal.
+{{else}}
+Bạn đã được thêm vào một công ty trên hệ thống CoBo Portal.
 {{end}}
-Ban da duoc them vao tai khoan cong ty tren he thong. Vui long dang nhap bang email va mat khau hien tai cua ban.
+Vui lòng đăng nhập bằng email và mật khẩu hiện tại của bạn để truy cập:
 
-Neu ban khong cho doi thao tac nay, hay lien he quan tri vien.
+{{.portal_url}}
+
+Nếu bạn không mong đợi thao tác này, vui lòng liên hệ quản trị viên của công ty.
+
+Trân trọng,
+Đội ngũ CoBo Portal

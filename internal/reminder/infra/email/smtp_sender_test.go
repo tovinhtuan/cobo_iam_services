@@ -10,32 +10,41 @@ import (
 )
 
 func TestRenderReminderEmailDisclosureDue(t *testing.T) {
+	// Augmented payload (as produced by service.prepareDispatch): human-readable
+	// disclosure_title + dd/mm/yyyy due_date + company_name + absolute portal_url.
 	subject, body, err := renderReminderEmail("REMINDER_DISCLOSURE_DUE", map[string]any{
-		"title":         "Annual disclosure report",
-		"deadline_date": "2026-05-10",
-		"disclosure_id": "disc-001",
-		"status":        "draft",
-		"portal_url":    "https://portal.cobo.vn/app/disclosures/disc-001",
+		"disclosure_title": "Báo cáo tài chính quý 2/2026",
+		"due_date":         "15/06/2026",
+		"company_name":     "Công ty Cổ phần ABC",
+		"portal_url":       "https://portal.cobo.vn/app/disclosures/disc-001",
+		// Legacy keys must be IGNORED by the rendered output. Distinct sentinel
+		// values (not the URL slug) make the leak assertion meaningful.
+		"disclosure_id": "RAW-UUID-LEAK-SENTINEL",
+		"status":        "RAW-STATUS-LEAK-SENTINEL",
 	})
 	if err != nil {
 		t.Fatalf("renderReminderEmail error = %v", err)
 	}
-	if !strings.Contains(subject, "Annual disclosure report") || !strings.Contains(subject, "2026-05-10") {
+	if !strings.Contains(subject, "Báo cáo tài chính quý 2/2026") || !strings.Contains(subject, "15/06/2026") {
 		t.Fatalf("subject missing business fields: %q", subject)
 	}
 	for _, want := range []string{
-		"Disclosure: Annual disclosure report",
-		"Disclosure ID: disc-001",
-		"Deadline: 2026-05-10",
-		"Current status: draft",
-		"Action link: https://portal.cobo.vn/app/disclosures/disc-001",
+		"Kính gửi,",
+		"Công ty: Công ty Cổ phần ABC",
+		"Nghĩa vụ công bố: Báo cáo tài chính quý 2/2026",
+		"Hạn nộp: 15/06/2026",
+		"https://portal.cobo.vn/app/disclosures/disc-001",
+		"Hệ thống CoBo Portal",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("body missing %q:\n%s", want, body)
 		}
 	}
-	if strings.Contains(body, "map[]") {
-		t.Fatalf("body must not expose raw map payload: %s", body)
+	// No English wording, no UUID/enum exposure, no raw payload leak.
+	for _, forbidden := range []string{"RAW-UUID-LEAK-SENTINEL", "RAW-STATUS-LEAK-SENTINEL", "Disclosure ID", "Current status", "is due on", "automated reminder", "map[]", "<no value>"} {
+		if strings.Contains(body, forbidden) || strings.Contains(subject, forbidden) {
+			t.Fatalf("output must not contain %q:\nsubject=%q\nbody=%s", forbidden, subject, body)
+		}
 	}
 }
 
@@ -45,17 +54,16 @@ func TestRenderReminderEmailDisclosureDueRequiresFields(t *testing.T) {
 	}
 }
 
-func TestSender_RenderReminderEmailContentEmbedMatchesLegacy(t *testing.T) {
+// TestSender_RenderReminderEmailContentEmbedVietnamese verifies the embed path
+// (EMAIL_TEMPLATE_SOURCE=embed) renders the disclosure-deadline reminder as a
+// Vietnamese business email with no English wording, UUID, or enum exposure,
+// when given the augmented payload that service.prepareDispatch produces.
+func TestSender_RenderReminderEmailContentEmbedVietnamese(t *testing.T) {
 	payload := map[string]any{
-		"title":         "Annual disclosure report",
-		"deadline_date": "2026-05-10",
-		"disclosure_id": "disc-001",
-		"status":        "draft",
-		"portal_url":    "https://portal.cobo.vn/app/disclosures/disc-001",
-	}
-	legacySubject, legacyBody, err := renderReminderEmail("REMINDER_DISCLOSURE_DUE", payload)
-	if err != nil {
-		t.Fatalf("renderReminderEmail error = %v", err)
+		"disclosure_title": "Báo cáo tài chính quý 2/2026",
+		"company_name":     "Công ty Cổ phần ABC",
+		"due_date":         "15/06/2026",
+		"portal_url":       "https://portal.cobo.vn/app/disclosures/disc-001",
 	}
 	sender := NewSMTPSender(SMTPConfig{}, WithTemplateRendering("embed", notificationregistry.NewEmbedRegistry(), notificationapp.NewEmailRenderer()))
 
@@ -63,11 +71,18 @@ func TestSender_RenderReminderEmailContentEmbedMatchesLegacy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("renderReminderEmailContent error = %v", err)
 	}
-	if subject != legacySubject {
-		t.Fatalf("subject mismatch\nwant: %q\ngot:  %q", legacySubject, subject)
+	for _, want := range []string{"Nghĩa vụ công bố: Báo cáo tài chính quý 2/2026", "Hạn nộp: 15/06/2026", "https://portal.cobo.vn/app/disclosures/disc-001"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("embed body missing %q:\n%s", want, body)
+		}
 	}
-	if body != legacyBody {
-		t.Fatalf("body mismatch\nwant: %q\ngot:  %q", legacyBody, body)
+	if !strings.Contains(subject, "Báo cáo tài chính quý 2/2026") {
+		t.Fatalf("embed subject missing disclosure title: %q", subject)
+	}
+	for _, forbidden := range []string{"Disclosure ID", "Current status", "is due on", "<no value>"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("embed body must not contain %q:\n%s", forbidden, body)
+		}
 	}
 }
 

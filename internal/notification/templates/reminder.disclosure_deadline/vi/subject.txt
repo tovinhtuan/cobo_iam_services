@@ -1,1 +1,1 @@
-[COBO] Reminder: {{.title}} is due on {{.deadline_date}}
+[CoBo] Nhắc nhở: {{.disclosure_title}} sắp đến hạn vào {{.due_date}}

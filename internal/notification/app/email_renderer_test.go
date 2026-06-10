@@ -76,18 +76,17 @@ var GoldenFlows = []GoldenFlow{
 	{
 		Name:    "existing user invitation",
 		Key:     "auth.user_invitation.existing_user",
-		Vars:    map[string]any{"display_name": "Nguyen Van A", "company_name": "COBO"},
+		Vars:    map[string]any{"display_name": "Nguyen Van A", "company_name": "COBO", "portal_url": "https://app.example.com"},
 		Fixture: "auth.user_invitation.existing_user",
 	},
 	{
 		Name: "reminder disclosure deadline",
 		Key:  "reminder.disclosure_deadline",
 		Vars: map[string]any{
-			"title":         "Annual disclosure report",
-			"deadline_date": "2026-05-10",
-			"disclosure_id": "disc-001",
-			"status":        "draft",
-			"portal_url":    "https://portal.cobo.vn/app/disclosures/disc-001",
+			"disclosure_title": "Báo cáo tài chính quý 2/2026",
+			"company_name":     "Công ty Cổ phần ABC",
+			"due_date":         "15/06/2026",
+			"portal_url":       "https://portal.cobo.vn/app/disclosures/disc-001",
 		},
 		Fixture: "reminder.disclosure_deadline",
 	},
@@ -125,6 +124,18 @@ func TestEmailRenderer_GoldenOutputs(t *testing.T) {
 			rendered, err := renderer.Render(resolved, tt.Vars)
 			if err != nil {
 				t.Fatalf("Render() error = %v", err)
+			}
+			// UPDATE_GOLDEN=1 rewrites the fixtures in place. Use after an
+			// intentional template change, then re-run without the env var to
+			// lock the new snapshot. Never set in CI.
+			if os.Getenv("UPDATE_GOLDEN") != "" {
+				if err := os.WriteFile(filepath.Join(goldenDir, tt.Fixture+".subject.txt"), []byte(rendered.Subject), 0o644); err != nil {
+					t.Fatalf("write golden subject %s: %v", tt.Fixture, err)
+				}
+				if err := os.WriteFile(filepath.Join(goldenDir, tt.Fixture+".body.txt"), []byte(rendered.TextBody), 0o644); err != nil {
+					t.Fatalf("write golden body %s: %v", tt.Fixture, err)
+				}
+				return
 			}
 			if rendered.Subject != wantSubj {
 				t.Fatalf("subject mismatch\nwant: %q\ngot:  %q", wantSubj, rendered.Subject)

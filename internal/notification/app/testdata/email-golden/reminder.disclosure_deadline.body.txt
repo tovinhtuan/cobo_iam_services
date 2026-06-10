@@ -1,13 +1,15 @@
-Hello,
+Kính gửi,
 
-This is an automated reminder for a disclosure task.
+Đây là thông báo nhắc nhở tự động từ hệ thống CoBo Portal.
+Công ty: Công ty Cổ phần ABC
+Nghĩa vụ công bố: Báo cáo tài chính quý 2/2026
+Hạn nộp: 15/06/2026
 
-Disclosure: Annual disclosure report
-Disclosure ID: disc-001
-Deadline: 2026-05-10
-Current status: draft
-Action link: https://portal.cobo.vn/app/disclosures/disc-001
+Vui lòng truy cập hệ thống để hoàn thành nghĩa vụ công bố thông tin trước thời hạn:
 
-Please review and complete the required action before the deadline.
+https://portal.cobo.vn/app/disclosures/disc-001
 
-COBO Notification System
+Lưu ý: Email này được gửi tự động, vui lòng không trả lời trực tiếp.
+
+Trân trọng,
+Hệ thống CoBo Portal

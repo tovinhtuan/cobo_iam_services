@@ -1,17 +1,19 @@
-Hello,
+Kính gửi,
 
-This is an automated reminder for a disclosure task.
+Đây là thông báo nhắc nhở tự động từ hệ thống CoBo Portal.
+{{- if .company_name}}
+Công ty: {{.company_name}}
+{{- end}}
+Nghĩa vụ công bố: {{.disclosure_title}}
+Hạn nộp: {{.due_date}}
 
-Disclosure: {{.title}}
-Disclosure ID: {{.disclosure_id}}
-Deadline: {{.deadline_date}}
-{{- if .status }}
-Current status: {{.status}}
-{{- end }}
-{{- if .portal_url }}
-Action link: {{.portal_url}}
-{{- end }}
+Vui lòng truy cập hệ thống để hoàn thành nghĩa vụ công bố thông tin trước thời hạn:
+{{- if .portal_url}}
 
-Please review and complete the required action before the deadline.
+{{.portal_url}}
+{{- end}}
 
-COBO Notification System
+Lưu ý: Email này được gửi tự động, vui lòng không trả lời trực tiếp.
+
+Trân trọng,
+Hệ thống CoBo Portal

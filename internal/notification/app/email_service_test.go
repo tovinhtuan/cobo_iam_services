@@ -190,11 +190,13 @@ func TestDispatchEmail_SanitisesAllSensitiveVars(t *testing.T) {
 		Locale:         "vi",
 		IdempotencyKey: "invite-001",
 		Variables: map[string]any{
-			"display_name": "Nguyen Van A",
-			"company_name": "COBO",
-			"setup_link":   "https://app/setup?token=abcdef",
-			"raw_token":    "tok-xyz",
-			"expiry_hours": 72,
+			"display_name":  "Nguyen Van A",
+			"company_name":  "COBO",
+			"setup_link":    "https://app/setup?token=abcdef",
+			"raw_token":     "tok-xyz",
+			"expiry_hours":  72,
+			"support_email": "support@cobo.vn",
+			"website_url":   "https://app.example.com",
 		},
 	}
 	got, err := svc.DispatchEmail(context.Background(), req)

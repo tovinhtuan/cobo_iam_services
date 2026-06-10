@@ -1,7 +1,5 @@
 default_locale: vi
 variables:
-  - name: proposal_id
-    required: true
   - name: proposal_title
     required: true
   - name: proposal_content
