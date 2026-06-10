@@ -784,3 +784,118 @@ func readSourceFile(t *testing.T, relPath string) string {
 func indexOf(haystack, needle string) int {
 	return strings.Index(haystack, needle)
 }
+
+// ---- Batch D: Email vars regression (E-CLONE, E-AUTOFILL, E-INLINE, E-REGRESSION) ----
+
+func assertEmailVarsNoTechnicalLeak(t *testing.T, vars map[string]any) {
+	t.Helper()
+	forbiddenKeys := []string{
+		"membership_id", "workflow_instance_id", "type_id",
+		"process_controller_id", "step_id", "change_note",
+	}
+	for _, k := range forbiddenKeys {
+		if _, ok := vars[k]; ok {
+			t.Errorf("forbidden key %q present in template vars", k)
+		}
+	}
+	portalURL, _ := vars["portal_url"].(string)
+	if portalURL != "" {
+		if strings.Contains(portalURL, "localhost") {
+			t.Errorf("portal_url contains localhost: %q", portalURL)
+		}
+		if strings.HasPrefix(portalURL, "/") {
+			t.Errorf("portal_url is relative: %q", portalURL)
+		}
+	}
+	for _, k := range []string{"proposal_title", "proposal_content", "company_name", "creator_name"} {
+		if v, ok := vars[k].(string); ok && v != "" {
+			if strings.Contains(v, "prop-test-001") || strings.Contains(v, "rec-test-001") {
+				t.Errorf("%s contains test fixture id: %q", k, v)
+			}
+		}
+	}
+}
+
+func TestEmailRegressionVars_EClone(t *testing.T) {
+	cr := &capturingRenderer{}
+	notifier := buildWithCapturingRenderer(cr, "https://portal.cobo.vn")
+	proposal := adhocapp.ProposalDTO{
+		ProposalID:      "prop-clone-real-001",
+		CompanyID:       "c-001",
+		CompanyName:     "Công ty XYZ",
+		CreatorName:     "Nguyễn Văn Clone",
+		ProposalTitle:   "Báo cáo (bản sao)",
+		ProposalContent: "Nội dung sao chép từ đề xuất gốc.",
+	}
+	focal := adhocapp.MemberInfo{UserID: "u1", MembershipID: "m1", Email: "f@ex.com", FullName: "Focal"}
+	notifier.NotifyFocalsForReview(context.Background(), proposal, []adhocapp.MemberInfo{focal})
+	for _, vars := range cr.snapshot() {
+		assertEmailVarsNoTechnicalLeak(t, vars)
+		if vars["proposal_title"] != proposal.ProposalTitle {
+			t.Errorf("proposal_title = %v, want %q", vars["proposal_title"], proposal.ProposalTitle)
+		}
+	}
+}
+
+func TestEmailRegressionVars_EAutofill(t *testing.T) {
+	cr := &capturingRenderer{}
+	notifier := buildWithCapturingRenderer(cr, "https://portal.cobo.vn")
+	proposal := adhocapp.ProposalDTO{
+		ProposalID:      "prop-autofill-001",
+		CompanyID:       "c-001",
+		CompanyName:     "Công ty ABC",
+		CreatorName:     "Lê Thị Auto",
+		ProposalTitle:   "Báo cáo tự động",
+		ProposalContent: strings.Repeat("Nội dung tự điền. ", 15),
+	}
+	ctrl := adhocapp.MemberInfo{UserID: "u2", MembershipID: "m2", Email: "c@ex.com", FullName: "Controller"}
+	notifier.NotifyControllerForReview(context.Background(), proposal, ctrl)
+	for _, vars := range cr.snapshot() {
+		assertEmailVarsNoTechnicalLeak(t, vars)
+		content, _ := vars["proposal_content"].(string)
+		if content == "" {
+			t.Error("proposal_content empty for auto-fill scenario")
+		}
+	}
+}
+
+func TestEmailRegressionVars_EInline(t *testing.T) {
+	cr := &capturingRenderer{}
+	notifier := buildWithCapturingRenderer(cr, "https://portal.cobo.vn")
+	proposal := adhocapp.ProposalDTO{
+		ProposalID:      "prop-inline-type-001",
+		CompanyID:       "c-001",
+		CompanyName:     "Công ty Mới",
+		CreatorName:     "Phạm Inline",
+		ProposalTitle:   "Đề xuất loại CBTT inline",
+		ProposalContent: "Loại mới tạo khi lập đề xuất.",
+	}
+	focal := adhocapp.MemberInfo{UserID: "u1", MembershipID: "m1", Email: "f@ex.com", FullName: "Focal"}
+	notifier.NotifyCreatorApproved(context.Background(), proposal, focal)
+	for _, vars := range cr.snapshot() {
+		assertEmailVarsNoTechnicalLeak(t, vars)
+	}
+}
+
+func TestEmailRegressionVars_ERegression(t *testing.T) {
+	cr := &capturingRenderer{}
+	notifier := buildWithCapturingRenderer(cr, "https://portal.cobo.vn")
+	proposal := adhocapp.ProposalDTO{
+		ProposalID:    "prop-regression-001",
+		CompanyID:     "c-001",
+		CompanyName:   "Công ty Test",
+		CreatorName:   "Hoàng Regression",
+		ProposalTitle: "Đề xuất regression",
+	}
+	focal := adhocapp.MemberInfo{UserID: "u1", MembershipID: "m1", Email: "f@ex.com", FullName: "Focal"}
+	notifier.NotifyFocalsForReview(context.Background(), proposal, []adhocapp.MemberInfo{focal})
+	notifier.NotifyControllerForReview(context.Background(), proposal, focal)
+	notifier.NotifyCreatorApproved(context.Background(), proposal, focal)
+	notifier.NotifyCreatorRejected(context.Background(), proposal, focal)
+	for i, vars := range cr.snapshot() {
+		assertEmailVarsNoTechnicalLeak(t, vars)
+		if title, _ := vars["proposal_title"].(string); title == "" {
+			t.Errorf("vars[%d]: proposal_title empty", i)
+		}
+	}
+}

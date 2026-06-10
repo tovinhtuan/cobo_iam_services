@@ -163,3 +163,158 @@ func TestAdhocTemplate_SubjectUsesProposalTitle(t *testing.T) {
 		})
 	}
 }
+
+// ---- Batch D: Email Regression Gates (E-CLONE, E-AUTOFILL, E-INLINE, E-REGRESSION) ----
+
+var emailTechnicalLeakPatterns = []string{
+	"membership_id",
+	"workflow_instance_id",
+	"type_id",
+	"process_controller_id",
+	"step_id",
+	"localhost",
+	"prop-test-001",
+	"rec-test-001",
+}
+
+// emailVisibleText strips CTA URL lines — proposal_id/record_id may appear only in href per V2.1.
+func emailVisibleText(body string) string {
+	lines := strings.Split(body, "\n")
+	var visible []string
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "http://") || strings.HasPrefix(trimmed, "https://") {
+			continue
+		}
+		if strings.Contains(trimmed, "/app/ad-hoc-proposals/") || strings.Contains(trimmed, "/app/disclosures/") {
+			continue
+		}
+		visible = append(visible, line)
+	}
+	return strings.Join(visible, "\n")
+}
+
+func enrichAdhocTemplateVars(vars map[string]any) map[string]any {
+	out := make(map[string]any, len(vars)+4)
+	for k, v := range vars {
+		out[k] = v
+	}
+	if _, ok := out["creator_name"]; !ok {
+		out["creator_name"] = "Nguyễn Văn A"
+	}
+	if _, ok := out["record_id"]; !ok {
+		out["record_id"] = "rec-email-gate"
+	}
+	if _, ok := out["reject_reason"]; !ok {
+		out["reject_reason"] = "Không hợp lệ"
+	}
+	return out
+}
+
+func assertNoTechnicalLeakInEmail(t *testing.T, label, subject, textBody, htmlBody string) {
+	t.Helper()
+	visible := subject + "\n" + emailVisibleText(textBody) + "\n" + emailVisibleText(htmlBody)
+	for _, pat := range emailTechnicalLeakPatterns {
+		if strings.Contains(visible, pat) {
+			t.Errorf("%s: visible email text contains forbidden pattern %q", label, pat)
+		}
+	}
+	if strings.Contains(visible, "9f4b2c1a-") || strings.Contains(visible, "deadbeef-") {
+		t.Errorf("%s: visible email text contains UUID-like technical value", label)
+	}
+	if strings.Contains(visible, "prop-render-test") {
+		t.Errorf("%s: proposal_id leaked into visible email body (not CTA href)", label)
+	}
+}
+
+func TestEmailRegression_EClone(t *testing.T) {
+	vars := enrichAdhocTemplateVars(baseVars())
+	vars["proposal_title"] = "Báo cáo sự cố (bản sao)"
+	vars["proposal_content"] = "Nội dung được sao chép từ đề xuất đã duyệt trước đó."
+	vars["creator_name"] = "Trần Văn A"
+	for _, key := range adhocTemplateKeys {
+		t.Run(key, func(t *testing.T) {
+			rendered := renderAdhocTemplate(t, key, vars)
+			assertNoTechnicalLeakInEmail(t, key, rendered.Subject, rendered.TextBody, rendered.HTMLBody)
+			if !strings.Contains(rendered.TextBody, "Tiêu đề") {
+				t.Error("body missing label Tiêu đề")
+			}
+			if !strings.Contains(rendered.TextBody, vars["proposal_title"].(string)) {
+				t.Error("body missing proposal_title")
+			}
+		})
+	}
+}
+
+func TestEmailRegression_EAutofill(t *testing.T) {
+	longContent := strings.Repeat("Mục báo cáo tự động điền. ", 20)
+	vars := enrichAdhocTemplateVars(baseVars())
+	vars["proposal_title"] = "Báo cáo tự động điền mô tả"
+	vars["proposal_content"] = longContent
+	vars["creator_name"] = "Lê Thị B"
+	for _, key := range adhocTemplateKeys {
+		t.Run(key, func(t *testing.T) {
+			rendered := renderAdhocTemplate(t, key, vars)
+			assertNoTechnicalLeakInEmail(t, key, rendered.Subject, rendered.TextBody, rendered.HTMLBody)
+			if !strings.Contains(rendered.TextBody, "Báo cáo tự động điền mô tả") {
+				t.Error("body missing auto-filled title")
+			}
+		})
+	}
+}
+
+func TestEmailRegression_EInline(t *testing.T) {
+	vars := enrichAdhocTemplateVars(baseVars())
+	vars["proposal_title"] = "Đề xuất loại CBTT mới"
+	vars["proposal_content"] = "Loại công bố mới được tạo trực tiếp khi lập đề xuất."
+	vars["creator_name"] = "Phạm Văn C"
+	for _, key := range adhocTemplateKeys {
+		t.Run(key, func(t *testing.T) {
+			rendered := renderAdhocTemplate(t, key, vars)
+			assertNoTechnicalLeakInEmail(t, key, rendered.Subject, rendered.TextBody, rendered.HTMLBody)
+		})
+	}
+}
+
+func TestEmailRegression_ERegression(t *testing.T) {
+	scenarios := []struct {
+		name string
+		vars map[string]any
+	}{
+		{
+			name: "approved_with_record",
+			vars: enrichAdhocTemplateVars(map[string]any{
+				"proposal_id":       "prop-regression-approved",
+				"proposal_title":    "Báo cáo quý I",
+				"proposal_content":  "Nội dung chi tiết báo cáo.",
+				"company_name":      "Công ty ABC",
+				"portal_url":        "https://portal.cobo.vn",
+				"creator_name":      "Nguyễn Văn D",
+				"record_id":         "rec-internal-only",
+			}),
+		},
+		{
+			name: "rejected_with_reason",
+			vars: enrichAdhocTemplateVars(map[string]any{
+				"proposal_id":    "prop-regression-rejected",
+				"proposal_title": "Đề xuất bị từ chối",
+				"company_name":   "Công ty ABC",
+				"portal_url":     "https://portal.cobo.vn",
+				"creator_name":   "Hoàng Thị E",
+				"reject_reason":  "Thiếu tài liệu đính kèm",
+			}),
+		},
+	}
+	for _, sc := range scenarios {
+		for _, key := range adhocTemplateKeys {
+			t.Run(sc.name+"/"+key, func(t *testing.T) {
+				rendered := renderAdhocTemplate(t, key, enrichAdhocTemplateVars(sc.vars))
+				assertNoTechnicalLeakInEmail(t, key, rendered.Subject, rendered.TextBody, rendered.HTMLBody)
+				visible := emailVisibleText(rendered.TextBody)
+				if strings.Contains(visible, "rec-internal-only") {
+					t.Error("record_id leaked into visible email body (not CTA href)")
+				}
+			})
+		}
+	}
+}
