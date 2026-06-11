@@ -99,6 +99,7 @@ seed_dev_identity_authorization.sql
 0093_company_applicability_profile.up.sql
 0094_template_applicability_rules.up.sql
 0095_backfill_template_applicability_rules.up.sql
+0097_deadline_engine_v2_prepare.up.sql
 "
 
 mysql_exec() {

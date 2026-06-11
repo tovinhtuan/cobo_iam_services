@@ -169,6 +169,9 @@ type Config struct {
 
 	// TEMPLATE_APPLICABILITY_STRICT_FILTER: when false, global templates without rules pass filter (grace).
 	TemplateApplicabilityStrictFilter bool
+
+	// DEADLINE_ENGINE_V2: use ResolveDeadline() unified engine (Batch 2+). Default false — legacy runtime.
+	DeadlineEngineV2 bool
 }
 
 // Load reads configuration from the environment with safe defaults for local dev.
@@ -242,6 +245,7 @@ func Load() (Config, error) {
 		CompanyProvisionIdempotencyRequired: boolEnv("COMPANY_PROVISION_IDEMPOTENCY_REQUIRED", false),
 		CompanySelfCreateEnabled:            boolEnv("COMPANY_SELF_CREATE_ENABLED", false),
 		TemplateApplicabilityStrictFilter:     boolEnv("TEMPLATE_APPLICABILITY_STRICT_FILTER", false),
+		DeadlineEngineV2:                      boolEnv("DEADLINE_ENGINE_V2", false),
 	}
 	if cfg.WorkerTickInterval < time.Second {
 		return Config{}, fmt.Errorf("WORKER_TICK_INTERVAL too small")

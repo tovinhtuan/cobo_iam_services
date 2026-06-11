@@ -49,9 +49,16 @@ type StructureDeadlineEntry struct {
 
 // TemplateApplicabilityRules is persisted on disclosure_type_versions.applicability_rules_json.
 type TemplateApplicabilityRules struct {
-	ApplicableCompanyClasses []CompanyClass                                    `json:"applicable_company_classes"`
-	ApplicableSectors        []BusinessSector                                  `json:"applicable_sectors"`
-	DeadlineByStructure      map[StructureCriterion]StructureDeadlineEntry     `json:"deadline_by_structure,omitempty"`
+	ApplicableCompanyClasses []CompanyClass                                 `json:"applicable_company_classes"`
+	ApplicableSectors        []BusinessSector                               `json:"applicable_sectors"`
+	DeadlineByStructure      map[StructureCriterion]StructureDeadlineEntry  `json:"deadline_by_structure,omitempty"`
+
+	// DeadlineDays is the source-of-truth N (số ngày công bố) for Deadline Engine V2.
+	DeadlineDays int `json:"deadline_days,omitempty"`
+	// DeadlineDayType is "calendar" | "working". Empty defaults to "calendar" (I-18).
+	DeadlineDayType string `json:"deadline_day_type,omitempty"`
+	// UseStructureDeadline toggles the deadline_by_structure conditional override.
+	UseStructureDeadline bool `json:"use_structure_deadline"`
 }
 
 // CompanyApplicabilityProfile is the company self-declaration subset.
