@@ -9,6 +9,7 @@ import (
 	"time"
 
 	authapp "github.com/cobo/cobo_iam_services/internal/authorization/app"
+	"github.com/cobo/cobo_iam_services/internal/disclosure/app/applicability"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 	"github.com/cobo/cobo_iam_services/internal/platform/idgen"
 )
@@ -18,8 +19,9 @@ type service struct {
 	auth                  authapp.Service
 	idg                   idgen.Generator
 	calculator            *DeadlineCalculator
-	workflowGroupsEnabled bool
-	tierLookup            func(ctx context.Context, userID string) string
+	workflowGroupsEnabled              bool
+	templateApplicabilityStrictFilter  bool
+	tierLookup                         func(ctx context.Context, userID string) string
 }
 
 // ServiceOption configures disclosure service construction.
@@ -38,6 +40,13 @@ func WithHolidayCalendarProvider(p HolidayCalendarProvider) ServiceOption {
 func WithWorkflowGroupsEnabled(enabled bool) ServiceOption {
 	return func(s *service) {
 		s.workflowGroupsEnabled = enabled
+	}
+}
+
+// WithTemplateApplicabilityStrictFilter enables strict global template applicability filtering.
+func WithTemplateApplicabilityStrictFilter(enabled bool) ServiceOption {
+	return func(s *service) {
+		s.templateApplicabilityStrictFilter = enabled
 	}
 }
 
@@ -107,6 +116,12 @@ func (s *service) CreateRecord(ctx context.Context, req CreateRecordRequest) (*R
 	// to be populated. Until CMS seeds data via the new schema, use feature-flag guard.
 	if typeID := strings.TrimSpace(req.Payload.TypeID); typeID != "" {
 		if err := s.enforceHasWorkflowGate(ctx, req.Subject.CompanyID, typeID); err != nil {
+			return nil, err
+		}
+		if err := s.enforceTemplateApplicability(ctx, req.Subject.CompanyID, typeID); err != nil {
+			return nil, err
+		}
+		if err := s.enforceStructureDeadlineOnCreate(ctx, req.Subject.CompanyID, typeID); err != nil {
 			return nil, err
 		}
 	}
@@ -303,19 +318,6 @@ func (s *service) ListTypes(ctx context.Context, req ListTypesRequest) (*ListTyp
 	} else if !allowedSortDir[sortDir] {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "sort_dir must be one of: asc, desc", nil)
 	}
-	out, total, err := s.repo.ListTypes(ctx, ListTypesParams{
-		CompanyID:        req.Subject.CompanyID,
-		GroupID:          req.GroupID,
-		DisplayGroupCode: req.DisplayGroupCode,
-		Query:            req.Query,
-		Page:             req.Page,
-		PageSize:         req.PageSize,
-		SortBy:           sortBy,
-		SortDir:          sortDir,
-	})
-	if err != nil {
-		return nil, err
-	}
 	page := req.Page
 	pageSize := req.PageSize
 	if pageSize <= 0 || pageSize > 100 {
@@ -324,7 +326,38 @@ func (s *service) ListTypes(ctx context.Context, req ListTypesRequest) (*ListTyp
 	if page <= 0 {
 		page = 0
 	}
-	return &ListTypesResponse{Items: out, Total: total, Page: page, PageSize: pageSize}, nil
+	// Fetch full catalog before applicability filter, then paginate in memory.
+	out, _, err := s.repo.ListTypes(ctx, ListTypesParams{
+		CompanyID:        req.Subject.CompanyID,
+		GroupID:          req.GroupID,
+		DisplayGroupCode: req.DisplayGroupCode,
+		Query:            req.Query,
+		Page:             0,
+		PageSize:         0,
+		SortBy:           sortBy,
+		SortDir:          sortDir,
+	})
+	if err != nil {
+		return nil, err
+	}
+	filtered, err := s.filterTypesByApplicability(ctx, req.Subject.CompanyID, out)
+	if err != nil {
+		return nil, err
+	}
+	total := len(filtered)
+	if page > 0 {
+		start := (page - 1) * pageSize
+		if start >= total {
+			filtered = []DisclosureTypeSummaryDTO{}
+		} else {
+			end := start + pageSize
+			if end > total {
+				end = total
+			}
+			filtered = filtered[start:end]
+		}
+	}
+	return &ListTypesResponse{Items: filtered, Total: total, Page: page, PageSize: pageSize}, nil
 }
 
 func (s *service) GetTypeDetail(ctx context.Context, req GetTypeDetailRequest) (*DisclosureTypeDTO, error) {
@@ -481,6 +514,12 @@ func (s *service) UpsertTypeVersion(ctx context.Context, req UpsertTypeVersionRe
 	if err := validateDisplayGroupCodesExist(ctx, s.repo, req.DisplayGroupCodes); err != nil {
 		return nil, err
 	}
+	if req.Scope == templateScopeGlobal {
+		isPeriodic := strings.EqualFold(req.TemplateCategory, TemplateCategoryPeriodic)
+		if err := applicability.ValidateRules(req.ApplicabilityRules, isPeriodic); err != nil {
+			return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, err.Error(), nil)
+		}
+	}
 	return s.repo.UpsertTypeVersion(ctx, req)
 }
 
@@ -570,6 +609,12 @@ func (s *service) ActivateTypeVersion(ctx context.Context, req ActivateTypeVersi
 	}
 	if err := validatePortalDeadlineRule(versionDetail.DeadlineRule, s.loadDeadlineRuleCatalog(ctx)); err != nil {
 		return nil, err
+	}
+	if versionDetail.Scope == templateScopeGlobal || versionDetail.Scope == "" {
+		isPeriodic := strings.EqualFold(versionDetail.TemplateCategory, TemplateCategoryPeriodic)
+		if err := applicability.ValidateRules(versionDetail.ApplicabilityRules, isPeriodic); err != nil {
+			return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, err.Error(), nil)
+		}
 	}
 	return s.repo.ActivateTypeVersion(ctx, req)
 }
@@ -1132,7 +1177,7 @@ func sanitizeChecklist(items []ChecklistItemDTO) []ChecklistItemDTO {
 // SeedPeriodicCycles computes expected cycles for the current tick and upserts them.
 // Idempotent — safe to call on every worker tick.
 func (s *service) SeedPeriodicCycles(ctx context.Context, now time.Time) (int, error) {
-	return seedPeriodicCycles(ctx, now, s.repo, s.idg, s.calculator)
+	return seedPeriodicCycles(ctx, now, s.repo, s.idg, s.calculator, s.templateApplicabilityStrictFilter)
 }
 
 // MaterializePeriodicDisclosures picks up pending cycles and creates disclosure records.

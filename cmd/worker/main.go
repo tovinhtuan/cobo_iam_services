@@ -126,7 +126,12 @@ func main() {
 	)
 	if sqlDB != nil && cfg.PeriodicSeedingEnabled {
 		disclosureRepo := disclosuremysql.NewRepository(sqlDB)
-		disclosureSvc = disclosureapp.NewService(disclosureRepo, nil /* no auth: worker mode */, idgen.UUIDv7Generator{})
+		disclosureSvc = disclosureapp.NewService(
+			disclosureRepo,
+			nil, /* no auth: worker mode */
+			idgen.UUIDv7Generator{},
+			disclosureapp.WithTemplateApplicabilityStrictFilter(cfg.TemplateApplicabilityStrictFilter),
+		)
 		var workflowSvc workflowapp.Service
 		if cfg.WorkflowSnapshotEnabled {
 			workflowRepo := workflowmysql.NewRepository(sqlDB)

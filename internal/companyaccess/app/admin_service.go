@@ -1047,6 +1047,17 @@ func (s *adminService) PatchOwnCompany(ctx context.Context, req PatchOwnCompanyR
 		return nil, err
 	}
 	// VerificationStatus and Status are intentionally absent — only platform admins may change those.
+	if req.BusinessSector != nil {
+		v := strings.TrimSpace(*req.BusinessSector)
+		if v != "" {
+			if v != "commercial" && v != "service" && v != "manufacturing" {
+				return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "invalid business_sector", nil)
+			}
+		} else {
+			empty := ""
+			req.BusinessSector = &empty
+		}
+	}
 	if err := s.repo.UpdateCompanyPlatform(ctx, UpdatePlatformCompanyRequest{
 		Subject:            req.Subject,
 		CompanyID:          req.Subject.CompanyID,
@@ -1057,6 +1068,12 @@ func (s *adminService) PatchOwnCompany(ctx context.Context, req PatchOwnCompanyR
 		Phone:              req.Phone,
 		ContactEmail:       req.ContactEmail,
 		RepresentativeName: req.RepresentativeName,
+		IsListed:                      req.IsListed,
+		IsLargePublic:                 req.IsLargePublic,
+		IsNonLargePublic:              req.IsNonLargePublic,
+		HasSubsidiaries:               req.HasSubsidiaries,
+		HasSubordinateAccountingUnits: req.HasSubordinateAccountingUnits,
+		BusinessSector:                req.BusinessSector,
 	}); err != nil {
 		return nil, err
 	}

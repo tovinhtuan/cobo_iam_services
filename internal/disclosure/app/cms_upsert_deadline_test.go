@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/cobo/cobo_iam_services/internal/disclosure/app/applicability"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 	"github.com/cobo/cobo_iam_services/internal/platform/idgen"
 )
@@ -45,7 +46,8 @@ func baseUpsertRequest() UpsertTypeVersionRequest {
 		TemplateCategory: TemplateCategoryPeriodic,
 		DeadlineStrategy: DeadlineStrategyFixedCycleDays,
 		Periodicity:      PeriodicityQuarterly,
-		DisplayGroupCodes: []string{"display_groups_001"},
+		DisplayGroupCodes:  []string{"display_groups_001"},
+		ApplicabilityRules: applicability.DefaultGlobalRules(true),
 		Blocks: []TemplateBlockDTO{
 			{BlockID: "b1", BlockKey: "legal_basis", BlockType: "rich_text", Title: "Cơ sở", Description: "test", DisplayOrder: 1, Config: map[string]any{"max_length": 8000, "allow_html": false}},
 			{BlockID: "b2", BlockKey: "disclosure_content", BlockType: "rich_text", Title: "Nội dung", Description: "test", DisplayOrder: 2, Config: map[string]any{"max_length": 50000, "allow_html": true}},
@@ -120,6 +122,7 @@ func TestUpsertTypeVersion_AcceptsDatePatternDeadlineRule(t *testing.T) {
 	req.TemplateCategory = TemplateCategoryIrregular
 	req.Periodicity = PeriodicityEventBased
 	req.DeadlineStrategy = DeadlineStrategyEventHours
+	req.ApplicabilityRules = applicability.DefaultGlobalRules(false)
 
 	resp, err := svc.UpsertTypeVersion(context.Background(), req)
 	if err != nil {
@@ -142,9 +145,12 @@ func (r *activateDeadlineRepo) ListActiveDeadlineRuleCatalog(_ context.Context) 
 
 func (r *activateDeadlineRepo) GetTypeVersionDetail(_ context.Context, _, typeID string, versionNo int) (*DisclosureTypeDTO, error) {
 	return &DisclosureTypeDTO{
-		TypeID:       typeID,
-		VersionNo:    versionNo,
-		DeadlineRule: r.deadlineRule,
+		TypeID:             typeID,
+		VersionNo:          versionNo,
+		Scope:              "global",
+		TemplateCategory:   TemplateCategoryPeriodic,
+		DeadlineRule:       r.deadlineRule,
+		ApplicabilityRules: applicability.DefaultGlobalRules(true),
 		Blocks: []TemplateBlockDTO{
 			{BlockID: "bwf", BlockKey: "enterprise_workflow", BlockType: "rich_text", Config: map[string]any{
 				"steps": []any{map[string]any{

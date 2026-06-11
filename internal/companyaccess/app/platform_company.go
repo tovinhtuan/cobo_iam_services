@@ -39,6 +39,12 @@ type PlatformCompanyDetail struct {
 	Phone              string `json:"phone,omitempty"`
 	ContactEmail       string `json:"contact_email,omitempty"`
 	RepresentativeName string `json:"representative_name,omitempty"`
+	IsListed                      bool   `json:"is_listed"`
+	IsLargePublic                 bool   `json:"is_large_public"`
+	IsNonLargePublic              bool   `json:"is_non_large_public"`
+	HasSubsidiaries               bool   `json:"has_subsidiaries"`
+	HasSubordinateAccountingUnits bool   `json:"has_subordinate_accounting_units"`
+	BusinessSector                string `json:"business_sector,omitempty"`
 	MemberCount        int    `json:"member_count"`
 	DisclosureCount    int    `json:"disclosure_count"`
 	TemplateCount      int    `json:"template_count"`
@@ -78,6 +84,12 @@ type UpdatePlatformCompanyRequest struct {
 	ContactEmail       *string
 	RepresentativeName *string
 	VerificationStatus *string
+	IsListed                      *bool
+	IsLargePublic                 *bool
+	IsNonLargePublic              *bool
+	HasSubsidiaries               *bool
+	HasSubordinateAccountingUnits *bool
+	BusinessSector                *string
 }
 
 type SetPlatformCompanyStatusRequest struct {

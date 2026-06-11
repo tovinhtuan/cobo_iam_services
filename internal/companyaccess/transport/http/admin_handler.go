@@ -699,6 +699,12 @@ func (h *AdminHandler) patchOwnCompany(w http.ResponseWriter, r *http.Request) {
 		Phone              *string `json:"phone"`
 		ContactEmail       *string `json:"contact_email"`
 		RepresentativeName *string `json:"representative_name"`
+		IsListed                      *bool   `json:"is_listed"`
+		IsLargePublic                 *bool   `json:"is_large_public"`
+		IsNonLargePublic              *bool   `json:"is_non_large_public"`
+		HasSubsidiaries               *bool   `json:"has_subsidiaries"`
+		HasSubordinateAccountingUnits *bool   `json:"has_subordinate_accounting_units"`
+		BusinessSector                *string `json:"business_sector"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&body)
 	out, err := h.svc.PatchOwnCompany(r.Context(), caapp.PatchOwnCompanyRequest{
@@ -710,6 +716,12 @@ func (h *AdminHandler) patchOwnCompany(w http.ResponseWriter, r *http.Request) {
 		Phone:              body.Phone,
 		ContactEmail:       body.ContactEmail,
 		RepresentativeName: body.RepresentativeName,
+		IsListed:                      body.IsListed,
+		IsLargePublic:                 body.IsLargePublic,
+		IsNonLargePublic:              body.IsNonLargePublic,
+		HasSubsidiaries:               body.HasSubsidiaries,
+		HasSubordinateAccountingUnits: body.HasSubordinateAccountingUnits,
+		BusinessSector:                body.BusinessSector,
 	})
 	if err != nil {
 		httpx.WriteError(w, nil, err)

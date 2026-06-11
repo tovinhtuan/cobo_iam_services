@@ -10,6 +10,7 @@ import (
 	"time"
 
 	disclosureapp "github.com/cobo/cobo_iam_services/internal/disclosure/app"
+	"github.com/cobo/cobo_iam_services/internal/disclosure/app/applicability"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 )
 
@@ -398,6 +399,10 @@ func (r *Repository) UpsertTypeVersion(_ context.Context, req disclosureapp.Upse
 		UpdatedBy:   req.Subject.UserID,
 		ActivatedAt: now,
 	}, nil
+}
+
+func (r *Repository) GetCompanyApplicabilityProfile(_ context.Context, _ string) (applicability.CompanyApplicabilityProfile, error) {
+	return applicability.CompanyApplicabilityProfile{}, nil
 }
 
 func (r *Repository) GetCompanyDeadlineContext(_ context.Context, companyID string) (disclosureapp.CompanyDeadlineContext, error) {

@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"time"
+
+	"github.com/cobo/cobo_iam_services/internal/disclosure/app/applicability"
 )
 
 // ErrDuplicateRecordID is returned when CreateRecord is called with an explicit
@@ -91,6 +93,7 @@ type Repository interface {
 	ListCompanyWorkflowOverrideVersions(ctx context.Context, companyID, typeID string, page, pageSize int) ([]CompanyWorkflowOverrideVersionDTO, int, error)
 	GetEffectiveWorkflow(ctx context.Context, companyID, typeID string) (*EffectiveWorkflowDTO, error)
 	GetCompanyDeadlineContext(ctx context.Context, companyID string) (CompanyDeadlineContext, error)
+	GetCompanyApplicabilityProfile(ctx context.Context, companyID string) (applicability.CompanyApplicabilityProfile, error)
 	// GetCompanyTypeDeadlineContext returns CompanyDeadlineContext enriched with
 	// per-company cycle anchor override from company_type_preferences.
 	GetCompanyTypeDeadlineContext(ctx context.Context, companyID, typeID string) (CompanyDeadlineContext, error)
@@ -281,6 +284,7 @@ type UpsertTypeVersionRequest struct {
 	Blocks                []TemplateBlockDTO      `json:"blocks"`
 	DisplayGroupCodes     []string                `json:"display_group_codes"`
 	ChangeNote            string                  `json:"change_note"`
+	ApplicabilityRules    *applicability.TemplateApplicabilityRules `json:"applicability_rules,omitempty"`
 }
 
 type UpsertTypeVersionResponse struct {
@@ -691,6 +695,8 @@ type DisclosureTypeSummaryDTO struct {
 	HasWorkflow       bool     `json:"has_workflow"`
 	ReviewStatus      string   `json:"review_status,omitempty"`
 	Tags              []string `json:"tags"`
+	ApplicabilityRules              *applicability.TemplateApplicabilityRules `json:"-"`
+	ResolvedStructureDeadlineDays   *int                                      `json:"resolved_structure_deadline_days,omitempty"`
 }
 
 type DisclosureTypeDTO struct {
@@ -731,6 +737,7 @@ type DisclosureTypeDTO struct {
 	IsMandatory       bool     `json:"is_mandatory"`
 	HasWorkflow       bool     `json:"has_workflow"`
 	ReviewStatus      string   `json:"review_status,omitempty"`
+	ApplicabilityRules *applicability.TemplateApplicabilityRules `json:"applicability_rules,omitempty"`
 }
 
 type DeadlineSummaryDTO struct {
@@ -903,6 +910,8 @@ type PeriodicTypeRow struct {
 	DeadlineDays      int
 	CycleAnchorDay    int // 0 = unset → defaults to 1
 	CycleAnchorMonth  int // 0 = unset → defaults to 1
+	IsGlobal          bool
+	ApplicabilityRules *applicability.TemplateApplicabilityRules
 }
 
 // PeriodicCycleRow represents one (type, company, cycle) idempotency slot.

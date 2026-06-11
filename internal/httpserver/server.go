@@ -326,6 +326,7 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 	holidayProvider := disclosureapp.HolidayCalendarProvider(fileHoliday)
 	var disclosureOpts []disclosureapp.ServiceOption
 	disclosureOpts = append(disclosureOpts, disclosureapp.WithWorkflowGroupsEnabled(cfg.WorkflowGroupsEnabled))
+	disclosureOpts = append(disclosureOpts, disclosureapp.WithTemplateApplicabilityStrictFilter(cfg.TemplateApplicabilityStrictFilter))
 	tierLookup := func(ctx context.Context, userID string) string {
 		if identity == nil {
 			return ""

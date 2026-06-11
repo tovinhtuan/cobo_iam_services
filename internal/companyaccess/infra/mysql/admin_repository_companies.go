@@ -131,15 +131,22 @@ func (r *AdminRepository) GetCompanyPlatform(ctx context.Context, companyID stri
 		SELECT company_id, company_code, company_name, status, verification_status,
 			COALESCE(tax_code, ''), COALESCE(registration_number, ''),
 			COALESCE(address, ''), COALESCE(phone, ''), COALESCE(contact_email, ''), COALESCE(representative_name, ''),
+			COALESCE(is_listed, 0), COALESCE(is_large_public, 0), COALESCE(is_non_large_public, 0),
+			COALESCE(has_subsidiaries, 0), COALESCE(has_subordinate_accounting_units, 0),
+			COALESCE(business_sector, ''),
 			created_at, updated_at
 		FROM companies WHERE company_id = ?
 	`, companyID)
 	var d caapp.PlatformCompanyDetail
 	var created, updated time.Time
+	var businessSector sql.NullString
 	if err := row.Scan(
 		&d.CompanyID, &d.CompanyCode, &d.CompanyName, &d.Status, &d.VerificationStatus,
 		&d.TaxCode, &d.RegistrationNumber,
 		&d.Address, &d.Phone, &d.ContactEmail, &d.RepresentativeName,
+		&d.IsListed, &d.IsLargePublic, &d.IsNonLargePublic,
+		&d.HasSubsidiaries, &d.HasSubordinateAccountingUnits,
+		&businessSector,
 		&created, &updated,
 	); err != nil {
 		if err == sql.ErrNoRows {
@@ -149,6 +156,9 @@ func (r *AdminRepository) GetCompanyPlatform(ctx context.Context, companyID stri
 	}
 	d.CreatedAtRFC3339 = created.UTC().Format(time.RFC3339)
 	d.UpdatedAtRFC3339 = updated.UTC().Format(time.RFC3339)
+	if businessSector.Valid {
+		d.BusinessSector = businessSector.String
+	}
 
 	if err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM memberships WHERE company_id = ? AND LOWER(TRIM(membership_status)) = 'active'`, companyID).Scan(&d.MemberCount); err != nil {
 		return nil, mapMySQLSchemaErr(err)
@@ -206,6 +216,35 @@ func (r *AdminRepository) UpdateCompanyPlatform(ctx context.Context, req caapp.U
 		sets = append(sets, "verification_status = ?")
 		args = append(args, strings.TrimSpace(*req.VerificationStatus))
 	}
+	if req.IsListed != nil {
+		sets = append(sets, "is_listed = ?")
+		args = append(args, boolToTiny(*req.IsListed))
+	}
+	if req.IsLargePublic != nil {
+		sets = append(sets, "is_large_public = ?")
+		args = append(args, boolToTiny(*req.IsLargePublic))
+	}
+	if req.IsNonLargePublic != nil {
+		sets = append(sets, "is_non_large_public = ?")
+		args = append(args, boolToTiny(*req.IsNonLargePublic))
+	}
+	if req.HasSubsidiaries != nil {
+		sets = append(sets, "has_subsidiaries = ?")
+		args = append(args, boolToTiny(*req.HasSubsidiaries))
+	}
+	if req.HasSubordinateAccountingUnits != nil {
+		sets = append(sets, "has_subordinate_accounting_units = ?")
+		args = append(args, boolToTiny(*req.HasSubordinateAccountingUnits))
+	}
+	if req.BusinessSector != nil {
+		v := strings.TrimSpace(*req.BusinessSector)
+		if v == "" {
+			sets = append(sets, "business_sector = NULL")
+		} else {
+			sets = append(sets, "business_sector = ?")
+			args = append(args, v)
+		}
+	}
 	if len(sets) == 0 {
 		return nil
 	}
@@ -231,6 +270,13 @@ func (r *AdminRepository) UpdateCompanyPlatform(ctx context.Context, req caapp.U
 		return mapMySQLSchemaErr(qerr)
 	}
 	return nil
+}
+
+func boolToTiny(v bool) int {
+	if v {
+		return 1
+	}
+	return 0
 }
 
 func (r *AdminRepository) SetCompanyStatusPlatform(ctx context.Context, companyID, status string) error {

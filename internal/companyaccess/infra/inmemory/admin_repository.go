@@ -823,6 +823,24 @@ func (r *AdminRepository) UpdateCompanyPlatform(_ context.Context, req caapp.Upd
 	if req.RepresentativeName != nil {
 		c.RepresentativeName = *req.RepresentativeName
 	}
+	if req.IsListed != nil {
+		c.IsListed = *req.IsListed
+	}
+	if req.IsLargePublic != nil {
+		c.IsLargePublic = *req.IsLargePublic
+	}
+	if req.IsNonLargePublic != nil {
+		c.IsNonLargePublic = *req.IsNonLargePublic
+	}
+	if req.HasSubsidiaries != nil {
+		c.HasSubsidiaries = *req.HasSubsidiaries
+	}
+	if req.HasSubordinateAccountingUnits != nil {
+		c.HasSubordinateAccountingUnits = *req.HasSubordinateAccountingUnits
+	}
+	if req.BusinessSector != nil {
+		c.BusinessSector = strings.TrimSpace(*req.BusinessSector)
+	}
 	return nil
 }
 

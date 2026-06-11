@@ -166,6 +166,9 @@ type Config struct {
 	CompanyProvisionIdempotencyRequired bool
 	// COMPANY_SELF_CREATE_ENABLED: expose POST /api/v1/company/create for Nth self-service company.
 	CompanySelfCreateEnabled bool
+
+	// TEMPLATE_APPLICABILITY_STRICT_FILTER: when false, global templates without rules pass filter (grace).
+	TemplateApplicabilityStrictFilter bool
 }
 
 // Load reads configuration from the environment with safe defaults for local dev.
@@ -238,6 +241,7 @@ func Load() (Config, error) {
 		PeriodicSeedingEnabled:              boolEnv("PERIODIC_SEEDING_ENABLED", false),
 		CompanyProvisionIdempotencyRequired: boolEnv("COMPANY_PROVISION_IDEMPOTENCY_REQUIRED", false),
 		CompanySelfCreateEnabled:            boolEnv("COMPANY_SELF_CREATE_ENABLED", false),
+		TemplateApplicabilityStrictFilter:     boolEnv("TEMPLATE_APPLICABILITY_STRICT_FILTER", false),
 	}
 	if cfg.WorkerTickInterval < time.Second {
 		return Config{}, fmt.Errorf("WORKER_TICK_INTERVAL too small")

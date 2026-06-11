@@ -2854,3 +2854,16 @@
   - the 4 pre-existing failures above should be triaged separately (template fixture `support_email` var; CMS dashboard session/auth fixture; `template_category` enum/test-data drift) — out of this batch's scope per "không tự mở rộng scope"
   - `cobo_adhoc_email_shadow_total` "mismatch" can only fire on a genuine idempotency-key collision (two different notification intents producing the same `<event_type>.<proposalID>.<recipientMembershipID>` key) — by construction this should be vanishingly rare; the metric is a correctness tripwire, not an expected-traffic signal
   - Docker rebuild not run in this sandbox (no `docker` binary available — consistent with the Batch 2A entry's note); recommend a fresh build + smoke test in staging before flipping `EMAIL_SHADOW_MODE`/`ADHOC_EMAIL_OUTBOX_ENABLED` to true anywhere
+
+## 2026-06-11 - OPS-APPL-01 — Migration manifest 0091–0095
+
+- task type: implement (migration runner only)
+- objective: `run_dev_migrations.sh` must auto-apply `0091`–`0095`
+- implemented:
+  - Added 5 migrations to `MIGRATIONS` list after `0090`
+  - Preflight drift: 0091/0093/0094 → ledger-only when target columns exist
+  - Ledger insert: `INSERT IGNORE` (0091 SQL self-records)
+- test (DEV `88.216.208.0`): migrate exit 0; 0091 preflight; ledger 0090–0095; rerun idempotent; backfill 19=19
+- build: `docker compose -f docker-compose.dev.yml build api` exit 0
+- prod pipeline: **NOT VERIFIED** (compose + deploy-dev.sh use same script)
+- verdict: **OPS-APPL-01 DONE** — Gate 0 PASS

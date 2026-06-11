@@ -94,6 +94,11 @@ seed_dev_identity_authorization.sql
 0088_revoke_cms_template_perms_from_enterprise_admin.up.sql
 0089_expand_override_id_varchar.up.sql
 0090_company_template_publish_permission.up.sql
+0091_fix_global_workflow_schema.up.sql
+0092_dev_premium_subscription_tvttthptlvh.up.sql
+0093_company_applicability_profile.up.sql
+0094_template_applicability_rules.up.sql
+0095_backfill_template_applicability_rules.up.sql
 "
 
 mysql_exec() {
@@ -140,10 +145,51 @@ if [ "${existing_count}" -gt 0 ] && [ "${tracked_count}" -eq 0 ]; then
   done
 fi
 
+column_exists() {
+  table="$1"
+  column="$2"
+  mysql_exec -Nse \
+    "SELECT COUNT(1) FROM information_schema.columns \
+     WHERE table_schema='${DB_NAME}' AND table_name='${table}' AND column_name='${column}'"
+}
+
+# Preflight ledger-only when schema already matches target (drift from manual/partial apply).
+preflight_schema_drift() {
+  file="$1"
+  case "${file}" in
+    0091_fix_global_workflow_schema.up.sql)
+      if [ "$(column_exists global_workflows status)" -gt 0 ]; then
+        echo "Preflight: ${file} — global_workflows.status exists; marking ledger only"
+        mysql_exec -e "INSERT IGNORE INTO schema_migrations(file_name) VALUES ('${file}')"
+        return 0
+      fi
+      ;;
+    0093_company_applicability_profile.up.sql)
+      if [ "$(column_exists companies is_listed)" -gt 0 ]; then
+        echo "Preflight: ${file} — companies.is_listed exists; marking ledger only"
+        mysql_exec -e "INSERT IGNORE INTO schema_migrations(file_name) VALUES ('${file}')"
+        return 0
+      fi
+      ;;
+    0094_template_applicability_rules.up.sql)
+      if [ "$(column_exists disclosure_type_versions applicability_rules_json)" -gt 0 ]; then
+        echo "Preflight: ${file} — disclosure_type_versions.applicability_rules_json exists; marking ledger only"
+        mysql_exec -e "INSERT IGNORE INTO schema_migrations(file_name) VALUES ('${file}')"
+        return 0
+      fi
+      ;;
+  esac
+  return 1
+}
+
 for file in ${MIGRATIONS}; do
   applied="$(mysql_exec -Nse "SELECT COUNT(1) FROM schema_migrations WHERE file_name='${file}'")"
   if [ "${applied}" -gt 0 ]; then
     echo "Skipping already applied migration: ${file}"
+    continue
+  fi
+
+  if preflight_schema_drift "${file}"; then
     continue
   fi
 
@@ -152,7 +198,8 @@ for file in ${MIGRATIONS}; do
     echo "ERROR: migration failed: ${file}" >&2
     exit 1
   fi
-  mysql_exec -e "INSERT INTO schema_migrations(file_name) VALUES ('${file}')"
+  # IGNORE: 0091 self-records in SQL; push-migration.sh uses the same pattern.
+  mysql_exec -e "INSERT IGNORE INTO schema_migrations(file_name) VALUES ('${file}')"
 done
 
 echo "All migrations are up to date."

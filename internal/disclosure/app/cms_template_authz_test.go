@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/cobo/cobo_iam_services/internal/disclosure/app/applicability"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 	"github.com/cobo/cobo_iam_services/internal/platform/idgen"
 )
@@ -29,8 +30,11 @@ func (r *cmsTemplateAuthzRepo) GetTypeVersionDetail(_ context.Context, _, typeID
 		return r.versionDetail, nil
 	}
 	return &DisclosureTypeDTO{
-		TypeID:    typeID,
-		VersionNo: versionNo,
+		TypeID:             typeID,
+		VersionNo:          versionNo,
+		Scope:              "global",
+		TemplateCategory:   TemplateCategoryIrregular,
+		ApplicabilityRules: applicability.DefaultGlobalRules(false),
 		Blocks: []TemplateBlockDTO{
 			{
 				BlockID:   "block-workflow",

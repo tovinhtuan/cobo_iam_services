@@ -13,6 +13,7 @@ import (
 	sqldriver "github.com/go-sql-driver/mysql"
 
 	disclosureapp "github.com/cobo/cobo_iam_services/internal/disclosure/app"
+	"github.com/cobo/cobo_iam_services/internal/disclosure/app/applicability"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 )
 
@@ -254,7 +255,7 @@ func (r *Repository) ListTypes(ctx context.Context, params disclosureapp.ListTyp
 	dataSQL := `SELECT t.type_id, t.group_id, COALESCE(t.display_group_code, ''), t.company_id,
 		       COALESCE(t.is_mandatory, 0), COALESCE(t.review_status, ''),
 		       v.name, v.category, v.template_category, v.description, v.deadline_rule, v.tags_json,
-		       COALESCE(v.periodicity, '')
+		       COALESCE(v.periodicity, ''), v.applicability_rules_json
 		` + baseSQL + `
 		ORDER BY ` + sortCol + ` ` + sortDir
 	dataArgs := args
@@ -274,14 +275,20 @@ func (r *Repository) ListTypes(ctx context.Context, params disclosureapp.ListTyp
 	for rows.Next() {
 		var item disclosureapp.DisclosureTypeSummaryDTO
 		var tagsRaw []byte
+		var rulesRaw []byte
 		var ownerCompanyID sql.NullString
 		if err := rows.Scan(
 			&item.TypeID, &item.GroupID, &item.DisplayGroupCode, &ownerCompanyID,
 			&item.IsMandatory, &item.ReviewStatus,
 			&item.Name, &item.Category, &item.TemplateCategory, &item.Description, &item.DeadlineRule, &tagsRaw,
-			&item.Periodicity,
+			&item.Periodicity, &rulesRaw,
 		); err != nil {
 			return nil, 0, err
+		}
+		if rules, err := applicability.ParseRulesJSON(rulesRaw); err != nil {
+			return nil, 0, err
+		} else {
+			item.ApplicabilityRules = rules
 		}
 		item.OwnerCompanyID = ownerCompanyID.String
 		if ownerCompanyID.Valid && strings.TrimSpace(ownerCompanyID.String) != "" {
@@ -462,7 +469,8 @@ func (r *Repository) GetTypeDetail(ctx context.Context, companyID, typeID string
 			COALESCE(v.deadline_config_json, JSON_OBJECT()),
 			COALESCE(v.legal_bases_json, JSON_ARRAY()),
 			COALESCE(v.checklist_json, JSON_ARRAY()),
-			v.tags_json
+			v.tags_json,
+			v.applicability_rules_json
 		FROM disclosure_types t
 		INNER JOIN disclosure_type_versions v ON v.type_id = t.type_id AND v.version_no = t.active_version_no
 		WHERE t.type_id = ? AND (t.company_id IS NULL OR t.company_id = ?)
@@ -473,6 +481,7 @@ func (r *Repository) GetTypeDetail(ctx context.Context, companyID, typeID string
 	var legalBasesRaw []byte
 	var checklistRaw []byte
 	var tagsRaw []byte
+	var rulesRaw []byte
 	if err := row.Scan(
 		&item.TypeID, &item.GroupID, &item.DisplayGroupCode, &ownerCompanyID, &item.VersionNo,
 		&item.IsMandatory, &item.ReviewStatus,
@@ -485,11 +494,17 @@ func (r *Repository) GetTypeDetail(ctx context.Context, companyID, typeID string
 		&legalBasesRaw,
 		&checklistRaw,
 		&tagsRaw,
+		&rulesRaw,
 	); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "disclosure type not found", nil)
 		}
 		return nil, err
+	}
+	if rules, err := applicability.ParseRulesJSON(rulesRaw); err != nil {
+		return nil, err
+	} else {
+		item.ApplicabilityRules = rules
 	}
 	if err := decodeTags(tagsRaw, &item.Tags); err != nil {
 		return nil, err
@@ -547,7 +562,8 @@ func (r *Repository) GetTypeVersionDetail(ctx context.Context, companyID, typeID
 			COALESCE(v.deadline_config_json, JSON_OBJECT()),
 			COALESCE(v.legal_bases_json, JSON_ARRAY()),
 			COALESCE(v.checklist_json, JSON_ARRAY()),
-			v.tags_json
+			v.tags_json,
+			v.applicability_rules_json
 		FROM disclosure_type_versions v
 		INNER JOIN disclosure_types t ON t.type_id = v.type_id
 		WHERE v.type_id = ? AND v.version_no = ? AND (t.company_id IS NULL OR t.company_id = ?)
@@ -558,6 +574,7 @@ func (r *Repository) GetTypeVersionDetail(ctx context.Context, companyID, typeID
 	var legalBasesRaw []byte
 	var checklistRaw []byte
 	var tagsRaw []byte
+	var rulesRaw []byte
 	if err := row.Scan(
 		&item.TypeID, &item.GroupID, &ownerCompanyID, &item.VersionNo,
 		&item.Name, &item.Category, &item.TemplateCategory, &item.DeadlineStrategy, &item.Description,
@@ -569,11 +586,17 @@ func (r *Repository) GetTypeVersionDetail(ctx context.Context, companyID, typeID
 		&legalBasesRaw,
 		&checklistRaw,
 		&tagsRaw,
+		&rulesRaw,
 	); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "disclosure type version not found", nil)
 		}
 		return nil, err
+	}
+	if rules, err := applicability.ParseRulesJSON(rulesRaw); err != nil {
+		return nil, err
+	} else {
+		item.ApplicabilityRules = rules
 	}
 	if err := decodeTags(tagsRaw, &item.Tags); err != nil {
 		return nil, err
@@ -687,6 +710,10 @@ func (r *Repository) UpsertTypeVersion(ctx context.Context, req disclosureapp.Up
 	if err != nil {
 		return nil, fmt.Errorf("marshal deadline config: %w", err)
 	}
+	applicabilityRulesJSON, err := applicability.MarshalRulesJSON(req.ApplicabilityRules)
+	if err != nil {
+		return nil, fmt.Errorf("marshal applicability rules: %w", err)
+	}
 	blocks, err := normalizeTemplateBlocks(req.Blocks)
 	if err != nil {
 		return nil, err
@@ -697,14 +724,14 @@ func (r *Repository) UpsertTypeVersion(ctx context.Context, req disclosureapp.Up
 		INSERT INTO disclosure_type_versions (
 			type_id, version_no, name, category, template_category, deadline_strategy, description, legal_basis, applicability, implementation_content,
 			implementation_notes, special_cases, report_content, required_docs, deadline_rule, periodicity, channels_text,
-			beneficiaries, receiving_authorities, format, legal_risks_text, general_info, deadline_config_json, legal_bases_json, checklist_json, tags_json, change_note, updated_by, activated_at
+			beneficiaries, receiving_authorities, format, legal_risks_text, general_info, deadline_config_json, legal_bases_json, checklist_json, tags_json, applicability_rules_json, change_note, updated_by, activated_at
 		) VALUES (?, ?, ?, ?, ?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
 		          NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
-		          NULLIF(?, ''), NULLIF(?, ''), CAST(? AS JSON), CAST(? AS JSON), CAST(? AS JSON), CAST(? AS JSON), NULLIF(?, ''), ?, ?)
+		          NULLIF(?, ''), NULLIF(?, ''), CAST(? AS JSON), CAST(? AS JSON), CAST(? AS JSON), CAST(? AS JSON), CAST(? AS JSON), NULLIF(?, ''), ?, ?)
 	`, req.TypeID, nextVersion, req.Name, req.Category, req.TemplateCategory, req.DeadlineStrategy, req.Description,
 		req.LegalBasis, req.Applicability, req.ImplementationContent, req.ImplementationNotes, req.SpecialCases, req.ReportContent,
 		req.RequiredDocs, req.DeadlineRule, req.Periodicity, req.ChannelsText, req.Beneficiaries, req.ReceivingAuthorities,
-		req.Format, req.LegalRisksText, req.GeneralInfo, string(deadlineConfigJSON), string(legalBasesJSON), string(checklistJSON), string(tagsJSON), changeNote, req.Subject.UserID, now)
+		req.Format, req.LegalRisksText, req.GeneralInfo, string(deadlineConfigJSON), string(legalBasesJSON), string(checklistJSON), string(tagsJSON), string(applicabilityRulesJSON), changeNote, req.Subject.UserID, now)
 	if err != nil {
 		return nil, err
 	}
@@ -1273,6 +1300,29 @@ func decodeDeadlineConfigJSON(raw []byte, target **disclosureapp.TemplateDeadlin
 	return nil
 }
 
+func (r *Repository) GetCompanyApplicabilityProfile(ctx context.Context, companyID string) (applicability.CompanyApplicabilityProfile, error) {
+	row := r.db.QueryRowContext(ctx, `
+		SELECT COALESCE(is_listed, 0), COALESCE(is_large_public, 0), COALESCE(is_non_large_public, 0),
+			COALESCE(has_subsidiaries, 0), COALESCE(has_subordinate_accounting_units, 0),
+			COALESCE(business_sector, '')
+		FROM companies
+		WHERE company_id = ?
+	`, companyID)
+	var isListed, isLargePublic, isNonLargePublic, hasSubsidiaries, hasSubordinateAccountingUnits int
+	var businessSector string
+	if err := row.Scan(&isListed, &isLargePublic, &isNonLargePublic, &hasSubsidiaries, &hasSubordinateAccountingUnits, &businessSector); err != nil {
+		if err == sql.ErrNoRows {
+			return applicability.CompanyApplicabilityProfile{}, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "company not found", nil)
+		}
+		return applicability.CompanyApplicabilityProfile{}, err
+	}
+	return applicability.ProfileFromCompanyDetail(
+		isListed == 1, isLargePublic == 1, isNonLargePublic == 1,
+		hasSubsidiaries == 1, hasSubordinateAccountingUnits == 1,
+		businessSector,
+	), nil
+}
+
 func (r *Repository) GetCompanyDeadlineContext(ctx context.Context, companyID string) (disclosureapp.CompanyDeadlineContext, error) {
 	row := r.db.QueryRowContext(ctx, `
 		SELECT established_date, established_month, established_day
@@ -1657,7 +1707,9 @@ func (r *Repository) ListActivePeriodicTypes(ctx context.Context) ([]disclosurea
 		       COALESCE(JSON_EXTRACT(dtv.deadline_config_json, '$.frequency_interval'), 1)              AS frequency_interval,
 		       COALESCE(JSON_EXTRACT(dtv.deadline_config_json, '$.deadline_days'), 0)                   AS deadline_days,
 		       COALESCE(JSON_EXTRACT(dtv.deadline_config_json, '$.cycle_anchor_day'), 0)                AS anchor_day,
-		       COALESCE(JSON_EXTRACT(dtv.deadline_config_json, '$.cycle_anchor_month'), 0)              AS anchor_month
+		       COALESCE(JSON_EXTRACT(dtv.deadline_config_json, '$.cycle_anchor_month'), 0)              AS anchor_month,
+		       CASE WHEN dt.company_id IS NULL THEN 1 ELSE 0 END AS is_global,
+		       dtv.applicability_rules_json
 		FROM disclosure_types dt
 		JOIN disclosure_type_versions dtv ON dtv.type_id = dt.type_id AND dtv.version_no = dt.active_version_no
 		WHERE JSON_UNQUOTE(JSON_EXTRACT(dtv.deadline_config_json, '$.template_category')) IN ('periodic', 'custom')
@@ -1671,9 +1723,17 @@ func (r *Repository) ListActivePeriodicTypes(ctx context.Context) ([]disclosurea
 	var out []disclosureapp.PeriodicTypeRow
 	for rows.Next() {
 		var row disclosureapp.PeriodicTypeRow
+		var isGlobal int
+		var rulesRaw []byte
 		if err := rows.Scan(&row.TypeID, &row.FrequencyUnit, &row.FrequencyInterval,
-			&row.DeadlineDays, &row.CycleAnchorDay, &row.CycleAnchorMonth); err != nil {
+			&row.DeadlineDays, &row.CycleAnchorDay, &row.CycleAnchorMonth, &isGlobal, &rulesRaw); err != nil {
 			return nil, fmt.Errorf("scan periodic type row: %w", err)
+		}
+		row.IsGlobal = isGlobal == 1
+		if rules, err := applicability.ParseRulesJSON(rulesRaw); err != nil {
+			return nil, fmt.Errorf("parse applicability rules: %w", err)
+		} else {
+			row.ApplicabilityRules = rules
 		}
 		out = append(out, row)
 	}

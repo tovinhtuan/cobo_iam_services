@@ -7,13 +7,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cobo/cobo_iam_services/internal/disclosure/app/applicability"
 	"github.com/cobo/cobo_iam_services/internal/platform/idgen"
 	workflowerrs "github.com/cobo/cobo_iam_services/internal/workflow/errs"
 )
 
 // seedPeriodicCycles computes expected cycles for the current tick and upserts them.
 // Returns the number of new cycle slots inserted (duplicates are silently ignored).
-func seedPeriodicCycles(ctx context.Context, now time.Time, repo Repository, idg idgen.Generator, calc *DeadlineCalculator) (int, error) {
+func seedPeriodicCycles(ctx context.Context, now time.Time, repo Repository, idg idgen.Generator, calc *DeadlineCalculator, strictApplicabilityFilter bool) (int, error) {
 	types, err := repo.ListActivePeriodicTypes(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("list periodic types: %w", err)
@@ -30,8 +31,21 @@ func seedPeriodicCycles(ctx context.Context, now time.Time, repo Repository, idg
 			if pref != nil && !pref.AutoCreateEnabled {
 				continue
 			}
+			profile, err := repo.GetCompanyApplicabilityProfile(ctx, companyID)
+			if err != nil {
+				continue
+			}
+			if t.IsGlobal && !applicability.IsApplicable(t.ApplicabilityRules, profile, strictApplicabilityFilter) {
+				continue
+			}
 			label, cycleStart := computeCycleLabelAndStart(t, now)
-			dueDate, err := calc.addDurationInclusive(ctx, cycleStart, t.DeadlineDays, DurationTypeWorkingDays)
+			deadlineDays := t.DeadlineDays
+			durationType := DurationTypeWorkingDays
+			if days, ok := applicability.ResolveDeadlineDays(t.ApplicabilityRules, profile); ok {
+				deadlineDays = days
+				durationType = DurationTypeCalendarDays
+			}
+			dueDate, err := calc.addDurationInclusive(ctx, cycleStart, deadlineDays, durationType)
 			if err != nil {
 				// log-only: don't fail entire batch for one bad config
 				continue

@@ -537,6 +537,12 @@ type PatchOwnCompanyRequest struct {
 	Phone              *string `json:"phone"`
 	ContactEmail       *string `json:"contact_email"`
 	RepresentativeName *string `json:"representative_name"`
+	IsListed                      *bool   `json:"is_listed"`
+	IsLargePublic                 *bool   `json:"is_large_public"`
+	IsNonLargePublic              *bool   `json:"is_non_large_public"`
+	HasSubsidiaries               *bool   `json:"has_subsidiaries"`
+	HasSubordinateAccountingUnits *bool   `json:"has_subordinate_accounting_units"`
+	BusinessSector                *string `json:"business_sector"`
 }
 
 // DirectPermissionView is one active direct grant row returned by ListDirectPermissions.
