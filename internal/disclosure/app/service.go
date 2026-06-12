@@ -19,9 +19,14 @@ type service struct {
 	auth                  authapp.Service
 	idg                   idgen.Generator
 	calculator            *DeadlineCalculator
+	holidayProvider       HolidayCalendarProvider
+	deadlineEngineAdapter DeadlineEngineAdapter
+	shadowRunner          *deadlineEngineShadowRunner
 	workflowGroupsEnabled              bool
 	templateApplicabilityStrictFilter  bool
+	deadlineEngineV2Shadow             bool
 	tierLookup                         func(ctx context.Context, userID string) string
+	workflowBootstrap                  WorkflowBootstrapper
 }
 
 // ServiceOption configures disclosure service construction.
@@ -32,7 +37,20 @@ func WithHolidayCalendarProvider(p HolidayCalendarProvider) ServiceOption {
 	return func(s *service) {
 		if p != nil {
 			s.calculator = NewDeadlineCalculator(p)
+			s.holidayProvider = p
 		}
+	}
+}
+
+// WithDeadlineEngineV2Shadow enables Batch 5B shadow-compute: Deadline Engine
+// V2 (Source C) is computed alongside the existing runtime for Portal
+// Preview, Periodic Worker, and Manual Create, compared against the existing
+// result, and logged (event=deadline_engine_shadow). Default false
+// (DEADLINE_ENGINE_V2_SHADOW). Shadow compute never affects DB writes, API
+// responses, or worker output — see deadlineengine_shadow.go.
+func WithDeadlineEngineV2Shadow(enabled bool) ServiceOption {
+	return func(s *service) {
+		s.deadlineEngineV2Shadow = enabled
 	}
 }
 
@@ -58,6 +76,18 @@ func WithSubscriptionTierLookup(fn func(ctx context.Context, userID string) stri
 	}
 }
 
+// WithWorkflowBootstrap wires workflow instance creation on disclosure submit.
+func WithWorkflowBootstrap(b WorkflowBootstrapper) ServiceOption {
+	return func(s *service) {
+		s.workflowBootstrap = b
+	}
+}
+
+// SetWorkflowBootstrap allows late binding after workflow service construction.
+func (s *service) SetWorkflowBootstrap(b WorkflowBootstrapper) {
+	s.workflowBootstrap = b
+}
+
 func companyTemplateQuotaLimit(tier string) int {
 	if tier == "Free" || tier == "" {
 		return 5
@@ -73,17 +103,25 @@ const (
 func NewService(repo Repository, auth authapp.Service, idg idgen.Generator, opts ...ServiceOption) Service {
 	holidayProvider := NewHolidayCalendarFileProvider(filepath.Join("configs", "non_trading_days"))
 	s := &service{
-		repo:       repo,
-		auth:       auth,
-		idg:        idg,
-		calculator: NewDeadlineCalculator(holidayProvider),
+		repo:            repo,
+		auth:            auth,
+		idg:             idg,
+		calculator:      NewDeadlineCalculator(holidayProvider),
+		holidayProvider: holidayProvider,
 	}
 	for _, o := range opts {
 		o(s)
 	}
+	s.deadlineEngineAdapter = NewDeadlineEngineAdapter(s.holidayProvider)
+	s.shadowRunner = newDeadlineEngineShadowRunner(s.deadlineEngineAdapter, s.deadlineEngineV2Shadow)
 	return s
 }
 
+// READY_FOR_5B (Manual Create): plannedDate is client-supplied and passed
+// through as-is (no server-side T0/N computation on this path today). 5B+
+// may offer DeadlineEngineAdapter.ResolveDeadline as a hint/default for the
+// client, but MUST NOT override a client-supplied planned_date. Behavior
+// unchanged in Batch 5A.
 func (s *service) CreateRecord(ctx context.Context, req CreateRecordRequest) (*RecordDTO, error) {
 	if strings.TrimSpace(req.Payload.Title) == "" {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "title is required", nil)
@@ -144,7 +182,38 @@ func (s *service) CreateRecord(ctx context.Context, req CreateRecordRequest) (*R
 		CreatedBy:    req.Subject.UserID,
 		UpdatedBy:    req.Subject.UserID,
 	}
-	return s.repo.Create(ctx, rec)
+	created, err := s.repo.Create(ctx, rec)
+	if err != nil {
+		return created, err
+	}
+	// Batch 5B Phase C (shadow only, see deadlineengine_shadow.go): audit-only,
+	// does not mutate the request or the persisted record. Guarded so the
+	// default (DEADLINE_ENGINE_V2_SHADOW=false) issues zero extra repo calls.
+	if rec.TypeID != "" && plannedDate != "" && s.shadowRunner != nil && s.shadowRunner.enabled {
+		s.shadowManualCreate(ctx, req.Subject.CompanyID, rec.TypeID, plannedDate, time.Now())
+	}
+	return created, nil
+}
+
+// shadowManualCreate fetches the type's deadline config and company context
+// (best-effort) and delegates to shadowRunner.manualCreate. Any error here is
+// swallowed — shadow compute must never affect CreateRecord's response.
+func (s *service) shadowManualCreate(ctx context.Context, companyID, typeID, plannedDate string, now time.Time) {
+	item, err := s.repo.GetTypeDetail(ctx, companyID, typeID)
+	if err != nil || item == nil || item.DeadlineConfig == nil {
+		return
+	}
+	companyCtx, err := s.repo.GetCompanyTypeDeadlineContext(ctx, companyID, typeID)
+	if err != nil {
+		return
+	}
+	profile, err := s.repo.GetCompanyApplicabilityProfile(ctx, companyID)
+	if err != nil {
+		return
+	}
+	s.shadowRunner.manualCreate(ctx, companyID, typeID,
+		item.DeadlineConfig, item.ApplicabilityRules, item.TemplateCategory,
+		companyCtx, profile, plannedDate, now)
 }
 
 func (s *service) UpdateRecord(ctx context.Context, req UpdateRecordRequest) (*RecordDTO, error) {
@@ -205,10 +274,22 @@ func (s *service) SubmitRecord(ctx context.Context, req SubmitRecordRequest) (*R
 	}); err != nil {
 		return nil, err
 	}
-	cur.Status = "Published"
-	cur.PublishedDate = time.Now().UTC().Format("2006-01-02")
+	if strings.EqualFold(cur.Status, "Draft") {
+		cur.Status = "PendingReview"
+	} else {
+		cur.Status = "In Progress"
+	}
 	cur.UpdatedBy = req.Subject.UserID
-	return s.repo.Update(ctx, *cur)
+	updated, err := s.repo.Update(ctx, *cur)
+	if err != nil {
+		return nil, err
+	}
+	if s.workflowBootstrap != nil && strings.TrimSpace(updated.WorkflowInstanceID) == "" {
+		if wfID, wfErr := s.workflowBootstrap.EnsureOnSubmit(ctx, req.Subject, *updated); wfErr == nil && wfID != "" {
+			updated.WorkflowInstanceID = wfID
+		}
+	}
+	return updated, nil
 }
 
 func (s *service) ConfirmRecord(ctx context.Context, req ConfirmRecordRequest) (*RecordDTO, error) {
@@ -230,8 +311,9 @@ func (s *service) ConfirmRecord(ctx context.Context, req ConfirmRecordRequest) (
 	}); err != nil {
 		return nil, err
 	}
-	if strings.ToLower(cur.Status) != "published" {
-		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "record is not in published state", nil)
+	status := strings.ToLower(strings.TrimSpace(cur.Status))
+	if status != "published" && status != "approved" {
+		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "record is not in approved state", nil)
 	}
 	cur.Status = "Completed"
 	cur.UpdatedBy = req.Subject.UserID
@@ -384,7 +466,19 @@ func (s *service) GetTypeDetail(ctx context.Context, req GetTypeDetailRequest) (
 		}
 		return item, nil
 	}
-	summary, err := s.calculator.CalculateDeadlineSummary(ctx, item.DeadlineConfig, companyCtx, time.Now())
+	now := time.Now()
+	deadlineCfg := item.DeadlineConfig
+	if item.ApplicabilityRules != nil && deadlineCfg != nil && deadlineCfg.DeadlineMode == DeadlineModePeriodic {
+		cfgCopy := *deadlineCfg
+		if profile, profileErr := s.repo.GetCompanyApplicabilityProfile(ctx, req.Subject.CompanyID); profileErr == nil {
+			if days, ok := applicability.ResolveDeadlineDays(item.ApplicabilityRules, profile); ok {
+				cfgCopy.DeadlineDays = days
+			}
+			cfgCopy.DeadlineDurationType = applicability.ResolveDeadlineDurationType(item.ApplicabilityRules)
+		}
+		deadlineCfg = &cfgCopy
+	}
+	summary, err := s.calculator.CalculateDeadlineSummary(ctx, deadlineCfg, companyCtx, now)
 	if err != nil {
 		item.DeadlineSummary = &DeadlineSummaryDTO{
 			DeadlineMode:    item.DeadlineConfig.DeadlineMode,
@@ -395,6 +489,17 @@ func (s *service) GetTypeDetail(ctx context.Context, req GetTypeDetailRequest) (
 		return item, nil
 	}
 	item.DeadlineSummary = summary
+	// Batch 5B Phase A (shadow only, see deadlineengine_shadow.go): does not
+	// modify item/summary or the API response. Guarded so the default
+	// (DEADLINE_ENGINE_V2_SHADOW=false) issues zero extra repo calls.
+	if summary != nil && s.shadowRunner != nil && s.shadowRunner.enabled {
+		profile, profileErr := s.repo.GetCompanyApplicabilityProfile(ctx, req.Subject.CompanyID)
+		if profileErr == nil {
+			s.shadowRunner.portalPreview(ctx, req.Subject.CompanyID, req.TypeID,
+				item.DeadlineConfig, item.ApplicabilityRules, item.TemplateCategory,
+				companyCtx, profile, summary.StartDate, summary.DeadlineDate, now)
+		}
+	}
 	return item, nil
 }
 
@@ -1177,7 +1282,7 @@ func sanitizeChecklist(items []ChecklistItemDTO) []ChecklistItemDTO {
 // SeedPeriodicCycles computes expected cycles for the current tick and upserts them.
 // Idempotent — safe to call on every worker tick.
 func (s *service) SeedPeriodicCycles(ctx context.Context, now time.Time) (int, error) {
-	return seedPeriodicCycles(ctx, now, s.repo, s.idg, s.calculator, s.templateApplicabilityStrictFilter)
+	return seedPeriodicCycles(ctx, now, s.repo, s.idg, s.calculator, s.templateApplicabilityStrictFilter, s.shadowRunner)
 }
 
 // MaterializePeriodicDisclosures picks up pending cycles and creates disclosure records.

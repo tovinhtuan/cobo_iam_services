@@ -12,11 +12,13 @@ import (
 )
 
 type service struct {
-	repo      Repository
-	milestone MilestoneRepository
-	auth      authapp.Service
-	idg       idgen.Generator
-	flags     Flags
+	repo           Repository
+	milestone      MilestoneRepository
+	auth           authapp.Service
+	idg            idgen.Generator
+	flags          Flags
+	recordUpdater  RecordStatusUpdater
+	notifier       WorkflowNotifier
 }
 
 func NewService(repo Repository, auth authapp.Service, idg idgen.Generator, opts ...ServiceOption) Service {
@@ -35,6 +37,14 @@ func WithMilestoneRepository(mr MilestoneRepository) ServiceOption {
 
 func WithFlags(f Flags) ServiceOption {
 	return func(s *service) { s.flags = f }
+}
+
+func WithRecordStatusUpdater(u RecordStatusUpdater) ServiceOption {
+	return func(s *service) { s.recordUpdater = u }
+}
+
+func WithWorkflowNotifier(n WorkflowNotifier) ServiceOption {
+	return func(s *service) { s.notifier = n }
 }
 
 func (s *service) CreateWorkflowInstance(ctx context.Context, req CreateWorkflowInstanceRequest) (*WorkflowInstanceDTO, error) {
@@ -222,7 +232,43 @@ func (s *service) transitionTask(ctx context.Context, req TaskActionRequest, act
 	if err != nil {
 		return nil, err
 	}
+	if err := s.maybeCompleteInstance(ctx, req.Subject, *task, nextStatus); err != nil {
+		return nil, err
+	}
 	return upd, nil
+}
+
+func (s *service) maybeCompleteInstance(ctx context.Context, sub Subject, task TaskDTO, terminalStatus string) error {
+	tasks, err := s.repo.ListTasksByInstance(ctx, sub.CompanyID, task.WorkflowInstanceID)
+	if err != nil {
+		return err
+	}
+	for _, t := range tasks {
+		if t.Status == "pending" {
+			return nil
+		}
+	}
+	inst, err := s.repo.FindInstance(ctx, sub.CompanyID, task.WorkflowInstanceID)
+	if err != nil {
+		return err
+	}
+	instanceStatus := "approved"
+	if terminalStatus == "rejected" {
+		instanceStatus = "rejected"
+	}
+	inst.Status = instanceStatus
+	if _, err := s.repo.UpdateInstance(ctx, *inst); err != nil {
+		return err
+	}
+	if terminalStatus == "approved" && s.recordUpdater != nil {
+		if err := s.recordUpdater.MarkRecordApproved(ctx, sub.CompanyID, inst.RecordID, sub.UserID); err != nil {
+			return err
+		}
+	}
+	if terminalStatus == "approved" && s.notifier != nil {
+		_ = s.notifier.NotifyWorkflowApproved(ctx, sub.CompanyID, inst.RecordID, inst.WorkflowInstanceID, task.AssigneeMembershipID)
+	}
+	return nil
 }
 
 func (s *service) authorize(ctx context.Context, sub Subject, action string, resource authapp.ResourceRef) error {

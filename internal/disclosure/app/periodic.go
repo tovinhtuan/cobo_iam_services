@@ -14,7 +14,17 @@ import (
 
 // seedPeriodicCycles computes expected cycles for the current tick and upserts them.
 // Returns the number of new cycle slots inserted (duplicates are silently ignored).
-func seedPeriodicCycles(ctx context.Context, now time.Time, repo Repository, idg idgen.Generator, calc *DeadlineCalculator, strictApplicabilityFilter bool) (int, error) {
+//
+// READY_FOR_5B (Periodic Worker): computeCycleLabelAndStart below is Source B
+// (legacy, anchor-blind cycle_start) — the locked Cycle Start SoT is Source C
+// (deadlineengine.ResolveT0, see deadline-engine-cycle-start-sot-review-2026-06-12.md).
+// Batch 5B added a shadow=Source C compute (see deadlineengine_shadow.go,
+// shadow.periodicWorker below) for comparison/audit only — the seeded
+// cycle_start/due_date below remain Source B, unchanged. 5B/5E cutover
+// replaces the computeCycleLabelAndStart call with
+// DeadlineEngineAdapter.ResolveDeadline (cycleCtx=nil for new seeds, per I-21);
+// cycle_label may remain derived from this function's calendar-period logic.
+func seedPeriodicCycles(ctx context.Context, now time.Time, repo Repository, idg idgen.Generator, calc *DeadlineCalculator, strictApplicabilityFilter bool, shadow *deadlineEngineShadowRunner) (int, error) {
 	types, err := repo.ListActivePeriodicTypes(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("list periodic types: %w", err)
@@ -40,16 +50,24 @@ func seedPeriodicCycles(ctx context.Context, now time.Time, repo Repository, idg
 			}
 			label, cycleStart := computeCycleLabelAndStart(t, now)
 			deadlineDays := t.DeadlineDays
-			durationType := DurationTypeWorkingDays
-			if days, ok := applicability.ResolveDeadlineDays(t.ApplicabilityRules, profile); ok {
-				deadlineDays = days
-				durationType = DurationTypeCalendarDays
+			durationType := DurationTypeCalendarDays
+			if t.ApplicabilityRules != nil {
+				if days, ok := applicability.ResolveDeadlineDays(t.ApplicabilityRules, profile); ok {
+					deadlineDays = days
+				}
+				durationType = applicability.ResolveDeadlineDurationType(t.ApplicabilityRules)
+			} else if deadlineDays > 0 {
+				durationType = DurationTypeWorkingDays
 			}
 			dueDate, err := calc.addDurationInclusive(ctx, cycleStart, deadlineDays, durationType)
 			if err != nil {
 				// log-only: don't fail entire batch for one bad config
 				continue
 			}
+			// Batch 5B Phase B (shadow only, see deadlineengine_shadow.go):
+			// compares Source B (cycleStart/dueDate above, persisted below)
+			// against Source C for audit. Never written to periodic_cycles.
+			shadow.periodicWorker(ctx, companyID, t, profile, cycleStart, dueDate, now)
 			if err := repo.UpsertPeriodicCycle(ctx, PeriodicCycleRow{
 				CycleID:    idg.NewUUID(),
 				TypeID:     t.TypeID,

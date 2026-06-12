@@ -2867,3 +2867,102 @@
 - build: `docker compose -f docker-compose.dev.yml build api` exit 0
 - prod pipeline: **NOT VERIFIED** (compose + deploy-dev.sh use same script)
 - verdict: **OPS-APPL-01 DONE** — Gate 0 PASS
+
+## 2026-06-12 - Deadline Engine V2 — Batch 5A Foundations & Adapters
+
+- task type: implement
+- objective: prepare additive-only infrastructure (adapter layer, feature flag confirmation, dual-compute/audit contracts, divergence classifier, wiring-readiness markers) so Batches 5B-5E can roll out the deadlineengine SoT (Source C) safely, with zero runtime/DB/output behavior change
+- what was implemented:
+  - `internal/disclosure/app/deadlineengine_adapter.go` (NEW): `DeadlineEngineAdapter` interface + `deadlineEngineAdapter` impl + `nonTradingDayCheckerAdapter`; maps existing `TemplateDeadlineConfig`/`TemplateApplicabilityRules`/`CompanyDeadlineContext`/`PeriodicCycleContext` into `deadlineengine.ResolveDeadline(...)` inputs — delegates 100%, no logic copy-pasted from `deadline_calculator.go`
+  - `internal/disclosure/app/deadlineengine_dualcompute.go` (NEW): `DeadlineComparison`, `DeadlineAudit`, `ClassifyDivergence`, divergence constants `DivergenceNone/DateShift/MonthShift/YearlyRollback`
+  - `internal/disclosure/app/deadlineengine_adapter_test.go` + `deadlineengine_dualcompute_test.go` (NEW): 17 tests, 100% coverage of both new files
+  - `READY_FOR_5B` comment-only markers added (no behavior change) to:
+    - `internal/disclosure/app/deadline_calculator.go` (`calculatePeriodic` — Portal Preview / Deadline Hint, Source A)
+    - `internal/disclosure/app/periodic.go` (`seedPeriodicCycles` — Periodic Worker, Source B)
+    - `internal/disclosure/app/service.go` (`CreateRecord` — Manual Create, client-supplied planned_date)
+    - `internal/reminder/infra/mysql/repository.go` (`MaterializeDueOccurrences` — Reminder)
+    - `internal/disclosure/app/deadlineengine/hint.go` (`FormatHintLabelVI` — Deadline Hint, already wired into `Resolution.HintLabelVI`, not yet rendered anywhere)
+  - confirmed Phase C already satisfied: `DEADLINE_ENGINE_V2` flag exists since Batch 2 (`internal/platform/config/config.go`, default `false`, unused in runtime) — no new flag code needed
+- affected repos/files/modules: `cobo_iam_services` — `internal/disclosure/app/` (2 new impl + 2 new test files, 3 comment-only edits), `internal/reminder/infra/mysql/repository.go` (comment-only), `internal/disclosure/app/deadlineengine/hint.go` (comment-only)
+- contracts/behaviors/constraints/decisions:
+  - Adapter, dual-compute, audit, and divergence types are new exported surface with **zero callers outside their own test files** — not wired into any runtime path
+  - `DivergenceNone`/`DateShift`/`MonthShift`/`YearlyRollback` semantics: equal dates → NONE; different year → YEARLY_ROLLBACK (RK-E09); same year different month → MONTH_SHIFT; same year/month different day → DATE_SHIFT
+  - No DB migration, no event publish, no metric emission, no `planned_date`/`cycle_start` recompute anywhere in this batch
+- build/verification result:
+  - `go build ./...` => exit 0
+  - `go test ./internal/disclosure/app/... -run 'DeadlineEngineAdapter|Divergence|DeadlineComparison|DeadlineAudit|NonTradingDayChecker' -v` => 17/17 PASS
+  - `go tool cover -func` on new files => 100.0% all functions
+  - `go test ./...` => 2 pre-existing FAILs (`internal/httpserver`, `internal/companyaccess/transport/http`), confirmed via `git stash`/`git stash pop` to exist identically on base commit `8fb5fae` before this batch — unrelated to Batch 5A
+  - `gofmt -l` clean on all new files
+- remaining gaps/risks/next steps:
+  - Batch 5B: wire `DeadlineEngineAdapter.ResolveDeadline` into `calculatePeriodic` (Portal Preview) and `seedPeriodicCycles` (Periodic Worker, `cycleCtx=nil` per I-21) behind `DEADLINE_ENGINE_V2`
+  - Batch 5C: render `FormatHintLabelVI`/`Resolution.HintLabelVI` in Portal response
+  - Batch 5D: enable `DeadlineComparison`/`DeadlineAudit` dual-compute path for shadow comparison before cutover
+  - full report: `docs/ai-cache/deadline-engine-batch5a-implementation-2026-06-12.md`
+- verdict: **BATCH 5A COMPLETE — READY FOR 5B**
+
+## 2026-06-12 - Deadline Engine V2 — Batch 5B: Shadow Runtime Wiring
+
+- task type: implement
+- objective: wire Deadline Engine V2 (Source C) as a **shadow-compute-only** path alongside the Old Runtime (Source A/B) at the three runtime entry points — Portal Preview, Periodic Worker seed tick, Manual Create — and emit a structured divergence-audit log, with zero impact on DB writes, API responses, or worker output. No cutover.
+- what was implemented:
+  - `internal/disclosure/app/deadlineengine_shadow.go` (NEW): `shadowSampler` (1-in-100 deterministic sampling for `NONE` divergence), `formatShadowDate`/`parseShadowDate`, `logDeadlineEngineShadow` (Phase E/F: exact `deadline_engine_shadow` JSON event, `slog`, no DB/Kafka/metrics), `deadlineEngineShadowRunner` with three methods:
+    - `portalPreview` (Phase A): shadow `adapter.ResolveDeadline` alongside `DeadlineCalculator.CalculateDeadlineSummary` in `GetTypeDetail`; compares old `summary.StartDate`/`DeadlineDate` vs `res.ResolvedT0`/`PlannedDate`; result never used.
+    - `periodicWorker` (Phase B): shadow-compute after `computeCycleLabelAndStart` in `seedPeriodicCycles`; compares `oldCycleStart`/`oldDueDate` (Source B, written to DB) vs `newResolution.T0`/`PlannedDate` (never persisted); deliberately passes zero-value `CompanyDeadlineContext` (Source B is anchor-blind, so this isolates the Source B vs Source C algorithm divergence — RK-E09 — without R-C confounding).
+    - `manualCreate` (Phase C): after `repo.Create` succeeds in `CreateRecord`, shadow `adapter.ResolveDeadline` and compares client `planned_date` vs `res.PlannedDate`. Audit-only; request/record never mutated. Since Manual Create has no "old cycle_start", `DivergenceClass` is classified on **due-date** divergence (`ClassifyDivergence(oldDue, res.PlannedDate)`); `OldCycleStart==NewCycleStart==res.ResolvedT0` for log context only.
+  - `internal/disclosure/app/service.go`: new `shadowRunner *deadlineEngineShadowRunner` + `deadlineEngineV2Shadow bool` fields, `WithDeadlineEngineV2Shadow` option, constructed in `NewService` after options applied; wired into `GetTypeDetail`, `CreateRecord` (via `shadowManualCreate`), `SeedPeriodicCycles`. All call sites guarded by `s.shadowRunner.enabled` — zero extra repo/adapter calls when disabled (default).
+  - `internal/disclosure/app/periodic.go`: `seedPeriodicCycles` gained trailing `shadow *deadlineEngineShadowRunner` param; one call `shadow.periodicWorker(...)` added after `dueDate` computed, before `repo.UpsertPeriodicCycle`.
+  - `internal/platform/config/config.go`: new `DeadlineEngineV2Shadow bool`, env `DEADLINE_ENGINE_V2_SHADOW`, default `false`.
+  - `internal/httpserver/server.go`: passes `cfg.DeadlineEngineV2Shadow` into `disclosureapp.WithDeadlineEngineV2Shadow(...)`.
+  - Tests (NEW):
+    - `internal/disclosure/app/deadlineengine_shadow_test.go` — unit tests for sampler, log format (Phase E JSON shape via `slog.NewJSONHandler`), sampling rules (Phase F), date helpers, and all three runner methods (success, disabled, nil-runner, non-periodic/nil-rules skip, adapter-error-swallowed) via `fakeShadowAdapter`.
+    - `internal/disclosure/app/deadlineengine_shadow_integration_test.go` (`package app_test`) — proves Behavior Before == Behavior After using `internal/disclosure/infra/inmemory.Repository`: `SeedPeriodicCycles` DB writes identical (shadow on/off), `GetTypeDetail` `DeadlineSummaryDTO`/full DTO identical, `CreateRecord` returned `RecordDTO` identical — with shadow actually executing and logging real `DATE_SHIFT` divergence (uses a `noHolidaysProvider` test double to avoid missing-fixture errors so the shadow path runs for real, not short-circuited).
+    - `internal/platform/config/deadline_engine_v2_shadow_test.go` — `DEADLINE_ENGINE_V2_SHADOW` defaults false / explicit true.
+- affected repos/files/modules: `cobo_iam_services` only — `internal/disclosure/app/{deadlineengine_shadow.go,deadlineengine_shadow_test.go,deadlineengine_shadow_integration_test.go,service.go,periodic.go}`, `internal/platform/config/{config.go,deadline_engine_v2_shadow_test.go}`, `internal/httpserver/server.go`.
+- contracts/behaviors/constraints/decisions:
+  - `planned_date`, `cycle_start`, `periodic_cycles`, `disclosure_records`, API response, reminder behavior, portal behavior, worker behavior — all unchanged (proven via integration tests, same on/off output).
+  - `DEADLINE_ENGINE_V2` remains unused/untouched (Batch 2). New flag `DEADLINE_ENGINE_V2_SHADOW` (default `false`) gates the entire shadow path; after this batch's deploy, flag stays `false`.
+  - Shadow compute never errors out to the caller — adapter errors are logged via `slog.WarnContext("deadline_engine_shadow_error", ...)` and swallowed.
+  - Log format (Phase E, exact): `{"event":"deadline_engine_shadow","company_id":...,"type_id":...,"divergence_class":...,"old_cycle_start":...,"new_cycle_start":...,"old_due_date":...,"new_due_date":...}`. Sampling (Phase F): `NONE` → 1-in-100; `DATE_SHIFT`/`MONTH_SHIFT`/`YEARLY_ROLLBACK` → always logged.
+- build/verification result:
+  - `go build ./...` => exit 0
+  - `go test ./internal/disclosure/app/...` and `./internal/platform/config/...` => all PASS (incl. new shadow unit + integration tests)
+  - `deadlineengine_shadow.go` coverage: 98.4% (`go tool cover`)
+  - `go test ./...` => only pre-existing failures in `internal/companyaccess/transport/http` (`TestCreateSelfServiceCompany_FeatureFlagOff`) and `internal/httpserver` (4 platform-CMS/template_category tests) — confirmed identical on `git stash` (pre-existing on `phase-300526`, unrelated to Batch 5B).
+  - `gofmt -l` clean on all new/modified Batch 5B files (pre-existing gofmt findings in `service.go`/`config.go` unrelated to this batch's lines).
+- remaining gaps/risks/next steps:
+  - Batch 5C: cutover planning — none of Worker/Portal/Reminder cutover, `planned_date` rewrite, periodic cycle rewrite, DB migration, backfill, or remediation were performed (non-goals, by design).
+  - `DEADLINE_ENGINE_V2_SHADOW` remains `false` after deploy; enabling it in a real environment requires real `configs/non_trading_days/*.json` fixtures for the target years (confirmed needed during integration test construction).
+- verdict: **BATCH 5B COMPLETE — READY FOR 5C**
+
+---
+
+## Batch 5C.1 + 5D — Deadline Engine V2 Input Contract Fix & Shadow Divergence Verification (2026-06-12)
+
+- scope: 5C.1 (input contract resolution, no cutover) + 5D (shadow divergence verification on DEV). 5E (cutover) explicitly NOT performed — see verdict.
+- **5C.1 decisions (locked)**:
+  1. `frequency_unit: "week"` (only `bao-cao-tan-suat`, DEV) → **Option C (future backlog)**. `DeriveDeadlineBehavior` (resolve_t0.go) only supports `monthly|quarterly|yearly`; `ListActivePeriodicTypes` SQL already excludes `week` from the periodic worker. Adding weekly-cycle semantics to Source C is a scope-expanding engine change requiring product sign-off — out of scope for 5C.1/5D. The resulting `deadline_engine_shadow_error` (`unsupported frequency_unit: "week"`) for this single template is **expected and non-blocking** (swallowed by design, isolated to one template, old runtime unaffected).
+  2. `deadline_days must be > 0` (affected ALL periodic-eligible templates, root cause of shadow success=0 in prior 5C run) → **Option B (adapter mapping bug, fixed)**. DEV `applicability_rules_json` rows (authored before the V2 `use_structure_deadline` flag existed) populate `deadline_by_structure` (required by CMS validation E01-E06 for periodic templates) but leave `deadline_days=0` and `use_structure_deadline=false`. `ResolveEffectiveN` (resolve_n.go) requires `DeadlineDays>0 || UseStructureDeadline=true`, so it always returned `ErrInvalidDeadlineDays`. Legacy Source A/B (`applicability.ResolveDeadlineDays`) consults `deadline_by_structure` unconditionally — no opt-in flag. Fix: added `normalizeRulesForEngine()` in `internal/disclosure/app/deadlineengine_adapter.go` — when `DeadlineDays<=0 && !UseStructureDeadline && len(DeadlineByStructure)>0`, returns a copy with `UseStructureDeadline=true` before calling `deadlineengine.ResolveDeadline`. Read-only normalization, no DB write, no mutation of caller's rules. Covered by new test `TestDeadlineEngineAdapter_ResolveDeadline_LegacyDeadlineByStructureFallback`.
+- **Files changed**:
+  - `internal/disclosure/app/deadlineengine_adapter.go` — added `normalizeRulesForEngine()`, applied to `in.Rules` in `ResolveDeadline`.
+  - `internal/disclosure/app/deadlineengine_adapter_test.go` — added `TestDeadlineEngineAdapter_ResolveDeadline_LegacyDeadlineByStructureFallback`.
+  - `cmd/worker/main.go` — fixed Batch 5B wiring gap: `disclosureapp.WithDeadlineEngineV2Shadow(cfg.DeadlineEngineV2Shadow)` was constructed by `internal/httpserver/server.go` but **not** by the worker's `disclosureSvc` (used for `SeedPeriodicCycles`/periodic worker shadow). Added the missing option.
+- **Build/test**: `go build ./...` clean. `go test ./internal/disclosure/app/... ./internal/platform/config/...` pass. `go test ./...`: only pre-existing unrelated failure `TestCreateSelfServiceCompany_FeatureFlagOff` (internal/companyaccess/transport/http, self-service company creation flag — untouched by this batch). `gofmt -l` on edited files: clean (repo-wide `gofmt -l` noise is pre-existing/unrelated).
+- **Deploy**: `make deploy-be` to DEV (88.216.208.0). `cobo-iam-api`/`cobo-iam-worker` recreated, healthy (`/healthz`, `/readyz` ok). Flags after deploy: `DEADLINE_ENGINE_V2=false`, `DEADLINE_ENGINE_V2_SHADOW=true` (both containers) — unchanged from pre-deploy.
+- **5D shadow verification (DEV)**:
+  - Portal Preview (`GET /api/v1/disclosure-types/{type_id}`, company `08f59da2-...`):
+    - `bao-cao-tai-chinh-quy-1` (DeadlineMode=PERIODIC, frequency_unit empty) → **SUCCESS**, `divergence_class=NONE` (cycle_start 2026-06-12 both), `old_due_date=2026-07-09` vs `new_due_date=2026-07-11` (2-day due-date divergence logged for analysis — `ClassifyDivergence` only compares cycle_start, by design/Batch 5A).
+    - `bao-cao-tan-suat` (frequency_unit=week) → `shadow_error`: `unsupported frequency_unit: "week"` — expected per 5C.1 Decision 1, non-blocking.
+  - Periodic Worker (`PERIODIC_SEEDING_ENABLED=true` temporarily on worker only, `.env` backed up as `.env.bak.5d_preflip.<ts>`, reverted to `false` after evidence collected; `periodic_cycles` count unchanged 27→27, `disclosure_records` unchanged 83/57 during this window):
+    - `bao-cao-tai-chinh-quy-2` (frequency_unit=quarterly), company `08f59da2-...` → **SUCCESS**, `divergence_class=NONE`, `old_due_date=2026-04-30 == new_due_date=2026-04-30` (full parity).
+  - Manual Create (`POST /api/v1/disclosures`, DEV-only labeled test record `[DEV-ONLY 5D SHADOW SMOKE TEST]`, record_id `019ebac1-d199-7773-89cf-5cca89835baa`, type `bao-cao-tai-chinh-quy-1`, `planned_date=2026-07-09` submitted and persisted unchanged — **no cutover, client value used as-is**) → **SUCCESS**, `divergence_class=DATE_SHIFT`, `old_due_date=2026-07-09` (client) vs `new_due_date=2026-07-11` (engine).
+  - Totals: 3 `deadline_engine_shadow` events (NONE=2, DATE_SHIFT=1, MONTH_SHIFT=0, YEARLY_ROLLBACK=0), `shadow_error=1` (week, documented non-blocking per Decision 1). No panic/fatal in API or worker logs.
+  - 5D required success conditions met: ≥1 periodic-worker success ✓, ≥1 portal-preview success ✓, ≥1 manual-create success ✓.
+- **Behavior/data safety**: `periodic_cycles` 27→27 (unchanged). `disclosure_records` 83/57 → 84/58 (the +1 is the labeled DEV-only smoke-test record; `planned_date` stored = client-submitted value, not engine value). Final DEV state restored: `DEADLINE_ENGINE_V2=false`, `DEADLINE_ENGINE_V2_SHADOW=true`, `PERIODIC_SEEDING_ENABLED=false` on both containers, health OK.
+- **5E (cutover) — NOT performed.** Blocked by explicit stop condition (Part C §3.4): `RecordPayload` (`internal/disclosure/app/contracts.go`) carries only `planned_date`, **no T0 input field** — Manual Create cutover (server recomputing `planned_date` from `T0 + N`) cannot be implemented without a UI/API contract change to carry T0. Additionally, the DATE_SHIFT divergence found on `bao-cao-tai-chinh-quy-1` (consistent 2-day due-date difference, Source A vs Source C N/day-type) needs product/PO review before any V2-derived date is exposed in Portal/Manual Create — applies to cutover scopes 3.4 and 3.5.
+- **remaining gaps / next steps**:
+  - Product decision needed: reconcile the 2-day due-date divergence (likely `deadline_day_type` default mismatch — Source A vs Source C `calendar`/`working` default, or inclusive-day-counting difference) before any cutover that changes user-visible dates.
+  - API/contract change needed before Manual Create cutover (3.4): add a T0 input field to `RecordPayload`/`CreateRecordRequest`, or get explicit PO confirmation that `planned_date` itself may be treated as T0 (spec forbids silently assuming this).
+  - `bao-cao-tan-suat` (`frequency_unit=week`) remains out of V2 scope (Decision 1) — revisit if/when weekly periodic templates become a product priority.
+  - DEV-only smoke-test record `019ebac1-d199-7773-89cf-5cca89835baa` (`[DEV-ONLY 5D SHADOW SMOKE TEST]`, type `bao-cao-tai-chinh-quy-1`, company `08f59da2-...`) left in place — safe to delete (status=Draft).
+- verdict: **PARTIAL COMPLETE — BLOCKED BEFORE CUTOVER** (5C.1 PASS, 5D PASS, 5E blocked per stop conditions above)

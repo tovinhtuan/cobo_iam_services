@@ -1,0 +1,12 @@
+default_locale: vi
+variables:
+  - name: disclosure_title
+    required: true
+  - name: company_name
+    required: true
+  - name: record_id
+    required: true
+  - name: portal_url
+    required: true
+  - name: workflow_instance_id
+    required: false

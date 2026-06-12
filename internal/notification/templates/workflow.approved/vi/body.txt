@@ -1,0 +1,15 @@
+Kính gửi,
+
+Hồ sơ công bố thông tin của bạn đã được phê duyệt qua quy trình workflow.
+
+Công ty: {{.company_name}}
+Tiêu đề: {{.disclosure_title}}
+
+Vui lòng truy cập hệ thống để xem chi tiết:
+
+{{.portal_url}}/app/disclosures/{{.record_id}}
+
+Lưu ý: Email này được gửi tự động, vui lòng không trả lời trực tiếp.
+
+Trân trọng,
+Hệ thống CoBo Portal

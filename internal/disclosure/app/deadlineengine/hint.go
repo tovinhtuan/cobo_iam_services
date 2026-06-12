@@ -5,6 +5,12 @@ import (
 	"time"
 )
 
+// READY_FOR_5B (Deadline Hint): FormatHintLabelVI is already wired into
+// ResolveDeadline's Resolution.HintLabelVI. No current runtime path renders a
+// V2 hint (Portal Preview still uses Source A / DeadlineSummaryDTO.RuleDescription).
+// 5C wires app.DeadlineEngineAdapter.ResolveDeadline().HintLabelVI into the
+// Portal response. Behavior unchanged in Batch 5A.
+//
 // FormatHintLabelVI builds the Portal hint string per UX Contract v2 §D.1.
 //
 //	Calendar: "Hạn gợi ý: 01/04/2026 + 20 ngày dương lịch → 20/04/2026"

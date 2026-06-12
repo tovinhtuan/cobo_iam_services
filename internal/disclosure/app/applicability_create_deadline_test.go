@@ -41,6 +41,8 @@ func fullStructureRules() *applicability.TemplateApplicabilityRules {
 	return &applicability.TemplateApplicabilityRules{
 		ApplicableCompanyClasses: []applicability.CompanyClass{applicability.CompanyClassListed},
 		ApplicableSectors:        []applicability.BusinessSector{applicability.BusinessSectorCommercial},
+		UseStructureDeadline:     true,
+		DeadlineDays:             20,
 		DeadlineByStructure: map[applicability.StructureCriterion]applicability.StructureDeadlineEntry{
 			applicability.StructureHasSubsidiaries:     {Days: 30},
 			applicability.StructureHasSubordinateUnits: {Days: 30},
@@ -113,6 +115,7 @@ func TestCreateRecord_E11_MissingHasSubsidiariesKey(t *testing.T) {
 			"dt-bctc": workflowTypeDetail("dt-bctc", &applicability.TemplateApplicabilityRules{
 				ApplicableCompanyClasses: []applicability.CompanyClass{applicability.CompanyClassListed},
 				ApplicableSectors:        []applicability.BusinessSector{applicability.BusinessSectorCommercial},
+				UseStructureDeadline:     true,
 				DeadlineByStructure: map[applicability.StructureCriterion]applicability.StructureDeadlineEntry{
 					applicability.StructureHasSubordinateUnits: {Days: 30},
 					applicability.StructureSimpleStructure:     {Days: 20},
@@ -140,6 +143,7 @@ func TestCreateRecord_E11_MissingSimpleStructureKey(t *testing.T) {
 			"dt-bctc": workflowTypeDetail("dt-bctc", &applicability.TemplateApplicabilityRules{
 				ApplicableCompanyClasses: []applicability.CompanyClass{applicability.CompanyClassListed},
 				ApplicableSectors:        []applicability.BusinessSector{applicability.BusinessSectorCommercial},
+				UseStructureDeadline:     true,
 				DeadlineByStructure: map[applicability.StructureCriterion]applicability.StructureDeadlineEntry{
 					applicability.StructureHasSubsidiaries:     {Days: 30},
 					applicability.StructureHasSubordinateUnits: {Days: 30},

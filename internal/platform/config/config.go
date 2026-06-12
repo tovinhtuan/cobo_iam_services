@@ -172,6 +172,12 @@ type Config struct {
 
 	// DEADLINE_ENGINE_V2: use ResolveDeadline() unified engine (Batch 2+). Default false — legacy runtime.
 	DeadlineEngineV2 bool
+
+	// DEADLINE_ENGINE_V2_SHADOW: compute ResolveDeadline() (Source C) alongside
+	// the existing runtime for Portal Preview / Periodic Worker / Manual
+	// Create, log a deadline_engine_shadow comparison, but never write the
+	// result or change DB/API/worker output (Batch 5B). Default false.
+	DeadlineEngineV2Shadow bool
 }
 
 // Load reads configuration from the environment with safe defaults for local dev.
@@ -246,6 +252,7 @@ func Load() (Config, error) {
 		CompanySelfCreateEnabled:            boolEnv("COMPANY_SELF_CREATE_ENABLED", false),
 		TemplateApplicabilityStrictFilter:     boolEnv("TEMPLATE_APPLICABILITY_STRICT_FILTER", false),
 		DeadlineEngineV2:                      boolEnv("DEADLINE_ENGINE_V2", false),
+		DeadlineEngineV2Shadow:                boolEnv("DEADLINE_ENGINE_V2_SHADOW", false),
 	}
 	if cfg.WorkerTickInterval < time.Second {
 		return Config{}, fmt.Errorf("WORKER_TICK_INTERVAL too small")

@@ -73,7 +73,7 @@ func (s *service) enforceStructureDeadlineOnCreate(ctx context.Context, companyI
 		return nil
 	}
 	rules := detail.ApplicabilityRules
-	if rules == nil || len(rules.DeadlineByStructure) == 0 {
+	if rules == nil || !rules.UseStructureDeadline || len(rules.DeadlineByStructure) == 0 {
 		return nil
 	}
 	profile, err := s.repo.GetCompanyApplicabilityProfile(ctx, companyID)

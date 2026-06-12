@@ -306,6 +306,10 @@ func (r *Repository) SeedOccurrence(ctx context.Context, in reminderapp.Reminder
 	return scanOccurrenceRow(row)
 }
 
+// READY_FOR_5B (Reminder): reads disclosure_records.planned_date directly —
+// never cycle_start, never deadlineengine. No change needed for 5B/5E cutover
+// (planned_date remains the single reminder input regardless of which source
+// computed it). Behavior unchanged in Batch 5A.
 func (r *Repository) MaterializeDueOccurrences(ctx context.Context, now time.Time) (int, error) {
 	now = now.UTC()
 	// Global timezone + deadline cutoff:

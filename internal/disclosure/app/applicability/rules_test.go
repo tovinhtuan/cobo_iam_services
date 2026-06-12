@@ -44,6 +44,8 @@ func TestResolveStructure_Priority(t *testing.T) {
 
 func TestResolveDeadlineDays(t *testing.T) {
 	rules := &TemplateApplicabilityRules{
+		UseStructureDeadline: true,
+		DeadlineDays:         20,
 		DeadlineByStructure: map[StructureCriterion]StructureDeadlineEntry{
 			StructureHasSubsidiaries:     {Days: 30},
 			StructureHasSubordinateUnits: {Days: 30},
@@ -57,6 +59,20 @@ func TestResolveDeadlineDays(t *testing.T) {
 	days, ok = ResolveDeadlineDays(rules, CompanyApplicabilityProfile{})
 	if !ok || days != 20 {
 		t.Fatalf("days=%d ok=%v", days, ok)
+	}
+}
+
+func TestResolveDeadlineDays_IgnoresStructureWhenToggleOff(t *testing.T) {
+	rules := &TemplateApplicabilityRules{
+		UseStructureDeadline: false,
+		DeadlineDays:         20,
+		DeadlineByStructure: map[StructureCriterion]StructureDeadlineEntry{
+			StructureHasSubsidiaries: {Days: 30},
+		},
+	}
+	days, ok := ResolveDeadlineDays(rules, CompanyApplicabilityProfile{HasSubsidiaries: true})
+	if !ok || days != 20 {
+		t.Fatalf("days=%d ok=%v want 20", days, ok)
 	}
 }
 

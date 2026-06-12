@@ -131,6 +131,7 @@ func main() {
 			nil, /* no auth: worker mode */
 			idgen.UUIDv7Generator{},
 			disclosureapp.WithTemplateApplicabilityStrictFilter(cfg.TemplateApplicabilityStrictFilter),
+			disclosureapp.WithDeadlineEngineV2Shadow(cfg.DeadlineEngineV2Shadow),
 		)
 		var workflowSvc workflowapp.Service
 		if cfg.WorkflowSnapshotEnabled {

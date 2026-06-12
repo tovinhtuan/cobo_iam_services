@@ -303,6 +303,11 @@ func ptrBool(v bool) *bool       { return &v }
 // where cycleStart is derived from the template's frequency and cycle anchor.
 // Per-company CycleAnchorMonth/Day (CompanyDeadlineContext) takes precedence over template defaults.
 // Returns nil when DeadlineDays <= 0 (no deadline configured).
+//
+// READY_FOR_5B (Portal Preview / Deadline Hint): this is Source A — the
+// preview-only twin of deadlineengine's Source C (locked Cycle Start SoT).
+// Cutover replaces this body with DeadlineEngineAdapter.ResolveDeadline;
+// behavior unchanged in Batch 5A.
 func (c *DeadlineCalculator) calculatePeriodic(
 	ctx context.Context,
 	config *TemplateDeadlineConfig,
@@ -313,13 +318,21 @@ func (c *DeadlineCalculator) calculatePeriodic(
 		return nil, nil
 	}
 	cycleStart := c.computeCycleStart(config, company, now)
-	deadline, err := c.addDurationInclusive(ctx, cycleStart, config.DeadlineDays, DurationTypeWorkingDays)
+	durationType := DurationTypeWorkingDays
+	if config.DeadlineDurationType != "" {
+		durationType = config.DeadlineDurationType
+	}
+	deadline, err := c.addDurationInclusive(ctx, cycleStart, config.DeadlineDays, durationType)
 	if err != nil {
 		return nil, err
 	}
 	remainingDays := int(deadline.Sub(stripTime(now)).Hours() / 24)
 	status := deriveSummaryStatus(remainingDays)
-	ruleDesc := fmt.Sprintf("T0 ngày %s + %d ngày làm việc", cycleStart.Format("2006-01-02"), config.DeadlineDays)
+	dayLabel := "ngày làm việc"
+	if durationType == DurationTypeCalendarDays {
+		dayLabel = "ngày dương lịch"
+	}
+	ruleDesc := fmt.Sprintf("T0 ngày %s + %d %s", cycleStart.Format("2006-01-02"), config.DeadlineDays, dayLabel)
 	return &DeadlineSummaryDTO{
 		DeadlineMode:      DeadlineModePeriodic,
 		StartDate:         ptrString(cycleStart.Format("2006-01-02")),
@@ -327,7 +340,7 @@ func (c *DeadlineCalculator) calculatePeriodic(
 		ActualDeadline:    ptrString(deadline.Format("2006-01-02")),
 		DeadlineDate:      ptrString(deadline.Format("2006-01-02")),
 		Duration:          &config.DeadlineDays,
-		DurationType:      ptrString(DurationTypeWorkingDays),
+		DurationType:      ptrString(durationType),
 		RemainingDays:     &remainingDays,
 		Status:            status,
 		RuleDescription:   ptrString(ruleDesc),

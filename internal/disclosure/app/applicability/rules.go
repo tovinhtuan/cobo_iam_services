@@ -1,5 +1,7 @@
 package applicability
 
+import "strings"
+
 // CompanyLabels returns active company class labels from profile checkboxes.
 func CompanyLabels(p CompanyApplicabilityProfile) []CompanyClass {
 	out := make([]CompanyClass, 0, 3)
@@ -61,17 +63,42 @@ func IsApplicable(rules *TemplateApplicabilityRules, profile CompanyApplicabilit
 	return sectorMatch
 }
 
-// ResolveDeadlineDays returns structure-based deadline days when configured.
+// ResolveDeadlineDays returns effective N from applicability rules.
+// deadline_days is the default; deadline_by_structure applies only when use_structure_deadline=true.
 func ResolveDeadlineDays(rules *TemplateApplicabilityRules, profile CompanyApplicabilityProfile) (int, bool) {
-	if rules == nil || len(rules.DeadlineByStructure) == 0 {
+	if rules == nil {
 		return 0, false
 	}
-	criterion := ResolveStructure(profile)
-	entry, ok := rules.DeadlineByStructure[criterion]
-	if !ok {
-		return 0, false
+	if !rules.UseStructureDeadline {
+		if rules.DeadlineDays <= 0 {
+			return 0, false
+		}
+		return rules.DeadlineDays, true
 	}
-	return entry.Days, true
+	if len(rules.DeadlineByStructure) > 0 {
+		criterion := ResolveStructure(profile)
+		if entry, ok := rules.DeadlineByStructure[criterion]; ok && entry.Days > 0 {
+			return entry.Days, true
+		}
+	}
+	if rules.DeadlineDays > 0 {
+		return rules.DeadlineDays, true
+	}
+	return 0, false
+}
+
+// ResolveDeadlineDurationType maps applicability deadline_day_type to calculator duration type.
+// Empty deadline_day_type defaults to calendar days (contract I-18).
+func ResolveDeadlineDurationType(rules *TemplateApplicabilityRules) string {
+	if rules == nil {
+		return "CALENDAR_DAYS"
+	}
+	switch strings.ToLower(strings.TrimSpace(rules.DeadlineDayType)) {
+	case "working":
+		return "WORKING_DAYS"
+	default:
+		return "CALENDAR_DAYS"
+	}
 }
 
 // ParseBusinessSector validates and parses sector string from API/DB.

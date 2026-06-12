@@ -38,6 +38,7 @@ import (
 	disclosureapp "github.com/cobo/cobo_iam_services/internal/disclosure/app"
 	disclosureinmem "github.com/cobo/cobo_iam_services/internal/disclosure/infra/inmemory"
 	disclosuremysql "github.com/cobo/cobo_iam_services/internal/disclosure/infra/mysql"
+	disclosureworkflow "github.com/cobo/cobo_iam_services/internal/disclosure/infra/workflow"
 	disclosurehttp "github.com/cobo/cobo_iam_services/internal/disclosure/transport/http"
 	holidayapp "github.com/cobo/cobo_iam_services/internal/holiday/app"
 	holidaymysql "github.com/cobo/cobo_iam_services/internal/holiday/infra/mysql"
@@ -82,6 +83,7 @@ import (
 	workflowapp "github.com/cobo/cobo_iam_services/internal/workflow/app"
 	workflowinmem "github.com/cobo/cobo_iam_services/internal/workflow/infra/inmemory"
 	workflowmysql "github.com/cobo/cobo_iam_services/internal/workflow/infra/mysql"
+	workflownotif "github.com/cobo/cobo_iam_services/internal/workflow/infra/notification"
 	workflowhttp "github.com/cobo/cobo_iam_services/internal/workflow/transport/http"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -217,6 +219,24 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 	var iamOpts []iamapp.ServiceOption
 	emailTemplateRegistry := notificationregistry.NewEmbedRegistry()
 	emailRenderer := notificationapp.NewEmailRenderer()
+	smtpDelivery := notificationsmtp.NewAdapter(notificationsmtp.Config{
+		Host: cfg.SMTPHost,
+		Port: cfg.SMTPPort,
+		User: cfg.SMTPUser,
+		Pass: cfg.SMTPPassword,
+		From: cfg.SMTPFrom,
+	}, nil)
+	var workflowEmailNotificationService *notificationapp.EmailNotificationService
+	if pool != nil && outboxSQL != nil {
+		workflowEmailNotificationService = notificationapp.NewEmailNotificationService(
+			notificationmysql.NewEmailNotificationRepository(pool),
+			emailTemplateRegistry,
+			emailRenderer,
+			id,
+			nil,
+			notificationapp.WithTransactionalDispatch(pool, outboxSQL),
+		)
+	}
 	iamOpts = append(iamOpts, iamapp.WithAuthFlowConfig(iamapp.AuthFlowConfig{
 		WebBaseURL:              cfg.PublicWebBaseURL,
 		SupportEmail:            cfg.SupportEmail,
@@ -327,6 +347,7 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 	var disclosureOpts []disclosureapp.ServiceOption
 	disclosureOpts = append(disclosureOpts, disclosureapp.WithWorkflowGroupsEnabled(cfg.WorkflowGroupsEnabled))
 	disclosureOpts = append(disclosureOpts, disclosureapp.WithTemplateApplicabilityStrictFilter(cfg.TemplateApplicabilityStrictFilter))
+	disclosureOpts = append(disclosureOpts, disclosureapp.WithDeadlineEngineV2Shadow(cfg.DeadlineEngineV2Shadow))
 	tierLookup := func(ctx context.Context, userID string) string {
 		if identity == nil {
 			return ""
@@ -380,7 +401,27 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 	if pool != nil && cfg.WorkflowTimelineEnabled {
 		workflowOpts = append(workflowOpts, workflowapp.WithMilestoneRepository(workflowmysql.NewMilestoneRepository(pool)))
 	}
+	workflowOpts = append(workflowOpts, workflowapp.WithRecordStatusUpdater(disclosureworkflow.NewRecordStatusAdapter(disclosureRepo)))
+	var workflowMembershipLookup workflownotif.MembershipEmailLookup
+	if pool != nil {
+		workflowMembershipLookup = &workflownotif.SQLMembershipLookup{DB: pool}
+	}
+	workflowOpts = append(workflowOpts, workflowapp.WithWorkflowNotifier(workflownotif.NewWorkflowNotifier(
+		smtpDelivery,
+		emailTemplateRegistry,
+		emailRenderer,
+		workflowEmailNotificationService,
+		workflowMembershipLookup,
+		cfg.PublicWebBaseURL,
+		cfg.AdhocEmailOutboxEnabled,
+		log,
+	)))
 	workflowSvc := workflowapp.NewService(workflowRepo, authSvc, id, workflowOpts...)
+	if setter, ok := disclosureSvc.(interface {
+		SetWorkflowBootstrap(disclosureapp.WorkflowBootstrapper)
+	}); ok {
+		setter.SetWorkflowBootstrap(disclosureworkflow.NewBootstrap(disclosureSvc, workflowSvc, true))
+	}
 	workflowHandler := workflowhttp.NewHandler(workflowSvc, tokenManager)
 	notificationSvc := notificationapp.NewService(notificationRepo, authSvc, id, outboxPublisher, notifOpts...)
 	notificationHandler := notificationhttp.NewHandler(notificationSvc, tokenManager)
@@ -471,15 +512,6 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 		recordCreator := adhocrecord.NewRecordCreatorAdapter(disclosureSvc, workflowSvc, true)
 		typeCatalog := adhocrecord.NewTypeCatalogAdapter(disclosureRepo)
 		membershipValidator := adhocmysql.NewMembershipValidator(pool)
-
-		// Build SMTP delivery adapter for adhoc email notifications (same SMTP config as reminder module).
-		smtpDelivery := notificationsmtp.NewAdapter(notificationsmtp.Config{
-			Host: cfg.SMTPHost,
-			Port: cfg.SMTPPort,
-			User: cfg.SMTPUser,
-			Pass: cfg.SMTPPassword,
-			From: cfg.SMTPFrom,
-		}, nil)
 
 		// Durable email pipeline (Batch 2 cutover): only constructible when a DB +
 		// outbox repo are available. nil notificationService disables the durable

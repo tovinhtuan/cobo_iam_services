@@ -30,6 +30,7 @@ func TestFilterTypesByApplicability_PF1_PF6(t *testing.T) {
 	rules := &applicability.TemplateApplicabilityRules{
 		ApplicableCompanyClasses: []applicability.CompanyClass{applicability.CompanyClassListed},
 		ApplicableSectors:        []applicability.BusinessSector{applicability.BusinessSectorCommercial},
+		UseStructureDeadline:     true,
 		DeadlineByStructure: map[applicability.StructureCriterion]applicability.StructureDeadlineEntry{
 			applicability.StructureSimpleStructure: {Days: 20},
 		},

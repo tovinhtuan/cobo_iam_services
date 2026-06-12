@@ -19,6 +19,16 @@ type Service interface {
 	ResolveAssignees(ctx context.Context, req ResolveAssigneesRequest) (*ResolveAssigneesResponse, error)
 }
 
+// RecordStatusUpdater advances disclosure record status when workflow completes.
+type RecordStatusUpdater interface {
+	MarkRecordApproved(ctx context.Context, companyID, recordID, actorUserID string) error
+}
+
+// WorkflowNotifier emits workflow lifecycle emails.
+type WorkflowNotifier interface {
+	NotifyWorkflowApproved(ctx context.Context, companyID, recordID, workflowInstanceID, actorMembershipID string) error
+}
+
 type Repository interface {
 	CreateInstance(ctx context.Context, in WorkflowInstanceDTO) (*WorkflowInstanceDTO, error)
 	FindInstance(ctx context.Context, companyID, workflowInstanceID string) (*WorkflowInstanceDTO, error)

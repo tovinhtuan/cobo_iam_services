@@ -785,6 +785,8 @@ type TemplateDeadlineConfig struct {
 	// 0 = unset (defaults to 01/01). Not needed for monthly/quarterly.
 	CycleAnchorDay   int `json:"cycle_anchor_day,omitempty"`
 	CycleAnchorMonth int `json:"cycle_anchor_month,omitempty"`
+	// DeadlineDurationType is a runtime-only override (WORKING_DAYS | CALENDAR_DAYS).
+	DeadlineDurationType string `json:"deadline_duration_type,omitempty"`
 }
 
 // WorkflowOverrideReminderPreviewMilestoneDTO is one projected reminder row for draft preview.
@@ -881,6 +883,11 @@ type RecordDTO struct {
 	UpdatedBy          string          `json:"updated_by"`
 	CreatedAt          time.Time       `json:"created_at"`
 	UpdatedAt          time.Time       `json:"updated_at"`
+}
+
+// WorkflowBootstrapper creates a workflow instance when a disclosure record is submitted.
+type WorkflowBootstrapper interface {
+	EnsureOnSubmit(ctx context.Context, sub Subject, rec RecordDTO) (workflowInstanceID string, err error)
 }
 
 // PeriodicMaterializeRepository is the repository surface used during materialize.

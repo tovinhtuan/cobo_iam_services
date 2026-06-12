@@ -1006,11 +1006,8 @@ func TestIntegration_disclosureC1_contractMatrix_happyPathAndErrors(t *testing.T
 	}
 	var submitted map[string]any
 	mustDecodeJSON(t, submitRes.Body, &submitted)
-	if submitted["status"] != "Published" {
+	if submitted["status"] != "PendingReview" {
 		t.Fatalf("unexpected submit status: %+v", submitted)
-	}
-	if submitted["published_date"] == "" {
-		t.Fatalf("published_date should be present after submit: %+v", submitted)
 	}
 
 	confirmByNonAdminRes := doJSONRequest(t, http.MethodPost, srv.URL+"/api/v1/disclosures/"+recordID+"/confirm", userToken, nil, "idem-confirm-user")
@@ -1026,18 +1023,8 @@ func TestIntegration_disclosureC1_contractMatrix_happyPathAndErrors(t *testing.T
 	_ = readBody(t, listRes.Body)
 
 	confirmByAdminRes := doJSONRequest(t, http.MethodPost, srv.URL+"/api/v1/disclosures/"+recordID+"/confirm", adminToken, nil, "idem-confirm-admin")
-	if confirmByAdminRes.StatusCode != http.StatusOK {
-		t.Fatalf("confirm by admin status=%d body=%s", confirmByAdminRes.StatusCode, readBody(t, confirmByAdminRes.Body))
-	}
-	var confirmed map[string]any
-	mustDecodeJSON(t, confirmByAdminRes.Body, &confirmed)
-	if confirmed["status"] != "Completed" {
-		t.Fatalf("unexpected confirm status: %+v", confirmed)
-	}
-
-	confirmAgainRes := doJSONRequest(t, http.MethodPost, srv.URL+"/api/v1/disclosures/"+recordID+"/confirm", adminToken, nil, "idem-confirm-admin-2")
-	if confirmAgainRes.StatusCode != http.StatusConflict {
-		t.Fatalf("confirm again status=%d body=%s", confirmAgainRes.StatusCode, readBody(t, confirmAgainRes.Body))
+	if confirmByAdminRes.StatusCode != http.StatusConflict {
+		t.Fatalf("confirm before workflow approval should conflict, got status=%d body=%s", confirmByAdminRes.StatusCode, readBody(t, confirmByAdminRes.Body))
 	}
 }
 
