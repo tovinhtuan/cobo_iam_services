@@ -141,8 +141,9 @@ type DispatchCandidate struct {
 	CurrentAttempt  int
 	ScheduledAt     time.Time
 	// Fields added for alert dispatch (Phase 4):
-	ScopeType        ScopeType // "DISCLOSURE" | "WORKFLOW_STEP"
-	ScopeID          string    // disclosure_id for DISCLOSURE; step_id for WORKFLOW_STEP
+	ScopeType            ScopeType // "DISCLOSURE" | "WORKFLOW_STEP"
+	ScopeID              string    // disclosure_id for DISCLOSURE; step_id for WORKFLOW_STEP
+	WorkflowInstanceID   string    // workflow_instances.workflow_instance_id for WORKFLOW_STEP milestones
 	CompanyID        string    // company_id from disclosure_records or workflow_instances
 	CompanyName      string    // company_name from companies
 	DisclosureTypeID string    // type_id from disclosure_types (via disclosure_records)
@@ -152,7 +153,12 @@ type DispatchCandidate struct {
 // Implementations must enforce tenant isolation: only return emails belonging to companyID.
 type RecipientResolver interface {
 	ResolveForDeadline(ctx context.Context, companyID, scopeID string) ([]string, error)
-	ResolveForWorkflowStep(ctx context.Context, companyID, stepID string) ([]string, error)
+	ResolveForWorkflowStep(ctx context.Context, companyID, workflowInstanceID, stepID string) ([]string, error)
+}
+
+// WorkflowTaskAssigneeReader resolves the assignee email for a pending workflow task.
+type WorkflowTaskAssigneeReader interface {
+	AssigneeEmailsByStep(ctx context.Context, companyID, workflowInstanceID, stepCode string) ([]string, error)
 }
 
 // MembershipEmailQuerier performs low-level membership → email lookups.

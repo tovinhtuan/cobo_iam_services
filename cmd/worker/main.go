@@ -158,11 +158,8 @@ func main() {
 		alertCfgRepo := remindermysql.NewAlertConfigRepository(sqlDB)
 		membershipQuerier := remindermysql.NewMembershipEmailQuerier(sqlDB)
 		stepReader := remindermysql.NewGlobalWorkflowStepReader(sqlDB)
-		recipientResolver := reminderapp.NewRecipientResolver(reminderRepo, stepReader, membershipQuerier, log)
-		reminderScheduler = reminderapp.NewService(
-			reminderRepo,
-			reminderRepo,
-			reminderRepo,
+		recipientResolver := reminderapp.NewRecipientResolver(reminderRepo, stepReader, membershipQuerier, membershipQuerier, log)
+		reminderOpts := []reminderapp.ServiceOption{
 			reminderapp.WithEmailSender(reminderemail.NewSMTPSender(reminderemail.SMTPConfig{
 				Host: cfg.SMTPHost,
 				Port: cfg.SMTPPort,
@@ -176,7 +173,12 @@ func main() {
 			reminderapp.WithPublicWebBaseURL(cfg.PublicWebBaseURL),
 			reminderapp.WithMetrics(reminderobserve.NewPromMetrics()),
 			reminderapp.WithAlertHook(reminderobserve.AlertLogger{Log: log}),
-		)
+		}
+		if cfg.WorkflowRemindersEnabled {
+			reminderOpts = append(reminderOpts, reminderapp.WithMilestoneScanner(remindermysql.NewMilestoneScanner(sqlDB)))
+			log.Info("workflow milestone reminder bridge enabled")
+		}
+		reminderScheduler = reminderapp.NewService(reminderRepo, reminderRepo, reminderRepo, reminderOpts...)
 	}
 
 	var wg sync.WaitGroup

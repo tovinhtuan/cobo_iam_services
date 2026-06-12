@@ -100,6 +100,31 @@ func (q *MembershipEmailQuerier) EmailsByRoles(ctx context.Context, companyID st
 	return scanEmailRows(rows)
 }
 
+// AssigneeEmailsByStep returns the assignee email for a workflow task on the given step.
+func (q *MembershipEmailQuerier) AssigneeEmailsByStep(ctx context.Context, companyID, workflowInstanceID, stepCode string) ([]string, error) {
+	if companyID == "" || workflowInstanceID == "" || strings.TrimSpace(stepCode) == "" {
+		return nil, nil
+	}
+	rows, err := q.db.QueryContext(ctx, `
+		SELECT DISTINCT COALESCE(NULLIF(TRIM(u.email), ''), u.login_id)
+		FROM workflow_tasks wt
+		JOIN memberships m ON m.membership_id = wt.assignee_membership_id
+		JOIN users u ON u.user_id = m.user_id
+		WHERE wt.company_id = ?
+		  AND wt.workflow_instance_id = ?
+		  AND wt.step_code = ?
+		  AND wt.status IN ('pending', 'reviewed')
+		  AND m.company_id = ?
+		  AND m.membership_status = 'active'
+		  AND u.account_status = 'active'
+	`, companyID, workflowInstanceID, stepCode, companyID)
+	if err != nil {
+		return nil, fmt.Errorf("assignee emails by workflow step: %w", err)
+	}
+	defer rows.Close()
+	return scanEmailRows(rows)
+}
+
 func scanEmailRows(rows *sql.Rows) ([]string, error) {
 	var out []string
 	for rows.Next() {

@@ -457,7 +457,7 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 		alertCfgRepo := reminderalertmysql.NewAlertConfigRepository(pool)
 		membershipQuerier := reminderalertmysql.NewMembershipEmailQuerier(pool)
 		stepReader := reminderalertmysql.NewGlobalWorkflowStepReader(pool)
-		resolver := reminderapp.NewRecipientResolver(reminderConfigRepo, stepReader, membershipQuerier, log)
+		resolver := reminderapp.NewRecipientResolver(reminderConfigRepo, stepReader, membershipQuerier, membershipQuerier, log)
 		reminderSvcOpts = append(reminderSvcOpts,
 			reminderapp.WithAlertConfigRepo(alertCfgRepo),
 			reminderapp.WithRecipientResolver(resolver),

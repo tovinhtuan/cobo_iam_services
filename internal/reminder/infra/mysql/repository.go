@@ -104,8 +104,13 @@ func (r *Repository) ListHistoryByDisclosure(ctx context.Context, disclosureID s
 	}
 	offset := (q.Page - 1) * q.PageSize
 
-	whereParts := []string{"disclosure_id = ?"}
-	args := []any{disclosureID}
+	whereParts := []string{`(
+		disclosure_id = ?
+		OR disclosure_id IN (
+			SELECT workflow_instance_id FROM workflow_instances WHERE record_id = ?
+		)
+	)`}
+	args := []any{disclosureID, disclosureID}
 	if strings.TrimSpace(q.Scope) == "disclosure" {
 		whereParts = append(whereParts, "scope_type = 'DISCLOSURE'")
 	} else if strings.TrimSpace(q.Scope) == "step" {
@@ -404,12 +409,13 @@ func (r *Repository) ListDispatchCandidates(ctx context.Context, now time.Time, 
 		       o.disclosure_id,
 		       o.scope_type,
 		       o.scope_id,
-		       COALESCE(dr.title, ''),
-		       COALESCE(dr.planned_date, DATE(o.scheduled_at)),
-		       COALESCE(dr.status, ''),
-		       COALESCE(dr.company_id, wi.company_id, ''),
-		       COALESCE(dr.type_id, dr2.type_id, ''),
-		       COALESCE(comp.company_name, '')
+		       COALESCE(dr.title, dr2.title, dr3.title, ''),
+		       COALESCE(dr.planned_date, dr2.planned_date, dr3.planned_date, DATE(o.scheduled_at)),
+		       COALESCE(dr.status, dr2.status, dr3.status, ''),
+		       COALESCE(dr.company_id, wi.company_id, wi2.company_id, ''),
+		       COALESCE(dr.type_id, dr2.type_id, dr3.type_id, ''),
+		       COALESCE(comp.company_name, ''),
+		       COALESCE(wi.workflow_instance_id, wi2.workflow_instance_id, '')
 		FROM reminder_occurrences o
 		LEFT JOIN reminder_configs c
 		  ON c.scope_type = o.scope_type AND c.scope_id = o.scope_id
@@ -417,8 +423,12 @@ func (r *Repository) ListDispatchCandidates(ctx context.Context, now time.Time, 
 		  ON dr.record_id = o.disclosure_id
 		LEFT JOIN workflow_instances wi
 		  ON wi.workflow_instance_id = o.disclosure_id
+		LEFT JOIN workflow_instances wi2
+		  ON wi2.record_id = o.disclosure_id AND o.scope_type = 'WORKFLOW_STEP'
 		LEFT JOIN disclosure_records dr2
 		  ON dr2.record_id = wi.record_id
+		LEFT JOIN disclosure_records dr3
+		  ON dr3.record_id = wi2.record_id
 		LEFT JOIN companies comp
 		  ON comp.company_id = COALESCE(dr.company_id, wi.company_id)
 		WHERE (
@@ -440,7 +450,7 @@ func (r *Repository) ListDispatchCandidates(ctx context.Context, now time.Time, 
 		var recipientsJSON []byte
 		var disclosureID, scopeType, scopeID, title, status, companyID string
 		var deadlineDate time.Time
-		var disclosureTypeID, companyName string
+		var disclosureTypeID, companyName, workflowInstanceID string
 		if err := rows.Scan(
 			&c.OccurrenceID,
 			&c.IdempotencyKey,
@@ -456,6 +466,7 @@ func (r *Repository) ListDispatchCandidates(ctx context.Context, now time.Time, 
 			&companyID,
 			&disclosureTypeID,
 			&companyName,
+			&workflowInstanceID,
 		); err != nil {
 			return nil, fmt.Errorf("scan dispatch candidate: %w", err)
 		}
@@ -465,6 +476,7 @@ func (r *Repository) ListDispatchCandidates(ctx context.Context, now time.Time, 
 		// Populate new Phase 4 fields.
 		c.ScopeType = reminderapp.ScopeType(scopeType)
 		c.ScopeID = scopeID
+		c.WorkflowInstanceID = workflowInstanceID
 		c.CompanyID = companyID
 		c.CompanyName = companyName
 		c.DisclosureTypeID = disclosureTypeID

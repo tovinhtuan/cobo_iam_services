@@ -103,17 +103,26 @@ func (s *service) createWorkflowInstance(ctx context.Context, req CreateWorkflow
 		Status:               "pending",
 	})
 
-	if s.flags.TimelineEnabled && s.milestone != nil && len(req.Milestones) > 0 {
-		// Attach the resolved instance ID to milestone rows (caller pre-computed them without it).
-		rows := make([]StepMilestoneRow, len(req.Milestones))
-		for i, m := range req.Milestones {
-			rows[i] = m
-			rows[i].InstanceID = created.WorkflowInstanceID
-			rows[i].CompanyID = req.Subject.CompanyID
+	if s.flags.TimelineEnabled && s.milestone != nil {
+		rows := append([]StepMilestoneRow(nil), req.Milestones...)
+		if len(rows) == 0 && req.T0Date != nil && len(req.Snapshot) > 0 {
+			built, buildErr := buildMilestonesFromSnapshot(created.WorkflowInstanceID, req.Subject.CompanyID, req.Snapshot, *req.T0Date, s.idg.NewUUID)
+			if buildErr != nil {
+				_ = fmt.Errorf("build milestones: %w", buildErr)
+			} else {
+				rows = built
+			}
+		} else if len(rows) > 0 {
+			for i := range rows {
+				rows[i].InstanceID = created.WorkflowInstanceID
+				rows[i].CompanyID = req.Subject.CompanyID
+			}
 		}
-		if err := s.milestone.InsertStepMilestones(ctx, rows); err != nil {
-			// Non-fatal: instance is created; log and continue. Milestones can be retried.
-			_ = fmt.Errorf("seed milestones: %w", err)
+		if len(rows) > 0 {
+			if err := s.milestone.InsertStepMilestones(ctx, rows); err != nil {
+				// Non-fatal: instance is created; log and continue. Milestones can be retried.
+				_ = fmt.Errorf("seed milestones: %w", err)
+			}
 		}
 	}
 	return created, nil

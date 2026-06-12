@@ -38,15 +38,11 @@ func (s *MilestoneScanner) ListDueMilestones(ctx context.Context, asOf time.Time
 	out := make([]reminderapp.DueMilestone, 0, limit)
 	for rows.Next() {
 		var m reminderapp.DueMilestone
-		var scheduledDate string
+		var scheduledDate time.Time
 		if err := rows.Scan(&m.MilestoneID, &m.CompanyID, &m.WorkflowInstanceID, &m.StepID, &m.MilestoneType, &scheduledDate); err != nil {
 			return nil, fmt.Errorf("scan due milestone: %w", err)
 		}
-		t, err := time.Parse("2006-01-02", scheduledDate)
-		if err != nil {
-			return nil, fmt.Errorf("parse scheduled_date %q: %w", scheduledDate, err)
-		}
-		m.ScheduledDate = t
+		m.ScheduledDate = time.Date(scheduledDate.Year(), scheduledDate.Month(), scheduledDate.Day(), 0, 0, 0, 0, time.UTC)
 		out = append(out, m)
 	}
 	return out, rows.Err()

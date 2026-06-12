@@ -16,10 +16,11 @@ type WorkflowStepConfig struct {
 }
 
 type recipientResolver struct {
-	configReader      ConfigRepository
-	stepReader        WorkflowStepReader
-	membershipQuerier MembershipEmailQuerier
-	log               *slog.Logger
+	configReader       ConfigRepository
+	stepReader         WorkflowStepReader
+	membershipQuerier  MembershipEmailQuerier
+	taskAssigneeReader WorkflowTaskAssigneeReader
+	log                *slog.Logger
 }
 
 // NewRecipientResolver constructs a RecipientResolver.
@@ -28,16 +29,18 @@ func NewRecipientResolver(
 	configReader ConfigRepository,
 	stepReader WorkflowStepReader,
 	membershipQuerier MembershipEmailQuerier,
+	taskAssigneeReader WorkflowTaskAssigneeReader,
 	log *slog.Logger,
 ) RecipientResolver {
 	if log == nil {
 		log = slog.Default()
 	}
 	return &recipientResolver{
-		configReader:      configReader,
-		stepReader:        stepReader,
-		membershipQuerier: membershipQuerier,
-		log:               log,
+		configReader:       configReader,
+		stepReader:         stepReader,
+		membershipQuerier:  membershipQuerier,
+		taskAssigneeReader: taskAssigneeReader,
+		log:                log,
 	}
 }
 
@@ -57,26 +60,39 @@ func (r *recipientResolver) ResolveForDeadline(ctx context.Context, companyID, s
 
 // ResolveForWorkflowStep expands recipients for a WORKFLOW_STEP-scope occurrence.
 // It reads the global_workflow_step by stepID and expands role-based membership.
+// When role resolution is empty, it falls back to the pending task assignee on the workflow instance.
 // Always filters by companyID to enforce tenant isolation.
-func (r *recipientResolver) ResolveForWorkflowStep(ctx context.Context, companyID, stepID string) ([]string, error) {
+func (r *recipientResolver) ResolveForWorkflowStep(ctx context.Context, companyID, workflowInstanceID, stepID string) ([]string, error) {
 	if companyID == "" || stepID == "" {
 		return nil, nil
 	}
-	if r.stepReader == nil || r.membershipQuerier == nil {
-		return nil, nil
+	stepCode := stepID
+	if idx := strings.LastIndex(stepID, ":"); idx >= 0 {
+		stepCode = stepID[idx+1:]
 	}
-	step, err := r.stepReader.GetStepByID(ctx, stepID)
-	if err != nil || step == nil {
-		return nil, nil
+	if r.stepReader != nil && r.membershipQuerier != nil {
+		step, err := r.stepReader.GetStepByID(ctx, stepCode)
+		if err != nil {
+			return nil, err
+		}
+		if step != nil && len(step.AssigneeRoleIDs) > 0 {
+			emails, err := r.membershipQuerier.EmailsByRoles(ctx, companyID, step.AssigneeRoleIDs, step.DepartmentID)
+			if err != nil {
+				return nil, err
+			}
+			if len(emails) > 0 {
+				return deduplicateEmails(emails), nil
+			}
+		}
 	}
-	if len(step.AssigneeRoleIDs) == 0 {
-		return nil, nil
+	if workflowInstanceID != "" && r.taskAssigneeReader != nil {
+		emails, err := r.taskAssigneeReader.AssigneeEmailsByStep(ctx, companyID, workflowInstanceID, stepCode)
+		if err != nil {
+			return nil, err
+		}
+		return deduplicateEmails(emails), nil
 	}
-	emails, err := r.membershipQuerier.EmailsByRoles(ctx, companyID, step.AssigneeRoleIDs, step.DepartmentID)
-	if err != nil {
-		return nil, err
-	}
-	return deduplicateEmails(emails), nil
+	return nil, nil
 }
 
 func (r *recipientResolver) expandConfig(ctx context.Context, companyID string, cfg ReminderConfigInput) ([]string, error) {

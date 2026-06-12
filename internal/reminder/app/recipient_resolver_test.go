@@ -12,7 +12,9 @@ type fakeMembershipQuerier struct {
 	departmentEmails map[string][]string
 	// roleEmails maps companyID:roleID → emails
 	roleEmails map[string][]string
-	err        error
+	// taskAssigneeEmails maps companyID:workflowInstanceID:stepCode → emails
+	taskAssigneeEmails map[string][]string
+	err                error
 }
 
 func (f *fakeMembershipQuerier) EmailsByDepartments(_ context.Context, companyID string, deptIDs []string) ([]string, error) {
@@ -39,7 +41,18 @@ func (f *fakeMembershipQuerier) EmailsByRoles(_ context.Context, companyID strin
 	return out, nil
 }
 
+func (f *fakeMembershipQuerier) AssigneeEmailsByStep(_ context.Context, companyID, workflowInstanceID, stepCode string) ([]string, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	if f.taskAssigneeEmails == nil {
+		return nil, nil
+	}
+	return f.taskAssigneeEmails[companyID+":"+workflowInstanceID+":"+stepCode], nil
+}
+
 var _ MembershipEmailQuerier = (*fakeMembershipQuerier)(nil)
+var _ WorkflowTaskAssigneeReader = (*fakeMembershipQuerier)(nil)
 
 // fakeStepReader returns configured WorkflowStepConfig by stepID.
 type fakeStepReader struct {
@@ -90,7 +103,7 @@ func TestResolveForDeadline_Individuals(t *testing.T) {
 			},
 		},
 	}}
-	r := NewRecipientResolver(cfgRepo, nil, nil, nil)
+	r := NewRecipientResolver(cfgRepo, nil, nil, nil, nil)
 	emails, err := r.ResolveForDeadline(context.Background(), "company-1", "scope-1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -116,7 +129,7 @@ func TestResolveForDeadline_Departments(t *testing.T) {
 			"c1:dept-a": {"cfo@co.com", "ceo@co.com"},
 		},
 	}
-	r := NewRecipientResolver(cfgRepo, nil, querier, nil)
+	r := NewRecipientResolver(cfgRepo, nil, querier, nil, nil)
 	emails, err := r.ResolveForDeadline(context.Background(), "c1", "scope-2")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -143,7 +156,7 @@ func TestResolveForDeadline_Both_Deduplicates(t *testing.T) {
 			"c1:dept-b": {"shared@co.com", "dept-only@co.com"},
 		},
 	}
-	r := NewRecipientResolver(cfgRepo, nil, querier, nil)
+	r := NewRecipientResolver(cfgRepo, nil, querier, nil, nil)
 	emails, err := r.ResolveForDeadline(context.Background(), "c1", "scope-3")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -171,7 +184,7 @@ func TestResolveForDeadline_CrossTenant_Empty(t *testing.T) {
 			"company-correct:dept-x": {"secret@other.com"},
 		},
 	}
-	r := NewRecipientResolver(cfgRepo, nil, querier, nil)
+	r := NewRecipientResolver(cfgRepo, nil, querier, nil, nil)
 	emails, err := r.ResolveForDeadline(context.Background(), "company-wrong", "scope-4")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -184,7 +197,7 @@ func TestResolveForDeadline_CrossTenant_Empty(t *testing.T) {
 
 func TestResolveForDeadline_NoConfig_ReturnsEmpty(t *testing.T) {
 	cfgRepo := &fakeReminderConfigReader{configs: map[string]*ReminderConfigDTO{}} // empty
-	r := NewRecipientResolver(cfgRepo, nil, nil, nil)
+	r := NewRecipientResolver(cfgRepo, nil, nil, nil, nil)
 	emails, err := r.ResolveForDeadline(context.Background(), "c1", "missing-scope")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -205,8 +218,8 @@ func TestResolveForWorkflowStep_ByRole(t *testing.T) {
 			"c1:role-reviewer": {"rev1@co.com", "rev2@co.com"},
 		},
 	}
-	r := NewRecipientResolver(nil, stepReader, querier, nil)
-	emails, err := r.ResolveForWorkflowStep(context.Background(), "c1", "step-1")
+	r := NewRecipientResolver(nil, stepReader, querier, nil, nil)
+	emails, err := r.ResolveForWorkflowStep(context.Background(), "c1", "", "step-1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -224,8 +237,8 @@ func TestResolveForWorkflowStep_CrossTenant_Empty(t *testing.T) {
 			"company-correct:role-approver": {"secret@other.com"},
 		},
 	}
-	r := NewRecipientResolver(nil, stepReader, querier, nil)
-	emails, err := r.ResolveForWorkflowStep(context.Background(), "company-wrong", "step-2")
+	r := NewRecipientResolver(nil, stepReader, querier, nil, nil)
+	emails, err := r.ResolveForWorkflowStep(context.Background(), "company-wrong", "", "step-2")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -235,19 +248,24 @@ func TestResolveForWorkflowStep_CrossTenant_Empty(t *testing.T) {
 }
 
 func TestResolveForWorkflowStep_StepNotFound_ReturnsEmpty(t *testing.T) {
-	r := NewRecipientResolver(nil, &fakeStepReader{steps: map[string]*WorkflowStepConfig{}}, nil, nil)
-	emails, err := r.ResolveForWorkflowStep(context.Background(), "c1", "nonexistent-step")
+	querier := &fakeMembershipQuerier{
+		taskAssigneeEmails: map[string][]string{
+			"c1:wf-1:nonexistent-step": {"assignee@co.com"},
+		},
+	}
+	r := NewRecipientResolver(nil, &fakeStepReader{steps: map[string]*WorkflowStepConfig{}}, querier, querier, nil)
+	emails, err := r.ResolveForWorkflowStep(context.Background(), "c1", "wf-1", "nonexistent-step")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(emails) != 0 {
-		t.Errorf("expected empty, got %v", emails)
+	if len(emails) != 1 || emails[0] != "assignee@co.com" {
+		t.Errorf("expected task assignee fallback, got %v", emails)
 	}
 }
 
 func TestResolveForWorkflowStep_EmptyCompanyID_ReturnsEmpty(t *testing.T) {
-	r := NewRecipientResolver(nil, nil, nil, nil)
-	emails, err := r.ResolveForWorkflowStep(context.Background(), "", "step-3")
+	r := NewRecipientResolver(nil, nil, nil, nil, nil)
+	emails, err := r.ResolveForWorkflowStep(context.Background(), "", "", "step-3")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

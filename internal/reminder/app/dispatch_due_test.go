@@ -48,7 +48,7 @@ func (f *fakeResolverForDispatch) ResolveForDeadline(_ context.Context, _, _ str
 	return f.emails, nil
 }
 
-func (f *fakeResolverForDispatch) ResolveForWorkflowStep(_ context.Context, _, _ string) ([]string, error) {
+func (f *fakeResolverForDispatch) ResolveForWorkflowStep(_ context.Context, _, _, _ string) ([]string, error) {
 	return f.emails, nil
 }
 

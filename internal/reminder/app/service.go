@@ -347,7 +347,7 @@ func (s *service) prepareDispatch(ctx context.Context, c DispatchCandidate) (tem
 	if len(recipients) == 0 && s.recipientResolver != nil && c.CompanyID != "" {
 		var resolveErr error
 		if c.ScopeType == ScopeTypeWorkflowStep {
-			recipients, resolveErr = s.recipientResolver.ResolveForWorkflowStep(ctx, c.CompanyID, c.ScopeID)
+			recipients, resolveErr = s.recipientResolver.ResolveForWorkflowStep(ctx, c.CompanyID, c.WorkflowInstanceID, c.ScopeID)
 		} else {
 			recipients, resolveErr = s.recipientResolver.ResolveForDeadline(ctx, c.CompanyID, c.ScopeID)
 		}
