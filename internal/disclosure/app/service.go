@@ -426,6 +426,10 @@ func (s *service) ListTypes(ctx context.Context, req ListTypesRequest) (*ListTyp
 	if err != nil {
 		return nil, err
 	}
+	catalog := s.loadDeadlineRuleCatalog(ctx)
+	for i := range filtered {
+		enrichDeadlineRuleDisplaySummary(&filtered[i], catalog)
+	}
 	total := len(filtered)
 	if page > 0 {
 		start := (page - 1) * pageSize
@@ -453,6 +457,7 @@ func (s *service) GetTypeDetail(ctx context.Context, req GetTypeDetailRequest) (
 	if err != nil {
 		return nil, err
 	}
+	enrichDeadlineRuleDisplay(item, s.loadDeadlineRuleCatalog(ctx))
 	if item.DeadlineConfig == nil {
 		return item, nil
 	}

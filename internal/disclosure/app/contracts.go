@@ -690,8 +690,9 @@ type DisclosureTypeSummaryDTO struct {
 	TemplateCategory  string   `json:"template_category"`
 	Periodicity       string   `json:"periodicity"`
 	Description       string   `json:"description"`
-	DeadlineRule      string   `json:"deadline_rule"`
-	IsMandatory       bool     `json:"is_mandatory"`
+	DeadlineRule        string `json:"deadline_rule"`
+	DeadlineRuleDisplay string `json:"deadline_rule_display,omitempty"`
+	IsMandatory         bool   `json:"is_mandatory"`
 	HasWorkflow       bool     `json:"has_workflow"`
 	ReviewStatus      string   `json:"review_status,omitempty"`
 	Tags              []string `json:"tags"`
@@ -718,6 +719,7 @@ type DisclosureTypeDTO struct {
 	ReportContent         string                  `json:"report_content"`
 	RequiredDocs          string                  `json:"required_docs"`
 	DeadlineRule          string                  `json:"deadline_rule"`
+	DeadlineRuleDisplay   string                  `json:"deadline_rule_display,omitempty"`
 	Periodicity           string                  `json:"periodicity"`
 	ChannelsText          string                  `json:"channels_text"`
 	Beneficiaries         string                  `json:"beneficiaries"`
