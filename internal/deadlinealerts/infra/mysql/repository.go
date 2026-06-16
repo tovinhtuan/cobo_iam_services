@@ -23,6 +23,11 @@ func NewRepository(db *sql.DB) *Repository {
 }
 
 func (r *Repository) ListRows(ctx context.Context, companyID string) ([]deadlinealertsapp.AlertRow, error) {
+	deptByRecord, err := r.listCurrentStepDepartments(ctx, companyID)
+	if err != nil {
+		return nil, err
+	}
+
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT
 			dr.company_id,
@@ -43,7 +48,6 @@ func (r *Repository) ListRows(ctx context.Context, companyID string) ([]deadline
 			COALESCE(DATE_FORMAT(dr.planned_date, '%Y-%m-%d'), ''),
 			COALESCE(wi.workflow_instance_id, ''),
 			COALESCE(wi.current_step_code, ''),
-			wi.snapshot_json,
 			COALESCE((
 				SELECT DATE_FORMAT(
 					COALESCE(
@@ -72,7 +76,6 @@ func (r *Repository) ListRows(ctx context.Context, companyID string) ([]deadline
 				LIMIT 1
 			), ''),
 			COALESCE(JSON_UNQUOTE(JSON_EXTRACT(dtv.deadline_config_json, '$.template_category')), ''),
-			COALESCE(dtv.deadline_config_json, JSON_OBJECT()),
 			COALESCE(dac.confirmed_by, ''),
 			dac.confirmed_at
 		FROM disclosure_records dr
@@ -100,8 +103,6 @@ func (r *Repository) ListRows(ctx context.Context, companyID string) ([]deadline
 	var out []deadlinealertsapp.AlertRow
 	for rows.Next() {
 		var row deadlinealertsapp.AlertRow
-		var snapshot sql.NullString
-		var deadlineConfig sql.NullString
 		var confirmedBy sql.NullString
 		var confirmedAt sql.NullTime
 		if err := rows.Scan(
@@ -115,21 +116,14 @@ func (r *Repository) ListRows(ctx context.Context, companyID string) ([]deadline
 			&row.PlannedDate,
 			&row.WorkflowInstanceID,
 			&row.CurrentStepCode,
-			&snapshot,
 			&row.AdHocDeadlineDate,
 			&row.TemplateCategory,
-			&deadlineConfig,
 			&confirmedBy,
 			&confirmedAt,
 		); err != nil {
 			return nil, err
 		}
-		if snapshot.Valid && snapshot.String != "" && snapshot.String != "null" {
-			row.SnapshotJSON = []byte(snapshot.String)
-		}
-		if deadlineConfig.Valid && deadlineConfig.String != "" && deadlineConfig.String != "null" {
-			row.DeadlineConfigJSON = []byte(deadlineConfig.String)
-		}
+		row.CurrentStepDepartment = deptByRecord[row.RecordID]
 		if confirmedBy.Valid {
 			row.ConfirmedBy = strings.TrimSpace(confirmedBy.String)
 		}
@@ -138,6 +132,52 @@ func (r *Repository) ListRows(ctx context.Context, companyID string) ([]deadline
 			row.ConfirmedAt = &ts
 		}
 		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repository) listCurrentStepDepartments(ctx context.Context, companyID string) (map[string]string, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT
+			wi.record_id,
+			COALESCE((
+				SELECT NULLIF(TRIM(jt.department), '')
+				FROM JSON_TABLE(
+					IF(
+						wi.snapshot_json IS NULL OR wi.snapshot_json = CAST('null' AS JSON),
+						JSON_ARRAY(),
+						wi.snapshot_json
+					),
+					'$[*]' COLUMNS (
+						step_code VARCHAR(191) COLLATE utf8mb4_unicode_ci PATH '$.step_code',
+						step_id VARCHAR(191) COLLATE utf8mb4_unicode_ci PATH '$.step_id',
+						department VARCHAR(512) COLLATE utf8mb4_unicode_ci PATH '$.department'
+					)
+				) AS jt
+				WHERE COALESCE(NULLIF(TRIM(jt.step_code), ''), NULLIF(TRIM(jt.step_id), '')) = TRIM(wi.current_step_code)
+				LIMIT 1
+			), '') AS department
+		FROM workflow_instances wi
+		INNER JOIN disclosure_records dr ON dr.company_id = wi.company_id
+			AND dr.record_id = wi.record_id
+		WHERE wi.company_id = ?
+		  AND LOWER(TRIM(dr.status)) <> 'draft'
+	`, companyID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := map[string]string{}
+	for rows.Next() {
+		var recordID string
+		var department sql.NullString
+		if err := rows.Scan(&recordID, &department); err != nil {
+			return nil, err
+		}
+		if department.Valid {
+			out[recordID] = strings.TrimSpace(department.String)
+		}
 	}
 	return out, rows.Err()
 }

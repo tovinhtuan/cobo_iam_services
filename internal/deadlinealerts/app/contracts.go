@@ -69,8 +69,9 @@ type AlertRow struct {
 	RecordStatus       string
 	PlannedDate        string
 	WorkflowInstanceID string
-	CurrentStepCode    string
-	SnapshotJSON       []byte
+	CurrentStepCode        string
+	CurrentStepDepartment  string
+	SnapshotJSON           []byte // populated only when full snapshot is required (not list query)
 	AdHocDeadlineDate  string
 	TemplateCategory   string
 	DeadlineConfigJSON []byte

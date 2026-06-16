@@ -110,6 +110,36 @@ func TestListDeadlineAlerts_confirmedRecordBecomesDone(t *testing.T) {
 	}
 }
 
+func TestListDeadlineAlerts_populatesActiveDepartmentsFromRow(t *testing.T) {
+	repo := &stubRepo{rows: []AlertRow{
+		{
+			CompanyID:               "c1",
+			RecordID:                "r-live",
+			Title:                   "Live",
+			RecordStatus:            "submitted",
+			PlannedDate:             "2026-06-10",
+			CurrentStepCode:         "focal_confirm",
+			CurrentStepDepartment:   "Phòng CBTT",
+		},
+	}}
+	svc := NewService(repo, allowAuthSvc(), disclosureapp.NewDeadlineCalculator(disclosureapp.NewHolidayCalendarFileProvider("configs/non_trading_days")))
+	svc.(*service).now = func() time.Time { return time.Date(2026, 5, 25, 0, 0, 0, 0, time.UTC) }
+
+	resp, err := svc.ListDeadlineAlerts(context.Background(), ListDeadlineAlertsRequest{
+		Subject: Subject{UserID: "u1", MembershipID: "m_admin_001", CompanyID: "c_001"},
+		Page:    1, PageSize: 10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Items) != 1 {
+		t.Fatalf("got %+v", resp)
+	}
+	if len(resp.Items[0].ActiveDepartments) != 1 || resp.Items[0].ActiveDepartments[0] != "Phòng CBTT" {
+		t.Fatalf("active departments %+v", resp.Items[0].ActiveDepartments)
+	}
+}
+
 func TestListDeadlineAlerts_forbiddenWithoutPermission(t *testing.T) {
 	repo := &stubRepo{rows: []AlertRow{
 		{CompanyID: "c1", RecordID: "r1", Title: "X", RecordStatus: "submitted", PlannedDate: "2026-06-01"},

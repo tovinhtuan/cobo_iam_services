@@ -81,7 +81,7 @@ func (s *service) ListDeadlineAlerts(ctx context.Context, req ListDeadlineAlerts
 			Title:              DisplayAlertTitle(row),
 			DueDate:            dueDate,
 			Status:             alertStatus,
-			ActiveDepartments:  ActiveDepartmentsFromSnapshot(row.CurrentStepCode, row.SnapshotJSON),
+			ActiveDepartments:  ActiveDepartmentsFromRow(row.CurrentStepCode, row.CurrentStepDepartment, row.SnapshotJSON),
 			Source:             "disclosure_record",
 			TemplateCategory:   strings.TrimSpace(row.TemplateCategory),
 		})

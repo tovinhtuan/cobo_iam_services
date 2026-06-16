@@ -7,6 +7,14 @@ import (
 	workflowapp "github.com/cobo/cobo_iam_services/internal/workflow/app"
 )
 
+// ActiveDepartmentsFromRow returns Option C using a pre-extracted department (list query).
+func ActiveDepartmentsFromRow(currentStepCode, currentStepDepartment string, snapshotJSON []byte) []string {
+	if dept := strings.TrimSpace(currentStepDepartment); dept != "" {
+		return []string{dept}
+	}
+	return ActiveDepartmentsFromSnapshot(currentStepCode, snapshotJSON)
+}
+
 // ActiveDepartmentsFromSnapshot returns Option C: department of the current workflow step.
 func ActiveDepartmentsFromSnapshot(currentStepCode string, snapshotJSON []byte) []string {
 	code := strings.TrimSpace(currentStepCode)
