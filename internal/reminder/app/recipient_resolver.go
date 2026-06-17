@@ -90,7 +90,18 @@ func (r *recipientResolver) ResolveForWorkflowStep(ctx context.Context, companyI
 		if err != nil {
 			return nil, err
 		}
-		return deduplicateEmails(emails), nil
+		if len(emails) > 0 {
+			return deduplicateEmails(emails), nil
+		}
+	}
+	// Last-resort fallback: alert the company's admin when no role/department/task-assignee
+	// resolves — covers new companies with no workflow config or unassigned future steps.
+	if r.membershipQuerier != nil {
+		adminEmails, err := r.membershipQuerier.AdminEmailsByCompany(ctx, companyID)
+		if err != nil {
+			return nil, err
+		}
+		return deduplicateEmails(adminEmails), nil
 	}
 	return nil, nil
 }

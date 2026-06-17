@@ -100,6 +100,32 @@ func (q *MembershipEmailQuerier) EmailsByRoles(ctx context.Context, companyID st
 	return scanEmailRows(rows)
 }
 
+// AdminEmailsByCompany returns emails of active members with role_code='admin_doanh_nghiep'.
+// Used as the last-resort fallback when no department/role/task-assignee resolves to a recipient.
+func (q *MembershipEmailQuerier) AdminEmailsByCompany(ctx context.Context, companyID string) ([]string, error) {
+	if companyID == "" {
+		return nil, nil
+	}
+	rows, err := q.db.QueryContext(ctx, `
+		SELECT DISTINCT COALESCE(NULLIF(TRIM(u.email), ''), u.login_id)
+		FROM memberships m
+		JOIN membership_roles mr ON mr.membership_id = m.membership_id
+		JOIN roles r ON r.role_id = mr.role_id
+		JOIN users u ON u.user_id = m.user_id
+		WHERE m.company_id = ?
+		  AND r.role_code = 'admin_doanh_nghiep'
+		  AND m.membership_status = 'active'
+		  AND mr.status = 'active'
+		  AND r.status = 'active'
+		  AND u.account_status = 'active'
+	`, companyID)
+	if err != nil {
+		return nil, fmt.Errorf("admin emails by company: %w", err)
+	}
+	defer rows.Close()
+	return scanEmailRows(rows)
+}
+
 // AssigneeEmailsByStep returns the assignee email for a workflow task on the given step.
 func (q *MembershipEmailQuerier) AssigneeEmailsByStep(ctx context.Context, companyID, workflowInstanceID, stepCode string) ([]string, error) {
 	if companyID == "" || workflowInstanceID == "" || strings.TrimSpace(stepCode) == "" {

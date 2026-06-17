@@ -356,6 +356,12 @@ func (s *service) prepareDispatch(ctx context.Context, c DispatchCandidate) (tem
 			return "", nil, nil, true
 		}
 	}
+	// Guard: skip if still no recipients after all resolution paths.
+	// Covers occurrences whose companyID could not be resolved (e.g. workflow_instance deleted),
+	// preventing an infinite PENDING→failed retry loop.
+	if len(recipients) == 0 {
+		return "", nil, nil, true
+	}
 
 	// Step 3: Augment payload with fields required by new templates (additive, backward-safe).
 	if c.CompanyName != "" {

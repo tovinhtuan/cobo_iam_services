@@ -166,6 +166,9 @@ type WorkflowTaskAssigneeReader interface {
 type MembershipEmailQuerier interface {
 	EmailsByDepartments(ctx context.Context, companyID string, departmentIDs []string) ([]string, error)
 	EmailsByRoles(ctx context.Context, companyID string, roleIDs []string, departmentID string) ([]string, error)
+	// AdminEmailsByCompany returns emails of active members with the admin_doanh_nghiep role.
+	// Used as a last-resort fallback when no role/department/task assignee is resolved.
+	AdminEmailsByCompany(ctx context.Context, companyID string) ([]string, error)
 }
 
 // WorkflowStepReader looks up global workflow step config by step_id.

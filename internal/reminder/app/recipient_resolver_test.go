@@ -14,7 +14,9 @@ type fakeMembershipQuerier struct {
 	roleEmails map[string][]string
 	// taskAssigneeEmails maps companyID:workflowInstanceID:stepCode → emails
 	taskAssigneeEmails map[string][]string
-	err                error
+	// adminEmails maps companyID → emails (fallback admin list)
+	adminEmails map[string][]string
+	err         error
 }
 
 func (f *fakeMembershipQuerier) EmailsByDepartments(_ context.Context, companyID string, deptIDs []string) ([]string, error) {
@@ -39,6 +41,13 @@ func (f *fakeMembershipQuerier) EmailsByRoles(_ context.Context, companyID strin
 		out = append(out, f.roleEmails[key]...)
 	}
 	return out, nil
+}
+
+func (f *fakeMembershipQuerier) AdminEmailsByCompany(_ context.Context, companyID string) ([]string, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.adminEmails[companyID], nil
 }
 
 func (f *fakeMembershipQuerier) AssigneeEmailsByStep(_ context.Context, companyID, workflowInstanceID, stepCode string) ([]string, error) {
@@ -271,6 +280,62 @@ func TestResolveForWorkflowStep_EmptyCompanyID_ReturnsEmpty(t *testing.T) {
 	}
 	if len(emails) != 0 {
 		t.Errorf("expected empty for empty companyID, got %v", emails)
+	}
+}
+
+func TestResolveForWorkflowStep_AdminFallback_NoRole_NoTask(t *testing.T) {
+	// Simulate: step has platform role IDs that no company member holds,
+	// and no workflow task exists for this step yet (future step).
+	// Expect: fallback to company admin email.
+	stepReader := &fakeStepReader{steps: map[string]*WorkflowStepConfig{
+		"step-future": {StepID: "step-future", AssigneeRoleIDs: []string{"platform-role-uuid"}, DepartmentID: ""},
+	}}
+	querier := &fakeMembershipQuerier{
+		roleEmails:  map[string][]string{}, // platform-role-uuid not in any company member
+		adminEmails: map[string][]string{"c1": {"admin@company.com"}},
+	}
+	r := NewRecipientResolver(nil, stepReader, querier, querier, nil)
+	emails, err := r.ResolveForWorkflowStep(context.Background(), "c1", "wf-1", "step-future")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(emails) != 1 || emails[0] != "admin@company.com" {
+		t.Errorf("expected admin fallback email, got %v", emails)
+	}
+}
+
+func TestResolveForWorkflowStep_AdminFallback_NoStep_NoTask(t *testing.T) {
+	// Simulate: step not in global_workflow_steps at all, no task assigned.
+	// Expect: fallback to company admin.
+	querier := &fakeMembershipQuerier{
+		adminEmails: map[string][]string{"c1": {"admin@company.com"}},
+	}
+	r := NewRecipientResolver(nil, &fakeStepReader{steps: map[string]*WorkflowStepConfig{}}, querier, querier, nil)
+	emails, err := r.ResolveForWorkflowStep(context.Background(), "c1", "wf-2", "step-missing")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(emails) != 1 || emails[0] != "admin@company.com" {
+		t.Errorf("expected admin fallback email, got %v", emails)
+	}
+}
+
+func TestResolveForWorkflowStep_NoAdminFallback_WhenRoleResolves(t *testing.T) {
+	// Role-based path succeeds → admin fallback must NOT be called.
+	stepReader := &fakeStepReader{steps: map[string]*WorkflowStepConfig{
+		"step-1": {StepID: "step-1", AssigneeRoleIDs: []string{"role-reviewer"}, DepartmentID: ""},
+	}}
+	querier := &fakeMembershipQuerier{
+		roleEmails:  map[string][]string{"c1:role-reviewer": {"reviewer@co.com"}},
+		adminEmails: map[string][]string{"c1": {"admin@co.com"}},
+	}
+	r := NewRecipientResolver(nil, stepReader, querier, nil, nil)
+	emails, err := r.ResolveForWorkflowStep(context.Background(), "c1", "", "step-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(emails) != 1 || emails[0] != "reviewer@co.com" {
+		t.Errorf("expected only reviewer (not admin fallback), got %v", emails)
 	}
 }
 

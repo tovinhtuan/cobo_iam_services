@@ -267,6 +267,7 @@ func tick(ctx context.Context, log *slog.Logger, sqlDB *sql.DB, processor *platf
 					slog.Int("sent", dispatchRes.Sent),
 					slog.Int("retried", dispatchRes.Retried),
 					slog.Int("failed", dispatchRes.Failed),
+					slog.Int("skipped", dispatchRes.Skipped),
 				)
 			}
 			// Reaper: recover occurrences orphaned in DISPATCHING by a crashed worker
