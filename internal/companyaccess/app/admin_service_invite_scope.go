@@ -13,8 +13,8 @@ const permissionInvite = "admin.membership.invite"
 type inviteScopeKind string
 
 const (
-	inviteScopeCompany     inviteScopeKind = "company"
-	inviteScopeDepartment  inviteScopeKind = "department"
+	inviteScopeCompany    inviteScopeKind = "company"
+	inviteScopeDepartment inviteScopeKind = "department"
 )
 
 type inviteScope struct {
@@ -67,7 +67,7 @@ func (s *adminService) resolveInviteScope(ctx context.Context, sub AdminSubject)
 
 func (s *adminService) pickInviteDepartmentID(scope inviteScope, requested string) (string, error) {
 	if scope.Kind != inviteScopeDepartment {
-		return "", nil
+		return strings.TrimSpace(requested), nil
 	}
 	req := strings.TrimSpace(requested)
 	if len(scope.DepartmentIDs) == 1 {

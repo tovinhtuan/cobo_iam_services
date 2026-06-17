@@ -273,6 +273,8 @@ type InviteUserRequest struct {
 	Permissions []string `json:"permissions,omitempty"`
 	// DepartmentID is required when inviter is dept-scoped (direct grant only) and heads multiple departments.
 	DepartmentID string `json:"department_id,omitempty"`
+	// TitleID optionally assigns one active company title to the created membership during invite.
+	TitleID string `json:"title_id,omitempty"`
 }
 
 type InviteUserResponse struct {
@@ -319,8 +321,8 @@ type GetInviteScopeRequest struct {
 
 // InviteScopeView describes company-wide vs department-scoped invite for the current subject.
 type InviteScopeView struct {
-	Scope       string              `json:"scope"` // company | department
-	Departments []InviteScopeDept   `json:"departments,omitempty"`
+	Scope       string            `json:"scope"` // company | department
+	Departments []InviteScopeDept `json:"departments,omitempty"`
 }
 
 type InviteScopeDept struct {
@@ -385,6 +387,12 @@ type CreateUserRequest struct {
 	// Semantics align with optional company_id on InviteUser.
 	CompanyID        string `json:"company_id"`
 	MembershipStatus string `json:"membership_status"`
+	// Optional membership bootstrap fields when company_id is set.
+	RoleID       string   `json:"role_id,omitempty"`
+	RoleCode     string   `json:"role_code,omitempty"`
+	Permissions  []string `json:"permissions,omitempty"`
+	DepartmentID string   `json:"department_id,omitempty"`
+	TitleID      string   `json:"title_id,omitempty"`
 }
 
 type CreateMembershipRequest struct {
@@ -529,14 +537,14 @@ type GetOwnCompanyRequest struct {
 }
 
 type PatchOwnCompanyRequest struct {
-	Subject            AdminSubject
-	CompanyName        *string `json:"company_name"`
-	TaxCode            *string `json:"tax_code"`
-	RegistrationNumber *string `json:"registration_number"`
-	Address            *string `json:"address"`
-	Phone              *string `json:"phone"`
-	ContactEmail       *string `json:"contact_email"`
-	RepresentativeName *string `json:"representative_name"`
+	Subject                       AdminSubject
+	CompanyName                   *string `json:"company_name"`
+	TaxCode                       *string `json:"tax_code"`
+	RegistrationNumber            *string `json:"registration_number"`
+	Address                       *string `json:"address"`
+	Phone                         *string `json:"phone"`
+	ContactEmail                  *string `json:"contact_email"`
+	RepresentativeName            *string `json:"representative_name"`
 	IsListed                      *bool   `json:"is_listed"`
 	IsLargePublic                 *bool   `json:"is_large_public"`
 	IsNonLargePublic              *bool   `json:"is_non_large_public"`
@@ -734,8 +742,8 @@ type CreateTitleRequest struct {
 }
 
 type UpdateTitleRequest struct {
-	Subject   AdminSubject
-	TitleID   string
+	Subject AdminSubject
+	TitleID string
 	// nil = not provided (no change).
 	Name      *string `json:"name"`
 	SortOrder *int    `json:"sort_order"`

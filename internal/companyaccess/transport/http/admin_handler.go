@@ -3,6 +3,7 @@ package http
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 
 	auditapp "github.com/cobo/cobo_iam_services/internal/audit/app"
@@ -16,14 +17,14 @@ import (
 )
 
 type AdminHandler struct {
-	svc         caapp.AdminService
-	inspector   iamapp.TokenInspector
-	tokenIssuer iamapp.TokenIssuer
-	sessions    iamapp.SessionRepository
-	audit       auditapp.Service
-	iamSvc      iamapp.Service
-	loginPWD    *loginpassword.Service
-	idem        idempotency.Store
+	svc                         caapp.AdminService
+	inspector                   iamapp.TokenInspector
+	tokenIssuer                 iamapp.TokenIssuer
+	sessions                    iamapp.SessionRepository
+	audit                       auditapp.Service
+	iamSvc                      iamapp.Service
+	loginPWD                    *loginpassword.Service
+	idem                        idempotency.Store
 	requireProvisionIdempotency bool
 	selfCreateEnabled           bool
 	listedLookup                *marketapp.Service // nil → 503 on lookup endpoint
@@ -141,26 +142,36 @@ func (h *AdminHandler) createUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var p struct {
-		LoginID       string `json:"login_id"`
-		Password      string `json:"password"`
-		FullName      string `json:"full_name"`
-		Email         string `json:"email"`
-		Phone         string `json:"phone"`
-		AccountStatus string `json:"account_status"`
-		CompanyID        string `json:"company_id"`        // optional: empty = user without membership (when caller has rbac.manage)
-		MembershipStatus string `json:"membership_status"` // when company_id set
+		LoginID          string   `json:"login_id"`
+		Password         string   `json:"password"`
+		FullName         string   `json:"full_name"`
+		Email            string   `json:"email"`
+		Phone            string   `json:"phone"`
+		AccountStatus    string   `json:"account_status"`
+		CompanyID        string   `json:"company_id"`        // optional: empty = user without membership (when caller has rbac.manage)
+		MembershipStatus string   `json:"membership_status"` // when company_id set
+		RoleID           string   `json:"role_id"`
+		RoleCode         string   `json:"role_code"`
+		Permissions      []string `json:"permissions"`
+		DepartmentID     string   `json:"department_id"`
+		TitleID          string   `json:"title_id"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&p)
 	resp, err := h.svc.CreateUser(r.Context(), caapp.CreateUserRequest{
-		Subject:       sub,
-		LoginID:       p.LoginID,
-		Password:      p.Password,
-		FullName:      p.FullName,
-		Email:         p.Email,
-		Phone:         p.Phone,
-		AccountStatus: p.AccountStatus,
+		Subject:          sub,
+		LoginID:          p.LoginID,
+		Password:         p.Password,
+		FullName:         p.FullName,
+		Email:            p.Email,
+		Phone:            p.Phone,
+		AccountStatus:    p.AccountStatus,
 		CompanyID:        p.CompanyID,
 		MembershipStatus: p.MembershipStatus,
+		RoleID:           p.RoleID,
+		RoleCode:         p.RoleCode,
+		Permissions:      p.Permissions,
+		DepartmentID:     p.DepartmentID,
+		TitleID:          p.TitleID,
 	})
 	if err != nil {
 		httpx.WriteError(w, nil, err)
@@ -280,16 +291,16 @@ func (h *AdminHandler) auditProvision(r *http.Request, actorUserID, membershipID
 		return
 	}
 	_ = h.audit.AppendAuditLog(r.Context(), auditapp.AppendAuditLogRequest{
-		ActorUserID:         actorUserID,
-		ActorMembershipID:   membershipID,
-		CompanyID:           companyID,
-		Action:              action,
-		ResourceType:        "company",
-		ResourceID:          companyID,
-		Decision:            "allow",
-		RequestID:           httpx.RequestIDFromContext(r.Context()),
-		IP:                  r.RemoteAddr,
-		UserAgent:           r.UserAgent(),
+		ActorUserID:       actorUserID,
+		ActorMembershipID: membershipID,
+		CompanyID:         companyID,
+		Action:            action,
+		ResourceType:      "company",
+		ResourceID:        companyID,
+		Decision:          "allow",
+		RequestID:         httpx.RequestIDFromContext(r.Context()),
+		IP:                r.RemoteAddr,
+		UserAgent:         r.UserAgent(),
 	})
 }
 
@@ -300,12 +311,24 @@ func (h *AdminHandler) listMemberships(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cid := r.PathValue("company_id")
-	items, err := h.svc.ListCompanyMemberships(r.Context(), caapp.ListCompanyMembershipsRequest{Subject: sub, CompanyID: cid})
+	page, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("page")))
+	pageSize, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("page_size")))
+	items, err := h.svc.ListCompanyMemberships(r.Context(), caapp.ListCompanyMembershipsRequest{
+		Subject:   sub,
+		CompanyID: cid,
+		Page:      page,
+		PageSize:  pageSize,
+	})
 	if err != nil {
 		httpx.WriteError(w, nil, err)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, map[string]any{"items": items})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"items":     items.Items,
+		"total":     items.Total,
+		"page":      items.Page,
+		"page_size": items.PageSize,
+	})
 }
 
 func (h *AdminHandler) assignRole(w http.ResponseWriter, r *http.Request) {
@@ -692,13 +715,13 @@ func (h *AdminHandler) patchOwnCompany(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		CompanyName        *string `json:"company_name"`
-		TaxCode            *string `json:"tax_code"`
-		RegistrationNumber *string `json:"registration_number"`
-		Address            *string `json:"address"`
-		Phone              *string `json:"phone"`
-		ContactEmail       *string `json:"contact_email"`
-		RepresentativeName *string `json:"representative_name"`
+		CompanyName                   *string `json:"company_name"`
+		TaxCode                       *string `json:"tax_code"`
+		RegistrationNumber            *string `json:"registration_number"`
+		Address                       *string `json:"address"`
+		Phone                         *string `json:"phone"`
+		ContactEmail                  *string `json:"contact_email"`
+		RepresentativeName            *string `json:"representative_name"`
 		IsListed                      *bool   `json:"is_listed"`
 		IsLargePublic                 *bool   `json:"is_large_public"`
 		IsNonLargePublic              *bool   `json:"is_non_large_public"`
@@ -708,14 +731,14 @@ func (h *AdminHandler) patchOwnCompany(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = json.NewDecoder(r.Body).Decode(&body)
 	out, err := h.svc.PatchOwnCompany(r.Context(), caapp.PatchOwnCompanyRequest{
-		Subject:            sub,
-		CompanyName:        body.CompanyName,
-		TaxCode:            body.TaxCode,
-		RegistrationNumber: body.RegistrationNumber,
-		Address:            body.Address,
-		Phone:              body.Phone,
-		ContactEmail:       body.ContactEmail,
-		RepresentativeName: body.RepresentativeName,
+		Subject:                       sub,
+		CompanyName:                   body.CompanyName,
+		TaxCode:                       body.TaxCode,
+		RegistrationNumber:            body.RegistrationNumber,
+		Address:                       body.Address,
+		Phone:                         body.Phone,
+		ContactEmail:                  body.ContactEmail,
+		RepresentativeName:            body.RepresentativeName,
 		IsListed:                      body.IsListed,
 		IsLargePublic:                 body.IsLargePublic,
 		IsNonLargePublic:              body.IsNonLargePublic,
@@ -744,6 +767,7 @@ func (h *AdminHandler) inviteUser(w http.ResponseWriter, r *http.Request) {
 		RoleCode     string   `json:"role_code"`
 		Permissions  []string `json:"permissions"`
 		DepartmentID string   `json:"department_id"`
+		TitleID      string   `json:"title_id"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&p)
 	resp, err := h.svc.InviteUser(r.Context(), caapp.InviteUserRequest{
@@ -756,6 +780,7 @@ func (h *AdminHandler) inviteUser(w http.ResponseWriter, r *http.Request) {
 		RoleCode:        p.RoleCode,
 		Permissions:     p.Permissions,
 		DepartmentID:    p.DepartmentID,
+		TitleID:         p.TitleID,
 	})
 	if err != nil {
 		httpx.WriteError(w, nil, err)

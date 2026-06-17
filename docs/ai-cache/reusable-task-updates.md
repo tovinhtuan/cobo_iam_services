@@ -2966,3 +2966,67 @@
   - `bao-cao-tan-suat` (`frequency_unit=week`) remains out of V2 scope (Decision 1) — revisit if/when weekly periodic templates become a product priority.
   - DEV-only smoke-test record `019ebac1-d199-7773-89cf-5cca89835baa` (`[DEV-ONLY 5D SHADOW SMOKE TEST]`, type `bao-cao-tai-chinh-quy-1`, company `08f59da2-...`) left in place — safe to delete (status=Draft).
 - verdict: **PARTIAL COMPLETE — BLOCKED BEFORE CUTOVER** (5C.1 PASS, 5D PASS, 5E blocked per stop conditions above)
+
+## 2026-06-18 - Invite user with title assignment
+
+- task type: cross-repo implement (backend invite flow)
+- objective: support assigning a membership title when inviting a new employee from Admin Center
+- implemented:
+  - extended `InviteUserRequest` with optional `title_id`
+  - decoded `title_id` in `POST /api/v1/admin/users/invite`
+  - assigned title during invite for both:
+    - new invited users with a freshly created membership
+    - existing active users added into a new company membership
+  - enriched in-memory membership listing with titles so service tests can assert the new behavior
+  - added service test covering invite + title assignment
+- affected files:
+  - `internal/companyaccess/app/admin.go`
+  - `internal/companyaccess/app/admin_service.go`
+  - `internal/companyaccess/app/admin_service_test.go`
+  - `internal/companyaccess/infra/inmemory/admin_repository.go`
+  - `internal/companyaccess/transport/http/admin_handler.go`
+- constraints and decisions:
+  - additive contract only; no migration needed
+  - reused existing membership-title persistence path instead of inventing a separate invite-specific table
+  - title assignment remains optional and scoped by the existing membership/company validation in repository layer
+- verification:
+  - run `go test ./internal/companyaccess/...` and `go build ./...`
+  - try Docker API build per repo workflow; if unavailable, mark blocked by environment
+- related cache:
+  - `docs/ai-cache/invite-user-title-assignment-integration-summary-2026-06-18.md`
+
+## 2026-06-18 - Direct employee creation with membership bootstrap
+
+- task type: cross-repo implement (backend direct-create flow)
+- objective: let Admin Center create active employees directly and assign membership metadata in one request
+- implemented:
+  - extended `POST /api/v1/admin/users` to accept:
+    - `role_id`
+    - `role_code`
+    - `permissions[]`
+    - `department_id`
+    - `title_id`
+  - assigned the initial role inside the same DB transaction as user + membership creation
+  - applied direct permissions, default workflow-read permission, department, and title after membership creation
+  - fixed company-scope department handling so an explicitly selected `department_id` is no longer dropped
+  - fixed `GET /api/v1/admin/companies/{company_id}/memberships` to return flat `items[]` + `total` and pass through `page` / `page_size`
+  - added service and handler regression tests covering the new flow
+- affected files:
+  - `internal/companyaccess/app/admin.go`
+  - `internal/companyaccess/app/admin_service.go`
+  - `internal/companyaccess/app/admin_service_invite_scope.go`
+  - `internal/companyaccess/app/admin_service_test.go`
+  - `internal/companyaccess/infra/inmemory/admin_repository.go`
+  - `internal/companyaccess/infra/mysql/admin_repository.go`
+  - `internal/companyaccess/transport/http/admin_handler.go`
+  - `internal/companyaccess/transport/http/admin_handler_memberships_test.go`
+- constraints and decisions:
+  - reused the existing create-user endpoint instead of creating a second admin-staff contract
+  - kept all new request fields optional to avoid breaking existing callers
+  - preserved backward compatibility with the invite/title work completed earlier in the day
+- verification:
+  - PASS: targeted create-user service tests using workspace-local `GOCACHE`
+  - PASS: targeted memberships handler test for flat payload + pagination
+  - default Go build cache path was blocked by machine permissions, so verification used a workspace cache override
+- related cache:
+  - `docs/ai-cache/create-employee-direct-flow-integration-summary-2026-06-18.md`

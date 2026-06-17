@@ -17,7 +17,7 @@ type fixedIDGen string
 func (g fixedIDGen) NewUUID() string { return string(g) }
 
 type fakeAuthService struct {
-	decision authapp.Decision
+	decision    authapp.Decision
 	permissions []string
 }
 
@@ -46,15 +46,41 @@ func (f fakeAuthService) GetEffectiveAccess(_ context.Context, _, _ string) (*au
 	return &authapp.EffectiveAccessSummary{Permissions: f.permissions}, nil
 }
 
+func seedInviteScopedSubject(t *testing.T, repo *cainmem.AdminRepository, sub caapp.AdminSubject) {
+	t.Helper()
+	_, err := repo.CreateUser(context.Background(), caapp.UserView{
+		UserID:        sub.UserID,
+		LoginID:       sub.UserID + "@example.com",
+		FullName:      "Admin User",
+		AccountStatus: "active",
+	}, "hash", caapp.CreateUserOptions{
+		MembershipID:     sub.MembershipID,
+		CompanyID:        sub.CompanyID,
+		MembershipStatus: "active",
+	})
+	if err != nil {
+		t.Fatalf("seed subject membership: %v", err)
+	}
+	if err := repo.AddRolePermission(context.Background(), "company_admin", "admin.membership.invite"); err != nil {
+		t.Fatalf("seed invite role permission: %v", err)
+	}
+	if err := repo.AddRole(context.Background(), sub.MembershipID, "company_admin"); err != nil {
+		t.Fatalf("seed invite role: %v", err)
+	}
+}
+
 func TestAdminService_CreateUser_OK(t *testing.T) {
+	repo := cainmem.NewAdminRepository()
+	sub := caapp.AdminSubject{UserID: "u_admin", MembershipID: "m_admin", CompanyID: "c_001"}
+	seedInviteScopedSubject(t, repo, sub)
 	svc := caapp.NewAdminService(
-		cainmem.NewAdminRepository(),
-		fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{"system.settings"}},
+		repo,
+		fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{"system.settings", "admin.membership.invite"}},
 		fixedIDGen("u_new"),
 	)
 
 	out, err := svc.CreateUser(context.Background(), caapp.CreateUserRequest{
-		Subject:  caapp.AdminSubject{UserID: "u_admin", MembershipID: "m_admin", CompanyID: "c_001"},
+		Subject:  sub,
 		LoginID:  "  New.User@Example.com ",
 		Password: "StrongPass123!",
 		FullName: " New User ",
@@ -75,14 +101,17 @@ func TestAdminService_CreateUser_OK(t *testing.T) {
 }
 
 func TestAdminService_CreateUser_WithOptionalMembership(t *testing.T) {
+	repo := cainmem.NewAdminRepository()
+	sub := caapp.AdminSubject{UserID: "u_admin", MembershipID: "m_admin", CompanyID: "c_001"}
+	seedInviteScopedSubject(t, repo, sub)
 	svc := caapp.NewAdminService(
-		cainmem.NewAdminRepository(),
-		fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{"system.settings"}},
+		repo,
+		fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{"system.settings", "admin.membership.invite"}},
 		fixedIDGen("fixed-id"),
 	)
 
 	out, err := svc.CreateUser(context.Background(), caapp.CreateUserRequest{
-		Subject:          caapp.AdminSubject{UserID: "u_admin", MembershipID: "m_admin", CompanyID: "c_001"},
+		Subject:          sub,
 		LoginID:          "member.user@example.com",
 		Password:         "StrongPass123!",
 		FullName:         "Member User",
@@ -100,15 +129,100 @@ func TestAdminService_CreateUser_WithOptionalMembership(t *testing.T) {
 	}
 }
 
-func TestAdminService_CreateUser_EnterpriseAdminForcesCurrentCompany(t *testing.T) {
+func TestAdminService_CreateUser_AssignsMembershipSetup(t *testing.T) {
+	repo := cainmem.NewAdminRepository()
+	repo.SeedDepartment(caapp.DepartmentView{
+		DepartmentID:   "dep_legal",
+		DepartmentName: "Phap che",
+		Name:           "Phap che",
+	})
+	sub := caapp.AdminSubject{UserID: "u_admin", MembershipID: "m_admin", CompanyID: "c_001"}
+	seedInviteScopedSubject(t, repo, sub)
 	svc := caapp.NewAdminService(
-		cainmem.NewAdminRepository(),
-		fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{"system.settings"}},
+		repo,
+		fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{"system.settings", "rbac.manage"}},
+		idgen.UUIDv7Generator{},
+	)
+
+	out, err := svc.CreateUser(context.Background(), caapp.CreateUserRequest{
+		Subject:          sub,
+		LoginID:          "employee.direct@example.com",
+		Password:         "StrongPass123!",
+		FullName:         "Employee Direct",
+		Email:            "employee.direct@example.com",
+		CompanyID:        "c_001",
+		MembershipStatus: "active",
+		RoleCode:         "department_staff",
+		Permissions:      []string{"ad_hoc_alert.propose"},
+		DepartmentID:     "dep_legal",
+		TitleID:          "title_legal_head",
+	})
+	if err != nil {
+		t.Fatalf("CreateUser err=%v", err)
+	}
+	if out.MembershipID == "" {
+		t.Fatal("expected membership_id")
+	}
+
+	items, err := svc.ListCompanyMemberships(context.Background(), caapp.ListCompanyMembershipsRequest{
+		Subject:   sub,
+		CompanyID: "c_001",
+	})
+	if err != nil {
+		t.Fatalf("ListCompanyMemberships: %v", err)
+	}
+
+	var member *caapp.MembershipView
+	for i := range items.Items {
+		if items.Items[i].MembershipID == out.MembershipID {
+			member = &items.Items[i]
+			break
+		}
+	}
+	if member == nil {
+		t.Fatal("expected created membership in list")
+	}
+	if len(member.Roles) != 1 || member.Roles[0].RoleCode != "department_staff" {
+		t.Fatalf("roles=%+v want department_staff", member.Roles)
+	}
+	if len(member.Departments) != 1 || member.Departments[0].DepartmentID != "dep_legal" {
+		t.Fatalf("departments=%+v want dep_legal", member.Departments)
+	}
+	if len(member.Titles) != 1 || member.Titles[0].TitleID != "title_legal_head" {
+		t.Fatalf("titles=%+v want title_legal_head", member.Titles)
+	}
+
+	perms, err := svc.ListDirectPermissions(context.Background(), caapp.ListDirectPermissionsRequest{
+		Subject:      sub,
+		MembershipID: out.MembershipID,
+	})
+	if err != nil {
+		t.Fatalf("ListDirectPermissions: %v", err)
+	}
+	found := map[string]bool{}
+	for _, perm := range perms {
+		found[perm.PermissionCode] = true
+	}
+	if !found["ad_hoc_alert.propose"] {
+		t.Fatalf("expected ad_hoc_alert.propose in %+v", perms)
+	}
+	if !found["template.workflow.override.read"] {
+		t.Fatalf("expected template.workflow.override.read in %+v", perms)
+	}
+}
+
+func TestAdminService_CreateUser_EnterpriseAdminForcesCurrentCompany(t *testing.T) {
+	repo := cainmem.NewAdminRepository()
+	sub := caapp.AdminSubject{UserID: "u_admin", MembershipID: "m_admin", CompanyID: "c_001"}
+	seedInviteScopedSubject(t, repo, sub)
+	svc := caapp.NewAdminService(
+		repo,
+		fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{"system.settings", "admin.membership.invite"}},
 		fixedIDGen("fixed-id"),
 	)
 
 	out, err := svc.CreateUser(context.Background(), caapp.CreateUserRequest{
-		Subject:   caapp.AdminSubject{UserID: "u_admin", MembershipID: "m_admin", CompanyID: "c_001"},
+		Subject:   sub,
 		LoginID:   "force.company@example.com",
 		Password:  "StrongPass123!",
 		FullName:  "Force Company",
@@ -123,14 +237,17 @@ func TestAdminService_CreateUser_EnterpriseAdminForcesCurrentCompany(t *testing.
 }
 
 func TestAdminService_CreateUser_EnterpriseAdminCannotCreateOtherCompany(t *testing.T) {
+	repo := cainmem.NewAdminRepository()
+	sub := caapp.AdminSubject{UserID: "u_admin", MembershipID: "m_admin", CompanyID: "c_001"}
+	seedInviteScopedSubject(t, repo, sub)
 	svc := caapp.NewAdminService(
-		cainmem.NewAdminRepository(),
-		fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{"system.settings"}},
+		repo,
+		fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{"system.settings", "admin.membership.invite"}},
 		fixedIDGen("fixed-id"),
 	)
 
 	_, err := svc.CreateUser(context.Background(), caapp.CreateUserRequest{
-		Subject:   caapp.AdminSubject{UserID: "u_admin", MembershipID: "m_admin", CompanyID: "c_001"},
+		Subject:   sub,
 		LoginID:   "cross.company@example.com",
 		Password:  "StrongPass123!",
 		FullName:  "Cross Company",
@@ -234,7 +351,7 @@ func TestAdminService_ListCompanyMemberships_ListWithoutCompany(t *testing.T) {
 func TestAdminService_ListCompanyMemberships_ListWithoutCompanyDeniedWithoutRbac(t *testing.T) {
 	svc := caapp.NewAdminService(
 		cainmem.NewAdminRepository(),
-		fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{"system.settings"}},
+		fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{"system.settings", "admin.membership.invite"}},
 		fixedIDGen("x"),
 	)
 	_, err := svc.ListCompanyMemberships(context.Background(), caapp.ListCompanyMembershipsRequest{
@@ -278,13 +395,16 @@ func TestAdminService_ResendUserInvitation_NoCompanyScope(t *testing.T) {
 }
 
 func TestAdminService_CreateUser_Validation(t *testing.T) {
+	repo := cainmem.NewAdminRepository()
+	sub := caapp.AdminSubject{UserID: "u_admin", MembershipID: "m_admin", CompanyID: "c_001"}
+	seedInviteScopedSubject(t, repo, sub)
 	svc := caapp.NewAdminService(
-		cainmem.NewAdminRepository(),
-		fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{"system.settings"}},
+		repo,
+		fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{"system.settings", "admin.membership.invite"}},
 		idgen.UUIDv7Generator{},
 	)
 	_, err := svc.CreateUser(context.Background(), caapp.CreateUserRequest{
-		Subject:  caapp.AdminSubject{UserID: "u_admin", MembershipID: "m_admin", CompanyID: "c_001"},
+		Subject:  sub,
 		LoginID:  "",
 		Password: "short",
 		FullName: "",
@@ -373,6 +493,53 @@ func TestAdminService_InviteUser_AlreadyMemberSameCompany(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected conflict: already member of this company")
+	}
+}
+
+func TestAdminService_InviteUser_AssignsTitleToMembership(t *testing.T) {
+	repo := cainmem.NewAdminRepository()
+	svc := caapp.NewAdminService(
+		repo,
+		fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{"system.settings", "rbac.manage"}},
+		idgen.UUIDv7Generator{},
+	)
+
+	out, err := svc.InviteUser(context.Background(), caapp.InviteUserRequest{
+		Subject:          caapp.AdminSubject{UserID: "u_admin", MembershipID: "m_admin", CompanyID: "c_001"},
+		Email:            "title.invite@example.com",
+		FullName:         "Invite With Title",
+		CompanyID:        "c_001",
+		MembershipStatus: "active",
+		CreatedByUserID:  "u_admin",
+		TitleID:          "title_legal_head",
+	})
+	if err != nil {
+		t.Fatalf("InviteUser: %v", err)
+	}
+	if out.MembershipID == "" {
+		t.Fatal("expected membership_id")
+	}
+
+	items, err := svc.ListCompanyMemberships(context.Background(), caapp.ListCompanyMembershipsRequest{
+		Subject:   caapp.AdminSubject{UserID: "u_admin", MembershipID: "m_admin", CompanyID: "c_001"},
+		CompanyID: "c_001",
+	})
+	if err != nil {
+		t.Fatalf("ListCompanyMemberships: %v", err)
+	}
+
+	var titles []caapp.TitleView
+	for _, item := range items.Items {
+		if item.MembershipID == out.MembershipID {
+			titles = item.Titles
+			break
+		}
+	}
+	if len(titles) != 1 {
+		t.Fatalf("len(titles)=%d want 1", len(titles))
+	}
+	if titles[0].TitleID != "title_legal_head" {
+		t.Fatalf("title_id=%q want title_legal_head", titles[0].TitleID)
 	}
 }
 
@@ -515,7 +682,6 @@ func TestAdminService_NotificationRulesListPatchDelete_and_AccountSettings(t *te
 	}
 }
 
-
 func TestAdminService_DirectPermissions_RbacManageWithoutSystemSettings(t *testing.T) {
 	repo := cainmem.NewAdminRepository()
 	svc := caapp.NewAdminService(
@@ -579,10 +745,11 @@ func TestAdminService_DirectPermissions_DeniedWithoutRbacManage(t *testing.T) {
 	repo := cainmem.NewAdminRepository()
 	svc := caapp.NewAdminService(
 		repo,
-		fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{"system.settings"}},
+		fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{"system.settings", "admin.membership.invite"}},
 		fixedIDGen("u_target2"),
 	)
 	sub := caapp.AdminSubject{UserID: "u_admin", MembershipID: "m_admin", CompanyID: "c_dp2"}
+	seedInviteScopedSubject(t, repo, sub)
 
 	out, err := svc.CreateUser(context.Background(), caapp.CreateUserRequest{
 		Subject:   sub,

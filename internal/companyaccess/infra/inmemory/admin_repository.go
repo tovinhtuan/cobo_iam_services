@@ -32,7 +32,7 @@ type AdminRepository struct {
 	workflowAssigneeRules []map[string]any
 	notificationRules     []map[string]any
 
-	invitationsByUser map[string][]string // stacked token hashes for in-mem sanity (minimal)
+	invitationsByUser map[string][]string                   // stacked token hashes for in-mem sanity (minimal)
 	directPermissions map[string]caapp.DirectPermissionView // key: membershipID:permCode
 
 	departments map[string]caapp.DepartmentView // department_id -> view
@@ -110,6 +110,9 @@ func (r *AdminRepository) CreateUser(_ context.Context, u caapp.UserView, passwo
 		u.MembershipStatus = m.Status
 		u.CompanyID = m.CompanyID
 		u.CompanyName = m.CompanyName
+		if strings.TrimSpace(opts.InitialRoleID) != "" {
+			addSet(r.rolesByMembership, m.MembershipID, strings.TrimSpace(opts.InitialRoleID))
+		}
 	}
 	cp := u
 	return &cp, nil
@@ -286,6 +289,24 @@ func (r *AdminRepository) ListMembershipsByCompany(_ context.Context, companyID 
 					cp.Roles = append(cp.Roles, caapp.RoleView{RoleID: id, RoleCode: code, RoleName: code})
 				}
 			}
+			if deptIDs, ok := r.departmentsByMembership[m.MembershipID]; ok {
+				for id := range deptIDs {
+					deptName := id
+					if dept, found := r.departments[id]; found {
+						if strings.TrimSpace(dept.DepartmentName) != "" {
+							deptName = dept.DepartmentName
+						} else if strings.TrimSpace(dept.Name) != "" {
+							deptName = dept.Name
+						}
+					}
+					cp.Departments = append(cp.Departments, caapp.DepartmentView{DepartmentID: id, DepartmentName: deptName, Name: deptName})
+				}
+			}
+			if titleIDs, ok := r.titlesByMembership[m.MembershipID]; ok {
+				for id := range titleIDs {
+					cp.Titles = append(cp.Titles, caapp.TitleView{TitleID: id, TitleName: id, Name: id})
+				}
+			}
 			out = append(out, cp)
 		}
 	}
@@ -412,11 +433,11 @@ func (r *AdminRepository) BootstrapSelfServiceCompanyTx(_ context.Context, in ca
 		r.companyTaxCodes[tax] = companyID
 	}
 	r.memberships[in.MembershipID] = caapp.MembershipView{
-		MembershipID: in.MembershipID,
-		UserID:       in.UserID,
-		CompanyID:    companyID,
-		CompanyName:  name,
-		Status:       "active",
+		MembershipID:   in.MembershipID,
+		UserID:         in.UserID,
+		CompanyID:      companyID,
+		CompanyName:    name,
+		Status:         "active",
 		IsPrimaryAdmin: true,
 	}
 	return &caapp.BootstrapSelfServiceResult{

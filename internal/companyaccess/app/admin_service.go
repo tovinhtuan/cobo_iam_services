@@ -62,6 +62,10 @@ func (s *adminService) CreateUser(ctx context.Context, req CreateUserRequest) (*
 	req.AccountStatus = strings.TrimSpace(req.AccountStatus)
 	req.CompanyID = strings.TrimSpace(req.CompanyID)
 	req.MembershipStatus = strings.TrimSpace(req.MembershipStatus)
+	req.RoleID = strings.TrimSpace(req.RoleID)
+	req.RoleCode = strings.TrimSpace(req.RoleCode)
+	req.DepartmentID = strings.TrimSpace(req.DepartmentID)
+	req.TitleID = strings.TrimSpace(req.TitleID)
 	if req.AccountStatus == "" {
 		req.AccountStatus = "active"
 	}
@@ -74,6 +78,22 @@ func (s *adminService) CreateUser(ctx context.Context, req CreateUserRequest) (*
 	}
 	if req.CompanyID != "" && req.MembershipStatus == "" {
 		req.MembershipStatus = "active"
+	}
+	if req.CompanyID != "" {
+		scope, err := s.resolveInviteScope(ctx, req.Subject)
+		if err != nil {
+			return nil, err
+		}
+		deptID, err := s.pickInviteDepartmentID(scope, req.DepartmentID)
+		if err != nil {
+			return nil, err
+		}
+		req.DepartmentID = deptID
+		for _, p := range req.Permissions {
+			if !isGrantable(p) {
+				return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "permission_code is not grantable: "+p, nil)
+			}
+		}
 	}
 	if req.LoginID == "" {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "login_id required", nil)
@@ -103,9 +123,38 @@ func (s *adminService) CreateUser(ctx context.Context, req CreateUserRequest) (*
 		MembershipStatus: req.MembershipStatus,
 	}
 	if req.CompanyID != "" {
+		defRoleCode := strings.TrimSpace(s.inviteDefaultRoleCode)
+		if defRoleCode == "" {
+			defRoleCode = "user_thuong"
+		}
+		roleID, err := s.repo.LookupRoleIDForInvite(ctx, req.CompanyID, req.RoleID, req.RoleCode, defRoleCode)
+		if err != nil {
+			return nil, err
+		}
 		opts.MembershipID = s.idg.NewUUID()
+		opts.InitialRoleID = roleID
 	}
-	return s.repo.CreateUser(ctx, u, string(hash), opts)
+	out, err := s.repo.CreateUser(ctx, u, string(hash), opts)
+	if err != nil {
+		return nil, err
+	}
+	if out.MembershipID != "" {
+		for _, p := range req.Permissions {
+			if err := s.repo.InsertDirectPermission(ctx, out.MembershipID, out.CompanyID, p, req.Subject.UserID); err != nil {
+				return nil, err
+			}
+		}
+		if err := s.grantDefaultPermissions(ctx, out.MembershipID, out.CompanyID, req.Subject.UserID); err != nil {
+			return nil, err
+		}
+		if err := s.assignInviteDepartment(ctx, out.MembershipID, req.DepartmentID); err != nil {
+			return nil, err
+		}
+		if err := s.assignInviteTitle(ctx, out.MembershipID, req.TitleID); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
 }
 
 func (s *adminService) CreateCompany(ctx context.Context, req CreateCompanyRequest) (*CreateCompanyResult, error) {
@@ -203,6 +252,7 @@ func (s *adminService) InviteUser(ctx context.Context, req InviteUserRequest) (*
 	req.FullName = strings.TrimSpace(req.FullName)
 	req.CompanyID = strings.TrimSpace(req.CompanyID)
 	req.MembershipStatus = strings.TrimSpace(req.MembershipStatus)
+	req.TitleID = strings.TrimSpace(req.TitleID)
 	if req.Email == "" {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "email is required", nil)
 	}
@@ -355,6 +405,9 @@ func (s *adminService) inviteUserWithCompany(ctx context.Context, req InviteUser
 		if err := s.assignInviteDepartment(ctx, m.MembershipID, req.DepartmentID); err != nil {
 			return nil, err
 		}
+		if err := s.assignInviteTitle(ctx, m.MembershipID, req.TitleID); err != nil {
+			return nil, err
+		}
 		companyDisplay := ""
 		if cn, err := s.repo.GetCompanyName(ctx, req.CompanyID); err == nil {
 			companyDisplay = cn
@@ -433,6 +486,9 @@ func (s *adminService) inviteUserWithCompany(ctx context.Context, req InviteUser
 		return nil, err
 	}
 	if err := s.assignInviteDepartment(ctx, opts.MembershipID, req.DepartmentID); err != nil {
+		return nil, err
+	}
+	if err := s.assignInviteTitle(ctx, opts.MembershipID, req.TitleID); err != nil {
 		return nil, err
 	}
 	if s.invMailer != nil {
@@ -1059,15 +1115,15 @@ func (s *adminService) PatchOwnCompany(ctx context.Context, req PatchOwnCompanyR
 		}
 	}
 	if err := s.repo.UpdateCompanyPlatform(ctx, UpdatePlatformCompanyRequest{
-		Subject:            req.Subject,
-		CompanyID:          req.Subject.CompanyID,
-		CompanyName:        req.CompanyName,
-		TaxCode:            req.TaxCode,
-		RegistrationNumber: req.RegistrationNumber,
-		Address:            req.Address,
-		Phone:              req.Phone,
-		ContactEmail:       req.ContactEmail,
-		RepresentativeName: req.RepresentativeName,
+		Subject:                       req.Subject,
+		CompanyID:                     req.Subject.CompanyID,
+		CompanyName:                   req.CompanyName,
+		TaxCode:                       req.TaxCode,
+		RegistrationNumber:            req.RegistrationNumber,
+		Address:                       req.Address,
+		Phone:                         req.Phone,
+		ContactEmail:                  req.ContactEmail,
+		RepresentativeName:            req.RepresentativeName,
 		IsListed:                      req.IsListed,
 		IsLargePublic:                 req.IsLargePublic,
 		IsNonLargePublic:              req.IsNonLargePublic,
@@ -1132,6 +1188,17 @@ func (s *adminService) grantDefaultPermissions(ctx context.Context, membershipID
 		if err := s.repo.InsertDirectPermission(ctx, membershipID, companyID, p, grantedBy); err != nil {
 			return fmt.Errorf("grant default permission %s: %w", p, err)
 		}
+	}
+	return nil
+}
+
+func (s *adminService) assignInviteTitle(ctx context.Context, membershipID, titleID string) error {
+	titleID = strings.TrimSpace(titleID)
+	if titleID == "" {
+		return nil
+	}
+	if err := s.repo.AddTitle(ctx, membershipID, titleID); err != nil {
+		return fmt.Errorf("assign invite title: %w", err)
 	}
 	return nil
 }

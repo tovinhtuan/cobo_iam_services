@@ -77,6 +77,11 @@ func (r *AdminRepository) CreateUser(ctx context.Context, u caapp.UserView, pass
 		u.MembershipStatus = membershipStatus
 		u.CompanyID = opts.CompanyID
 		u.CompanyName = companyName
+		if strings.TrimSpace(opts.InitialRoleID) != "" {
+			if err := inviteAssignMembershipRoleTx(ctx, tx, opts.MembershipID, opts.InitialRoleID); err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	if err := tx.Commit(); err != nil {
