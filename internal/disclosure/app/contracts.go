@@ -990,6 +990,7 @@ type CmsArchiveTemplateResponse struct {
 type GlobalWorkflowStepInput struct {
 	StepID          string   `json:"step_id"`
 	Stage           string   `json:"stage"`
+	Instructions    string   `json:"instructions,omitempty"`
 	DepartmentID    string   `json:"department_id"`
 	AssigneeRoleIds []string `json:"assignee_role_ids"`
 	DueRule         string   `json:"due_rule"`

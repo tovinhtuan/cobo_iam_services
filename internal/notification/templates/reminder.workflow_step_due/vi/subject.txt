@@ -1,1 +1,1 @@
-[CoBo] Cần xử lý: Bước {{.step_name}} của {{.disclosure_title}} đến hạn {{.due_date}}
+[CẢNH BÁO] {{.urgency_status}} bước {{.step_name}} - {{.disclosure_title}}

@@ -36,7 +36,7 @@ func TestEmbedRegistry_ResolveDeadlineApproaching(t *testing.T) {
 	if resolved.HTMLBody == "" {
 		t.Error("expected non-empty HTMLBody")
 	}
-	wantVars := []string{"company_name", "disclosure_title", "due_date", "portal_url"}
+	wantVars := []string{"recipient_name", "urgency_status", "company_name", "disclosure_title", "due_date", "remaining_days", "implementation_guide", "portal_url"}
 	if len(resolved.RequiredVars) != len(wantVars) {
 		t.Errorf("RequiredVars = %v, want %v", resolved.RequiredVars, wantVars)
 	}
@@ -58,7 +58,7 @@ func TestEmbedRegistry_ResolveWorkflowStepDue(t *testing.T) {
 	if resolved.HTMLBody == "" {
 		t.Error("expected non-empty HTMLBody")
 	}
-	wantVars := []string{"company_name", "disclosure_title", "due_date", "portal_url", "step_name"}
+	wantVars := []string{"recipient_name", "urgency_status", "company_name", "disclosure_title", "step_name", "due_date", "remaining_days", "implementation_guide", "portal_url"}
 	if len(resolved.RequiredVars) != len(wantVars) {
 		t.Errorf("RequiredVars = %v, want %v", resolved.RequiredVars, wantVars)
 	}

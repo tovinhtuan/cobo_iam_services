@@ -2,15 +2,15 @@
 <html lang="vi">
 <head><meta charset="UTF-8"></head>
 <body style="font-family:sans-serif;color:#1a1a1a;line-height:1.6;max-width:600px;margin:0 auto;padding:24px">
-  <p>Kính gửi,</p>
-  <p>Đây là thông báo tự động từ hệ thống CoBo Portal. Một bước trong quy trình xử lý công bố thông tin cần được hoàn thành:</p>
+  <p>Kính gửi {{.recipient_name}},</p>
+  <p>Hệ thống CoBo Portal xin thông báo đầu mục công việc dưới đây <strong>{{.urgency_status}}</strong> thực hiện:</p>
   <table style="border-collapse:collapse;width:100%;margin:16px 0">
     <tr>
       <td style="padding:8px 12px;background:#f5f5f5;font-weight:600;width:40%">Công ty</td>
       <td style="padding:8px 12px;border:1px solid #e0e0e0">{{.company_name}}</td>
     </tr>
     <tr>
-      <td style="padding:8px 12px;background:#f5f5f5;font-weight:600">Nghĩa vụ công bố</td>
+      <td style="padding:8px 12px;background:#f5f5f5;font-weight:600">Công việc</td>
       <td style="padding:8px 12px;border:1px solid #e0e0e0">{{.disclosure_title}}</td>
     </tr>
     <tr>
@@ -18,12 +18,15 @@
       <td style="padding:8px 12px;border:1px solid #e0e0e0;font-weight:600">{{.step_name}}</td>
     </tr>
     <tr>
-      <td style="padding:8px 12px;background:#fff3cd;font-weight:600">Hạn xử lý</td>
-      <td style="padding:8px 12px;border:1px solid #e0e0e0;font-weight:600;color:#b45309">{{.due_date}}</td>
+      <td style="padding:8px 12px;background:#fff3cd;font-weight:600">Hạn chót</td>
+      <td style="padding:8px 12px;border:1px solid #e0e0e0;font-weight:600;color:#b45309">{{.due_date}} &nbsp;&nbsp; Số ngày còn lại: <strong>{{.remaining_days}}</strong> ngày</td>
     </tr>
   </table>
-  <p>Vui lòng truy cập hệ thống để xử lý bước này:</p>
-  <p><a href="{{.portal_url}}" style="color:#2563eb">{{.portal_url}}</a></p>
+  <p style="font-weight:600;margin:16px 0 4px">Hướng dẫn thực hiện:</p>
+  <p style="margin:0 0 16px;padding:12px 16px;background:#f9fafb;border-left:4px solid #2563eb;white-space:pre-line">{{.implementation_guide}}</p>
+  <p style="text-align:center;margin:24px 0">
+    <a href="{{.portal_url}}" style="display:inline-block;padding:12px 28px;background:#2563eb;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:600">Xem thêm</a>
+  </p>
   <hr style="border:none;border-top:1px solid #e0e0e0;margin:24px 0">
   <p style="font-size:12px;color:#6b7280">Email này được gửi tự động, vui lòng không trả lời trực tiếp.</p>
 </body>

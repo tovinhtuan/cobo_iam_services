@@ -1,17 +1,16 @@
-Kính gửi,
+Kính gửi {{.recipient_name}},
 
-Đây là thông báo tự động từ hệ thống CoBo Portal.
-
-Một bước trong quy trình xử lý công bố thông tin cần được hoàn thành:
+Hệ thống CoBo Portal xin thông báo đầu mục công việc dưới đây {{.urgency_status}} thực hiện:
 
 Công ty: {{.company_name}}
-Nghĩa vụ công bố: {{.disclosure_title}}
+Công việc: {{.disclosure_title}}
 Bước cần xử lý: {{.step_name}}
-Hạn xử lý: {{.due_date}}
+Hạn chót: {{.due_date}} — Số ngày còn lại: {{.remaining_days}} ngày
 
-Vui lòng truy cập hệ thống để xử lý bước này:
+Hướng dẫn thực hiện:
+{{.implementation_guide}}
 
-{{.portal_url}}
+Xem thêm: {{.portal_url}}
 
 Lưu ý: Email này được gửi tự động, vui lòng không trả lời trực tiếp.
 

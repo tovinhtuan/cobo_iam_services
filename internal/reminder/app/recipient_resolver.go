@@ -11,6 +11,7 @@ import (
 type WorkflowStepConfig struct {
 	StepID          string
 	StageName       string
+	Instructions    string
 	AssigneeRoleIDs []string
 	DepartmentID    string
 }

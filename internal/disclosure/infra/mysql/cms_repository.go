@@ -158,7 +158,7 @@ func (r *Repository) GetGlobalWorkflow(ctx context.Context, typeID string) (*dis
 
 func (r *Repository) listGlobalWorkflowSteps(ctx context.Context, workflowID string) ([]disclosureapp.GlobalWorkflowStepInput, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT step_id, stage, department_id, assignee_role_ids, due_rule, processing_days, display_order
+		SELECT step_id, stage, instructions, department_id, assignee_role_ids, due_rule, processing_days, display_order
 		FROM global_workflow_steps WHERE workflow_id = ?
 		ORDER BY display_order ASC, step_id ASC
 	`, workflowID)
@@ -170,9 +170,11 @@ func (r *Repository) listGlobalWorkflowSteps(ctx context.Context, workflowID str
 	for rows.Next() {
 		var step disclosureapp.GlobalWorkflowStepInput
 		var roleIDsJSON []byte
-		if err := rows.Scan(&step.StepID, &step.Stage, &step.DepartmentID, &roleIDsJSON, &step.DueRule, &step.ProcessingDays, &step.DisplayOrder); err != nil {
+		var instructions sql.NullString
+		if err := rows.Scan(&step.StepID, &step.Stage, &instructions, &step.DepartmentID, &roleIDsJSON, &step.DueRule, &step.ProcessingDays, &step.DisplayOrder); err != nil {
 			return nil, fmt.Errorf("scan global workflow step: %w", err)
 		}
+		step.Instructions = instructions.String
 		if err := json.Unmarshal(roleIDsJSON, &step.AssigneeRoleIds); err != nil {
 			step.AssigneeRoleIds = []string{}
 		}
@@ -216,9 +218,9 @@ func (r *Repository) UpsertGlobalWorkflow(ctx context.Context, req disclosureapp
 		}
 		stepID := fmt.Sprintf("%s-step-%d", workflowID, i+1)
 		_, err = tx.ExecContext(ctx, `
-			INSERT INTO global_workflow_steps (step_id, workflow_id, stage, department_id, assignee_role_ids, due_rule, processing_days, display_order, created_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-		`, stepID, workflowID, step.Stage, step.DepartmentID, string(roleIDsJSON), step.DueRule, step.ProcessingDays, displayOrder, now)
+			INSERT INTO global_workflow_steps (step_id, workflow_id, stage, instructions, department_id, assignee_role_ids, due_rule, processing_days, display_order, created_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`, stepID, workflowID, step.Stage, step.Instructions, step.DepartmentID, string(roleIDsJSON), step.DueRule, step.ProcessingDays, displayOrder, now)
 		if err != nil {
 			return nil, fmt.Errorf("insert global workflow step %d: %w", i, err)
 		}

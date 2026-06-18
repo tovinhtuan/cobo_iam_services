@@ -369,19 +369,28 @@ func (s *service) prepareDispatch(ctx context.Context, c DispatchCandidate) (tem
 	}
 	payload["due_date"] = c.ScheduledAt.UTC().Format("02/01/2006")
 	if c.ScopeType == ScopeTypeWorkflowStep && c.ScopeID != "" {
-		if _, ok := payload["step_name"]; !ok {
-			// scope_id may be "disclosureID:stepID" (config path) or just "stepID" (milestone path).
-			stepID := c.ScopeID
-			if idx := strings.LastIndex(c.ScopeID, ":"); idx >= 0 {
-				stepID = c.ScopeID[idx+1:]
+		// scope_id may be "disclosureID:stepID" (config path) or just "stepID" (milestone path).
+		stepID := extractStepID(c.ScopeID)
+		// Reuse the single, pre-existing per-candidate step lookup for BOTH step_name and
+		// implementation_guide. No new query is introduced: the milestone/config dispatch path
+		// never pre-populates step_name, so GetStepByID was already invoked here.
+		var step *WorkflowStepConfig
+		if s.stepReader != nil {
+			if st, err := s.stepReader.GetStepByID(ctx, stepID); err == nil {
+				step = st
 			}
+		}
+		if _, ok := payload["step_name"]; !ok {
 			stepName := stepID
-			if s.stepReader != nil {
-				if step, err := s.stepReader.GetStepByID(ctx, stepID); err == nil && step != nil && step.StageName != "" {
-					stepName = step.StageName
-				}
+			if step != nil && step.StageName != "" {
+				stepName = step.StageName
 			}
 			payload["step_name"] = stepName
+		}
+		if _, ok := payload["implementation_guide"]; !ok {
+			if step != nil && strings.TrimSpace(step.Instructions) != "" {
+				payload["implementation_guide"] = truncateImplementationGuide(step.Instructions, implementationGuideMaxChars)
+			}
 		}
 	}
 	// Map disclosure_title from existing "title" field in payload (backward compat alias).
@@ -423,6 +432,30 @@ func (s *service) prepareDispatch(ctx context.Context, c DispatchCandidate) (tem
 				payload["portal_url"] = s.publicWebBaseURL + "/app/disclosures/" + disclosureID
 			}
 		}
+	}
+
+	// recipient_name: greet by the first resolved recipient. The resolver yields emails
+	// (users.email, falling back to users.login_id) — not display names — so per the spec
+	// "tên user (nếu có) hoặc email" we greet by the email. recipients is guaranteed non-empty
+	// here (the earlier guard skips occurrences with no recipient). No extra query, no resolver
+	// change: surfacing the actual users.full_name would require the resolver to return names.
+	if _, ok := payload["recipient_name"]; !ok && len(recipients) > 0 {
+		payload["recipient_name"] = recipients[0]
+	}
+
+	// remaining_days + urgency_status: computed in memory from the scheduled due instant.
+	// Day-boundary semantics in Asia/Ho_Chi_Minh mirror the deadline UI (remainingDaysFromDue).
+	remaining := calculateRemainingDays(c.ScheduledAt, time.Now().UTC())
+	if _, ok := payload["remaining_days"]; !ok {
+		payload["remaining_days"] = remaining
+	}
+	if _, ok := payload["urgency_status"]; !ok {
+		payload["urgency_status"] = determineUrgencyStatus(remaining)
+	}
+	// implementation_guide: templates declare it required, so guarantee a non-empty value.
+	// Falls back to a generic instruction when the step carries no instructions (or no step).
+	if guide, ok := payload["implementation_guide"]; !ok || strings.TrimSpace(fmt.Sprint(guide)) == "" {
+		payload["implementation_guide"] = defaultImplementationGuide
 	}
 
 	return templateCode, recipients, payload, false
@@ -639,6 +672,77 @@ func retryAtForAttempt(now time.Time, attemptNo int) time.Time {
 	default:
 		return now.Add(20 * time.Minute)
 	}
+}
+
+// ─── Phase 3: reminder content enrichment helpers ────────────────────────────
+
+const (
+	// implementationGuideMaxChars caps the "Hướng dẫn thực hiện" block so emails stay compact.
+	implementationGuideMaxChars = 500
+	// defaultImplementationGuide is the non-empty fallback when no step instructions exist
+	// (templates declare implementation_guide as required, so it must never render empty).
+	defaultImplementationGuide = "Vui lòng truy cập hệ thống để xem chi tiết và hoàn thành công việc đúng hạn."
+)
+
+// reminderCalculatorLocation returns Asia/Ho_Chi_Minh, falling back to a fixed +07:00 zone
+// when tzdata is unavailable — matching the deadline engine's timezone handling.
+func reminderCalculatorLocation() *time.Location {
+	loc, err := time.LoadLocation("Asia/Ho_Chi_Minh")
+	if err != nil {
+		return time.FixedZone("Asia/Ho_Chi_Minh", 7*60*60)
+	}
+	return loc
+}
+
+// calculateRemainingDays returns the whole-day difference between the due instant and now,
+// floored to midnight in Asia/Ho_Chi_Minh (calendar-day semantics, consistent with the
+// deadline UI's remainingDaysFromDue). Negative = overdue, 0 = due today, positive = upcoming.
+func calculateRemainingDays(dueDate, now time.Time) int {
+	if dueDate.IsZero() {
+		return 0
+	}
+	loc := reminderCalculatorLocation()
+	d := dueDate.In(loc)
+	n := now.In(loc)
+	d = time.Date(d.Year(), d.Month(), d.Day(), 0, 0, 0, 0, loc)
+	n = time.Date(n.Year(), n.Month(), n.Day(), 0, 0, 0, 0, loc)
+	return int(d.Sub(n).Hours() / 24)
+}
+
+// determineUrgencyStatus maps remaining days to the Vietnamese urgency phrase embedded by
+// the reminder email subject/body. Values are self-contained (templates insert them directly).
+func determineUrgencyStatus(remainingDays int) string {
+	switch {
+	case remainingDays < 0:
+		return "Quá hạn"
+	case remainingDays == 0:
+		return "Đã đến hạn"
+	default:
+		return "Sắp đến hạn"
+	}
+}
+
+// extractStepID returns the bare step id from a scope_id that may be "disclosureID:stepID"
+// (config path) or just "stepID" (milestone path).
+func extractStepID(scopeID string) string {
+	if idx := strings.LastIndex(scopeID, ":"); idx >= 0 {
+		return scopeID[idx+1:]
+	}
+	return scopeID
+}
+
+// truncateImplementationGuide trims and caps the guide to maxChars runes (UTF-8 safe for
+// Vietnamese), appending an ellipsis when truncated. maxChars <= 0 disables capping.
+func truncateImplementationGuide(guide string, maxChars int) string {
+	guide = strings.TrimSpace(guide)
+	if maxChars <= 0 {
+		return guide
+	}
+	runes := []rune(guide)
+	if len(runes) <= maxChars {
+		return guide
+	}
+	return strings.TrimSpace(string(runes[:maxChars])) + "..."
 }
 
 func normalizeEmails(in []string) []string {

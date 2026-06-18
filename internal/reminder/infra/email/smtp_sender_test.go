@@ -151,10 +151,14 @@ func TestSender_PassThroughKey_UsesEmbedRegistry(t *testing.T) {
 		notificationregistry.NewEmbedRegistry(), notificationapp.NewEmailRenderer()))
 
 	msgID, err := sender.SendReminderEmail(context.Background(), "reminder.deadline_approaching", map[string]any{
-		"disclosure_title": "Báo cáo tài chính",
-		"company_name":     "ACME Co.",
-		"due_date":         "15/06/2026",
-		"portal_url":       "http://localhost:3000/app/disclosures/d1",
+		"recipient_name":       "Phạm Thị Lan Hương",
+		"urgency_status":       "Sắp đến hạn",
+		"disclosure_title":     "Báo cáo tài chính",
+		"company_name":         "ACME Co.",
+		"due_date":             "15/06/2026",
+		"remaining_days":       5,
+		"implementation_guide": "Tổng hợp số liệu và nộp báo cáo.",
+		"portal_url":           "http://localhost:3000/app/disclosures/d1",
 	}, []string{"a@example.com"}, "idem-1")
 	if err != nil {
 		t.Fatalf("SendReminderEmail error = %v", err)

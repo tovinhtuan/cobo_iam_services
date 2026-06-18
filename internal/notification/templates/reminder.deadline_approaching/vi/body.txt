@@ -1,14 +1,15 @@
-Kính gửi,
+Kính gửi {{.recipient_name}},
 
-Đây là thông báo nhắc nhở tự động từ hệ thống CoBo Portal.
+Hệ thống CoBo Portal xin thông báo đầu mục công việc dưới đây {{.urgency_status}} thực hiện:
 
 Công ty: {{.company_name}}
-Nghĩa vụ công bố: {{.disclosure_title}}
-Hạn nộp: {{.due_date}}
+Công việc: {{.disclosure_title}}
+Hạn chót: {{.due_date}} — Số ngày còn lại: {{.remaining_days}} ngày
 
-Vui lòng truy cập hệ thống để hoàn thành nghĩa vụ công bố thông tin trước thời hạn:
+Hướng dẫn thực hiện:
+{{.implementation_guide}}
 
-{{.portal_url}}
+Xem thêm: {{.portal_url}}
 
 Lưu ý: Email này được gửi tự động, vui lòng không trả lời trực tiếp.
 
