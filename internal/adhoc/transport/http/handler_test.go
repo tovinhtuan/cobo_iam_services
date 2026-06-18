@@ -197,3 +197,115 @@ func TestAdminApprove_ReplaysCompletedIdempotentResponse(t *testing.T) {
 		t.Fatalf("expected AdminApprove not to be called on replay, got %d", svc.adminApproveCalls)
 	}
 }
+
+// TestApproveResponse_GoldenJSONShape asserts that the wire shape of ApproveResponse
+// and ProposalDTO (embedded) contains the exact JSON keys required by the FE contract
+// (§6.8/B4, plan Phase 2 task 7). Any accidental json:"..." tag rename fails here.
+func TestApproveResponse_GoldenJSONShape(t *testing.T) {
+	t.Run("approve_response_not_finalized", func(t *testing.T) {
+		resp := adhocapp.ApproveResponse{
+			Proposal: adhocapp.ProposalDTO{
+				ProposalID: "p-001",
+				CompanyID:  "c-001",
+				Status:     adhocapp.StatusPendingFocalApproval,
+			},
+			ApprovalProgress: adhocapp.ApprovalProgressDTO{Required: 3, Completed: 2},
+			Finalized:        false,
+		}
+		data, err := json.Marshal(resp)
+		if err != nil {
+			t.Fatalf("json.Marshal failed: %v", err)
+		}
+		var m map[string]any
+		if err := json.Unmarshal(data, &m); err != nil {
+			t.Fatalf("json.Unmarshal failed: %v", err)
+		}
+		// Top-level keys required by §4.3 (not-finalized response).
+		for _, key := range []string{"proposal", "approval_progress", "finalized"} {
+			if _, ok := m[key]; !ok {
+				t.Errorf("missing required top-level key %q in approve response", key)
+			}
+		}
+		// approval_progress shape: required + completed.
+		ap, _ := m["approval_progress"].(map[string]any)
+		for _, key := range []string{"required", "completed"} {
+			if _, ok := ap[key]; !ok {
+				t.Errorf("missing key %q inside approval_progress", key)
+			}
+		}
+		// finalized must be false.
+		if fin, _ := m["finalized"].(bool); fin {
+			t.Errorf("expected finalized=false, got true")
+		}
+	})
+
+	t.Run("approve_response_finalized", func(t *testing.T) {
+		resp := adhocapp.ApproveResponse{
+			Proposal: adhocapp.ProposalDTO{
+				ProposalID: "p-001",
+				CompanyID:  "c-001",
+				Status:     adhocapp.StatusApproved,
+			},
+			ApprovalProgress:   adhocapp.ApprovalProgressDTO{Required: 3, Completed: 3},
+			Finalized:          true,
+			RecordID:           "rec-abc",
+			WorkflowInstanceID: "wf-xyz",
+		}
+		data, err := json.Marshal(resp)
+		if err != nil {
+			t.Fatalf("json.Marshal failed: %v", err)
+		}
+		var m map[string]any
+		if err := json.Unmarshal(data, &m); err != nil {
+			t.Fatalf("json.Unmarshal failed: %v", err)
+		}
+		// Top-level keys required by §4.3 (finalized response).
+		for _, key := range []string{"proposal", "approval_progress", "finalized", "record_id", "workflow_instance_id"} {
+			if _, ok := m[key]; !ok {
+				t.Errorf("missing required top-level key %q in finalized approve response", key)
+			}
+		}
+		if fin, _ := m["finalized"].(bool); !fin {
+			t.Errorf("expected finalized=true, got false")
+		}
+	})
+
+	t.Run("proposal_dto_review_state_keys", func(t *testing.T) {
+		// Verify ProposalDTO embeds reviewers/approvals/approval_progress (GET {id} shape).
+		req1 := adhocapp.ApprovalProgressDTO{Required: 2, Completed: 1}
+		dto := adhocapp.ProposalDTO{
+			ProposalID: "p-001",
+			CompanyID:  "c-001",
+			Status:     adhocapp.StatusPendingFocalApproval,
+			Reviewers: []adhocapp.ReviewerDTO{
+				{MembershipID: "m-001", FullName: "Alice"},
+			},
+			Approvals: []adhocapp.ApprovalDTO{
+				{MembershipID: "m-002"},
+			},
+			ApprovalProgress: &req1,
+		}
+		data, err := json.Marshal(dto)
+		if err != nil {
+			t.Fatalf("json.Marshal ProposalDTO failed: %v", err)
+		}
+		var m map[string]any
+		if err := json.Unmarshal(data, &m); err != nil {
+			t.Fatalf("json.Unmarshal failed: %v", err)
+		}
+		for _, key := range []string{"reviewers", "approvals", "approval_progress"} {
+			if _, ok := m[key]; !ok {
+				t.Errorf("missing key %q in ProposalDTO JSON (GET {id} shape)", key)
+			}
+		}
+		// reviewer shape: membership_id.
+		reviewers, _ := m["reviewers"].([]any)
+		if len(reviewers) != 1 {
+			t.Fatalf("expected 1 reviewer, got %d", len(reviewers))
+		}
+		rev0, _ := reviewers[0].(map[string]any)
+		if _, ok := rev0["membership_id"]; !ok {
+			t.Errorf("missing key membership_id in ReviewerDTO")
+		}
+	})
+}

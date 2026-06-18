@@ -193,9 +193,27 @@ func (s *service) SubmitProposal(ctx context.Context, req ProposalActionRequest)
 	}
 	snap := s.enrichProposalForNotification(ctx, *updated)
 	if s.notifier != nil && s.membershipValidator != nil {
+		// Phase 5: for v3 proposals (reviewer list already loaded above), send targeted
+		// notifications to only the assigned reviewers — not a broadcast to all focal_review
+		// holders (plan §6.8, NotifyReviewersForReview). Legacy proposals without an
+		// explicit reviewers table fall back to the broadcast (NotifyFocalsForReview).
 		safeNotify(snap.ProposalID, func() {
-			if focals, err := s.membershipValidator.ListMembersWithPermissionFull(ctx, snap.CompanyID, "ad_hoc_alert.focal_review"); err == nil {
-				s.notifier.NotifyFocalsForReview(ctx, snap, focals)
+			if len(reviewers) > 0 {
+				// v3 path: resolve UserID for each assigned reviewer then notify.
+				var members []MemberInfo
+				for _, r := range reviewers {
+					if m, err := s.membershipValidator.ResolveMembership(ctx, snap.CompanyID, r.MembershipID); err == nil && m != nil {
+						members = append(members, *m)
+					}
+				}
+				if len(members) > 0 {
+					s.notifier.NotifyReviewersForReview(ctx, snap, members)
+				}
+			} else {
+				// Legacy fallback: broadcast to all focal_review holders.
+				if focals, err := s.membershipValidator.ListMembersWithPermissionFull(ctx, snap.CompanyID, "ad_hoc_alert.focal_review"); err == nil {
+					s.notifier.NotifyFocalsForReview(ctx, snap, focals)
+				}
 			}
 		})
 	}
@@ -651,12 +669,26 @@ func (s *service) FinalizeLegacyApproval(ctx context.Context, sub Subject, compa
 	if err != nil {
 		return err
 	}
+	// §5.3 field mapping: use proposed dates as final dates (no human override
+	// in migration path), fixed adjustment note for audit trail, and a
+	// deterministic idempotency key so a repeated call is a safe no-op.
+	var finalT0, finalDeadline string
+	if cur.ProposedT0Date != nil {
+		finalT0 = *cur.ProposedT0Date
+	}
+	if cur.ProposedDeadlineDate != nil {
+		finalDeadline = *cur.ProposedDeadlineDate
+	}
 	// AdminApprove's identity check requires Subject.MembershipID == the
 	// designated process controller; ActorUserID still records the real actor
 	// (the platform admin running this migration) for audit purposes.
 	_, err = s.AdminApprove(ctx, AdminApproveRequest{
-		Subject:    Subject{UserID: sub.UserID, MembershipID: cur.ProcessControllerID, CompanyID: companyID},
-		ProposalID: proposalID,
+		Subject:        Subject{UserID: sub.UserID, MembershipID: cur.ProcessControllerID, CompanyID: companyID},
+		ProposalID:     proposalID,
+		IdempotencyKey: "migration-0098:" + proposalID,
+		FinalT0Date:    finalT0,
+		FinalDeadlineDate: finalDeadline,
+		AdjustmentNote: "Auto-approved by migration 0098 (D9)",
 	})
 	return err
 }

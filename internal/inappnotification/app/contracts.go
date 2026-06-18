@@ -75,9 +75,14 @@ const (
 
 	KindAdhocFocalReviewRequested      = "adhoc.focal_review_requested"
 	KindAdhocControllerReviewRequested = "adhoc.controller_review_requested"
-	KindAdhocProposalApproved          = "adhoc.proposal_approved"
-	KindAdhocProposalRejected          = "adhoc.proposal_rejected"
-	ResourceTypeAdHocProposal          = "ad_hoc_proposal"
+	// KindAdhocReviewerReviewRequested is sent to each individually assigned reviewer
+	// (v3 multi-reviewer flow). Additive — does NOT replace KindAdhocFocalReviewRequested
+	// which is kept for backward compatibility (plan §6.8/B2).
+	KindAdhocReviewerReviewRequested    = "adhoc.reviewer_review_requested"
+
+	KindAdhocProposalApproved           = "adhoc.proposal_approved"
+	KindAdhocProposalRejected           = "adhoc.proposal_rejected"
+	ResourceTypeAdHocProposal           = "ad_hoc_proposal"
 )
 
 const listLimit = 20

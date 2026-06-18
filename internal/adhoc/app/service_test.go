@@ -818,6 +818,9 @@ type panicNotifier struct{}
 func (panicNotifier) NotifyFocalsForReview(_ context.Context, _ ProposalDTO, _ []MemberInfo) {
 	panic("R-2 test: NotifyFocalsForReview panic")
 }
+func (panicNotifier) NotifyReviewersForReview(_ context.Context, _ ProposalDTO, _ []MemberInfo) {
+	panic("R-2 test: NotifyReviewersForReview panic")
+}
 func (panicNotifier) NotifyControllerForReview(_ context.Context, _ ProposalDTO, _ MemberInfo) {
 	panic("R-2 test: NotifyControllerForReview panic")
 }

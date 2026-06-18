@@ -103,6 +103,32 @@ func (n *AdhocProposalNotifier) NotifyFocalsForReview(ctx context.Context, propo
 	}
 }
 
+// NotifyReviewersForReview sends targeted notifications to the assigned reviewers of a v3
+// multi-reviewer proposal (plan Phase 5). Uses KindAdhocReviewerReviewRequested — additive,
+// does NOT replace KindAdhocFocalReviewRequested (plan §6.8/B2).
+func (n *AdhocProposalNotifier) NotifyReviewersForReview(ctx context.Context, proposal adhocapp.ProposalDTO, reviewers []adhocapp.MemberInfo) {
+	resType := inappapp.ResourceTypeAdHocProposal
+	resID := proposal.ProposalID
+	title := "Đề xuất cần duyệt"
+	body := shortNote(proposal.ChangeNote)
+	for _, r := range reviewers {
+		if r.UserID != "" {
+			if err := n.inApp.CreateForUser(ctx, r.UserID, proposal.CompanyID,
+				inappapp.KindAdhocReviewerReviewRequested, title, body, &resType, &resID); err != nil {
+				n.log.Warn("adhoc notifier: create in-app (reviewer) failed",
+					slog.String("proposal_id", proposal.ProposalID),
+					slog.String("user_id", r.UserID),
+					slog.String("err", err.Error()))
+			}
+		}
+		if r.Email != "" {
+			n.sendEmail(ctx, r.Email, "adhoc.focal_review_requested",
+				n.focalReviewVars(proposal, r), proposal.ProposalID, "reviewer",
+				"reviewer_review_requested", r.MembershipID, proposal.CompanyID)
+		}
+	}
+}
+
 func (n *AdhocProposalNotifier) NotifyControllerForReview(ctx context.Context, proposal adhocapp.ProposalDTO, controller adhocapp.MemberInfo) {
 	resType := inappapp.ResourceTypeAdHocProposal
 	resID := proposal.ProposalID

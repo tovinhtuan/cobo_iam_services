@@ -297,6 +297,9 @@ var GrantablePermissions = []string{
 	"template.workflow.override.approve",
 	"template.workflow.override.reset",
 	"ad_hoc_alert.propose",
+	// ad_hoc_alert.focal_review: "Duyệt cảnh báo bất thường" — allows a membership to be
+	// assigned as a reviewer on ad-hoc proposals (v3 D8, plan §7 Phase 3).
+	"ad_hoc_alert.focal_review",
 	"disclosure_type.manage",
 }
 

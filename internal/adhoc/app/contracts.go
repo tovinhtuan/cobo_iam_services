@@ -129,7 +129,13 @@ type MemberInfo struct {
 // ProposalNotifier dispatches in-app and email notifications after proposal state transitions.
 // All methods are fire-and-forget: implementations log errors but must never propagate them.
 type ProposalNotifier interface {
+	// NotifyFocalsForReview broadcasts to every member with ad_hoc_alert.focal_review.
+	// Kept for backward compatibility (plan §6.8/B2); used by the legacy submit path.
 	NotifyFocalsForReview(ctx context.Context, proposal ProposalDTO, focals []MemberInfo)
+	// NotifyReviewersForReview sends targeted notifications to only the assigned reviewers
+	// of a v3 multi-reviewer proposal (plan Phase 5). Supersedes NotifyFocalsForReview for
+	// proposals that have an explicit reviewers[] list.
+	NotifyReviewersForReview(ctx context.Context, proposal ProposalDTO, reviewers []MemberInfo)
 	NotifyControllerForReview(ctx context.Context, proposal ProposalDTO, controller MemberInfo)
 	NotifyCreatorApproved(ctx context.Context, proposal ProposalDTO, creator MemberInfo)
 	NotifyCreatorRejected(ctx context.Context, proposal ProposalDTO, creator MemberInfo)

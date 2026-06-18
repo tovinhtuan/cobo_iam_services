@@ -272,8 +272,10 @@ func (h *Handler) cancel(w http.ResponseWriter, r *http.Request) {
 
 // migrateLegacyApprovals is the one-time migration endpoint (§6.7/A1, A2):
 // finds every proposal stuck at pending_admin_approval (cross-company) and
-// auto-finalizes each via the legacy AdminApprove path. Best-effort per row —
-// one failure does not abort the remaining rows (C2).
+// auto-finalizes each via the legacy AdminApprove path. Per plan §6.7/A1 and
+// §12.3: stops immediately at the first error — does NOT continue remaining rows.
+// The endpoint is idempotent (deterministic IdempotencyKey per §5.3), so it
+// is safe to call again after fixing the failure.
 func (h *Handler) migrateLegacyApprovals(w http.ResponseWriter, r *http.Request) {
 	sub, err := h.subjectFromToken(r)
 	if err != nil {
@@ -285,22 +287,26 @@ func (h *Handler) migrateLegacyApprovals(w http.ResponseWriter, r *http.Request)
 		httpx.WriteError(w, h.log, err)
 		return
 	}
-	results := make([]map[string]any, 0, len(rows))
+	processed := 0
 	for _, row := range rows {
-		entry := map[string]any{"proposal_id": row.ProposalID, "company_id": row.CompanyID}
 		if err := h.svc.FinalizeLegacyApproval(r.Context(), sub, row.CompanyID, row.ProposalID); err != nil {
-			entry["status"] = "failed"
-			entry["error"] = err.Error()
 			h.log.Error("adhoc_migrate_legacy_approval_failed",
 				slog.String("proposal_id", row.ProposalID),
 				slog.String("company_id", row.CompanyID),
 				slog.Any("error", err))
-		} else {
-			entry["status"] = "finalized"
+			httpx.WriteJSON(w, http.StatusOK, map[string]any{
+				"processed":              processed,
+				"stopped_at_proposal_id": row.ProposalID,
+				"error":                  err.Error(),
+			})
+			return
 		}
-		results = append(results, entry)
+		processed++
 	}
-	httpx.WriteJSON(w, http.StatusOK, map[string]any{"items": results, "total": len(results)})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"processed":              processed,
+		"stopped_at_proposal_id": nil,
+	})
 }
 
 func (h *Handler) subjectFromToken(r *http.Request) (adhocapp.Subject, error) {
