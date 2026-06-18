@@ -36,13 +36,19 @@ func (r *Repository) Insert(ctx context.Context, p adhocapp.ProposalDTO) (*adhoc
 		return nil, fmt.Errorf("check ad_hoc_proposals schema: %w", err)
 	}
 
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
 	embedDays := p.ProposedDeadlineDays
 	if hasDaysCol {
 		overridesJSON, mErr := marshalProposedWorkflowJSON(p.StepOverrides, nil)
 		if mErr != nil {
 			return nil, fmt.Errorf("marshal step_overrides: %w", mErr)
 		}
-		_, err = r.db.ExecContext(ctx, `
+		_, err = tx.ExecContext(ctx, `
 			INSERT INTO ad_hoc_proposals
 				(proposal_id, company_id, type_id, status, proposed_workflow_json, proposed_t0_date,
 				 proposed_deadline_date, proposed_deadline_days, change_note, created_by, process_controller_id)
@@ -55,7 +61,7 @@ func (r *Repository) Insert(ctx context.Context, p adhocapp.ProposalDTO) (*adhoc
 		if mErr != nil {
 			return nil, fmt.Errorf("marshal step_overrides: %w", mErr)
 		}
-		_, err = r.db.ExecContext(ctx, `
+		_, err = tx.ExecContext(ctx, `
 			INSERT INTO ad_hoc_proposals
 				(proposal_id, company_id, type_id, status, proposed_workflow_json, proposed_t0_date,
 				 proposed_deadline_date, change_note, created_by, process_controller_id)
@@ -66,6 +72,19 @@ func (r *Repository) Insert(ctx context.Context, p adhocapp.ProposalDTO) (*adhoc
 	}
 	if err != nil {
 		return nil, fmt.Errorf("insert ad_hoc_proposal: %w", err)
+	}
+
+	for i, membershipID := range p.ReviewerMembershipIDs {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO ad_hoc_proposal_reviewers (proposal_id, company_id, membership_id, sort_order)
+			VALUES (?, ?, ?, ?)
+		`, p.ProposalID, p.CompanyID, membershipID, i); err != nil {
+			return nil, fmt.Errorf("insert ad_hoc_proposal_reviewer: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, err
 	}
 	return r.FindByID(ctx, p.CompanyID, p.ProposalID)
 }
@@ -265,6 +284,235 @@ func (r *Repository) CompleteAdminApproval(ctx context.Context, upd adhocapp.Sta
 	}
 	dto, err := r.FindByID(ctx, upd.CompanyID, upd.ProposalID)
 	return dto, true, err
+}
+
+// ReserveVote is Phase A of §6.5: a single FOR UPDATE transaction that records
+// one reviewer's vote (idempotently — a repeat vote from the same reviewer is
+// not double-counted) and reports whether this was the last outstanding vote.
+func (r *Repository) ReserveVote(ctx context.Context, in adhocapp.ReserveVoteInput) (*adhocapp.VoteReservation, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	cols, includeDays, err := r.proposalDetailColumns(ctx)
+	if err != nil {
+		return nil, err
+	}
+	row := tx.QueryRowContext(ctx, `
+		SELECT `+cols+`
+		FROM ad_hoc_proposals
+		WHERE proposal_id = ? AND company_id = ?
+		FOR UPDATE
+	`, in.ProposalID, in.CompanyID)
+	p, err := scanProposalRow(row, includeDays)
+	if err != nil {
+		return nil, err
+	}
+
+	if p.Status != adhocapp.StatusApproved && p.Status != adhocapp.StatusPendingFocalApproval {
+		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "proposal is not pending focal approval", nil)
+	}
+
+	var assigned int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COUNT(1) FROM ad_hoc_proposal_reviewers WHERE proposal_id = ? AND company_id = ? AND membership_id = ?
+	`, in.ProposalID, in.CompanyID, in.ActorMembershipID).Scan(&assigned); err != nil {
+		return nil, fmt.Errorf("check assigned reviewer: %w", err)
+	}
+	if assigned == 0 {
+		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "actor is not an assigned reviewer for this proposal", nil)
+	}
+
+	if p.Status == adhocapp.StatusApproved {
+		// Already finalized — idempotent replay (EV-2). Caller distinguishes via
+		// Proposal.Status; Required/Completed are best-effort context only.
+		required, completed, cErr := countReviewersAndApprovals(ctx, tx, in.ProposalID, in.CompanyID)
+		if cErr != nil {
+			return nil, cErr
+		}
+		if err := tx.Commit(); err != nil {
+			return nil, err
+		}
+		return &adhocapp.VoteReservation{Proposal: p, Required: required, Completed: completed, ActorMembershipID: in.ActorMembershipID, ActorUserID: in.ActorUserID}, nil
+	}
+
+	// Insert-if-not-voted (last-writer-wins on the optional adjustment fields if
+	// the same reviewer calls Approve twice before finalize).
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO ad_hoc_proposal_approvals
+			(proposal_id, company_id, membership_id, approved_at, final_t0_date, final_deadline_date, adjustment_note, comment)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		ON DUPLICATE KEY UPDATE
+			approved_at = VALUES(approved_at),
+			final_t0_date = VALUES(final_t0_date),
+			final_deadline_date = VALUES(final_deadline_date),
+			adjustment_note = VALUES(adjustment_note),
+			comment = VALUES(comment)
+	`, in.ProposalID, in.CompanyID, in.ActorMembershipID, time.Now().UTC(),
+		nullableStr(in.FinalT0Date), nullableStr(in.FinalDeadlineDate), nullIfBlank(in.AdjustmentNote), nullIfBlank(in.Comment))
+	if err != nil {
+		return nil, fmt.Errorf("insert ad_hoc_proposal_approval: %w", err)
+	}
+
+	required, completed, err := countReviewersAndApprovals(ctx, tx, in.ProposalID, in.CompanyID)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+
+	return &adhocapp.VoteReservation{
+		Proposal:              p,
+		IsLastVote:            completed >= required,
+		Required:              required,
+		Completed:             completed,
+		ActorMembershipID:     in.ActorMembershipID,
+		ActorUserID:           in.ActorUserID,
+		LastFinalT0Date:       in.FinalT0Date,
+		LastFinalDeadlineDate: in.FinalDeadlineDate,
+		LastAdjustmentNote:    in.AdjustmentNote,
+	}, nil
+}
+
+func countReviewersAndApprovals(ctx context.Context, tx *sql.Tx, proposalID, companyID string) (required, completed int, err error) {
+	if err = tx.QueryRowContext(ctx, `
+		SELECT COUNT(1) FROM ad_hoc_proposal_reviewers WHERE proposal_id = ? AND company_id = ?
+	`, proposalID, companyID).Scan(&required); err != nil {
+		return 0, 0, fmt.Errorf("count reviewers: %w", err)
+	}
+	if err = tx.QueryRowContext(ctx, `
+		SELECT COUNT(1) FROM ad_hoc_proposal_approvals WHERE proposal_id = ? AND company_id = ?
+	`, proposalID, companyID).Scan(&completed); err != nil {
+		return 0, 0, fmt.Errorf("count approvals: %w", err)
+	}
+	return required, completed, nil
+}
+
+// CompleteFinalize is Phase C of §6.5 — mirrors CompleteAdminApproval but
+// keyed on FromStatus=pending_focal_approval with no idempotency-key complexity
+// (finalize-retry safety instead comes from the deterministic RecordID, ADR-1B).
+func (r *Repository) CompleteFinalize(ctx context.Context, upd adhocapp.StatusUpdate) (*adhocapp.ProposalDTO, bool, error) {
+	now := time.Now().UTC()
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE ad_hoc_proposals
+		SET status = ?, admin_approved_by = ?, admin_approved_at = ?,
+		    record_id = NULLIF(?, ''), workflow_instance_id = NULLIF(?, ''),
+		    final_t0_date = ?, final_deadline_date = ?, adjustment_note = ?, updated_at = ?
+		WHERE proposal_id = ? AND company_id = ? AND status = ?
+	`, upd.Status, upd.ActorMembershipID, now, upd.RecordID, upd.WorkflowInstanceID,
+		nullableStr(upd.FinalT0Date), nullableStr(upd.FinalDeadlineDate), nullIfBlank(upd.AdjustmentNote), now,
+		upd.ProposalID, upd.CompanyID, upd.FromStatus)
+	if err != nil {
+		return nil, false, fmt.Errorf("complete finalize: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		// EV-2/EV-3 disambiguation: guarded UPDATE matched no row — re-read to
+		// distinguish an idempotent replay (already approved by a concurrent
+		// finalize) from a genuine conflict.
+		cur, findErr := r.FindByID(ctx, upd.CompanyID, upd.ProposalID)
+		if findErr != nil {
+			return nil, false, findErr
+		}
+		if cur.Status == adhocapp.StatusApproved {
+			return cur, false, nil
+		}
+		return nil, false, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "proposal cannot be finalized in current state", nil)
+	}
+	dto, err := r.FindByID(ctx, upd.CompanyID, upd.ProposalID)
+	return dto, true, err
+}
+
+func (r *Repository) IsAssignedReviewer(ctx context.Context, companyID, proposalID, membershipID string) (bool, error) {
+	var count int
+	err := r.db.QueryRowContext(ctx, `
+		SELECT COUNT(1) FROM ad_hoc_proposal_reviewers WHERE proposal_id = ? AND company_id = ? AND membership_id = ?
+	`, proposalID, companyID, membershipID).Scan(&count)
+	if err != nil {
+		return false, fmt.Errorf("check assigned reviewer: %w", err)
+	}
+	return count > 0, nil
+}
+
+func (r *Repository) ListReviewers(ctx context.Context, companyID, proposalID string) ([]adhocapp.ReviewerDTO, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT rv.membership_id, COALESCE(u.full_name, ''), COALESCE(NULLIF(TRIM(u.email), ''), u.login_id)
+		FROM ad_hoc_proposal_reviewers rv
+		LEFT JOIN memberships m ON m.membership_id = rv.membership_id
+		LEFT JOIN users u ON u.user_id = m.user_id
+		WHERE rv.proposal_id = ? AND rv.company_id = ?
+		ORDER BY rv.sort_order, rv.membership_id
+	`, proposalID, companyID)
+	if err != nil {
+		return nil, fmt.Errorf("list reviewers: %w", err)
+	}
+	defer rows.Close()
+
+	var out []adhocapp.ReviewerDTO
+	for rows.Next() {
+		var d adhocapp.ReviewerDTO
+		if err := rows.Scan(&d.MembershipID, &d.FullName, &d.Email); err != nil {
+			return nil, fmt.Errorf("scan reviewer: %w", err)
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repository) ListApprovals(ctx context.Context, companyID, proposalID string) ([]adhocapp.ApprovalDTO, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT membership_id, approved_at, final_t0_date, final_deadline_date, COALESCE(adjustment_note, ''), COALESCE(comment, '')
+		FROM ad_hoc_proposal_approvals
+		WHERE proposal_id = ? AND company_id = ?
+		ORDER BY approved_at
+	`, proposalID, companyID)
+	if err != nil {
+		return nil, fmt.Errorf("list approvals: %w", err)
+	}
+	defer rows.Close()
+
+	var out []adhocapp.ApprovalDTO
+	for rows.Next() {
+		var d adhocapp.ApprovalDTO
+		var finalT0, finalDeadline sql.NullString
+		if err := rows.Scan(&d.MembershipID, &d.ApprovedAt, &finalT0, &finalDeadline, &d.AdjustmentNote, &d.Comment); err != nil {
+			return nil, fmt.Errorf("scan approval: %w", err)
+		}
+		if finalT0.Valid {
+			d.FinalT0Date = &finalT0.String
+		}
+		if finalDeadline.Valid {
+			d.FinalDeadlineDate = &finalDeadline.String
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+// ListPendingAdminApproval scans across all companies (no tenant scoping) for
+// the one-time legacy migration endpoint (§6.7/A1).
+func (r *Repository) ListPendingAdminApproval(ctx context.Context) ([]adhocapp.PendingApprovalRow, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT proposal_id, company_id FROM ad_hoc_proposals WHERE status = ?
+	`, adhocapp.StatusPendingAdminApproval)
+	if err != nil {
+		return nil, fmt.Errorf("list pending admin approval: %w", err)
+	}
+	defer rows.Close()
+
+	var out []adhocapp.PendingApprovalRow
+	for rows.Next() {
+		var row adhocapp.PendingApprovalRow
+		if err := rows.Scan(&row.ProposalID, &row.CompanyID); err != nil {
+			return nil, fmt.Errorf("scan pending approval row: %w", err)
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
 }
 
 func (r *Repository) List(ctx context.Context, companyID string, statusFilter []string, page, pageSize int) ([]adhocapp.ProposalDTO, int, error) {

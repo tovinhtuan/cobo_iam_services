@@ -18,17 +18,38 @@ const (
 type Service interface {
 	CreateProposal(ctx context.Context, req CreateProposalRequest) (*ProposalDTO, error)
 	SubmitProposal(ctx context.Context, req ProposalActionRequest) (*ProposalDTO, error)
-	FocalApprove(ctx context.Context, req ProposalActionRequest) (*ProposalDTO, error)
+	// Approve replaces FocalApprove for the one-round multi-reviewer flow (v3 D1/D3/D4).
+	Approve(ctx context.Context, req ApproveRequest) (*ApproveResponse, error)
+	// AdminApprove is kept unchanged for the legacy two-round flow.
+	//
+	// @deprecated: serves only (1) legacy clients still calling POST .../admin-approve
+	// directly, and (2) FinalizeLegacyApproval's internal reuse for the one-time
+	// migration endpoint. Do not call from any new code path. Removed only once
+	// both conditions in the migration runbook (§12.5) are satisfied.
 	AdminApprove(ctx context.Context, req AdminApproveRequest) (*AdminApproveResponse, error)
 	Reject(ctx context.Context, req RejectRequest) (*ProposalDTO, error)
 	Cancel(ctx context.Context, req ProposalActionRequest) (*ProposalDTO, error)
 	GetProposal(ctx context.Context, req GetProposalRequest) (*ProposalDTO, error)
 	ListProposals(ctx context.Context, req ListProposalsRequest) (*ListProposalsResponse, error)
-	ListEligibleControllers(ctx context.Context, req ListEligibleControllersRequest) ([]EligibleController, error)
+	ListEligibleReviewers(ctx context.Context, req ListEligibleReviewersRequest) ([]EligibleController, error)
+	// FinalizeLegacyApproval is a thin wrapper around AdminApprove (field-mapped per
+	// §5.3) used by the temporary migration endpoint to auto-finalize proposals stuck
+	// at pending_admin_approval. Gated internally on rbac.manage.
+	FinalizeLegacyApproval(ctx context.Context, sub Subject, companyID, proposalID string) error
+	// ListPendingLegacyApprovals is gated on rbac.manage (platform admin only) since
+	// it scans across all companies.
+	ListPendingLegacyApprovals(ctx context.Context, sub Subject) ([]PendingApprovalRow, error)
 }
 
-type ListEligibleControllersRequest struct {
+type ListEligibleReviewersRequest struct {
 	Subject Subject
+}
+
+// PendingApprovalRow identifies a proposal still stuck at pending_admin_approval,
+// for the one-time legacy migration endpoint (§6.7/A1).
+type PendingApprovalRow struct {
+	ProposalID string
+	CompanyID  string
 }
 
 type Repository interface {
@@ -44,6 +65,20 @@ type Repository interface {
 	// The bool return ("applied") follows the same EV-1/EV-2 contract as UpdateStatus.
 	CompleteAdminApproval(ctx context.Context, upd StatusUpdate, idemKey string) (*ProposalDTO, bool, error)
 	List(ctx context.Context, companyID string, statusFilter []string, page, pageSize int) ([]ProposalDTO, int, error)
+
+	// ReserveVote casts one reviewer's vote inside a single FOR UPDATE transaction
+	// (Phase A of §6.5). Returns 403 (not assigned) / 409 (wrong status) as errors.
+	ReserveVote(ctx context.Context, in ReserveVoteInput) (*VoteReservation, error)
+	// CompleteFinalize is Phase C of §6.5 — the guarded UPDATE that transitions
+	// pending_focal_approval -> approved. The bool return follows the EV-1/EV-2
+	// contract above.
+	CompleteFinalize(ctx context.Context, upd StatusUpdate) (*ProposalDTO, bool, error)
+	IsAssignedReviewer(ctx context.Context, companyID, proposalID, membershipID string) (bool, error)
+	ListReviewers(ctx context.Context, companyID, proposalID string) ([]ReviewerDTO, error)
+	ListApprovals(ctx context.Context, companyID, proposalID string) ([]ApprovalDTO, error)
+	// ListPendingAdminApproval scans across all companies (no tenant scoping) for
+	// the one-time legacy migration endpoint (§6.7/A1).
+	ListPendingAdminApproval(ctx context.Context) ([]PendingApprovalRow, error)
 }
 
 type TypeCatalog interface {
@@ -169,14 +204,91 @@ type WorkflowStepOverride struct {
 }
 
 type CreateProposalRequest struct {
-	Subject                       Subject
-	TypeID                        string                 `json:"type_id"`
-	StepOverrides                 []WorkflowStepOverride `json:"step_overrides"`
-	ProposedT0Date                string                 `json:"proposed_t0_date,omitempty"` // YYYY-MM-DD
-	ProposedDeadlineDays          int                    `json:"proposed_deadline_days,omitempty"`
-	ProposedDeadline              string                 `json:"proposed_deadline_date,omitempty"` // YYYY-MM-DD or legacy day count string
-	ChangeNote                    string                 `json:"change_note,omitempty"`
-	ProcessControllerMembershipID string                 `json:"process_controller_membership_id,omitempty"`
+	Subject               Subject
+	TypeID                string                 `json:"type_id"`
+	StepOverrides         []WorkflowStepOverride `json:"step_overrides"`
+	ProposedT0Date        string                 `json:"proposed_t0_date,omitempty"` // YYYY-MM-DD
+	ProposedDeadlineDays  int                    `json:"proposed_deadline_days,omitempty"`
+	ProposedDeadline      string                 `json:"proposed_deadline_date,omitempty"` // YYYY-MM-DD or legacy day count string
+	ChangeNote            string                 `json:"change_note,omitempty"`
+	ReviewerMembershipIDs []string               `json:"reviewer_membership_ids,omitempty"`
+	// ProcessControllerMembershipID is the deprecated single-reviewer field (A6
+	// backward-compat alias). Used only when ReviewerMembershipIDs is empty.
+	ProcessControllerMembershipID string `json:"process_controller_membership_id,omitempty"`
+}
+
+// ApproveRequest is the wire body for POST .../approve (replaces focal-approve).
+type ApproveRequest struct {
+	Subject           Subject
+	ProposalID        string
+	FinalT0Date       string `json:"final_t0_date,omitempty"`       // YYYY-MM-DD
+	FinalDeadlineDate string `json:"final_deadline_date,omitempty"` // YYYY-MM-DD
+	AdjustmentNote    string `json:"adjustment_note,omitempty"`
+	Comment           string `json:"comment,omitempty"`
+}
+
+type ApprovalProgressDTO struct {
+	Required  int `json:"required"`
+	Completed int `json:"completed"`
+}
+
+type ApproveResponse struct {
+	Proposal           ProposalDTO         `json:"proposal"`
+	ApprovalProgress   ApprovalProgressDTO `json:"approval_progress"`
+	Finalized          bool                `json:"finalized"`
+	RecordID           string              `json:"record_id,omitempty"`
+	WorkflowInstanceID string              `json:"workflow_instance_id,omitempty"`
+}
+
+// ReviewerDTO is one assigned reviewer, embedded in ProposalDTO.Reviewers.
+type ReviewerDTO struct {
+	MembershipID string `json:"membership_id"`
+	FullName     string `json:"full_name,omitempty"`
+	Email        string `json:"email,omitempty"`
+}
+
+// ApprovalDTO is one cast vote, embedded in ProposalDTO.Approvals.
+type ApprovalDTO struct {
+	MembershipID      string    `json:"membership_id"`
+	ApprovedAt        time.Time `json:"approved_at"`
+	FinalT0Date       *string   `json:"final_t0_date,omitempty"`
+	FinalDeadlineDate *string   `json:"final_deadline_date,omitempty"`
+	AdjustmentNote    string    `json:"adjustment_note,omitempty"`
+	Comment           string    `json:"comment,omitempty"`
+}
+
+// ReserveVoteInput is the input to Repository.ReserveVote (Phase A of §6.5).
+type ReserveVoteInput struct {
+	CompanyID         string
+	ProposalID        string
+	ActorMembershipID string
+	ActorUserID       string
+	FinalT0Date       *string
+	FinalDeadlineDate *string
+	AdjustmentNote    string
+	Comment           string
+}
+
+// VoteReservation is the result of Repository.ReserveVote. IsLastVote is true
+// when, after this call, completed == required and the proposal is still
+// pending_focal_approval — callers must attempt finalizeApprovedProposal,
+// including on safe retry after a prior finalize failure (§6.5 test #3).
+type VoteReservation struct {
+	Proposal              *ProposalDTO
+	IsLastVote            bool
+	Required              int
+	Completed             int
+	ActorMembershipID     string
+	ActorUserID           string
+	LastFinalT0Date       *string
+	LastFinalDeadlineDate *string
+	LastAdjustmentNote    string
+}
+
+// FinalizeResult is the outcome of finalizeApprovedProposal (Phase B+C of §6.5).
+type FinalizeResult struct {
+	RecordID           string
+	WorkflowInstanceID string
 }
 
 type ProposalActionRequest struct {
@@ -275,6 +387,19 @@ type ProposalDTO struct {
 	ProcessControllerID  string                 `json:"process_controller_id,omitempty"`
 	CreatedAt            time.Time              `json:"created_at"`
 	UpdatedAt            time.Time              `json:"updated_at"`
+
+	// Reviewers, Approvals, ApprovalProgress are embedded by the service layer
+	// (GetProposal/ListProposals) — never populated directly by the repository's
+	// FindByID/List scan. ApprovalProgress is a pointer so it is omitted entirely
+	// when not enriched, instead of rendering as required:0/completed:0.
+	Reviewers        []ReviewerDTO        `json:"reviewers,omitempty"`
+	Approvals        []ApprovalDTO        `json:"approvals,omitempty"`
+	ApprovalProgress *ApprovalProgressDTO `json:"approval_progress,omitempty"`
+
+	// ReviewerMembershipIDs is a transient, create-time-only field: the reviewer
+	// IDs to persist into ad_hoc_proposal_reviewers when this DTO is passed to
+	// Repository.Insert. Never read back from the DB; not part of the wire DTO.
+	ReviewerMembershipIDs []string `json:"-"`
 }
 
 // StatusUpdate carries fields for a state transition update.

@@ -28,24 +28,32 @@ func NewHandler(log *slog.Logger, svc adhocapp.Service, inspector iamapp.TokenIn
 }
 
 func (h *Handler) Register(mux *http.ServeMux) {
-	mux.HandleFunc("GET /api/v1/company/ad-hoc-proposals/eligible-controllers", h.listEligibleControllers)
+	// eligible-reviewers is the v3 primary route name; eligible-controllers is
+	// kept as a deprecated alias pointing at the same renamed handler.
+	mux.HandleFunc("GET /api/v1/company/ad-hoc-proposals/eligible-reviewers", h.listEligibleReviewers)
+	mux.HandleFunc("GET /api/v1/company/ad-hoc-proposals/eligible-controllers", h.listEligibleReviewers)
 	mux.HandleFunc("POST /api/v1/company/ad-hoc-proposals", h.createProposal)
 	mux.HandleFunc("GET /api/v1/company/ad-hoc-proposals", h.listProposals)
 	mux.HandleFunc("GET /api/v1/company/ad-hoc-proposals/{proposal_id}", h.getProposal)
 	mux.HandleFunc("POST /api/v1/company/ad-hoc-proposals/{proposal_id}/submit", h.submitProposal)
+	mux.HandleFunc("POST /api/v1/company/ad-hoc-proposals/{proposal_id}/approve", h.approve)
+	// focal-approve is deprecated -> proxies straight to approve (v3 D1/D3).
 	mux.HandleFunc("POST /api/v1/company/ad-hoc-proposals/{proposal_id}/focal-approve", h.focalApprove)
 	mux.HandleFunc("POST /api/v1/company/ad-hoc-proposals/{proposal_id}/admin-approve", h.adminApprove)
 	mux.HandleFunc("POST /api/v1/company/ad-hoc-proposals/{proposal_id}/reject", h.reject)
 	mux.HandleFunc("POST /api/v1/company/ad-hoc-proposals/{proposal_id}/cancel", h.cancel)
+	// One-time legacy migration endpoint (§6.7/A1) — platform admin only,
+	// self-gated on rbac.manage inside the service layer.
+	mux.HandleFunc("POST /api/v1/platform/cms/admin/ops/adhoc-migrate-legacy-approvals", h.migrateLegacyApprovals)
 }
 
-func (h *Handler) listEligibleControllers(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) listEligibleReviewers(w http.ResponseWriter, r *http.Request) {
 	sub, err := h.subjectFromToken(r)
 	if err != nil {
 		httpx.WriteError(w, h.log, err)
 		return
 	}
-	items, err := h.svc.ListEligibleControllers(r.Context(), adhocapp.ListEligibleControllersRequest{Subject: sub})
+	items, err := h.svc.ListEligibleReviewers(r.Context(), adhocapp.ListEligibleReviewersRequest{Subject: sub})
 	if err != nil {
 		httpx.WriteError(w, h.log, err)
 		return
@@ -139,16 +147,22 @@ func (h *Handler) submitProposal(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, resp)
 }
 
-func (h *Handler) focalApprove(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) approve(w http.ResponseWriter, r *http.Request) {
 	sub, err := h.subjectFromToken(r)
 	if err != nil {
 		httpx.WriteError(w, h.log, err)
 		return
 	}
-	resp, err := h.svc.FocalApprove(r.Context(), adhocapp.ProposalActionRequest{
-		Subject:    sub,
-		ProposalID: strings.TrimSpace(r.PathValue("proposal_id")),
-	})
+	var body adhocapp.ApproveRequest
+	if r.ContentLength > 0 {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			httpx.WriteError(w, h.log, err)
+			return
+		}
+	}
+	body.Subject = sub
+	body.ProposalID = strings.TrimSpace(r.PathValue("proposal_id"))
+	resp, err := h.svc.Approve(r.Context(), body)
 	if err != nil {
 		httpx.WriteError(w, h.log, err)
 		return
@@ -156,7 +170,13 @@ func (h *Handler) focalApprove(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, resp)
 }
 
+// focalApprove is deprecated — proxies to approve (v3 D1/D3: one round only).
+func (h *Handler) focalApprove(w http.ResponseWriter, r *http.Request) {
+	h.approve(w, r)
+}
+
 func (h *Handler) adminApprove(w http.ResponseWriter, r *http.Request) {
+	h.log.Warn("deprecated_endpoint_called", slog.String("endpoint", "admin-approve"))
 	sub, err := h.subjectFromToken(r)
 	if err != nil {
 		httpx.WriteError(w, h.log, err)
@@ -248,6 +268,39 @@ func (h *Handler) cancel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+// migrateLegacyApprovals is the one-time migration endpoint (§6.7/A1, A2):
+// finds every proposal stuck at pending_admin_approval (cross-company) and
+// auto-finalizes each via the legacy AdminApprove path. Best-effort per row —
+// one failure does not abort the remaining rows (C2).
+func (h *Handler) migrateLegacyApprovals(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subjectFromToken(r)
+	if err != nil {
+		httpx.WriteError(w, h.log, err)
+		return
+	}
+	rows, err := h.svc.ListPendingLegacyApprovals(r.Context(), sub)
+	if err != nil {
+		httpx.WriteError(w, h.log, err)
+		return
+	}
+	results := make([]map[string]any, 0, len(rows))
+	for _, row := range rows {
+		entry := map[string]any{"proposal_id": row.ProposalID, "company_id": row.CompanyID}
+		if err := h.svc.FinalizeLegacyApproval(r.Context(), sub, row.CompanyID, row.ProposalID); err != nil {
+			entry["status"] = "failed"
+			entry["error"] = err.Error()
+			h.log.Error("adhoc_migrate_legacy_approval_failed",
+				slog.String("proposal_id", row.ProposalID),
+				slog.String("company_id", row.CompanyID),
+				slog.Any("error", err))
+		} else {
+			entry["status"] = "finalized"
+		}
+		results = append(results, entry)
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"items": results, "total": len(results)})
 }
 
 func (h *Handler) subjectFromToken(r *http.Request) (adhocapp.Subject, error) {

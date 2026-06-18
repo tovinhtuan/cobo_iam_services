@@ -80,28 +80,50 @@ func (s *service) CreateProposal(ctx context.Context, req CreateProposalRequest)
 		}
 	}
 
-	// Validate process controller (ADR-1: required at create time).
-	pcID := strings.TrimSpace(req.ProcessControllerMembershipID)
-	if pcID == "" {
-		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "process_controller_membership_id is required", nil)
+	// Validate reviewers (D3/D4: 1..N, each must hold ad_hoc_alert.focal_review).
+	reviewerIDs := normalizeReviewerIDs(req.ReviewerMembershipIDs)
+	if len(reviewerIDs) == 0 {
+		// A6 backward-compat alias: accept the deprecated single-reviewer field.
+		if legacy := strings.TrimSpace(req.ProcessControllerMembershipID); legacy != "" {
+			reviewerIDs = []string{legacy}
+		}
 	}
-	if pcID == req.Subject.MembershipID {
-		allowSelf, err := s.creatorMaySelfAssignProcessController(ctx, req.Subject.CompanyID, req.Subject.MembershipID)
+	if len(reviewerIDs) == 0 {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "reviewer_membership_ids is required", nil)
+	}
+	seen := make(map[string]bool, len(reviewerIDs))
+	for _, id := range reviewerIDs {
+		if seen[id] {
+			return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "reviewer_membership_ids must not contain duplicates", nil)
+		}
+		seen[id] = true
+	}
+	if seen[req.Subject.MembershipID] {
+		allowSelf, err := s.creatorMaySelfAssignReviewer(ctx, req.Subject.CompanyID, req.Subject.MembershipID)
 		if err != nil {
-			return nil, mapRepositoryError(fmt.Errorf("check creator process controller eligibility: %w", err))
+			return nil, mapRepositoryError(fmt.Errorf("check creator reviewer eligibility: %w", err))
 		}
 		if !allowSelf {
-			return nil, perr.NewHTTPError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, "process controller cannot be the creator", nil)
+			return nil, perr.NewHTTPError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, "creator cannot self-assign as reviewer without ad_hoc_alert.focal_review", nil)
+		}
+		// D7 SoD safeguard: creator self-assigning requires >=1 other reviewer.
+		if len(reviewerIDs) < 2 {
+			return nil, perr.NewHTTPError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, "creator self-assigning as reviewer requires at least one other reviewer", nil)
 		}
 	}
-	if s.membershipValidator != nil {
-		active, err := s.membershipValidator.IsActiveMembership(ctx, req.Subject.CompanyID, pcID)
+	// [B1] Always validate via membershipValidator — no `!= nil` guard. A nil
+	// validator is a server misconfiguration and must fail fast, not silently skip.
+	if s.membershipValidator == nil {
+		return nil, perr.NewHTTPError(http.StatusInternalServerError, perr.CodeInternal, "membership validator is unavailable", nil)
+	}
+	for _, id := range reviewerIDs {
+		active, err := s.membershipValidator.IsActiveMembership(ctx, req.Subject.CompanyID, id)
 		if err != nil || !active {
-			return nil, perr.NewHTTPError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, "process controller membership not found or inactive", nil)
+			return nil, perr.NewHTTPError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, "reviewer membership not found or inactive: "+id, nil)
 		}
-		hasPerm, err := s.membershipValidator.HasPermission(ctx, req.Subject.CompanyID, pcID, "ad_hoc_alert.process_control")
+		hasPerm, err := s.membershipValidator.HasPermission(ctx, req.Subject.CompanyID, id, "ad_hoc_alert.focal_review")
 		if err != nil || !hasPerm {
-			return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "designated member does not have process control authority (ad_hoc_alert.process_control)", nil)
+			return nil, perr.NewHTTPError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, "reviewer does not have ad_hoc_alert.focal_review: "+id, nil)
 		}
 	}
 
@@ -111,14 +133,14 @@ func (s *service) CreateProposal(ctx context.Context, req CreateProposalRequest)
 		return nil, err
 	}
 	p := ProposalDTO{
-		ProposalID:          s.idg.NewUUID(),
-		CompanyID:           req.Subject.CompanyID,
-		TypeID:              req.TypeID,
-		Status:              StatusDraft,
-		StepOverrides:       req.StepOverrides,
-		ChangeNote:          strings.TrimSpace(req.ChangeNote),
-		CreatedBy:           req.Subject.MembershipID,
-		ProcessControllerID: pcID,
+		ProposalID:            s.idg.NewUUID(),
+		CompanyID:             req.Subject.CompanyID,
+		TypeID:                req.TypeID,
+		Status:                StatusDraft,
+		StepOverrides:         req.StepOverrides,
+		ChangeNote:            strings.TrimSpace(req.ChangeNote),
+		CreatedBy:             req.Subject.MembershipID,
+		ReviewerMembershipIDs: reviewerIDs,
 	}
 	if t0 != "" {
 		p.ProposedT0Date = &t0
@@ -143,14 +165,21 @@ func (s *service) SubmitProposal(ctx context.Context, req ProposalActionRequest)
 	if cur.CreatedBy != req.Subject.MembershipID {
 		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "only the creator can submit the proposal", nil)
 	}
-	nextStatus := StatusPendingFocalApproval
-	if s.autoApprove {
-		nextStatus = StatusPendingAdminApproval
+	// D1: every new proposal has exactly one pending state (pending_focal_approval) —
+	// pending_admin_approval is no longer a valid submit target. reviewers are
+	// validated as non-empty at create time (immutable after, A5); this is a
+	// defensive re-check for rows that predate the reviewers table.
+	reviewers, err := s.repo.ListReviewers(ctx, req.Subject.CompanyID, req.ProposalID)
+	if err != nil {
+		return nil, err
+	}
+	if len(reviewers) == 0 {
+		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "proposal has no assigned reviewers", nil)
 	}
 	updated, applied, err := s.repo.UpdateStatus(ctx, StatusUpdate{
 		ProposalID:               req.ProposalID,
 		CompanyID:                req.Subject.CompanyID,
-		Status:                   nextStatus,
+		Status:                   StatusPendingFocalApproval,
 		FromStatus:               cur.Status, // ADR-2: cur.Status == StatusDraft (checked above)
 		ActorMembershipID:        req.Subject.MembershipID,
 		ActorUserID:              req.Subject.UserID,
@@ -160,65 +189,162 @@ func (s *service) SubmitProposal(ctx context.Context, req ProposalActionRequest)
 		return nil, err
 	}
 	if applied {
-		s.metrics.RecordTransition(updated.CompanyID, cur.Status, nextStatus)
+		s.metrics.RecordTransition(updated.CompanyID, cur.Status, StatusPendingFocalApproval)
 	}
 	snap := s.enrichProposalForNotification(ctx, *updated)
 	if s.notifier != nil && s.membershipValidator != nil {
 		safeNotify(snap.ProposalID, func() {
-			if s.autoApprove {
-				if ctrl, err := s.membershipValidator.ResolveMembership(ctx, snap.CompanyID, snap.ProcessControllerID); err == nil && ctrl != nil {
-					s.notifier.NotifyControllerForReview(ctx, snap, *ctrl)
-				}
-			} else {
-				if focals, err := s.membershipValidator.ListMembersWithPermissionFull(ctx, snap.CompanyID, "ad_hoc_alert.focal_review"); err == nil {
-					s.notifier.NotifyFocalsForReview(ctx, snap, focals)
-				}
+			if focals, err := s.membershipValidator.ListMembersWithPermissionFull(ctx, snap.CompanyID, "ad_hoc_alert.focal_review"); err == nil {
+				s.notifier.NotifyFocalsForReview(ctx, snap, focals)
 			}
 		})
 	}
 	return updated, nil
 }
 
-func (s *service) FocalApprove(ctx context.Context, req ProposalActionRequest) (*ProposalDTO, error) {
+// Approve casts one reviewer's vote (v3 D3/D4 — one round, unanimous, 1..N
+// reviewers). Replaces FocalApprove. See §6.5 for the 3-phase concurrency design.
+func (s *service) Approve(ctx context.Context, req ApproveRequest) (*ApproveResponse, error) {
 	if err := s.authorize(ctx, req.Subject, "ad_hoc_alert.focal_review", authapp.ResourceRef{Type: "ad_hoc_proposal", ID: req.ProposalID}); err != nil {
 		return nil, err
 	}
-	if s.autoApprove {
-		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "focal approval step is disabled (WORKFLOW_ADHOC_AUTOAPPROVE_ENABLED=true)", nil)
-	}
-	cur, err := s.repo.FindByID(ctx, req.Subject.CompanyID, req.ProposalID)
+	_, finalT0Date, err := parseOptionalISODate(req.FinalT0Date, "final_t0_date")
 	if err != nil {
 		return nil, err
 	}
-	if cur.Status != StatusPendingFocalApproval {
-		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "proposal is not pending focal approval", nil)
+	_, finalDeadlineDate, err := parseOptionalISODate(req.FinalDeadlineDate, "final_deadline_date")
+	if err != nil {
+		return nil, err
 	}
-	focalUpdated, applied, err := s.repo.UpdateStatus(ctx, StatusUpdate{
-		ProposalID:               req.ProposalID,
-		CompanyID:                req.Subject.CompanyID,
-		Status:                   StatusPendingAdminApproval,
-		FromStatus:               cur.Status, // ADR-2: cur.Status == StatusPendingFocalApproval (checked above)
-		ActorMembershipID:        req.Subject.MembershipID,
-		ActorUserID:              req.Subject.UserID,
-		SetFocalApprovalMetadata: true,
+
+	reservation, err := s.repo.ReserveVote(ctx, ReserveVoteInput{
+		CompanyID:         req.Subject.CompanyID,
+		ProposalID:        req.ProposalID,
+		ActorMembershipID: req.Subject.MembershipID,
+		ActorUserID:       req.Subject.UserID,
+		FinalT0Date:       finalT0Date,
+		FinalDeadlineDate: finalDeadlineDate,
+		AdjustmentNote:    strings.TrimSpace(req.AdjustmentNote),
+		Comment:           strings.TrimSpace(req.Comment),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	progress := ApprovalProgressDTO{Required: reservation.Required, Completed: reservation.Completed}
+
+	if reservation.Proposal.Status == StatusApproved {
+		// Already finalized by an earlier vote/retry — idempotent replay (EV-2).
+		return &ApproveResponse{
+			Proposal:           *reservation.Proposal,
+			ApprovalProgress:   progress,
+			Finalized:          true,
+			RecordID:           reservation.Proposal.RecordID,
+			WorkflowInstanceID: reservation.Proposal.WorkflowInstanceID,
+		}, nil
+	}
+
+	if !reservation.IsLastVote {
+		return &ApproveResponse{
+			Proposal:         *reservation.Proposal,
+			ApprovalProgress: progress,
+			Finalized:        false,
+		}, nil
+	}
+
+	// Last vote (or a safe retry of one — §6.5 test #3): attempt finalize. On
+	// error the proposal remains pending_focal_approval; retrying is safe because
+	// finalize uses a deterministic record ID and a guarded completion UPDATE.
+	result, err := s.finalizeApprovedProposal(ctx, reservation)
+	if err != nil {
+		return nil, err
+	}
+	updated, err := s.repo.FindByID(ctx, req.Subject.CompanyID, req.ProposalID)
+	if err != nil {
+		return nil, err
+	}
+	return &ApproveResponse{
+		Proposal:           *updated,
+		ApprovalProgress:   progress,
+		Finalized:          true,
+		RecordID:           result.RecordID,
+		WorkflowInstanceID: result.WorkflowInstanceID,
+	}, nil
+}
+
+// finalizeApprovedProposal is Phase B+C of §6.5: create the disclosure record
+// (idempotent via deterministic RecordID, ADR-1B) then guarded-UPDATE the
+// proposal to approved. Must only be called when reservation.IsLastVote is true.
+func (s *service) finalizeApprovedProposal(ctx context.Context, r *VoteReservation) (*FinalizeResult, error) {
+	cur := r.Proposal
+	typeDisplayName, _ := s.typeCatalog.GetTypeDisplayName(ctx, cur.CompanyID, cur.TypeID)
+	title := ResolveAdHocRecordTitle(cur.ChangeNote, typeDisplayName, cur.TypeID)
+
+	finalT0 := r.LastFinalT0Date
+	if finalT0 == nil {
+		finalT0 = cur.ProposedT0Date
+	}
+	var t0Time *time.Time
+	if finalT0 != nil {
+		if parsed, err := time.Parse("2006-01-02", *finalT0); err == nil {
+			t0Time = &parsed
+		}
+	}
+
+	// ADR-1B: deterministic RecordID so a retried finalize (after a prior
+	// CreateAndSubmitRecordWithOpts failure) is recognized as a replay instead of
+	// creating an orphaned second disclosure_records row (CF-01).
+	deterministicRecordID := uuid.NewSHA1(
+		adhocRecordIDNamespace,
+		[]byte(fmt.Sprintf("%s:%s", cur.CompanyID, cur.ProposalID)),
+	).String()
+	recordID, workflowInstanceID, err := s.recordCreator.CreateAndSubmitRecordWithOpts(ctx, cur.CompanyID, cur.TypeID, cur.CreatedBy, title, t0Time, CreateRecordOpts{
+		RecordID:      deterministicRecordID,
+		StepOverrides: cur.StepOverrides,
+	})
+	if err != nil {
+		if httpErr, ok := perr.AsHTTPError(err); ok {
+			return nil, httpErr
+		}
+		return nil, perr.NewHTTPError(http.StatusInternalServerError, perr.CodeInternal, "failed to create disclosure record", err)
+	}
+
+	updated, applied, err := s.repo.CompleteFinalize(ctx, StatusUpdate{
+		ProposalID:         cur.ProposalID,
+		CompanyID:          cur.CompanyID,
+		Status:             StatusApproved,
+		FromStatus:         StatusPendingFocalApproval,
+		ActorMembershipID:  r.ActorMembershipID,
+		ActorUserID:        r.ActorUserID,
+		RecordID:           recordID,
+		WorkflowInstanceID: workflowInstanceID,
+		FinalT0Date:        r.LastFinalT0Date,
+		FinalDeadlineDate:  r.LastFinalDeadlineDate,
+		AdjustmentNote:     r.LastAdjustmentNote,
 	})
 	if err != nil {
 		return nil, err
 	}
 	if applied {
-		s.metrics.RecordTransition(focalUpdated.CompanyID, cur.Status, StatusPendingAdminApproval)
+		s.metrics.RecordTransition(updated.CompanyID, StatusPendingFocalApproval, StatusApproved)
 	}
-	snap := s.enrichProposalForNotification(ctx, *focalUpdated)
+	snap := s.enrichProposalForNotification(ctx, *updated)
 	if s.notifier != nil && s.membershipValidator != nil {
 		safeNotify(snap.ProposalID, func() {
-			if ctrl, err := s.membershipValidator.ResolveMembership(ctx, snap.CompanyID, snap.ProcessControllerID); err == nil && ctrl != nil {
-				s.notifier.NotifyControllerForReview(ctx, snap, *ctrl)
+			if creator, err := s.membershipValidator.ResolveMembership(ctx, snap.CompanyID, snap.CreatedBy); err == nil && creator != nil {
+				s.notifier.NotifyCreatorApproved(ctx, snap, *creator)
 			}
 		})
 	}
-	return focalUpdated, nil
+	return &FinalizeResult{RecordID: recordID, WorkflowInstanceID: workflowInstanceID}, nil
 }
 
+// AdminApprove is kept unchanged for the legacy two-round flow.
+//
+// @deprecated: serves only (1) legacy clients still calling POST .../admin-approve
+// directly, and (2) FinalizeLegacyApproval's internal reuse for the one-time
+// migration endpoint. Do not call from any new code path. Removed only once
+// both conditions in the migration runbook (§12.5) are satisfied.
 func (s *service) AdminApprove(ctx context.Context, req AdminApproveRequest) (*AdminApproveResponse, error) {
 	// ADR-2: identity check — only the designated process controller may approve.
 	// Permission-based check (ad_hoc_alert.admin_review) is deprecated and no longer the gate.
@@ -338,20 +464,20 @@ func (s *service) Reject(ctx context.Context, req RejectRequest) (*ProposalDTO, 
 	if err != nil {
 		return nil, err
 	}
-	switch cur.Status {
-	case StatusPendingFocalApproval, StatusPendingAdminApproval:
-	default:
+	// D1: pending_admin_approval is legacy-only and never reached by new proposals;
+	// the one-round flow only rejects out of pending_focal_approval.
+	if cur.Status != StatusPendingFocalApproval {
 		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "proposal cannot be rejected in current state", nil)
 	}
-	if cur.Status == StatusPendingFocalApproval {
-		if err := s.authorize(ctx, req.Subject, "ad_hoc_alert.focal_review", authapp.ResourceRef{Type: "ad_hoc_proposal", ID: req.ProposalID, Attributes: map[string]any{"workflow_state": cur.Status}}); err != nil {
-			return nil, err
-		}
-	} else {
-		// pending_admin_approval: only the designated process controller may reject.
-		if cur.ProcessControllerID != req.Subject.MembershipID {
-			return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "only the designated process controller can reject this proposal at admin stage", nil)
-		}
+	if err := s.authorize(ctx, req.Subject, "ad_hoc_alert.focal_review", authapp.ResourceRef{Type: "ad_hoc_proposal", ID: req.ProposalID, Attributes: map[string]any{"workflow_state": cur.Status}}); err != nil {
+		return nil, err
+	}
+	assigned, err := s.repo.IsAssignedReviewer(ctx, req.Subject.CompanyID, req.ProposalID, req.Subject.MembershipID)
+	if err != nil {
+		return nil, err
+	}
+	if !assigned {
+		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "only an assigned reviewer can reject this proposal", nil)
 	}
 	reason := strings.TrimSpace(req.RejectReason)
 	if reason == "" {
@@ -361,7 +487,7 @@ func (s *service) Reject(ctx context.Context, req RejectRequest) (*ProposalDTO, 
 		ProposalID: req.ProposalID,
 		CompanyID:  req.Subject.CompanyID,
 		Status:     StatusRejected,
-		// ADR-2: cur.Status is one of {StatusPendingFocalApproval, StatusPendingAdminApproval} (checked above).
+		// ADR-2: cur.Status == StatusPendingFocalApproval (checked above).
 		FromStatus:        cur.Status,
 		ActorMembershipID: req.Subject.MembershipID,
 		ActorUserID:       req.Subject.UserID,
@@ -425,7 +551,11 @@ func (s *service) GetProposal(ctx context.Context, req GetProposalRequest) (*Pro
 	if strings.TrimSpace(req.ProposalID) == "" {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "proposal_id is required", nil)
 	}
-	return s.repo.FindByID(ctx, req.Subject.CompanyID, req.ProposalID)
+	p, err := s.repo.FindByID(ctx, req.Subject.CompanyID, req.ProposalID)
+	if err != nil {
+		return nil, err
+	}
+	return s.embedReviewState(ctx, p), nil
 }
 
 func (s *service) ListProposals(ctx context.Context, req ListProposalsRequest) (*ListProposalsResponse, error) {
@@ -442,10 +572,13 @@ func (s *service) ListProposals(ctx context.Context, req ListProposalsRequest) (
 	if err != nil {
 		return nil, err
 	}
+	for i := range items {
+		items[i] = *s.embedReviewState(ctx, &items[i])
+	}
 	return &ListProposalsResponse{Items: items, Page: req.Page, PageSize: req.PageSize, Total: total}, nil
 }
 
-func (s *service) ListEligibleControllers(ctx context.Context, req ListEligibleControllersRequest) ([]EligibleController, error) {
+func (s *service) ListEligibleReviewers(ctx context.Context, req ListEligibleReviewersRequest) ([]EligibleController, error) {
 	if err := s.authorize(ctx, req.Subject, "ad_hoc_alert.propose", authapp.ResourceRef{Type: "ad_hoc_proposal"}); err != nil {
 		return nil, err
 	}
@@ -453,21 +586,88 @@ func (s *service) ListEligibleControllers(ctx context.Context, req ListEligibleC
 		return []EligibleController{}, nil
 	}
 	excludeMembershipID := req.Subject.MembershipID
-	allowSelf, err := s.creatorMaySelfAssignProcessController(ctx, req.Subject.CompanyID, req.Subject.MembershipID)
+	allowSelf, err := s.creatorMaySelfAssignReviewer(ctx, req.Subject.CompanyID, req.Subject.MembershipID)
 	if err != nil {
-		return nil, fmt.Errorf("check creator process controller eligibility: %w", err)
+		return nil, fmt.Errorf("check creator reviewer eligibility: %w", err)
 	}
 	if allowSelf {
 		excludeMembershipID = ""
 	}
-	return s.membershipValidator.ListMembersWithPermission(ctx, req.Subject.CompanyID, "ad_hoc_alert.process_control", excludeMembershipID)
+	return s.membershipValidator.ListMembersWithPermission(ctx, req.Subject.CompanyID, "ad_hoc_alert.focal_review", excludeMembershipID)
 }
 
-func (s *service) creatorMaySelfAssignProcessController(ctx context.Context, companyID, membershipID string) (bool, error) {
+// creatorMaySelfAssignReviewer implements D7: the creator may self-assign as a
+// reviewer only if they themselves hold ad_hoc_alert.focal_review. The >=1
+// other-reviewer SoD safeguard is enforced separately at the call site
+// (CreateProposal), since it depends on the full reviewer list, not just identity.
+func (s *service) creatorMaySelfAssignReviewer(ctx context.Context, companyID, membershipID string) (bool, error) {
 	if s.membershipValidator == nil {
 		return false, nil
 	}
-	return s.membershipValidator.HasActiveRoleCode(ctx, companyID, membershipID, RoleCodeAdminDoanhNghiep)
+	return s.membershipValidator.HasPermission(ctx, companyID, membershipID, "ad_hoc_alert.focal_review")
+}
+
+// normalizeReviewerIDs trims whitespace and drops empty strings.
+func normalizeReviewerIDs(ids []string) []string {
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		out = append(out, id)
+	}
+	return out
+}
+
+// embedReviewState populates Reviewers/Approvals/ApprovalProgress on a
+// ProposalDTO copy for read paths (GetProposal/ListProposals). Errors are
+// swallowed with safe fallbacks — enrichment must never block a read.
+func (s *service) embedReviewState(ctx context.Context, p *ProposalDTO) *ProposalDTO {
+	if p == nil {
+		return p
+	}
+	out := *p
+	reviewers, err := s.repo.ListReviewers(ctx, p.CompanyID, p.ProposalID)
+	if err == nil {
+		out.Reviewers = reviewers
+	}
+	approvals, err := s.repo.ListApprovals(ctx, p.CompanyID, p.ProposalID)
+	if err == nil {
+		out.Approvals = approvals
+	}
+	out.ApprovalProgress = &ApprovalProgressDTO{Required: len(out.Reviewers), Completed: len(out.Approvals)}
+	return &out
+}
+
+// FinalizeLegacyApproval is a thin wrapper around AdminApprove (field-mapped
+// per §5.3) for the one-time migration endpoint that auto-finalizes proposals
+// stuck at pending_admin_approval. Gated on rbac.manage (platform admin only).
+func (s *service) FinalizeLegacyApproval(ctx context.Context, sub Subject, companyID, proposalID string) error {
+	if err := s.authorize(ctx, sub, "rbac.manage", authapp.ResourceRef{Type: "platform"}); err != nil {
+		return err
+	}
+	cur, err := s.repo.FindByID(ctx, companyID, proposalID)
+	if err != nil {
+		return err
+	}
+	// AdminApprove's identity check requires Subject.MembershipID == the
+	// designated process controller; ActorUserID still records the real actor
+	// (the platform admin running this migration) for audit purposes.
+	_, err = s.AdminApprove(ctx, AdminApproveRequest{
+		Subject:    Subject{UserID: sub.UserID, MembershipID: cur.ProcessControllerID, CompanyID: companyID},
+		ProposalID: proposalID,
+	})
+	return err
+}
+
+// ListPendingLegacyApprovals is gated on rbac.manage (platform admin only)
+// since it scans across all companies (§6.7/A1).
+func (s *service) ListPendingLegacyApprovals(ctx context.Context, sub Subject) ([]PendingApprovalRow, error) {
+	if err := s.authorize(ctx, sub, "rbac.manage", authapp.ResourceRef{Type: "platform"}); err != nil {
+		return nil, err
+	}
+	return s.repo.ListPendingAdminApproval(ctx)
 }
 
 func (s *service) authorize(ctx context.Context, sub Subject, action string, resource authapp.ResourceRef) error {

@@ -3,6 +3,8 @@ package http
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,6 +14,12 @@ import (
 	iamapp "github.com/cobo/cobo_iam_services/internal/iam/app"
 	"github.com/cobo/cobo_iam_services/internal/platform/idempotency"
 )
+
+// discardLogger is a no-op *slog.Logger used by handler tests that exercise
+// a code path with a log call but don't assert on log output.
+func discardLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(io.Discard, nil))
+}
 
 type fakeService struct {
 	listReq           adhocapp.ListProposalsRequest
@@ -27,7 +35,7 @@ func (f *fakeService) SubmitProposal(context.Context, adhocapp.ProposalActionReq
 	return nil, nil
 }
 
-func (f *fakeService) FocalApprove(context.Context, adhocapp.ProposalActionRequest) (*adhocapp.ProposalDTO, error) {
+func (f *fakeService) Approve(context.Context, adhocapp.ApproveRequest) (*adhocapp.ApproveResponse, error) {
 	return nil, nil
 }
 
@@ -48,8 +56,16 @@ func (f *fakeService) ListProposals(_ context.Context, req adhocapp.ListProposal
 	return &adhocapp.ListProposalsResponse{Items: []adhocapp.ProposalDTO{}, Page: req.Page, PageSize: req.PageSize, Total: 0}, nil
 }
 
-func (f *fakeService) ListEligibleControllers(_ context.Context, _ adhocapp.ListEligibleControllersRequest) ([]adhocapp.EligibleController, error) {
+func (f *fakeService) ListEligibleReviewers(_ context.Context, _ adhocapp.ListEligibleReviewersRequest) ([]adhocapp.EligibleController, error) {
 	return []adhocapp.EligibleController{}, nil
+}
+
+func (f *fakeService) FinalizeLegacyApproval(context.Context, adhocapp.Subject, string, string) error {
+	return nil
+}
+
+func (f *fakeService) ListPendingLegacyApprovals(context.Context, adhocapp.Subject) ([]adhocapp.PendingApprovalRow, error) {
+	return nil, nil
 }
 
 type fakeInspector struct{}
@@ -123,7 +139,7 @@ func (f *fakeService) AdminApprove(ctx context.Context, req adhocapp.AdminApprov
 func TestAdminApprove_UsesFallbackIdempotencyKeyAndCompletesReservation(t *testing.T) {
 	svc := &fakeService{}
 	idem := &fakeIdemStore{tryResult: idempotency.Result{ReservationID: "idem-001"}}
-	handler := NewHandler(nil, svc, fakeInspector{}, idem)
+	handler := NewHandler(discardLogger(), svc, fakeInspector{}, idem)
 	mux := http.NewServeMux()
 	handler.Register(mux)
 
@@ -163,7 +179,7 @@ func TestAdminApprove_ReplaysCompletedIdempotentResponse(t *testing.T) {
 	envBytes, _ := json.Marshal(&idempotency.Envelope{HTTPStatus: http.StatusOK, Body: body})
 	idem := &fakeIdemStore{tryResult: idempotency.Result{Replay: true, ReplayHTTPStatus: http.StatusOK, ReplayBody: body}}
 	_ = envBytes
-	handler := NewHandler(nil, svc, fakeInspector{}, idem)
+	handler := NewHandler(discardLogger(), svc, fakeInspector{}, idem)
 	mux := http.NewServeMux()
 	handler.Register(mux)
 

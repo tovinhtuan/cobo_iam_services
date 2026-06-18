@@ -26,12 +26,126 @@ type fakeRepository struct {
 	progressRecordID   string
 	progressWorkflowID string
 	completeErr        error
+
+	// v3 multi-reviewer fields (§6.5).
+	reviewers             []ReviewerDTO
+	approvals             []ApprovalDTO
+	reserveVoteCalls      int
+	completeFinalizeCalls int
+	completeFinalizeErr   error
 }
 
 func (f *fakeRepository) Insert(ctx context.Context, p ProposalDTO) (*ProposalDTO, error) {
 	f.insertCalls++
 	cp := p
+	for _, id := range p.ReviewerMembershipIDs {
+		f.reviewers = append(f.reviewers, ReviewerDTO{MembershipID: id})
+	}
 	return &cp, nil
+}
+
+// ReserveVote mimics the production FOR-UPDATE/insert-if-not-voted/count
+// semantics (§6.5 Phase A) against this fake's in-memory reviewers/approvals.
+func (f *fakeRepository) ReserveVote(ctx context.Context, in ReserveVoteInput) (*VoteReservation, error) {
+	f.reserveVoteCalls++
+	if f.proposal.Status != StatusPendingFocalApproval && f.proposal.Status != StatusApproved {
+		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "proposal is not pending focal approval", nil)
+	}
+	assigned := false
+	for _, r := range f.reviewers {
+		if r.MembershipID == in.ActorMembershipID {
+			assigned = true
+			break
+		}
+	}
+	if !assigned {
+		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "actor is not an assigned reviewer for this proposal", nil)
+	}
+	if f.proposal.Status == StatusApproved {
+		cp := *f.proposal
+		return &VoteReservation{Proposal: &cp, Required: len(f.reviewers), Completed: len(f.approvals), ActorMembershipID: in.ActorMembershipID, ActorUserID: in.ActorUserID}, nil
+	}
+	already := false
+	for i, a := range f.approvals {
+		if a.MembershipID == in.ActorMembershipID {
+			already = true
+			f.approvals[i].FinalT0Date = in.FinalT0Date
+			f.approvals[i].FinalDeadlineDate = in.FinalDeadlineDate
+			f.approvals[i].AdjustmentNote = in.AdjustmentNote
+			f.approvals[i].Comment = in.Comment
+			break
+		}
+	}
+	if !already {
+		f.approvals = append(f.approvals, ApprovalDTO{
+			MembershipID:      in.ActorMembershipID,
+			ApprovedAt:        time.Now().UTC(),
+			FinalT0Date:       in.FinalT0Date,
+			FinalDeadlineDate: in.FinalDeadlineDate,
+			AdjustmentNote:    in.AdjustmentNote,
+			Comment:           in.Comment,
+		})
+	}
+	cp := *f.proposal
+	required := len(f.reviewers)
+	completed := len(f.approvals)
+	return &VoteReservation{
+		Proposal:              &cp,
+		IsLastVote:            completed >= required,
+		Required:              required,
+		Completed:             completed,
+		ActorMembershipID:     in.ActorMembershipID,
+		ActorUserID:           in.ActorUserID,
+		LastFinalT0Date:       in.FinalT0Date,
+		LastFinalDeadlineDate: in.FinalDeadlineDate,
+		LastAdjustmentNote:    in.AdjustmentNote,
+	}, nil
+}
+
+// CompleteFinalize mimics the guarded UPDATE of §6.5 Phase C.
+func (f *fakeRepository) CompleteFinalize(ctx context.Context, upd StatusUpdate) (*ProposalDTO, bool, error) {
+	f.completeFinalizeCalls++
+	f.lastUpdate = upd
+	if f.completeFinalizeErr != nil {
+		return nil, false, f.completeFinalizeErr
+	}
+	if f.proposal.Status != upd.FromStatus {
+		if f.proposal.Status == StatusApproved {
+			cp := *f.proposal
+			return &cp, false, nil
+		}
+		return nil, false, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "proposal cannot be finalized in current state", nil)
+	}
+	cp := *f.proposal
+	cp.Status = upd.Status
+	cp.RecordID = upd.RecordID
+	cp.WorkflowInstanceID = upd.WorkflowInstanceID
+	cp.FinalT0Date = upd.FinalT0Date
+	cp.FinalDeadlineDate = upd.FinalDeadlineDate
+	cp.AdjustmentNote = upd.AdjustmentNote
+	f.proposal = &cp
+	return &cp, true, nil
+}
+
+func (f *fakeRepository) IsAssignedReviewer(ctx context.Context, companyID, proposalID, membershipID string) (bool, error) {
+	for _, r := range f.reviewers {
+		if r.MembershipID == membershipID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (f *fakeRepository) ListReviewers(ctx context.Context, companyID, proposalID string) ([]ReviewerDTO, error) {
+	return f.reviewers, nil
+}
+
+func (f *fakeRepository) ListApprovals(ctx context.Context, companyID, proposalID string) ([]ApprovalDTO, error) {
+	return f.approvals, nil
+}
+
+func (f *fakeRepository) ListPendingAdminApproval(ctx context.Context) ([]PendingApprovalRow, error) {
+	return nil, nil
 }
 
 func (f *fakeRepository) FindByID(ctx context.Context, companyID, proposalID string) (*ProposalDTO, error) {
@@ -125,7 +239,7 @@ type fakeIDGen struct{}
 func (fakeIDGen) NewUUID() string { return "uuid-test" }
 
 type fakeAuthService struct {
-	mu             sync.Mutex // guards authorizeCalls/lastAction for concurrency tests (Cancel/FocalApprove races)
+	mu             sync.Mutex // guards authorizeCalls/lastAction for concurrency tests (Cancel/Approve races)
 	decision       authapp.Decision
 	authorizeCalls int
 	lastAction     string
@@ -288,14 +402,14 @@ func TestCreateProposalAllowsIrregularTemplate(t *testing.T) {
 	}
 }
 
-func TestFocalApproveRequiresPermission(t *testing.T) {
+func TestApproveRequiresPermission(t *testing.T) {
 	repo := &fakeRepository{proposal: &ProposalDTO{
 		ProposalID: "prop-001", CompanyID: "company-001", TypeID: "dt-001", Status: StatusPendingFocalApproval,
 	}}
 	auth := &fakeAuthService{decision: authapp.DecisionDeny}
 	svc := newTestService(repo, &fakeRecordCreator{}, &fakeTypeCatalog{category: "irregular"}, auth)
 
-	_, err := svc.FocalApprove(context.Background(), ProposalActionRequest{
+	_, err := svc.Approve(context.Background(), ApproveRequest{
 		Subject:    Subject{CompanyID: "company-001", MembershipID: "member-001", UserID: "user-001"},
 		ProposalID: "prop-001",
 	})
@@ -309,19 +423,24 @@ func TestFocalApproveRequiresPermission(t *testing.T) {
 	if auth.lastAction != "ad_hoc_alert.focal_review" {
 		t.Fatalf("expected focal_review action, got %q", auth.lastAction)
 	}
-	if repo.updateCalls != 0 {
-		t.Fatalf("expected no mutation, got %d updates", repo.updateCalls)
+	if repo.reserveVoteCalls != 0 {
+		t.Fatalf("expected no vote reservation, got %d calls", repo.reserveVoteCalls)
 	}
 }
 
-func TestSubmitProposalAutoApproveSkipsFocalMetadata(t *testing.T) {
-	repo := &fakeRepository{proposal: &ProposalDTO{
-		ProposalID: "prop-001",
-		CompanyID:  "company-001",
-		TypeID:     "dt-001",
-		Status:     StatusDraft,
-		CreatedBy:  "member-creator",
-	}}
+func TestSubmitProposalAutoApproveIsNoOp(t *testing.T) {
+	// D1: autoApprove no longer has a target state to skip to â€” every new
+	// proposal has exactly one pending state (pending_focal_approval).
+	repo := &fakeRepository{
+		proposal: &ProposalDTO{
+			ProposalID: "prop-001",
+			CompanyID:  "company-001",
+			TypeID:     "dt-001",
+			Status:     StatusDraft,
+			CreatedBy:  "member-creator",
+		},
+		reviewers: []ReviewerDTO{{MembershipID: "member-focal"}},
+	}
 	auth := &fakeAuthService{decision: authapp.DecisionAllow}
 	svc := NewService(repo, &fakeRecordCreator{}, &fakeTypeCatalog{category: "irregular"}, fakeIDGen{}, true, auth, nil, nil, noopMetrics{})
 
@@ -332,47 +451,218 @@ func TestSubmitProposalAutoApproveSkipsFocalMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SubmitProposal() error = %v", err)
 	}
-	if resp.Status != StatusPendingAdminApproval {
-		t.Fatalf("expected status %q, got %q", StatusPendingAdminApproval, resp.Status)
+	if resp.Status != StatusPendingFocalApproval {
+		t.Fatalf("expected status %q, got %q", StatusPendingFocalApproval, resp.Status)
 	}
 	if repo.lastUpdate.SetFocalApprovalMetadata {
-		t.Fatal("expected auto-approve submit to skip focal approval metadata")
-	}
-	if resp.FocalApprovedBy != "" || resp.FocalApprovedAt != nil {
-		t.Fatalf("expected no focal approval metadata, got by=%q at=%v", resp.FocalApprovedBy, resp.FocalApprovedAt)
+		t.Fatal("expected submit to not set focal approval metadata")
 	}
 }
 
-func TestFocalApproveSetsFocalMetadata(t *testing.T) {
+func TestSubmitProposal_NoReviewers_Returns409(t *testing.T) {
 	repo := &fakeRepository{proposal: &ProposalDTO{
 		ProposalID: "prop-001",
 		CompanyID:  "company-001",
 		TypeID:     "dt-001",
-		Status:     StatusPendingFocalApproval,
+		Status:     StatusDraft,
+		CreatedBy:  "member-creator",
 	}}
 	auth := &fakeAuthService{decision: authapp.DecisionAllow}
 	svc := newTestService(repo, &fakeRecordCreator{}, &fakeTypeCatalog{category: "irregular"}, auth)
 
-	resp, err := svc.FocalApprove(context.Background(), ProposalActionRequest{
+	_, err := svc.SubmitProposal(context.Background(), ProposalActionRequest{
+		Subject:    Subject{CompanyID: "company-001", MembershipID: "member-creator", UserID: "user-001"},
+		ProposalID: "prop-001",
+	})
+	if err == nil {
+		t.Fatal("expected error for proposal with no reviewers")
+	}
+	httpErr, ok := err.(*perr.HTTPError)
+	if !ok || httpErr.HTTPStatus != http.StatusConflict {
+		t.Fatalf("expected 409, got %#v", err)
+	}
+}
+
+func TestApprove_SingleReviewer_FinalizesImmediately(t *testing.T) {
+	repo := &fakeRepository{
+		proposal: &ProposalDTO{
+			ProposalID: "prop-001",
+			CompanyID:  "company-001",
+			TypeID:     "dt-001",
+			Status:     StatusPendingFocalApproval,
+			CreatedBy:  "member-creator",
+		},
+		reviewers: []ReviewerDTO{{MembershipID: "member-focal"}},
+	}
+	recordCreator := &fakeRecordCreator{recordID: "record-001", workflowID: "wf-001"}
+	auth := &fakeAuthService{decision: authapp.DecisionAllow}
+	svc := newTestService(repo, recordCreator, &fakeTypeCatalog{category: "irregular"}, auth)
+
+	resp, err := svc.Approve(context.Background(), ApproveRequest{
 		Subject:    Subject{CompanyID: "company-001", MembershipID: "member-focal", UserID: "user-focal"},
 		ProposalID: "prop-001",
 	})
 	if err != nil {
-		t.Fatalf("FocalApprove() error = %v", err)
+		t.Fatalf("Approve() error = %v", err)
 	}
-	if resp.Status != StatusPendingAdminApproval {
-		t.Fatalf("expected status %q, got %q", StatusPendingAdminApproval, resp.Status)
+	if !resp.Finalized {
+		t.Fatal("expected single-reviewer vote to finalize immediately")
 	}
-	if !repo.lastUpdate.SetFocalApprovalMetadata {
-		t.Fatal("expected focal approve transition to persist focal metadata")
+	if resp.Proposal.Status != StatusApproved {
+		t.Fatalf("expected status %q, got %q", StatusApproved, resp.Proposal.Status)
 	}
-	if resp.FocalApprovedBy != "member-focal" || resp.FocalApprovedAt == nil {
-		t.Fatalf("expected focal metadata to be set, got by=%q at=%v", resp.FocalApprovedBy, resp.FocalApprovedAt)
+	if resp.RecordID != "record-001" || resp.WorkflowInstanceID != "wf-001" {
+		t.Fatalf("expected record/workflow ids to be returned, got record=%q workflow=%q", resp.RecordID, resp.WorkflowInstanceID)
+	}
+	if resp.ApprovalProgress.Required != 1 || resp.ApprovalProgress.Completed != 1 {
+		t.Fatalf("expected progress 1/1, got %+v", resp.ApprovalProgress)
 	}
 }
 
-func TestRejectUsesStatusBasedPermission(t *testing.T) {
-	// At pending_admin_approval stage, Reject uses identity check (not permission check).
+func TestApprove_NotAssignedReviewer_Returns403(t *testing.T) {
+	repo := &fakeRepository{
+		proposal: &ProposalDTO{
+			ProposalID: "prop-001", CompanyID: "company-001", TypeID: "dt-001", Status: StatusPendingFocalApproval,
+		},
+		reviewers: []ReviewerDTO{{MembershipID: "member-focal"}},
+	}
+	auth := &fakeAuthService{decision: authapp.DecisionAllow}
+	svc := newTestService(repo, &fakeRecordCreator{}, &fakeTypeCatalog{category: "irregular"}, auth)
+
+	_, err := svc.Approve(context.Background(), ApproveRequest{
+		Subject:    Subject{CompanyID: "company-001", MembershipID: "member-other", UserID: "user-other"},
+		ProposalID: "prop-001",
+	})
+	if err == nil {
+		t.Fatal("expected 403 for non-assigned reviewer")
+	}
+	httpErr, ok := err.(*perr.HTTPError)
+	if !ok || httpErr.HTTPStatus != http.StatusForbidden {
+		t.Fatalf("expected 403, got %#v", err)
+	}
+}
+
+func TestApprove_MultiReviewer_RequiresAllVotes(t *testing.T) {
+	repo := &fakeRepository{
+		proposal: &ProposalDTO{
+			ProposalID: "prop-001", CompanyID: "company-001", TypeID: "dt-001", Status: StatusPendingFocalApproval,
+			CreatedBy: "member-creator",
+		},
+		reviewers: []ReviewerDTO{{MembershipID: "member-a"}, {MembershipID: "member-b"}},
+	}
+	recordCreator := &fakeRecordCreator{recordID: "record-001", workflowID: "wf-001"}
+	auth := &fakeAuthService{decision: authapp.DecisionAllow}
+	svc := newTestService(repo, recordCreator, &fakeTypeCatalog{category: "irregular"}, auth)
+
+	resp1, err := svc.Approve(context.Background(), ApproveRequest{
+		Subject:    Subject{CompanyID: "company-001", MembershipID: "member-a", UserID: "user-a"},
+		ProposalID: "prop-001",
+	})
+	if err != nil {
+		t.Fatalf("first Approve() error = %v", err)
+	}
+	if resp1.Finalized {
+		t.Fatal("expected first vote (of 2) to not finalize")
+	}
+	if resp1.Proposal.Status != StatusPendingFocalApproval {
+		t.Fatalf("expected proposal to remain pending, got %q", resp1.Proposal.Status)
+	}
+	if recordCreator.callCount != 0 {
+		t.Fatalf("expected no record creation before last vote, got %d", recordCreator.callCount)
+	}
+
+	resp2, err := svc.Approve(context.Background(), ApproveRequest{
+		Subject:    Subject{CompanyID: "company-001", MembershipID: "member-b", UserID: "user-b"},
+		ProposalID: "prop-001",
+	})
+	if err != nil {
+		t.Fatalf("second Approve() error = %v", err)
+	}
+	if !resp2.Finalized {
+		t.Fatal("expected last vote to finalize")
+	}
+	if recordCreator.callCount != 1 {
+		t.Fatalf("expected exactly one record creation, got %d", recordCreator.callCount)
+	}
+}
+
+// TestApprove_FinalizeFailureThenRetry_SucceedsWithoutDuplicateRecord covers
+// the corrected (non-literal) Approve() design: a last-vote finalize failure
+// must not strand the proposal, and a retry by the same last voter must
+// succeed without creating a second disclosure record (ADR-1B deterministic
+// RecordID + idempotent-replay-on-duplicate).
+func TestApprove_FinalizeFailureThenRetry_SucceedsWithoutDuplicateRecord(t *testing.T) {
+	repo := &fakeRepository{
+		proposal: &ProposalDTO{
+			ProposalID: "prop-001", CompanyID: "company-001", TypeID: "dt-001", Status: StatusPendingFocalApproval,
+			CreatedBy: "member-creator",
+		},
+		reviewers: []ReviewerDTO{{MembershipID: "member-focal"}},
+	}
+	recordCreator := newConcurrencyFakeRecordCreator()
+	auth := &fakeAuthService{decision: authapp.DecisionAllow}
+	svc := NewService(repo, recordCreator, &fakeTypeCatalog{category: "irregular"}, fakeIDGen{}, false, auth, nil, nil, noopMetrics{})
+
+	repo.completeFinalizeErr = perr.NewHTTPError(http.StatusInternalServerError, perr.CodeInternal, "transient finalize failure", nil)
+	_, err := svc.Approve(context.Background(), ApproveRequest{
+		Subject:    Subject{CompanyID: "company-001", MembershipID: "member-focal", UserID: "user-focal"},
+		ProposalID: "prop-001",
+	})
+	if err == nil {
+		t.Fatal("expected first finalize attempt to fail")
+	}
+
+	repo.completeFinalizeErr = nil
+	resp, err := svc.Approve(context.Background(), ApproveRequest{
+		Subject:    Subject{CompanyID: "company-001", MembershipID: "member-focal", UserID: "user-focal"},
+		ProposalID: "prop-001",
+	})
+	if err != nil {
+		t.Fatalf("expected retry to succeed, got %v", err)
+	}
+	if !resp.Finalized {
+		t.Fatal("expected retry to finalize")
+	}
+
+	recordCreator.mu.Lock()
+	createCalls := recordCreator.createCalls
+	recordCreator.mu.Unlock()
+	if createCalls != 1 {
+		t.Fatalf("expected exactly one record creation across retry, got %d (orphan risk)", createCalls)
+	}
+}
+
+func TestReject_RequiresAssignedReviewer(t *testing.T) {
+	repo := &fakeRepository{
+		proposal: &ProposalDTO{
+			ProposalID: "prop-001", CompanyID: "company-001", TypeID: "dt-001",
+			Status: StatusPendingFocalApproval, CreatedBy: "member-creator",
+		},
+		reviewers: []ReviewerDTO{{MembershipID: "member-focal"}},
+	}
+	auth := &fakeAuthService{decision: authapp.DecisionAllow}
+	svc := newTestService(repo, &fakeRecordCreator{}, &fakeTypeCatalog{category: "irregular"}, auth)
+
+	_, err := svc.Reject(context.Background(), RejectRequest{
+		Subject:      Subject{CompanyID: "company-001", MembershipID: "member-other", UserID: "user-other"},
+		ProposalID:   "prop-001",
+		RejectReason: "Not valid",
+	})
+	if err == nil {
+		t.Fatal("expected error for non-assigned reviewer")
+	}
+	httpErr, ok := err.(*perr.HTTPError)
+	if !ok || httpErr.HTTPStatus != http.StatusForbidden {
+		t.Fatalf("expected 403, got %#v", err)
+	}
+	if repo.updateCalls != 0 {
+		t.Fatalf("expected no mutation, got %d updates", repo.updateCalls)
+	}
+}
+
+func TestReject_CannotRejectAtPendingAdminApproval(t *testing.T) {
+	// D1: pending_admin_approval is legacy-only; the one-round flow never
+	// reaches it, so Reject must refuse to act on a proposal stuck there.
 	repo := &fakeRepository{proposal: &ProposalDTO{
 		ProposalID: "prop-001", CompanyID: "company-001", TypeID: "dt-001",
 		Status: StatusPendingAdminApproval, ProcessControllerID: "member-controller",
@@ -381,19 +671,34 @@ func TestRejectUsesStatusBasedPermission(t *testing.T) {
 	svc := newTestService(repo, &fakeRecordCreator{}, &fakeTypeCatalog{category: "irregular"}, auth)
 
 	_, err := svc.Reject(context.Background(), RejectRequest{
-		Subject:      Subject{CompanyID: "company-001", MembershipID: "member-001", UserID: "user-001"},
+		Subject:      Subject{CompanyID: "company-001", MembershipID: "member-controller", UserID: "user-001"},
 		ProposalID:   "prop-001",
 		RejectReason: "Not valid",
 	})
 	if err == nil {
-		t.Fatal("expected identity check error")
+		t.Fatal("expected error for pending_admin_approval state")
 	}
-	// No permission check should be called â€” gate is purely by identity.
-	if auth.authorizeCalls != 0 {
-		t.Fatalf("expected no authorize calls for admin stage rejection, got %d", auth.authorizeCalls)
+	httpErr, ok := err.(*perr.HTTPError)
+	if !ok || httpErr.HTTPStatus != http.StatusConflict {
+		t.Fatalf("expected 409, got %#v", err)
 	}
-	if repo.updateCalls != 0 {
-		t.Fatalf("expected no mutation, got %d updates", repo.updateCalls)
+}
+
+func TestFinalizeLegacyApproval_DelegatesToAdminApprove(t *testing.T) {
+	repo := &fakeRepository{proposal: &ProposalDTO{
+		ProposalID: "prop-001", CompanyID: "company-001", TypeID: "dt-001",
+		Status: StatusPendingAdminApproval, ProcessControllerID: "member-ctrl", CreatedBy: "member-creator",
+	}}
+	recordCreator := &fakeRecordCreator{recordID: "record-001", workflowID: "wf-001"}
+	auth := &fakeAuthService{decision: authapp.DecisionAllow}
+	svc := newTestService(repo, recordCreator, &fakeTypeCatalog{category: "irregular"}, auth)
+
+	err := svc.FinalizeLegacyApproval(context.Background(), Subject{UserID: "admin-user", CompanyID: "company-001"}, "company-001", "prop-001")
+	if err != nil {
+		t.Fatalf("FinalizeLegacyApproval() error = %v", err)
+	}
+	if repo.completeCalls != 1 {
+		t.Fatalf("expected legacy AdminApprove completion once, got %d", repo.completeCalls)
 	}
 }
 
@@ -553,14 +858,16 @@ func newMemberAwareValidator() *memberAwareFakeMembershipValidator {
 }
 
 func TestR2_NotifyPanicRecovered_SubmitProposal(t *testing.T) {
-	repo := &fakeRepository{proposal: &ProposalDTO{
-		ProposalID:          "prop-r2-submit",
-		CompanyID:           "company-r2",
-		TypeID:              "dt-001",
-		Status:              StatusDraft,
-		CreatedBy:           "member-creator",
-		ProcessControllerID: "member-ctrl",
-	}}
+	repo := &fakeRepository{
+		proposal: &ProposalDTO{
+			ProposalID: "prop-r2-submit",
+			CompanyID:  "company-r2",
+			TypeID:     "dt-001",
+			Status:     StatusDraft,
+			CreatedBy:  "member-creator",
+		},
+		reviewers: []ReviewerDTO{{MembershipID: "member-focal"}},
+	}
 	auth := &fakeAuthService{decision: authapp.DecisionAllow}
 	// autoApprove=false: calls NotifyFocalsForReview, which panics; safeNotify must recover.
 	svc := NewService(repo, &fakeRecordCreator{}, &fakeTypeCatalog{category: "irregular"}, fakeIDGen{}, false, auth, newMemberAwareValidator(), panicNotifier{}, noopMetrics{})
@@ -574,25 +881,29 @@ func TestR2_NotifyPanicRecovered_SubmitProposal(t *testing.T) {
 	}
 }
 
-func TestR2_NotifyPanicRecovered_FocalApprove(t *testing.T) {
-	repo := &fakeRepository{proposal: &ProposalDTO{
-		ProposalID:          "prop-r2-focal",
-		CompanyID:           "company-r2",
-		TypeID:              "dt-001",
-		Status:              StatusPendingFocalApproval,
-		ProcessControllerID: "member-ctrl",
-	}}
+func TestR2_NotifyPanicRecovered_Approve(t *testing.T) {
+	repo := &fakeRepository{
+		proposal: &ProposalDTO{
+			ProposalID: "prop-r2-focal",
+			CompanyID:  "company-r2",
+			TypeID:     "dt-001",
+			Status:     StatusPendingFocalApproval,
+			CreatedBy:  "member-creator",
+		},
+		reviewers: []ReviewerDTO{{MembershipID: "member-focal"}},
+	}
 	auth := &fakeAuthService{decision: authapp.DecisionAllow}
-	// autoApprove=false: calls NotifyControllerForReview (ctrl != nil guaranteed by
-	// memberAwareValidator), which panics; safeNotify must recover.
+	// Single reviewer -> last vote finalizes immediately, which calls
+	// NotifyCreatorApproved (creator != nil via memberAwareValidator); it
+	// panics, and safeNotify must recover without failing the request.
 	svc := NewService(repo, &fakeRecordCreator{}, &fakeTypeCatalog{category: "irregular"}, fakeIDGen{}, false, auth, newMemberAwareValidator(), panicNotifier{}, noopMetrics{})
 
-	_, err := svc.FocalApprove(context.Background(), ProposalActionRequest{
+	_, err := svc.Approve(context.Background(), ApproveRequest{
 		Subject:    Subject{CompanyID: "company-r2", MembershipID: "member-focal", UserID: "user-focal"},
 		ProposalID: "prop-r2-focal",
 	})
 	if err != nil {
-		t.Fatalf("FocalApprove must succeed despite notifier panic (R-2 safeNotify); got %v", err)
+		t.Fatalf("Approve must succeed despite notifier panic (R-2 safeNotify); got %v", err)
 	}
 }
 
@@ -626,22 +937,24 @@ func TestR2_NotifyPanicRecovered_AdminApprove(t *testing.T) {
 }
 
 func TestR2_NotifyPanicRecovered_Reject(t *testing.T) {
-	repo := &fakeRepository{proposal: &ProposalDTO{
-		ProposalID:          "prop-r2-reject",
-		CompanyID:           "company-r2",
-		TypeID:              "dt-001",
-		Status:              StatusPendingAdminApproval,
-		ProcessControllerID: "member-ctrl",
-		CreatedBy:           "member-creator",
-	}}
+	repo := &fakeRepository{
+		proposal: &ProposalDTO{
+			ProposalID: "prop-r2-reject",
+			CompanyID:  "company-r2",
+			TypeID:     "dt-001",
+			Status:     StatusPendingFocalApproval,
+			CreatedBy:  "member-creator",
+		},
+		reviewers: []ReviewerDTO{{MembershipID: "member-focal"}},
+	}
 	auth := &fakeAuthService{decision: authapp.DecisionAllow}
-	// admin-stage reject uses identity check only (no s.authorize call);
-	// NotifyCreatorRejected panics (creator != nil via memberAwareValidator);
-	// safeNotify must recover.
+	// Reject requires permission ad_hoc_alert.focal_review plus assigned-reviewer
+	// identity check; NotifyCreatorRejected panics (creator != nil via
+	// memberAwareValidator); safeNotify must recover.
 	svc := NewService(repo, &fakeRecordCreator{}, &fakeTypeCatalog{category: "irregular"}, fakeIDGen{}, false, auth, newMemberAwareValidator(), panicNotifier{}, noopMetrics{})
 
 	_, err := svc.Reject(context.Background(), RejectRequest{
-		Subject:      Subject{CompanyID: "company-r2", MembershipID: "member-ctrl", UserID: "user-ctrl"},
+		Subject:      Subject{CompanyID: "company-r2", MembershipID: "member-focal", UserID: "user-focal"},
 		ProposalID:   "prop-r2-reject",
 		RejectReason: "Rejected for R-2 panic test",
 	})
@@ -736,22 +1049,47 @@ func TestCreateProposal_ControllerIsSelf(t *testing.T) {
 	}
 }
 
-func TestCreateProposal_ControllerIsSelf_AdminDoanhNghiep_Allowed(t *testing.T) {
+func TestCreateProposal_ControllerIsSelf_SoleReviewer_Returns422(t *testing.T) {
+	// D7 SoD safeguard: even a creator who holds ad_hoc_alert.focal_review
+	// cannot self-assign as the SOLE reviewer — at least one other reviewer
+	// must also be present.
+	repo := &fakeRepository{}
+	auth := &fakeAuthService{decision: authapp.DecisionAllow}
+	mv := &fakeMembershipValidator{active: true, hasPerm: true, hasAdminRole: true}
+	svc := NewService(repo, &fakeRecordCreator{}, &fakeTypeCatalog{category: "irregular"}, fakeIDGen{}, false, auth, mv, nil, noopMetrics{})
+
+	_, err := svc.CreateProposal(context.Background(), CreateProposalRequest{
+		Subject:               Subject{CompanyID: "company-001", MembershipID: "member-001", UserID: "user-001"},
+		TypeID:                "dt-irregular",
+		ReviewerMembershipIDs: []string{"member-001"},
+	})
+	if err == nil {
+		t.Fatal("expected 422 for creator self-assigning as sole reviewer")
+	}
+	httpErr, ok := err.(*perr.HTTPError)
+	if !ok || httpErr.HTTPStatus != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422, got %#v", err)
+	}
+}
+
+func TestCreateProposal_ControllerIsSelf_WithOtherReviewer_Allowed(t *testing.T) {
+	// D7: self-assign is allowed once >=1 other reviewer is also present, and
+	// the creator holds ad_hoc_alert.focal_review.
 	repo := &fakeRepository{}
 	auth := &fakeAuthService{decision: authapp.DecisionAllow}
 	mv := &fakeMembershipValidator{active: true, hasPerm: true, hasAdminRole: true}
 	svc := NewService(repo, &fakeRecordCreator{}, &fakeTypeCatalog{category: "irregular"}, fakeIDGen{}, false, auth, mv, nil, noopMetrics{})
 
 	resp, err := svc.CreateProposal(context.Background(), CreateProposalRequest{
-		Subject:                       Subject{CompanyID: "company-001", MembershipID: "member-001", UserID: "user-001"},
-		TypeID:                        "dt-irregular",
-		ProcessControllerMembershipID: "member-001",
+		Subject:               Subject{CompanyID: "company-001", MembershipID: "member-001", UserID: "user-001"},
+		TypeID:                "dt-irregular",
+		ReviewerMembershipIDs: []string{"member-001", "member-002"},
 	})
 	if err != nil {
 		t.Fatalf("CreateProposal() error = %v", err)
 	}
-	if resp.ProcessControllerID != "member-001" {
-		t.Fatalf("expected ProcessControllerID member-001, got %q", resp.ProcessControllerID)
+	if len(resp.ReviewerMembershipIDs) != 2 {
+		t.Fatalf("expected 2 reviewers stored, got %v", resp.ReviewerMembershipIDs)
 	}
 }
 
@@ -767,11 +1105,11 @@ func TestCreateProposal_ControllerNoPermission(t *testing.T) {
 		ProcessControllerMembershipID: "member-controller",
 	})
 	if err == nil {
-		t.Fatal("expected permission error for controller without process_control permission")
+		t.Fatal("expected permission error for reviewer without ad_hoc_alert.focal_review")
 	}
 	httpErr, ok := err.(*perr.HTTPError)
-	if !ok || httpErr.HTTPStatus != http.StatusForbidden {
-		t.Fatalf("expected 403, got %#v", err)
+	if !ok || httpErr.HTTPStatus != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422, got %#v", err)
 	}
 }
 
@@ -795,7 +1133,30 @@ func TestCreateProposal_ControllerInactive(t *testing.T) {
 	}
 }
 
-func TestCreateProposal_ValidController_StoresID(t *testing.T) {
+func TestCreateProposal_ValidReviewers_StoresIDs(t *testing.T) {
+	repo := &fakeRepository{}
+	auth := &fakeAuthService{decision: authapp.DecisionAllow}
+	svc := newTestService(repo, &fakeRecordCreator{}, &fakeTypeCatalog{category: "irregular"}, auth)
+
+	resp, err := svc.CreateProposal(context.Background(), CreateProposalRequest{
+		Subject:               Subject{CompanyID: "company-001", MembershipID: "member-001", UserID: "user-001"},
+		TypeID:                "dt-irregular",
+		ReviewerMembershipIDs: []string{"member-controller"},
+	})
+	if err != nil {
+		t.Fatalf("CreateProposal() error = %v", err)
+	}
+	if len(resp.ReviewerMembershipIDs) != 1 || resp.ReviewerMembershipIDs[0] != "member-controller" {
+		t.Fatalf("expected ReviewerMembershipIDs ['member-controller'], got %v", resp.ReviewerMembershipIDs)
+	}
+	if repo.insertCalls != 1 {
+		t.Fatalf("expected one insert, got %d", repo.insertCalls)
+	}
+}
+
+func TestCreateProposal_LegacyProcessControllerAlias_StoresAsSoleReviewer(t *testing.T) {
+	// A6 backward compat: the deprecated single-reviewer field is accepted
+	// when reviewer_membership_ids is empty.
 	repo := &fakeRepository{}
 	auth := &fakeAuthService{decision: authapp.DecisionAllow}
 	svc := newTestService(repo, &fakeRecordCreator{}, &fakeTypeCatalog{category: "irregular"}, auth)
@@ -808,11 +1169,8 @@ func TestCreateProposal_ValidController_StoresID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateProposal() error = %v", err)
 	}
-	if resp.ProcessControllerID != "member-controller" {
-		t.Fatalf("expected ProcessControllerID 'member-controller', got %q", resp.ProcessControllerID)
-	}
-	if repo.insertCalls != 1 {
-		t.Fatalf("expected one insert, got %d", repo.insertCalls)
+	if len(resp.ReviewerMembershipIDs) != 1 || resp.ReviewerMembershipIDs[0] != "member-controller" {
+		t.Fatalf("expected legacy field aliased to ReviewerMembershipIDs ['member-controller'], got %v", resp.ReviewerMembershipIDs)
 	}
 }
 
@@ -978,6 +1336,33 @@ func (f *concurrencyFakeRepo) CompleteAdminApproval(ctx context.Context, upd Sta
 
 func (f *concurrencyFakeRepo) List(ctx context.Context, companyID string, statusFilter []string, page, pageSize int) ([]ProposalDTO, int, error) {
 	return nil, 0, nil
+}
+
+// ReserveVote/CompleteFinalize/IsAssignedReviewer/ListReviewers/ListApprovals/
+// ListPendingAdminApproval are unused by the AdminApprove-only tests in this
+// file â€” simple stubs satisfy the Repository interface.
+func (f *concurrencyFakeRepo) ReserveVote(ctx context.Context, in ReserveVoteInput) (*VoteReservation, error) {
+	return nil, errors.New("not used in this test")
+}
+
+func (f *concurrencyFakeRepo) CompleteFinalize(ctx context.Context, upd StatusUpdate) (*ProposalDTO, bool, error) {
+	return nil, false, errors.New("not used in this test")
+}
+
+func (f *concurrencyFakeRepo) IsAssignedReviewer(ctx context.Context, companyID, proposalID, membershipID string) (bool, error) {
+	return false, nil
+}
+
+func (f *concurrencyFakeRepo) ListReviewers(ctx context.Context, companyID, proposalID string) ([]ReviewerDTO, error) {
+	return nil, nil
+}
+
+func (f *concurrencyFakeRepo) ListApprovals(ctx context.Context, companyID, proposalID string) ([]ApprovalDTO, error) {
+	return nil, nil
+}
+
+func (f *concurrencyFakeRepo) ListPendingAdminApproval(ctx context.Context) ([]PendingApprovalRow, error) {
+	return nil, nil
 }
 
 // TestAdminApprove_ConcurrentRetries_CreateExactlyOneRecordWithSameDeterministicID
@@ -1231,21 +1616,29 @@ func (f *raceFakeRepo) Insert(ctx context.Context, p ProposalDTO) (*ProposalDTO,
 	return &cp, nil
 }
 
-func (f *raceFakeRepo) FindByID(ctx context.Context, companyID, proposalID string) (*ProposalDTO, error) {
-	f.mu.Lock()
-	cp := f.proposal
-	f.mu.Unlock()
-
+// rendezvous blocks the first of exactly two concurrent callers until the
+// second arrives, forcing both to have observed the same pre-write snapshot
+// before either writes — shared by FindByID (used by Cancel) and ReserveVote
+// (used by Approve) so the two real entry points into the race reproduce the
+// same TOCTOU window.
+func (f *raceFakeRepo) rendezvous() {
 	f.gateMu.Lock()
 	f.gateCount++
 	if f.gateCount == 1 {
 		ch := f.gateCh
 		f.gateMu.Unlock()
-		<-ch // block until the second concurrent reader arrives and observes the same snapshot
+		<-ch
 	} else {
 		close(f.gateCh)
 		f.gateMu.Unlock()
 	}
+}
+
+func (f *raceFakeRepo) FindByID(ctx context.Context, companyID, proposalID string) (*ProposalDTO, error) {
+	f.mu.Lock()
+	cp := f.proposal
+	f.mu.Unlock()
+	f.rendezvous()
 	return &cp, nil
 }
 
@@ -1288,15 +1681,82 @@ func (f *raceFakeRepo) List(ctx context.Context, companyID string, statusFilter 
 	return nil, 0, nil
 }
 
-// TestConcurrentCancelAndFocalApprove_OneWinsOneGets409Conflict covers TC-12: a
-// proposal sitting in pending_focal_approval is simultaneously raced by its
-// creator calling Cancel and a focal reviewer calling FocalApprove. Both read
-// the same starting status (cur.Status == pending_focal_approval) before either
-// writes â€” the classic lost-update window ADR-2 closes with `WHERE status = ?`.
-// Exactly one transition must win; the other must observe the status changed
-// out from under it and receive 409 CodeStateConflict (never silently overwrite
-// or silently no-op).
-func TestConcurrentCancelAndFocalApprove_OneWinsOneGets409Conflict(t *testing.T) {
+// ReserveVote mirrors the production FOR-UPDATE-gated read: it rendezvouses
+// with Cancel's FindByID on the same shared gate so both observe the same
+// pre-write snapshot, then validates that snapshot the same way the real
+// repository's SQL guard does.
+func (f *raceFakeRepo) ReserveVote(ctx context.Context, in ReserveVoteInput) (*VoteReservation, error) {
+	f.mu.Lock()
+	cp := f.proposal
+	f.mu.Unlock()
+	f.rendezvous()
+	if cp.Status != StatusApproved && cp.Status != StatusPendingFocalApproval {
+		conflictErr := perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "proposal is not pending focal approval", nil)
+		conflictErr.Details = map[string]any{
+			"current_status": cp.Status,
+			"proposal_id":    cp.ProposalID,
+		}
+		return nil, conflictErr
+	}
+	return &VoteReservation{
+		Proposal:          &cp,
+		IsLastVote:        true,
+		Required:          1,
+		Completed:         1,
+		ActorMembershipID: in.ActorMembershipID,
+		ActorUserID:       in.ActorUserID,
+	}, nil
+}
+
+// CompleteFinalize is the guarded write counterpart to Cancel's UpdateStatus —
+// same `current status must equal FromStatus` check, same conflict Details
+// shape, so whichever of the two writers loses the race gets an identical
+// 409 CodeStateConflict regardless of which side it came from.
+func (f *raceFakeRepo) CompleteFinalize(ctx context.Context, upd StatusUpdate) (*ProposalDTO, bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.proposal.Status != upd.FromStatus {
+		conflictErr := perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "proposal status changed concurrently", nil)
+		conflictErr.Details = map[string]any{
+			"current_status":          f.proposal.Status,
+			"expected_from_status":    upd.FromStatus,
+			"attempted_target_status": upd.Status,
+			"proposal_id":             upd.ProposalID,
+		}
+		return nil, false, conflictErr
+	}
+	f.proposal.Status = upd.Status
+	f.proposal.RecordID = upd.RecordID
+	f.proposal.WorkflowInstanceID = upd.WorkflowInstanceID
+	cp := f.proposal
+	return &cp, true, nil
+}
+
+func (f *raceFakeRepo) IsAssignedReviewer(ctx context.Context, companyID, proposalID, membershipID string) (bool, error) {
+	return true, nil
+}
+
+func (f *raceFakeRepo) ListReviewers(ctx context.Context, companyID, proposalID string) ([]ReviewerDTO, error) {
+	return nil, nil
+}
+
+func (f *raceFakeRepo) ListApprovals(ctx context.Context, companyID, proposalID string) ([]ApprovalDTO, error) {
+	return nil, nil
+}
+
+func (f *raceFakeRepo) ListPendingAdminApproval(ctx context.Context) ([]PendingApprovalRow, error) {
+	return nil, nil
+}
+
+// TestConcurrentCancelAndApprove_OneWinsOneGets409Conflict covers TC-12: a
+// proposal sitting in pending_focal_approval (single reviewer, last vote) is
+// simultaneously raced by its creator calling Cancel and the sole reviewer
+// calling Approve. Both observe the same starting status before either writes
+// â€” the classic lost-update window ADR-2 closes with a guarded write. Exactly
+// one transition must win; the other must observe the status changed out from
+// under it and receive 409 CodeStateConflict (never silently overwrite or
+// silently no-op).
+func TestConcurrentCancelAndApprove_OneWinsOneGets409Conflict(t *testing.T) {
 	const companyID = "company-001"
 	const proposalID = "prop-race-001"
 
@@ -1312,8 +1772,9 @@ func TestConcurrentCancelAndFocalApprove_OneWinsOneGets409Conflict(t *testing.T)
 	svc := NewService(repo, &fakeRecordCreator{}, &fakeTypeCatalog{category: "irregular"}, fakeIDGen{}, false, auth, newAllowValidator(), nil, noopMetrics{})
 
 	var wg sync.WaitGroup
-	var cancelResp, focalResp *ProposalDTO
-	var cancelErr, focalErr error
+	var cancelResp *ProposalDTO
+	var approveResp *ApproveResponse
+	var cancelErr, approveErr error
 
 	wg.Add(2)
 	go func() {
@@ -1325,7 +1786,7 @@ func TestConcurrentCancelAndFocalApprove_OneWinsOneGets409Conflict(t *testing.T)
 	}()
 	go func() {
 		defer wg.Done()
-		focalResp, focalErr = svc.FocalApprove(context.Background(), ProposalActionRequest{
+		approveResp, approveErr = svc.Approve(context.Background(), ApproveRequest{
 			Subject:    Subject{CompanyID: companyID, MembershipID: "member-focal", UserID: "user-focal"},
 			ProposalID: proposalID,
 		})
@@ -1334,12 +1795,12 @@ func TestConcurrentCancelAndFocalApprove_OneWinsOneGets409Conflict(t *testing.T)
 
 	type outcome struct {
 		name string
-		resp *ProposalDTO
+		ok   bool
 		err  error
 	}
 	outcomes := []outcome{
-		{name: "Cancel", resp: cancelResp, err: cancelErr},
-		{name: "FocalApprove", resp: focalResp, err: focalErr},
+		{name: "Cancel", ok: cancelResp != nil, err: cancelErr},
+		{name: "Approve", ok: approveResp != nil && approveResp.Finalized, err: approveErr},
 	}
 
 	successes, conflicts := 0, 0
@@ -1347,8 +1808,8 @@ func TestConcurrentCancelAndFocalApprove_OneWinsOneGets409Conflict(t *testing.T)
 		switch {
 		case o.err == nil:
 			successes++
-			if o.resp == nil {
-				t.Fatalf("%s: winner must return the updated proposal", o.name)
+			if !o.ok {
+				t.Fatalf("%s: winner must report a finalized result", o.name)
 			}
 		case o.err != nil:
 			httpErr, ok := o.err.(*perr.HTTPError)
@@ -1366,7 +1827,7 @@ func TestConcurrentCancelAndFocalApprove_OneWinsOneGets409Conflict(t *testing.T)
 	}
 
 	if successes != 1 || conflicts != 1 {
-		t.Fatalf("expected exactly one winner and one 409 conflict, got %d successes / %d conflicts (cancelErr=%v, focalErr=%v)", successes, conflicts, cancelErr, focalErr)
+		t.Fatalf("expected exactly one winner and one 409 conflict, got %d successes / %d conflicts (cancelErr=%v, approveErr=%v)", successes, conflicts, cancelErr, approveErr)
 	}
 
 	// The persisted status must reflect whichever transition actually won â€”
@@ -1374,8 +1835,8 @@ func TestConcurrentCancelAndFocalApprove_OneWinsOneGets409Conflict(t *testing.T)
 	repo.mu.Lock()
 	finalStatus := repo.proposal.Status
 	repo.mu.Unlock()
-	if finalStatus != StatusCancelled && finalStatus != StatusPendingAdminApproval {
-		t.Fatalf("final status = %q, want either %q (Cancel won) or %q (FocalApprove won)", finalStatus, StatusCancelled, StatusPendingAdminApproval)
+	if finalStatus != StatusCancelled && finalStatus != StatusApproved {
+		t.Fatalf("final status = %q, want either %q (Cancel won) or %q (Approve won)", finalStatus, StatusCancelled, StatusApproved)
 	}
 }
 
@@ -1501,16 +1962,16 @@ func TestProposalActions_EmitTransitionMetricWithExactLabels(t *testing.T) {
 			},
 		},
 		{
-			name:        "FocalApprove: pending_focal_approval -> pending_admin_approval",
+			name:        "Approve: pending_focal_approval -> approved",
 			startStatus: StatusPendingFocalApproval,
 			wantFrom:    StatusPendingFocalApproval,
-			wantTo:      StatusPendingAdminApproval,
+			wantTo:      StatusApproved,
 			run: func(t *testing.T, svc Service) {
-				if _, err := svc.FocalApprove(context.Background(), ProposalActionRequest{
+				if _, err := svc.Approve(context.Background(), ApproveRequest{
 					Subject:    Subject{CompanyID: companyID, MembershipID: "member-focal", UserID: "user-focal"},
 					ProposalID: proposalID,
 				}); err != nil {
-					t.Fatalf("FocalApprove() error = %v", err)
+					t.Fatalf("Approve() error = %v", err)
 				}
 			},
 		},
@@ -1562,14 +2023,17 @@ func TestProposalActions_EmitTransitionMetricWithExactLabels(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			repo := &fakeRepository{proposal: &ProposalDTO{
-				ProposalID:          proposalID,
-				CompanyID:           companyID,
-				TypeID:              "dt-001",
-				Status:              tc.startStatus,
-				CreatedBy:           "member-creator",
-				ProcessControllerID: "member-admin",
-			}}
+			repo := &fakeRepository{
+				proposal: &ProposalDTO{
+					ProposalID:          proposalID,
+					CompanyID:           companyID,
+					TypeID:              "dt-001",
+					Status:              tc.startStatus,
+					CreatedBy:           "member-creator",
+					ProcessControllerID: "member-admin",
+				},
+				reviewers: []ReviewerDTO{{MembershipID: "member-focal"}},
+			}
 			auth := &fakeAuthService{decision: authapp.DecisionAllow}
 			spy := &spyMetrics{}
 			svc := NewService(repo, &fakeRecordCreator{}, &fakeTypeCatalog{category: "irregular"}, fakeIDGen{}, false, auth, newAllowValidator(), nil, spy)
