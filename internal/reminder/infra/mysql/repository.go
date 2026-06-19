@@ -410,7 +410,7 @@ func (r *Repository) ListDispatchCandidates(ctx context.Context, now time.Time, 
 		       o.scope_type,
 		       o.scope_id,
 		       COALESCE(dr.title, dr2.title, dr3.title, ''),
-		       COALESCE(dr.planned_date, dr2.planned_date, dr3.planned_date, DATE(o.scheduled_at)),
+		       COALESCE(dr.planned_date, dr2.planned_date, dr3.planned_date, DATE(o.scheduled_at)) AS deadline_at,
 		       COALESCE(dr.status, dr2.status, dr3.status, ''),
 		       COALESCE(dr.company_id, wi.company_id, wi2.company_id, ''),
 		       COALESCE(dr.type_id, dr2.type_id, dr3.type_id, ''),
@@ -471,6 +471,7 @@ func (r *Repository) ListDispatchCandidates(ctx context.Context, now time.Time, 
 			return nil, fmt.Errorf("scan dispatch candidate: %w", err)
 		}
 		_ = json.Unmarshal(recipientsJSON, &c.RecipientEmails)
+		c.DeadlineAt = deadlineDate
 		c.TemplateCode = "REMINDER_DISCLOSURE_DUE"
 		c.TemplatePayload = buildReminderTemplatePayload(disclosureID, scopeType, scopeID, title, deadlineDate, c.ScheduledAt, status, companyID)
 		// Populate new Phase 4 fields.

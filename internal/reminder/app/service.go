@@ -367,7 +367,11 @@ func (s *service) prepareDispatch(ctx context.Context, c DispatchCandidate) (tem
 	if c.CompanyName != "" {
 		payload["company_name"] = c.CompanyName
 	}
-	payload["due_date"] = c.ScheduledAt.UTC().Format("02/01/2006")
+	deadlineAt := dispatchDeadlineAt(c)
+	loc := reminderCalculatorLocation()
+	if _, ok := payload["due_date"]; !ok {
+		payload["due_date"] = deadlineAt.In(loc).Format("02/01/2006")
+	}
 	if c.ScopeType == ScopeTypeWorkflowStep && c.ScopeID != "" {
 		// scope_id may be "disclosureID:stepID" (config path) or just "stepID" (milestone path).
 		stepID := extractStepID(c.ScopeID)
@@ -443,10 +447,14 @@ func (s *service) prepareDispatch(ctx context.Context, c DispatchCandidate) (tem
 		payload["recipient_name"] = recipients[0]
 	}
 
-	// remaining_days + urgency_status: computed in memory from the scheduled due instant.
-	// Day-boundary semantics in Asia/Ho_Chi_Minh mirror the deadline UI (remainingDaysFromDue).
-	remaining := calculateRemainingDays(c.ScheduledAt, time.Now().UTC())
-	if _, ok := payload["remaining_days"]; !ok {
+	// remaining_days + urgency_status: computed from the real deadline (DeadlineAt), not
+	// ScheduledAt (reminder fire time). Day-boundary semantics in Asia/Ho_Chi_Minh mirror
+	// the deadline UI (remainingDaysFromDue).
+	var remaining int
+	if rd, ok := payload["remaining_days"]; ok {
+		remaining, _ = intFromPayload(rd)
+	} else {
+		remaining = calculateRemainingDays(deadlineAt, time.Now().UTC())
 		payload["remaining_days"] = remaining
 	}
 	if _, ok := payload["urgency_status"]; !ok {
@@ -686,6 +694,30 @@ const (
 
 // reminderCalculatorLocation returns Asia/Ho_Chi_Minh, falling back to a fixed +07:00 zone
 // when tzdata is unavailable — matching the deadline engine's timezone handling.
+// dispatchDeadlineAt returns the disclosure/workflow due instant for email rendering.
+// Falls back to ScheduledAt when the repository did not resolve a planned_date.
+func dispatchDeadlineAt(c DispatchCandidate) time.Time {
+	if !c.DeadlineAt.IsZero() {
+		return c.DeadlineAt
+	}
+	return c.ScheduledAt
+}
+
+func intFromPayload(v any) (int, bool) {
+	switch x := v.(type) {
+	case int:
+		return x, true
+	case int32:
+		return int(x), true
+	case int64:
+		return int(x), true
+	case float64:
+		return int(x), true
+	default:
+		return 0, false
+	}
+}
+
 func reminderCalculatorLocation() *time.Location {
 	loc, err := time.LoadLocation("Asia/Ho_Chi_Minh")
 	if err != nil {

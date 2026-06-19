@@ -12,7 +12,7 @@ import (
 func TestRenderReminderEmailDisclosureDue(t *testing.T) {
 	// Augmented payload (as produced by service.prepareDispatch): human-readable
 	// disclosure_title + dd/mm/yyyy due_date + company_name + absolute portal_url.
-	subject, body, err := renderReminderEmail("REMINDER_DISCLOSURE_DUE", map[string]any{
+	subject, body, _, err := renderReminderEmail("REMINDER_DISCLOSURE_DUE", map[string]any{
 		"disclosure_title": "Báo cáo tài chính quý 2/2026",
 		"due_date":         "15/06/2026",
 		"company_name":     "Công ty Cổ phần ABC",
@@ -49,7 +49,7 @@ func TestRenderReminderEmailDisclosureDue(t *testing.T) {
 }
 
 func TestRenderReminderEmailDisclosureDueRequiresFields(t *testing.T) {
-	if _, _, err := renderReminderEmail("REMINDER_DISCLOSURE_DUE", map[string]any{}); err == nil {
+	if _, _, _, err := renderReminderEmail("REMINDER_DISCLOSURE_DUE", map[string]any{}); err == nil {
 		t.Fatal("expected missing fields error")
 	}
 }
@@ -67,7 +67,7 @@ func TestSender_RenderReminderEmailContentEmbedVietnamese(t *testing.T) {
 	}
 	sender := NewSMTPSender(SMTPConfig{}, WithTemplateRendering("embed", notificationregistry.NewEmbedRegistry(), notificationapp.NewEmailRenderer()))
 
-	subject, body, err := sender.renderReminderEmailContent("REMINDER_DISCLOSURE_DUE", payload)
+	subject, body, _, err := sender.renderReminderEmailContent("REMINDER_DISCLOSURE_DUE", payload)
 	if err != nil {
 		t.Fatalf("renderReminderEmailContent error = %v", err)
 	}

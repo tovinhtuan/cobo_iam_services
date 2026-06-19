@@ -140,6 +140,10 @@ type DispatchCandidate struct {
 	RecipientEmails []string
 	CurrentAttempt  int
 	ScheduledAt     time.Time
+	// DeadlineAt is the real disclosure/workflow due date from planned_date (repository
+	// COALESCE). ScheduledAt is when the reminder fires; they differ when reminders are
+	// sent N days before the deadline.
+	DeadlineAt time.Time
 	// Fields added for alert dispatch (Phase 4):
 	ScopeType            ScopeType // "DISCLOSURE" | "WORKFLOW_STEP"
 	ScopeID              string    // disclosure_id for DISCLOSURE; step_id for WORKFLOW_STEP

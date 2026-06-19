@@ -262,6 +262,7 @@ func (r *Repository) ListDispatchCandidates(_ context.Context, now time.Time, li
 			RecipientEmails: append([]string{}, p.cfg.Config.Recipients...),
 			CurrentAttempt:  p.occ.AttemptCount,
 			ScheduledAt:     p.occ.ScheduledAt,
+			DeadlineAt:      p.occ.ScheduledAt,
 		})
 	}
 	return out, nil

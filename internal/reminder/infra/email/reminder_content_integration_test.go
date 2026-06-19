@@ -58,7 +58,7 @@ func assertNoForbidden(t *testing.T, subject, body string) {
 }
 
 func TestIntegration_RenderDeadlineApproaching_FullPayload(t *testing.T) {
-	subject, body, err := embedSender().renderReminderEmailContent("reminder.deadline_approaching", fullDeadlinePayload())
+	subject, body, _, err := embedSender().renderReminderEmailContent("reminder.deadline_approaching", fullDeadlinePayload())
 	if err != nil {
 		t.Fatalf("render error: %v", err)
 	}
@@ -84,7 +84,7 @@ func TestIntegration_RenderDeadlineApproaching_FullPayload(t *testing.T) {
 }
 
 func TestIntegration_RenderWorkflowStepDue_FullPayload(t *testing.T) {
-	subject, body, err := embedSender().renderReminderEmailContent("reminder.workflow_step_due", fullWorkflowStepPayload())
+	subject, body, _, err := embedSender().renderReminderEmailContent("reminder.workflow_step_due", fullWorkflowStepPayload())
 	if err != nil {
 		t.Fatalf("render error: %v", err)
 	}
@@ -113,7 +113,7 @@ func TestIntegration_RenderWorkflowStepDue_FullPayload(t *testing.T) {
 func TestIntegration_DeadlineApproaching_MissingRequiredVar_Errors(t *testing.T) {
 	payload := fullDeadlinePayload()
 	delete(payload, "implementation_guide") // required var removed
-	if _, _, err := embedSender().renderReminderEmailContent("reminder.deadline_approaching", payload); err == nil {
+	if _, _, _, err := embedSender().renderReminderEmailContent("reminder.deadline_approaching", payload); err == nil {
 		t.Fatal("expected render error when a required var (implementation_guide) is missing")
 	}
 }

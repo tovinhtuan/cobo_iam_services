@@ -10,6 +10,7 @@ import (
 	"time"
 
 	notificationapp "github.com/cobo/cobo_iam_services/internal/notification/app"
+	notificationsmtp "github.com/cobo/cobo_iam_services/internal/notification/infra/smtp"
 )
 
 // SMTP timeout hardening (Reminder Reliability Hardening, P0). The previous
@@ -79,7 +80,7 @@ func (s *Sender) SendReminderEmail(_ context.Context, templateCode string, paylo
 	if len(recipients) == 0 {
 		return "", PermanentError{Err: fmt.Errorf("recipient list is empty")}
 	}
-	subject, body, err := s.renderReminderEmailContent(templateCode, payload)
+	subject, textBody, htmlBody, err := s.renderReminderEmailContent(templateCode, payload)
 	if err != nil {
 		return "", PermanentError{Err: err}
 	}
@@ -93,18 +94,13 @@ func (s *Sender) SendReminderEmail(_ context.Context, templateCode string, paylo
 	if from == "" {
 		from = "no-reply@cobo.local"
 	}
-	msg := "From: " + from + "\r\n" +
-		"To: " + strings.Join(recipients, ",") + "\r\n" +
-		"Subject: " + subject + "\r\n" +
-		"MIME-Version: 1.0\r\n" +
-		"Content-Type: text/plain; charset=UTF-8\r\n\r\n" +
-		body + "\r\n"
+	msg, _ := notificationsmtp.BuildMessage(from, strings.Join(recipients, ","), subject, textBody, htmlBody)
 
 	var auth smtp.Auth
 	if strings.TrimSpace(s.cfg.User) != "" {
 		auth = smtp.PlainAuth("", s.cfg.User, s.cfg.Pass, s.cfg.Host)
 	}
-	if err := s.sendMail(addr, auth, from, recipients, []byte(msg)); err != nil {
+	if err := s.sendMail(addr, auth, from, recipients, msg); err != nil {
 		if isTemporarySMTPError(err) {
 			return "", TemporaryError{Err: err}
 		}
@@ -175,14 +171,14 @@ func (s *Sender) boundedSendMail(addr string, auth smtp.Auth, from string, to []
 	return c.Quit()
 }
 
-func (s *Sender) renderReminderEmailContent(templateCode string, payload map[string]any) (string, string, error) {
+func (s *Sender) renderReminderEmailContent(templateCode string, payload map[string]any) (subject, textBody, htmlBody string, err error) {
 	if s.templateSource == "embed" && s.registry != nil && s.renderer != nil {
 		if key, ok := reminderTemplateKey(templateCode); ok {
 			resolved, err := s.registry.Resolve(context.Background(), key, "vi")
 			if err == nil {
 				rendered, renderErr := s.renderer.Render(resolved, payload)
 				if renderErr == nil {
-					return rendered.Subject, strings.ReplaceAll(rendered.TextBody, "\n", "\r\n"), nil
+					return rendered.Subject, rendered.TextBody, rendered.HTMLBody, nil
 				}
 			}
 		}
@@ -203,7 +199,7 @@ func reminderTemplateKey(templateCode string) (string, bool) {
 	}
 }
 
-func renderReminderEmail(templateCode string, payload map[string]any) (string, string, error) {
+func renderReminderEmail(templateCode string, payload map[string]any) (subject, textBody, htmlBody string, err error) {
 	switch strings.TrimSpace(templateCode) {
 	case "REMINDER_DISCLOSURE_DUE":
 		// Title/deadline prefer the augmented human-readable keys (disclosure_title,
@@ -224,7 +220,7 @@ func renderReminderEmail(templateCode string, payload map[string]any) (string, s
 			actionURL = optionalString(payload, "action_url")
 		}
 		if title == "" || deadline == "" {
-			return "", "", fmt.Errorf("missing required reminder template fields")
+			return "", "", "", fmt.Errorf("missing required reminder template fields")
 		}
 		subject := fmt.Sprintf("[CoBo] Nhắc nhở: %s sắp đến hạn vào %s", title, deadline)
 		lines := []string{
@@ -252,9 +248,9 @@ func renderReminderEmail(templateCode string, payload map[string]any) (string, s
 			"Trân trọng,",
 			"Hệ thống CoBo Portal",
 		)
-		return subject, strings.Join(lines, "\r\n"), nil
+		return subject, strings.Join(lines, "\n"), "", nil
 	default:
-		return "", "", fmt.Errorf("unsupported reminder template_code: %s", templateCode)
+		return "", "", "", fmt.Errorf("unsupported reminder template_code: %s", templateCode)
 	}
 }
 
