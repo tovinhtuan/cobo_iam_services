@@ -83,8 +83,27 @@ func (r *Repository) UpsertGlobalWorkflow(_ context.Context, req disclosureapp.C
 		r.globalWorkflows = map[string]*disclosureapp.GlobalWorkflowDTO{}
 	}
 	now := time.Now().UTC()
+
+	// mig-S1: build the existing step identity map BEFORE overwrite, to preserve step_key
+	// across upsert (match by step_key, then step_id). Mirrors the MySQL repository.
+	existingKeyByStepID := map[string]string{}
+	existingKeys := map[string]bool{}
+	// Batch 3: preserve version pointers across save-draft (mirrors MySQL repo).
+	var prevPublishedNo, prevActiveNo *int
+	if prev, ok := r.globalWorkflows[req.TypeID]; ok && prev != nil {
+		for _, s := range prev.Steps {
+			if s.StepKey != "" {
+				existingKeyByStepID[s.StepID] = s.StepKey
+				existingKeys[s.StepKey] = true
+			}
+		}
+		prevPublishedNo = prev.PublishedVersionNo
+		prevActiveNo = prev.ActiveVersionNo
+	}
+
 	steps := make([]disclosureapp.GlobalWorkflowStepInput, len(req.Steps))
 	copy(steps, req.Steps)
+	usedKeys := map[string]bool{}
 	for i := range steps {
 		if steps[i].StepID == "" {
 			steps[i].StepID = fmt.Sprintf("%s-step-%d", workflowID, i+1)
@@ -92,15 +111,19 @@ func (r *Repository) UpsertGlobalWorkflow(_ context.Context, req disclosureapp.C
 		if steps[i].DisplayOrder <= 0 {
 			steps[i].DisplayOrder = i + 1
 		}
+		steps[i].StepKey = disclosureapp.ResolveStepKey(steps[i], existingKeys, existingKeyByStepID, usedKeys)
+		usedKeys[steps[i].StepKey] = true
 	}
 	r.globalWorkflows[req.TypeID] = &disclosureapp.GlobalWorkflowDTO{
-		WorkflowID: workflowID,
-		TypeID:     req.TypeID,
-		Status:     "active",
-		ChangeNote: req.ChangeNote,
-		Steps:      steps,
-		CreatedBy:  req.Subject.UserID,
-		UpdatedBy:  req.Subject.UserID,
+		WorkflowID:         workflowID,
+		TypeID:             req.TypeID,
+		Status:             "active",
+		ChangeNote:         req.ChangeNote,
+		PublishedVersionNo: prevPublishedNo,
+		ActiveVersionNo:    prevActiveNo,
+		Steps:              steps,
+		CreatedBy:          req.Subject.UserID,
+		UpdatedBy:          req.Subject.UserID,
 		CreatedAt:  now,
 		UpdatedAt:  now,
 	}

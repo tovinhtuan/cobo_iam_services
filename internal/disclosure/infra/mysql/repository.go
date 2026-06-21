@@ -1186,6 +1186,14 @@ func (r *Repository) GetEffectiveWorkflow(ctx context.Context, companyID, typeID
 		dto.Workflow = view.ActiveVersion.Workflow
 		return dto, nil
 	}
+	if steps, versionNo, ok, err := r.loadActiveGlobalWorkflow(ctx, typeID); err != nil {
+		return nil, err
+	} else if ok {
+		dto.Source = "global_workflow"
+		dto.VersionNo = versionNo
+		dto.Workflow = steps
+		return dto, nil
+	}
 	detail, err := r.GetTypeDetail(ctx, companyID, typeID)
 	if err != nil {
 		return nil, err

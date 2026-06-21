@@ -135,19 +135,32 @@ func (r *Repository) CountGlobalWorkflowsByTypeId(ctx context.Context, typeID st
 	return count, err
 }
 
+// nullInt converts a nullable SQL int into *int (nil when NULL).
+func nullInt(n sql.NullInt64) *int {
+	if !n.Valid {
+		return nil
+	}
+	v := int(n.Int64)
+	return &v
+}
+
 func (r *Repository) GetGlobalWorkflow(ctx context.Context, typeID string) (*disclosureapp.GlobalWorkflowDTO, error) {
 	row := r.db.QueryRowContext(ctx, `
-		SELECT workflow_id, type_id, status, COALESCE(change_note,''), created_by, updated_by, created_at, updated_at
+		SELECT workflow_id, type_id, status, COALESCE(change_note,''), created_by, updated_by, created_at, updated_at,
+		       published_version_no, active_version_no
 		FROM global_workflows WHERE type_id = ? AND status = 'active'
 		LIMIT 1
 	`, typeID)
 	var wf disclosureapp.GlobalWorkflowDTO
-	if err := row.Scan(&wf.WorkflowID, &wf.TypeID, &wf.Status, &wf.ChangeNote, &wf.CreatedBy, &wf.UpdatedBy, &wf.CreatedAt, &wf.UpdatedAt); err != nil {
+	var pubNo, actNo sql.NullInt64
+	if err := row.Scan(&wf.WorkflowID, &wf.TypeID, &wf.Status, &wf.ChangeNote, &wf.CreatedBy, &wf.UpdatedBy, &wf.CreatedAt, &wf.UpdatedAt, &pubNo, &actNo); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("get global workflow: %w", err)
 	}
+	wf.PublishedVersionNo = nullInt(pubNo)
+	wf.ActiveVersionNo = nullInt(actNo)
 	steps, err := r.listGlobalWorkflowSteps(ctx, wf.WorkflowID)
 	if err != nil {
 		return nil, err
@@ -158,7 +171,7 @@ func (r *Repository) GetGlobalWorkflow(ctx context.Context, typeID string) (*dis
 
 func (r *Repository) listGlobalWorkflowSteps(ctx context.Context, workflowID string) ([]disclosureapp.GlobalWorkflowStepInput, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT step_id, stage, instructions, department_id, assignee_role_ids, due_rule, processing_days, display_order
+		SELECT step_id, COALESCE(step_key, ''), stage, instructions, department_id, assignee_role_ids, due_rule, processing_days, display_order
 		FROM global_workflow_steps WHERE workflow_id = ?
 		ORDER BY display_order ASC, step_id ASC
 	`, workflowID)
@@ -171,7 +184,7 @@ func (r *Repository) listGlobalWorkflowSteps(ctx context.Context, workflowID str
 		var step disclosureapp.GlobalWorkflowStepInput
 		var roleIDsJSON []byte
 		var instructions sql.NullString
-		if err := rows.Scan(&step.StepID, &step.Stage, &instructions, &step.DepartmentID, &roleIDsJSON, &step.DueRule, &step.ProcessingDays, &step.DisplayOrder); err != nil {
+		if err := rows.Scan(&step.StepID, &step.StepKey, &step.Stage, &instructions, &step.DepartmentID, &roleIDsJSON, &step.DueRule, &step.ProcessingDays, &step.DisplayOrder); err != nil {
 			return nil, fmt.Errorf("scan global workflow step: %w", err)
 		}
 		step.Instructions = instructions.String
@@ -191,6 +204,45 @@ func (r *Repository) UpsertGlobalWorkflow(ctx context.Context, req disclosureapp
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	// mig-S1: read the existing step identity map BEFORE delete, so step_key is preserved
+	// across the DELETE+INSERT upsert. Match incoming steps by step_key, then by step_id.
+	existingKeyByStepID := map[string]string{} // old step_id -> step_key
+	existingKeys := map[string]bool{}          // valid existing step_keys (server-owned)
+	stepRows, err := tx.QueryContext(ctx, `
+		SELECT s.step_id, COALESCE(s.step_key, '')
+		FROM global_workflow_steps s
+		JOIN global_workflows w ON w.workflow_id = s.workflow_id
+		WHERE w.type_id = ?
+	`, req.TypeID)
+	if err != nil {
+		return nil, fmt.Errorf("read existing step keys: %w", err)
+	}
+	for stepRows.Next() {
+		var oldStepID, oldStepKey string
+		if err := stepRows.Scan(&oldStepID, &oldStepKey); err != nil {
+			_ = stepRows.Close()
+			return nil, fmt.Errorf("scan existing step key: %w", err)
+		}
+		if oldStepKey != "" {
+			existingKeyByStepID[oldStepID] = oldStepKey
+			existingKeys[oldStepKey] = true
+		}
+	}
+	if err := stepRows.Err(); err != nil {
+		_ = stepRows.Close()
+		return nil, fmt.Errorf("iterate existing step keys: %w", err)
+	}
+	_ = stepRows.Close()
+
+	// Batch 3: read the version pointers BEFORE delete so save-draft does not reset them.
+	// (DELETE+INSERT would otherwise null published_version_no/active_version_no.)
+	var prevPubNo, prevActNo sql.NullInt64
+	if err := tx.QueryRowContext(ctx,
+		`SELECT published_version_no, active_version_no FROM global_workflows WHERE type_id = ? LIMIT 1`, req.TypeID).
+		Scan(&prevPubNo, &prevActNo); err != nil && err != sql.ErrNoRows {
+		return nil, fmt.Errorf("read version pointers: %w", err)
+	}
+
 	// Delete any existing workflow for this type (all statuses).
 	// FK CASCADE deletes associated steps, preventing step_id primary key collisions
 	// on the next upsert. "Upsert" semantics: exactly one workflow per type at all times.
@@ -199,17 +251,20 @@ func (r *Repository) UpsertGlobalWorkflow(ctx context.Context, req disclosureapp
 		return nil, fmt.Errorf("delete existing workflow: %w", err)
 	}
 
-	// Insert new active workflow.
+	// Insert new active workflow, carrying the preserved version pointers (Batch 3).
 	changeNote := req.ChangeNote
 	_, err = tx.ExecContext(ctx, `
-		INSERT INTO global_workflows (workflow_id, type_id, status, change_note, created_by, updated_by, created_at, updated_at)
-		VALUES (?, ?, 'active', NULLIF(?, ''), ?, ?, ?, ?)
-	`, workflowID, req.TypeID, changeNote, req.Subject.UserID, req.Subject.UserID, now, now)
+		INSERT INTO global_workflows (workflow_id, type_id, status, change_note, created_by, updated_by, created_at, updated_at, published_version_no, active_version_no)
+		VALUES (?, ?, 'active', NULLIF(?, ''), ?, ?, ?, ?, ?, ?)
+	`, workflowID, req.TypeID, changeNote, req.Subject.UserID, req.Subject.UserID, now, now,
+		prevPubNo, prevActNo)
 	if err != nil {
 		return nil, fmt.Errorf("insert global workflow: %w", err)
 	}
 
 	// Insert steps with server-generated IDs to prevent caller-supplied step_id collisions.
+	// step_key is the stable identity (mig-S1): preserved for existing steps, minted for new ones.
+	usedKeys := map[string]bool{}
 	for i, step := range req.Steps {
 		roleIDsJSON, _ := json.Marshal(step.AssigneeRoleIds)
 		displayOrder := step.DisplayOrder
@@ -217,10 +272,12 @@ func (r *Repository) UpsertGlobalWorkflow(ctx context.Context, req disclosureapp
 			displayOrder = i + 1
 		}
 		stepID := fmt.Sprintf("%s-step-%d", workflowID, i+1)
+		stepKey := disclosureapp.ResolveStepKey(step, existingKeys, existingKeyByStepID, usedKeys)
+		usedKeys[stepKey] = true
 		_, err = tx.ExecContext(ctx, `
-			INSERT INTO global_workflow_steps (step_id, workflow_id, stage, instructions, department_id, assignee_role_ids, due_rule, processing_days, display_order, created_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		`, stepID, workflowID, step.Stage, step.Instructions, step.DepartmentID, string(roleIDsJSON), step.DueRule, step.ProcessingDays, displayOrder, now)
+			INSERT INTO global_workflow_steps (step_id, step_key, workflow_id, stage, instructions, department_id, assignee_role_ids, due_rule, processing_days, display_order, created_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`, stepID, stepKey, workflowID, step.Stage, step.Instructions, step.DepartmentID, string(roleIDsJSON), step.DueRule, step.ProcessingDays, displayOrder, now)
 		if err != nil {
 			return nil, fmt.Errorf("insert global workflow step %d: %w", i, err)
 		}

@@ -85,6 +85,9 @@ import (
 	workflowmysql "github.com/cobo/cobo_iam_services/internal/workflow/infra/mysql"
 	workflownotif "github.com/cobo/cobo_iam_services/internal/workflow/infra/notification"
 	workflowhttp "github.com/cobo/cobo_iam_services/internal/workflow/transport/http"
+	wfcapp "github.com/cobo/cobo_iam_services/internal/workflowconfig/app"
+	wfcmysql "github.com/cobo/cobo_iam_services/internal/workflowconfig/infra/mysql"
+	wfchttp "github.com/cobo/cobo_iam_services/internal/workflowconfig/transport/http"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -394,8 +397,9 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 	disclosureHandler := disclosurehttp.NewHandler(disclosureSvc, tokenManager, idemStore, auditSvc)
 	workflowOpts := []workflowapp.ServiceOption{
 		workflowapp.WithFlags(workflowapp.Flags{
-			SnapshotEnabled: cfg.WorkflowSnapshotEnabled,
-			TimelineEnabled: cfg.WorkflowTimelineEnabled,
+			SnapshotEnabled:           cfg.WorkflowSnapshotEnabled,
+			TimelineEnabled:           cfg.WorkflowTimelineEnabled,
+			AssigneeResolutionEnabled: cfg.WorkflowAssigneeResolutionEnabled,
 		}),
 	}
 	if pool != nil && cfg.WorkflowTimelineEnabled {
@@ -416,6 +420,16 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 		cfg.AdhocEmailOutboxEnabled,
 		log,
 	)))
+	// Wire strict assignee resolution (Sprint 1 / Batch 1). Inject only when a SQL pool exists; the
+	// workflow service still gates actual use by Flags.AssigneeResolutionEnabled (default OFF). When
+	// the resolver is absent or disabled, ResolveAssignees returns controlled-unresolved — never the
+	// current user. No schema change; no task-creation change.
+	if pool != nil {
+		assigneeResolver := wfcapp.WorkflowAssigneeResolverAdapter{
+			Service: wfcapp.NewAssigneeResolutionService(wfcapp.DefaultRoleRegistry(), wfcmysql.NewDirectory(pool)),
+		}
+		workflowOpts = append(workflowOpts, workflowapp.WithAssigneeResolver(assigneeResolver))
+	}
 	workflowSvc := workflowapp.NewService(workflowRepo, authSvc, id, workflowOpts...)
 	if setter, ok := disclosureSvc.(interface {
 		SetWorkflowBootstrap(disclosureapp.WorkflowBootstrapper)
@@ -423,6 +437,15 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 		setter.SetWorkflowBootstrap(disclosureworkflow.NewBootstrap(disclosureSvc, workflowSvc, true))
 	}
 	workflowHandler := workflowhttp.NewHandler(workflowSvc, tokenManager)
+	// Global workflow versioning lifecycle (publish ≠ activate). Registered ONLY when the flag is ON
+	// and a SQL pool exists; existing GET/PUT workflow APIs are unaffected. Versioning touches global
+	// tables only — never tenant override tables, never runtime instances.
+	if pool != nil && cfg.WorkflowVersioningEnabled {
+		versionSvc := wfcapp.NewVersionService(wfcmysql.NewVersionRepository(pool), nil)
+		readinessSvc := wfcapp.NewReadinessService(versionSvc, wfcapp.DefaultRoleRegistry())
+		configSvc := wfcapp.NewConfigService(versionSvc, readinessSvc)
+		wfchttp.NewHandler(versionSvc, configSvc, tokenManager).Register(mux)
+	}
 	notificationSvc := notificationapp.NewService(notificationRepo, authSvc, id, outboxPublisher, notifOpts...)
 	notificationHandler := notificationhttp.NewHandler(notificationSvc, tokenManager)
 	reminderRepo := reminderinmem.NewRepository()

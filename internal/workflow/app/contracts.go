@@ -74,6 +74,15 @@ type InstanceReminderDTO struct {
 type Flags struct {
 	SnapshotEnabled bool
 	TimelineEnabled bool
+	// AssigneeResolutionEnabled gates strict assignee resolution (Batch 4). Default OFF.
+	AssigneeResolutionEnabled bool
+}
+
+// AssigneeResolver resolves a workflow step's assignees to membership ids. It MUST NOT fall back to
+// the current user. Returns (membershipIDs, resolved); resolved=false means controlled-unresolved.
+// Satisfied by internal/workflowconfig/app.WorkflowAssigneeResolverAdapter (structural).
+type AssigneeResolver interface {
+	ResolveStepAssignees(ctx context.Context, companyID, stepCode, roleID string, explicitMembershipIDs []string) (membershipIDs []string, resolved bool)
 }
 
 type Subject struct {

@@ -552,6 +552,10 @@ type GetEffectiveWorkflowRequest struct {
 	TypeID  string
 }
 
+// EffectiveWorkflowDTO.Source is one of: "company_override" (tenant override active version),
+// "global_workflow" (Sprint 0-2 governed workflow's active global_workflow_versions row), or
+// "global_template" (legacy enterprise_workflow content block — fallback when neither of the
+// above exists for the type). Precedence: company_override > global_workflow > global_template.
 type EffectiveWorkflowDTO struct {
 	TypeID    string            `json:"type_id"`
 	CompanyID string            `json:"company_id"`
@@ -989,6 +993,11 @@ type CmsArchiveTemplateResponse struct {
 
 type GlobalWorkflowStepInput struct {
 	StepID          string   `json:"step_id"`
+	// StepKey is the immutable, server-minted stable identity of the step (mig-S1).
+	// Additive + backward compatible: legacy clients may omit it. On upsert the server
+	// preserves it (match by step_key, then by step_id) and mints a new one for genuinely
+	// new steps. Never reused once retired. See Phase 13 STEP_KEY_SPECIFICATION.
+	StepKey         string   `json:"step_key,omitempty"`
 	Stage           string   `json:"stage"`
 	Instructions    string   `json:"instructions,omitempty"`
 	DepartmentID    string   `json:"department_id"`
@@ -1003,7 +1012,11 @@ type GlobalWorkflowDTO struct {
 	TypeID     string                    `json:"type_id"`
 	Status     string                    `json:"status"`
 	ChangeNote string                    `json:"change_note,omitempty"`
-	Steps      []GlobalWorkflowStepInput `json:"steps"`
+	// Version pointers (Batch 2 versioning). Preserved across save-draft (Batch 3). Nil when versioning
+	// has not been used for this type. Source of truth for active/published is global_workflow_versions.state.
+	PublishedVersionNo *int                     `json:"published_version_no,omitempty"`
+	ActiveVersionNo    *int                     `json:"active_version_no,omitempty"`
+	Steps              []GlobalWorkflowStepInput `json:"steps"`
 	CreatedBy  string                    `json:"created_by"`
 	UpdatedBy  string                    `json:"updated_by"`
 	CreatedAt  time.Time                 `json:"created_at"`

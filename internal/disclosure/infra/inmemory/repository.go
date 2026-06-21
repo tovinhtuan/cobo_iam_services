@@ -725,26 +725,55 @@ func (r *Repository) GetEffectiveWorkflow(_ context.Context, companyID, typeID s
 		VersionNo: 0,
 		Workflow:  []disclosureapp.WorkflowStepDTO{},
 	}
-	st, ok := r.overrideByCompanyType[overrideKey(companyID, typeID)]
-	if !ok || st.header.ActiveVersionNo <= 0 {
+	legacyOrGlobalWorkflowFallback := func() {
+		if wf, exists := r.globalWorkflows[typeID]; exists && wf.Status == "active" && wf.ActiveVersionNo != nil {
+			dto.Source = "global_workflow"
+			dto.VersionNo = *wf.ActiveVersionNo
+			dto.Workflow = convertGlobalWorkflowSteps(wf.Steps)
+			return
+		}
 		if current, exists := r.catalog[typeID]; exists {
 			dto.VersionNo = current.VersionNo
 			dto.Workflow = disclosureapp.ExtractTemplateWorkflow(current.Blocks)
 		}
+	}
+	st, ok := r.overrideByCompanyType[overrideKey(companyID, typeID)]
+	if !ok || st.header.ActiveVersionNo <= 0 {
+		legacyOrGlobalWorkflowFallback()
 		return dto, nil
 	}
 	v, ok := st.versions[st.header.ActiveVersionNo]
 	if !ok || v.State != "approved" {
-		if current, exists := r.catalog[typeID]; exists {
-			dto.VersionNo = current.VersionNo
-			dto.Workflow = disclosureapp.ExtractTemplateWorkflow(current.Blocks)
-		}
+		legacyOrGlobalWorkflowFallback()
 		return dto, nil
 	}
 	dto.Source = "company_override"
 	dto.VersionNo = v.VersionNo
 	dto.Workflow = cloneWorkflowSteps(v.Workflow)
 	return dto, nil
+}
+
+// convertGlobalWorkflowSteps mirrors the MySQL repository's manifest-step conversion (Batch R1),
+// approximated for the in-memory test double using the current global_workflow_steps shape
+// directly (no separate version-manifest snapshot exists in-memory).
+func convertGlobalWorkflowSteps(steps []disclosureapp.GlobalWorkflowStepInput) []disclosureapp.WorkflowStepDTO {
+	out := make([]disclosureapp.WorkflowStepDTO, 0, len(steps))
+	for _, s := range steps {
+		dueRule := s.DueRule
+		if dueRule == "" && s.ProcessingDays > 0 {
+			dueRule = fmt.Sprintf("T+%d", s.ProcessingDays)
+		}
+		out = append(out, disclosureapp.WorkflowStepDTO{
+			StepID:          s.StepID,
+			Stage:           s.Stage,
+			DepartmentID:    s.DepartmentID,
+			AssigneeRoleIds: s.AssigneeRoleIds,
+			DueRule:         dueRule,
+			ProcessingDays:  s.ProcessingDays,
+			DisplayOrder:    s.DisplayOrder,
+		})
+	}
+	return out
 }
 
 // ── Periodic auto-creation stubs (not used by in-memory / dev server) ────────

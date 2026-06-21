@@ -150,6 +150,10 @@ type Config struct {
 	WorkflowSnapshotEnabled bool
 	// WORKFLOW_TIMELINE_ENABLED: compute step timelines and seed milestones on instance creation.
 	WorkflowTimelineEnabled bool
+	// WORKFLOW_ASSIGNEE_RESOLUTION_ENABLED: use strict assignee resolution (Batch 4). Default OFF.
+	WorkflowAssigneeResolutionEnabled bool
+	// WORKFLOW_VERSIONING_ENABLED: expose global workflow versioning lifecycle (publish≠activate). Default OFF.
+	WorkflowVersioningEnabled bool
 	// WORKFLOW_REMINDERS_ENABLED: dispatch reminder emails from seeded milestones.
 	WorkflowRemindersEnabled bool
 	// WORKFLOW_ADHOC_ENABLED: enable ad-hoc proposal state machine.
@@ -243,6 +247,8 @@ func Load() (Config, error) {
 		WorkflowDraftEtagMode:               getenv("WORKFLOW_DRAFT_ETAG_MODE", "off"),
 		WorkflowSnapshotEnabled:             boolEnv("WORKFLOW_SNAPSHOT_ENABLED", false),
 		WorkflowTimelineEnabled:             boolEnv("WORKFLOW_TIMELINE_ENABLED", false),
+		WorkflowAssigneeResolutionEnabled:   boolEnv("WORKFLOW_ASSIGNEE_RESOLUTION_ENABLED", false),
+		WorkflowVersioningEnabled:           boolEnv("WORKFLOW_VERSIONING_ENABLED", false),
 		WorkflowRemindersEnabled:            boolEnv("WORKFLOW_REMINDERS_ENABLED", false),
 		WorkflowAdhocEnabled:                devAwareBoolEnv("WORKFLOW_ADHOC_ENABLED", false, true),
 		WorkflowAdhocAutoApproveEnabled:     boolEnv("WORKFLOW_ADHOC_AUTOAPPROVE_ENABLED", false),

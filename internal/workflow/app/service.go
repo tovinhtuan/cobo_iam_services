@@ -12,13 +12,14 @@ import (
 )
 
 type service struct {
-	repo           Repository
-	milestone      MilestoneRepository
-	auth           authapp.Service
-	idg            idgen.Generator
-	flags          Flags
-	recordUpdater  RecordStatusUpdater
-	notifier       WorkflowNotifier
+	repo             Repository
+	milestone        MilestoneRepository
+	auth             authapp.Service
+	idg              idgen.Generator
+	flags            Flags
+	recordUpdater    RecordStatusUpdater
+	notifier         WorkflowNotifier
+	assigneeResolver AssigneeResolver
 }
 
 func NewService(repo Repository, auth authapp.Service, idg idgen.Generator, opts ...ServiceOption) Service {
@@ -45,6 +46,12 @@ func WithRecordStatusUpdater(u RecordStatusUpdater) ServiceOption {
 
 func WithWorkflowNotifier(n WorkflowNotifier) ServiceOption {
 	return func(s *service) { s.notifier = n }
+}
+
+// WithAssigneeResolver injects strict assignee resolution (Batch 4). When unset, ResolveAssignees
+// returns a controlled unresolved result — it NEVER falls back to the current user.
+func WithAssigneeResolver(r AssigneeResolver) ServiceOption {
+	return func(s *service) { s.assigneeResolver = r }
 }
 
 func (s *service) CreateWorkflowInstance(ctx context.Context, req CreateWorkflowInstanceRequest) (*WorkflowInstanceDTO, error) {
@@ -208,8 +215,37 @@ func (s *service) ResolveAssignees(ctx context.Context, req ResolveAssigneesRequ
 	}); err != nil {
 		return nil, err
 	}
-	// Skeleton resolver: return current membership as default assignee candidate.
-	return &ResolveAssigneesResponse{MembershipIDs: []string{req.Subject.MembershipID}}, nil
+
+	// Batch 4: strict assignee resolution. NEVER fall back to the current user.
+	// When a resolver is wired and enabled, resolve from the step's configured role; otherwise
+	// return a controlled "unresolved" (empty) result.
+	// TODO(workflow-config Sprint 1+): wire the production resolver (RoleRegistry + AssigneeDirectory)
+	// in server.go and feed resolved assignees into task creation + publish-time readiness validation.
+	if s.assigneeResolver != nil && s.flags.AssigneeResolutionEnabled {
+		roleID := s.stepRoleForResolution(ctx, req.Subject.CompanyID, req.WorkflowInstanceID, req.StepCode)
+		ids, _ := s.assigneeResolver.ResolveStepAssignees(ctx, req.Subject.CompanyID, req.StepCode, roleID, nil)
+		if ids == nil {
+			ids = []string{}
+		}
+		return &ResolveAssigneesResponse{MembershipIDs: ids}, nil
+	}
+	// No resolver / disabled: controlled unresolved. Do NOT assign the current user.
+	return &ResolveAssigneesResponse{MembershipIDs: []string{}}, nil
+}
+
+// stepRoleForResolution looks up the configured assignee role for a step from the instance snapshot.
+// Returns "" when the snapshot or step is unavailable (resolution then yields unresolved).
+func (s *service) stepRoleForResolution(ctx context.Context, companyID, instanceID, stepCode string) string {
+	inst, err := s.repo.FindInstance(ctx, companyID, instanceID)
+	if err != nil || inst == nil {
+		return ""
+	}
+	for _, st := range inst.Snapshot {
+		if st.StepCode == stepCode || st.StepID == stepCode {
+			return st.AssigneeRole
+		}
+	}
+	return ""
 }
 
 func (s *service) transitionTask(ctx context.Context, req TaskActionRequest, action, nextStatus string) (*TaskDTO, error) {
