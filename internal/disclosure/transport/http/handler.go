@@ -52,6 +52,9 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/company/disclosure-types/{type_id}/workflow-override/versions", h.listCompanyWorkflowOverrideVersions)
 	mux.HandleFunc("GET /api/v1/company/disclosure-types/{type_id}/workflow-override/draft/reminder-preview", h.getCompanyWorkflowOverrideDraftReminderPreview)
 	mux.HandleFunc("PUT /api/v1/company/disclosure-types/{type_id}/workflow-override/draft/steps/{step_id}/groups", h.updateWorkflowOverrideStepGroups)
+	// Sprint 3 / Batch 2 — Workflow Override Staleness Detection.
+	mux.HandleFunc("GET /api/v1/company/disclosure-types/{type_id}/workflow/override/status", h.getWorkflowOverrideStatus)
+	mux.HandleFunc("POST /api/v1/company/disclosure-types/{type_id}/workflow/override/rebase-check", h.rebaseCheckWorkflowOverride)
 	mux.HandleFunc("GET /api/v1/company/groups", h.listCompanyGroups)
 	mux.HandleFunc("GET /api/v1/disclosure-types/{type_id}/effective-workflow", h.getEffectiveWorkflow)
 	mux.HandleFunc("GET /api/v1/admin/disclosure-types/{type_id}/config", h.getTemplateDeadlineConfig)
@@ -442,6 +445,42 @@ func (h *Handler) getCompanyWorkflowOverride(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	resp, err := h.svc.GetCompanyWorkflowOverride(r.Context(), disclosureapp.GetCompanyWorkflowOverrideRequest{
+		Subject: sub,
+		TypeID:  strings.TrimSpace(r.PathValue("type_id")),
+	})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+// Sprint 3 / Batch 2 — Workflow Override Staleness Detection.
+
+func (h *Handler) getWorkflowOverrideStatus(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subjectFromToken(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	resp, err := h.svc.GetWorkflowOverrideStatus(r.Context(), disclosureapp.GetWorkflowOverrideStatusRequest{
+		Subject: sub,
+		TypeID:  strings.TrimSpace(r.PathValue("type_id")),
+	})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) rebaseCheckWorkflowOverride(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subjectFromToken(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	resp, err := h.svc.RebaseCheckWorkflowOverride(r.Context(), disclosureapp.RebaseCheckWorkflowOverrideRequest{
 		Subject: sub,
 		TypeID:  strings.TrimSpace(r.PathValue("type_id")),
 	})

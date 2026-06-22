@@ -103,6 +103,7 @@ seed_dev_identity_authorization.sql
 0100_workflow_step_key.up.sql
 0101_global_workflow_versions.up.sql
 0102_global_workflow_legacy_backfill.up.sql
+0103_override_base_metadata.up.sql
 "
 
 mysql_exec() {

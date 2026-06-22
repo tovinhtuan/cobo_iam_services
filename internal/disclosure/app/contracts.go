@@ -37,6 +37,9 @@ type Service interface {
 	ResetCompanyWorkflowOverrideActive(ctx context.Context, req ResetCompanyWorkflowOverrideActiveRequest) (*ResetCompanyWorkflowOverrideActiveResponse, error)
 	ListCompanyWorkflowOverrideVersions(ctx context.Context, req ListCompanyWorkflowOverrideVersionsRequest) (*ListCompanyWorkflowOverrideVersionsResponse, error)
 	GetCompanyWorkflowOverrideDraftReminderPreview(ctx context.Context, req GetCompanyWorkflowOverrideDraftReminderPreviewRequest) (*GetCompanyWorkflowOverrideDraftReminderPreviewResponse, error)
+	// Sprint 3 / Batch 2 — Workflow Override Staleness Detection.
+	GetWorkflowOverrideStatus(ctx context.Context, req GetWorkflowOverrideStatusRequest) (*GetWorkflowOverrideStatusResponse, error)
+	RebaseCheckWorkflowOverride(ctx context.Context, req RebaseCheckWorkflowOverrideRequest) (*RebaseCheckWorkflowOverrideResponse, error)
 	GetEffectiveWorkflow(ctx context.Context, req GetEffectiveWorkflowRequest) (*GetEffectiveWorkflowResponse, error)
 	GetTemplateDeadlineConfig(ctx context.Context, req GetTemplateDeadlineConfigRequest) (*GetTemplateDeadlineConfigResponse, error)
 	UpdateTemplateDeadlineConfig(ctx context.Context, req UpdateTemplateDeadlineConfigRequest) (*UpdateTemplateDeadlineConfigResponse, error)
@@ -91,6 +94,12 @@ type Repository interface {
 	DeleteCompanyWorkflowOverrideDraft(ctx context.Context, req DeleteCompanyWorkflowOverrideDraftRequest) (*DeleteCompanyWorkflowOverrideDraftResponse, error)
 	ResetCompanyWorkflowOverrideActive(ctx context.Context, req ResetCompanyWorkflowOverrideActiveRequest) (*ResetCompanyWorkflowOverrideActiveResponse, error)
 	ListCompanyWorkflowOverrideVersions(ctx context.Context, companyID, typeID string, page, pageSize int) ([]CompanyWorkflowOverrideVersionDTO, int, error)
+	// Sprint 3 / Batch 2 — Workflow Override Staleness Detection. None of these four methods is
+	// called by, or calls, GetEffectiveWorkflow/GetCompanyWorkflowOverride below.
+	TypeExists(ctx context.Context, typeID string) (bool, error)
+	GetOverrideStalenessMetadata(ctx context.Context, companyID, typeID string) (*OverrideStalenessRow, bool, error)
+	GetCurrentGlobalActiveVersionNo(ctx context.Context, typeID string) (*int, error)
+	UpdateOverrideStaleness(ctx context.Context, companyID, typeID, staleStatus string, checkedAt time.Time) error
 	GetEffectiveWorkflow(ctx context.Context, companyID, typeID string) (*EffectiveWorkflowDTO, error)
 	GetCompanyDeadlineContext(ctx context.Context, companyID string) (CompanyDeadlineContext, error)
 	GetCompanyApplicabilityProfile(ctx context.Context, companyID string) (applicability.CompanyApplicabilityProfile, error)
@@ -254,36 +263,36 @@ type GetTemplateReferenceDataResponse struct {
 
 type UpsertTypeVersionRequest struct {
 	Subject               Subject
-	TypeID                string                  `json:"type_id"`
-	Scope                 string                  `json:"scope"`
-	GroupID               string                  `json:"group_id"`
-	Name                  string                  `json:"name"`
-	Category              string                  `json:"category"`
-	TemplateCategory      string                  `json:"template_category"`
-	DeadlineStrategy      string                  `json:"deadline_strategy"`
-	Description           string                  `json:"description"`
-	LegalBasis            string                  `json:"legal_basis"`
-	Applicability         string                  `json:"applicability"`
-	ImplementationContent string                  `json:"implementation_content"`
-	ImplementationNotes   string                  `json:"implementation_notes"`
-	SpecialCases          string                  `json:"special_cases"`
-	ReportContent         string                  `json:"report_content"`
-	RequiredDocs          string                  `json:"required_docs"`
-	DeadlineRule          string                  `json:"deadline_rule"`
-	Periodicity           string                  `json:"periodicity"`
-	ChannelsText          string                  `json:"channels_text"`
-	Beneficiaries         string                  `json:"beneficiaries"`
-	ReceivingAuthorities  string                  `json:"receiving_authorities"`
-	Format                string                  `json:"format"`
-	LegalRisksText        string                  `json:"legal_risks_text"`
-	GeneralInfo           string                  `json:"general_info"`
-	LegalBases            []LegalBasisDTO         `json:"legal_bases"`
-	Checklist             []ChecklistItemDTO      `json:"checklist"`
-	Tags                  []string                `json:"tags"`
-	DeadlineConfig        *TemplateDeadlineConfig `json:"deadline_config,omitempty"`
-	Blocks                []TemplateBlockDTO      `json:"blocks"`
-	DisplayGroupCodes     []string                `json:"display_group_codes"`
-	ChangeNote            string                  `json:"change_note"`
+	TypeID                string                                    `json:"type_id"`
+	Scope                 string                                    `json:"scope"`
+	GroupID               string                                    `json:"group_id"`
+	Name                  string                                    `json:"name"`
+	Category              string                                    `json:"category"`
+	TemplateCategory      string                                    `json:"template_category"`
+	DeadlineStrategy      string                                    `json:"deadline_strategy"`
+	Description           string                                    `json:"description"`
+	LegalBasis            string                                    `json:"legal_basis"`
+	Applicability         string                                    `json:"applicability"`
+	ImplementationContent string                                    `json:"implementation_content"`
+	ImplementationNotes   string                                    `json:"implementation_notes"`
+	SpecialCases          string                                    `json:"special_cases"`
+	ReportContent         string                                    `json:"report_content"`
+	RequiredDocs          string                                    `json:"required_docs"`
+	DeadlineRule          string                                    `json:"deadline_rule"`
+	Periodicity           string                                    `json:"periodicity"`
+	ChannelsText          string                                    `json:"channels_text"`
+	Beneficiaries         string                                    `json:"beneficiaries"`
+	ReceivingAuthorities  string                                    `json:"receiving_authorities"`
+	Format                string                                    `json:"format"`
+	LegalRisksText        string                                    `json:"legal_risks_text"`
+	GeneralInfo           string                                    `json:"general_info"`
+	LegalBases            []LegalBasisDTO                           `json:"legal_bases"`
+	Checklist             []ChecklistItemDTO                        `json:"checklist"`
+	Tags                  []string                                  `json:"tags"`
+	DeadlineConfig        *TemplateDeadlineConfig                   `json:"deadline_config,omitempty"`
+	Blocks                []TemplateBlockDTO                        `json:"blocks"`
+	DisplayGroupCodes     []string                                  `json:"display_group_codes"`
+	ChangeNote            string                                    `json:"change_note"`
 	ApplicabilityRules    *applicability.TemplateApplicabilityRules `json:"applicability_rules,omitempty"`
 }
 
@@ -417,6 +426,20 @@ type CompanyWorkflowOverrideHeaderDTO struct {
 	Status          string    `json:"status"`
 	ActiveVersionNo int       `json:"active_version_no"`
 	UpdatedAt       time.Time `json:"updated_at"`
+
+	// Sprint 3 / Batch 1 (Workflow Override Metadata Foundation) — additive fields backed by
+	// migration 0103. Not yet populated or read by any repository method or runtime path in
+	// Batch 1 (GetEffectiveWorkflow/GetCompanyWorkflowOverride are deliberately NOT touched this
+	// batch — see docs/ai-cache/workflow-override-foundation-batch1/PREFLIGHT_AUDIT.md). Reading
+	// these into the repository's SELECT and acting on them is Batch 2's (Staleness Detection)
+	// responsibility. BaseSource is one of "global_workflow" | "global_template" | "unknown".
+	// StaleStatus is one of "unknown" | "current" | "stale" (always "unknown" as of Batch 1).
+	BaseSource        string     `json:"base_source,omitempty"`
+	BaseWorkflowID    string     `json:"base_workflow_id,omitempty"`
+	BaseVersionNo     *int       `json:"base_version_no,omitempty"`
+	BaseHash          string     `json:"base_hash,omitempty"`
+	StaleStatus       string     `json:"stale_status,omitempty"`
+	LastRebaseCheckAt *time.Time `json:"last_rebase_check_at,omitempty"`
 }
 
 type CompanyWorkflowOverrideVersionDTO struct {
@@ -685,23 +708,23 @@ type DisclosureTypeSummaryDTO struct {
 	TypeID  string `json:"type_id"`
 	GroupID string `json:"group_id"`
 	// Deprecated: use DisplayGroupCodes. Kept for compatibility window (BE-008).
-	DisplayGroupCode  string   `json:"display_group_code,omitempty"`
-	DisplayGroupCodes []string `json:"display_group_codes"`
-	Scope             string   `json:"scope"`
-	OwnerCompanyID    string   `json:"owner_company_id"`
-	Name              string   `json:"name"`
-	Category          string   `json:"category"`
-	TemplateCategory  string   `json:"template_category"`
-	Periodicity       string   `json:"periodicity"`
-	Description       string   `json:"description"`
-	DeadlineRule        string `json:"deadline_rule"`
-	DeadlineRuleDisplay string `json:"deadline_rule_display,omitempty"`
-	IsMandatory         bool   `json:"is_mandatory"`
-	HasWorkflow       bool     `json:"has_workflow"`
-	ReviewStatus      string   `json:"review_status,omitempty"`
-	Tags              []string `json:"tags"`
-	ApplicabilityRules              *applicability.TemplateApplicabilityRules `json:"-"`
-	ResolvedStructureDeadlineDays   *int                                      `json:"resolved_structure_deadline_days,omitempty"`
+	DisplayGroupCode              string                                    `json:"display_group_code,omitempty"`
+	DisplayGroupCodes             []string                                  `json:"display_group_codes"`
+	Scope                         string                                    `json:"scope"`
+	OwnerCompanyID                string                                    `json:"owner_company_id"`
+	Name                          string                                    `json:"name"`
+	Category                      string                                    `json:"category"`
+	TemplateCategory              string                                    `json:"template_category"`
+	Periodicity                   string                                    `json:"periodicity"`
+	Description                   string                                    `json:"description"`
+	DeadlineRule                  string                                    `json:"deadline_rule"`
+	DeadlineRuleDisplay           string                                    `json:"deadline_rule_display,omitempty"`
+	IsMandatory                   bool                                      `json:"is_mandatory"`
+	HasWorkflow                   bool                                      `json:"has_workflow"`
+	ReviewStatus                  string                                    `json:"review_status,omitempty"`
+	Tags                          []string                                  `json:"tags"`
+	ApplicabilityRules            *applicability.TemplateApplicabilityRules `json:"-"`
+	ResolvedStructureDeadlineDays *int                                      `json:"resolved_structure_deadline_days,omitempty"`
 }
 
 type DisclosureTypeDTO struct {
@@ -738,11 +761,11 @@ type DisclosureTypeDTO struct {
 	Tags                  []string                `json:"tags"`
 	Blocks                []TemplateBlockDTO      `json:"blocks"`
 	// Deprecated: use DisplayGroupCodes. Kept for compatibility window (BE-008).
-	DisplayGroupCode  string   `json:"display_group_code,omitempty"`
-	DisplayGroupCodes []string `json:"display_group_codes"`
-	IsMandatory       bool     `json:"is_mandatory"`
-	HasWorkflow       bool     `json:"has_workflow"`
-	ReviewStatus      string   `json:"review_status,omitempty"`
+	DisplayGroupCode   string                                    `json:"display_group_code,omitempty"`
+	DisplayGroupCodes  []string                                  `json:"display_group_codes"`
+	IsMandatory        bool                                      `json:"is_mandatory"`
+	HasWorkflow        bool                                      `json:"has_workflow"`
+	ReviewStatus       string                                    `json:"review_status,omitempty"`
 	ApplicabilityRules *applicability.TemplateApplicabilityRules `json:"applicability_rules,omitempty"`
 }
 
@@ -779,11 +802,11 @@ type TemplateDeadlineConfig struct {
 	// ProcessingDays is the default per-step duration in calendar days.
 	ProcessingDays int `json:"processing_days,omitempty"`
 	// Portal/CMS template config extensions (stored in deadline_config_json).
-	TemplateCategory   string `json:"template_category,omitempty"`
-	FrequencyInterval  int    `json:"frequency_interval,omitempty"`
-	FrequencyUnit      string `json:"frequency_unit,omitempty"`
-	AllowT0Override    *bool  `json:"allow_t0_override,omitempty"`
-	ReportInfoLocked   *bool  `json:"report_info_locked,omitempty"`
+	TemplateCategory  string `json:"template_category,omitempty"`
+	FrequencyInterval int    `json:"frequency_interval,omitempty"`
+	FrequencyUnit     string `json:"frequency_unit,omitempty"`
+	AllowT0Override   *bool  `json:"allow_t0_override,omitempty"`
+	ReportInfoLocked  *bool  `json:"report_info_locked,omitempty"`
 	// StepDefaultSlaDays is the per-step workflow SLA fallback (calendar days).
 	// Intentionally separate from DeadlineDays (total SLA) to prevent timeline blow-up.
 	StepDefaultSlaDays int `json:"step_default_sla_days,omitempty"`
@@ -917,13 +940,13 @@ type PeriodicRecordCreator interface {
 
 // PeriodicTypeRow is returned by ListActivePeriodicTypes.
 type PeriodicTypeRow struct {
-	TypeID            string
-	FrequencyUnit     string // "monthly" | "quarterly" | "yearly"
-	FrequencyInterval int
-	DeadlineDays      int
-	CycleAnchorDay    int // 0 = unset → defaults to 1
-	CycleAnchorMonth  int // 0 = unset → defaults to 1
-	IsGlobal          bool
+	TypeID             string
+	FrequencyUnit      string // "monthly" | "quarterly" | "yearly"
+	FrequencyInterval  int
+	DeadlineDays       int
+	CycleAnchorDay     int // 0 = unset → defaults to 1
+	CycleAnchorMonth   int // 0 = unset → defaults to 1
+	IsGlobal           bool
 	ApplicabilityRules *applicability.TemplateApplicabilityRules
 }
 
@@ -933,10 +956,10 @@ type PeriodicCycleRow struct {
 	TypeID     string
 	TypeName   string
 	CompanyID  string
-	CycleLabel  string
-	CycleStart  time.Time // DATE at seed; materialize T0 (AC-9)
-	DueDate     time.Time
-	RecordID    string // empty = pending
+	CycleLabel string
+	CycleStart time.Time // DATE at seed; materialize T0 (AC-9)
+	DueDate    time.Time
+	RecordID   string // empty = pending
 }
 
 // CompanyTypePreference is used by the repository layer.
@@ -992,7 +1015,7 @@ type CmsArchiveTemplateResponse struct {
 // ─── Global Workflow ─────────────────────────────────────────────────────────
 
 type GlobalWorkflowStepInput struct {
-	StepID          string   `json:"step_id"`
+	StepID string `json:"step_id"`
 	// StepKey is the immutable, server-minted stable identity of the step (mig-S1).
 	// Additive + backward compatible: legacy clients may omit it. On upsert the server
 	// preserves it (match by step_key, then by step_id) and mints a new one for genuinely
@@ -1008,19 +1031,19 @@ type GlobalWorkflowStepInput struct {
 }
 
 type GlobalWorkflowDTO struct {
-	WorkflowID string                    `json:"workflow_id"`
-	TypeID     string                    `json:"type_id"`
-	Status     string                    `json:"status"`
-	ChangeNote string                    `json:"change_note,omitempty"`
+	WorkflowID string `json:"workflow_id"`
+	TypeID     string `json:"type_id"`
+	Status     string `json:"status"`
+	ChangeNote string `json:"change_note,omitempty"`
 	// Version pointers (Batch 2 versioning). Preserved across save-draft (Batch 3). Nil when versioning
 	// has not been used for this type. Source of truth for active/published is global_workflow_versions.state.
-	PublishedVersionNo *int                     `json:"published_version_no,omitempty"`
-	ActiveVersionNo    *int                     `json:"active_version_no,omitempty"`
+	PublishedVersionNo *int                      `json:"published_version_no,omitempty"`
+	ActiveVersionNo    *int                      `json:"active_version_no,omitempty"`
 	Steps              []GlobalWorkflowStepInput `json:"steps"`
-	CreatedBy  string                    `json:"created_by"`
-	UpdatedBy  string                    `json:"updated_by"`
-	CreatedAt  time.Time                 `json:"created_at"`
-	UpdatedAt  time.Time                 `json:"updated_at"`
+	CreatedBy          string                    `json:"created_by"`
+	UpdatedBy          string                    `json:"updated_by"`
+	CreatedAt          time.Time                 `json:"created_at"`
+	UpdatedAt          time.Time                 `json:"updated_at"`
 }
 
 type CmsGetGlobalWorkflowRequest struct {

@@ -127,11 +127,12 @@ func (a *RecordCreatorAdapter) CreateAndSubmitRecordWithOpts(ctx context.Context
 	return rec.RecordID, instanceID, nil
 }
 
+// mapWorkflowSource passes the resolver's classification through unchanged (company_override |
+// global_workflow | global_template) — must not collapse any value to another, or the persisted
+// workflow_source mislabels the record's real provenance.
 func mapWorkflowSource(source string) string {
-	switch source {
-	case "company_override":
-		return "company_override"
-	default:
+	if source == "" {
 		return "global_template"
 	}
+	return source
 }

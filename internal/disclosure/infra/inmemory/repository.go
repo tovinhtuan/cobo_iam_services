@@ -715,6 +715,82 @@ func (r *Repository) UpdateWorkflowOverrideStepGroups(_ context.Context, _ discl
 	return nil, perr.NewHTTPError(http.StatusNotImplemented, perr.CodeInternal, "not implemented in-memory", nil)
 }
 
+// Sprint 3 / Batch 2 — Workflow Override Staleness Detection (in-memory mirror).
+
+// SetOverrideBaseMetadataForTest is a white-box test helper (same convention as
+// cms_repository_pointer_test.go's direct header field manipulation) letting tests set up a
+// known base_source/base_version_no for an already-created override, since no production code
+// path populates these for new overrides yet (Batch 1's known, disclosed gap — see
+// docs/ai-cache/workflow-override-foundation-batch1/BACKFILL_REPORT.md "known gap" section).
+func (r *Repository) SetOverrideBaseMetadataForTest(companyID, typeID, baseSource string, baseVersionNo *int) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	st, ok := r.overrideByCompanyType[overrideKey(companyID, typeID)]
+	if !ok {
+		return perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "override not found for test setup", nil)
+	}
+	st.header.BaseSource = baseSource
+	st.header.BaseVersionNo = baseVersionNo
+	return nil
+}
+
+func (r *Repository) TypeExists(_ context.Context, typeID string) (bool, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	_, ok := r.catalog[typeID]
+	return ok, nil
+}
+
+func (r *Repository) GetOverrideStalenessMetadata(_ context.Context, companyID, typeID string) (*disclosureapp.OverrideStalenessRow, bool, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	st, ok := r.overrideByCompanyType[overrideKey(companyID, typeID)]
+	if !ok {
+		return nil, false, nil
+	}
+	h := st.header
+	return &disclosureapp.OverrideStalenessRow{
+		HasOverride:       h.ActiveVersionNo > 0,
+		BaseSource:        h.BaseSource,
+		BaseWorkflowID:    nilIfEmptyPtr(h.BaseWorkflowID),
+		BaseVersionNo:     h.BaseVersionNo,
+		BaseHash:          nilIfEmptyPtr(h.BaseHash),
+		StaleStatus:       h.StaleStatus,
+		LastRebaseCheckAt: h.LastRebaseCheckAt,
+	}, true, nil
+}
+
+func (r *Repository) GetCurrentGlobalActiveVersionNo(_ context.Context, typeID string) (*int, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	wf, ok := r.globalWorkflows[typeID]
+	if !ok || wf.Status != "active" {
+		return nil, nil
+	}
+	return wf.ActiveVersionNo, nil
+}
+
+func (r *Repository) UpdateOverrideStaleness(_ context.Context, companyID, typeID, staleStatus string, checkedAt time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	st, ok := r.overrideByCompanyType[overrideKey(companyID, typeID)]
+	if !ok {
+		return nil // Rule 1 — no override row, no-op, not an error.
+	}
+	st.header.StaleStatus = staleStatus
+	at := checkedAt
+	st.header.LastRebaseCheckAt = &at
+	return nil
+}
+
+func nilIfEmptyPtr(s string) *string {
+	if s == "" {
+		return nil
+	}
+	v := s
+	return &v
+}
+
 func (r *Repository) GetEffectiveWorkflow(_ context.Context, companyID, typeID string) (*disclosureapp.EffectiveWorkflowDTO, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

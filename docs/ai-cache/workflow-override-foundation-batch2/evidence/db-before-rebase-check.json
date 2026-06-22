@@ -1,0 +1,2 @@
+override_id	company_id	type_id	active_version_no	status	base_source	base_version_no	base_hash	stale_status	last_rebase_check_at
+ovr_144ca32b-cd59-467b-aba9-9576d3b148ad_bao-cao-tai-chinh-quy-1	144ca32b-cd59-467b-aba9-9576d3b148ad	bao-cao-tai-chinh-quy-1	5	approved	global_workflow	2	NULL	unknown	NULL

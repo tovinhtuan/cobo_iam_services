@@ -13,6 +13,20 @@ import (
 // 3) Copy mandatory block descriptions back onto UpsertTypeVersionRequest flat fields so DB columns stay aligned with the matrix.
 //
 // Empty blocks and empty flat fields remain unchanged (legacy "no matrix" upserts).
+//
+// DEPRECATED / NO-OP for the "enterprise_workflow" mandatory key specifically (Architecture
+// Integrity Fix D, see docs/ai-cache/workflow-architecture-integrity-fix/):
+// this key's Description round-trips losslessly via req.ImplementationContent on every save, but
+// has zero render site in any current CMS UI (confirmed: no .tsx file in
+// cobo_web_design/src/features/cms-core/ binds to form.enterpriseWorkflow). The workflow STEPS
+// that actually matter to runtime live in the SAME content block's Config.steps field, which this
+// sync never touches and which has its own dead editor (EnterpriseWorkflowSection.tsx, unmounted).
+// Accepted as P3 tech debt rather than removed: the round-trip is harmless (no admin can observe
+// or be misled by it today, since no UI surfaces it) and removing it would require coordinated
+// changes across both repos (templateMappers.ts, cmsApi.ts, types.ts, templateValidation.ts,
+// templateDefaults.ts, useTemplateEditor.ts) for a field that causes no runtime-correctness bug —
+// disproportionate to the issue for this fix's scope. Revisit if/when the CMS template editor's
+// mandatory-blocks UI is next touched.
 func ApplyTemplateFlatBlockSync(req *UpsertTypeVersionRequest, idg idgen.Generator) {
 	if req == nil || idg == nil {
 		return

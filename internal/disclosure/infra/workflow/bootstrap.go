@@ -34,10 +34,7 @@ func (b *Bootstrap) EnsureOnSubmit(ctx context.Context, sub disclosureapp.Subjec
 	if err != nil {
 		return "", fmt.Errorf("get effective workflow: %w", err)
 	}
-	workflowSource := "global_template"
-	if effResp.Data.Source == "company_override" {
-		workflowSource = "company_override"
-	}
+	workflowSource := workflowSourceLabel(effResp.Data.Source)
 	snapshot := workflowapp.MapEffectiveWorkflowToSnapshot(effResp.Data.Workflow, workflowSource)
 	if err := workflowapp.ValidateSnapshot(snapshot); err != nil {
 		return "", perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "template has no effective workflow steps", err)
@@ -67,4 +64,14 @@ func (b *Bootstrap) EnsureOnSubmit(ctx context.Context, sub disclosureapp.Subjec
 		return "", nil
 	}
 	return inst.WorkflowInstanceID, nil
+}
+
+// workflowSourceLabel passes the resolver's own classification through unchanged
+// (company_override | global_workflow | global_template) — must not collapse any value to
+// another, or the persisted workflow_source mislabels the instance's real provenance.
+func workflowSourceLabel(source string) string {
+	if source == "" {
+		return "global_template"
+	}
+	return source
 }
