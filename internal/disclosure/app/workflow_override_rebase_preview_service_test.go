@@ -169,8 +169,15 @@ func TestGetWorkflowOverrideRebasePreview_Stale_Returns200WithDiff(t *testing.T)
 	if !found {
 		t.Errorf("expected an update_step_field/stage operation for stepkey-1, got %+v", resp.Data.PatchOperations)
 	}
-	if resp.Data.PreviewID != nil {
-		t.Errorf("preview_id must be nil/ephemeral in Batch 3, got %v", *resp.Data.PreviewID)
+	// Sprint 3 / Batch 5 superseded this assertion: preview_id was always nil through Batch 3/4
+	// (fully stateless preview), but Batch 5's apply preconditions need a referenceable preview to
+	// validate freshness against, so PREFLIGHT_AUDIT.md (Batch 5) §2 deliberately makes this a
+	// real, non-nil, ephemeral in-process cache key. Confirmed as a genuine, intentional behavior
+	// change (not a regression) by reverting Batch 5's preview-cache wiring and re-running this
+	// test, which then passed again with the old nil assertion — see Batch 5's TEST_REPORT.md.
+	// Still-true invariant from Batch 3: PreviewID is a string pointer here, not a database row.
+	if resp.Data.PreviewID == nil || *resp.Data.PreviewID == "" {
+		t.Errorf("preview_id must be a real, non-empty value as of Batch 5, got %v", resp.Data.PreviewID)
 	}
 }
 

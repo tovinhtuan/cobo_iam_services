@@ -123,20 +123,20 @@ func (r *Repository) scanWorkflowOverrideConflictByID(ctx context.Context, compa
 		SELECT id, company_id, type_id, COALESCE(override_id, ''), COALESCE(override_version_no, 0),
 		       preview_id, base_version_no, target_version_no, step_key, field_path, severity,
 		       conflict_type, global_old_json, global_new_json, company_value_json,
-		       resolution_status, resolution, created_at, resolved_by, resolved_at
+		       resolution_status, resolution, resolution_json, created_at, resolved_by, resolved_at
 		FROM workflow_override_conflicts
 		WHERE id = ? AND company_id = ? AND type_id = ?
 	`, conflictID, companyID, typeID)
 
 	var dto disclosureapp.PersistedConflictDTO
 	var previewID, resolution, resolvedBy sql.NullString
-	var globalOldRaw, globalNewRaw, companyValueRaw []byte
+	var globalOldRaw, globalNewRaw, companyValueRaw, resolutionValueRaw []byte
 	var resolvedAt sql.NullTime
 
 	err := row.Scan(&dto.ID, &dto.CompanyID, &dto.TypeID, &dto.OverrideID, &dto.OverrideVersionNo,
 		&previewID, &dto.BaseVersionNo, &dto.TargetVersionNo, &dto.StepKey, &dto.FieldPath,
 		&dto.Severity, &dto.ConflictType, &globalOldRaw, &globalNewRaw, &companyValueRaw,
-		&dto.ResolutionStatus, &resolution, &dto.CreatedAt, &resolvedBy, &resolvedAt)
+		&dto.ResolutionStatus, &resolution, &resolutionValueRaw, &dto.CreatedAt, &resolvedBy, &resolvedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, false, nil
@@ -160,6 +160,9 @@ func (r *Repository) scanWorkflowOverrideConflictByID(ctx context.Context, compa
 	_ = json.Unmarshal(globalOldRaw, &dto.GlobalOld)
 	_ = json.Unmarshal(globalNewRaw, &dto.GlobalNew)
 	_ = json.Unmarshal(companyValueRaw, &dto.CompanyValue)
+	if len(resolutionValueRaw) > 0 {
+		_ = json.Unmarshal(resolutionValueRaw, &dto.ResolutionValue)
+	}
 
 	return &dto, true, nil
 }

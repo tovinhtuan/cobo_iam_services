@@ -1,0 +1,31 @@
+ M internal/disclosure/app/contracts.go
+ M internal/disclosure/app/workflow_override_conflict.go
+ M internal/disclosure/app/workflow_override_rebase_preview.go
+ M internal/disclosure/app/workflow_override_rebase_preview_service_test.go
+ M internal/disclosure/infra/inmemory/repository.go
+ M internal/disclosure/infra/mysql/workflow_override_conflict_repository.go
+ M internal/disclosure/transport/http/handler.go
+ M internal/platform/errors/errors.go
+?? docs/ai-cache/workflow-override-architecture-integrity-audit/
+?? docs/ai-cache/workflow-override-foundation-batch5/
+?? docs/ai-cache/workflow-override-foundation-batch6/
+?? docs/ai-cache/workflow-override-runtime-invariants-lock/
+?? internal/disclosure/app/workflow_override_apply.go
+?? internal/disclosure/app/workflow_override_apply_service_test.go
+?? internal/disclosure/app/workflow_override_patch_apply.go
+?? internal/disclosure/app/workflow_override_patch_apply_test.go
+?? internal/disclosure/app/workflow_override_preview_cache.go
+?? internal/disclosure/infra/mysql/workflow_override_apply_repository.go
+ M src/pages/portal/DisclosureTypeDetail.batch3-rebase-preview.test.tsx
+ M src/pages/portal/DisclosureTypeDetail.batch4-conflict-resolution.test.tsx
+ M src/pages/portal/DisclosureTypeDetail.tsx
+ M src/pages/portal/WorkflowOverrideRebasePreviewModal.tsx
+ M src/services/disclosureTypesApi.ts
+?? docs/ai-cache/workflow-override-architecture-integrity-audit/
+?? docs/ai-cache/workflow-override-foundation-batch5/
+?? docs/ai-cache/workflow-override-foundation-batch6/
+?? docs/ai-cache/workflow-override-runtime-invariants-lock/
+?? playwright_batch6_conflict.mjs
+?? playwright_batch6_smoke.mjs
+?? src/pages/portal/DisclosureTypeDetail.batch5-rebase-apply.test.tsx
+?? src/pages/portal/DisclosureTypeDetail.batch6-ui-integration.test.tsx

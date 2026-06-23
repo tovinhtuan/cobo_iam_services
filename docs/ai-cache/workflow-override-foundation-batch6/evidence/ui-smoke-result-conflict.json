@@ -1,0 +1,9 @@
+{
+  "conflictRows": 1,
+  "conflictTypeText": "company_removed_mandatory_step",
+  "applyDisabledBeforeResolve": true,
+  "resolvedRowVisible": true,
+  "applyDisabledAfterResolve": false,
+  "applySuccessVisible": true,
+  "successText": "Đã áp dụng thành công — phiên bản mới #9. Workflow đang chạy đã được cập nhật."
+}

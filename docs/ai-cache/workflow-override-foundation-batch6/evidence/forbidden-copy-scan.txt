@@ -1,0 +1,8 @@
+Forbidden copy scan against captured DEV network log bodies + ui-smoke-result files:
+
+not found (clean): Workflow đã thay đổi
+not found (clean): bước đầu tiên sẽ chạy
+not found (clean): Tự động đồng bộ
+not found (clean): Đã kiểm tra toàn bộ dữ liệu
+
+Note: full-page text scan also performed live during Playwright runs (see screenshots); no forbidden phrase appears in any captured screenshot or network response body.

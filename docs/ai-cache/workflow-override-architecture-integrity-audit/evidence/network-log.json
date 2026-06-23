@@ -1,0 +1,13 @@
+[
+  {"step": "runtime-before-preview", "method": "GET", "url": "/api/v1/disclosure-types/bao-cao-tai-chinh-quy-1/effective-workflow", "status": 200},
+  {"step": "status", "method": "GET", "url": "/api/v1/company/disclosure-types/bao-cao-tai-chinh-quy-1/workflow/override/status", "status": 200},
+  {"step": "rebase-preview", "method": "GET", "url": "/api/v1/company/disclosure-types/bao-cao-tai-chinh-quy-1/workflow/override/rebase-preview", "status": 200, "conflicts": 0},
+  {"step": "non-override-before", "method": "GET", "url": "/api/v1/disclosure-types/bao-cao-tai-chinh-quy-1/effective-workflow", "status": 200, "company": "08f59da2-252c-47b3-a873-266aeb14f6dd"},
+  {"step": "runtime-before-apply", "method": "GET", "url": "/api/v1/disclosure-types/bao-cao-tai-chinh-quy-1/effective-workflow", "status": 200},
+  {"step": "rebase-apply", "method": "POST", "url": "/api/v1/company/disclosure-types/bao-cao-tai-chinh-quy-1/workflow/override/rebase-apply", "status": 200, "new_version_no": 8},
+  {"step": "runtime-after-apply", "method": "GET", "url": "/api/v1/disclosure-types/bao-cao-tai-chinh-quy-1/effective-workflow", "status": 200},
+  {"step": "non-override-after", "method": "GET", "url": "/api/v1/disclosure-types/bao-cao-tai-chinh-quy-1/effective-workflow", "status": 200, "company": "08f59da2-252c-47b3-a873-266aeb14f6dd"},
+  {"step": "idempotency-repeat", "method": "POST", "url": "/api/v1/company/disclosure-types/bao-cao-tai-chinh-quy-1/workflow/override/rebase-apply", "status": 200, "note": "identical applied_at, replay"},
+  {"step": "create-record", "method": "POST", "url": "/api/v1/disclosures", "status": 201},
+  {"step": "submit-record", "method": "POST", "url": "/api/v1/disclosures/{id}/submit", "status": 200}
+]

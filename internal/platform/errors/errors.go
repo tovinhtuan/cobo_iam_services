@@ -47,6 +47,12 @@ const (
 	// Sprint 3 / Batch 4 — Workflow Override Conflict Detection.
 	CodeInvalidResolution       Code = "INVALID_RESOLUTION"
 	CodeConflictAlreadyResolved Code = "CONFLICT_ALREADY_RESOLVED"
+	// Sprint 3 / Batch 5 — Workflow Override Rebase Apply.
+	CodePreviewRequired         Code = "PREVIEW_REQUIRED"
+	CodePreviewExpired          Code = "PREVIEW_EXPIRED"
+	CodeConflictsUnresolved     Code = "CONFLICTS_UNRESOLVED"
+	CodeDeferredValidationBlock Code = "DEFERRED_VALIDATION_BLOCKED"
+	CodeInvalidPatch            Code = "INVALID_PATCH"
 )
 
 // HTTPError is returned to clients as JSON { "error": { ... } }.

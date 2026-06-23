@@ -59,6 +59,47 @@ func (s *service) GetWorkflowOverrideRebasePreview(ctx context.Context, req GetW
 	}); err != nil {
 		return nil, err
 	}
+	computed, err := s.computeRebasePreview(ctx, req.Subject, typeID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Sprint 3 / Batch 5 — issue a real, ephemeral preview_id so rebase-apply has something to
+	// validate freshness against (PREFLIGHT_AUDIT.md §2). In-process only; never a DB row.
+	previewID := globalPreviewCache.Put(req.Subject.CompanyID, typeID, computed.BaseVersionNo, computed.TargetVersionNo)
+
+	dto := WorkflowOverrideRebasePreviewDTO{
+		PreviewID:       &previewID,
+		TypeID:          typeID,
+		CompanyID:       req.Subject.CompanyID,
+		BaseVersionNo:   computed.BaseVersionNo,
+		TargetVersionNo: computed.TargetVersionNo,
+		StaleStatus:     computed.StaleStatus,
+		GeneratedAt:     time.Now().UTC(),
+		PatchOperations: computed.Ops,
+		Conflicts:       computed.PersistedConflicts,
+	}
+	return &GetWorkflowOverrideRebasePreviewResponse{Data: dto}, nil
+}
+
+// rebasePreviewComputation is everything both the preview endpoint (Batch 3/4) and the apply
+// endpoint (Batch 5) need from a freshly-recomputed diff — shared so apply never trusts a cached
+// snapshot of ops/conflicts, only the company/global state as it exists AT APPLY TIME
+// (ABSOLUTE_RUNTIME_RULE: apply must never use stale data to decide what to write).
+type rebasePreviewComputation struct {
+	OverrideID         string
+	OverrideVersionNo  int
+	BaseVersionNo      int
+	TargetVersionNo    int
+	StaleStatus        string
+	CompanySteps       []WorkflowStepDTO
+	TargetManifest     []GlobalWorkflowStepInput
+	Ops                []PatchOperation
+	PersistedConflicts []PersistedConflictDTO
+	KeyOf              func(WorkflowStepDTO) string
+}
+
+func (s *service) computeRebasePreview(ctx context.Context, subject Subject, typeID string) (*rebasePreviewComputation, error) {
 	exists, err := s.repo.TypeExists(ctx, typeID)
 	if err != nil {
 		return nil, err
@@ -71,7 +112,7 @@ func (s *service) GetWorkflowOverrideRebasePreview(ctx context.Context, req GetW
 	if err != nil {
 		return nil, err
 	}
-	row, hasRow, err := s.repo.GetOverrideStalenessMetadata(ctx, req.Subject.CompanyID, typeID)
+	row, hasRow, err := s.repo.GetOverrideStalenessMetadata(ctx, subject.CompanyID, typeID)
 	if err != nil {
 		return nil, err
 	}
@@ -84,7 +125,7 @@ func (s *service) GetWorkflowOverrideRebasePreview(ctx context.Context, req GetW
 		BaseSource:    row.BaseSource,
 		BaseVersionNo: row.BaseVersionNo,
 	}, currentGlobalActiveVersionNo)
-	LogStalenessAnomaly(ctx, req.Subject.CompanyID, typeID, anomaly)
+	LogStalenessAnomaly(ctx, subject.CompanyID, typeID, anomaly)
 
 	if staleStatus == StaleStatusCurrent {
 		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeNotStale, "override is already current; nothing to preview", nil)
@@ -109,7 +150,7 @@ func (s *service) GetWorkflowOverrideRebasePreview(ctx context.Context, req GetW
 		return nil, perr.NewHTTPError(http.StatusGone, perr.CodePreviewUnavailable, "base or target global workflow version could not be decoded", nil)
 	}
 
-	overrideView, err := s.repo.GetCompanyWorkflowOverride(ctx, req.Subject.CompanyID, typeID)
+	overrideView, err := s.repo.GetCompanyWorkflowOverride(ctx, subject.CompanyID, typeID)
 	if err != nil {
 		return nil, err
 	}
@@ -137,24 +178,40 @@ func (s *service) GetWorkflowOverrideRebasePreview(ctx context.Context, req GetW
 		overrideVersionNo = overrideView.ActiveVersion.VersionNo
 	}
 
-	persistedConflicts, err := s.persistConflicts(ctx, conflicts, req.Subject.CompanyID, typeID, overrideID, overrideVersionNo, baseVersionNo, targetVersionNo, req.Subject.UserID)
+	persistedConflicts, err := s.persistConflicts(ctx, conflicts, subject.CompanyID, typeID, overrideID, overrideVersionNo, baseVersionNo, targetVersionNo, subject.UserID)
 	if err != nil {
 		return nil, err
 	}
 
-	dto := WorkflowOverrideRebasePreviewDTO{
-		PreviewID:       nil, // ephemeral identifier — Batch 4 still does not introduce one; the
-		// durable identity that matters (each conflict's own `id`) comes from persistence below.
-		TypeID:          typeID,
-		CompanyID:       req.Subject.CompanyID,
-		BaseVersionNo:   baseVersionNo,
-		TargetVersionNo: targetVersionNo,
-		StaleStatus:     staleStatus,
-		GeneratedAt:     time.Now().UTC(),
-		PatchOperations: ops,
-		Conflicts:       persistedConflicts,
+	// keyOf must bridge exactly the way buildDiffStepInputs bridged companySteps above, so the
+	// patch engine can match operations (keyed by base/target identity) against the company's
+	// current steps (keyed by their own StepID unless bridged). companyInputs already carries
+	// each company step's resolved Key in the same order as companySteps.
+	keyByStepID := map[string]string{}
+	for i, ci := range companyInputs {
+		if i < len(companySteps) {
+			keyByStepID[companySteps[i].StepID] = ci.Key
+		}
 	}
-	return &GetWorkflowOverrideRebasePreviewResponse{Data: dto}, nil
+	keyOf := func(step WorkflowStepDTO) string {
+		if k, ok := keyByStepID[step.StepID]; ok {
+			return k
+		}
+		return step.StepID
+	}
+
+	return &rebasePreviewComputation{
+		OverrideID:         overrideID,
+		OverrideVersionNo:  overrideVersionNo,
+		BaseVersionNo:      baseVersionNo,
+		TargetVersionNo:    targetVersionNo,
+		StaleStatus:        staleStatus,
+		CompanySteps:       companySteps,
+		TargetManifest:     targetManifest,
+		Ops:                ops,
+		PersistedConflicts: persistedConflicts,
+		KeyOf:              keyOf,
+	}, nil
 }
 
 // persistConflicts converts the ephemeral PreviewConflict list into PersistedConflictInput rows

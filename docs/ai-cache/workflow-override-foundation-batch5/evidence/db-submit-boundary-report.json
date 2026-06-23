@@ -1,0 +1,16 @@
+{
+  "comparison": "db-before-submit.json vs db-after-submit.json",
+  "note": "Separate from the apply-only boundary check above per the task's explicit instruction not to mix the two windows.",
+  "unchanged_tables": [
+    { "table": "global_workflows", "count_before": 14, "count_after": 14, "hash_unchanged": true },
+    { "table": "global_workflow_versions", "count_before": 22, "count_after": 22, "hash_unchanged": true },
+    { "table": "company_template_workflow_overrides", "count_before": 11, "count_after": 11, "hash_unchanged": true },
+    { "table": "company_template_workflow_override_versions", "count_before": 18, "count_after": 18, "hash_unchanged": true }
+  ],
+  "expected_changed_tables": [
+    { "table": "workflow_instances", "count_before": 54, "count_after": 55, "delta": "+1 row (the new instance from this submit)" },
+    { "table": "workflow_tasks", "count_before": 54, "count_after": 55, "delta": "+1 row (the first task minted from the applied snapshot's single step)" }
+  ],
+  "verdict": "PASS - submit changed only workflow_instances/workflow_tasks (+1 each, expected); zero override/global tables touched by submit",
+  "method_note": "all hashes computed with SET SESSION group_concat_max_len=10485760"
+}

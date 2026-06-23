@@ -1,0 +1,7 @@
+mysql: [Warning] Using a password on the command line interface can be insecure.
+*************************** 1. row ***************************
+         version_no: 3
+steps_manifest_json: {"steps": [{"name": "REBASE-TEST CMS V3 Stage", "role": "reviewer", "stage": "REBASE-TEST CMS V3 Stage", "step_id": "019eea44-7499-7b89-ae1a-01997ff14d7f-step-1", "due_rule": "T+3", "step_key": "stp_krdsnse6342d", "department_id": "d1", "display_order": 1, "processing_days": 3}], "type_id": "bao-cao-tai-chinh-quy-1", "version_no": 3, "workflow_id": "019eea44-7499-7b89-ae1a-01997ff14d7f"}
+*************************** 2. row ***************************
+         version_no: 2
+steps_manifest_json: {"steps": [{"name": "Final Step", "role": "reviewer", "stage": "Final Step", "step_id": "019e9237-61d6-7180-9702-f9a1e0553540-step-1", "due_rule": "", "step_key": "019e9237-61d6-7180-9702-f9a1e0553540-step-1", "department_id": "d1", "display_order": 1, "processing_days": 7}], "type_id": "bao-cao-tai-chinh-quy-1", "version_no": 2, "workflow_id": "019e9237-61d6-7180-9702-f9a1e0553540"}

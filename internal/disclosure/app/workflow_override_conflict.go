@@ -68,6 +68,11 @@ type PersistedConflictDTO struct {
 	CompanyValue      any        `json:"company_value"`
 	ResolutionStatus  string     `json:"resolution_status"`
 	Resolution        *string    `json:"resolution,omitempty"`
+	// ResolutionValue is the decoded resolution_json — populated so Batch 5's apply engine can
+	// read a merge_manual resolution's actual replacement value. Additive field, existing column,
+	// no migration; the resolve endpoint's response never set this before (write-only column
+	// prior to this batch), so this cannot change any already-locked Batch 4 API behavior.
+	ResolutionValue   any        `json:"resolution_value,omitempty"`
 	ResolutionOptions []string   `json:"resolution_options"`
 	CreatedAt         time.Time  `json:"created_at"`
 	ResolvedBy        *string    `json:"resolved_by,omitempty"`

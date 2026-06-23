@@ -42,6 +42,9 @@ type Service interface {
 	RebaseCheckWorkflowOverride(ctx context.Context, req RebaseCheckWorkflowOverrideRequest) (*RebaseCheckWorkflowOverrideResponse, error)
 	GetWorkflowOverrideRebasePreview(ctx context.Context, req GetWorkflowOverrideRebasePreviewRequest) (*GetWorkflowOverrideRebasePreviewResponse, error)
 	ResolveWorkflowOverrideConflict(ctx context.Context, req ResolveWorkflowOverrideConflictRequest) (*ResolveWorkflowOverrideConflictResponse, error)
+	// Sprint 3 / Batch 5 — Workflow Override Rebase Apply. The only Sprint 3 service method
+	// allowed to change what GetEffectiveWorkflow subsequently returns.
+	ApplyWorkflowOverrideRebase(ctx context.Context, req ApplyWorkflowOverrideRebaseRequest) (*ApplyWorkflowOverrideRebaseResponse, error)
 	GetEffectiveWorkflow(ctx context.Context, req GetEffectiveWorkflowRequest) (*GetEffectiveWorkflowResponse, error)
 	GetTemplateDeadlineConfig(ctx context.Context, req GetTemplateDeadlineConfigRequest) (*GetTemplateDeadlineConfigResponse, error)
 	UpdateTemplateDeadlineConfig(ctx context.Context, req UpdateTemplateDeadlineConfigRequest) (*UpdateTemplateDeadlineConfigResponse, error)
@@ -113,6 +116,13 @@ type Repository interface {
 	UpsertWorkflowOverrideConflicts(ctx context.Context, inputs []PersistedConflictInput) ([]PersistedConflictDTO, error)
 	GetWorkflowOverrideConflict(ctx context.Context, companyID, typeID, conflictID string) (*PersistedConflictDTO, error)
 	ResolveWorkflowOverrideConflict(ctx context.Context, companyID, typeID, conflictID, resolution string, resolutionValue any, resolvedBy string, resolvedAt time.Time) (*PersistedConflictDTO, error)
+	// Sprint 3 / Batch 5 — Workflow Override Rebase Apply. Writes ONLY
+	// company_template_workflow_override_versions (insert) and
+	// company_template_workflow_overrides (active_version_no/status/stale_status/base_version_no/
+	// base_hash/last_rebase_check_at/approved_by/approved_at/updated_by/updated_at), in one
+	// transaction (DB_WRITE_BOUNDARY_REPORT.md). Returns 409 STATE_CONFLICT if
+	// ExpectedActiveVersionNo no longer matches at commit time (race guard).
+	ApplyWorkflowOverrideRebase(ctx context.Context, params ApplyWorkflowOverrideRebaseParams) (*ApplyWorkflowOverrideRebaseResult, error)
 	GetEffectiveWorkflow(ctx context.Context, companyID, typeID string) (*EffectiveWorkflowDTO, error)
 	GetCompanyDeadlineContext(ctx context.Context, companyID string) (CompanyDeadlineContext, error)
 	GetCompanyApplicabilityProfile(ctx context.Context, companyID string) (applicability.CompanyApplicabilityProfile, error)

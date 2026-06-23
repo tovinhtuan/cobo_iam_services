@@ -1,0 +1,131 @@
+[
+  {
+    "url": "http://88.216.208.0:3000/api/v1/company/disclosure-types/bao-cao-tai-chinh-quy-1/workflow/override/status",
+    "status": 200,
+    "method": "GET",
+    "body": {
+      "data": {
+        "has_override": true,
+        "stale_status": "stale",
+        "base_source": "global_workflow",
+        "base_workflow_id": "019e9237-61d6-7180-9702-f9a1e0553540",
+        "base_version_no": 3,
+        "current_global_active_version_no": 4,
+        "last_rebase_check_at": "2026-06-23T14:04:27Z"
+      }
+    }
+  },
+  {
+    "url": "http://88.216.208.0:3000/api/v1/company/disclosure-types/bao-cao-tai-chinh-quy-1/workflow/override/rebase-preview",
+    "status": 200,
+    "method": "GET",
+    "body": {
+      "data": {
+        "preview_id": "prv_8578817faa64431c1b7392d6bd36e202",
+        "type_id": "bao-cao-tai-chinh-quy-1",
+        "company_id": "144ca32b-cd59-467b-aba9-9576d3b148ad",
+        "base_version_no": 3,
+        "target_version_no": 4,
+        "stale_status": "stale",
+        "generated_at": "2026-06-23T16:28:15.061170967Z",
+        "patch_operations": [
+          {
+            "op": "update_step_field",
+            "step_key": "override-step-1",
+            "origin": "both_changed",
+            "field_path": "stage",
+            "from": "REBASE-TEST CMS V3 Stage",
+            "to": "SmokeQA C-Fix Stage Edit 1782136784901"
+          }
+        ],
+        "conflicts": [
+          {
+            "id": "c241af5e184cf9c0f913a8f8eae6a5cfa324474d84ef9634c73eefb744a10cd6",
+            "preview_id": null,
+            "company_id": "144ca32b-cd59-467b-aba9-9576d3b148ad",
+            "type_id": "bao-cao-tai-chinh-quy-1",
+            "override_id": "ovr_144ca32b-cd59-467b-aba9-9576d3b148ad_bao-cao-tai-chinh-quy-1",
+            "override_version_no": 6,
+            "base_version_no": 3,
+            "target_version_no": 4,
+            "step_key": "override-step-1",
+            "field_path": "due_rule",
+            "severity": "warning",
+            "conflict_type": "same_field_changed",
+            "global_old": "T+3",
+            "global_new": "T+30",
+            "company_value": "T+42",
+            "resolution_status": "unresolved",
+            "resolution_options": [
+              "keep_company",
+              "accept_global",
+              "merge_manual"
+            ],
+            "created_at": "2026-06-23T16:28:15Z"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "url": "http://88.216.208.0:3000/api/v1/company/disclosure-types/bao-cao-tai-chinh-quy-1/workflow/override/conflicts/c241af5e184cf9c0f913a8f8eae6a5cfa324474d84ef9634c73eefb744a10cd6/resolve",
+    "status": 200,
+    "method": "POST",
+    "body": {
+      "data": {
+        "id": "c241af5e184cf9c0f913a8f8eae6a5cfa324474d84ef9634c73eefb744a10cd6",
+        "preview_id": null,
+        "company_id": "144ca32b-cd59-467b-aba9-9576d3b148ad",
+        "type_id": "bao-cao-tai-chinh-quy-1",
+        "override_id": "ovr_144ca32b-cd59-467b-aba9-9576d3b148ad_bao-cao-tai-chinh-quy-1",
+        "override_version_no": 6,
+        "base_version_no": 3,
+        "target_version_no": 4,
+        "step_key": "override-step-1",
+        "field_path": "due_rule",
+        "severity": "warning",
+        "conflict_type": "same_field_changed",
+        "global_old": "T+3",
+        "global_new": "T+30",
+        "company_value": "T+42",
+        "resolution_status": "resolved",
+        "resolution": "accept_global",
+        "resolution_value": {},
+        "resolution_options": null,
+        "created_at": "2026-06-23T16:28:15Z",
+        "resolved_by": "d938e010-1064-440c-8c7b-aba6e1924402",
+        "resolved_at": "2026-06-23T16:28:18Z"
+      }
+    }
+  },
+  {
+    "url": "http://88.216.208.0:3000/api/v1/company/disclosure-types/bao-cao-tai-chinh-quy-1/workflow/override/rebase-apply",
+    "status": 200,
+    "method": "POST",
+    "body": {
+      "data": {
+        "override_id": "ovr_144ca32b-cd59-467b-aba9-9576d3b148ad_bao-cao-tai-chinh-quy-1",
+        "new_version_no": 7,
+        "state": "approved",
+        "applied_at": "2026-06-23T16:28:20.109541414Z",
+        "workflow_source": "company_override"
+      }
+    }
+  },
+  {
+    "url": "http://88.216.208.0:3000/api/v1/company/disclosure-types/bao-cao-tai-chinh-quy-1/workflow/override/status",
+    "status": 200,
+    "method": "GET",
+    "body": {
+      "data": {
+        "has_override": true,
+        "stale_status": "current",
+        "base_source": "global_workflow",
+        "base_workflow_id": "019e9237-61d6-7180-9702-f9a1e0553540",
+        "base_version_no": 4,
+        "current_global_active_version_no": 4,
+        "last_rebase_check_at": "2026-06-23T16:28:20Z"
+      }
+    }
+  }
+]

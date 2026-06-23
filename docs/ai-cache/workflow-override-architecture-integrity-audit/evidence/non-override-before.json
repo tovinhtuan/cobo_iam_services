@@ -1,0 +1,1 @@
+{"data":{"type_id":"bao-cao-tai-chinh-quy-1","company_id":"08f59da2-252c-47b3-a873-266aeb14f6dd","source":"global_workflow","version_no":3,"workflow":[{"step_id":"019eea44-7499-7b89-ae1a-01997ff14d7f-step-1","stage":"REBASE-TEST CMS V3 Stage","department_id":"d1","assignee_role_ids":["reviewer"],"due_rule":"T+3","processing_days":3,"documents":null,"display_order":1}]}}

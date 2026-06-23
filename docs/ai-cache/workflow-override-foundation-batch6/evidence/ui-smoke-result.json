@@ -1,0 +1,8 @@
+{
+  "badgeText": "Đang dùng phiên bản cũ",
+  "versionDetailText": "Phiên bản gốc v2 · Phiên bản hệ thống hiện tại v3",
+  "displayOrderWarningVisible": true,
+  "applySuccessVisibleInPreview": false,
+  "applyDisabledNow": false,
+  "modalContainsRuntimeUnchangedBanner": true
+}

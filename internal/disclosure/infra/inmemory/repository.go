@@ -636,6 +636,57 @@ func (r *Repository) ApproveCompanyWorkflowOverride(_ context.Context, req discl
 	}, nil
 }
 
+// ApplyWorkflowOverrideRebase mirrors the mysql repository's exact transactional shape and race
+// guard (Sprint 3 / Batch 5) — under r.mu, so it is atomic relative to every other in-memory
+// repository method by construction.
+func (r *Repository) ApplyWorkflowOverrideRebase(_ context.Context, params disclosureapp.ApplyWorkflowOverrideRebaseParams) (*disclosureapp.ApplyWorkflowOverrideRebaseResult, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	st, ok := r.overrideByCompanyType[overrideKey(params.CompanyID, params.TypeID)]
+	if !ok {
+		return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeOverrideNotFound, "workflow override not found", nil)
+	}
+	if st.header.ActiveVersionNo != params.ExpectedActiveVersionNo {
+		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "override was modified concurrently; re-run rebase-preview and retry", nil)
+	}
+
+	nextVersion := 0
+	for vn := range st.versions {
+		if vn > nextVersion {
+			nextVersion = vn
+		}
+	}
+	nextVersion++
+
+	approvedAt := params.Now
+	st.versions[nextVersion] = disclosureapp.CompanyWorkflowOverrideVersionDTO{
+		VersionNo:  nextVersion,
+		State:      "approved",
+		ChangeNote: "rebase-apply",
+		Workflow:   params.NewSnapshot,
+		CreatedBy:  params.UserID,
+		ApprovedBy: params.UserID,
+		ApprovedAt: &approvedAt,
+		CreatedAt:  params.Now,
+	}
+	st.header.ActiveVersionNo = nextVersion
+	st.header.Status = "approved"
+	st.header.BaseSource = disclosureapp.BaseSourceGlobalWorkflow
+	baseVersionNo := params.NewBaseVersionNo
+	st.header.BaseVersionNo = &baseVersionNo
+	st.header.BaseHash = ""
+	st.header.StaleStatus = disclosureapp.StaleStatusCurrent
+	lastCheck := params.Now
+	st.header.LastRebaseCheckAt = &lastCheck
+	st.header.UpdatedAt = params.Now
+
+	return &disclosureapp.ApplyWorkflowOverrideRebaseResult{
+		OverrideID:   st.header.OverrideID,
+		NewVersionNo: nextVersion,
+		AppliedAt:    params.Now,
+	}, nil
+}
+
 func (r *Repository) DeleteCompanyWorkflowOverrideDraft(_ context.Context, req disclosureapp.DeleteCompanyWorkflowOverrideDraftRequest) (*disclosureapp.DeleteCompanyWorkflowOverrideDraftResponse, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -897,8 +948,10 @@ func (r *Repository) GetWorkflowOverrideConflict(_ context.Context, companyID, t
 }
 
 // ResolveWorkflowOverrideConflict mirrors the mysql repository's scoped update — writes ONLY the
-// 5 resolution fields.
-func (r *Repository) ResolveWorkflowOverrideConflict(_ context.Context, companyID, typeID, conflictID, resolution string, _ any, resolvedBy string, resolvedAt time.Time) (*disclosureapp.PersistedConflictDTO, error) {
+// 5 resolution fields (resolution_value included, Sprint 3 / Batch 5 — needed so an in-memory
+// merge_manual resolution carries its value through to the apply engine exactly as the mysql
+// repository's resolution_json round-trip now does).
+func (r *Repository) ResolveWorkflowOverrideConflict(_ context.Context, companyID, typeID, conflictID, resolution string, resolutionValue any, resolvedBy string, resolvedAt time.Time) (*disclosureapp.PersistedConflictDTO, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	dto, ok := r.workflowOverrideConflicts[conflictID]
@@ -908,6 +961,7 @@ func (r *Repository) ResolveWorkflowOverrideConflict(_ context.Context, companyI
 	dto.ResolutionStatus = disclosureapp.ResolutionStatusResolved
 	res := resolution
 	dto.Resolution = &res
+	dto.ResolutionValue = resolutionValue
 	by := resolvedBy
 	dto.ResolvedBy = &by
 	at := resolvedAt

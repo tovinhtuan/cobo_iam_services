@@ -1,0 +1,7 @@
+{
+  "task_id": "019ef579-a97c-7117-9af5-51c06c326a05",
+  "workflow_instance_id": "019ef579-a97a-7928-8f02-d0e281118793",
+  "step_code": "019eea44-7499-7b89-ae1a-01997ff14d7f-step-1",
+  "status": "pending",
+  "note": "Created from the step MapEffectiveWorkflowToSnapshot sorted first (display_order, then step_id lexicographic tie-break) -- see 11_SECONDARY_MISMATCH_SCAN.md finding M1 for why this differs from GetEffectiveWorkflow's own array order under a display_order tie."
+}

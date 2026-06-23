@@ -59,6 +59,9 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/company/disclosure-types/{type_id}/workflow/override/rebase-preview", h.getWorkflowOverrideRebasePreview)
 	// Sprint 3 / Batch 4 — Workflow Override Conflict Detection. Writes ONLY workflow_override_conflicts.
 	mux.HandleFunc("POST /api/v1/company/disclosure-types/{type_id}/workflow/override/conflicts/{conflict_id}/resolve", h.resolveWorkflowOverrideConflict)
+	// Sprint 3 / Batch 5 — Workflow Override Rebase Apply. The only Sprint 3 endpoint that can
+	// change what GetEffectiveWorkflow subsequently returns.
+	mux.HandleFunc("POST /api/v1/company/disclosure-types/{type_id}/workflow/override/rebase-apply", h.applyWorkflowOverrideRebase)
 	mux.HandleFunc("GET /api/v1/company/groups", h.listCompanyGroups)
 	mux.HandleFunc("GET /api/v1/disclosure-types/{type_id}/effective-workflow", h.getEffectiveWorkflow)
 	mux.HandleFunc("GET /api/v1/admin/disclosure-types/{type_id}/config", h.getTemplateDeadlineConfig)
@@ -535,6 +538,68 @@ func (h *Handler) resolveWorkflowOverrideConflict(w http.ResponseWriter, r *http
 	})
 	if err != nil {
 		httpx.WriteError(w, nil, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+// applyWorkflowOverrideRebase — Sprint 3 / Batch 5. Idempotency-Key is MANDATORY here (deviating
+// from submit/confirm's optional convention — IDEMPOTENCY_CONTRACT.md's documented, deliberate
+// exception): this is the only Sprint 3 write that changes runtime, so an unkeyed retry must never
+// be allowed to risk a duplicate apply.
+func (h *Handler) applyWorkflowOverrideRebase(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subjectFromToken(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	typeID := strings.TrimSpace(r.PathValue("type_id"))
+	var body struct {
+		PreviewID string `json:"preview_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	idemKey := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+	if idemKey == "" || h.idem == nil {
+		httpx.WriteError(w, nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "Idempotency-Key header is required for rebase-apply", nil))
+		return
+	}
+	hash := disclosureRequestHash(sub.CompanyID, typeID, sub.UserID, "rebase-apply:"+strings.TrimSpace(body.PreviewID))
+	res, err := h.idem.TryReserve(r.Context(), idempotency.Params{
+		CompanyID: sub.CompanyID, Scope: "workflow.override.rebase-apply", Key: idemKey, RequestHash: hash,
+	})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	if res.Replay {
+		httpx.WriteJSONRaw(w, res.ReplayHTTPStatus, res.ReplayBody)
+		return
+	}
+	if res.Conflict {
+		httpx.WriteJSON(w, http.StatusConflict, idempotencyConflictBody("idempotency conflict: same key with a different preview, or a request already in progress"))
+		return
+	}
+
+	resp, applyErr := h.svc.ApplyWorkflowOverrideRebase(r.Context(), disclosureapp.ApplyWorkflowOverrideRebaseRequest{
+		Subject:   sub,
+		TypeID:    typeID,
+		PreviewID: strings.TrimSpace(body.PreviewID),
+	})
+	if res.ReservationID != "" {
+		if applyErr != nil {
+			_ = h.idem.Abandon(r.Context(), res.ReservationID)
+		} else {
+			respBody, _ := json.Marshal(resp)
+			env := idempotency.Envelope{HTTPStatus: http.StatusOK, Body: respBody}
+			envBytes, _ := json.Marshal(&env)
+			_ = h.idem.Complete(r.Context(), res.ReservationID, envBytes)
+		}
+	}
+	if applyErr != nil {
+		httpx.WriteError(w, nil, applyErr)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, resp)

@@ -1,0 +1,36 @@
+{
+  "comparison": "db-before-apply.json vs db-after-apply.json",
+  "forbidden_tables_unchanged": [
+    { "table": "global_workflows", "count_before": 14, "count_after": 14, "hash_unchanged": true },
+    { "table": "global_workflow_versions", "count_before": 22, "count_after": 22, "hash_unchanged": true },
+    { "table": "global_workflow_steps", "count_before": 40, "count_after": 40, "hash_unchanged": true },
+    { "table": "disclosure_template_blocks", "count_before": 357, "count_after": 357, "hash_unchanged": true },
+    { "table": "workflow_instances", "count_before": 54, "count_after": 54, "hash_unchanged": true },
+    { "table": "workflow_tasks", "count_before": 54, "count_after": 54, "hash_unchanged": true }
+  ],
+  "allowed_tables_changed": [
+    {
+      "table": "company_template_workflow_overrides",
+      "count_before": 11, "count_after": 11,
+      "hash_before": "56fff0c297acf6ed0bee953ceb5aecec",
+      "hash_after": "9c72a4cc238ee8c93999ab62d7874edc",
+      "reason": "144ca32b's row: active_version_no 5->6, stale_status stale->current, base_version_no 2->3"
+    },
+    {
+      "table": "company_template_workflow_override_versions",
+      "count_before": 17, "count_after": 18,
+      "hash_before": "50d4bcfebd9f4f587297ef0158c2ccc4",
+      "hash_after": "8bb1a0591ff60d169c9be6e4babdf9b4",
+      "reason": "exactly one new row inserted: version_no=6, state=approved"
+    },
+    {
+      "table": "workflow_override_conflicts",
+      "count_before": 1, "count_after": 1,
+      "hash_before": "b2152a826cd28de7d6ee97758a32474b",
+      "hash_after": "b2152a826cd28de7d6ee97758a32474b",
+      "reason": "unchanged by apply itself -- the resolve call that changed it happened strictly before this before/after window"
+    }
+  ],
+  "verdict": "PASS - apply touched exactly the 2 allowed tables (overrides, override_versions); workflow_override_conflicts and all 6 forbidden tables byte-identical",
+  "method_note": "all hashes computed with SET SESSION group_concat_max_len=10485760 per Batch 4's disclosed group_concat_max_len finding"
+}

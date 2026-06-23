@@ -1,0 +1,8 @@
+{
+  "GetEffectiveWorkflow_source_after_apply": "company_override",
+  "workflow_instance_workflow_source_after_submit": "company_override",
+  "non_overridden_company_source": "global_workflow",
+  "source_values_observed_across_this_audit": ["company_override", "global_workflow"],
+  "code_level_check": "workflowSourceLabel() in internal/disclosure/infra/workflow/bootstrap.go passes the resolver's Source value through unchanged -- no collapsing/mapping table exists anywhere in the codebase that could merge company_override/global_workflow/global_template into one another",
+  "verdict": "PASS - provenance accurate and never collapsed, in both live API responses and DB rows"
+}
