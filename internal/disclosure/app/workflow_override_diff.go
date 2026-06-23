@@ -42,13 +42,30 @@ const (
 	OriginBothChanged    = "both_changed"
 )
 
-// Conflict severities (CONFLICT_DETECTION_MODEL.md).
+// Conflict severities. Batch 4 (docs/ai-cache/workflow-override-foundation-batch4/PREFLIGHT_AUDIT.md)
+// locks the wire contract to exactly these 3 values — ConflictSeverityAdvisory's VALUE was
+// "advisory" in Batch 3 and is renamed to "warning" here; every Go call site references the
+// constant, not the literal, so this is a value-only change with zero call-site edits required.
 const (
 	ConflictSeverityBlocking = "blocking"
-	ConflictSeverityAdvisory = "advisory"
+	ConflictSeverityAdvisory = "warning"
+	ConflictSeverityInfo     = "info"
 )
 
-// Conflict reasons.
+// Conflict type values (Batch 4 — persisted conflict_type column / API field). Each maps to
+// exactly one CONFLICT_DETECTION_MODEL.md rule.
+const (
+	ConflictTypeSameFieldChanged               = "same_field_changed"                 // rule 1
+	ConflictTypeGlobalDeletedCustomized        = "global_deleted_customized_step"     // rule 2
+	ConflictTypeGlobalRenamedCompanyReassigned = "global_renamed_company_reassigned"  // rule 3 (info)
+	ConflictTypeReorderAndDueDateChanged       = "reorder_and_due_date_changed"       // rule 4 (info)
+	ConflictTypeNewMandatoryStepUnresolvedRole = "new_mandatory_step_unresolved_role" // rule 5
+	ConflictTypeCompanyRemovedMandatoryStep    = "company_removed_mandatory_step"     // rule 6
+	ConflictTypeRoleNoLongerExists             = "role_no_longer_exists"              // rule 7
+	ConflictTypeStepIdentityUnclear            = "step_identity_unclear"
+)
+
+// Conflict reasons (legacy field, kept for the step-identity-unclear case's human-readable detail).
 const (
 	ConflictReasonStepIdentityUnclear = "STEP_IDENTITY_UNCLEAR"
 	ConflictReasonRoleUnresolved      = "ROLE_UNRESOLVED"
@@ -104,6 +121,7 @@ type PreviewConflict struct {
 	StepKey             string   `json:"step_key"`
 	FieldPath           string   `json:"field_path"`
 	Severity            string   `json:"severity"`
+	ConflictType        string   `json:"conflict_type"`
 	GlobalOld           any      `json:"global_old"`
 	GlobalNew           any      `json:"global_new"`
 	CompanyValue        any      `json:"company_value"`
@@ -190,6 +208,7 @@ func ComputeRebaseDiff(base, target, company []DiffStepInput) ([]PatchOperation,
 				StepKey:             key,
 				FieldPath:           "__step_existence__",
 				Severity:            ConflictSeverityBlocking,
+				ConflictType:        ConflictTypeGlobalDeletedCustomized,
 				GlobalOld:           b,
 				GlobalNew:           nil,
 				CompanyValue:        c,
@@ -217,9 +236,26 @@ func ComputeRebaseDiff(base, target, company []DiffStepInput) ([]PatchOperation,
 			continue
 
 		case hasB && hasT && !hasC:
-			// Company removed a step from their own customization that the base/target still
-			// has. Rule 6 in spirit (company-initiated removal) — not flagged as a conflict since
-			// it's the company's own deliberate action, not a global-vs-company collision.
+			// Rule 6 (CONFLICT_DETECTION_MODEL.md): the company removed/skipped a step that BOTH
+			// the base AND the current target global manifest still carry — i.e. a global step
+			// that survived the global side's own evolution, the company has nevertheless dropped
+			// from its own current snapshot. "Must be explicitly surfaced; silently re-adding a
+			// step the company deliberately removed would itself be a data-loss-adjacent
+			// surprise" — so this is a real conflict (not blocking — the company's removal may
+			// well be intentional — but never silent), severity warning, requiring an explicit
+			// decision: re-confirm the removal (mark_not_applicable) or accept the global step
+			// back (accept_global).
+			conflicts = append(conflicts, PreviewConflict{
+				TemporaryConflictID: "preview-" + key + "-company-removed",
+				StepKey:             key,
+				FieldPath:           "__step_existence__",
+				Severity:            ConflictSeverityAdvisory,
+				ConflictType:        ConflictTypeCompanyRemovedMandatoryStep,
+				GlobalOld:           b,
+				GlobalNew:           t,
+				CompanyValue:        nil,
+				ResolutionOptions:   []string{ResolutionMarkNotApplicable, ResolutionAcceptGlobal},
+			})
 			continue
 		}
 
@@ -250,6 +286,7 @@ func unclearIdentityConflict(side string, step *WorkflowStepDTO) PreviewConflict
 		StepKey:             stepID,
 		FieldPath:           "__step_existence__",
 		Severity:            ConflictSeverityBlocking,
+		ConflictType:        ConflictTypeStepIdentityUnclear,
 		ResolutionOptions:   []string{ResolutionMergeManual},
 		Reason:              ConflictReasonStepIdentityUnclear,
 	}
@@ -344,6 +381,7 @@ func diffGenericField(key, fieldPath string, base, target, company any) (*PatchO
 			StepKey:             key,
 			FieldPath:           fieldPath,
 			Severity:            ConflictSeverityAdvisory,
+			ConflictType:        ConflictTypeSameFieldChanged,
 			GlobalOld:           base,
 			GlobalNew:           target,
 			CompanyValue:        company,
@@ -382,6 +420,7 @@ func diffAssignees(key string, base, target, company []string) (*PatchOperation,
 			StepKey:             key,
 			FieldPath:           "assignee_role_ids",
 			Severity:            ConflictSeverityAdvisory,
+			ConflictType:        ConflictTypeSameFieldChanged,
 			GlobalOld:           baseSet,
 			GlobalNew:           targetSet,
 			CompanyValue:        companySet,
@@ -407,7 +446,8 @@ func diffDueRule(key, base, target, company string) (*PatchOperation, *PreviewCo
 		return nil, &PreviewConflict{
 			TemporaryConflictID: "preview-" + key + "-due_rule",
 			StepKey:             key, FieldPath: "due_rule", Severity: ConflictSeverityAdvisory,
-			GlobalOld: base, GlobalNew: target, CompanyValue: company,
+			ConflictType: ConflictTypeSameFieldChanged,
+			GlobalOld:    base, GlobalNew: target, CompanyValue: company,
 			ResolutionOptions: []string{ResolutionKeepCompany, ResolutionAcceptGlobal, ResolutionMergeManual},
 		}
 	}
@@ -430,7 +470,8 @@ func diffReminders(key string, base, target, company *WorkflowStepReminderConfig
 		return nil, &PreviewConflict{
 			TemporaryConflictID: "preview-" + key + "-reminder_config",
 			StepKey:             key, FieldPath: "reminder_config", Severity: ConflictSeverityAdvisory,
-			GlobalOld: base, GlobalNew: target, CompanyValue: company,
+			ConflictType: ConflictTypeSameFieldChanged,
+			GlobalOld:    base, GlobalNew: target, CompanyValue: company,
 			ResolutionOptions: []string{ResolutionKeepCompany, ResolutionAcceptGlobal, ResolutionMergeManual},
 		}
 	}

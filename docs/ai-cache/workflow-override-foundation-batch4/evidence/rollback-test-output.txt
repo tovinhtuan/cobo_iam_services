@@ -1,0 +1,14 @@
+=== Rollback test: running 0104.down.sql on real DEV (table is empty, zero dependents) ===
+mysql: [Warning] Using a password on the command line interface can be insecure.
+
+=== Post-rollback: confirm table is gone, ledger entry removed ===
+mysql: [Warning] Using a password on the command line interface can be insecure.
+table_exists_after_rollback
+0
+ledger_entry_count
+0
+
+=== Re-applying up.sql to restore working state for the rest of Batch 4 ===
+Skipping already applied migration: 0103_override_base_metadata.up.sql
+Applying migration: 0104_workflow_override_conflicts.up.sql
+All migrations are up to date.

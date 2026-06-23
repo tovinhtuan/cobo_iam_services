@@ -1,0 +1,20 @@
+{
+  "scenario": "live rebase-preview call against a real, deliberately-conflicting override (company 144ca32b / type bao-cao-tai-chinh-quy-1)",
+  "tables_checked": 8,
+  "tables_allowed_to_change": ["workflow_override_conflicts"],
+  "rows_changed_in_other_tables": 0,
+  "detail": [
+    {"table": "company_template_workflow_overrides", "before_hash": "971c817a4fb6ce1204c6d2b1bf4187a0", "after_hash": "971c817a4fb6ce1204c6d2b1bf4187a0", "changed": false},
+    {"table": "company_template_workflow_override_versions", "before_hash": "da7a5ee8ba25ea451a2811ff4172ae3b", "after_hash": "da7a5ee8ba25ea451a2811ff4172ae3b", "changed": false},
+    {"table": "global_workflows", "before_hash": "85fae14cd3cb6dc6bc2cc8ef112bed2e", "after_hash": "85fae14cd3cb6dc6bc2cc8ef112bed2e", "changed": false},
+    {"table": "global_workflow_versions", "before_hash": "11cc529fa01618db2e87de3cb55a0c7c", "after_hash": "11cc529fa01618db2e87de3cb55a0c7c", "changed": false},
+    {"table": "global_workflow_steps", "before_hash": "bb30b09bc5fa3cc9f7ddebd00198fd11", "after_hash": "bb30b09bc5fa3cc9f7ddebd00198fd11", "changed": false},
+    {"table": "workflow_instances", "before_hash": "59dfdd98a5c33f5fc09c5788daa7cab2", "after_hash": "59dfdd98a5c33f5fc09c5788daa7cab2", "changed": false},
+    {"table": "workflow_tasks", "before_hash": "1a381d45d472ad70c6cf348e17d81dbb", "after_hash": "1a381d45d472ad70c6cf348e17d81dbb", "changed": false},
+    {"table": "disclosure_template_blocks", "before_hash": "59e06da5495ca5288ec489bf04d2b966", "after_hash": "59e06da5495ca5288ec489bf04d2b966", "changed": false}
+  ],
+  "workflow_override_conflicts_row_count_before": 0,
+  "workflow_override_conflicts_row_count_after": 1,
+  "methodology_correction": "group_concat_max_len was raised from the MySQL default (1024) to 1000000 for this capture — the default silently truncated and masked real content differences in earlier comparisons. All before/after pairs above were captured under the SAME corrected setting, so the comparison is internally valid.",
+  "conclusion": "Live preview call against a real, deliberately-conflicting override wrote exactly 1 new row to workflow_override_conflicts and zero changes to any other table."
+}

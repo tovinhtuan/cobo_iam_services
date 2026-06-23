@@ -44,6 +44,9 @@ const (
 	CodeOverrideNotFound   Code = "OVERRIDE_NOT_FOUND"
 	CodeNotStale           Code = "NOT_STALE"
 	CodePreviewUnavailable Code = "PREVIEW_UNAVAILABLE"
+	// Sprint 3 / Batch 4 — Workflow Override Conflict Detection.
+	CodeInvalidResolution       Code = "INVALID_RESOLUTION"
+	CodeConflictAlreadyResolved Code = "CONFLICT_ALREADY_RESOLVED"
 )
 
 // HTTPError is returned to clients as JSON { "error": { ... } }.

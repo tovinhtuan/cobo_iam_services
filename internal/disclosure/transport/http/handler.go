@@ -57,6 +57,8 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/company/disclosure-types/{type_id}/workflow/override/rebase-check", h.rebaseCheckWorkflowOverride)
 	// Sprint 3 / Batch 3 — Workflow Override Rebase Preview. Read-only; zero DB writes.
 	mux.HandleFunc("GET /api/v1/company/disclosure-types/{type_id}/workflow/override/rebase-preview", h.getWorkflowOverrideRebasePreview)
+	// Sprint 3 / Batch 4 — Workflow Override Conflict Detection. Writes ONLY workflow_override_conflicts.
+	mux.HandleFunc("POST /api/v1/company/disclosure-types/{type_id}/workflow/override/conflicts/{conflict_id}/resolve", h.resolveWorkflowOverrideConflict)
 	mux.HandleFunc("GET /api/v1/company/groups", h.listCompanyGroups)
 	mux.HandleFunc("GET /api/v1/disclosure-types/{type_id}/effective-workflow", h.getEffectiveWorkflow)
 	mux.HandleFunc("GET /api/v1/admin/disclosure-types/{type_id}/config", h.getTemplateDeadlineConfig)
@@ -502,6 +504,34 @@ func (h *Handler) getWorkflowOverrideRebasePreview(w http.ResponseWriter, r *htt
 	resp, err := h.svc.GetWorkflowOverrideRebasePreview(r.Context(), disclosureapp.GetWorkflowOverrideRebasePreviewRequest{
 		Subject: sub,
 		TypeID:  strings.TrimSpace(r.PathValue("type_id")),
+	})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) resolveWorkflowOverrideConflict(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subjectFromToken(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	var body struct {
+		Resolution      string `json:"resolution"`
+		ResolutionValue any    `json:"resolution_value"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	resp, err := h.svc.ResolveWorkflowOverrideConflict(r.Context(), disclosureapp.ResolveWorkflowOverrideConflictRequest{
+		Subject:         sub,
+		TypeID:          strings.TrimSpace(r.PathValue("type_id")),
+		ConflictID:      strings.TrimSpace(r.PathValue("conflict_id")),
+		Resolution:      body.Resolution,
+		ResolutionValue: body.ResolutionValue,
 	})
 	if err != nil {
 		httpx.WriteError(w, nil, err)

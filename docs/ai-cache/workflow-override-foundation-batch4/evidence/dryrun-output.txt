@@ -1,0 +1,21 @@
+mysql: [Warning] Using a password on the command line interface can be insecure.
+table_already_exists
+0
+already_recorded
+0
+tbl	row_count
+company_template_workflow_overrides	11
+tbl	row_count
+company_template_workflow_override_versions	17
+tbl	row_count
+global_workflows	14
+tbl	row_count
+global_workflow_versions	22
+tbl	row_count
+global_workflow_steps	40
+tbl	row_count
+workflow_instances	54
+tbl	row_count
+workflow_tasks	54
+tbl	row_count
+disclosure_template_blocks	357

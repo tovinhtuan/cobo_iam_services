@@ -41,6 +41,7 @@ type Service interface {
 	GetWorkflowOverrideStatus(ctx context.Context, req GetWorkflowOverrideStatusRequest) (*GetWorkflowOverrideStatusResponse, error)
 	RebaseCheckWorkflowOverride(ctx context.Context, req RebaseCheckWorkflowOverrideRequest) (*RebaseCheckWorkflowOverrideResponse, error)
 	GetWorkflowOverrideRebasePreview(ctx context.Context, req GetWorkflowOverrideRebasePreviewRequest) (*GetWorkflowOverrideRebasePreviewResponse, error)
+	ResolveWorkflowOverrideConflict(ctx context.Context, req ResolveWorkflowOverrideConflictRequest) (*ResolveWorkflowOverrideConflictResponse, error)
 	GetEffectiveWorkflow(ctx context.Context, req GetEffectiveWorkflowRequest) (*GetEffectiveWorkflowResponse, error)
 	GetTemplateDeadlineConfig(ctx context.Context, req GetTemplateDeadlineConfigRequest) (*GetTemplateDeadlineConfigResponse, error)
 	UpdateTemplateDeadlineConfig(ctx context.Context, req UpdateTemplateDeadlineConfigRequest) (*UpdateTemplateDeadlineConfigResponse, error)
@@ -105,6 +106,13 @@ type Repository interface {
 	// called by, and does not call, GetEffectiveWorkflow/GetCompanyWorkflowOverride. ok=false
 	// means no such (typeID, versionNo) row exists.
 	GetGlobalWorkflowVersionManifest(ctx context.Context, typeID string, versionNo int) ([]GlobalWorkflowStepInput, bool, error)
+	// Sprint 3 / Batch 4 — Workflow Override Conflict Detection. UpsertWorkflowOverrideConflicts
+	// writes ONLY workflow_override_conflicts (insert-or-update on the unique conflict_key —
+	// Option B idempotency, PREFLIGHT_AUDIT.md §8). GetWorkflowOverrideConflict /
+	// ResolveWorkflowOverrideConflict are scoped to (companyID, typeID) — never cross-tenant.
+	UpsertWorkflowOverrideConflicts(ctx context.Context, inputs []PersistedConflictInput) ([]PersistedConflictDTO, error)
+	GetWorkflowOverrideConflict(ctx context.Context, companyID, typeID, conflictID string) (*PersistedConflictDTO, error)
+	ResolveWorkflowOverrideConflict(ctx context.Context, companyID, typeID, conflictID, resolution string, resolutionValue any, resolvedBy string, resolvedAt time.Time) (*PersistedConflictDTO, error)
 	GetEffectiveWorkflow(ctx context.Context, companyID, typeID string) (*EffectiveWorkflowDTO, error)
 	GetCompanyDeadlineContext(ctx context.Context, companyID string) (CompanyDeadlineContext, error)
 	GetCompanyApplicabilityProfile(ctx context.Context, companyID string) (applicability.CompanyApplicabilityProfile, error)

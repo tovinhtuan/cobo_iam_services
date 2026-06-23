@@ -1,0 +1,16 @@
+=== Idempotency proof 1: ledger-skip path (re-run via standard migrate runner) ===
+Skipping already applied migration: 0101_global_workflow_versions.up.sql
+Skipping already applied migration: 0102_global_workflow_legacy_backfill.up.sql
+Skipping already applied migration: 0103_override_base_metadata.up.sql
+Skipping already applied migration: 0104_workflow_override_conflicts.up.sql
+All migrations are up to date.
+
+=== Idempotency proof 2: raw SQL bypass-ledger re-run ===
+mysql: [Warning] Using a password on the command line interface can be insecure.
+
+=== Post-rerun state (must be identical to first verify) ===
+mysql: [Warning] Using a password on the command line interface can be insecure.
+table_count_after_rerun
+1
+rows_in_table
+0

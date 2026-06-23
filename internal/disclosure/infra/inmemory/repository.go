@@ -31,6 +31,8 @@ type Repository struct {
 	// by typeID then versionNo. Test-only seeding via SetGlobalWorkflowVersionManifestForTest;
 	// no production code path writes this map (mirrors globalWorkflows' own test-fixture nature).
 	globalWorkflowVersions map[string]map[int][]disclosureapp.GlobalWorkflowStepInput
+	// workflowOverrideConflicts backs Sprint 3 / Batch 4 — keyed by conflict id (== conflict_key).
+	workflowOverrideConflicts map[string]disclosureapp.PersistedConflictDTO
 }
 
 type overrideState struct {
@@ -51,6 +53,7 @@ func NewRepository() *Repository {
 		catalogScope:              map[string]string{},
 		overrideByCompanyType:     map[string]*overrideState{},
 		globalWorkflowVersions:    map[string]map[int][]disclosureapp.GlobalWorkflowStepInput{},
+		workflowOverrideConflicts: map[string]disclosureapp.PersistedConflictDTO{},
 	}
 	for _, item := range disclosureapp.SeedDisclosureTypeCatalog() {
 		item.VersionNo = 1
@@ -835,6 +838,83 @@ func (r *Repository) SetGlobalWorkflowVersionManifestForTest(typeID string, vers
 		r.globalWorkflowVersions[typeID] = map[int][]disclosureapp.GlobalWorkflowStepInput{}
 	}
 	r.globalWorkflowVersions[typeID][versionNo] = steps
+}
+
+// UpsertWorkflowOverrideConflicts is the in-memory mirror of the mysql repository's upsert —
+// same Option B idempotency (id == conflict_key), same "never reset resolution_status on
+// re-detection" rule.
+func (r *Repository) UpsertWorkflowOverrideConflicts(_ context.Context, inputs []disclosureapp.PersistedConflictInput) ([]disclosureapp.PersistedConflictDTO, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]disclosureapp.PersistedConflictDTO, 0, len(inputs))
+	for _, in := range inputs {
+		conflictKey := disclosureapp.BuildConflictKey(in.CompanyID, in.TypeID, in.BaseVersionNo, in.TargetVersionNo, in.StepKey, in.FieldPath, in.ConflictType)
+		existing, exists := r.workflowOverrideConflicts[conflictKey]
+		dto := disclosureapp.PersistedConflictDTO{
+			ID:                conflictKey,
+			CompanyID:         in.CompanyID,
+			TypeID:            in.TypeID,
+			OverrideID:        in.OverrideID,
+			OverrideVersionNo: in.OverrideVersionNo,
+			BaseVersionNo:     in.BaseVersionNo,
+			TargetVersionNo:   in.TargetVersionNo,
+			StepKey:           in.StepKey,
+			FieldPath:         in.FieldPath,
+			Severity:          in.Severity,
+			ConflictType:      in.ConflictType,
+			GlobalOld:         in.GlobalOld,
+			GlobalNew:         in.GlobalNew,
+			CompanyValue:      in.CompanyValue,
+			ResolutionOptions: in.ResolutionOptions,
+			ResolutionStatus:  disclosureapp.ResolutionStatusUnresolved,
+			CreatedAt:         time.Now().UTC(),
+		}
+		if exists {
+			// Preserve resolution state across re-detection; refresh only the content fields.
+			dto.ResolutionStatus = existing.ResolutionStatus
+			dto.Resolution = existing.Resolution
+			dto.ResolvedBy = existing.ResolvedBy
+			dto.ResolvedAt = existing.ResolvedAt
+			dto.CreatedAt = existing.CreatedAt
+		}
+		r.workflowOverrideConflicts[conflictKey] = dto
+		out = append(out, dto)
+	}
+	return out, nil
+}
+
+// GetWorkflowOverrideConflict mirrors the mysql repository's tenant-scoped lookup — returns nil
+// (no error) for both "doesn't exist" and "exists but isn't yours."
+func (r *Repository) GetWorkflowOverrideConflict(_ context.Context, companyID, typeID, conflictID string) (*disclosureapp.PersistedConflictDTO, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	dto, ok := r.workflowOverrideConflicts[conflictID]
+	if !ok || dto.CompanyID != companyID || dto.TypeID != typeID {
+		return nil, nil
+	}
+	cp := dto
+	return &cp, nil
+}
+
+// ResolveWorkflowOverrideConflict mirrors the mysql repository's scoped update — writes ONLY the
+// 5 resolution fields.
+func (r *Repository) ResolveWorkflowOverrideConflict(_ context.Context, companyID, typeID, conflictID, resolution string, _ any, resolvedBy string, resolvedAt time.Time) (*disclosureapp.PersistedConflictDTO, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	dto, ok := r.workflowOverrideConflicts[conflictID]
+	if !ok || dto.CompanyID != companyID || dto.TypeID != typeID {
+		return nil, nil
+	}
+	dto.ResolutionStatus = disclosureapp.ResolutionStatusResolved
+	res := resolution
+	dto.Resolution = &res
+	by := resolvedBy
+	dto.ResolvedBy = &by
+	at := resolvedAt
+	dto.ResolvedAt = &at
+	r.workflowOverrideConflicts[conflictID] = dto
+	cp := dto
+	return &cp, nil
 }
 
 func nilIfEmptyPtr(s string) *string {

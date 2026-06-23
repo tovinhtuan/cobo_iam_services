@@ -1,0 +1,19 @@
+mysql: [Warning] Using a password on the command line interface can be insecure.
+check_name	status	detail
+1.table_exists	PASS	found=1
+check_name	status	detail
+2.all_columns_exist	PASS	found=23/23
+check_name	status	detail
+3.updated_at_exists	PASS	found=1
+check_name	status	detail
+4.unique_conflict_key_index	PASS	found=1
+check_name	status	detail
+5.company_type_index	PASS	found=2
+check_name	status	detail
+6.preview_id_index	PASS	found=1
+check_name	status	detail
+7.resolution_status_index	PASS	found=1
+check_name	status	detail
+8.no_fk_constraints	PASS	fk_count=0
+check_name	status	detail
+9.row_count_sanity_overrides	INFO	current_row_count=11

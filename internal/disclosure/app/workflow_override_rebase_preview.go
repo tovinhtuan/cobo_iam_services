@@ -24,15 +24,18 @@ type GetWorkflowOverrideRebasePreviewRequest struct {
 }
 
 type WorkflowOverrideRebasePreviewDTO struct {
-	PreviewID       *string           `json:"preview_id"`
-	TypeID          string            `json:"type_id"`
-	CompanyID       string            `json:"company_id"`
-	BaseVersionNo   int               `json:"base_version_no"`
-	TargetVersionNo int               `json:"target_version_no"`
-	StaleStatus     string            `json:"stale_status"`
-	GeneratedAt     time.Time         `json:"generated_at"`
-	PatchOperations []PatchOperation  `json:"patch_operations"`
-	Conflicts       []PreviewConflict `json:"conflicts"`
+	PreviewID       *string                `json:"preview_id"`
+	TypeID          string                 `json:"type_id"`
+	CompanyID       string                 `json:"company_id"`
+	BaseVersionNo   int                    `json:"base_version_no"`
+	TargetVersionNo int                    `json:"target_version_no"`
+	StaleStatus     string                 `json:"stale_status"`
+	GeneratedAt     time.Time              `json:"generated_at"`
+	PatchOperations []PatchOperation       `json:"patch_operations"`
+	// Conflicts are persisted (Batch 4) — each carries a durable `id` usable by the resolve
+	// endpoint. Persistence never touches any table but workflow_override_conflicts; see
+	// ZERO_DB_WRITE_REPORT.md / DB_WRITE_BOUNDARY_REPORT.md for the live proof.
+	Conflicts []PersistedConflictDTO `json:"conflicts"`
 }
 
 type GetWorkflowOverrideRebasePreviewResponse struct {
@@ -118,8 +121,30 @@ func (s *service) GetWorkflowOverrideRebasePreview(ctx context.Context, req GetW
 	baseInputs, targetInputs, companyInputs := buildDiffStepInputs(baseManifest, targetManifest, companySteps)
 	ops, conflicts := ComputeRebaseDiff(baseInputs, targetInputs, companyInputs)
 
+	// Sprint 3 / Batch 4 — rules 3/4 (cross-field, informational) and 5/7 (role registry) run as
+	// a separate pass over the same inputs/ops (PREFLIGHT_AUDIT.md §4). Rules 1/2/6 are already
+	// included in `conflicts` above (ComputeRebaseDiff itself).
+	conflicts = append(conflicts, DetectRule3And4Conflicts(baseInputs, targetInputs, companyInputs)...)
+	conflicts = append(conflicts, DetectRule5Conflicts(ops, roleRegistryForConflictDetection)...)
+	conflicts = append(conflicts, DetectRule7Conflicts(companyInputs, roleRegistryForConflictDetection)...)
+
+	overrideID := ""
+	overrideVersionNo := 0
+	if overrideView != nil && overrideView.Override != nil {
+		overrideID = overrideView.Override.OverrideID
+	}
+	if overrideView != nil && overrideView.ActiveVersion != nil {
+		overrideVersionNo = overrideView.ActiveVersion.VersionNo
+	}
+
+	persistedConflicts, err := s.persistConflicts(ctx, conflicts, req.Subject.CompanyID, typeID, overrideID, overrideVersionNo, baseVersionNo, targetVersionNo, req.Subject.UserID)
+	if err != nil {
+		return nil, err
+	}
+
 	dto := WorkflowOverrideRebasePreviewDTO{
-		PreviewID:       nil, // ephemeral, no durable identity in Batch 3 — see SCOPE_DRIFT_GUARD.md
+		PreviewID:       nil, // ephemeral identifier — Batch 4 still does not introduce one; the
+		// durable identity that matters (each conflict's own `id`) comes from persistence below.
 		TypeID:          typeID,
 		CompanyID:       req.Subject.CompanyID,
 		BaseVersionNo:   baseVersionNo,
@@ -127,9 +152,33 @@ func (s *service) GetWorkflowOverrideRebasePreview(ctx context.Context, req GetW
 		StaleStatus:     staleStatus,
 		GeneratedAt:     time.Now().UTC(),
 		PatchOperations: ops,
-		Conflicts:       conflicts,
+		Conflicts:       persistedConflicts,
 	}
 	return &GetWorkflowOverrideRebasePreviewResponse{Data: dto}, nil
+}
+
+// persistConflicts converts the ephemeral PreviewConflict list into PersistedConflictInput rows
+// (computing each one's stable conflict_key) and upserts them. The ONLY write in this entire
+// preview flow happens inside s.repo.UpsertWorkflowOverrideConflicts, and it touches
+// workflow_override_conflicts exclusively (DB_WRITE_BOUNDARY_REPORT.md).
+func (s *service) persistConflicts(ctx context.Context, conflicts []PreviewConflict, companyID, typeID, overrideID string, overrideVersionNo, baseVersionNo, targetVersionNo int, createdBy string) ([]PersistedConflictDTO, error) {
+	if len(conflicts) == 0 {
+		return []PersistedConflictDTO{}, nil
+	}
+	inputs := make([]PersistedConflictInput, 0, len(conflicts))
+	for _, c := range conflicts {
+		inputs = append(inputs, PersistedConflictInput{
+			PreviewConflict:   c,
+			CompanyID:         companyID,
+			TypeID:            typeID,
+			OverrideID:        overrideID,
+			OverrideVersionNo: overrideVersionNo,
+			BaseVersionNo:     baseVersionNo,
+			TargetVersionNo:   targetVersionNo,
+			CreatedBy:         createdBy,
+		})
+	}
+	return s.repo.UpsertWorkflowOverrideConflicts(ctx, inputs)
 }
 
 // buildDiffStepInputs implements the step-identity bridging documented in PREFLIGHT_AUDIT.md §5:
