@@ -40,6 +40,7 @@ type Service interface {
 	// Sprint 3 / Batch 2 — Workflow Override Staleness Detection.
 	GetWorkflowOverrideStatus(ctx context.Context, req GetWorkflowOverrideStatusRequest) (*GetWorkflowOverrideStatusResponse, error)
 	RebaseCheckWorkflowOverride(ctx context.Context, req RebaseCheckWorkflowOverrideRequest) (*RebaseCheckWorkflowOverrideResponse, error)
+	GetWorkflowOverrideRebasePreview(ctx context.Context, req GetWorkflowOverrideRebasePreviewRequest) (*GetWorkflowOverrideRebasePreviewResponse, error)
 	GetEffectiveWorkflow(ctx context.Context, req GetEffectiveWorkflowRequest) (*GetEffectiveWorkflowResponse, error)
 	GetTemplateDeadlineConfig(ctx context.Context, req GetTemplateDeadlineConfigRequest) (*GetTemplateDeadlineConfigResponse, error)
 	UpdateTemplateDeadlineConfig(ctx context.Context, req UpdateTemplateDeadlineConfigRequest) (*UpdateTemplateDeadlineConfigResponse, error)
@@ -100,6 +101,10 @@ type Repository interface {
 	GetOverrideStalenessMetadata(ctx context.Context, companyID, typeID string) (*OverrideStalenessRow, bool, error)
 	GetCurrentGlobalActiveVersionNo(ctx context.Context, typeID string) (*int, error)
 	UpdateOverrideStaleness(ctx context.Context, companyID, typeID, staleStatus string, checkedAt time.Time) error
+	// Sprint 3 / Batch 3 — Workflow Override Rebase Preview. Read-only (a single SELECT); not
+	// called by, and does not call, GetEffectiveWorkflow/GetCompanyWorkflowOverride. ok=false
+	// means no such (typeID, versionNo) row exists.
+	GetGlobalWorkflowVersionManifest(ctx context.Context, typeID string, versionNo int) ([]GlobalWorkflowStepInput, bool, error)
 	GetEffectiveWorkflow(ctx context.Context, companyID, typeID string) (*EffectiveWorkflowDTO, error)
 	GetCompanyDeadlineContext(ctx context.Context, companyID string) (CompanyDeadlineContext, error)
 	GetCompanyApplicabilityProfile(ctx context.Context, companyID string) (applicability.CompanyApplicabilityProfile, error)

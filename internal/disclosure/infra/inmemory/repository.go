@@ -15,18 +15,22 @@ import (
 )
 
 type Repository struct {
-	mu                    sync.RWMutex
-	items                 map[string]disclosureapp.RecordDTO
-	groups                []disclosureapp.DisclosureGroupDTO
-	displayGroups         []disclosureapp.DisplayGroupDTO
+	mu                        sync.RWMutex
+	items                     map[string]disclosureapp.RecordDTO
+	groups                    []disclosureapp.DisclosureGroupDTO
+	displayGroups             []disclosureapp.DisplayGroupDTO
 	displayGroupCodes         map[string]string
 	templateDisplayGroupCodes map[string][]string
-	catalog               map[string]disclosureapp.DisclosureTypeDTO
-	catalogByVer          map[string]map[int]disclosureapp.DisclosureTypeDTO
-	versions              map[string][]disclosureapp.DisclosureTypeVersionDTO
-	catalogScope          map[string]string
-	overrideByCompanyType map[string]*overrideState
-	globalWorkflows       map[string]*disclosureapp.GlobalWorkflowDTO
+	catalog                   map[string]disclosureapp.DisclosureTypeDTO
+	catalogByVer              map[string]map[int]disclosureapp.DisclosureTypeDTO
+	versions                  map[string][]disclosureapp.DisclosureTypeVersionDTO
+	catalogScope              map[string]string
+	overrideByCompanyType     map[string]*overrideState
+	globalWorkflows           map[string]*disclosureapp.GlobalWorkflowDTO
+	// globalWorkflowVersions backs Sprint 3 / Batch 3's GetGlobalWorkflowVersionManifest — keyed
+	// by typeID then versionNo. Test-only seeding via SetGlobalWorkflowVersionManifestForTest;
+	// no production code path writes this map (mirrors globalWorkflows' own test-fixture nature).
+	globalWorkflowVersions map[string]map[int][]disclosureapp.GlobalWorkflowStepInput
 }
 
 type overrideState struct {
@@ -36,16 +40,17 @@ type overrideState struct {
 
 func NewRepository() *Repository {
 	repo := &Repository{
-		items:                 map[string]disclosureapp.RecordDTO{},
-		groups:                disclosureapp.SeedDisclosureTypeGroups(),
-		displayGroups:         disclosureapp.SeedDisplayGroups(),
+		items:                     map[string]disclosureapp.RecordDTO{},
+		groups:                    disclosureapp.SeedDisclosureTypeGroups(),
+		displayGroups:             disclosureapp.SeedDisplayGroups(),
 		displayGroupCodes:         map[string]string{},
 		templateDisplayGroupCodes: map[string][]string{},
-		catalog:               map[string]disclosureapp.DisclosureTypeDTO{},
-		catalogByVer:          map[string]map[int]disclosureapp.DisclosureTypeDTO{},
-		versions:              map[string][]disclosureapp.DisclosureTypeVersionDTO{},
-		catalogScope:          map[string]string{},
-		overrideByCompanyType: map[string]*overrideState{},
+		catalog:                   map[string]disclosureapp.DisclosureTypeDTO{},
+		catalogByVer:              map[string]map[int]disclosureapp.DisclosureTypeDTO{},
+		versions:                  map[string][]disclosureapp.DisclosureTypeVersionDTO{},
+		catalogScope:              map[string]string{},
+		overrideByCompanyType:     map[string]*overrideState{},
+		globalWorkflowVersions:    map[string]map[int][]disclosureapp.GlobalWorkflowStepInput{},
 	}
 	for _, item := range disclosureapp.SeedDisclosureTypeCatalog() {
 		item.VersionNo = 1
@@ -161,7 +166,6 @@ func (r *Repository) ListDisplayGroups(_ context.Context) ([]disclosureapp.Displ
 	copy(out, r.displayGroups)
 	return out, nil
 }
-
 
 func (r *Repository) ListTypes(_ context.Context, params disclosureapp.ListTypesParams) ([]disclosureapp.DisclosureTypeSummaryDTO, int, error) {
 	r.mu.RLock()
@@ -770,6 +774,27 @@ func (r *Repository) GetCurrentGlobalActiveVersionNo(_ context.Context, typeID s
 	return wf.ActiveVersionNo, nil
 }
 
+// SetGlobalActiveVersionForTest is a white-box test helper (mirrors SetOverrideBaseMetadataForTest's
+// convention) for setting up GetCurrentGlobalActiveVersionNo's backing state directly, without
+// requiring a full CMS publish/activate flow in every Batch 2/3 test.
+func (r *Repository) SetGlobalActiveVersionForTest(typeID string, activeVersionNo int) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.globalWorkflows == nil {
+		r.globalWorkflows = map[string]*disclosureapp.GlobalWorkflowDTO{}
+	}
+	wf, ok := r.globalWorkflows[typeID]
+	if !ok {
+		v := activeVersionNo
+		r.globalWorkflows[typeID] = &disclosureapp.GlobalWorkflowDTO{TypeID: typeID, Status: "active", ActiveVersionNo: &v}
+		return nil
+	}
+	v := activeVersionNo
+	wf.Status = "active"
+	wf.ActiveVersionNo = &v
+	return nil
+}
+
 func (r *Repository) UpdateOverrideStaleness(_ context.Context, companyID, typeID, staleStatus string, checkedAt time.Time) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -781,6 +806,35 @@ func (r *Repository) UpdateOverrideStaleness(_ context.Context, companyID, typeI
 	at := checkedAt
 	st.header.LastRebaseCheckAt = &at
 	return nil
+}
+
+// GetGlobalWorkflowVersionManifest is Sprint 3 / Batch 3's read-only in-memory mirror. No
+// production code path writes globalWorkflowVersions — see SetGlobalWorkflowVersionManifestForTest.
+func (r *Repository) GetGlobalWorkflowVersionManifest(_ context.Context, typeID string, versionNo int) ([]disclosureapp.GlobalWorkflowStepInput, bool, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	byVersion, ok := r.globalWorkflowVersions[typeID]
+	if !ok {
+		return nil, false, nil
+	}
+	steps, ok := byVersion[versionNo]
+	if !ok {
+		return nil, false, nil
+	}
+	return steps, true, nil
+}
+
+// SetGlobalWorkflowVersionManifestForTest is a white-box test helper (same convention as Batch
+//2's SetOverrideBaseMetadataForTest) — there is no production write path for this map, since the
+// real MySQL repository reads global_workflow_versions directly and this in-memory repo has no
+// equivalent versions table to derive it from.
+func (r *Repository) SetGlobalWorkflowVersionManifestForTest(typeID string, versionNo int, steps []disclosureapp.GlobalWorkflowStepInput) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.globalWorkflowVersions[typeID] == nil {
+		r.globalWorkflowVersions[typeID] = map[int][]disclosureapp.GlobalWorkflowStepInput{}
+	}
+	r.globalWorkflowVersions[typeID][versionNo] = steps
 }
 
 func nilIfEmptyPtr(s string) *string {

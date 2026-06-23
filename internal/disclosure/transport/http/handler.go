@@ -55,6 +55,8 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	// Sprint 3 / Batch 2 — Workflow Override Staleness Detection.
 	mux.HandleFunc("GET /api/v1/company/disclosure-types/{type_id}/workflow/override/status", h.getWorkflowOverrideStatus)
 	mux.HandleFunc("POST /api/v1/company/disclosure-types/{type_id}/workflow/override/rebase-check", h.rebaseCheckWorkflowOverride)
+	// Sprint 3 / Batch 3 — Workflow Override Rebase Preview. Read-only; zero DB writes.
+	mux.HandleFunc("GET /api/v1/company/disclosure-types/{type_id}/workflow/override/rebase-preview", h.getWorkflowOverrideRebasePreview)
 	mux.HandleFunc("GET /api/v1/company/groups", h.listCompanyGroups)
 	mux.HandleFunc("GET /api/v1/disclosure-types/{type_id}/effective-workflow", h.getEffectiveWorkflow)
 	mux.HandleFunc("GET /api/v1/admin/disclosure-types/{type_id}/config", h.getTemplateDeadlineConfig)
@@ -491,6 +493,23 @@ func (h *Handler) rebaseCheckWorkflowOverride(w http.ResponseWriter, r *http.Req
 	httpx.WriteJSON(w, http.StatusOK, resp)
 }
 
+func (h *Handler) getWorkflowOverrideRebasePreview(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subjectFromToken(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	resp, err := h.svc.GetWorkflowOverrideRebasePreview(r.Context(), disclosureapp.GetWorkflowOverrideRebasePreviewRequest{
+		Subject: sub,
+		TypeID:  strings.TrimSpace(r.PathValue("type_id")),
+	})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
 func (h *Handler) getCompanyWorkflowOverrideDraftReminderPreview(w http.ResponseWriter, r *http.Request) {
 	sub, err := h.subjectFromToken(r)
 	if err != nil {
@@ -784,9 +803,9 @@ func (h *Handler) updateWorkflowOverrideStepGroups(w http.ResponseWriter, r *htt
 	typeID := strings.TrimSpace(r.PathValue("type_id"))
 	stepID := strings.TrimSpace(r.PathValue("step_id"))
 	var body struct {
-		BaseEtag  string                                   `json:"base_etag"`
-		Groups    []disclosureapp.WorkflowStepGroupWriteInput `json:"groups"`
-		ClearAll  bool                                     `json:"clear_all_groups"`
+		BaseEtag string                                      `json:"base_etag"`
+		Groups   []disclosureapp.WorkflowStepGroupWriteInput `json:"groups"`
+		ClearAll bool                                        `json:"clear_all_groups"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		httpx.WriteError(w, nil, err)
@@ -805,7 +824,7 @@ func (h *Handler) updateWorkflowOverrideStepGroups(w http.ResponseWriter, r *htt
 		return
 	}
 	h.auditLog(r, sub, "disclosure.workflow_override.step_groups_updated", "disclosure_type", typeID, map[string]any{
-		"step_id":    stepID,
+		"step_id":     stepID,
 		"group_count": len(resp.Groups),
 	})
 	httpx.WriteJSON(w, http.StatusOK, resp)

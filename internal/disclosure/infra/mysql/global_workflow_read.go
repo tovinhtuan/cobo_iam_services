@@ -84,6 +84,53 @@ func (r *Repository) loadActiveGlobalWorkflow(ctx context.Context, typeID string
 	return steps, versionNo, true, nil
 }
 
+// GetGlobalWorkflowVersionManifest is Sprint 3 / Batch 3's read for an ARBITRARY version_no
+// (not just the active one) — needed for the rebase-preview's three-way comparison, which must
+// read BOTH base_version_no and the current active version. Unlike loadActiveGlobalWorkflow,
+// this preserves step_key (PREFLIGHT_AUDIT.md §5/§6 — the only existing global-side read path
+// that does). Read-only: a single SELECT, no write of any kind. ok=false means no such
+// (typeID, versionNo) row exists — caller returns 410 PREVIEW_UNAVAILABLE, never a partial result.
+func (r *Repository) GetGlobalWorkflowVersionManifest(ctx context.Context, typeID string, versionNo int) ([]disclosureapp.GlobalWorkflowStepInput, bool, error) {
+	var manifestJSON []byte
+	err := r.db.QueryRowContext(ctx, `
+		SELECT steps_manifest_json FROM global_workflow_versions WHERE type_id = ? AND version_no = ?
+	`, typeID, versionNo).Scan(&manifestJSON)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, false, nil
+		}
+		return nil, false, fmt.Errorf("load global workflow version manifest (type=%s, version=%d): %w", typeID, versionNo, err)
+	}
+
+	manifestSteps, err := decodeGlobalWorkflowManifestSteps(manifestJSON)
+	if err != nil {
+		return nil, false, fmt.Errorf("unmarshal global workflow version manifest (type=%s, version=%d): %w", typeID, versionNo, err)
+	}
+
+	steps := make([]disclosureapp.GlobalWorkflowStepInput, 0, len(manifestSteps))
+	for _, ms := range manifestSteps {
+		dueRule := ms.DueRule
+		if dueRule == "" && ms.ProcessingDays > 0 {
+			dueRule = fmt.Sprintf("T+%d", ms.ProcessingDays)
+		}
+		var roleIDs []string
+		if ms.Role != "" {
+			roleIDs = []string{ms.Role}
+		}
+		steps = append(steps, disclosureapp.GlobalWorkflowStepInput{
+			StepKey:         ms.StepKey,
+			StepID:          ms.StepID,
+			Stage:           ms.Stage,
+			DepartmentID:    ms.DepartmentID,
+			AssigneeRoleIds: roleIDs,
+			DueRule:         dueRule,
+			ProcessingDays:  ms.ProcessingDays,
+			DisplayOrder:    ms.DisplayOrder,
+		})
+	}
+	return steps, true, nil
+}
+
 // decodeGlobalWorkflowManifestSteps tolerates two on-disk shapes of steps_manifest_json:
 //   - the envelope workflowconfig's Publish() writes: {"type_id":..,"workflow_id":..,"version_no":..,"steps":[...]}
 //   - a bare step array: [...] — the shape migrations/0101's backfill wrote directly via

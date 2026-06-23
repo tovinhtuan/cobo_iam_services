@@ -1,0 +1,16 @@
+{
+  "method": "MD5(GROUP_CONCAT(...)) content hash + COUNT(*), captured before and after 4 total live rebase-preview calls (1 initial + 3 repeated)",
+  "tables_checked": 8,
+  "rows_changed": 0,
+  "detail": [
+    {"table": "company_template_workflow_overrides", "count_before": 11, "count_after": 11, "hash_before": "971c817a4fb6ce1204c6d2b1bf4187a0", "hash_after": "971c817a4fb6ce1204c6d2b1bf4187a0", "changed": false},
+    {"table": "company_template_workflow_override_versions", "count_before": 17, "count_after": 17, "hash_before": "4163b6872bce9a3b0b1079ae8e5be699", "hash_after": "4163b6872bce9a3b0b1079ae8e5be699", "changed": false},
+    {"table": "global_workflows", "count_before": 14, "count_after": 14, "hash_before": "85fae14cd3cb6dc6bc2cc8ef112bed2e", "hash_after": "85fae14cd3cb6dc6bc2cc8ef112bed2e", "changed": false},
+    {"table": "global_workflow_versions", "count_before": 22, "count_after": 22, "hash_before": "a0a70daec3aad96274b61a0cc51edcb8", "hash_after": "a0a70daec3aad96274b61a0cc51edcb8", "changed": false},
+    {"table": "global_workflow_steps", "count_before": 40, "count_after": 40, "hash_before": "020dcd66253a047e7874dffbdfdc7b9e", "hash_after": "020dcd66253a047e7874dffbdfdc7b9e", "changed": false},
+    {"table": "workflow_instances", "count_before": 54, "count_after": 54, "hash_before": "b01d2d651834959c8f9b8bbc1141138a", "hash_after": "b01d2d651834959c8f9b8bbc1141138a", "changed": false},
+    {"table": "workflow_tasks", "count_before": 54, "count_after": 54, "hash_before": "ede0149cbef7795e5952af5774335fc3", "hash_after": "ede0149cbef7795e5952af5774335fc3", "changed": false},
+    {"table": "disclosure_template_blocks", "count_before": 357, "count_after": 357, "hash_before": "8691b64330b4a8790d8c9dc4059e213f", "hash_after": "8691b64330b4a8790d8c9dc4059e213f", "changed": false}
+  ],
+  "conclusion": "Zero row changes across all 8 relevant tables after 4 live rebase-preview calls (including 3 deliberately repeated calls). Confirms Batch 3's locked invariant: rebase-preview ships with zero DB writes."
+}

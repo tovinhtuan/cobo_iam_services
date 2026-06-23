@@ -1,0 +1,59 @@
+[
+  {
+    "url": "http://88.216.208.0:3000/api/v1/company/disclosure-types/bao-cao-tai-chinh-quy-1/workflow/override/status",
+    "status": 200,
+    "method": "GET",
+    "body": {
+      "data": {
+        "has_override": true,
+        "stale_status": "stale",
+        "base_source": "global_workflow",
+        "base_workflow_id": "019e9237-61d6-7180-9702-f9a1e0553540",
+        "base_version_no": 2,
+        "current_global_active_version_no": 3,
+        "last_rebase_check_at": "2026-06-22T16:33:12Z"
+      }
+    }
+  },
+  {
+    "url": "http://88.216.208.0:3000/api/v1/company/disclosure-types/bao-cao-tai-chinh-quy-1/workflow/override/rebase-preview",
+    "status": 200,
+    "method": "GET",
+    "body": {
+      "data": {
+        "preview_id": null,
+        "type_id": "bao-cao-tai-chinh-quy-1",
+        "company_id": "144ca32b-cd59-467b-aba9-9576d3b148ad",
+        "base_version_no": 2,
+        "target_version_no": 3,
+        "stale_status": "stale",
+        "generated_at": "2026-06-23T00:23:46.324176322Z",
+        "patch_operations": [
+          {
+            "op": "remove_step",
+            "step_key": "019e9237-61d6-7180-9702-f9a1e0553540-step-1",
+            "origin": "global_changed"
+          },
+          {
+            "op": "add_step",
+            "step_key": "stp_krdsnse6342d",
+            "origin": "global_changed",
+            "new_step": {
+              "step_id": "019eea44-7499-7b89-ae1a-01997ff14d7f-step-1",
+              "stage": "REBASE-TEST CMS V3 Stage",
+              "department_id": "d1",
+              "assignee_role_ids": [
+                "reviewer"
+              ],
+              "due_rule": "T+3",
+              "processing_days": 3,
+              "documents": null,
+              "display_order": 1
+            }
+          }
+        ],
+        "conflicts": []
+      }
+    }
+  }
+]
