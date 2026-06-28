@@ -89,10 +89,15 @@ func (c *ConfigService) Lifecycle(ctx context.Context, typeID string) (Lifecycle
 		Draft:       draft,
 		Published:   published,
 		CanPublish:  readiness.Ready,
-		CanActivate: published != nil,
 	}
 	if active != nil {
 		ls.Active = &active.VersionInfo
+	}
+	// Allow activate when a published version exists and is not yet the active runtime version.
+	if published != nil {
+		if active == nil || active.VersionNo != published.VersionNo {
+			ls.CanActivate = true
+		}
 	}
 	return ls, nil
 }

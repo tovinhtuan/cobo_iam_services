@@ -53,6 +53,9 @@ const (
 	CodeConflictsUnresolved     Code = "CONFLICTS_UNRESOLVED"
 	CodeDeferredValidationBlock Code = "DEFERRED_VALIDATION_BLOCKED"
 	CodeInvalidPatch            Code = "INVALID_PATCH"
+	// Company workflow override activation — empty or structurally invalid graph.
+	CodeWorkflowOverrideEmpty   Code = "WORKFLOW_OVERRIDE_EMPTY"
+	CodeWorkflowOverrideInvalid Code = "WORKFLOW_OVERRIDE_INVALID"
 )
 
 // HTTPError is returned to clients as JSON { "error": { ... } }.

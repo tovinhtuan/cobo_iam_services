@@ -589,6 +589,9 @@ func (s *service) UpsertTypeVersion(ctx context.Context, req UpsertTypeVersionRe
 	if req.Name == "" {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "name is required", nil)
 	}
+	if err := validateTemplateDescription(req.Description); err != nil {
+		return nil, err
+	}
 	if req.Scope == "" {
 		if s.hasPermission(ctx, req.Subject, permissionPlatformCMSView) {
 			req.Scope = templateScopeGlobal
@@ -630,7 +633,11 @@ func (s *service) UpsertTypeVersion(ctx context.Context, req UpsertTypeVersionRe
 			return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, err.Error(), nil)
 		}
 	}
-	return s.repo.UpsertTypeVersion(ctx, req)
+	resp, err := s.repo.UpsertTypeVersion(ctx, req)
+	if err != nil {
+		return nil, mapRepositoryUpsertError(err)
+	}
+	return resp, nil
 }
 
 func normalizeDisplayGroupCodes(codes []string) []string {
@@ -769,13 +776,8 @@ func (s *service) UpsertCompanyWorkflowOverrideDraft(ctx context.Context, req Up
 	if req.TypeID == "" {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "type_id is required", nil)
 	}
-	if len(req.Workflow) == 0 {
-		return nil, &perr.HTTPError{
-			Code:       perr.CodeInvalidRequest,
-			Message:    "workflow is required",
-			HTTPStatus: http.StatusBadRequest,
-			Details:    map[string]any{"field_errors": map[string]string{"workflow": "must contain at least one step"}},
-		}
+	if err := ValidateCompanyWorkflowOverrideSteps(req.Workflow); err != nil {
+		return nil, err
 	}
 	if err := s.authorize(ctx, req.Subject, "template.workflow.override.write", authapp.ResourceRef{
 		Type: "disclosure_type",
@@ -784,18 +786,8 @@ func (s *service) UpsertCompanyWorkflowOverrideDraft(ctx context.Context, req Up
 		return nil, err
 	}
 	for i := range req.Workflow {
-		req.Workflow[i].StepID = strings.TrimSpace(req.Workflow[i].StepID)
-		req.Workflow[i].Stage = strings.TrimSpace(req.Workflow[i].Stage)
 		req.Workflow[i].DepartmentID = strings.TrimSpace(req.Workflow[i].DepartmentID)
 		req.Workflow[i].DueRule = strings.TrimSpace(req.Workflow[i].DueRule)
-		if req.Workflow[i].StepID == "" || req.Workflow[i].Stage == "" {
-			return nil, &perr.HTTPError{
-				Code:       perr.CodeInvalidRequest,
-				Message:    "workflow step is invalid",
-				HTTPStatus: http.StatusBadRequest,
-				Details:    map[string]any{"field_errors": map[string]string{fmt.Sprintf("workflow[%d]", i): "step_id and stage are required"}},
-			}
-		}
 		// Auto-fill active groups when flag is on, step has a department, and
 		// groups field was absent in the request (nil != explicit empty slice []).
 		if s.workflowGroupsEnabled && req.Workflow[i].DepartmentID != "" && req.Workflow[i].Groups == nil {
@@ -868,6 +860,16 @@ func (s *service) ApproveCompanyWorkflowOverride(ctx context.Context, req Approv
 		Type: "disclosure_type",
 		ID:   req.TypeID,
 	}); err != nil {
+		return nil, err
+	}
+	view, err := s.repo.GetCompanyWorkflowOverride(ctx, req.Subject.CompanyID, req.TypeID)
+	if err != nil {
+		return nil, err
+	}
+	if view.DraftVersion == nil || view.DraftVersion.VersionNo != req.VersionNo {
+		return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "workflow override draft version not found", nil)
+	}
+	if err := ValidateCompanyWorkflowOverrideSteps(view.DraftVersion.Workflow); err != nil {
 		return nil, err
 	}
 	return s.repo.ApproveCompanyWorkflowOverride(ctx, req)

@@ -775,6 +775,39 @@ func (r *Repository) UpdateWorkflowOverrideStepGroups(_ context.Context, _ discl
 
 // Sprint 3 / Batch 2 — Workflow Override Staleness Detection (in-memory mirror).
 
+// SeedCompanyWorkflowOverrideDraftForTest inserts a draft version with arbitrary workflow (including empty) for activation tests.
+func (r *Repository) SeedCompanyWorkflowOverrideDraftForTest(companyID, typeID string, versionNo int, workflow []disclosureapp.WorkflowStepDTO) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	k := overrideKey(companyID, typeID)
+	now := time.Now().UTC()
+	st, ok := r.overrideByCompanyType[k]
+	if !ok {
+		st = &overrideState{
+			header: disclosureapp.CompanyWorkflowOverrideHeaderDTO{
+				OverrideID:      "ovr_" + companyID + "_" + typeID,
+				TypeID:          typeID,
+				CompanyID:       companyID,
+				Status:          "draft",
+				ActiveVersionNo: 0,
+				UpdatedAt:       now,
+			},
+			versions: map[int]disclosureapp.CompanyWorkflowOverrideVersionDTO{},
+		}
+		r.overrideByCompanyType[k] = st
+	}
+	st.versions[versionNo] = disclosureapp.CompanyWorkflowOverrideVersionDTO{
+		VersionNo: versionNo,
+		State:     "draft",
+		Workflow:  cloneWorkflowSteps(workflow),
+		CreatedBy: "test",
+		CreatedAt: now,
+	}
+	st.header.Status = "draft"
+	st.header.UpdatedAt = now
+	return nil
+}
+
 // SetOverrideBaseMetadataForTest is a white-box test helper (same convention as
 // cms_repository_pointer_test.go's direct header field manipulation) letting tests set up a
 // known base_source/base_version_no for an already-created override, since no production code
@@ -1014,6 +1047,12 @@ func (r *Repository) GetEffectiveWorkflow(_ context.Context, companyID, typeID s
 	dto.Source = "company_override"
 	dto.VersionNo = v.VersionNo
 	dto.Workflow = cloneWorkflowSteps(v.Workflow)
+	if len(dto.Workflow) == 0 {
+		dto.OverrideInvalidEmpty = true
+		if wf, exists := r.globalWorkflows[typeID]; exists && wf.Status == "active" && wf.ActiveVersionNo != nil && len(wf.Steps) > 0 {
+			dto.GlobalWorkflowAvailable = true
+		}
+	}
 	return dto, nil
 }
 

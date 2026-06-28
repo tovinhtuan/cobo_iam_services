@@ -1184,6 +1184,14 @@ func (r *Repository) GetEffectiveWorkflow(ctx context.Context, companyID, typeID
 		dto.Source = "company_override"
 		dto.VersionNo = view.ActiveVersion.VersionNo
 		dto.Workflow = view.ActiveVersion.Workflow
+		if len(dto.Workflow) == 0 {
+			dto.OverrideInvalidEmpty = true
+			if steps, _, ok, err := r.loadActiveGlobalWorkflow(ctx, typeID); err != nil {
+				return nil, err
+			} else if ok && len(steps) > 0 {
+				dto.GlobalWorkflowAvailable = true
+			}
+		}
 		return dto, nil
 	}
 	if steps, versionNo, ok, err := r.loadActiveGlobalWorkflow(ctx, typeID); err != nil {

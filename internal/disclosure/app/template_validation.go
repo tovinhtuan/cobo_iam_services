@@ -166,6 +166,7 @@ func validatePortalTemplateMatrix(req *UpsertTypeVersionRequest) error {
 		return newValidationError(fieldErrors)
 	}
 	validateTemplateBlocks(req, fieldErrors)
+	validateTemplateBlockDescriptionLengths(req.Blocks, fieldErrors)
 	if len(fieldErrors) > 0 {
 		return newValidationError(fieldErrors)
 	}
@@ -227,6 +228,7 @@ func validateTemplateMatrix(req *UpsertTypeVersionRequest) error {
 		return newValidationError(fieldErrors)
 	}
 	validateTemplateBlocks(req, fieldErrors)
+	validateTemplateBlockDescriptionLengths(req.Blocks, fieldErrors)
 	if len(fieldErrors) > 0 {
 		return newValidationError(fieldErrors)
 	}

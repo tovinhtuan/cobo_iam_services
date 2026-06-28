@@ -173,6 +173,9 @@ func (s *service) ApplyWorkflowOverrideRebase(ctx context.Context, req ApplyWork
 		}
 		return nil, err
 	}
+	if err := ValidateCompanyWorkflowOverrideSteps(newSnapshot); err != nil {
+		return nil, err
+	}
 
 	now := time.Now().UTC()
 	result, err := s.repo.ApplyWorkflowOverrideRebase(ctx, ApplyWorkflowOverrideRebaseParams{

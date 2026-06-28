@@ -1,0 +1,2 @@
+-- Irreversible data repair: re-activating empty overrides would require manual audit.
+-- No-op down migration.

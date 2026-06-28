@@ -176,9 +176,9 @@ func (r *VersionRepository) Activate(ctx context.Context, typeID string, version
 	if n, _ := res.RowsAffected(); n == 0 {
 		return wfcapp.VersionInfo{}, fmt.Errorf("version %d not activatable for type %q", versionNo, typeID)
 	}
-	// Pointer on global_workflows.
+	// Pointer on global_workflows — status must be 'active' for Effective Workflow resolution (loadActiveGlobalWorkflow).
 	if _, err := tx.ExecContext(ctx,
-		`UPDATE global_workflows SET active_version_no = ? WHERE type_id = ?`, versionNo, typeID); err != nil {
+		`UPDATE global_workflows SET active_version_no = ?, status = 'active' WHERE type_id = ?`, versionNo, typeID); err != nil {
 		return wfcapp.VersionInfo{}, fmt.Errorf("set active pointer: %w", err)
 	}
 	if err := tx.Commit(); err != nil {

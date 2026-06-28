@@ -608,6 +608,11 @@ type EffectiveWorkflowDTO struct {
 	Source    string            `json:"source"`
 	VersionNo int               `json:"version_no"`
 	Workflow  []WorkflowStepDTO `json:"workflow"`
+	// OverrideInvalidEmpty is true when source=company_override but the active snapshot has zero steps.
+	// Precedence is unchanged — workflow remains empty; Portal uses this for honest UX.
+	OverrideInvalidEmpty bool `json:"override_invalid_empty,omitempty"`
+	// GlobalWorkflowAvailable is true when a governed global workflow exists but is hidden by an active override.
+	GlobalWorkflowAvailable bool `json:"global_workflow_available,omitempty"`
 }
 
 type GetEffectiveWorkflowResponse struct {
