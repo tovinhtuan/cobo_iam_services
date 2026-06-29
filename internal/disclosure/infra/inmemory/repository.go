@@ -1089,6 +1089,7 @@ func convertGlobalWorkflowSteps(steps []disclosureapp.GlobalWorkflowStepInput) [
 		out = append(out, disclosureapp.WorkflowStepDTO{
 			StepID:          s.StepID,
 			Stage:           s.Stage,
+			Instructions:    s.Instructions,
 			DepartmentID:    s.DepartmentID,
 			AssigneeRoleIds: s.AssigneeRoleIds,
 			DueRule:         dueRule,

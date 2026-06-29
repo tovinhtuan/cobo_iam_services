@@ -19,6 +19,7 @@ type activeGlobalWorkflowManifestStep struct {
 	StepKey        string `json:"step_key"`
 	Stage          string `json:"stage"`
 	Name           string `json:"name"`
+	Instructions   string `json:"instructions,omitempty"`
 	Role           string `json:"role"`
 	DepartmentID   string `json:"department_id"`
 	DueRule        string `json:"due_rule"`
@@ -74,6 +75,7 @@ func (r *Repository) loadActiveGlobalWorkflow(ctx context.Context, typeID string
 		steps = append(steps, disclosureapp.WorkflowStepDTO{
 			StepID:          ms.StepID,
 			Stage:           ms.Stage,
+			Instructions:    ms.Instructions,
 			DepartmentID:    ms.DepartmentID,
 			AssigneeRoleIds: roleIDs,
 			DueRule:         dueRule,
@@ -121,6 +123,7 @@ func (r *Repository) GetGlobalWorkflowVersionManifest(ctx context.Context, typeI
 			StepKey:         ms.StepKey,
 			StepID:          ms.StepID,
 			Stage:           ms.Stage,
+			Instructions:    ms.Instructions,
 			DepartmentID:    ms.DepartmentID,
 			AssigneeRoleIds: roleIDs,
 			DueRule:         dueRule,

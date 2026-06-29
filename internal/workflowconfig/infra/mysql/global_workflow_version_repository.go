@@ -34,7 +34,8 @@ func (r *VersionRepository) BuildManifest(ctx context.Context, typeID string) (w
 		return wfcapp.Manifest{}, fmt.Errorf("build manifest (workflow): %w", err)
 	}
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT step_id, COALESCE(step_key,''), stage, COALESCE(assignee_role_ids, JSON_ARRAY()),
+		SELECT step_id, COALESCE(step_key,''), stage, COALESCE(instructions,''),
+		       COALESCE(assignee_role_ids, JSON_ARRAY()),
 		       department_id, due_rule, processing_days, display_order
 		FROM global_workflow_steps WHERE workflow_id = ?
 		ORDER BY display_order ASC, step_key ASC
@@ -47,7 +48,7 @@ func (r *VersionRepository) BuildManifest(ctx context.Context, typeID string) (w
 	for rows.Next() {
 		var st wfcapp.ManifestStep
 		var roleJSON []byte
-		if err := rows.Scan(&st.StepID, &st.StepKey, &st.Stage, &roleJSON, &st.DepartmentID, &st.DueRule, &st.ProcessingDays, &st.DisplayOrder); err != nil {
+		if err := rows.Scan(&st.StepID, &st.StepKey, &st.Stage, &st.Instructions, &roleJSON, &st.DepartmentID, &st.DueRule, &st.ProcessingDays, &st.DisplayOrder); err != nil {
 			return wfcapp.Manifest{}, fmt.Errorf("scan step: %w", err)
 		}
 		st.Name = st.Stage

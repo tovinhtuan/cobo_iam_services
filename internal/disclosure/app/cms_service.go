@@ -53,7 +53,15 @@ func (s *service) CmsUpsertGlobalWorkflow(ctx context.Context, req CmsUpsertGlob
 	if len(req.Steps) == 0 {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "workflow must have at least one step", nil)
 	}
+	const maxWorkflowStepInstructionsLen = 2000
 	for i, step := range req.Steps {
+		if len(step.Instructions) > maxWorkflowStepInstructionsLen {
+			return nil, &perr.HTTPError{
+				HTTPStatus: http.StatusBadRequest, Code: perr.CodeInvalidRequest,
+				Message: "workflow step instructions must be at most 2000 characters",
+				Details: map[string]any{"step_index": i, "field": "instructions"},
+			}
+		}
 		if strings.TrimSpace(step.Stage) == "" {
 			return nil, &perr.HTTPError{
 				HTTPStatus: http.StatusBadRequest, Code: perr.CodeInvalidRequest,

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"strings"
 	"testing"
 
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
@@ -30,9 +31,23 @@ func TestValidateCompanyWorkflowOverrideSteps_InvalidStep(t *testing.T) {
 
 func TestValidateCompanyWorkflowOverrideSteps_Valid(t *testing.T) {
 	err := ValidateCompanyWorkflowOverrideSteps([]WorkflowStepDTO{
-		{StepID: "s1", Stage: "Review", ProcessingDays: 1},
+		{StepID: "s1", Stage: "Review", ProcessingDays: 1, Instructions: "Chuẩn bị hồ sơ"},
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateCompanyWorkflowOverrideSteps_InstructionsTooLong(t *testing.T) {
+	long := strings.Repeat("x", maxWorkflowOverrideStepInstructionsLen+1)
+	err := ValidateCompanyWorkflowOverrideSteps([]WorkflowStepDTO{
+		{StepID: "s1", Stage: "Review", ProcessingDays: 1, Instructions: long},
+	})
+	if err == nil {
+		t.Fatal("expected error for long instructions")
+	}
+	he, ok := perr.AsHTTPError(err)
+	if !ok || he.Code != perr.CodeWorkflowOverrideInvalid {
+		t.Fatalf("code = %v, want WORKFLOW_OVERRIDE_INVALID", he)
 	}
 }
