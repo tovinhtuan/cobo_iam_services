@@ -297,8 +297,10 @@ func (h *Handler) listTypes(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, nil, err)
 		return
 	}
-	page, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("page")))
-	pageSize, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("page_size")))
+	pageRaw := strings.TrimSpace(r.URL.Query().Get("page"))
+	pageSizeRaw := strings.TrimSpace(r.URL.Query().Get("page_size"))
+	page, _ := strconv.Atoi(pageRaw)
+	pageSize, _ := strconv.Atoi(pageSizeRaw)
 	resp, err := h.svc.ListTypes(r.Context(), disclosureapp.ListTypesRequest{
 		Subject:          sub,
 		GroupID:          strings.TrimSpace(r.URL.Query().Get("group_id")),
@@ -306,6 +308,8 @@ func (h *Handler) listTypes(w http.ResponseWriter, r *http.Request) {
 		Query:            strings.TrimSpace(r.URL.Query().Get("q")),
 		Page:             page,
 		PageSize:         pageSize,
+		PageProvided:     pageRaw != "",
+		PageSizeProvided: pageSizeRaw != "",
 		SortBy:           strings.TrimSpace(r.URL.Query().Get("sort_by")),
 		SortDir:          strings.TrimSpace(r.URL.Query().Get("sort_dir")),
 	})

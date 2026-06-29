@@ -237,6 +237,14 @@ func (r *Repository) ListTypes(ctx context.Context, params disclosureapp.ListTyp
 		like := "%" + strings.ToLower(query) + "%"
 		args = append(args, like, like)
 	}
+	if len(params.TypeIDs) > 0 {
+		placeholders := make([]string, len(params.TypeIDs))
+		for i, id := range params.TypeIDs {
+			placeholders[i] = "?"
+			args = append(args, id)
+		}
+		conditions = append(conditions, "t.type_id IN ("+strings.Join(placeholders, ",")+")")
+	}
 
 	whereClause := strings.Join(conditions, " AND ")
 	baseSQL := `FROM disclosure_types t` + joins + `
@@ -244,20 +252,27 @@ func (r *Repository) ListTypes(ctx context.Context, params disclosureapp.ListTyp
 			ON v.type_id = t.type_id AND v.version_no = t.active_version_no
 		WHERE ` + whereClause
 
-	// Count query for pagination metadata.
-	var total int
-	countSQL := `SELECT COUNT(*) ` + baseSQL
-	if err := r.db.QueryRowContext(ctx, countSQL, args...).Scan(&total); err != nil {
-		return nil, 0, err
+	total := 0
+	if !params.LightweightOnly && len(params.TypeIDs) == 0 {
+		countSQL := `SELECT COUNT(*) ` + baseSQL
+		if err := r.db.QueryRowContext(ctx, countSQL, args...).Scan(&total); err != nil {
+			return nil, 0, err
+		}
 	}
 
-	// Data query — LIMIT/OFFSET applied only when page > 0.
-	dataSQL := `SELECT t.type_id, t.group_id, COALESCE(t.display_group_code, ''), t.company_id,
-		       COALESCE(t.is_mandatory, 0), COALESCE(t.review_status, ''),
-		       v.name, v.category, v.template_category, v.description, v.deadline_rule, v.tags_json,
-		       COALESCE(v.periodicity, ''), v.applicability_rules_json
+	var dataSQL string
+	if params.LightweightOnly {
+		dataSQL = `SELECT t.type_id, t.company_id, v.name, t.created_at, v.applicability_rules_json
 		` + baseSQL + `
 		ORDER BY ` + sortCol + ` ` + sortDir
+	} else {
+		dataSQL = `SELECT t.type_id, t.group_id, COALESCE(t.display_group_code, ''), t.company_id,
+		       COALESCE(t.is_mandatory, 0), COALESCE(t.review_status, ''),
+		       v.name, v.category, v.template_category, v.description, v.deadline_rule, v.tags_json,
+		       COALESCE(v.periodicity, ''), v.applicability_rules_json, t.created_at
+		` + baseSQL + `
+		ORDER BY ` + sortCol + ` ` + sortDir
+	}
 	dataArgs := args
 	if page > 0 {
 		offset := (page - 1) * pageSize
@@ -274,6 +289,27 @@ func (r *Repository) ListTypes(ctx context.Context, params disclosureapp.ListTyp
 	typeIDs := make([]string, 0)
 	for rows.Next() {
 		var item disclosureapp.DisclosureTypeSummaryDTO
+		if params.LightweightOnly {
+			var ownerCompanyID sql.NullString
+			var rulesRaw []byte
+			if err := rows.Scan(&item.TypeID, &ownerCompanyID, &item.Name, &item.CreatedAt, &rulesRaw); err != nil {
+				return nil, 0, err
+			}
+			if rules, err := applicability.ParseRulesJSON(rulesRaw); err != nil {
+				return nil, 0, err
+			} else {
+				item.ApplicabilityRules = rules
+			}
+			item.OwnerCompanyID = ownerCompanyID.String
+			if ownerCompanyID.Valid && strings.TrimSpace(ownerCompanyID.String) != "" {
+				item.Scope = "company"
+			} else {
+				item.Scope = "global"
+			}
+			out = append(out, item)
+			continue
+		}
+
 		var tagsRaw []byte
 		var rulesRaw []byte
 		var ownerCompanyID sql.NullString
@@ -281,7 +317,7 @@ func (r *Repository) ListTypes(ctx context.Context, params disclosureapp.ListTyp
 			&item.TypeID, &item.GroupID, &item.DisplayGroupCode, &ownerCompanyID,
 			&item.IsMandatory, &item.ReviewStatus,
 			&item.Name, &item.Category, &item.TemplateCategory, &item.Description, &item.DeadlineRule, &tagsRaw,
-			&item.Periodicity, &rulesRaw,
+			&item.Periodicity, &rulesRaw, &item.CreatedAt,
 		); err != nil {
 			return nil, 0, err
 		}
@@ -305,6 +341,12 @@ func (r *Repository) ListTypes(ctx context.Context, params disclosureapp.ListTyp
 	}
 	if err := rows.Err(); err != nil {
 		return nil, 0, err
+	}
+	if params.LightweightOnly || len(typeIDs) == 0 {
+		if params.LightweightOnly {
+			total = len(out)
+		}
+		return out, total, nil
 	}
 	// Batch-load display_group_codes from junction table (DBA-001 / many-to-many).
 	if len(typeIDs) > 0 {

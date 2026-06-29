@@ -233,10 +233,12 @@ type ListTypesParams struct {
 	GroupID          string // legacy: filter by disclosure_types.group_id
 	DisplayGroupCode string // new model: filter via template_display_groups junction table
 	Query            string
-	Page             int    // 1-based; 0 or negative → no pagination (return all)
-	PageSize         int    // effective only when Page > 0; clamped 1–100, default 20
-	SortBy           string // "name" | "created_at"
-	SortDir          string // "asc" | "desc"
+	Page             int      // 1-based; 0 → no SQL LIMIT (internal use)
+	PageSize         int      // effective only when Page > 0
+	SortBy           string   // "name" | "created_at"
+	SortDir          string   // "asc" | "desc"
+	TypeIDs          []string // optional: restrict to these type IDs
+	LightweightOnly  bool     // minimal columns; skips workflow/display-group batch loads
 }
 
 type ListTypesRequest struct {
@@ -246,6 +248,8 @@ type ListTypesRequest struct {
 	Query            string
 	Page             int
 	PageSize         int
+	PageProvided     bool
+	PageSizeProvided bool
 	SortBy           string // "name" | "created_at"; empty → default "created_at"
 	SortDir          string // "asc" | "desc"; empty → default "desc"
 }
@@ -753,6 +757,7 @@ type DisclosureTypeSummaryDTO struct {
 	Tags                          []string                                  `json:"tags"`
 	ApplicabilityRules            *applicability.TemplateApplicabilityRules `json:"-"`
 	ResolvedStructureDeadlineDays *int                                      `json:"resolved_structure_deadline_days,omitempty"`
+	CreatedAt                     time.Time                                 `json:"-"`
 }
 
 type DisclosureTypeDTO struct {

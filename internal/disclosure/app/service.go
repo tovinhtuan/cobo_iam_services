@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -402,48 +403,103 @@ func (s *service) ListTypes(ctx context.Context, req ListTypesRequest) (*ListTyp
 	}
 	page := req.Page
 	pageSize := req.PageSize
-	if pageSize <= 0 || pageSize > 100 {
+	if req.PageProvided && page <= 0 {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "page must be a positive integer", nil)
+	}
+	if !req.PageProvided {
+		page = 1
+	}
+	if req.PageSizeProvided && (pageSize <= 0 || pageSize > 100) {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "page_size must be between 1 and 100", nil)
+	}
+	if !req.PageSizeProvided {
 		pageSize = 20
 	}
-	if page <= 0 {
-		page = 0
-	}
-	// Fetch full catalog before applicability filter, then paginate in memory.
-	out, _, err := s.repo.ListTypes(ctx, ListTypesParams{
+
+	// Phase 1: lightweight rows for applicability filtering without loading the full catalog payload.
+	light, _, err := s.repo.ListTypes(ctx, ListTypesParams{
 		CompanyID:        req.Subject.CompanyID,
 		GroupID:          req.GroupID,
 		DisplayGroupCode: req.DisplayGroupCode,
 		Query:            req.Query,
-		Page:             0,
-		PageSize:         0,
 		SortBy:           sortBy,
 		SortDir:          sortDir,
+		LightweightOnly:  true,
 	})
 	if err != nil {
 		return nil, err
 	}
-	filtered, err := s.filterTypesByApplicability(ctx, req.Subject.CompanyID, out)
+	filtered, err := s.filterTypesByApplicability(ctx, req.Subject.CompanyID, light)
 	if err != nil {
 		return nil, err
 	}
-	catalog := s.loadDeadlineRuleCatalog(ctx)
-	for i := range filtered {
-		enrichDeadlineRuleDisplaySummary(&filtered[i], catalog)
-	}
+	sortTypeSummaries(filtered, sortBy, sortDir)
 	total := len(filtered)
-	if page > 0 {
-		start := (page - 1) * pageSize
-		if start >= total {
-			filtered = []DisclosureTypeSummaryDTO{}
-		} else {
-			end := start + pageSize
-			if end > total {
-				end = total
-			}
-			filtered = filtered[start:end]
+	start := (page - 1) * pageSize
+	if start >= total {
+		return &ListTypesResponse{Items: []DisclosureTypeSummaryDTO{}, Total: total, Page: page, PageSize: pageSize}, nil
+	}
+	end := start + pageSize
+	if end > total {
+		end = total
+	}
+	pageSlice := filtered[start:end]
+	pageIDs := make([]string, 0, len(pageSlice))
+	for _, item := range pageSlice {
+		pageIDs = append(pageIDs, item.TypeID)
+	}
+
+	// Phase 2: load full summary fields only for the current page.
+	out, _, err := s.repo.ListTypes(ctx, ListTypesParams{
+		CompanyID: req.Subject.CompanyID,
+		TypeIDs:   pageIDs,
+		SortBy:    sortBy,
+		SortDir:   sortDir,
+	})
+	if err != nil {
+		return nil, err
+	}
+	byID := make(map[string]DisclosureTypeSummaryDTO, len(out))
+	for _, item := range out {
+		byID[item.TypeID] = item
+	}
+	ordered := make([]DisclosureTypeSummaryDTO, 0, len(pageIDs))
+	for _, id := range pageIDs {
+		if item, ok := byID[id]; ok {
+			ordered = append(ordered, item)
 		}
 	}
-	return &ListTypesResponse{Items: filtered, Total: total, Page: page, PageSize: pageSize}, nil
+	catalog := s.loadDeadlineRuleCatalog(ctx)
+	for i := range ordered {
+		enrichDeadlineRuleDisplaySummary(&ordered[i], catalog)
+	}
+	return &ListTypesResponse{Items: ordered, Total: total, Page: page, PageSize: pageSize}, nil
+}
+
+func sortTypeSummaries(items []DisclosureTypeSummaryDTO, sortBy, sortDir string) {
+	less := func(i, j int) bool {
+		switch sortBy {
+		case "name":
+			if strings.EqualFold(items[i].Name, items[j].Name) {
+				return items[i].TypeID < items[j].TypeID
+			}
+			lessName := strings.ToLower(items[i].Name) < strings.ToLower(items[j].Name)
+			if sortDir == "asc" {
+				return lessName
+			}
+			return !lessName
+		default:
+			if items[i].CreatedAt.Equal(items[j].CreatedAt) {
+				return items[i].TypeID < items[j].TypeID
+			}
+			before := items[i].CreatedAt.Before(items[j].CreatedAt)
+			if sortDir == "asc" {
+				return before
+			}
+			return !before
+		}
+	}
+	sort.Slice(items, less)
 }
 
 func (s *service) GetTypeDetail(ctx context.Context, req GetTypeDetailRequest) (*DisclosureTypeDTO, error) {

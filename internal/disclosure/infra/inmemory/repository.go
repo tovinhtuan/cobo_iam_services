@@ -182,9 +182,18 @@ func (r *Repository) ListTypes(_ context.Context, params disclosureapp.ListTypes
 	if pageSize <= 0 || pageSize > 100 {
 		pageSize = 20
 	}
+	typeIDFilter := map[string]struct{}{}
+	for _, id := range params.TypeIDs {
+		typeIDFilter[id] = struct{}{}
+	}
 
 	out := make([]disclosureapp.DisclosureTypeSummaryDTO, 0)
 	for _, item := range r.catalog {
+		if len(typeIDFilter) > 0 {
+			if _, ok := typeIDFilter[item.TypeID]; !ok {
+				continue
+			}
+		}
 		if scope := r.catalogScope[item.TypeID]; scope != "global" && scope != companyID {
 			continue
 		}
@@ -203,6 +212,16 @@ func (r *Repository) ListTypes(_ context.Context, params disclosureapp.ListTypes
 			scope = "global"
 			ownerCompanyID = ""
 		}
+		if params.LightweightOnly {
+			out = append(out, disclosureapp.DisclosureTypeSummaryDTO{
+				TypeID:             item.TypeID,
+				Scope:              scope,
+				OwnerCompanyID:     ownerCompanyID,
+				Name:               item.Name,
+				ApplicabilityRules: item.ApplicabilityRules,
+			})
+			continue
+		}
 		out = append(out, disclosureapp.DisclosureTypeSummaryDTO{
 			TypeID:           item.TypeID,
 			GroupID:          item.GroupID,
@@ -216,15 +235,16 @@ func (r *Repository) ListTypes(_ context.Context, params disclosureapp.ListTypes
 				}
 				return []string{}
 			}(),
-			Scope:            scope,
-			OwnerCompanyID:   ownerCompanyID,
-			Name:             item.Name,
-			Category:         item.Category,
-			TemplateCategory: item.TemplateCategory,
-			Description:      item.Description,
-			DeadlineRule:     item.DeadlineRule,
-			HasWorkflow:      disclosureapp.TemplateHasWorkflow(item.Blocks),
-			Tags:             slices.Clone(item.Tags),
+			Scope:              scope,
+			OwnerCompanyID:     ownerCompanyID,
+			Name:               item.Name,
+			Category:           item.Category,
+			TemplateCategory:   item.TemplateCategory,
+			Description:        item.Description,
+			DeadlineRule:       item.DeadlineRule,
+			HasWorkflow:        disclosureapp.TemplateHasWorkflow(item.Blocks),
+			Tags:               slices.Clone(item.Tags),
+			ApplicabilityRules: item.ApplicabilityRules,
 		})
 	}
 	total := len(out)
