@@ -73,6 +73,87 @@ func TestMapRepositoryUpsertError_DataTooLong(t *testing.T) {
 	}
 }
 
+func TestMapRepositoryUpsertError_MaxAllowedPacket(t *testing.T) {
+	err := mapRepositoryUpsertError(errors.New("Error 1153 (08S01): Got a packet bigger than 'max_allowed_packet' bytes"))
+	var he *perr.HTTPError
+	if !errors.As(err, &he) || he.HTTPStatus != http.StatusBadRequest {
+		t.Fatalf("expected 400 mapped error, got %v", err)
+	}
+	fieldErrors, ok := he.Details["field_errors"].(map[string]string)
+	if !ok || fieldErrors["description"] == "" {
+		t.Fatalf("expected field_errors.description, got %#v", he.Details)
+	}
+}
+
+func vietnameseDescriptionBytes(target int) string {
+	chunk := "Đây là đoạn mô tả dài kiểm thử sau fix — không được HTTP 500. "
+	s := ""
+	for len([]byte(s)) < target {
+		s += chunk
+	}
+	for len([]byte(s)) > target {
+		s = s[:len(s)-1]
+	}
+	return s
+}
+
+func TestUpsertTypeVersion_AcceptsVietnameseDescriptionUnderMaxLength(t *testing.T) {
+	repo := &descriptionLimitRepo{}
+	svc := newCMSUpsertDeadlineService(repo)
+	req := baseUpsertRequest()
+	req.DisplayGroupCodes = []string{"display_groups_001"}
+	req.DeadlineRule = "T+20"
+	req.Description = vietnameseDescriptionBytes(2860)
+
+	resp, err := svc.UpsertTypeVersion(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp == nil || resp.TypeID == "" {
+		t.Fatal("expected successful upsert")
+	}
+	if templateDescriptionByteLength(repo.lastReq.Description) > MaxTemplateDescriptionLength {
+		t.Fatalf("repository received over-limit description: %d bytes", templateDescriptionByteLength(repo.lastReq.Description))
+	}
+}
+
+func TestUpsertTypeVersion_RejectsVietnameseDescriptionOverMaxLength(t *testing.T) {
+	repo := &descriptionLimitRepo{}
+	svc := newCMSUpsertDeadlineService(repo)
+	req := baseUpsertRequest()
+	req.DisplayGroupCodes = []string{"display_groups_001"}
+	req.Description = vietnameseDescriptionBytes(3201)
+
+	_, err := svc.UpsertTypeVersion(context.Background(), req)
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	var he *perr.HTTPError
+	if !errors.As(err, &he) || he.HTTPStatus != http.StatusBadRequest {
+		t.Fatalf("expected 400 validation, got %v", err)
+	}
+	if repo.lastReq.TypeID != "" {
+		t.Fatal("repository should not be called when description exceeds max length")
+	}
+}
+
+func TestUpsertTypeVersion_AcceptsDescriptionExactlyMaxLengthBytes(t *testing.T) {
+	repo := &descriptionLimitRepo{}
+	svc := newCMSUpsertDeadlineService(repo)
+	req := baseUpsertRequest()
+	req.DisplayGroupCodes = []string{"display_groups_001"}
+	req.DeadlineRule = "T+20"
+	req.Description = vietnameseDescriptionBytes(MaxTemplateDescriptionLength)
+
+	resp, err := svc.UpsertTypeVersion(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp == nil || templateDescriptionByteLength(repo.lastReq.Description) != MaxTemplateDescriptionLength {
+		t.Fatalf("expected %d byte description persisted, got %d", MaxTemplateDescriptionLength, templateDescriptionByteLength(repo.lastReq.Description))
+	}
+}
+
 func TestValidateTemplateDescription(t *testing.T) {
 	if err := validateTemplateDescription(strings.Repeat("a", MaxTemplateDescriptionLength)); err != nil {
 		t.Fatalf("at byte limit should pass: %v", err)

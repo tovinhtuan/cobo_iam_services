@@ -720,20 +720,31 @@ func (r *Repository) UpsertTypeVersion(ctx context.Context, req disclosureapp.Up
 	}
 	now := time.Now().UTC()
 	nextIsActive := !typeExists || !currentVersion.Valid || currentVersion.Int64 <= 0
+	// Insert with empty description first: combined INSERT packet (many TEXT/JSON columns + preset blocks)
+	// exceeds DEV MySQL max_allowed_packet (~8KB) when description is ~2.5KB+; follow-up UPDATE stays under limit.
+	versionDescription := strings.TrimSpace(req.Description)
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO disclosure_type_versions (
 			type_id, version_no, name, category, template_category, deadline_strategy, description, legal_basis, applicability, implementation_content,
 			implementation_notes, special_cases, report_content, required_docs, deadline_rule, periodicity, channels_text,
 			beneficiaries, receiving_authorities, format, legal_risks_text, general_info, deadline_config_json, legal_bases_json, checklist_json, tags_json, applicability_rules_json, change_note, updated_by, activated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
+		) VALUES (?, ?, ?, ?, ?, ?, '', NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
 		          NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
 		          NULLIF(?, ''), NULLIF(?, ''), CAST(? AS JSON), CAST(? AS JSON), CAST(? AS JSON), CAST(? AS JSON), CAST(? AS JSON), NULLIF(?, ''), ?, ?)
-	`, req.TypeID, nextVersion, req.Name, req.Category, req.TemplateCategory, req.DeadlineStrategy, req.Description,
+	`, req.TypeID, nextVersion, req.Name, req.Category, req.TemplateCategory, req.DeadlineStrategy,
 		req.LegalBasis, req.Applicability, req.ImplementationContent, req.ImplementationNotes, req.SpecialCases, req.ReportContent,
 		req.RequiredDocs, req.DeadlineRule, req.Periodicity, req.ChannelsText, req.Beneficiaries, req.ReceivingAuthorities,
 		req.Format, req.LegalRisksText, req.GeneralInfo, string(deadlineConfigJSON), string(legalBasesJSON), string(checklistJSON), string(tagsJSON), string(applicabilityRulesJSON), changeNote, req.Subject.UserID, now)
 	if err != nil {
 		return nil, err
+	}
+	if versionDescription != "" {
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE disclosure_type_versions SET description = ?
+			WHERE type_id = ? AND version_no = ?
+		`, versionDescription, req.TypeID, nextVersion); err != nil {
+			return nil, err
+		}
 	}
 	for _, block := range blocks {
 		configJSON, err := json.Marshal(block.Config)
