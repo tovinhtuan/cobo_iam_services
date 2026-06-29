@@ -552,24 +552,112 @@ func (r *AdminRepository) RemoveTitle(_ context.Context, membershipID, titleID s
 	return nil
 }
 
-func (r *AdminRepository) ListPermissions(_ context.Context) ([]string, error) {
+func (r *AdminRepository) ListPermissions(_ context.Context) ([]caapp.PermissionListItem, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	out := []string{}
-	for p := range r.permissions {
-		out = append(out, p)
+	out := make([]caapp.PermissionListItem, 0, len(r.permissions))
+	for code := range r.permissions {
+		out = append(out, caapp.PermissionListItem{
+			PermissionID:   code,
+			PermissionCode: code,
+			PermissionName: code,
+			ModuleName:     "general",
+			RiskLevel:      caapp.PermissionRiskLevel(code),
+			IsGrantable:    caapp.IsGrantablePermission(code),
+		})
 	}
+	sort.Slice(out, func(i, j int) bool { return out[i].PermissionCode < out[j].PermissionCode })
 	return out, nil
 }
-func (r *AdminRepository) ListRoles(_ context.Context, _ string) ([]string, error) {
+
+func (r *AdminRepository) ListRoles(_ context.Context, companyID string) ([]caapp.RoleListItem, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	out := []string{}
-	for p := range r.roles {
-		out = append(out, p)
+	out := make([]caapp.RoleListItem, 0, len(r.roles))
+	now := time.Now().UTC()
+	for roleID := range r.roles {
+		memberCount := 0
+		for _, roleSet := range r.rolesByMembership {
+			if _, ok := roleSet[roleID]; ok {
+				memberCount++
+			}
+		}
+		permCount := 0
+		if perms, ok := r.rolePermissions[roleID]; ok {
+			permCount = len(perms)
+		}
+		out = append(out, caapp.RoleListItem{
+			RoleID:          roleID,
+			RoleCode:        roleID,
+			RoleName:        roleID,
+			Status:          "active",
+			Scope:           "global",
+			IsBuiltin:       true,
+			PermissionCount: permCount,
+			MemberCount:     memberCount,
+			CreatedAt:       now,
+			UpdatedAt:       now,
+		})
 	}
+	sort.Slice(out, func(i, j int) bool { return out[i].RoleCode < out[j].RoleCode })
+	_ = companyID
 	return out, nil
 }
+
+func (r *AdminRepository) RoleAccessibleByCompany(_ context.Context, _, roleID string) (bool, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	_, ok := r.roles[roleID]
+	return ok, nil
+}
+
+func (r *AdminRepository) ListRolePermissions(_ context.Context, _, roleID string) (*caapp.RolePermissionsView, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if _, ok := r.roles[roleID]; !ok {
+		return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "role not found", nil)
+	}
+	perms := make([]caapp.PermissionListItem, 0)
+	if set, ok := r.rolePermissions[roleID]; ok {
+		for code := range set {
+			perms = append(perms, caapp.PermissionListItem{
+				PermissionID:   code,
+				PermissionCode: code,
+				PermissionName: code,
+				ModuleName:     "general",
+				RiskLevel:      caapp.PermissionRiskLevel(code),
+				IsGrantable:    caapp.IsGrantablePermission(code),
+			})
+		}
+	}
+	sort.Slice(perms, func(i, j int) bool { return perms[i].PermissionCode < perms[j].PermissionCode })
+	return &caapp.RolePermissionsView{RoleID: roleID, Permissions: perms}, nil
+}
+
+func (r *AdminRepository) GetNotificationRuleByCode(_ context.Context, companyID, ruleCode string) (*caapp.NotificationRuleView, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, rule := range r.notificationRules {
+		cid, _ := strFromAnyMap(rule, "company_id")
+		code, _ := strFromAnyMap(rule, "rule_code")
+		if cid == companyID && code == ruleCode {
+			id, _ := strFromAnyMap(rule, "notification_rule_id")
+			payload := cloneAnyMap(rule)
+			for _, k := range []string{"notification_rule_id", "company_id", "rule_code", "status"} {
+				delete(payload, k)
+			}
+			return &caapp.NotificationRuleView{
+				NotificationRuleID: id,
+				RuleCode:           code,
+				Status:             "active",
+				Payload:            payload,
+				UpdatedAt:          time.Now().UTC(),
+			}, nil
+		}
+	}
+	return nil, nil
+}
+
 func (r *AdminRepository) AddRolePermission(_ context.Context, roleID, permissionID string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

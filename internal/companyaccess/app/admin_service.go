@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -1007,17 +1008,23 @@ func (s *adminService) RemoveTitle(ctx context.Context, req RemoveTitleRequest) 
 	}
 	return s.repo.RemoveTitle(ctx, req.MembershipID, req.TitleID)
 }
-func (s *adminService) ListPermissions(ctx context.Context, req AdminSubjectRequest) ([]string, error) {
+func (s *adminService) ListPermissions(ctx context.Context, req AdminSubjectRequest) ([]PermissionListItem, error) {
 	if err := s.authorize(ctx, req.Subject, "admin.permissions.list", ""); err != nil {
 		return nil, err
 	}
 	return s.repo.ListPermissions(ctx)
 }
-func (s *adminService) ListRoles(ctx context.Context, req AdminSubjectRequest) ([]string, error) {
+func (s *adminService) ListRoles(ctx context.Context, req AdminSubjectRequest) ([]RoleListItem, error) {
 	if err := s.authorize(ctx, req.Subject, "admin.roles.list", ""); err != nil {
 		return nil, err
 	}
 	return s.repo.ListRoles(ctx, req.Subject.CompanyID)
+}
+func (s *adminService) ListRolePermissions(ctx context.Context, req ListRolePermissionsRequest) (*RolePermissionsView, error) {
+	if err := s.authorize(ctx, req.Subject, "admin.roles.list", ""); err != nil {
+		return nil, err
+	}
+	return s.repo.ListRolePermissions(ctx, req.Subject.CompanyID, req.RoleID)
 }
 func (s *adminService) AssignRolePermission(ctx context.Context, req AssignRolePermissionRequest) error {
 	if err := s.authorize(ctx, req.Subject, "admin.role.permission.assign", req.RoleID); err != nil {
@@ -1047,7 +1054,29 @@ func (s *adminService) CreateNotificationRule(ctx context.Context, req CreateNot
 	if err := s.authorize(ctx, req.Subject, "admin.notification_rule.create", ""); err != nil {
 		return err
 	}
+	req.Payload["company_id"] = req.Subject.CompanyID
+	code, _ := req.Payload["rule_code"].(string)
+	if strings.TrimSpace(code) == AlertChannelPrefsRuleCode {
+		prefs := prefsDocumentFromRulePayload(req.Payload)
+		if valid, issues := ValidateAlertChannelPrefsPayload(prefs); !valid {
+			return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, strings.Join(issues, "; "), nil)
+		}
+		prefs["updated_by"] = req.Subject.MembershipID
+		prefs["updated_at"] = time.Now().UTC().Format(time.RFC3339)
+		for k, v := range prefs {
+			req.Payload[k] = v
+		}
+	}
 	return s.repo.AddNotificationRule(ctx, req.Payload)
+}
+
+func prefsDocumentFromRulePayload(m map[string]any) map[string]any {
+	out := cloneMap(m)
+	delete(out, "company_id")
+	delete(out, "rule_code")
+	delete(out, "status")
+	delete(out, "notification_rule_id")
+	return out
 }
 
 func (s *adminService) ListNotificationRules(ctx context.Context, req ListNotificationRulesRequest) ([]NotificationRuleView, error) {
@@ -1057,11 +1086,114 @@ func (s *adminService) ListNotificationRules(ctx context.Context, req ListNotifi
 	return s.repo.ListNotificationRules(ctx, req.Subject.CompanyID)
 }
 
+func (s *adminService) GetNotificationRuleStatus(ctx context.Context, req GetNotificationRuleStatusRequest) (*NotificationRuleStatusView, error) {
+	if err := s.authorize(ctx, req.Subject, "admin.notification_rule.list", ""); err != nil {
+		return nil, err
+	}
+	rule, err := s.repo.GetNotificationRuleByCode(ctx, req.Subject.CompanyID, AlertChannelPrefsRuleCode)
+	if err != nil {
+		return nil, err
+	}
+	view := &NotificationRuleStatusView{
+		RuleCode:                   AlertChannelPrefsRuleCode,
+		StorageConfigured:          rule != nil,
+		PreviewAvailable:           false,
+		RuntimeConsumerEnabled:     notificationRulesConsumerEnabled(),
+		DispatchEnforcementEnabled: false,
+		SubscriptionTierEnforced:   false,
+		ChannelsActive:             []string{},
+		UIState:                    "not_configured",
+		Warnings:                   []string{},
+	}
+	if rule == nil {
+		view.Warnings = append(view.Warnings, "Chưa có cấu hình kênh cảnh báo. Lưu cấu hình để bắt đầu.")
+		return view, nil
+	}
+	valid, issues := ValidateAlertChannelPrefsPayload(rule.Payload)
+	view.PayloadValid = valid
+	view.ChannelsActive = ChannelsActiveFromPayload(rule.Payload)
+	view.LastUpdatedAt = stringFromPayload(rule.Payload, "updated_at")
+	if view.LastUpdatedAt == "" && !rule.UpdatedAt.IsZero() {
+		view.LastUpdatedAt = rule.UpdatedAt.UTC().Format(time.RFC3339)
+	}
+	view.LastUpdatedBy = stringFromPayload(rule.Payload, "updated_by")
+
+	if !valid {
+		view.UIState = "misconfigured"
+		for _, issue := range issues {
+			view.Warnings = append(view.Warnings, issue)
+		}
+		return view, nil
+	}
+	view.UIState = "storage_configured"
+	view.Warnings = append(view.Warnings, "Cấu hình đã được lưu nhưng chưa ảnh hưởng tới runtime dispatch.")
+	if !view.RuntimeConsumerEnabled {
+		view.Warnings = append(view.Warnings, "Runtime consumer chưa đọc notification_rules — preview và dispatch chưa khả dụng.")
+	}
+	view.Warnings = append(view.Warnings, "Preview chưa khả dụng (Sprint 2).")
+	view.Warnings = append(view.Warnings, "Subscription enforcement chưa kích hoạt trên server.")
+	return view, nil
+}
+
+func notificationRulesConsumerEnabled() bool {
+	// Honest default: reminder does not read notification_rules until Sprint 3 consumer ships.
+	v := strings.TrimSpace(strings.ToLower(os.Getenv("NOTIFICATION_RULES_CONSUMER_ENABLED")))
+	return v == "1" || v == "true" || v == "yes"
+}
+
 func (s *adminService) UpdateNotificationRule(ctx context.Context, req UpdateNotificationRuleRequest) error {
 	if err := s.authorize(ctx, req.Subject, "admin.notification_rule.update", ""); err != nil {
 		return err
 	}
+	if len(req.PayloadPatch) > 0 {
+		req.PayloadPatch["updated_by"] = req.Subject.MembershipID
+		req.PayloadPatch["updated_at"] = time.Now().UTC().Format(time.RFC3339)
+	}
+	rules, err := s.repo.ListNotificationRules(ctx, req.Subject.CompanyID)
+	if err != nil {
+		return err
+	}
+	var ruleCode string
+	for _, item := range rules {
+		if item.NotificationRuleID == req.RuleID {
+			ruleCode = item.RuleCode
+			break
+		}
+	}
+	if ruleCode == AlertChannelPrefsRuleCode {
+		var current map[string]any
+		for _, item := range rules {
+			if item.NotificationRuleID == req.RuleID {
+				current = prefsDocumentFromRulePayload(cloneMap(item.Payload))
+				break
+			}
+		}
+		mergePayloadMaps(current, req.PayloadPatch)
+		if valid, issues := ValidateAlertChannelPrefsPayload(current); !valid {
+			return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, strings.Join(issues, "; "), nil)
+		}
+	}
 	return s.repo.UpdateNotificationRuleMerged(ctx, req.Subject.CompanyID, req.RuleID, req.PayloadPatch, req.Status)
+}
+
+func cloneMap(m map[string]any) map[string]any {
+	out := make(map[string]any, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
+}
+
+func mergePayloadMaps(dst, patch map[string]any) {
+	for k, v := range patch {
+		dstMap, ok1 := dst[k].(map[string]any)
+		srcMap, ok2 := v.(map[string]any)
+		if ok1 && ok2 {
+			mergePayloadMaps(dstMap, srcMap)
+			continue
+		}
+		dst[k] = v
+	}
 }
 
 func (s *adminService) DeleteNotificationRule(ctx context.Context, req DeleteNotificationRuleRequest) error {

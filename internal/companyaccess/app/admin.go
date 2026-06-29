@@ -49,8 +49,9 @@ type AdminService interface {
 	AddTitleMember(ctx context.Context, req AddTitleMemberRequest) error
 	RemoveTitleMember(ctx context.Context, req RemoveTitleMemberRequest) error
 
-	ListPermissions(ctx context.Context, req AdminSubjectRequest) ([]string, error)
-	ListRoles(ctx context.Context, req AdminSubjectRequest) ([]string, error)
+	ListPermissions(ctx context.Context, req AdminSubjectRequest) ([]PermissionListItem, error)
+	ListRoles(ctx context.Context, req AdminSubjectRequest) ([]RoleListItem, error)
+	ListRolePermissions(ctx context.Context, req ListRolePermissionsRequest) (*RolePermissionsView, error)
 	AssignRolePermission(ctx context.Context, req AssignRolePermissionRequest) error
 	RemoveRolePermission(ctx context.Context, req RemoveRolePermissionRequest) error
 
@@ -58,6 +59,7 @@ type AdminService interface {
 	CreateWorkflowAssigneeRule(ctx context.Context, req CreateWorkflowAssigneeRuleRequest) error
 	CreateNotificationRule(ctx context.Context, req CreateNotificationRuleRequest) error
 	ListNotificationRules(ctx context.Context, req ListNotificationRulesRequest) ([]NotificationRuleView, error)
+	GetNotificationRuleStatus(ctx context.Context, req GetNotificationRuleStatusRequest) (*NotificationRuleStatusView, error)
 	UpdateNotificationRule(ctx context.Context, req UpdateNotificationRuleRequest) error
 	DeleteNotificationRule(ctx context.Context, req DeleteNotificationRuleRequest) error
 	GetAdminAccountSettings(ctx context.Context, req GetAdminAccountSettingsRequest) (*AdminAccountSettingsView, error)
@@ -192,9 +194,11 @@ type AdminRepository interface {
 	RemoveTeamMember(ctx context.Context, companyID, teamID, membershipID string) error
 	MemberBelongsToDepartment(ctx context.Context, membershipID, departmentID string) (bool, error)
 
-	ListPermissions(ctx context.Context) ([]string, error)
-	// ListRoles returns role_id values for the given company: global roles (company_id NULL) plus roles scoped to that company.
-	ListRoles(ctx context.Context, companyID string) ([]string, error)
+	ListPermissions(ctx context.Context) ([]PermissionListItem, error)
+	// ListRoles returns roles for the given company: global roles (company_id NULL) plus roles scoped to that company.
+	ListRoles(ctx context.Context, companyID string) ([]RoleListItem, error)
+	ListRolePermissions(ctx context.Context, companyID, roleID string) (*RolePermissionsView, error)
+	RoleAccessibleByCompany(ctx context.Context, companyID, roleID string) (bool, error)
 	AddRolePermission(ctx context.Context, roleID, permissionID string) error
 	RemoveRolePermission(ctx context.Context, roleID, permissionID string) error
 
@@ -202,6 +206,7 @@ type AdminRepository interface {
 	AddWorkflowAssigneeRule(ctx context.Context, rule map[string]any) error
 	AddNotificationRule(ctx context.Context, rule map[string]any) error
 	ListNotificationRules(ctx context.Context, companyID string) ([]NotificationRuleView, error)
+	GetNotificationRuleByCode(ctx context.Context, companyID, ruleCode string) (*NotificationRuleView, error)
 	UpdateNotificationRuleMerged(ctx context.Context, companyID, ruleID string, payloadPatch map[string]any, status *string) error
 	DeleteNotificationRule(ctx context.Context, companyID, ruleID string) error
 	GetAdminAccountSettings(ctx context.Context, userID string) (*AdminAccountSettingsView, error)

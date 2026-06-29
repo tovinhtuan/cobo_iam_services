@@ -19,9 +19,9 @@ func (s *adminService) CreateDepartment(ctx context.Context, req CreateDepartmen
 	if err := s.requireRbacManage(ctx, req.Subject); err != nil {
 		return nil, err
 	}
-	name := strings.TrimSpace(req.Name)
-	if name == "" {
-		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "name is required", nil)
+	name, err := validateDepartmentName(req.Name)
+	if err != nil {
+		return nil, err
 	}
 	if req.HeadMembershipID != nil {
 		if err := s.requireMembershipInCompany(ctx, *req.HeadMembershipID, req.Subject.CompanyID); err != nil {
@@ -42,9 +42,9 @@ func (s *adminService) UpdateDepartment(ctx context.Context, req UpdateDepartmen
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "department_id is required", nil)
 	}
 	if req.Name != nil {
-		trimmed := strings.TrimSpace(*req.Name)
-		if trimmed == "" {
-			return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "name cannot be empty", nil)
+		trimmed, err := validateDepartmentName(*req.Name)
+		if err != nil {
+			return nil, err
 		}
 		req.Name = &trimmed
 	}

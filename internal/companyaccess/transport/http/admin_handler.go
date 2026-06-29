@@ -77,11 +77,13 @@ func (h *AdminHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/v1/admin/memberships/{membership_id}/titles/{title_id}", h.removeTitle)
 	mux.HandleFunc("GET /api/v1/admin/permissions", h.listPermissions)
 	mux.HandleFunc("GET /api/v1/admin/roles", h.listRoles)
+	mux.HandleFunc("GET /api/v1/admin/roles/{role_id}/permissions", h.listRolePermissions)
 	mux.HandleFunc("POST /api/v1/admin/roles/{role_id}/permissions", h.assignRolePermission)
 	mux.HandleFunc("DELETE /api/v1/admin/roles/{role_id}/permissions/{permission_id}", h.removeRolePermission)
 	mux.HandleFunc("POST /api/v1/admin/resource-scope-rules", h.createResourceScopeRule)
 	mux.HandleFunc("POST /api/v1/admin/workflow-assignee-rules", h.createWorkflowAssigneeRule)
 	mux.HandleFunc("POST /api/v1/admin/notification-rules", h.createNotificationRule)
+	mux.HandleFunc("GET /api/v1/admin/notification-rules/status", h.getNotificationRuleStatus)
 	mux.HandleFunc("GET /api/v1/admin/notification-rules", h.listNotificationRules)
 	mux.HandleFunc("PATCH /api/v1/admin/notification-rules/{notification_rule_id}", h.patchNotificationRule)
 	mux.HandleFunc("DELETE /api/v1/admin/notification-rules/{notification_rule_id}", h.deleteNotificationRule)
@@ -464,6 +466,25 @@ func (h *AdminHandler) listRoles(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
+func (h *AdminHandler) listRolePermissions(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	rid := strings.TrimSpace(r.PathValue("role_id"))
+	if rid == "" {
+		httpx.WriteError(w, nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "role_id required", nil))
+		return
+	}
+	out, err := h.svc.ListRolePermissions(r.Context(), caapp.ListRolePermissionsRequest{Subject: sub, RoleID: rid})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, out)
+}
+
 func (h *AdminHandler) assignRolePermission(w http.ResponseWriter, r *http.Request) {
 	sub, err := h.subject(r)
 	if err != nil {
@@ -527,6 +548,20 @@ func (h *AdminHandler) listNotificationRules(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (h *AdminHandler) getNotificationRuleStatus(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	out, err := h.svc.GetNotificationRuleStatus(r.Context(), caapp.GetNotificationRuleStatusRequest{Subject: sub})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, out)
 }
 
 func (h *AdminHandler) patchNotificationRule(w http.ResponseWriter, r *http.Request) {

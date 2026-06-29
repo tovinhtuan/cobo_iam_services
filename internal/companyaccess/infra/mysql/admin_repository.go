@@ -431,41 +431,6 @@ func (r *AdminRepository) RemoveTitle(ctx context.Context, membershipID, titleID
 	return nil
 }
 
-func (r *AdminRepository) ListPermissions(ctx context.Context) ([]string, error) {
-	rows, err := r.db.QueryContext(ctx, `
-		SELECT permission_code FROM permissions WHERE status = 'active' ORDER BY permission_code
-	`)
-	if err != nil {
-		return nil, fmt.Errorf("list permissions: %w", err)
-	}
-	defer rows.Close()
-	return scanStringRows(rows)
-}
-
-func (r *AdminRepository) ListRoles(ctx context.Context, companyID string) ([]string, error) {
-	q := `
-		SELECT role_id FROM roles
-		WHERE status = 'active' AND company_id IS NULL
-	`
-	args := []any{}
-	if strings.TrimSpace(companyID) != "" {
-		q = `
-			SELECT role_id FROM roles
-			WHERE status = 'active' AND (company_id IS NULL OR company_id = ?)
-			ORDER BY role_code
-		`
-		args = append(args, companyID)
-	} else {
-		q += ` ORDER BY role_code`
-	}
-	rows, err := r.db.QueryContext(ctx, q, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	return scanStringRows(rows)
-}
-
 func (r *AdminRepository) AddRolePermission(ctx context.Context, roleID, permissionID string) error {
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO role_permissions (role_id, permission_id, status)
