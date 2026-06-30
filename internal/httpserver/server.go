@@ -61,6 +61,7 @@ import (
 	notificationhttp "github.com/cobo/cobo_iam_services/internal/notification/transport/http"
 	platformclock "github.com/cobo/cobo_iam_services/internal/platform/clock"
 	"github.com/cobo/cobo_iam_services/internal/platform/config"
+	"github.com/cobo/cobo_iam_services/internal/subscription/entitlement"
 	"github.com/cobo/cobo_iam_services/internal/platform/db"
 	"github.com/cobo/cobo_iam_services/internal/platform/httpx"
 	"github.com/cobo/cobo_iam_services/internal/platform/idempotency"
@@ -476,21 +477,43 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 		reminderapp.WithAuditor(reminderobserve.AuditRecorder{Svc: auditSvc, IDG: id}),
 		reminderapp.WithAlertHook(reminderobserve.AlertLogger{Log: log}),
 	)
+	var adminOpts []companyaccessapp.AdminOption
+	adminOpts = append(adminOpts, companyaccessapp.WithInviteDefaultRoleCode(cfg.InviteDefaultRoleCode))
 	if pool != nil {
 		alertCfgRepo := reminderalertmysql.NewAlertConfigRepository(pool)
 		membershipQuerier := reminderalertmysql.NewMembershipEmailQuerier(pool)
 		stepReader := reminderalertmysql.NewGlobalWorkflowStepReader(pool)
 		resolver := reminderapp.NewRecipientResolver(reminderConfigRepo, stepReader, membershipQuerier, membershipQuerier, log)
+		rulesReader := remindermysql.NewNotificationRulesReader(pool)
+		rulesEvaluator := reminderapp.NewNotificationRulesEvaluator(rulesReader, cfg.NotificationRulesConsumerEnabled)
+		tierChecker := &entitlement.Checker{
+			Enabled:            cfg.SubscriptionTierEnforcementEnabled,
+			ResolveUserTier:    tierLookup,
+			ResolveCompanyTier: entitlement.NewMySQLCompanyTierResolver(pool),
+		}
 		reminderSvcOpts = append(reminderSvcOpts,
 			reminderapp.WithAlertConfigRepo(alertCfgRepo),
 			reminderapp.WithRecipientResolver(resolver),
+			reminderapp.WithRecipientPolicyDeps(membershipQuerier, membershipQuerier),
+			reminderapp.WithDispatchLogger(log),
+			reminderapp.WithNotificationRulesFoundation(rulesReader, rulesEvaluator),
+			reminderapp.WithTierEnforcement(tierChecker),
 		)
+		simDeps := reminderapp.DispatchDecisionDeps{
+			EvaluatorRuntime:   rulesEvaluator,
+			EvaluatorSimulate:  reminderapp.NewNotificationRulesEvaluator(rulesReader, true),
+			AlertConfigRepo:    alertCfgRepo,
+			RecipientResolver:  resolver,
+			MembershipQuerier:  membershipQuerier,
+			TaskAssigneeReader: membershipQuerier,
+			StepReader:         stepReader,
+			TierEnforcement:    tierChecker,
+		}
+		adminOpts = append(adminOpts, companyaccessapp.WithDispatchSimulator(newReminderDispatchSimulatorAdapter(reminderapp.NewDispatchSimulator(simDeps))))
 	}
 	reminderSvcOpts = append(reminderSvcOpts, reminderapp.WithInAppCreator(&reminderInAppBridge{svc: inAppSvc}))
 	reminderSvc := reminderapp.NewService(reminderConfigRepo, reminderOccurrenceRepo, reminderAttemptRepo, reminderSvcOpts...)
 	reminderHandler := reminderhttp.NewHandler(reminderSvc, tokenManager, "", cfg.Env)
-	var adminOpts []companyaccessapp.AdminOption
-	adminOpts = append(adminOpts, companyaccessapp.WithInviteDefaultRoleCode(cfg.InviteDefaultRoleCode))
 	if pool != nil {
 		adminOpts = append(adminOpts,
 			companyaccessapp.WithInvitationMailer(&iamInvitationMailer{iam: iamSvc}),
@@ -498,6 +521,8 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 		)
 	}
 	adminOpts = append(adminOpts, companyaccessapp.WithSubscriptionTierLookup(tierLookup))
+	adminOpts = append(adminOpts, companyaccessapp.WithNotificationRulesConsumerEnabled(cfg.NotificationRulesConsumerEnabled))
+	adminOpts = append(adminOpts, companyaccessapp.WithSubscriptionTierEnforcementEnabled(cfg.SubscriptionTierEnforcementEnabled))
 	adminSvc := companyaccessapp.NewAdminService(adminRepo, authSvc, id, adminOpts...)
 	adminHandler := companyaccesshttp.NewAdminHandler(adminSvc, tokenManager, auditSvc)
 	adminHandler.WithTokenIssuer(tokenManager, sessionRepo)

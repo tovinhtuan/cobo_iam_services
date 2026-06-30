@@ -182,6 +182,16 @@ type Config struct {
 	// Create, log a deadline_engine_shadow comparison, but never write the
 	// result or change DB/API/worker output (Batch 5B). Default false.
 	DeadlineEngineV2Shadow bool
+
+	// NotificationRulesConsumerEnabled gates Sprint 3 layer-1 notification_rules
+	// evaluation in reminder prepareDispatch (Batch 2+). Default false — Sprint 2
+	// dispatch path unchanged until explicitly enabled.
+	NotificationRulesConsumerEnabled bool
+
+	// SubscriptionTierEnforcementEnabled gates server-side subscription tier checks
+	// on notification rule mutations, runtime dispatch premium skip, and simulation
+	// warnings (Sprint 3 Batch 5). Default false — preserve Sprint 2/3 behavior.
+	SubscriptionTierEnforcementEnabled bool
 }
 
 // Load reads configuration from the environment with safe defaults for local dev.
@@ -259,6 +269,8 @@ func Load() (Config, error) {
 		TemplateApplicabilityStrictFilter:     boolEnv("TEMPLATE_APPLICABILITY_STRICT_FILTER", false),
 		DeadlineEngineV2:                      boolEnv("DEADLINE_ENGINE_V2", false),
 		DeadlineEngineV2Shadow:                boolEnv("DEADLINE_ENGINE_V2_SHADOW", false),
+		NotificationRulesConsumerEnabled:      ParseNotificationRulesConsumerEnabled(os.Getenv("NOTIFICATION_RULES_CONSUMER_ENABLED")),
+		SubscriptionTierEnforcementEnabled:    ParseSubscriptionTierEnforcementEnabled(os.Getenv("SUBSCRIPTION_TIER_ENFORCEMENT_ENABLED")),
 	}
 	if cfg.WorkerTickInterval < time.Second {
 		return Config{}, fmt.Errorf("WORKER_TICK_INTERVAL too small")

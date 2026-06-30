@@ -83,6 +83,7 @@ func (h *AdminHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/admin/resource-scope-rules", h.createResourceScopeRule)
 	mux.HandleFunc("POST /api/v1/admin/workflow-assignee-rules", h.createWorkflowAssigneeRule)
 	mux.HandleFunc("POST /api/v1/admin/notification-rules", h.createNotificationRule)
+	mux.HandleFunc("POST /api/v1/admin/notification-rules/simulate", h.simulateNotificationRule)
 	mux.HandleFunc("GET /api/v1/admin/notification-rules/status", h.getNotificationRuleStatus)
 	mux.HandleFunc("GET /api/v1/admin/notification-rules", h.listNotificationRules)
 	mux.HandleFunc("PATCH /api/v1/admin/notification-rules/{notification_rule_id}", h.patchNotificationRule)
@@ -561,6 +562,35 @@ func (h *AdminHandler) getNotificationRuleStatus(w http.ResponseWriter, r *http.
 		httpx.WriteError(w, nil, err)
 		return
 	}
+	httpx.WriteJSON(w, http.StatusOK, out)
+}
+
+func (h *AdminHandler) simulateNotificationRule(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	var raw map[string]any
+	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+		httpx.WriteError(w, nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "invalid JSON body", nil))
+		return
+	}
+	var body caapp.SimulateNotificationRuleBody
+	rawBytes, _ := json.Marshal(raw)
+	if err := json.Unmarshal(rawBytes, &body); err != nil {
+		httpx.WriteError(w, nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "invalid request body", nil))
+		return
+	}
+	out, err := h.svc.SimulateNotificationRule(r.Context(), caapp.SimulateNotificationRuleRequest{
+		Subject: sub,
+		Body:    body,
+	}, raw)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	h.auditLog(r, "admin.notification_rule.simulate", "notification_rule", "simulate")
 	httpx.WriteJSON(w, http.StatusOK, out)
 }
 

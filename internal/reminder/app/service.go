@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
+	"github.com/cobo/cobo_iam_services/internal/subscription/entitlement"
 )
 
 type service struct {
@@ -25,6 +27,12 @@ type service struct {
 	stepReader        WorkflowStepReader
 	publicWebBaseURL  string
 	inAppCreator      InAppNotificationCreator // optional, nil = disabled
+	notificationRulesReader    NotificationRulesReader
+	notificationRulesEvaluator *NotificationRulesEvaluator
+	membershipQuerier          MembershipEmailQuerier
+	taskAssigneeReader         WorkflowTaskAssigneeReader
+	dispatchLogger             *slog.Logger
+	tierEnforcement            *entitlement.Checker
 }
 
 type EmailSender interface {
@@ -90,6 +98,36 @@ func WithStepReader(r WorkflowStepReader) ServiceOption {
 func WithInAppCreator(c InAppNotificationCreator) ServiceOption {
 	return func(s *service) {
 		s.inAppCreator = c
+	}
+}
+
+// WithNotificationRulesFoundation wires Sprint 3 reader/evaluator for Batch 2.
+func WithNotificationRulesFoundation(reader NotificationRulesReader, evaluator *NotificationRulesEvaluator) ServiceOption {
+	return func(s *service) {
+		s.notificationRulesReader = reader
+		s.notificationRulesEvaluator = evaluator
+	}
+}
+
+// WithRecipientPolicyDeps wires membership queries used for recipient_policies filtering (Batch 2B).
+func WithRecipientPolicyDeps(querier MembershipEmailQuerier, taskReader WorkflowTaskAssigneeReader) ServiceOption {
+	return func(s *service) {
+		s.membershipQuerier = querier
+		s.taskAssigneeReader = taskReader
+	}
+}
+
+// WithDispatchLogger sets structured logger for dispatch skip events.
+func WithDispatchLogger(log *slog.Logger) ServiceOption {
+	return func(s *service) {
+		s.dispatchLogger = log
+	}
+}
+
+// WithTierEnforcement wires subscription tier enforcement for runtime dispatch (Batch 5).
+func WithTierEnforcement(checker *entitlement.Checker) ServiceOption {
+	return func(s *service) {
+		s.tierEnforcement = checker
 	}
 }
 
@@ -274,8 +312,13 @@ func (s *service) DispatchDueOccurrences(ctx context.Context, now time.Time, lim
 			})
 		}
 
-		templateCode, recipients, payload, skip := s.prepareDispatch(ctx, c)
-		if skip {
+		out := s.prepareDispatch(ctx, c, now.UTC())
+		if out.evalErr != nil {
+			s.handleEvaluatorError(ctx, c, out.evalErr, result)
+			continue
+		}
+		if out.skip {
+			s.recordDispatchSkipped(ctx, c, out.skipReason, out.ruleCode)
 			result.Skipped++
 			continue
 		}
@@ -283,9 +326,9 @@ func (s *service) DispatchDueOccurrences(ctx context.Context, now time.Time, lim
 		resp, dispatchErr := s.DispatchOccurrence(ctx, DispatchOccurrenceRequest{
 			OccurrenceID:    c.OccurrenceID,
 			IdempotencyKey:  c.IdempotencyKey,
-			TemplateCode:    templateCode,
-			TemplatePayload: payload,
-			RecipientEmails: recipients,
+			TemplateCode:    out.templateCode,
+			TemplatePayload: out.payload,
+			RecipientEmails: out.recipients,
 		})
 		if dispatchErr != nil {
 			result.Failed++
@@ -294,10 +337,10 @@ func (s *service) DispatchDueOccurrences(ctx context.Context, now time.Time, lim
 		switch resp.Status {
 		case ReminderStatusSent:
 			result.Sent++
-			if s.inAppCreator != nil {
+			if s.inAppCreator != nil && out.allowInApp {
 				cc := c
-				cc.RecipientEmails = recipients
-				cc.TemplatePayload = payload
+				cc.RecipientEmails = out.recipients
+				cc.TemplatePayload = out.payload
 				go func(candidate DispatchCandidate) {
 					_ = s.inAppCreator.CreateForReminderDispatch(context.Background(), candidate)
 				}(cc)
@@ -312,163 +355,207 @@ func (s *service) DispatchDueOccurrences(ctx context.Context, now time.Time, lim
 	return result, nil
 }
 
-// prepareDispatch resolves the template key, recipients, and payload for a candidate.
-// Returns skip=true if the occurrence should be skipped without dispatching.
-// Never panics; all errors are handled gracefully.
-func (s *service) prepareDispatch(ctx context.Context, c DispatchCandidate) (templateCode string, recipients []string, payload map[string]any, skip bool) {
-	templateCode = c.TemplateCode
-	recipients = c.RecipientEmails
-	payload = c.TemplatePayload
-	if payload == nil {
-		payload = map[string]any{}
+// prepareDispatchOutcome is the internal result of prepareDispatch (Batch 2B).
+type prepareDispatchOutcome struct {
+	templateCode string
+	recipients   []string
+	payload      map[string]any
+	skip         bool
+	skipReason   string
+	ruleCode     string
+	allowInApp   bool
+	evalErr      error
+}
+
+// prepareDispatch resolves template, recipients, and payload for a candidate.
+// Flag OFF: Sprint 2 path unchanged. Flag ON: Step 0 evaluator + Step 2b policies.
+func (s *service) prepareDispatch(ctx context.Context, c DispatchCandidate, asOf time.Time) prepareDispatchOutcome {
+	if asOf.IsZero() {
+		asOf = time.Now().UTC()
+	}
+	dec := evaluateDispatchDecision(ctx, s.dispatchDecisionDeps(), dispatchDecisionInputFromCandidate(c, asOf), DispatchDecisionModeRuntime)
+	out := prepareDispatchOutcome{
+		templateCode: dec.TemplateCode,
+		recipients:   dec.Recipients,
+		payload:      c.TemplatePayload,
+		skip:         dec.Skip,
+		skipReason:   dec.SkipReason,
+		ruleCode:     dec.RuleCode,
+		allowInApp:   dec.AllowInApp,
+		evalErr:      dec.EvalErr,
+	}
+	if out.payload == nil {
+		out.payload = map[string]any{}
+	}
+	if out.templateCode == "" {
+		out.templateCode = c.TemplateCode
+	}
+	if out.evalErr != nil || out.skip {
+		return out
 	}
 
-	// Step 1: Lookup alert config when available.
-	if s.alertConfigRepo != nil && c.DisclosureTypeID != "" {
-		alertKind := AlertKindDeadline
-		if c.ScopeType == ScopeTypeWorkflowStep {
-			alertKind = AlertKindWorkflowStep
-		}
-		cfg, err := s.alertConfigRepo.GetByTypeAndKind(ctx, c.DisclosureTypeID, alertKind)
-		if err == nil && cfg != nil {
-			if !cfg.Enabled {
-				// Admin explicitly disabled alert for this type → skip.
-				return "", nil, nil, true
-			}
-			if cfg.TemplateKey != "" {
-				templateCode = cfg.TemplateKey
-			}
-		}
-		// cfg == nil (no config) → fall through with original TemplateCode (backward compat).
-		// err != nil (DB error) → fall through, log nothing (don't mask existing behavior).
-	}
-
-	// Step 2: Resolve recipients when not pre-populated.
-	if len(recipients) == 0 && s.recipientResolver != nil && c.CompanyID != "" {
-		var resolveErr error
-		if c.ScopeType == ScopeTypeWorkflowStep {
-			recipients, resolveErr = s.recipientResolver.ResolveForWorkflowStep(ctx, c.CompanyID, c.WorkflowInstanceID, c.ScopeID)
-		} else {
-			recipients, resolveErr = s.recipientResolver.ResolveForDeadline(ctx, c.CompanyID, c.ScopeID)
-		}
-		if resolveErr != nil || len(recipients) == 0 {
-			// No recipients resolved → skip (DispatchOccurrence would fail with PERMANENT error).
-			return "", nil, nil, true
-		}
-	}
-	// Guard: skip if still no recipients after all resolution paths.
-	// Covers occurrences whose companyID could not be resolved (e.g. workflow_instance deleted),
-	// preventing an infinite PENDING→failed retry loop.
-	if len(recipients) == 0 {
-		return "", nil, nil, true
-	}
-
-	// Step 3: Augment payload with fields required by new templates (additive, backward-safe).
+	// Step 3: Payload augmentation (unchanged).
 	if c.CompanyName != "" {
-		payload["company_name"] = c.CompanyName
+		out.payload["company_name"] = c.CompanyName
 	}
 	deadlineAt := dispatchDeadlineAt(c)
 	loc := reminderCalculatorLocation()
-	if _, ok := payload["due_date"]; !ok {
-		payload["due_date"] = deadlineAt.In(loc).Format("02/01/2006")
+	if _, ok := out.payload["due_date"]; !ok {
+		out.payload["due_date"] = deadlineAt.In(loc).Format("02/01/2006")
 	}
 	if c.ScopeType == ScopeTypeWorkflowStep && c.ScopeID != "" {
-		// scope_id may be "disclosureID:stepID" (config path) or just "stepID" (milestone path).
 		stepID := extractStepID(c.ScopeID)
-		// Reuse the single, pre-existing per-candidate step lookup for BOTH step_name and
-		// implementation_guide. No new query is introduced: the milestone/config dispatch path
-		// never pre-populates step_name, so GetStepByID was already invoked here.
 		var step *WorkflowStepConfig
 		if s.stepReader != nil {
 			if st, err := s.stepReader.GetStepByID(ctx, stepID); err == nil {
 				step = st
 			}
 		}
-		if _, ok := payload["step_name"]; !ok {
+		if _, ok := out.payload["step_name"]; !ok {
 			stepName := stepID
 			if step != nil && step.StageName != "" {
 				stepName = step.StageName
 			}
-			payload["step_name"] = stepName
+			out.payload["step_name"] = stepName
 		}
-		if _, ok := payload["implementation_guide"]; !ok {
+		if _, ok := out.payload["implementation_guide"]; !ok {
 			if step != nil && strings.TrimSpace(step.Instructions) != "" {
-				payload["implementation_guide"] = truncateImplementationGuide(step.Instructions, implementationGuideMaxChars)
+				out.payload["implementation_guide"] = truncateImplementationGuide(step.Instructions, implementationGuideMaxChars)
 			}
 		}
 	}
-	// Map disclosure_title from existing "title" field in payload (backward compat alias).
-	if _, ok := payload["disclosure_title"]; !ok {
-		if title, ok2 := payload["title"]; ok2 {
-			payload["disclosure_title"] = title
+	if _, ok := out.payload["disclosure_title"]; !ok {
+		if title, ok2 := out.payload["title"]; ok2 {
+			out.payload["disclosure_title"] = title
 		}
 	}
-	// Map portal_url from existing "action_url" field, prefixed with PUBLIC_WEB_BASE_URL.
-	if _, ok := payload["portal_url"]; !ok {
-		if actionURL, ok2 := payload["action_url"]; ok2 {
+	if _, ok := out.payload["portal_url"]; !ok {
+		if actionURL, ok2 := out.payload["action_url"]; ok2 {
 			relative := fmt.Sprint(actionURL)
 			if s.publicWebBaseURL != "" {
-				payload["portal_url"] = s.publicWebBaseURL + relative
+				out.payload["portal_url"] = s.publicWebBaseURL + relative
 			} else {
-				payload["portal_url"] = relative
+				out.payload["portal_url"] = relative
 			}
 		}
 	}
-	// Fallback: derive portal_url from scope when neither portal_url nor action_url was in
-	// the payload. Guarantees a deep-link rather than the bare portal homepage.
-	// DISCLOSURE scope → /app/disclosures/{scopeID}
-	// WORKFLOW_STEP scope → /app/disclosures/{disclosureID} (extracted from payload or scopeID)
-	if _, ok := payload["portal_url"]; !ok && s.publicWebBaseURL != "" {
+	if _, ok := out.payload["portal_url"]; !ok && s.publicWebBaseURL != "" {
 		switch c.ScopeType {
 		case ScopeTypeDisclosure:
 			if c.ScopeID != "" {
-				payload["portal_url"] = s.publicWebBaseURL + "/app/disclosures/" + c.ScopeID
+				out.payload["portal_url"] = s.publicWebBaseURL + "/app/disclosures/" + c.ScopeID
 			}
 		case ScopeTypeWorkflowStep:
-			disclosureID, _ := payload["disclosure_id"].(string)
+			disclosureID, _ := out.payload["disclosure_id"].(string)
 			if disclosureID == "" {
-				// scope_id may be "disclosureID:stepID" on the config path
 				if idx := strings.LastIndex(c.ScopeID, ":"); idx >= 0 {
 					disclosureID = c.ScopeID[:idx]
 				}
 			}
 			if disclosureID != "" {
-				payload["portal_url"] = s.publicWebBaseURL + "/app/disclosures/" + disclosureID
+				out.payload["portal_url"] = s.publicWebBaseURL + "/app/disclosures/" + disclosureID
 			}
 		}
 	}
-
-	// recipient_name: greet by the first resolved recipient. The resolver yields emails
-	// (users.email, falling back to users.login_id) — not display names — so per the spec
-	// "tên user (nếu có) hoặc email" we greet by the email. recipients is guaranteed non-empty
-	// here (the earlier guard skips occurrences with no recipient). No extra query, no resolver
-	// change: surfacing the actual users.full_name would require the resolver to return names.
-	if _, ok := payload["recipient_name"]; !ok && len(recipients) > 0 {
-		payload["recipient_name"] = recipients[0]
+	if _, ok := out.payload["recipient_name"]; !ok && len(out.recipients) > 0 {
+		out.payload["recipient_name"] = out.recipients[0]
 	}
-
-	// remaining_days + urgency_status: computed from the real deadline (DeadlineAt), not
-	// ScheduledAt (reminder fire time). Day-boundary semantics in Asia/Ho_Chi_Minh mirror
-	// the deadline UI (remainingDaysFromDue).
 	var remaining int
-	if rd, ok := payload["remaining_days"]; ok {
+	if rd, ok := out.payload["remaining_days"]; ok {
 		remaining, _ = intFromPayload(rd)
 	} else {
-		remaining = calculateRemainingDays(deadlineAt, time.Now().UTC())
-		payload["remaining_days"] = remaining
+		remaining = calculateRemainingDays(deadlineAt, asOf)
+		out.payload["remaining_days"] = remaining
 	}
-	if _, ok := payload["urgency_status"]; !ok {
-		payload["urgency_status"] = determineUrgencyStatus(remaining)
+	if _, ok := out.payload["urgency_status"]; !ok {
+		out.payload["urgency_status"] = determineUrgencyStatus(remaining)
 	}
-	// implementation_guide: templates declare it required, so guarantee a non-empty value.
-	// Falls back to a generic instruction when the step carries no instructions (or no step).
-	if guide, ok := payload["implementation_guide"]; !ok || strings.TrimSpace(fmt.Sprint(guide)) == "" {
-		payload["implementation_guide"] = defaultImplementationGuide
+	if guide, ok := out.payload["implementation_guide"]; !ok || strings.TrimSpace(fmt.Sprint(guide)) == "" {
+		out.payload["implementation_guide"] = defaultImplementationGuide
 	}
 
-	return templateCode, recipients, payload, false
+	return out
 }
 
+func (s *service) dispatchDecisionDeps() DispatchDecisionDeps {
+	var simulateEval *NotificationRulesEvaluator
+	if s.notificationRulesReader != nil {
+		simulateEval = NewNotificationRulesEvaluator(s.notificationRulesReader, true)
+	}
+	return DispatchDecisionDeps{
+		EvaluatorRuntime:   s.notificationRulesEvaluator,
+		EvaluatorSimulate:  simulateEval,
+		AlertConfigRepo:    s.alertConfigRepo,
+		RecipientResolver:  s.recipientResolver,
+		MembershipQuerier:  s.membershipQuerier,
+		TaskAssigneeReader: s.taskAssigneeReader,
+		StepReader:         s.stepReader,
+		TierEnforcement:    s.tierEnforcement,
+	}
+}
+
+func emailChannelAllowed(dec EvaluateDecision) bool {
+	for _, ch := range dec.ActiveChannels {
+		if strings.EqualFold(ch, "email") {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *service) recordDispatchSkipped(ctx context.Context, c DispatchCandidate, reason, ruleCode string) {
+	if reason == "" {
+		reason = "UNKNOWN"
+	}
+	s.metrics.IncCounter("reminder_dispatch_skipped_total", map[string]string{"reason": reason})
+	log := s.dispatchLogger
+	if log == nil {
+		log = slog.Default()
+	}
+	log.InfoContext(ctx, "reminder_dispatch_skipped",
+		slog.String("event", "reminder_dispatch_skipped"),
+		slog.String("skip_reason", reason),
+		slog.String("occurrence_id", c.OccurrenceID),
+		slog.String("company_id", c.CompanyID),
+		slog.String("rule_code", ruleCode),
+		slog.String("channel", "email"),
+	)
+}
+
+func (s *service) handleEvaluatorError(ctx context.Context, c DispatchCandidate, evalErr error, result *DispatchDueResult) {
+	log := s.dispatchLogger
+	if log == nil {
+		log = slog.Default()
+	}
+	log.WarnContext(ctx, "reminder_dispatch_evaluator_error",
+		slog.String("event", "reminder_dispatch_evaluator_error"),
+		slog.String("skip_reason", SkipReasonEvaluatorUnavailable),
+		slog.String("occurrence_id", c.OccurrenceID),
+		slog.String("company_id", c.CompanyID),
+		slog.String("err", evalErr.Error()),
+	)
+	s.metrics.IncCounter("reminder_dispatch_skipped_total", map[string]string{"reason": SkipReasonEvaluatorUnavailable})
+
+	occurrence, err := s.occurrenceRepo.ClaimForDispatch(ctx, c.OccurrenceID)
+	if err != nil {
+		result.Failed++
+		return
+	}
+	if strings.TrimSpace(c.IdempotencyKey) != strings.TrimSpace(occurrence.IdempotencyKey) {
+		result.Failed++
+		return
+	}
+	resp, retryErr := s.failRetryable(ctx, c.OccurrenceID, occurrence.AttemptCount+1, evalErr)
+	if retryErr != nil {
+		result.Failed++
+		return
+	}
+	if resp.Status == ReminderStatusRetryScheduled {
+		result.Retried++
+	} else {
+		result.Failed++
+	}
+}
 func (s *service) dispatchClaimedOccurrence(ctx context.Context, occurrence *ReminderOccurrenceDTO, req DispatchOccurrenceRequest) (*DispatchOccurrenceResponse, error) {
 	now := time.Now().UTC()
 	attemptNo := occurrence.AttemptCount + 1

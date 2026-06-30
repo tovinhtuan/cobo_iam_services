@@ -15,6 +15,7 @@ type NotificationRuleStatusView struct {
 	StorageConfigured            bool     `json:"storage_configured"`
 	PayloadValid                 bool     `json:"payload_valid"`
 	PreviewAvailable             bool     `json:"preview_available"`
+	SimulationAvailable          bool     `json:"simulation_available"`
 	RuntimeConsumerEnabled       bool     `json:"runtime_consumer_enabled"`
 	DispatchEnforcementEnabled   bool     `json:"dispatch_enforcement_enabled"`
 	SubscriptionTierEnforced     bool     `json:"subscription_tier_enforced"`

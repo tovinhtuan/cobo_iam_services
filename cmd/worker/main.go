@@ -29,6 +29,7 @@ import (
 	platformoutbox "github.com/cobo/cobo_iam_services/internal/platform/outbox"
 	outboxinmem "github.com/cobo/cobo_iam_services/internal/platform/outbox/inmemory"
 	outboxmysql "github.com/cobo/cobo_iam_services/internal/platform/outbox/mysql"
+	"github.com/cobo/cobo_iam_services/internal/subscription/entitlement"
 	reminderapp "github.com/cobo/cobo_iam_services/internal/reminder/app"
 	reminderemail "github.com/cobo/cobo_iam_services/internal/reminder/infra/email"
 	remindermysql "github.com/cobo/cobo_iam_services/internal/reminder/infra/mysql"
@@ -159,6 +160,12 @@ func main() {
 		membershipQuerier := remindermysql.NewMembershipEmailQuerier(sqlDB)
 		stepReader := remindermysql.NewGlobalWorkflowStepReader(sqlDB)
 		recipientResolver := reminderapp.NewRecipientResolver(reminderRepo, stepReader, membershipQuerier, membershipQuerier, log)
+		rulesReader := remindermysql.NewNotificationRulesReader(sqlDB)
+		rulesEvaluator := reminderapp.NewNotificationRulesEvaluator(rulesReader, cfg.NotificationRulesConsumerEnabled)
+		tierChecker := &entitlement.Checker{
+			Enabled:            cfg.SubscriptionTierEnforcementEnabled,
+			ResolveCompanyTier: entitlement.NewMySQLCompanyTierResolver(sqlDB),
+		}
 		reminderOpts := []reminderapp.ServiceOption{
 			reminderapp.WithEmailSender(reminderemail.NewSMTPSender(reminderemail.SMTPConfig{
 				Host: cfg.SMTPHost,
@@ -169,10 +176,14 @@ func main() {
 			}, reminderemail.WithTemplateRendering(cfg.EmailTemplateSource, emailTemplateRegistry, emailRenderer))),
 			reminderapp.WithAlertConfigRepo(alertCfgRepo),
 			reminderapp.WithRecipientResolver(recipientResolver),
+			reminderapp.WithRecipientPolicyDeps(membershipQuerier, membershipQuerier),
 			reminderapp.WithStepReader(stepReader),
 			reminderapp.WithPublicWebBaseURL(cfg.PublicWebBaseURL),
 			reminderapp.WithMetrics(reminderobserve.NewPromMetrics()),
 			reminderapp.WithAlertHook(reminderobserve.AlertLogger{Log: log}),
+			reminderapp.WithDispatchLogger(log),
+			reminderapp.WithNotificationRulesFoundation(rulesReader, rulesEvaluator),
+			reminderapp.WithTierEnforcement(tierChecker),
 		}
 		if cfg.WorkflowRemindersEnabled {
 			reminderOpts = append(reminderOpts, reminderapp.WithMilestoneScanner(remindermysql.NewMilestoneScanner(sqlDB)))

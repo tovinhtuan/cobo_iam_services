@@ -62,6 +62,7 @@ type AdminService interface {
 	GetNotificationRuleStatus(ctx context.Context, req GetNotificationRuleStatusRequest) (*NotificationRuleStatusView, error)
 	UpdateNotificationRule(ctx context.Context, req UpdateNotificationRuleRequest) error
 	DeleteNotificationRule(ctx context.Context, req DeleteNotificationRuleRequest) error
+	SimulateNotificationRule(ctx context.Context, req SimulateNotificationRuleRequest, rawForbidden map[string]any) (*NotificationDispatchSimulateResult, error)
 	GetAdminAccountSettings(ctx context.Context, req GetAdminAccountSettingsRequest) (*AdminAccountSettingsView, error)
 	PatchAdminAccountSettings(ctx context.Context, req PatchAdminAccountSettingsRequest) error
 

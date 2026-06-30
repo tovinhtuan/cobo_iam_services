@@ -38,3 +38,24 @@ func WithSubscriptionTierLookup(fn func(ctx context.Context, userID string) stri
 		s.tierLookup = fn
 	}
 }
+
+// WithNotificationRulesConsumerEnabled sets runtime_consumer_enabled in notification status API.
+func WithNotificationRulesConsumerEnabled(enabled bool) AdminOption {
+	return func(s *adminService) {
+		s.notificationRulesConsumerEnabled = enabled
+	}
+}
+
+// WithSubscriptionTierEnforcementEnabled gates server-side tier checks (Batch 5).
+func WithSubscriptionTierEnforcementEnabled(enabled bool) AdminOption {
+	return func(s *adminService) {
+		s.subscriptionTierEnforcementEnabled = enabled
+	}
+}
+
+// WithDispatchSimulator wires read-only notification dispatch simulation (Batch 3B).
+func WithDispatchSimulator(sim NotificationDispatchSimulator) AdminOption {
+	return func(s *adminService) {
+		s.dispatchSimulator = sim
+	}
+}

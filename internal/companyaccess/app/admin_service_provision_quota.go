@@ -4,6 +4,8 @@ import (
 	"context"
 	"log/slog"
 	"strings"
+
+	"github.com/cobo/cobo_iam_services/internal/subscription/entitlement"
 )
 
 // selfServiceCompanyQuotaLimit returns max self-provisioned companies; 0 means unlimited (Enterprise).
@@ -23,6 +25,13 @@ func (s *adminService) subscriptionTier(ctx context.Context, userID string) stri
 		return ""
 	}
 	return s.tierLookup(ctx, userID)
+}
+
+func (s *adminService) entitlementChecker() entitlement.Checker {
+	return entitlement.Checker{
+		Enabled:         s.subscriptionTierEnforcementEnabled,
+		ResolveUserTier: s.tierLookup,
+	}
 }
 
 func displaySubscriptionTier(tier string) string {

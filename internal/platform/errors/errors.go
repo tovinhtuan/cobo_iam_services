@@ -33,6 +33,7 @@ const (
 	CodeFeatureNotEnabled             Code = "FEATURE_NOT_ENABLED"
 	CodeFeatureDisabled               Code = "FEATURE_DISABLED"
 	CodeQuotaExceeded                 Code = "QUOTA_EXCEEDED"
+	CodeSubscriptionTierRequired      Code = "SUBSCRIPTION_TIER_REQUIRED"
 	CodeEmailVerificationRequired     Code = "EMAIL_VERIFICATION_REQUIRED"
 	CodeSessionContextUpdateFailed    Code = "SESSION_CONTEXT_UPDATE_FAILED"
 	CodeGroupNotInDepartment          Code = "GROUP_NOT_IN_DEPARTMENT"

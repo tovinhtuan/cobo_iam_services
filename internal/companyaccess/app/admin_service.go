@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -18,13 +17,16 @@ import (
 )
 
 type adminService struct {
-	repo                  AdminRepository
-	auth                  authapp.Service
-	idg                   idgen.Generator
-	invMailer             InvitationMailer
-	inviteTTL             time.Duration
-	inviteDefaultRoleCode string
-	tierLookup            func(ctx context.Context, userID string) string
+	repo                             AdminRepository
+	auth                             authapp.Service
+	idg                              idgen.Generator
+	invMailer                        InvitationMailer
+	inviteTTL                        time.Duration
+	inviteDefaultRoleCode            string
+	tierLookup                       func(ctx context.Context, userID string) string
+	notificationRulesConsumerEnabled bool
+	subscriptionTierEnforcementEnabled bool
+	dispatchSimulator                NotificationDispatchSimulator
 }
 
 func NewAdminService(repo AdminRepository, auth authapp.Service, idg idgen.Generator, opts ...AdminOption) AdminService {
@@ -1061,6 +1063,9 @@ func (s *adminService) CreateNotificationRule(ctx context.Context, req CreateNot
 		if valid, issues := ValidateAlertChannelPrefsPayload(prefs); !valid {
 			return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, strings.Join(issues, "; "), nil)
 		}
+		if err := s.entitlementChecker().ValidateAlertChannelPrefsMutation(ctx, req.Subject.UserID, prefs); err != nil {
+			return err
+		}
 		prefs["updated_by"] = req.Subject.MembershipID
 		prefs["updated_at"] = time.Now().UTC().Format(time.RFC3339)
 		for k, v := range prefs {
@@ -1098,9 +1103,10 @@ func (s *adminService) GetNotificationRuleStatus(ctx context.Context, req GetNot
 		RuleCode:                   AlertChannelPrefsRuleCode,
 		StorageConfigured:          rule != nil,
 		PreviewAvailable:           false,
-		RuntimeConsumerEnabled:     notificationRulesConsumerEnabled(),
+		SimulationAvailable:        s.dispatchSimulator != nil,
+		RuntimeConsumerEnabled:     s.notificationRulesConsumerEnabled,
 		DispatchEnforcementEnabled: false,
-		SubscriptionTierEnforced:   false,
+		SubscriptionTierEnforced:   s.subscriptionTierEnforcementEnabled,
 		ChannelsActive:             []string{},
 		UIState:                    "not_configured",
 		Warnings:                   []string{},
@@ -1131,14 +1137,10 @@ func (s *adminService) GetNotificationRuleStatus(ctx context.Context, req GetNot
 		view.Warnings = append(view.Warnings, "Runtime consumer chưa đọc notification_rules — preview và dispatch chưa khả dụng.")
 	}
 	view.Warnings = append(view.Warnings, "Preview chưa khả dụng (Sprint 2).")
-	view.Warnings = append(view.Warnings, "Subscription enforcement chưa kích hoạt trên server.")
+	if !view.SubscriptionTierEnforced {
+		view.Warnings = append(view.Warnings, "Subscription enforcement chưa kích hoạt trên server.")
+	}
 	return view, nil
-}
-
-func notificationRulesConsumerEnabled() bool {
-	// Honest default: reminder does not read notification_rules until Sprint 3 consumer ships.
-	v := strings.TrimSpace(strings.ToLower(os.Getenv("NOTIFICATION_RULES_CONSUMER_ENABLED")))
-	return v == "1" || v == "true" || v == "yes"
 }
 
 func (s *adminService) UpdateNotificationRule(ctx context.Context, req UpdateNotificationRuleRequest) error {
@@ -1171,6 +1173,9 @@ func (s *adminService) UpdateNotificationRule(ctx context.Context, req UpdateNot
 		mergePayloadMaps(current, req.PayloadPatch)
 		if valid, issues := ValidateAlertChannelPrefsPayload(current); !valid {
 			return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, strings.Join(issues, "; "), nil)
+		}
+		if err := s.entitlementChecker().ValidateAlertChannelPrefsMutation(ctx, req.Subject.UserID, current); err != nil {
+			return err
 		}
 	}
 	return s.repo.UpdateNotificationRuleMerged(ctx, req.Subject.CompanyID, req.RuleID, req.PayloadPatch, req.Status)
