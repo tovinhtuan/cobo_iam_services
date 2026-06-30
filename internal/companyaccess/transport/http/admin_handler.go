@@ -2,6 +2,7 @@ package http
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -85,6 +86,11 @@ func (h *AdminHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/admin/notification-rules", h.createNotificationRule)
 	mux.HandleFunc("POST /api/v1/admin/notification-rules/simulate", h.simulateNotificationRule)
 	mux.HandleFunc("GET /api/v1/admin/notification-rules/status", h.getNotificationRuleStatus)
+	mux.HandleFunc("GET /api/v1/admin/configuration-health", h.getConfigurationHealth)
+	mux.HandleFunc("POST /api/v1/admin/configuration/validate", h.validateConfiguration)
+	mux.HandleFunc("GET /api/v1/admin/objects/{object_type}/{object_id}/dependencies", h.getObjectDependencies)
+	mux.HandleFunc("GET /api/v1/admin/operational-dashboard", h.getOperationalDashboard)
+	h.registerAuditRoutes(mux)
 	mux.HandleFunc("GET /api/v1/admin/notification-rules", h.listNotificationRules)
 	mux.HandleFunc("PATCH /api/v1/admin/notification-rules/{notification_rule_id}", h.patchNotificationRule)
 	mux.HandleFunc("DELETE /api/v1/admin/notification-rules/{notification_rule_id}", h.deleteNotificationRule)
@@ -558,6 +564,97 @@ func (h *AdminHandler) getNotificationRuleStatus(w http.ResponseWriter, r *http.
 		return
 	}
 	out, err := h.svc.GetNotificationRuleStatus(r.Context(), caapp.GetNotificationRuleStatusRequest{Subject: sub})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, out)
+}
+
+func (h *AdminHandler) getConfigurationHealth(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	out, err := h.svc.GetConfigurationHealth(r.Context(), caapp.GetConfigurationHealthRequest{Subject: sub})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, out)
+}
+
+func (h *AdminHandler) validateConfiguration(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	var body struct {
+		Suites    []string `json:"suites"`
+		CompanyID string   `json:"company_id"`
+	}
+	if r.Body != nil {
+		dec := json.NewDecoder(r.Body)
+		if err := dec.Decode(&body); err != nil && err != io.EOF {
+			httpx.WriteError(w, nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "invalid JSON body", nil))
+			return
+		}
+	}
+	if strings.TrimSpace(body.CompanyID) != "" {
+		httpx.WriteError(w, nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "company_id must not be sent in body", nil))
+		return
+	}
+	out, err := h.svc.ValidateConfiguration(r.Context(), caapp.ValidateConfigurationRequest{
+		Subject: sub,
+		Suites:  body.Suites,
+	})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, out)
+}
+
+func (h *AdminHandler) getObjectDependencies(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	objectType := strings.TrimSpace(r.PathValue("object_type"))
+	objectID := strings.TrimSpace(r.PathValue("object_id"))
+	sampleLimit, includeCounts, err := caapp.ParseObjectDependenciesQuery(
+		r.URL.Query().Get("sample_limit"),
+		r.URL.Query().Get("include_counts"),
+	)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	out, err := h.svc.GetObjectDependencies(r.Context(), caapp.GetObjectDependenciesRequest{
+		Subject:          sub,
+		ObjectType:       objectType,
+		ObjectID:         objectID,
+		SampleLimit:      sampleLimit,
+		IncludeCounts:    includeCounts,
+		IncludeCountsSet: r.URL.Query().Get("include_counts") != "",
+	})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, out)
+}
+
+func (h *AdminHandler) getOperationalDashboard(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	out, err := h.svc.GetOperationalDashboard(r.Context(), caapp.GetOperationalDashboardRequest{Subject: sub})
 	if err != nil {
 		httpx.WriteError(w, nil, err)
 		return

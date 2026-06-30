@@ -72,32 +72,72 @@ func (r *Repository) Append(ctx context.Context, e auditapp.Entry) error {
 }
 
 func (r *Repository) ListByCompany(ctx context.Context, companyID, action, resourceType, resourceID, fromOccurredAt, toOccurredAt, cursor string, limit int) ([]auditapp.Entry, error) {
+	return r.ListFiltered(ctx, auditapp.ListFilter{
+		CompanyID:      companyID,
+		Action:         action,
+		ResourceType:   resourceType,
+		ResourceID:     resourceID,
+		FromOccurredAt: fromOccurredAt,
+		ToOccurredAt: toOccurredAt,
+		Cursor:         cursor,
+		Limit:          limit,
+	})
+}
+
+func (r *Repository) ListFiltered(ctx context.Context, filter auditapp.ListFilter) ([]auditapp.Entry, error) {
+	limit := filter.Limit
 	if limit <= 0 {
 		limit = 50
 	}
-	companyID = strings.TrimSpace(companyID)
-	action = strings.TrimSpace(action)
-	resourceType = strings.TrimSpace(resourceType)
-	resourceID = strings.TrimSpace(resourceID)
-	fromOccurredAt = strings.TrimSpace(fromOccurredAt)
-	toOccurredAt = strings.TrimSpace(toOccurredAt)
-	cursor = strings.TrimSpace(cursor)
-	rows, err := r.db.QueryContext(ctx, `
+	companyID := strings.TrimSpace(filter.CompanyID)
+	action := strings.TrimSpace(filter.Action)
+	resourceType := strings.TrimSpace(filter.ResourceType)
+	resourceID := strings.TrimSpace(filter.ResourceID)
+	fromOccurredAt := strings.TrimSpace(filter.FromOccurredAt)
+	toOccurredAt := strings.TrimSpace(filter.ToOccurredAt)
+	cursor := strings.TrimSpace(filter.Cursor)
+
+	actionSQL := ""
+	actionArgs := []any{}
+	switch {
+	case filter.ActionPrefix && action != "":
+		actionSQL = "AND action LIKE CONCAT(?, '%')"
+		actionArgs = append(actionArgs, action)
+	case action != "":
+		actionSQL = "AND action = ?"
+		actionArgs = append(actionArgs, action)
+	case filter.RequireAdminPrefix:
+		actionSQL = "AND action LIKE 'admin.%'"
+	}
+
+	args := []any{
+		companyID, companyID,
+		resourceType, resourceType,
+		resourceID, resourceID,
+		fromOccurredAt, fromOccurredAt,
+		toOccurredAt, toOccurredAt,
+		cursor, cursor,
+	}
+	args = append(args, actionArgs...)
+	args = append(args, limit)
+
+	query := `
 		SELECT event_id, occurred_at, IFNULL(actor_user_id, ''), IFNULL(actor_membership_id, ''), IFNULL(company_id, ''),
 		       IFNULL(action, ''), IFNULL(resource_type, ''), IFNULL(resource_id, ''), IFNULL(decision, ''),
 		       IFNULL(request_id, ''), IFNULL(ip, ''), IFNULL(user_agent, ''),
 		       effective_permissions_snapshot, effective_scope_snapshot, metadata_json
 		FROM audit_logs
 		WHERE (? = '' OR company_id = ?)
-		  AND (? = '' OR action = ?)
 		  AND (? = '' OR resource_type = ?)
 		  AND (? = '' OR resource_id = ?)
 		  AND (? = '' OR occurred_at >= ?)
 		  AND (? = '' OR occurred_at <= ?)
 		  AND (? = '' OR occurred_at < ?)
+		  ` + actionSQL + `
 		ORDER BY occurred_at DESC
-		LIMIT ?
-	`, companyID, companyID, action, action, resourceType, resourceType, resourceID, resourceID, fromOccurredAt, fromOccurredAt, toOccurredAt, toOccurredAt, cursor, cursor, limit)
+		LIMIT ?`
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("audit list by company: %w", err)
 	}

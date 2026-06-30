@@ -11,6 +11,7 @@ type Service interface {
 type Repository interface {
 	Append(ctx context.Context, entry Entry) error
 	ListByCompany(ctx context.Context, companyID, action, resourceType, resourceID, fromOccurredAt, toOccurredAt, cursor string, limit int) ([]Entry, error)
+	ListFiltered(ctx context.Context, filter ListFilter) ([]Entry, error)
 }
 
 type AppendAuditLogRequest struct {

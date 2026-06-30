@@ -515,14 +515,24 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 	reminderSvc := reminderapp.NewService(reminderConfigRepo, reminderOccurrenceRepo, reminderAttemptRepo, reminderSvcOpts...)
 	reminderHandler := reminderhttp.NewHandler(reminderSvc, tokenManager, "", cfg.Env)
 	if pool != nil {
+		mysqlAdmin := adminRepo.(*camysql.AdminRepository)
 		adminOpts = append(adminOpts,
 			companyaccessapp.WithInvitationMailer(&iamInvitationMailer{iam: iamSvc}),
 			companyaccessapp.WithInvitationTTL(cfg.UserInvitationTokenTTL),
+			companyaccessapp.WithConflictSnapshotReader(camysql.NewConflictSnapshotReader(mysqlAdmin)),
+			companyaccessapp.WithDependencyReader(camysql.NewDependencyReader(mysqlAdmin)),
+			companyaccessapp.WithCompanyTierLookup(entitlement.NewMySQLCompanyTierResolver(pool)),
+		)
+	} else if memRepo, ok := adminRepo.(*cainmem.AdminRepository); ok {
+		adminOpts = append(adminOpts,
+			companyaccessapp.WithConflictSnapshotReader(cainmem.NewConflictSnapshotReader(memRepo)),
+			companyaccessapp.WithDependencyReader(cainmem.NewDependencyReader(memRepo)),
 		)
 	}
 	adminOpts = append(adminOpts, companyaccessapp.WithSubscriptionTierLookup(tierLookup))
 	adminOpts = append(adminOpts, companyaccessapp.WithNotificationRulesConsumerEnabled(cfg.NotificationRulesConsumerEnabled))
 	adminOpts = append(adminOpts, companyaccessapp.WithSubscriptionTierEnforcementEnabled(cfg.SubscriptionTierEnforcementEnabled))
+	adminOpts = append(adminOpts, companyaccessapp.WithAuditRepository(auditRepo))
 	adminSvc := companyaccessapp.NewAdminService(adminRepo, authSvc, id, adminOpts...)
 	adminHandler := companyaccesshttp.NewAdminHandler(adminSvc, tokenManager, auditSvc)
 	adminHandler.WithTokenIssuer(tokenManager, sessionRepo)

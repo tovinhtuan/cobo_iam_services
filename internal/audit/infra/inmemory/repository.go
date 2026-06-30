@@ -23,16 +23,34 @@ func (r *Repository) Append(_ context.Context, entry auditapp.Entry) error {
 	return nil
 }
 
-func (r *Repository) ListByCompany(_ context.Context, companyID, action, resourceType, resourceID, fromOccurredAt, toOccurredAt, cursor string, limit int) ([]auditapp.Entry, error) {
+func (r *Repository) ListByCompany(ctx context.Context, companyID, action, resourceType, resourceID, fromOccurredAt, toOccurredAt, cursor string, limit int) ([]auditapp.Entry, error) {
+	return r.ListFiltered(ctx, auditapp.ListFilter{
+		CompanyID:      companyID,
+		Action:         action,
+		ResourceType:   resourceType,
+		ResourceID:     resourceID,
+		FromOccurredAt: fromOccurredAt,
+		ToOccurredAt:   toOccurredAt,
+		Cursor:         cursor,
+		Limit:          limit,
+	})
+}
+
+func (r *Repository) ListFiltered(_ context.Context, filter auditapp.ListFilter) ([]auditapp.Entry, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+	limit := filter.Limit
 	if limit <= 0 {
 		limit = 50
 	}
 	out := make([]auditapp.Entry, 0, limit)
-	fromTime, hasFrom := parseRFC3339(fromOccurredAt)
-	toTime, hasTo := parseRFC3339(toOccurredAt)
-	cursorTime, hasCursor := parseRFC3339(cursor)
+	fromTime, hasFrom := parseRFC3339(filter.FromOccurredAt)
+	toTime, hasTo := parseRFC3339(filter.ToOccurredAt)
+	cursorTime, hasCursor := parseRFC3339(filter.Cursor)
+	companyID := strings.TrimSpace(filter.CompanyID)
+	action := strings.TrimSpace(filter.Action)
+	resourceType := strings.TrimSpace(filter.ResourceType)
+	resourceID := strings.TrimSpace(filter.ResourceID)
 	for i := len(r.entries) - 1; i >= 0; i-- {
 		item := r.entries[i]
 		occurredAt, hasOccurred := parseRFC3339(item.OccurredAt)
@@ -45,16 +63,16 @@ func (r *Repository) ListByCompany(_ context.Context, companyID, action, resourc
 		if hasCursor && hasOccurred && !occurredAt.Before(cursorTime) {
 			continue
 		}
-		if strings.TrimSpace(companyID) != "" && !strings.EqualFold(strings.TrimSpace(item.CompanyID), strings.TrimSpace(companyID)) {
+		if companyID != "" && !strings.EqualFold(strings.TrimSpace(item.CompanyID), companyID) {
 			continue
 		}
-		if strings.TrimSpace(action) != "" && !strings.EqualFold(strings.TrimSpace(item.Action), strings.TrimSpace(action)) {
+		if !matchActionFilter(item.Action, action, filter.ActionPrefix, filter.RequireAdminPrefix) {
 			continue
 		}
-		if strings.TrimSpace(resourceType) != "" && !strings.EqualFold(strings.TrimSpace(item.ResourceType), strings.TrimSpace(resourceType)) {
+		if resourceType != "" && !strings.EqualFold(strings.TrimSpace(item.ResourceType), resourceType) {
 			continue
 		}
-		if strings.TrimSpace(resourceID) != "" && !strings.EqualFold(strings.TrimSpace(item.ResourceID), strings.TrimSpace(resourceID)) {
+		if resourceID != "" && !strings.EqualFold(strings.TrimSpace(item.ResourceID), resourceID) {
 			continue
 		}
 		out = append(out, item)
@@ -63,6 +81,29 @@ func (r *Repository) ListByCompany(_ context.Context, companyID, action, resourc
 		}
 	}
 	return out, nil
+}
+
+func matchActionFilter(itemAction, filterAction string, actionPrefix, requireAdminPrefix bool) bool {
+	itemAction = strings.TrimSpace(itemAction)
+	filterAction = strings.TrimSpace(filterAction)
+	switch {
+	case actionPrefix && filterAction != "":
+		return strings.HasPrefix(strings.ToLower(itemAction), strings.ToLower(filterAction))
+	case filterAction != "":
+		return strings.EqualFold(itemAction, filterAction)
+	case requireAdminPrefix:
+		return strings.HasPrefix(strings.ToLower(itemAction), "admin.")
+	default:
+		return true
+	}
+}
+
+func (r *Repository) Snapshot() []auditapp.Entry {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]auditapp.Entry, len(r.entries))
+	copy(out, r.entries)
+	return out
 }
 
 func parseRFC3339(value string) (time.Time, bool) {
@@ -75,12 +116,4 @@ func parseRFC3339(value string) (time.Time, bool) {
 		return time.Time{}, false
 	}
 	return t, true
-}
-
-func (r *Repository) Snapshot() []auditapp.Entry {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	out := make([]auditapp.Entry, len(r.entries))
-	copy(out, r.entries)
-	return out
 }

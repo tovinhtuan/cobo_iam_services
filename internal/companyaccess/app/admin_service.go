@@ -10,6 +10,9 @@ import (
 	"time"
 
 	authapp "github.com/cobo/cobo_iam_services/internal/authorization/app"
+	auditapp "github.com/cobo/cobo_iam_services/internal/audit/app"
+	"github.com/cobo/cobo_iam_services/internal/companyaccess/conflict"
+	"github.com/cobo/cobo_iam_services/internal/companyaccess/dependency"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 	"github.com/cobo/cobo_iam_services/internal/platform/idgen"
 	"github.com/cobo/cobo_iam_services/internal/platform/refreshtoken"
@@ -27,6 +30,10 @@ type adminService struct {
 	notificationRulesConsumerEnabled bool
 	subscriptionTierEnforcementEnabled bool
 	dispatchSimulator                NotificationDispatchSimulator
+	conflictReader                   conflict.SnapshotReader
+	dependencyReader                 dependency.Reader
+	auditRepo                        auditapp.Repository
+	companyTierLookup                func(ctx context.Context, companyID string) string
 }
 
 func NewAdminService(repo AdminRepository, auth authapp.Service, idg idgen.Generator, opts ...AdminOption) AdminService {

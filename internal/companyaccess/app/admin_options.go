@@ -4,6 +4,10 @@ import (
 	"context"
 	"strings"
 	"time"
+
+	auditapp "github.com/cobo/cobo_iam_services/internal/audit/app"
+	"github.com/cobo/cobo_iam_services/internal/companyaccess/conflict"
+	"github.com/cobo/cobo_iam_services/internal/companyaccess/dependency"
 )
 
 // AdminOption configures AdminService construction.
@@ -53,9 +57,37 @@ func WithSubscriptionTierEnforcementEnabled(enabled bool) AdminOption {
 	}
 }
 
+// WithConflictSnapshotReader wires read-only conflict snapshot loading (Sprint 4 Batch 1B).
+func WithConflictSnapshotReader(r conflict.SnapshotReader) AdminOption {
+	return func(s *adminService) {
+		s.conflictReader = r
+	}
+}
+
+// WithCompanyTierLookup resolves company subscription tier for conflict rules (read-only).
+func WithCompanyTierLookup(fn func(ctx context.Context, companyID string) string) AdminOption {
+	return func(s *adminService) {
+		s.companyTierLookup = fn
+	}
+}
+
+// WithDependencyReader wires read-only dependency viewer queries (Sprint 4 Batch 3).
+func WithDependencyReader(r dependency.Reader) AdminOption {
+	return func(s *adminService) {
+		s.dependencyReader = r
+	}
+}
+
 // WithDispatchSimulator wires read-only notification dispatch simulation (Batch 3B).
 func WithDispatchSimulator(sim NotificationDispatchSimulator) AdminOption {
 	return func(s *adminService) {
 		s.dispatchSimulator = sim
+	}
+}
+
+// WithAuditRepository wires read-only audit list for change timeline (Batch 5B).
+func WithAuditRepository(repo auditapp.Repository) AdminOption {
+	return func(s *adminService) {
+		s.auditRepo = repo
 	}
 }
