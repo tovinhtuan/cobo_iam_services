@@ -1326,6 +1326,10 @@ func (h *Handler) createAdminUser(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, nil, err)
 		return
 	}
+	h.appendCMSAuditLog(r.Context(), sub, "cms.admin.users.create", "user", resp.UserID)
+	if strings.TrimSpace(resp.MembershipID) != "" {
+		h.appendCMSAuditLog(r.Context(), sub, "cms.admin.membership.create", "membership", resp.MembershipID)
+	}
 	writeEnvelope(w, http.StatusCreated, resp, nil)
 }
 
@@ -1373,15 +1377,7 @@ func (h *Handler) inviteAdminUser(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, nil, err)
 		return
 	}
-	_ = h.auditSvc.AppendAuditLog(r.Context(), auditapp.AppendAuditLogRequest{
-		ActorUserID:       sub.Sub,
-		ActorMembershipID: sub.MembershipID,
-		CompanyID:         sub.CompanyID,
-		Action:            "cms.admin.users.invite",
-		ResourceType:      "user",
-		ResourceID:        resp.UserID,
-		Decision:          "allow",
-	})
+	h.appendCMSAuditLog(r.Context(), sub, "cms.admin.users.invite", "user", resp.UserID)
 	writeEnvelope(w, http.StatusCreated, resp, nil)
 }
 
@@ -1569,6 +1565,22 @@ func (h *Handler) subject(r *http.Request) (iamapp.AccessTokenClaims, error) {
 		return iamapp.AccessTokenClaims{}, perr.NewHTTPError(http.StatusUnauthorized, perr.CodeSessionExpired, "invalid token", nil)
 	}
 	return *claims, nil
+}
+
+// appendCMSAuditLog records append-only CMS admin actions (no secrets in payload).
+func (h *Handler) appendCMSAuditLog(ctx context.Context, sub iamapp.AccessTokenClaims, action, resourceType, resourceID string) {
+	if h.auditSvc == nil {
+		return
+	}
+	_ = h.auditSvc.AppendAuditLog(ctx, auditapp.AppendAuditLogRequest{
+		ActorUserID:       sub.Sub,
+		ActorMembershipID: sub.MembershipID,
+		CompanyID:         sub.CompanyID,
+		Action:            action,
+		ResourceType:      resourceType,
+		ResourceID:        resourceID,
+		Decision:          "allow",
+	})
 }
 
 func (h *Handler) requireAnyPermission(ctx context.Context, membershipID, companyID string, permissions ...string) ([]string, error) {
