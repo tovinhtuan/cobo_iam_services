@@ -27,7 +27,12 @@ func (r *Repository) ListRows(ctx context.Context, companyID string) ([]deadline
 	if err != nil {
 		return nil, err
 	}
+	adHocByRecord, err := r.listLatestAdHocMeta(ctx, companyID)
+	if err != nil {
+		return nil, err
+	}
 
+	// Keep SQL compact: DEV MySQL may use max_allowed_packet=2048; avoid large correlated subqueries.
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT
 			dr.company_id,
@@ -35,46 +40,10 @@ func (r *Repository) ListRows(ctx context.Context, companyID string) ([]deadline
 			COALESCE(dr.type_id, ''),
 			dr.title,
 			COALESCE(dtv.name, ''),
-			COALESCE((
-				SELECT TRIM(SUBSTRING_INDEX(ah.change_note, '\n', 1))
-				FROM ad_hoc_proposals ah
-				WHERE ah.company_id = dr.company_id
-				  AND ah.record_id = dr.record_id
-				  AND ah.status = 'approved'
-				ORDER BY ah.updated_at DESC
-				LIMIT 1
-			), ''),
 			dr.status,
 			COALESCE(DATE_FORMAT(dr.planned_date, '%Y-%m-%d'), ''),
 			COALESCE(wi.workflow_instance_id, ''),
 			COALESCE(wi.current_step_code, ''),
-			COALESCE((
-				SELECT DATE_FORMAT(
-					COALESCE(
-						ah.final_deadline_date,
-						CASE
-							WHEN ah.proposed_t0_date IS NOT NULL
-								AND ah.proposed_deadline_days IS NOT NULL
-								AND ah.proposed_deadline_days > 0
-							THEN DATE_ADD(DATE(ah.proposed_t0_date), INTERVAL ah.proposed_deadline_days DAY)
-							ELSE NULL
-						END,
-						CASE
-							WHEN ah.proposed_deadline_date IS NOT NULL
-								AND ah.proposed_deadline_date >= '2000-01-01'
-							THEN DATE(ah.proposed_deadline_date)
-							ELSE NULL
-						END
-					),
-					'%Y-%m-%d'
-				)
-				FROM ad_hoc_proposals ah
-				WHERE ah.company_id = dr.company_id
-				  AND ah.record_id = dr.record_id
-				  AND ah.status = 'approved'
-				ORDER BY ah.updated_at DESC
-				LIMIT 1
-			), ''),
 			COALESCE(JSON_UNQUOTE(JSON_EXTRACT(dtv.deadline_config_json, '$.template_category')), ''),
 			COALESCE(dac.confirmed_by, ''),
 			dac.confirmed_at
@@ -111,12 +80,10 @@ func (r *Repository) ListRows(ctx context.Context, companyID string) ([]deadline
 			&row.TypeID,
 			&row.Title,
 			&row.TypeName,
-			&row.AdHocTitleLine,
 			&row.RecordStatus,
 			&row.PlannedDate,
 			&row.WorkflowInstanceID,
 			&row.CurrentStepCode,
-			&row.AdHocDeadlineDate,
 			&row.TemplateCategory,
 			&confirmedBy,
 			&confirmedAt,
@@ -124,6 +91,10 @@ func (r *Repository) ListRows(ctx context.Context, companyID string) ([]deadline
 			return nil, err
 		}
 		row.CurrentStepDepartment = deptByRecord[row.RecordID]
+		if meta, ok := adHocByRecord[row.RecordID]; ok {
+			row.AdHocTitleLine = meta.titleLine
+			row.AdHocDeadlineDate = meta.dueDate
+		}
 		if confirmedBy.Valid {
 			row.ConfirmedBy = strings.TrimSpace(confirmedBy.String)
 		}
@@ -136,27 +107,71 @@ func (r *Repository) ListRows(ctx context.Context, companyID string) ([]deadline
 	return out, rows.Err()
 }
 
-func (r *Repository) listCurrentStepDepartments(ctx context.Context, companyID string) (map[string]string, error) {
+type adHocMeta struct {
+	titleLine string
+	dueDate   string
+}
+
+func (r *Repository) listLatestAdHocMeta(ctx context.Context, companyID string) (map[string]adHocMeta, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT
-			wi.record_id,
-			COALESCE((
-				SELECT NULLIF(TRIM(jt.department), '')
-				FROM JSON_TABLE(
-					IF(
-						wi.snapshot_json IS NULL OR wi.snapshot_json = CAST('null' AS JSON),
-						JSON_ARRAY(),
-						wi.snapshot_json
-					),
-					'$[*]' COLUMNS (
-						step_code VARCHAR(191) COLLATE utf8mb4_unicode_ci PATH '$.step_code',
-						step_id VARCHAR(191) COLLATE utf8mb4_unicode_ci PATH '$.step_id',
-						department VARCHAR(512) COLLATE utf8mb4_unicode_ci PATH '$.department'
-					)
-				) AS jt
-				WHERE COALESCE(NULLIF(TRIM(jt.step_code), ''), NULLIF(TRIM(jt.step_id), '')) = TRIM(wi.current_step_code)
-				LIMIT 1
-			), '') AS department
+			record_id,
+			COALESCE(change_note, ''),
+			final_deadline_date,
+			proposed_t0_date,
+			proposed_deadline_days,
+			proposed_deadline_date,
+			updated_at
+		FROM ad_hoc_proposals
+		WHERE company_id = ? AND status = 'approved'
+		ORDER BY updated_at DESC
+	`, companyID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := map[string]adHocMeta{}
+	for rows.Next() {
+		var recordID string
+		var changeNote string
+		var finalDue sql.NullTime
+		var proposedT0 sql.NullTime
+		var proposedDays sql.NullInt64
+		var proposedDue sql.NullTime
+		var updatedAt time.Time
+		if err := rows.Scan(&recordID, &changeNote, &finalDue, &proposedT0, &proposedDays, &proposedDue, &updatedAt); err != nil {
+			return nil, err
+		}
+		if _, exists := out[recordID]; exists {
+			continue
+		}
+		titleLine := strings.TrimSpace(strings.Split(changeNote, "\n")[0])
+		out[recordID] = adHocMeta{
+			titleLine: titleLine,
+			dueDate:   formatAdHocDueDate(finalDue, proposedT0, proposedDays, proposedDue),
+		}
+	}
+	return out, rows.Err()
+}
+
+func formatAdHocDueDate(finalDue sql.NullTime, proposedT0 sql.NullTime, proposedDays sql.NullInt64, proposedDue sql.NullTime) string {
+	if finalDue.Valid {
+		return finalDue.Time.UTC().Format("2006-01-02")
+	}
+	if proposedT0.Valid && proposedDays.Valid && proposedDays.Int64 > 0 {
+		d := proposedT0.Time.UTC().AddDate(0, 0, int(proposedDays.Int64))
+		return d.Format("2006-01-02")
+	}
+	if proposedDue.Valid && !proposedDue.Time.Before(time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)) {
+		return proposedDue.Time.UTC().Format("2006-01-02")
+	}
+	return ""
+}
+
+func (r *Repository) listCurrentStepDepartments(ctx context.Context, companyID string) (map[string]string, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT wi.record_id, wi.current_step_code, wi.snapshot_json
 		FROM workflow_instances wi
 		INNER JOIN disclosure_records dr ON dr.company_id = wi.company_id
 			AND dr.record_id = wi.record_id
@@ -170,14 +185,16 @@ func (r *Repository) listCurrentStepDepartments(ctx context.Context, companyID s
 
 	out := map[string]string{}
 	for rows.Next() {
-		var recordID string
-		var department sql.NullString
-		if err := rows.Scan(&recordID, &department); err != nil {
+		var recordID, stepCode string
+		var snapshot []byte
+		if err := rows.Scan(&recordID, &stepCode, &snapshot); err != nil {
 			return nil, err
 		}
-		if department.Valid {
-			out[recordID] = strings.TrimSpace(department.String)
+		depts := deadlinealertsapp.ActiveDepartmentsFromSnapshot(stepCode, snapshot)
+		if len(depts) == 0 {
+			continue
 		}
+		out[recordID] = depts[0]
 	}
 	return out, rows.Err()
 }

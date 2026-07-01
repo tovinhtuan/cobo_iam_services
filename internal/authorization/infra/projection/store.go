@@ -12,6 +12,7 @@ import (
 type SnapshotStore interface {
 	Get(ctx context.Context, membershipID, companyID string) (*authapp.EffectiveAccessSummary, bool)
 	Put(ctx context.Context, snapshot *authapp.EffectiveAccessSummary)
+	InvalidateMemberships(ctx context.Context, companyID string, membershipIDs []string)
 }
 
 type inMemoryStore struct {
@@ -55,6 +56,17 @@ func (s *inMemoryStore) Put(_ context.Context, snapshot *authapp.EffectiveAccess
 	}
 	s.mu.Lock()
 	s.items[key(snapshot.MembershipID, snapshot.CompanyID)] = entry{snapshot: *snapshot, expires: s.now().Add(s.ttl)}
+	s.mu.Unlock()
+}
+
+func (s *inMemoryStore) InvalidateMemberships(_ context.Context, companyID string, membershipIDs []string) {
+	if companyID == "" || len(membershipIDs) == 0 {
+		return
+	}
+	s.mu.Lock()
+	for _, mid := range membershipIDs {
+		delete(s.items, key(mid, companyID))
+	}
 	s.mu.Unlock()
 }
 

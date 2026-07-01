@@ -106,6 +106,10 @@ seed_dev_identity_authorization.sql
 0103_override_base_metadata.up.sql
 0104_workflow_override_conflicts.up.sql
 0105_deactivate_empty_active_overrides.up.sql
+0106_config_versioning.up.sql
+0107_pending_admin_changes.up.sql
+0108_delegated_admin_grants.up.sql
+0109_emergency_access_grants.up.sql
 "
 
 mysql_exec() {

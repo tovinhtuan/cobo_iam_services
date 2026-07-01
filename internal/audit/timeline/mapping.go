@@ -48,6 +48,21 @@ var knownActions = map[string]actionMeta{
 	"admin.notification_rule.simulate":     {Summary: "Mô phỏng cảnh báo", Domain: "notification", Category: "notification_simulate", ActionLink: "/app/admin?tab=notifications"},
 	"admin.account.settings.patch":         {Summary: "Cập nhật cài đặt tài khoản", Domain: "account", Category: "account_settings", ActionLink: "/app/admin"},
 	"admin.account.password_change":        {Summary: "Đổi mật khẩu", Domain: "account", Category: "account_security", ActionLink: "/app/admin"},
+	"admin.config.approval.requested":      {Summary: "Yêu cầu phê duyệt cấu hình", Domain: "configuration", Category: "approval", ActionLink: "/app/admin?tab=approvals"},
+	"admin.config.approval.approved":       {Summary: "Phê duyệt và áp dụng cấu hình", Domain: "configuration", Category: "approval", ActionLink: "/app/admin/audit"},
+	"admin.config.approval.rejected":       {Summary: "Từ chối yêu cầu cấu hình", Domain: "configuration", Category: "approval", ActionLink: "/app/admin/audit"},
+	"admin.config.approval.cancelled":      {Summary: "Hủy yêu cầu phê duyệt", Domain: "configuration", Category: "approval", ActionLink: "/app/admin/audit"},
+	"config.export.requested":              {Summary: "Xuất cấu hình doanh nghiệp", Domain: "configuration", Category: "export", ActionLink: "/app/admin"},
+	"delegated.admin.granted":              {Summary: "Ủy quyền quản trị theo phạm vi", Domain: "delegation", Category: "delegation", ActionLink: "/app/admin?tab=staff"},
+	"delegated.admin.revoked":              {Summary: "Thu hồi ủy quyền quản trị", Domain: "delegation", Category: "delegation", ActionLink: "/app/admin?tab=staff"},
+	"delegated.admin.updated":              {Summary: "Cập nhật ủy quyền quản trị", Domain: "delegation", Category: "delegation", ActionLink: "/app/admin?tab=staff"},
+	"breakglass.session.created":           {Summary: "Yêu cầu truy cập khẩn cấp", Domain: "break_glass", Category: "emergency_access", ActionLink: "/app/admin?tab=emergency"},
+	"breakglass.session.approved":          {Summary: "Phê duyệt truy cập khẩn cấp", Domain: "break_glass", Category: "emergency_access", ActionLink: "/app/admin?tab=emergency"},
+	"breakglass.session.activated":         {Summary: "Kích hoạt truy cập khẩn cấp", Domain: "break_glass", Category: "emergency_access", ActionLink: "/app/admin?tab=emergency"},
+	"breakglass.session.used":              {Summary: "Sử dụng quyền truy cập khẩn cấp", Domain: "break_glass", Category: "emergency_access", ActionLink: "/app/admin?tab=emergency"},
+	"breakglass.session.expired":           {Summary: "Hết hạn truy cập khẩn cấp", Domain: "break_glass", Category: "emergency_access", ActionLink: "/app/admin?tab=emergency"},
+	"breakglass.session.revoked":           {Summary: "Thu hồi truy cập khẩn cấp", Domain: "break_glass", Category: "emergency_access", ActionLink: "/app/admin?tab=emergency"},
+	"breakglass.session.denied":            {Summary: "Từ chối truy cập khẩn cấp", Domain: "break_glass", Category: "emergency_access", ActionLink: "/app/admin?tab=emergency"},
 }
 
 func lookupAction(action string) actionMeta {

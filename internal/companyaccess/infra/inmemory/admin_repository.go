@@ -42,6 +42,12 @@ type AdminRepository struct {
 	companyFounder    map[string]string
 	companyProvSource map[string]string
 	companyTaxCodes   map[string]string
+
+	notificationVersions []notificationVersionRow
+	rbacVersions         []rbacVersionRow
+	pendingApprovals     []pendingRow
+	delegatedGrants      map[string]*delegationGrantRow
+	emergencyGrants      map[string]*emergencyGrantRow
 }
 
 func NewAdminRepository() *AdminRepository {
@@ -66,6 +72,8 @@ func NewAdminRepository() *AdminRepository {
 		companyFounder:          map[string]string{},
 		companyProvSource:       map[string]string{},
 		companyTaxCodes:         map[string]string{},
+		delegatedGrants:         map[string]*delegationGrantRow{},
+		emergencyGrants:         map[string]*emergencyGrantRow{},
 	}
 }
 
@@ -1065,7 +1073,14 @@ func (r *AdminRepository) MembershipBelongsToCompany(_ context.Context, membersh
 }
 
 func (r *AdminRepository) ListCompanyDepartments(_ context.Context, _ string) ([]caapp.DepartmentView, error) {
-	return []caapp.DepartmentView{}, nil
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]caapp.DepartmentView, 0, len(r.departments))
+	for _, d := range r.departments {
+		out = append(out, d)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].DepartmentID < out[j].DepartmentID })
+	return out, nil
 }
 
 func (r *AdminRepository) ListDepartmentTeams(_ context.Context, _, _ string) ([]caapp.TeamView, error) {

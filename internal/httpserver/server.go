@@ -533,6 +533,7 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 	adminOpts = append(adminOpts, companyaccessapp.WithNotificationRulesConsumerEnabled(cfg.NotificationRulesConsumerEnabled))
 	adminOpts = append(adminOpts, companyaccessapp.WithSubscriptionTierEnforcementEnabled(cfg.SubscriptionTierEnforcementEnabled))
 	adminOpts = append(adminOpts, companyaccessapp.WithAuditRepository(auditRepo))
+	adminOpts = append(adminOpts, companyaccessapp.WithEffectiveAccessCache(projectionStore))
 	adminSvc := companyaccessapp.NewAdminService(adminRepo, authSvc, id, adminOpts...)
 	adminHandler := companyaccesshttp.NewAdminHandler(adminSvc, tokenManager, auditSvc)
 	adminHandler.WithTokenIssuer(tokenManager, sessionRepo)

@@ -87,10 +87,16 @@ func (h *AdminHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/admin/notification-rules/simulate", h.simulateNotificationRule)
 	mux.HandleFunc("GET /api/v1/admin/notification-rules/status", h.getNotificationRuleStatus)
 	mux.HandleFunc("GET /api/v1/admin/configuration-health", h.getConfigurationHealth)
+	mux.HandleFunc("GET /api/v1/admin/rule-recommendations", h.getRuleRecommendations)
 	mux.HandleFunc("POST /api/v1/admin/configuration/validate", h.validateConfiguration)
 	mux.HandleFunc("GET /api/v1/admin/objects/{object_type}/{object_id}/dependencies", h.getObjectDependencies)
 	mux.HandleFunc("GET /api/v1/admin/operational-dashboard", h.getOperationalDashboard)
 	h.registerAuditRoutes(mux)
+	h.registerVersioningRoutes(mux)
+	h.registerApprovalRoutes(mux)
+	h.registerDelegationRoutes(mux)
+	h.registerEmergencyAccessRoutes(mux)
+	h.registerConfigExportRoutes(mux)
 	mux.HandleFunc("GET /api/v1/admin/notification-rules", h.listNotificationRules)
 	mux.HandleFunc("PATCH /api/v1/admin/notification-rules/{notification_rule_id}", h.patchNotificationRule)
 	mux.HandleFunc("DELETE /api/v1/admin/notification-rules/{notification_rule_id}", h.deleteNotificationRule)
@@ -520,7 +526,7 @@ func (h *AdminHandler) removeRolePermission(w http.ResponseWriter, r *http.Reque
 	rid := r.PathValue("role_id")
 	pid := r.PathValue("permission_id")
 	if err := h.svc.RemoveRolePermission(r.Context(), caapp.RemoveRolePermissionRequest{Subject: sub, RoleID: rid, PermissionID: pid}); err != nil {
-		httpx.WriteError(w, nil, err)
+		writeApprovalRoutedOrError(w, err)
 		return
 	}
 	h.auditLog(r, "admin.role.permission.remove", "role", rid)
@@ -578,6 +584,20 @@ func (h *AdminHandler) getConfigurationHealth(w http.ResponseWriter, r *http.Req
 		return
 	}
 	out, err := h.svc.GetConfigurationHealth(r.Context(), caapp.GetConfigurationHealthRequest{Subject: sub})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, out)
+}
+
+func (h *AdminHandler) getRuleRecommendations(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	out, err := h.svc.GetRuleRecommendations(r.Context(), caapp.GetRuleRecommendationsRequest{Subject: sub})
 	if err != nil {
 		httpx.WriteError(w, nil, err)
 		return
@@ -713,7 +733,7 @@ func (h *AdminHandler) patchNotificationRule(w http.ResponseWriter, r *http.Requ
 		PayloadPatch: body.Payload,
 		Status:       body.Status,
 	}); err != nil {
-		httpx.WriteError(w, nil, err)
+		writeApprovalRoutedOrError(w, err)
 		return
 	}
 	h.auditLog(r, "admin.notification_rule.update", "notification_rule", ruleID)
@@ -1035,7 +1055,7 @@ func (h *AdminHandler) removeMemberPermission(w http.ResponseWriter, r *http.Req
 		MembershipID:   mid,
 		PermissionCode: permCode,
 	}); err != nil {
-		httpx.WriteError(w, nil, err)
+		writeApprovalRoutedOrError(w, err)
 		return
 	}
 	h.auditLog(r, "admin.membership.permission.remove", "membership", mid)

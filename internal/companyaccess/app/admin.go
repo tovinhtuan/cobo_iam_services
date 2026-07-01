@@ -64,6 +64,7 @@ type AdminService interface {
 	DeleteNotificationRule(ctx context.Context, req DeleteNotificationRuleRequest) error
 	SimulateNotificationRule(ctx context.Context, req SimulateNotificationRuleRequest, rawForbidden map[string]any) (*NotificationDispatchSimulateResult, error)
 	GetConfigurationHealth(ctx context.Context, req GetConfigurationHealthRequest) (*ConfigurationHealthView, error)
+	GetRuleRecommendations(ctx context.Context, req GetRuleRecommendationsRequest) (*RuleRecommendationsView, error)
 	ValidateConfiguration(ctx context.Context, req ValidateConfigurationRequest) (*ConfigurationValidateView, error)
 	GetObjectDependencies(ctx context.Context, req GetObjectDependenciesRequest) (*ObjectDependenciesView, error)
 	GetOperationalDashboard(ctx context.Context, req GetOperationalDashboardRequest) (*OperationalDashboardView, error)
@@ -107,6 +108,47 @@ type AdminService interface {
 	CreateSelfServiceCompany(ctx context.Context, req CreateSelfServiceCompanyRequest) (*InitializeCompanyResult, error)
 	// RollbackSelfServiceBootstrap removes a freshly created self-service company after session failure.
 	RollbackSelfServiceBootstrap(ctx context.Context, companyID, userID string) error
+
+	// Configuration versioning (Sprint 5 Batch 1B).
+	ListNotificationRuleVersions(ctx context.Context, req ListNotificationRuleVersionsRequest) (*ConfigVersionListView, error)
+	GetNotificationRuleVersion(ctx context.Context, req GetNotificationRuleVersionRequest) (*ConfigVersionDetail, error)
+	CompareNotificationRuleVersions(ctx context.Context, req CompareNotificationRuleVersionsRequest) (*CompareVersionsView, error)
+	RollbackNotificationRuleVersion(ctx context.Context, req RollbackNotificationRuleVersionRequest) (*ConfigVersionRow, error)
+	ListRBACMatrixVersions(ctx context.Context, req ListRBACMatrixVersionsRequest) (*ConfigVersionListView, error)
+	GetRBACMatrixVersion(ctx context.Context, req GetRBACMatrixVersionRequest) (*ConfigVersionDetail, error)
+	CompareRBACMatrixVersions(ctx context.Context, req CompareRBACMatrixVersionsRequest) (*CompareVersionsView, error)
+	RollbackRBACMatrixVersion(ctx context.Context, req RollbackRBACMatrixVersionRequest) (*ConfigVersionRow, error)
+
+	// Configuration approval (Sprint 5 Batch 2B).
+	SubmitConfigApproval(ctx context.Context, req SubmitConfigApprovalRequest) (*PendingAdminChangeSummary, error)
+	ListConfigApprovals(ctx context.Context, req ListConfigApprovalsRequest) (*ConfigApprovalListView, error)
+	GetConfigApproval(ctx context.Context, req GetConfigApprovalRequest) (*PendingAdminChangeSummary, error)
+	ApproveConfigApproval(ctx context.Context, req ApproveConfigApprovalRequest) (*PendingAdminChangeSummary, error)
+	RejectConfigApproval(ctx context.Context, req RejectConfigApprovalRequest) (*PendingAdminChangeSummary, error)
+	CancelConfigApproval(ctx context.Context, req CancelConfigApprovalRequest) (*PendingAdminChangeSummary, error)
+	CompareConfigApproval(ctx context.Context, req CompareConfigApprovalRequest) (*CompareConfigApprovalView, error)
+
+	// Delegated administration (Sprint 5 Batch 3B).
+	CreateDelegation(ctx context.Context, req CreateDelegationRequest) (*DelegatedAdminGrant, error)
+	ListDelegations(ctx context.Context, req ListDelegationsRequest) (*DelegationListView, error)
+	GetDelegation(ctx context.Context, req GetDelegationRequest) (*DelegatedAdminGrant, error)
+	PatchDelegation(ctx context.Context, req PatchDelegationRequest) (*DelegatedAdminGrant, error)
+	RevokeDelegation(ctx context.Context, req RevokeDelegationRequest) (*DelegatedAdminGrant, error)
+
+	// Break glass emergency access (Sprint 5 Batch 4B).
+	CreateEmergencyAccessRequest(ctx context.Context, req CreateEmergencyAccessRequest) (*EmergencyAccessGrant, error)
+	ListEmergencyAccessRequests(ctx context.Context, req ListEmergencyAccessRequests) (*EmergencyAccessListView, error)
+	GetEmergencyAccessRequest(ctx context.Context, req GetEmergencyAccessRequest) (*EmergencyAccessGrant, error)
+	ApproveEmergencyAccessRequest(ctx context.Context, req ApproveEmergencyAccessRequest) (*EmergencyAccessGrant, error)
+	DenyEmergencyAccessRequest(ctx context.Context, req DenyEmergencyAccessRequest) (*EmergencyAccessGrant, error)
+	CancelEmergencyAccessRequest(ctx context.Context, req CancelEmergencyAccessRequest) (*EmergencyAccessGrant, error)
+	RevokeEmergencyAccessRequest(ctx context.Context, req RevokeEmergencyAccessRequest) (*EmergencyAccessGrant, error)
+	GetEmergencyAccessTimeline(ctx context.Context, req GetEmergencyAccessTimelineRequest) (*ChangeTimelineView, error)
+
+	// Configuration export (Sprint 5 Batch 5B).
+	CreateConfigExport(ctx context.Context, req CreateConfigExportRequest) (*ConfigExportJobView, error)
+	GetConfigExport(ctx context.Context, req GetConfigExportRequest) (*ConfigExportJobView, error)
+	DownloadConfigExport(ctx context.Context, req DownloadConfigExportRequest) ([]byte, error)
 }
 
 type AdminRepository interface {
@@ -227,6 +269,51 @@ type AdminRepository interface {
 	GetMembershipByID(ctx context.Context, membershipID string) (*MembershipView, error)
 	// CountAdminsInCompany returns the number of memberships with the company_admin role in the company.
 	CountAdminsInCompany(ctx context.Context, companyID string) (int, error)
+
+	// Configuration versioning (Sprint 5 Batch 1B).
+	BuildNotificationRuleSnapshotJSON(ctx context.Context, companyID, ruleID string) ([]byte, error)
+	BuildRBACMatrixSnapshotJSON(ctx context.Context, companyID string) ([]byte, error)
+	InsertNotificationRuleVersion(ctx context.Context, in InsertNotificationRuleVersionInput) (*ConfigVersionRow, error)
+	InsertRBACMatrixSnapshot(ctx context.Context, in InsertRBACMatrixSnapshotInput) (*ConfigVersionRow, error)
+	ListNotificationRuleVersions(ctx context.Context, companyID, ruleID string, limit int) ([]ConfigVersionRow, error)
+	GetNotificationRuleVersion(ctx context.Context, companyID, ruleID string, versionNo int) (*ConfigVersionDetail, error)
+	ListRBACMatrixVersions(ctx context.Context, companyID string, limit int) ([]ConfigVersionRow, error)
+	GetRBACMatrixVersion(ctx context.Context, companyID string, versionNo int) (*ConfigVersionDetail, error)
+	RestoreNotificationRuleFromSnapshot(ctx context.Context, companyID string, raw []byte) error
+	RestoreRBACMatrixFromSnapshot(ctx context.Context, companyID, actorUserID string, raw []byte) error
+
+	// Configuration approval (Sprint 5 Batch 2B).
+	InsertPendingAdminChange(ctx context.Context, in InsertPendingAdminChangeInput) (*PendingAdminChange, error)
+	GetPendingAdminChange(ctx context.Context, companyID, approvalID string) (*PendingAdminChange, error)
+	ListPendingAdminChanges(ctx context.Context, companyID, status, aggregateType string, limit int) ([]PendingAdminChange, error)
+	HasPendingForAggregateStream(ctx context.Context, companyID, aggregateType, aggregateID string) (bool, error)
+	UpdatePendingAdminChangeDecision(ctx context.Context, companyID, approvalID, status, reviewedBy, rejectReason string) (*PendingAdminChange, error)
+	GetMaxNotificationRuleVersionNo(ctx context.Context, companyID, ruleID string) (int, error)
+	GetMaxRBACMatrixVersionNo(ctx context.Context, companyID string) (int, error)
+	ApplyPendingApprovalInTx(ctx context.Context, in ApplyPendingApprovalInput, row PendingAdminChange) (*ApplyPendingApprovalResult, error)
+
+	// Delegated administration (Sprint 5 Batch 3B).
+	InsertDelegationGrant(ctx context.Context, in InsertDelegationGrantInput) (*DelegatedAdminGrant, error)
+	GetDelegationGrant(ctx context.Context, companyID, delegationID string) (*DelegatedAdminGrant, error)
+	ListDelegationGrants(ctx context.Context, companyID, status, delegateeMembershipID, scopeID string, limit int) ([]DelegatedAdminGrant, error)
+	ListActiveDelegationsForDelegatee(ctx context.Context, companyID, delegateeMembershipID string) ([]DelegatedAdminGrant, error)
+	HasActiveDelegationGrant(ctx context.Context, companyID, delegateeMembershipID, scopeType, scopeID string) (bool, error)
+	UpdateDelegationGrantPermissions(ctx context.Context, companyID, delegationID string, permissionSet []string, updatedBy string) (*DelegatedAdminGrant, error)
+	RevokeDelegationGrant(ctx context.Context, companyID, delegationID, updatedBy string) (*DelegatedAdminGrant, error)
+
+	// Break glass (M4).
+	InsertEmergencyAccessGrant(ctx context.Context, in InsertEmergencyAccessGrantInput) (*EmergencyAccessGrant, error)
+	GetEmergencyAccessGrant(ctx context.Context, companyID, sessionID string) (*EmergencyAccessGrant, error)
+	ListEmergencyAccessGrants(ctx context.Context, companyID, status, targetMembershipID string, limit int) ([]EmergencyAccessGrant, error)
+	GetActiveEmergencyGrantForTarget(ctx context.Context, companyID, targetMembershipID string) (*EmergencyAccessGrant, error)
+	HasActiveEmergencyGrantForTarget(ctx context.Context, companyID, targetMembershipID string) (bool, error)
+	RecordEmergencyFirstApproval(ctx context.Context, companyID, sessionID, approverMembershipID string) (*EmergencyAccessGrant, error)
+	ActivateEmergencyGrant(ctx context.Context, companyID, sessionID, approverMembershipID string, expiresAt time.Time) (*EmergencyAccessGrant, error)
+	DenyEmergencyGrant(ctx context.Context, companyID, sessionID string) (*EmergencyAccessGrant, error)
+	CancelEmergencyGrant(ctx context.Context, companyID, sessionID string) (*EmergencyAccessGrant, error)
+	RevokeEmergencyGrant(ctx context.Context, companyID, sessionID string) (*EmergencyAccessGrant, error)
+	ExpireEmergencyGrant(ctx context.Context, companyID, sessionID string) (*EmergencyAccessGrant, error)
+	ExpireDueEmergencyGrants(ctx context.Context, companyID string) (int, error)
 }
 
 type AdminSubject struct {

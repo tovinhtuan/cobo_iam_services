@@ -80,21 +80,37 @@ func (s *adminService) DeleteDepartment(ctx context.Context, req DeleteDepartmen
 }
 
 func (s *adminService) AddDeptMember(ctx context.Context, req AddDeptMemberRequest) error {
-	if err := s.requireRbacManage(ctx, req.Subject); err != nil {
+	if err := s.authorizeDeptMemberMutation(ctx, req.Subject, req.DepartmentID, req.MembershipID); err != nil {
 		return err
 	}
-	if err := s.requireMembershipInCompany(ctx, req.MembershipID, req.Subject.CompanyID); err != nil {
-		return err
-	}
-	// AddDepartment validates department belongs to membership's company.
 	return s.repo.AddDepartment(ctx, req.MembershipID, req.DepartmentID)
 }
 
 func (s *adminService) RemoveDeptMember(ctx context.Context, req RemoveDeptMemberRequest) error {
-	if err := s.requireRbacManage(ctx, req.Subject); err != nil {
+	if err := s.authorizeDeptMemberMutation(ctx, req.Subject, req.DepartmentID, req.MembershipID); err != nil {
 		return err
 	}
 	return s.repo.RemoveDepartment(ctx, req.MembershipID, req.DepartmentID)
+}
+
+func (s *adminService) authorizeDeptMemberMutation(ctx context.Context, sub AdminSubject, departmentID, membershipID string) error {
+	ok, err := s.hasPermission(ctx, sub, "rbac.manage")
+	if err != nil {
+		return err
+	}
+	if ok {
+		if err := s.requireMembershipInCompany(ctx, membershipID, sub.CompanyID); err != nil {
+			return err
+		}
+		return nil
+	}
+	if err := s.authorize(ctx, sub, "admin.membership.update", membershipID); err != nil {
+		return err
+	}
+	if err := s.authorizeScopedDepartmentMutation(ctx, sub, "admin.membership.update", departmentID); err != nil {
+		return err
+	}
+	return s.authorizeScopedMembershipMutation(ctx, sub, "admin.membership.update", membershipID)
 }
 
 // requireRbacManage checks that the subject has the rbac.manage permission.

@@ -12,6 +12,7 @@ import (
 	authapp "github.com/cobo/cobo_iam_services/internal/authorization/app"
 	auditapp "github.com/cobo/cobo_iam_services/internal/audit/app"
 	"github.com/cobo/cobo_iam_services/internal/companyaccess/conflict"
+	"github.com/cobo/cobo_iam_services/internal/companyaccess/configversion"
 	"github.com/cobo/cobo_iam_services/internal/companyaccess/dependency"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 	"github.com/cobo/cobo_iam_services/internal/platform/idgen"
@@ -34,10 +35,19 @@ type adminService struct {
 	dependencyReader                 dependency.Reader
 	auditRepo                        auditapp.Repository
 	companyTierLookup                func(ctx context.Context, companyID string) string
+	effectiveAccessCache             EffectiveAccessCache
+	exportStore                      *configExportStore
 }
 
 func NewAdminService(repo AdminRepository, auth authapp.Service, idg idgen.Generator, opts ...AdminOption) AdminService {
-	s := &adminService{repo: repo, auth: auth, idg: idg, inviteTTL: 72 * time.Hour, inviteDefaultRoleCode: "user_thuong"}
+	s := &adminService{
+		repo:        repo,
+		auth:        auth,
+		idg:         idg,
+		inviteTTL:   72 * time.Hour,
+		inviteDefaultRoleCode: "user_thuong",
+		exportStore: newConfigExportStore(),
+	}
 	for _, o := range opts {
 		if o != nil {
 			o(s)
@@ -90,11 +100,11 @@ func (s *adminService) CreateUser(ctx context.Context, req CreateUserRequest) (*
 		req.MembershipStatus = "active"
 	}
 	if req.CompanyID != "" {
-		scope, err := s.resolveInviteScope(ctx, req.Subject)
+		scopeView, err := s.authorizeScopedInviteOrCreate(ctx, req.Subject, "admin.membership.create")
 		if err != nil {
 			return nil, err
 		}
-		deptID, err := s.pickInviteDepartmentID(scope, req.DepartmentID)
+		deptID, err := s.pickInviteDepartmentID(scopeView.inviteScope, req.DepartmentID)
 		if err != nil {
 			return nil, err
 		}
@@ -245,11 +255,11 @@ func (s *adminService) InviteUser(ctx context.Context, req InviteUserRequest) (*
 	if err := s.authorizeMembershipInvite(ctx, req.Subject, req.Subject.CompanyID); err != nil {
 		return nil, err
 	}
-	scope, err := s.resolveInviteScope(ctx, req.Subject)
+	scopeView, err := s.authorizeScopedInviteOrCreate(ctx, req.Subject, permissionInvite)
 	if err != nil {
 		return nil, err
 	}
-	deptID, err := s.pickInviteDepartmentID(scope, req.DepartmentID)
+	deptID, err := s.pickInviteDepartmentID(scopeView.inviteScope, req.DepartmentID)
 	if err != nil {
 		return nil, err
 	}
@@ -280,7 +290,7 @@ func (s *adminService) InviteUser(ctx context.Context, req InviteUserRequest) (*
 	if req.CompanyID == "" {
 		return s.inviteUserWithoutCompany(ctx, req)
 	}
-	return s.inviteUserWithCompany(ctx, req, scope)
+	return s.inviteUserWithCompany(ctx, req, scopeView.inviteScope)
 }
 
 // inviteUserWithoutCompany creates a user + invitation with no membership.
@@ -547,10 +557,11 @@ func (s *adminService) ResendUserInvitation(ctx context.Context, req ResendUserI
 	if err := s.authorizeMembershipInvite(ctx, req.Subject, req.Subject.CompanyID); err != nil {
 		return err
 	}
-	scope, err := s.resolveInviteScope(ctx, req.Subject)
+	scopeView, err := s.authorizeScopedInviteOrCreate(ctx, req.Subject, permissionInvite)
 	if err != nil {
 		return err
 	}
+	scope := scopeView.inviteScope
 	userID := strings.TrimSpace(req.UserID)
 	if userID == "" {
 		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "user_id is required", nil)
@@ -653,7 +664,7 @@ func (s *adminService) hasPermission(ctx context.Context, sub AdminSubject, perm
 			return true, nil
 		}
 	}
-	return false, nil
+	return s.hasBreakGlassPermissionOverlay(ctx, sub, permission)
 }
 
 // AssignUserToCompany links an existing user to a company. If the user is still in "invited" state
@@ -772,6 +783,9 @@ func (s *adminService) UpdateMembership(ctx context.Context, req UpdateMembershi
 	if err := s.authorize(ctx, req.Subject, "admin.membership.update", req.MembershipID); err != nil {
 		return nil, err
 	}
+	if err := s.authorizeScopedMembershipMutation(ctx, req.Subject, "admin.membership.update", req.MembershipID); err != nil {
+		return nil, err
+	}
 	if req.Status == "inactive" {
 		m, err := s.repo.GetMembershipByID(ctx, req.MembershipID)
 		if err == nil && m.IsPrimaryAdmin {
@@ -783,6 +797,9 @@ func (s *adminService) UpdateMembership(ctx context.Context, req UpdateMembershi
 
 func (s *adminService) DeleteMembership(ctx context.Context, req DeleteMembershipRequest) error {
 	if err := s.authorize(ctx, req.Subject, "admin.membership.delete", req.MembershipID); err != nil {
+		return err
+	}
+	if err := s.authorizeScopedMembershipMutation(ctx, req.Subject, "admin.membership.delete", req.MembershipID); err != nil {
 		return err
 	}
 	m, err := s.repo.GetMembershipByID(ctx, req.MembershipID)
@@ -997,10 +1014,22 @@ func (s *adminService) AssignDepartment(ctx context.Context, req AssignDepartmen
 	if err := s.authorize(ctx, req.Subject, "admin.membership.department.assign", req.MembershipID); err != nil {
 		return err
 	}
+	if err := s.authorizeScopedDepartmentMutation(ctx, req.Subject, "admin.membership.update", req.DepartmentID); err != nil {
+		return err
+	}
+	if err := s.authorizeScopedMembershipMutation(ctx, req.Subject, "admin.membership.update", req.MembershipID); err != nil {
+		return err
+	}
 	return s.repo.AddDepartment(ctx, req.MembershipID, req.DepartmentID)
 }
 func (s *adminService) RemoveDepartment(ctx context.Context, req RemoveDepartmentRequest) error {
 	if err := s.authorize(ctx, req.Subject, "admin.membership.department.remove", req.MembershipID); err != nil {
+		return err
+	}
+	if err := s.authorizeScopedDepartmentMutation(ctx, req.Subject, "admin.membership.update", req.DepartmentID); err != nil {
+		return err
+	}
+	if err := s.authorizeScopedMembershipMutation(ctx, req.Subject, "admin.membership.update", req.MembershipID); err != nil {
 		return err
 	}
 	return s.repo.RemoveDepartment(ctx, req.MembershipID, req.DepartmentID)
@@ -1039,13 +1068,32 @@ func (s *adminService) AssignRolePermission(ctx context.Context, req AssignRoleP
 	if err := s.authorize(ctx, req.Subject, "admin.role.permission.assign", req.RoleID); err != nil {
 		return err
 	}
-	return s.repo.AddRolePermission(ctx, req.RoleID, req.PermissionID)
+	if err := s.repo.AddRolePermission(ctx, req.RoleID, req.PermissionID); err != nil {
+		return err
+	}
+	_ = s.captureRBACMatrixVersion(ctx, req.Subject, configversion.SourceMutationAPI, "")
+	return nil
 }
 func (s *adminService) RemoveRolePermission(ctx context.Context, req RemoveRolePermissionRequest) error {
 	if err := s.authorize(ctx, req.Subject, "admin.role.permission.remove", req.RoleID); err != nil {
 		return err
 	}
-	return s.repo.RemoveRolePermission(ctx, req.RoleID, req.PermissionID)
+	code, err := s.permissionCodeByID(ctx, req.PermissionID)
+	if err != nil {
+		return err
+	}
+	if isCriticalPermissionCode(code) {
+		summary, qErr := s.submitRBACRolePermRemoveApproval(ctx, req.Subject, req.RoleID, req.PermissionID, "")
+		if qErr != nil {
+			return qErr
+		}
+		return s.routeApprovalRouted(req.Subject, summary)
+	}
+	if err := s.repo.RemoveRolePermission(ctx, req.RoleID, req.PermissionID); err != nil {
+		return err
+	}
+	_ = s.captureRBACMatrixVersion(ctx, req.Subject, configversion.SourceMutationAPI, "")
+	return nil
 }
 func (s *adminService) CreateResourceScopeRule(ctx context.Context, req CreateResourceScopeRuleRequest) error {
 	if err := s.authorize(ctx, req.Subject, "admin.resource_scope_rule.create", ""); err != nil {
@@ -1079,7 +1127,14 @@ func (s *adminService) CreateNotificationRule(ctx context.Context, req CreateNot
 			req.Payload[k] = v
 		}
 	}
-	return s.repo.AddNotificationRule(ctx, req.Payload)
+	if err := s.repo.AddNotificationRule(ctx, req.Payload); err != nil {
+		return err
+	}
+	code, _ = req.Payload["rule_code"].(string)
+	if rule, err := s.repo.GetNotificationRuleByCode(ctx, req.Subject.CompanyID, strings.TrimSpace(code)); err == nil && rule != nil {
+		_ = s.captureNotificationRuleVersion(ctx, req.Subject, rule.NotificationRuleID, configversion.SourceMutationAPI, "")
+	}
+	return nil
 }
 
 func prefsDocumentFromRulePayload(m map[string]any) map[string]any {
@@ -1173,7 +1228,7 @@ func (s *adminService) UpdateNotificationRule(ctx context.Context, req UpdateNot
 		var current map[string]any
 		for _, item := range rules {
 			if item.NotificationRuleID == req.RuleID {
-				current = prefsDocumentFromRulePayload(cloneMap(item.Payload))
+				current = prefsDocumentFromRulePayload(deepCloneMap(item.Payload))
 				break
 			}
 		}
@@ -1184,13 +1239,37 @@ func (s *adminService) UpdateNotificationRule(ctx context.Context, req UpdateNot
 		if err := s.entitlementChecker().ValidateAlertChannelPrefsMutation(ctx, req.Subject.UserID, current); err != nil {
 			return err
 		}
+		summary, err := s.submitNotificationPatchApproval(ctx, req.Subject, req.RuleID, req.PayloadPatch, req.Status, "")
+		if err != nil {
+			return err
+		}
+		return s.routeApprovalRouted(req.Subject, summary)
 	}
-	return s.repo.UpdateNotificationRuleMerged(ctx, req.Subject.CompanyID, req.RuleID, req.PayloadPatch, req.Status)
+	if err := s.repo.UpdateNotificationRuleMerged(ctx, req.Subject.CompanyID, req.RuleID, req.PayloadPatch, req.Status); err != nil {
+		return err
+	}
+	_ = s.captureNotificationRuleVersion(ctx, req.Subject, req.RuleID, configversion.SourceMutationAPI, "")
+	return nil
 }
 
 func cloneMap(m map[string]any) map[string]any {
 	out := make(map[string]any, len(m))
 	for k, v := range m {
+		out[k] = v
+	}
+	return out
+}
+
+func deepCloneMap(m map[string]any) map[string]any {
+	if m == nil {
+		return nil
+	}
+	out := make(map[string]any, len(m))
+	for k, v := range m {
+		if child, ok := v.(map[string]any); ok {
+			out[k] = deepCloneMap(child)
+			continue
+		}
 		out[k] = v
 	}
 	return out
@@ -1291,7 +1370,11 @@ func (s *adminService) AddDirectPermission(ctx context.Context, req AddDirectPer
 	if !isGrantable(req.PermissionCode) {
 		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "permission_code is not grantable", nil)
 	}
-	return s.repo.InsertDirectPermission(ctx, req.MembershipID, req.Subject.CompanyID, req.PermissionCode, req.Subject.UserID)
+	if err := s.repo.InsertDirectPermission(ctx, req.MembershipID, req.Subject.CompanyID, req.PermissionCode, req.Subject.UserID); err != nil {
+		return err
+	}
+	_ = s.captureRBACMatrixVersion(ctx, req.Subject, configversion.SourceMutationAPI, "")
+	return nil
 }
 
 func (s *adminService) RemoveDirectPermission(ctx context.Context, req RemoveDirectPermissionRequest) error {
@@ -1302,7 +1385,18 @@ func (s *adminService) RemoveDirectPermission(ctx context.Context, req RemoveDir
 	} else if err := s.requireRbacManage(ctx, req.Subject); err != nil {
 		return err
 	}
-	return s.repo.RevokeDirectPermission(ctx, req.MembershipID, req.PermissionCode, req.Subject.UserID)
+	if requiresApprovalForDirectRemove(req.PermissionCode) {
+		summary, qErr := s.submitRBACDirectPermRemoveApproval(ctx, req.Subject, req.MembershipID, req.PermissionCode, "")
+		if qErr != nil {
+			return qErr
+		}
+		return s.routeApprovalRouted(req.Subject, summary)
+	}
+	if err := s.repo.RevokeDirectPermission(ctx, req.MembershipID, req.PermissionCode, req.Subject.UserID); err != nil {
+		return err
+	}
+	_ = s.captureRBACMatrixVersion(ctx, req.Subject, configversion.SourceMutationAPI, "")
+	return nil
 }
 
 func (s *adminService) ListDirectPermissions(ctx context.Context, req ListDirectPermissionsRequest) ([]DirectPermissionView, error) {

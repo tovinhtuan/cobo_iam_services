@@ -33,38 +33,6 @@ func (s *adminService) authorizeMembershipInvite(ctx context.Context, sub AdminS
 	return s.authorize(ctx, sub, "admin.membership.create", companyID)
 }
 
-func (s *adminService) resolveInviteScope(ctx context.Context, sub AdminSubject) (inviteScope, error) {
-	ok, err := s.hasPermission(ctx, sub, "rbac.manage")
-	if err != nil {
-		return inviteScope{}, err
-	}
-	if ok {
-		return inviteScope{Kind: inviteScopeCompany}, nil
-	}
-	fromRole, err := s.repo.MembershipHasPermissionFromRole(ctx, sub.MembershipID, sub.CompanyID, permissionInvite)
-	if err != nil {
-		return inviteScope{}, err
-	}
-	if fromRole {
-		return inviteScope{Kind: inviteScopeCompany}, nil
-	}
-	hasDirect, err := s.repo.HasActiveDirectPermission(ctx, sub.MembershipID, permissionInvite)
-	if err != nil {
-		return inviteScope{}, err
-	}
-	if !hasDirect {
-		return inviteScope{}, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "access denied", nil)
-	}
-	deptIDs, err := s.repo.ListDepartmentIDsByHeadMembership(ctx, sub.CompanyID, sub.MembershipID)
-	if err != nil {
-		return inviteScope{}, err
-	}
-	if len(deptIDs) == 0 {
-		return inviteScope{}, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "dept-scoped invite requires head of at least one department", nil)
-	}
-	return inviteScope{Kind: inviteScopeDepartment, DepartmentIDs: deptIDs}, nil
-}
-
 func (s *adminService) pickInviteDepartmentID(scope inviteScope, requested string) (string, error) {
 	if scope.Kind != inviteScopeDepartment {
 		return strings.TrimSpace(requested), nil

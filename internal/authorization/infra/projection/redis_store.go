@@ -54,3 +54,15 @@ func (s *redisStore) Put(ctx context.Context, snapshot *authapp.EffectiveAccessS
 	}
 	_ = s.rdb.Set(ctx, redisKey(snapshot.CompanyID, snapshot.MembershipID), raw, s.ttl).Err()
 }
+
+func (s *redisStore) InvalidateMemberships(ctx context.Context, companyID string, membershipIDs []string) {
+	if s.rdb == nil || companyID == "" {
+		return
+	}
+	for _, mid := range membershipIDs {
+		if mid == "" {
+			continue
+		}
+		_ = s.rdb.Del(ctx, redisKey(companyID, mid)).Err()
+	}
+}

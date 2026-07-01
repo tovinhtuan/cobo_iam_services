@@ -91,3 +91,10 @@ func WithAuditRepository(repo auditapp.Repository) AdminOption {
 		s.auditRepo = repo
 	}
 }
+
+// WithEffectiveAccessCache wires ADR-025 targeted invalidation on RBAC rollback.
+func WithEffectiveAccessCache(cache EffectiveAccessCache) AdminOption {
+	return func(s *adminService) {
+		s.effectiveAccessCache = cache
+	}
+}

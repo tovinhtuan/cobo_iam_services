@@ -57,6 +57,11 @@ const (
 	// Company workflow override activation — empty or structurally invalid graph.
 	CodeWorkflowOverrideEmpty   Code = "WORKFLOW_OVERRIDE_EMPTY"
 	CodeWorkflowOverrideInvalid Code = "WORKFLOW_OVERRIDE_INVALID"
+	// Sprint 5 Batch 2B — Configuration approval.
+	CodePendingApprovalExists Code = "PENDING_APPROVAL_EXISTS"
+	CodeStaleProposal         Code = "STALE_PROPOSAL"
+	CodeApprovalNotPending    Code = "NOT_PENDING"
+	CodeApprovalRouted        Code = "APPROVAL_ROUTED"
 )
 
 // HTTPError is returned to clients as JSON { "error": { ... } }.
