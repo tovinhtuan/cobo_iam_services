@@ -30,6 +30,15 @@ func seedRbacAdmin(t *testing.T, repo *cainmem.AdminRepository) caapp.AdminSubje
 	sub := caapp.AdminSubject{UserID: "u_ver", MembershipID: "m_ver", CompanyID: "c_ver"}
 	seedInviteScopedSubject(t, repo, sub)
 	_ = repo.AddRolePermission(context.Background(), "company_admin", "rbac.manage")
+	// Seed enterprise permissions used by versioning tests for AssignRolePermission.
+	for _, code := range []string{"perm_disclosure_read", "perm_disclosure_write"} {
+		repo.SeedPermission(caapp.PermissionListItem{
+			PermissionID:   code,
+			PermissionCode: code,
+			PermissionName: code,
+			ModuleName:     "disclosure",
+		})
+	}
 	return sub
 }
 

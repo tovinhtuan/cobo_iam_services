@@ -1050,7 +1050,17 @@ func (s *adminService) ListPermissions(ctx context.Context, req AdminSubjectRequ
 	if err := s.authorize(ctx, req.Subject, "admin.permissions.list", ""); err != nil {
 		return nil, err
 	}
-	return s.repo.ListPermissions(ctx)
+	all, err := s.repo.ListPermissions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]PermissionListItem, 0, len(all))
+	for _, p := range all {
+		if IsEnterprisePermission(p.PermissionCode, p.ModuleName) {
+			out = append(out, p)
+		}
+	}
+	return out, nil
 }
 func (s *adminService) ListRoles(ctx context.Context, req AdminSubjectRequest) ([]RoleListItem, error) {
 	if err := s.authorize(ctx, req.Subject, "admin.roles.list", ""); err != nil {
@@ -1062,11 +1072,34 @@ func (s *adminService) ListRolePermissions(ctx context.Context, req ListRolePerm
 	if err := s.authorize(ctx, req.Subject, "admin.roles.list", ""); err != nil {
 		return nil, err
 	}
-	return s.repo.ListRolePermissions(ctx, req.Subject.CompanyID, req.RoleID)
+	view, err := s.repo.ListRolePermissions(ctx, req.Subject.CompanyID, req.RoleID)
+	if err != nil {
+		return nil, err
+	}
+	filtered := make([]PermissionListItem, 0, len(view.Permissions))
+	for _, p := range view.Permissions {
+		if IsEnterprisePermission(p.PermissionCode, p.ModuleName) {
+			filtered = append(filtered, p)
+		}
+	}
+	view.Permissions = filtered
+	return view, nil
 }
 func (s *adminService) AssignRolePermission(ctx context.Context, req AssignRolePermissionRequest) error {
 	if err := s.authorize(ctx, req.Subject, "admin.role.permission.assign", req.RoleID); err != nil {
 		return err
+	}
+	perm, err := s.permissionItemByID(ctx, req.PermissionID)
+	if err != nil {
+		return err
+	}
+	if !IsEnterprisePermission(perm.PermissionCode, perm.ModuleName) {
+		return perr.NewHTTPError(
+			http.StatusBadRequest,
+			perr.CodePermissionOutOfEnterpriseScope,
+			"permission is not configurable in enterprise RBAC scope",
+			nil,
+		)
 	}
 	if err := s.repo.AddRolePermission(ctx, req.RoleID, req.PermissionID); err != nil {
 		return err

@@ -54,6 +54,10 @@ func (s *adminService) captureRBACMatrixVersion(ctx context.Context, sub AdminSu
 	if err != nil {
 		return err
 	}
+	raw, err = filterEnterpriseRBACSnapshotJSON(ctx, s.repo.ListPermissions, raw)
+	if err != nil {
+		return err
+	}
 	row, err := s.repo.InsertRBACMatrixSnapshot(ctx, InsertRBACMatrixSnapshotInput{
 		ID:           s.idg.NewUUID(),
 		CompanyID:    sub.CompanyID,
@@ -254,7 +258,11 @@ func (s *adminService) RollbackRBACMatrixVersion(ctx context.Context, req Rollba
 	if err != nil {
 		return nil, err
 	}
-	if err := s.repo.RestoreRBACMatrixFromSnapshot(ctx, req.Subject.CompanyID, req.Subject.UserID, target.SnapshotJSON); err != nil {
+	sanitized, err := filterEnterpriseRBACSnapshotJSON(ctx, s.repo.ListPermissions, target.SnapshotJSON)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.repo.RestoreRBACMatrixFromSnapshot(ctx, req.Subject.CompanyID, req.Subject.UserID, sanitized); err != nil {
 		return nil, err
 	}
 	s.invalidateEffectiveAccessForCompany(ctx, req.Subject.CompanyID)

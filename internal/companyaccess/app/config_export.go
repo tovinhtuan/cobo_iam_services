@@ -198,6 +198,10 @@ func (s *adminService) buildConfigExportModule(ctx context.Context, companyID, m
 		if err != nil {
 			return nil, nil, err
 		}
+		raw, err = filterEnterpriseRBACSnapshotJSON(ctx, s.repo.ListPermissions, raw)
+		if err != nil {
+			return nil, nil, err
+		}
 		data, err := sanitizeConfigExportModuleData(raw, &warnings)
 		return data, warnings, err
 	default:

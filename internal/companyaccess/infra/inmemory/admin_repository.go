@@ -25,6 +25,7 @@ type AdminRepository struct {
 	titlesByMembership      map[string]map[string]struct{}
 
 	permissions     map[string]struct{}
+	permissionMeta  map[string]caapp.PermissionListItem // code → full metadata (for tests)
 	roles           map[string]struct{}
 	rolePermissions map[string]map[string]struct{}
 
@@ -60,6 +61,7 @@ func NewAdminRepository() *AdminRepository {
 		departmentsByMembership: map[string]map[string]struct{}{},
 		titlesByMembership:      map[string]map[string]struct{}{},
 		permissions:             map[string]struct{}{"dashboard.view": {}, "disclosure.view": {}, "disclosure.approve": {}, "rbac.manage": {}, "system.settings": {}},
+		permissionMeta:          map[string]caapp.PermissionListItem{},
 		roles:                   map[string]struct{}{"company_admin": {}, "disclosure_approver": {}, "department_staff": {}},
 		rolePermissions:         map[string]map[string]struct{}{},
 		resourceScopeRules:      []map[string]any{},
@@ -560,19 +562,32 @@ func (r *AdminRepository) RemoveTitle(_ context.Context, membershipID, titleID s
 	return nil
 }
 
+// SeedPermission registers a permission with full metadata for test scenarios that need
+// specific module_name values (e.g., CMS scope enforcement tests).
+func (r *AdminRepository) SeedPermission(item caapp.PermissionListItem) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.permissions[item.PermissionCode] = struct{}{}
+	r.permissionMeta[item.PermissionCode] = item
+}
+
 func (r *AdminRepository) ListPermissions(_ context.Context) ([]caapp.PermissionListItem, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	out := make([]caapp.PermissionListItem, 0, len(r.permissions))
 	for code := range r.permissions {
-		out = append(out, caapp.PermissionListItem{
-			PermissionID:   code,
-			PermissionCode: code,
-			PermissionName: code,
-			ModuleName:     "general",
-			RiskLevel:      caapp.PermissionRiskLevel(code),
-			IsGrantable:    caapp.IsGrantablePermission(code),
-		})
+		if meta, ok := r.permissionMeta[code]; ok {
+			out = append(out, meta)
+		} else {
+			out = append(out, caapp.PermissionListItem{
+				PermissionID:   code,
+				PermissionCode: code,
+				PermissionName: code,
+				ModuleName:     "general",
+				RiskLevel:      caapp.PermissionRiskLevel(code),
+				IsGrantable:    caapp.IsGrantablePermission(code),
+			})
+		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].PermissionCode < out[j].PermissionCode })
 	return out, nil

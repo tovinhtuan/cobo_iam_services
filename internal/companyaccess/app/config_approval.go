@@ -138,6 +138,10 @@ func (s *adminService) buildProposedRBACSnapshotAfterRolePermRemove(ctx context.
 	if err != nil {
 		return nil, err
 	}
+	raw, err = filterEnterpriseRBACSnapshotJSON(ctx, s.repo.ListPermissions, raw)
+	if err != nil {
+		return nil, err
+	}
 	var snap configversion.RBACMatrixSnapshot
 	if err := json.Unmarshal(raw, &snap); err != nil {
 		return nil, err
@@ -158,6 +162,10 @@ func (s *adminService) buildProposedRBACSnapshotAfterDirectPermRemove(ctx contex
 	if err != nil {
 		return nil, err
 	}
+	raw, err = filterEnterpriseRBACSnapshotJSON(ctx, s.repo.ListPermissions, raw)
+	if err != nil {
+		return nil, err
+	}
 	var snap configversion.RBACMatrixSnapshot
 	if err := json.Unmarshal(raw, &snap); err != nil {
 		return nil, err
@@ -174,16 +182,27 @@ func (s *adminService) buildProposedRBACSnapshotAfterDirectPermRemove(ctx contex
 }
 
 func (s *adminService) permissionCodeByID(ctx context.Context, permissionID string) (string, error) {
-	perms, err := s.repo.ListPermissions(ctx)
+	p, err := s.permissionItemByID(ctx, permissionID)
 	if err != nil {
 		return "", err
 	}
+	return p.PermissionCode, nil
+}
+
+// permissionItemByID returns the full PermissionListItem for a given permission ID.
+// Used for scope validation in AssignRolePermission and critical-code detection in RemoveRolePermission.
+func (s *adminService) permissionItemByID(ctx context.Context, permissionID string) (*PermissionListItem, error) {
+	perms, err := s.repo.ListPermissions(ctx)
+	if err != nil {
+		return nil, err
+	}
 	for _, p := range perms {
 		if p.PermissionID == permissionID {
-			return p.PermissionCode, nil
+			cp := p
+			return &cp, nil
 		}
 	}
-	return "", perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "permission not found", nil)
+	return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "permission not found", nil)
 }
 
 func (s *adminService) submitNotificationPatchApproval(ctx context.Context, sub AdminSubject, ruleID string, patch map[string]any, status *string, reason string) (*PendingAdminChangeSummary, error) {
@@ -489,6 +508,10 @@ func (s *adminService) CompareConfigApproval(ctx context.Context, req CompareCon
 			currentJSON = detail.SnapshotJSON
 		} else {
 			currentJSON, err = s.repo.BuildRBACMatrixSnapshotJSON(ctx, row.CompanyID)
+			if err != nil {
+				return nil, err
+			}
+			currentJSON, err = filterEnterpriseRBACSnapshotJSON(ctx, s.repo.ListPermissions, currentJSON)
 			if err != nil {
 				return nil, err
 			}

@@ -110,6 +110,7 @@ seed_dev_identity_authorization.sql
 0107_pending_admin_changes.up.sql
 0108_delegated_admin_grants.up.sql
 0109_emergency_access_grants.up.sql
+0110_cleanup_enterprise_rbac_remaining_blocked_perms.up.sql
 "
 
 mysql_exec() {

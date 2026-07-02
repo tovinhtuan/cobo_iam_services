@@ -24,6 +24,7 @@ type MembershipView struct {
 	MembershipID   string           `json:"membership_id"`
 	UserID         string           `json:"user_id"`
 	CompanyID      string           `json:"company_id"`
+	CompanyCode    string           `json:"company_code,omitempty"`
 	CompanyName    string           `json:"company_name"`
 	Status         string           `json:"membership_status"`
 	LoginID        string           `json:"login_id,omitempty"`

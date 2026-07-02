@@ -169,6 +169,7 @@ func (m *MeHandler) companies(w http.ResponseWriter, r *http.Request) {
 	for _, it := range items {
 		entry := map[string]any{
 			"company_id":        it.CompanyID,
+			"company_code":      it.CompanyCode,
 			"membership_id":     it.MembershipID,
 			"company_name":      it.CompanyName,
 			"membership_status": it.Status,

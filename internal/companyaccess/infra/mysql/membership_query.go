@@ -19,7 +19,7 @@ func NewMembershipQueryService(db *sql.DB) *MembershipQueryService {
 
 func (s *MembershipQueryService) GetMembershipsByUser(ctx context.Context, userID string) ([]caapp.MembershipView, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT m.membership_id, m.user_id, m.company_id, c.company_name, m.membership_status
+		SELECT m.membership_id, m.user_id, m.company_id, c.company_code, c.company_name, m.membership_status
 		FROM memberships m
 		INNER JOIN companies c ON c.company_id = m.company_id
 		WHERE m.user_id = ?
@@ -32,7 +32,7 @@ func (s *MembershipQueryService) GetMembershipsByUser(ctx context.Context, userI
 	var out []caapp.MembershipView
 	for rows.Next() {
 		var v caapp.MembershipView
-		if err := rows.Scan(&v.MembershipID, &v.UserID, &v.CompanyID, &v.CompanyName, &v.Status); err != nil {
+		if err := rows.Scan(&v.MembershipID, &v.UserID, &v.CompanyID, &v.CompanyCode, &v.CompanyName, &v.Status); err != nil {
 			return nil, err
 		}
 		out = append(out, v)
@@ -42,13 +42,13 @@ func (s *MembershipQueryService) GetMembershipsByUser(ctx context.Context, userI
 
 func (s *MembershipQueryService) GetActiveMembership(ctx context.Context, userID, companyID string) (*caapp.MembershipView, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT m.membership_id, m.user_id, m.company_id, c.company_name, m.membership_status
+		SELECT m.membership_id, m.user_id, m.company_id, c.company_code, c.company_name, m.membership_status
 		FROM memberships m
 		INNER JOIN companies c ON c.company_id = m.company_id
 		WHERE m.user_id = ? AND m.company_id = ? AND LOWER(m.membership_status) = 'active'
 	`, userID, companyID)
 	var v caapp.MembershipView
-	if err := row.Scan(&v.MembershipID, &v.UserID, &v.CompanyID, &v.CompanyName, &v.Status); err != nil {
+	if err := row.Scan(&v.MembershipID, &v.UserID, &v.CompanyID, &v.CompanyCode, &v.CompanyName, &v.Status); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodeMembershipNotFound, "membership not found", nil)
 		}

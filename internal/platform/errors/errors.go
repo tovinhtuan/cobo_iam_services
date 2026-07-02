@@ -62,6 +62,8 @@ const (
 	CodeStaleProposal         Code = "STALE_PROPOSAL"
 	CodeApprovalNotPending    Code = "NOT_PENDING"
 	CodeApprovalRouted        Code = "APPROVAL_ROUTED"
+	// Enterprise RBAC scope boundary — permission belongs to CMS/Platform, not enterprise.
+	CodePermissionOutOfEnterpriseScope Code = "PERMISSION_OUT_OF_ENTERPRISE_SCOPE"
 )
 
 // HTTPError is returned to clients as JSON { "error": { ... } }.
