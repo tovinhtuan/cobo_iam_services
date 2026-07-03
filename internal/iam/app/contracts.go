@@ -28,6 +28,10 @@ type Service interface {
 	AcceptUserInvitation(ctx context.Context, req AcceptUserInvitationRequest) (*AcceptUserInvitationResponse, error)
 	PublishUserInvitationEmail(ctx context.Context, userID, toEmail, fullName, loginID, rawToken, companyName string) error
 	AdminRequestPasswordReset(ctx context.Context, targetUserID string) error
+	// IssueEmailVerificationLink stores a one-time email-verification token and
+	// dispatches a verify-link email (used by admin staff-create: pending user
+	// must verify email via the public link before the account is activated).
+	IssueEmailVerificationLink(ctx context.Context, userID string) error
 }
 
 // CredentialVerifier verifies login credentials.
@@ -86,6 +90,10 @@ type AuthRecoveryRepository interface {
 	ConsumeEmailVerificationToken(ctx context.Context, tokenHash string, now time.Time) (string, error)
 	UpdatePasswordHash(ctx context.Context, userID string, passwordHash string, changedAt time.Time) error
 	MarkEmailVerified(ctx context.Context, userID string, verifiedAt time.Time) error
+	// ActivateUserAfterEmailVerification promotes a pending_email_verification user
+	// (and its pending_verification memberships) to active. Idempotent: only rows
+	// still in the pending state are touched, so already-active users are unaffected.
+	ActivateUserAfterEmailVerification(ctx context.Context, userID string) error
 
 	IsEmailVerified(ctx context.Context, userID string) (bool, error)
 	InvalidatePendingEmailVerificationOTPs(ctx context.Context, userID string) error

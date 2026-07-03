@@ -171,6 +171,36 @@ func (r *AuthRecoveryRepository) MarkEmailVerified(ctx context.Context, userID s
 	return nil
 }
 
+func (r *AuthRecoveryRepository) ActivateUserAfterEmailVerification(ctx context.Context, userID string) error {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return nil
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin activate after verify tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE users
+		SET account_status = 'active', updated_at = CURRENT_TIMESTAMP
+		WHERE user_id = ? AND account_status = 'pending_email_verification'
+	`, userID); err != nil {
+		return fmt.Errorf("activate user after verify: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE memberships
+		SET membership_status = 'active', updated_at = CURRENT_TIMESTAMP
+		WHERE user_id = ? AND membership_status = 'pending_verification'
+	`, userID); err != nil {
+		return fmt.Errorf("activate memberships after verify: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit activate after verify: %w", err)
+	}
+	return nil
+}
+
 func (r *AuthRecoveryRepository) IsEmailVerified(ctx context.Context, userID string) (bool, error) {
 	userID = strings.TrimSpace(userID)
 	if userID == "" {

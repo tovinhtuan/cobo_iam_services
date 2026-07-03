@@ -187,6 +187,9 @@ func (s *stubRecoveryEmailFlag) UpdatePasswordHash(context.Context, string, stri
 func (s *stubRecoveryEmailFlag) MarkEmailVerified(context.Context, string, time.Time) error {
 	return nil
 }
+func (s *stubRecoveryEmailFlag) ActivateUserAfterEmailVerification(context.Context, string) error {
+	return nil
+}
 func (s *stubRecoveryEmailFlag) IsEmailVerified(context.Context, string) (bool, error) {
 	return s.verified, nil
 }
@@ -221,6 +224,33 @@ func TestLogin_accountNotActive(t *testing.T) {
 	he, ok := perr.AsHTTPError(err)
 	if !ok || he.Code != perr.CodeAccountLocked {
 		t.Fatalf("got %#v", err)
+	}
+}
+
+func TestLogin_pendingEmailVerification_blockedWithoutToken(t *testing.T) {
+	ctx := context.Background()
+	svc := newTestIAMService(t, testIAMDeps{
+		cred: &iaminmem.StaticCredentialVerifier{Users: map[string]iaminmem.StaticUser{
+			"pending@x.com": {UserID: "u_p", LoginID: "pending@x.com", Password: "StrongPass123!", FullName: "P", Status: "pending_email_verification"},
+		}},
+		members: &cainmem.MembershipQueryService{ByUser: map[string][]caapp.MembershipView{
+			"u_p": {{MembershipID: "m1", UserID: "u_p", CompanyID: "c1", Status: "pending_verification"}},
+		}},
+	})
+
+	resp, err := svc.Login(ctx, iamapp.LoginRequest{LoginID: "pending@x.com", Password: "StrongPass123!"})
+	if err == nil {
+		t.Fatalf("expected error, got resp=%+v", resp)
+	}
+	if resp != nil {
+		t.Fatalf("expected nil response (no session), got %+v", resp)
+	}
+	he, ok := perr.AsHTTPError(err)
+	if !ok || he.Code != perr.CodeEmailVerificationRequired {
+		t.Fatalf("got %#v want EMAIL_VERIFICATION_REQUIRED", err)
+	}
+	if he.HTTPStatus != 403 {
+		t.Fatalf("http status=%d want 403", he.HTTPStatus)
 	}
 }
 
@@ -487,6 +517,130 @@ func TestPublishUserInvitationEmail_EmbedFallsBackToLegacy(t *testing.T) {
 	wantBody := "Xin chào Nguyen Van A,\n\nBạn đã được thêm vào công ty \"COBO\" trên hệ thống CoBo Portal.\n\nVui lòng đăng nhập bằng email và mật khẩu hiện tại của bạn để truy cập:\n\nhttps://app.example.com\n\nNếu bạn không mong đợi thao tác này, vui lòng liên hệ quản trị viên của công ty.\n\nTrân trọng,\nĐội ngũ CoBo Portal\n"
 	if got := publisher.last.Payload["body"]; got != wantBody {
 		t.Fatalf("legacy fallback body mismatch\nwant: %q\ngot:  %q", wantBody, got)
+	}
+}
+
+// recordingRecovery is a full AuthRecoveryRepository stub used to assert the
+// email-verification link + verify-then-activate flow.
+type recordingRecovery struct {
+	verified       bool
+	consumeUserID  string
+	storedTokens   int
+	markedVerified []string
+	activated      []string
+}
+
+func (r *recordingRecovery) FindUserByEmail(context.Context, string) (*iamapp.RecoveryUser, error) {
+	return &iamapp.RecoveryUser{UserID: "u_new", Email: "staff@example.com", FullName: "Staff", LoginID: "staff@example.com"}, nil
+}
+func (r *recordingRecovery) FindUserByUserID(context.Context, string) (*iamapp.RecoveryUser, error) {
+	return &iamapp.RecoveryUser{UserID: "u_new", Email: "staff@example.com", FullName: "Staff", LoginID: "staff@example.com"}, nil
+}
+func (r *recordingRecovery) StorePasswordResetToken(context.Context, iamapp.RecoveryTokenRecord) error {
+	return nil
+}
+func (r *recordingRecovery) ConsumePasswordResetToken(context.Context, string, time.Time) (string, error) {
+	return "", nil
+}
+func (r *recordingRecovery) StoreEmailVerificationToken(context.Context, iamapp.RecoveryTokenRecord) error {
+	r.storedTokens++
+	return nil
+}
+func (r *recordingRecovery) ConsumeEmailVerificationToken(context.Context, string, time.Time) (string, error) {
+	return r.consumeUserID, nil
+}
+func (r *recordingRecovery) UpdatePasswordHash(context.Context, string, string, time.Time) error {
+	return nil
+}
+func (r *recordingRecovery) MarkEmailVerified(_ context.Context, userID string, _ time.Time) error {
+	r.markedVerified = append(r.markedVerified, userID)
+	return nil
+}
+func (r *recordingRecovery) ActivateUserAfterEmailVerification(_ context.Context, userID string) error {
+	r.activated = append(r.activated, userID)
+	return nil
+}
+func (r *recordingRecovery) IsEmailVerified(context.Context, string) (bool, error) {
+	return r.verified, nil
+}
+func (r *recordingRecovery) InvalidatePendingEmailVerificationOTPs(context.Context, string) error {
+	return nil
+}
+func (r *recordingRecovery) StoreEmailVerificationOTP(context.Context, iamapp.EmailOTPRecord) error {
+	return nil
+}
+func (r *recordingRecovery) CountEmailVerificationOTPsSince(context.Context, string, time.Time) (int, error) {
+	return 0, nil
+}
+func (r *recordingRecovery) TryConsumeEmailVerificationOTP(context.Context, string, string, time.Time) (iamapp.EmailOTPConsumeOutcome, error) {
+	return iamapp.EmailOTPConsumed, nil
+}
+
+func TestIssueEmailVerificationLink_storesTokenAndPublishesLink(t *testing.T) {
+	ctx := context.Background()
+	publisher := &captureOutboxPublisher{}
+	rec := &recordingRecovery{verified: false}
+	svc := newTestIAMService(t, testIAMDeps{
+		cred:    testCred(),
+		members: cainmem.NewMembershipQueryService(),
+		opts: []iamapp.ServiceOption{
+			iamapp.WithOutboxPublisher(publisher),
+			iamapp.WithAuthRecoveryRepository(rec),
+			iamapp.WithAuthFlowConfig(iamapp.AuthFlowConfig{WebBaseURL: "https://app.example.com"}),
+		},
+	})
+	if err := svc.IssueEmailVerificationLink(ctx, "u_new"); err != nil {
+		t.Fatalf("IssueEmailVerificationLink err=%v", err)
+	}
+	if rec.storedTokens != 1 {
+		t.Fatalf("storedTokens=%d want 1", rec.storedTokens)
+	}
+	if publisher.last.EventType != "auth.email_verification_requested" {
+		t.Fatalf("event_type=%q", publisher.last.EventType)
+	}
+	body, _ := publisher.last.Payload["body"].(string)
+	if !strings.Contains(body, "https://app.example.com/verify-email?token=") {
+		t.Fatalf("body missing verify link: %q", body)
+	}
+}
+
+func TestIssueEmailVerificationLink_skipsWhenAlreadyVerified(t *testing.T) {
+	ctx := context.Background()
+	publisher := &captureOutboxPublisher{}
+	rec := &recordingRecovery{verified: true}
+	svc := newTestIAMService(t, testIAMDeps{
+		cred:    testCred(),
+		members: cainmem.NewMembershipQueryService(),
+		opts:    []iamapp.ServiceOption{iamapp.WithOutboxPublisher(publisher), iamapp.WithAuthRecoveryRepository(rec)},
+	})
+	if err := svc.IssueEmailVerificationLink(ctx, "u_new"); err != nil {
+		t.Fatalf("err=%v", err)
+	}
+	if rec.storedTokens != 0 {
+		t.Fatalf("storedTokens=%d want 0 (already verified)", rec.storedTokens)
+	}
+}
+
+func TestVerifyEmail_tokenPath_marksVerifiedAndActivates(t *testing.T) {
+	ctx := context.Background()
+	rec := &recordingRecovery{consumeUserID: "u_new"}
+	svc := newTestIAMService(t, testIAMDeps{
+		cred:    testCred(),
+		members: cainmem.NewMembershipQueryService(),
+		opts:    []iamapp.ServiceOption{iamapp.WithAuthRecoveryRepository(rec)},
+	})
+	resp, err := svc.VerifyEmail(ctx, iamapp.VerifyEmailRequest{Token: "raw-token-value"})
+	if err != nil {
+		t.Fatalf("VerifyEmail err=%v", err)
+	}
+	if !resp.Success || !resp.EmailVerified {
+		t.Fatalf("resp=%+v", resp)
+	}
+	if len(rec.markedVerified) != 1 || rec.markedVerified[0] != "u_new" {
+		t.Fatalf("markedVerified=%+v", rec.markedVerified)
+	}
+	if len(rec.activated) != 1 || rec.activated[0] != "u_new" {
+		t.Fatalf("activated=%+v", rec.activated)
 	}
 }
 

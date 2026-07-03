@@ -35,7 +35,10 @@ func (b credRecoveryBridge) UpdatePasswordHash(ctx context.Context, userID, hash
 	return b.cred.UpdatePasswordHash(ctx, userID, hash, at)
 }
 func (b credRecoveryBridge) MarkEmailVerified(context.Context, string, time.Time) error { return nil }
-func (b credRecoveryBridge) IsEmailVerified(context.Context, string) (bool, error)       { return true, nil }
+func (b credRecoveryBridge) ActivateUserAfterEmailVerification(context.Context, string) error {
+	return nil
+}
+func (b credRecoveryBridge) IsEmailVerified(context.Context, string) (bool, error) { return true, nil }
 func (b credRecoveryBridge) InvalidatePendingEmailVerificationOTPs(context.Context, string) error {
 	return nil
 }

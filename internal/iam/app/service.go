@@ -105,6 +105,11 @@ func (s *service) Login(ctx context.Context, req LoginRequest) (*LoginResponse, 
 			return nil, err
 		}
 	}
+	if strings.EqualFold(user.Status, "pending_email_verification") {
+		e := perr.NewHTTPError(http.StatusForbidden, perr.CodeEmailVerificationRequired, "email verification required before sign-in", nil)
+		s.recordLoginAttempt(ctx, req, user, false, e)
+		return nil, e
+	}
 	if strings.ToLower(user.Status) != "active" {
 		e := perr.NewHTTPError(http.StatusForbidden, perr.CodeAccountLocked, "account is not active", nil)
 		s.recordLoginAttempt(ctx, req, user, false, e)
@@ -604,6 +609,9 @@ func (s *service) VerifyEmail(ctx context.Context, req VerifyEmailRequest) (*Ver
 			if err := s.recovery.MarkEmailVerified(ctx, userID, time.Now().UTC()); err != nil {
 				return nil, fmt.Errorf("mark email verified: %w", err)
 			}
+			if err := s.recovery.ActivateUserAfterEmailVerification(ctx, userID); err != nil {
+				return nil, fmt.Errorf("activate after verify: %w", err)
+			}
 			return &VerifyEmailResponse{Success: true, EmailVerified: true}, nil
 		case EmailOTPWrongCode:
 			return nil, perr.NewHTTPError(http.StatusUnauthorized, perr.CodeEmailVerificationTokenInvalid, "verification code invalid or expired", nil)
@@ -632,6 +640,9 @@ func (s *service) VerifyEmail(ctx context.Context, req VerifyEmailRequest) (*Ver
 	}
 	if err := s.recovery.MarkEmailVerified(ctx, uid, time.Now().UTC()); err != nil {
 		return nil, fmt.Errorf("mark email verified: %w", err)
+	}
+	if err := s.recovery.ActivateUserAfterEmailVerification(ctx, uid); err != nil {
+		return nil, fmt.Errorf("activate after verify: %w", err)
 	}
 	return &VerifyEmailResponse{Success: true, EmailVerified: true}, nil
 }
@@ -836,6 +847,78 @@ func (s *service) PublishUserInvitationEmail(ctx context.Context, userID, toEmai
 		"subject": subject,
 		"body":    body,
 	})
+	return nil
+}
+
+// IssueEmailVerificationLink stores a one-time email-verification token and
+// dispatches a verify-link email. Used by admin staff-create so a pending user
+// can verify via the public link (they cannot log in to reach the OTP page).
+func (s *service) IssueEmailVerificationLink(ctx context.Context, userID string) error {
+	if s.recovery == nil {
+		// No persistence wired (inmemory/bootstrap) — nothing to send.
+		return nil
+	}
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "user_id is required", nil)
+	}
+	verified, err := s.recovery.IsEmailVerified(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if verified {
+		return nil
+	}
+	user, err := s.recovery.FindUserByUserID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if user == nil {
+		return perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "user not found", nil)
+	}
+	rawToken, tokenHash, err := s.generateRawTokenAndHash()
+	if err != nil {
+		return fmt.Errorf("generate email verify token: %w", err)
+	}
+	ttl := s.emailVerifyTTL
+	if ttl <= 0 {
+		ttl = 24 * time.Hour
+	}
+	if err := s.recovery.StoreEmailVerificationToken(ctx, RecoveryTokenRecord{
+		TokenID: s.idgen.NewUUID(), UserID: user.UserID, TokenHash: tokenHash, ExpiresAt: time.Now().UTC().Add(ttl),
+	}); err != nil {
+		return fmt.Errorf("store email verify token: %w", err)
+	}
+	// Best-effort email dispatch (async outbox); token is the source of truth.
+	if s.outbox != nil {
+		to := coalesce(strings.TrimSpace(user.Email), strings.TrimSpace(user.LoginID))
+		verifyLink := s.buildActionLink("/verify-email", rawToken)
+		websiteURL := strings.TrimRight(s.webBaseURL, "/")
+		expiryHours := int(ttl.Hours())
+		if expiryHours < 1 {
+			expiryHours = 1
+		}
+		displayName := coalesce(user.FullName, user.LoginID)
+		legacyBody := fmt.Sprintf("Xin chào %s,\n\n", displayName)
+		legacyBody += "Tài khoản của bạn trên hệ thống CoBo Portal đã được tạo và đang chờ xác thực email.\n\n"
+		legacyBody += "Vui lòng xác thực email trong vòng " + fmt.Sprintf("%d", expiryHours) + " giờ bằng cách mở liên kết sau:\n\n"
+		legacyBody += verifyLink + "\n\n"
+		legacyBody += "Sau khi xác thực, bạn có thể đăng nhập bằng email và mật khẩu đã được cấp.\n\n"
+		legacyBody += "Nếu bạn không mong đợi thao tác này, vui lòng liên hệ quản trị viên.\n\nTrân trọng,\nĐội ngũ CoBo Portal\n"
+		legacySubject := "[CoBo] Xác thực email để kích hoạt tài khoản"
+		subject, body := s.renderEmailContent(ctx, "auth.email_verification_link", map[string]any{
+			"display_name":  displayName,
+			"verify_link":   verifyLink,
+			"expiry_hours":  expiryHours,
+			"support_email": s.supportEmail,
+			"website_url":   websiteURL,
+		}, legacySubject, legacyBody)
+		s.publishEmail(ctx, "auth.email_verification_requested", user.UserID, map[string]any{
+			"to":      to,
+			"subject": subject,
+			"body":    body,
+		})
+	}
 	return nil
 }
 

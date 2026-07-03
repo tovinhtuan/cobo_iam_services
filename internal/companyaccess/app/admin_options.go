@@ -20,6 +20,14 @@ func WithInvitationMailer(m InvitationMailer) AdminOption {
 	}
 }
 
+// WithEmailVerificationIssuer wires the email-verification link issuer (IAM/outbox)
+// so admin staff-create can create a pending user and dispatch a verify email.
+func WithEmailVerificationIssuer(m EmailVerificationIssuer) AdminOption {
+	return func(s *adminService) {
+		s.emailVerifIssuer = m
+	}
+}
+
 // WithInvitationTTL sets invitation token lifetime (must match IAM AuthFlowConfig for email copy accuracy).
 func WithInvitationTTL(d time.Duration) AdminOption {
 	return func(s *adminService) {

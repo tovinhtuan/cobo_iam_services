@@ -211,6 +211,10 @@ func (s *stubRecoveryForBaseline) MarkEmailVerified(_ context.Context, _ string,
 	return nil
 }
 
+func (s *stubRecoveryForBaseline) ActivateUserAfterEmailVerification(_ context.Context, _ string) error {
+	return nil
+}
+
 func (s *stubRecoveryForBaseline) IsEmailVerified(_ context.Context, _ string) (bool, error) {
 	return false, nil
 }

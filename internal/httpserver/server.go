@@ -518,6 +518,7 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 		mysqlAdmin := adminRepo.(*camysql.AdminRepository)
 		adminOpts = append(adminOpts,
 			companyaccessapp.WithInvitationMailer(&iamInvitationMailer{iam: iamSvc}),
+			companyaccessapp.WithEmailVerificationIssuer(&iamEmailVerificationIssuer{iam: iamSvc}),
 			companyaccessapp.WithInvitationTTL(cfg.UserInvitationTokenTTL),
 			companyaccessapp.WithConflictSnapshotReader(camysql.NewConflictSnapshotReader(mysqlAdmin)),
 			companyaccessapp.WithDependencyReader(camysql.NewDependencyReader(mysqlAdmin)),

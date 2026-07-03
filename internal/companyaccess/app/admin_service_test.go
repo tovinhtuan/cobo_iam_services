@@ -100,6 +100,75 @@ func TestAdminService_CreateUser_OK(t *testing.T) {
 	}
 }
 
+type fakeEmailVerifIssuer struct {
+	calledUserIDs []string
+	err           error
+}
+
+func (f *fakeEmailVerifIssuer) IssueEmailVerificationLink(_ context.Context, userID string) error {
+	f.calledUserIDs = append(f.calledUserIDs, userID)
+	return f.err
+}
+
+func TestAdminService_CreateUser_EmailVerificationRequired_PendingAndIssuesLink(t *testing.T) {
+	repo := cainmem.NewAdminRepository()
+	sub := caapp.AdminSubject{UserID: "u_admin", MembershipID: "m_admin", CompanyID: "c_001"}
+	seedInviteScopedSubject(t, repo, sub)
+	issuer := &fakeEmailVerifIssuer{}
+	svc := caapp.NewAdminService(
+		repo,
+		fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{"system.settings", "admin.membership.invite"}},
+		fixedIDGen("u_new"),
+		caapp.WithEmailVerificationIssuer(issuer),
+	)
+
+	out, err := svc.CreateUser(context.Background(), caapp.CreateUserRequest{
+		Subject:          sub,
+		LoginID:          "staff.verify@example.com",
+		Password:         "StrongPass123!",
+		FullName:         "Staff Verify",
+		Email:            "staff.verify@example.com",
+		CompanyID:        "c_001",
+		MembershipStatus: "active",
+	})
+	if err != nil {
+		t.Fatalf("CreateUser err=%v", err)
+	}
+	if out.AccountStatus != "pending_email_verification" {
+		t.Fatalf("AccountStatus=%q want pending_email_verification", out.AccountStatus)
+	}
+	if out.MembershipStatus != "pending_verification" {
+		t.Fatalf("MembershipStatus=%q want pending_verification", out.MembershipStatus)
+	}
+	if len(issuer.calledUserIDs) != 1 || issuer.calledUserIDs[0] != "u_new" {
+		t.Fatalf("expected issuer called once for u_new, got %+v", issuer.calledUserIDs)
+	}
+}
+
+func TestAdminService_CreateUser_NoIssuer_StaysActive(t *testing.T) {
+	repo := cainmem.NewAdminRepository()
+	sub := caapp.AdminSubject{UserID: "u_admin", MembershipID: "m_admin", CompanyID: "c_001"}
+	seedInviteScopedSubject(t, repo, sub)
+	svc := caapp.NewAdminService(
+		repo,
+		fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{"system.settings", "admin.membership.invite"}},
+		fixedIDGen("u_new2"),
+	)
+	out, err := svc.CreateUser(context.Background(), caapp.CreateUserRequest{
+		Subject:  sub,
+		LoginID:  "legacy.staff@example.com",
+		Password: "StrongPass123!",
+		FullName: "Legacy Staff",
+		Email:    "legacy.staff@example.com",
+	})
+	if err != nil {
+		t.Fatalf("CreateUser err=%v", err)
+	}
+	if out.AccountStatus != "active" {
+		t.Fatalf("AccountStatus=%q want active (no issuer wired)", out.AccountStatus)
+	}
+}
+
 func TestAdminService_CreateUser_WithOptionalMembership(t *testing.T) {
 	repo := cainmem.NewAdminRepository()
 	sub := caapp.AdminSubject{UserID: "u_admin", MembershipID: "m_admin", CompanyID: "c_001"}

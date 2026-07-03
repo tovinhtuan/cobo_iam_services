@@ -358,6 +358,13 @@ type InvitationMailer interface {
 	SendInvitationEmail(ctx context.Context, p InvitationMailPayload) error
 }
 
+// EmailVerificationIssuer stores a one-time email-verification token and sends the
+// verify-link email for a freshly created (pending) user. Wired to iam.Service in
+// production; nil in bootstrap/inmemory modes (staff-create then skips email issuance).
+type EmailVerificationIssuer interface {
+	IssueEmailVerificationLink(ctx context.Context, userID string) error
+}
+
 type InviteUserRequest struct {
 	Subject          AdminSubject
 	Email            string

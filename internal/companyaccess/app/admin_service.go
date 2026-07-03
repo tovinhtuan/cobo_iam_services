@@ -25,6 +25,7 @@ type adminService struct {
 	auth                             authapp.Service
 	idg                              idgen.Generator
 	invMailer                        InvitationMailer
+	emailVerifIssuer                 EmailVerificationIssuer
 	inviteTTL                        time.Duration
 	inviteDefaultRoleCode            string
 	tierLookup                       func(ctx context.Context, userID string) string
@@ -99,6 +100,17 @@ func (s *adminService) CreateUser(ctx context.Context, req CreateUserRequest) (*
 	if req.CompanyID != "" && req.MembershipStatus == "" {
 		req.MembershipStatus = "active"
 	}
+	// Email verification gate (business rule): a staff account created with an email
+	// must verify that email (via the emailed link) before it becomes active and can
+	// sign in. Only enforced when the verification pipeline is wired (production);
+	// bootstrap/inmemory modes without an issuer keep the legacy active-now behavior.
+	requireEmailVerification := req.Email != "" && s.emailVerifIssuer != nil
+	if requireEmailVerification {
+		req.AccountStatus = "pending_email_verification"
+		if req.CompanyID != "" {
+			req.MembershipStatus = "pending_verification"
+		}
+	}
 	if req.CompanyID != "" {
 		scopeView, err := s.authorizeScopedInviteOrCreate(ctx, req.Subject, "admin.membership.create")
 		if err != nil {
@@ -171,6 +183,14 @@ func (s *adminService) CreateUser(ctx context.Context, req CreateUserRequest) (*
 			return nil, err
 		}
 		if err := s.assignInviteTitle(ctx, out.MembershipID, req.TitleID); err != nil {
+			return nil, err
+		}
+	}
+	if requireEmailVerification && out != nil {
+		// User is already persisted as pending (cannot sign in), so dispatching the
+		// verification link is the final step. A failure here surfaces a controlled
+		// error to the admin; the account stays pending and safe (no sign-in possible).
+		if err := s.emailVerifIssuer.IssueEmailVerificationLink(ctx, out.UserID); err != nil {
 			return nil, err
 		}
 	}
