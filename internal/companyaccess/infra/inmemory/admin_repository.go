@@ -22,6 +22,8 @@ type AdminRepository struct {
 	memberships             map[string]caapp.MembershipView
 	rolesByMembership       map[string]map[string]struct{}
 	departmentsByMembership map[string]map[string]struct{}
+	focalDepartmentsByMembership map[string]map[string]bool
+	departmentCompany       map[string]string
 	titlesByMembership      map[string]map[string]struct{}
 
 	permissions     map[string]struct{}
@@ -59,6 +61,8 @@ func NewAdminRepository() *AdminRepository {
 		memberships:             map[string]caapp.MembershipView{},
 		rolesByMembership:       map[string]map[string]struct{}{},
 		departmentsByMembership: map[string]map[string]struct{}{},
+		focalDepartmentsByMembership: map[string]map[string]bool{},
+		departmentCompany:       map[string]string{},
 		titlesByMembership:      map[string]map[string]struct{}{},
 		permissions:             map[string]struct{}{"dashboard.view": {}, "disclosure.view": {}, "disclosure.approve": {}, "rbac.manage": {}, "system.settings": {}},
 		permissionMeta:          map[string]caapp.PermissionListItem{},
@@ -81,9 +85,17 @@ func NewAdminRepository() *AdminRepository {
 
 // SeedDepartment registers a department for invite-scope tests.
 func (r *AdminRepository) SeedDepartment(d caapp.DepartmentView) {
+	r.SeedDepartmentForCompany("", d)
+}
+
+// SeedDepartmentForCompany registers a department and optional owning company for validation tests.
+func (r *AdminRepository) SeedDepartmentForCompany(companyID string, d caapp.DepartmentView) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.departments[d.DepartmentID] = d
+	if companyID != "" {
+		r.departmentCompany[d.DepartmentID] = companyID
+	}
 }
 
 // SeedCompany adds a company to the in-memory store for testing.
@@ -538,10 +550,46 @@ func (r *AdminRepository) RemoveRole(_ context.Context, membershipID, roleID str
 	return nil
 }
 func (r *AdminRepository) AddDepartment(_ context.Context, membershipID, departmentID string) error {
+	return r.UpsertDepartmentMembership(context.Background(), membershipID, departmentID, false)
+}
+func (r *AdminRepository) UpsertDepartmentMembership(_ context.Context, membershipID, departmentID string, isFocal bool) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	m, ok := r.memberships[membershipID]
+	if !ok {
+		return perr.NewHTTPError(http.StatusNotFound, perr.CodeMembershipNotFound, "membership not found", nil)
+	}
+	dept, ok := r.departments[departmentID]
+	if !ok || strings.TrimSpace(dept.Status) == "inactive" {
+		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "department not found", nil)
+	}
+	if comp, ok := r.departmentCompany[departmentID]; ok && comp != m.CompanyID {
+		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "department company mismatch", nil)
+	}
 	addSet(r.departmentsByMembership, membershipID, departmentID)
+	if isFocal {
+		if r.focalDepartmentsByMembership[membershipID] == nil {
+			r.focalDepartmentsByMembership[membershipID] = map[string]bool{}
+		}
+		r.focalDepartmentsByMembership[membershipID][departmentID] = true
+	}
 	return nil
+}
+func (r *AdminRepository) ListFocalDepartmentIDs(_ context.Context, membershipID string) ([]string, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	m := r.focalDepartmentsByMembership[membershipID]
+	if len(m) == 0 {
+		return nil, nil
+	}
+	out := make([]string, 0, len(m))
+	for deptID, focal := range m {
+		if focal {
+			out = append(out, deptID)
+		}
+	}
+	sort.Strings(out)
+	return out, nil
 }
 func (r *AdminRepository) RemoveDepartment(_ context.Context, membershipID, departmentID string) error {
 	r.mu.Lock()

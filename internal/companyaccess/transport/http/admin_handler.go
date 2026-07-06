@@ -168,25 +168,29 @@ func (h *AdminHandler) createUser(w http.ResponseWriter, r *http.Request) {
 		RoleID           string   `json:"role_id"`
 		RoleCode         string   `json:"role_code"`
 		Permissions      []string `json:"permissions"`
-		DepartmentID     string   `json:"department_id"`
-		TitleID          string   `json:"title_id"`
+		DepartmentID       string   `json:"department_id"`
+		TitleID            string   `json:"title_id"`
+		IsDepartmentFocal  bool     `json:"is_department_focal"`
+		FocalDepartmentIDs []string `json:"focal_department_ids"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&p)
 	resp, err := h.svc.CreateUser(r.Context(), caapp.CreateUserRequest{
-		Subject:          sub,
-		LoginID:          p.LoginID,
-		Password:         p.Password,
-		FullName:         p.FullName,
-		Email:            p.Email,
-		Phone:            p.Phone,
-		AccountStatus:    p.AccountStatus,
-		CompanyID:        p.CompanyID,
-		MembershipStatus: p.MembershipStatus,
-		RoleID:           p.RoleID,
-		RoleCode:         p.RoleCode,
-		Permissions:      p.Permissions,
-		DepartmentID:     p.DepartmentID,
-		TitleID:          p.TitleID,
+		Subject:            sub,
+		LoginID:            p.LoginID,
+		Password:           p.Password,
+		FullName:           p.FullName,
+		Email:              p.Email,
+		Phone:              p.Phone,
+		AccountStatus:      p.AccountStatus,
+		CompanyID:          p.CompanyID,
+		MembershipStatus:   p.MembershipStatus,
+		RoleID:             p.RoleID,
+		RoleCode:           p.RoleCode,
+		Permissions:        p.Permissions,
+		DepartmentID:       p.DepartmentID,
+		TitleID:            p.TitleID,
+		IsDepartmentFocal:  p.IsDepartmentFocal,
+		FocalDepartmentIDs: p.FocalDepartmentIDs,
 	})
 	if err != nil {
 		httpx.WriteError(w, nil, err)
@@ -943,26 +947,30 @@ func (h *AdminHandler) inviteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var p struct {
-		Email        string   `json:"email"`
-		FullName     string   `json:"full_name"`
-		RoleID       string   `json:"role_id"`
-		RoleCode     string   `json:"role_code"`
-		Permissions  []string `json:"permissions"`
-		DepartmentID string   `json:"department_id"`
-		TitleID      string   `json:"title_id"`
+		Email              string   `json:"email"`
+		FullName           string   `json:"full_name"`
+		RoleID             string   `json:"role_id"`
+		RoleCode           string   `json:"role_code"`
+		Permissions        []string `json:"permissions"`
+		DepartmentID       string   `json:"department_id"`
+		TitleID            string   `json:"title_id"`
+		IsDepartmentFocal  bool     `json:"is_department_focal"`
+		FocalDepartmentIDs []string `json:"focal_department_ids"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&p)
 	resp, err := h.svc.InviteUser(r.Context(), caapp.InviteUserRequest{
-		Subject:         sub,
-		Email:           p.Email,
-		FullName:        p.FullName,
-		CompanyID:       sub.CompanyID,
-		CreatedByUserID: sub.UserID,
-		RoleID:          p.RoleID,
-		RoleCode:        p.RoleCode,
-		Permissions:     p.Permissions,
-		DepartmentID:    p.DepartmentID,
-		TitleID:         p.TitleID,
+		Subject:            sub,
+		Email:              p.Email,
+		FullName:           p.FullName,
+		CompanyID:          sub.CompanyID,
+		CreatedByUserID:    sub.UserID,
+		RoleID:             p.RoleID,
+		RoleCode:           p.RoleCode,
+		Permissions:        p.Permissions,
+		DepartmentID:       p.DepartmentID,
+		TitleID:            p.TitleID,
+		IsDepartmentFocal:  p.IsDepartmentFocal,
+		FocalDepartmentIDs: p.FocalDepartmentIDs,
 	})
 	if err != nil {
 		httpx.WriteError(w, nil, err)

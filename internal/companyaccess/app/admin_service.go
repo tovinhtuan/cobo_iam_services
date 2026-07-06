@@ -111,22 +111,6 @@ func (s *adminService) CreateUser(ctx context.Context, req CreateUserRequest) (*
 			req.MembershipStatus = "pending_verification"
 		}
 	}
-	if req.CompanyID != "" {
-		scopeView, err := s.authorizeScopedInviteOrCreate(ctx, req.Subject, "admin.membership.create")
-		if err != nil {
-			return nil, err
-		}
-		deptID, err := s.pickInviteDepartmentID(scopeView.inviteScope, req.DepartmentID)
-		if err != nil {
-			return nil, err
-		}
-		req.DepartmentID = deptID
-		for _, p := range req.Permissions {
-			if !isGrantable(p) {
-				return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "permission_code is not grantable: "+p, nil)
-			}
-		}
-	}
 	if req.LoginID == "" {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "login_id required", nil)
 	}
@@ -154,12 +138,44 @@ func (s *adminService) CreateUser(ctx context.Context, req CreateUserRequest) (*
 		CompanyID:        req.CompanyID,
 		MembershipStatus: req.MembershipStatus,
 	}
+	var inviteScope inviteScope
 	if req.CompanyID != "" {
+		scopeView, err := s.authorizeScopedInviteOrCreate(ctx, req.Subject, "admin.membership.create")
+		if err != nil {
+			return nil, err
+		}
+		inviteScope = scopeView.inviteScope
+		deptID, err := s.pickInviteDepartmentID(inviteScope, req.DepartmentID)
+		if err != nil {
+			return nil, err
+		}
+		req.DepartmentID = deptID
+		req.FocalDepartmentIDs = normalizeFocalDepartmentIDs(req.FocalDepartmentIDs)
+		if req.IsDepartmentFocal && req.DepartmentID == "" && len(req.FocalDepartmentIDs) > 0 {
+			req.DepartmentID = req.FocalDepartmentIDs[0]
+		}
+		isPlatformCMS, err := s.isPlatformCMSOperator(ctx, req.Subject)
+		if err != nil {
+			return nil, err
+		}
+		if !isPlatformCMS {
+			if err := validateEnterpriseInvitePermissions(req.Permissions); err != nil {
+				return nil, err
+			}
+			if err := s.validateInviteOrgFields(req.IsDepartmentFocal, req.FocalDepartmentIDs); err != nil {
+				return nil, err
+			}
+		}
+		for _, p := range req.Permissions {
+			if !isGrantable(p) {
+				return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "permission_code is not grantable: "+p, nil)
+			}
+		}
 		defRoleCode := strings.TrimSpace(s.inviteDefaultRoleCode)
 		if defRoleCode == "" {
 			defRoleCode = "user_thuong"
 		}
-		roleID, err := s.repo.LookupRoleIDForInvite(ctx, req.CompanyID, req.RoleID, req.RoleCode, defRoleCode)
+		roleID, err := s.validateEnterpriseInviteRole(ctx, req.CompanyID, req.RoleID, req.RoleCode, defRoleCode, isPlatformCMS)
 		if err != nil {
 			return nil, err
 		}
@@ -179,7 +195,7 @@ func (s *adminService) CreateUser(ctx context.Context, req CreateUserRequest) (*
 		if err := s.grantDefaultPermissions(ctx, out.MembershipID, out.CompanyID, req.Subject.UserID); err != nil {
 			return nil, err
 		}
-		if err := s.assignInviteDepartment(ctx, out.MembershipID, req.DepartmentID); err != nil {
+		if err := s.assignInviteOrg(ctx, out.MembershipID, out.CompanyID, req.DepartmentID, req.IsDepartmentFocal, req.FocalDepartmentIDs, inviteScope); err != nil {
 			return nil, err
 		}
 		if err := s.assignInviteTitle(ctx, out.MembershipID, req.TitleID); err != nil {
@@ -293,6 +309,10 @@ func (s *adminService) InviteUser(ctx context.Context, req InviteUserRequest) (*
 	req.CompanyID = strings.TrimSpace(req.CompanyID)
 	req.MembershipStatus = strings.TrimSpace(req.MembershipStatus)
 	req.TitleID = strings.TrimSpace(req.TitleID)
+	req.FocalDepartmentIDs = normalizeFocalDepartmentIDs(req.FocalDepartmentIDs)
+	if req.IsDepartmentFocal && req.DepartmentID == "" && len(req.FocalDepartmentIDs) > 0 {
+		req.DepartmentID = req.FocalDepartmentIDs[0]
+	}
 	if req.Email == "" {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "email is required", nil)
 	}
@@ -390,7 +410,18 @@ func (s *adminService) inviteUserWithoutCompany(ctx context.Context, req InviteU
 
 // inviteUserWithCompany is the original invite flow (with company + membership creation).
 func (s *adminService) inviteUserWithCompany(ctx context.Context, req InviteUserRequest, scope inviteScope) (*InviteUserResponse, error) {
-	_ = scope
+	isPlatformCMS, err := s.isPlatformCMSOperator(ctx, req.Subject)
+	if err != nil {
+		return nil, err
+	}
+	if !isPlatformCMS {
+		if err := validateEnterpriseInvitePermissions(req.Permissions); err != nil {
+			return nil, err
+		}
+		if err := s.validateInviteOrgFields(req.IsDepartmentFocal, req.FocalDepartmentIDs); err != nil {
+			return nil, err
+		}
+	}
 	if req.MembershipStatus == "" {
 		req.MembershipStatus = "active"
 	}
@@ -416,7 +447,7 @@ func (s *adminService) inviteUserWithCompany(ctx context.Context, req InviteUser
 		if defRoleCode == "" {
 			defRoleCode = "user_thuong"
 		}
-		roleID, err := s.repo.LookupRoleIDForInvite(ctx, req.CompanyID, strings.TrimSpace(req.RoleID), strings.TrimSpace(req.RoleCode), defRoleCode)
+		roleID, err := s.validateEnterpriseInviteRole(ctx, req.CompanyID, strings.TrimSpace(req.RoleID), strings.TrimSpace(req.RoleCode), defRoleCode, isPlatformCMS)
 		if err != nil {
 			return nil, err
 		}
@@ -442,7 +473,7 @@ func (s *adminService) inviteUserWithCompany(ctx context.Context, req InviteUser
 		if err := s.grantDefaultPermissions(ctx, m.MembershipID, req.CompanyID, req.CreatedByUserID); err != nil {
 			return nil, err
 		}
-		if err := s.assignInviteDepartment(ctx, m.MembershipID, req.DepartmentID); err != nil {
+		if err := s.assignInviteOrg(ctx, m.MembershipID, req.CompanyID, req.DepartmentID, req.IsDepartmentFocal, req.FocalDepartmentIDs, scope); err != nil {
 			return nil, err
 		}
 		if err := s.assignInviteTitle(ctx, m.MembershipID, req.TitleID); err != nil {
@@ -492,7 +523,7 @@ func (s *adminService) inviteUserWithCompany(ctx context.Context, req InviteUser
 	if defRoleCode == "" {
 		defRoleCode = "user_thuong"
 	}
-	roleID, err := s.repo.LookupRoleIDForInvite(ctx, req.CompanyID, strings.TrimSpace(req.RoleID), strings.TrimSpace(req.RoleCode), defRoleCode)
+	roleID, err := s.validateEnterpriseInviteRole(ctx, req.CompanyID, strings.TrimSpace(req.RoleID), strings.TrimSpace(req.RoleCode), defRoleCode, isPlatformCMS)
 	if err != nil {
 		return nil, err
 	}
@@ -525,7 +556,7 @@ func (s *adminService) inviteUserWithCompany(ctx context.Context, req InviteUser
 	if err := s.grantDefaultPermissions(ctx, opts.MembershipID, req.CompanyID, createdBy); err != nil {
 		return nil, err
 	}
-	if err := s.assignInviteDepartment(ctx, opts.MembershipID, req.DepartmentID); err != nil {
+	if err := s.assignInviteOrg(ctx, opts.MembershipID, req.CompanyID, req.DepartmentID, req.IsDepartmentFocal, req.FocalDepartmentIDs, scope); err != nil {
 		return nil, err
 	}
 	if err := s.assignInviteTitle(ctx, opts.MembershipID, req.TitleID); err != nil {
@@ -552,11 +583,19 @@ func (s *adminService) inviteUserWithCompany(ctx context.Context, req InviteUser
 	}, nil
 }
 
+func (s *adminService) isPlatformCMSOperator(ctx context.Context, sub AdminSubject) (bool, error) {
+	return s.hasPermission(ctx, sub, "platform.cms.view")
+}
+
 func (s *adminService) ListInviteRoles(ctx context.Context, req ListInviteRolesRequest) ([]InviteRoleOption, error) {
 	if err := s.authorizeMembershipInvite(ctx, req.Subject, req.Subject.CompanyID); err != nil {
 		return nil, err
 	}
 	isWebAdmin, err := s.hasPermission(ctx, req.Subject, "rbac.manage")
+	if err != nil {
+		return nil, err
+	}
+	isPlatformCMS, err := s.isPlatformCMSOperator(ctx, req.Subject)
 	if err != nil {
 		return nil, err
 	}
@@ -570,7 +609,14 @@ func (s *adminService) ListInviteRoles(ctx context.Context, req ListInviteRolesR
 	if target == "" {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "company_id is required", nil)
 	}
-	return s.repo.ListInviteRolesForCompany(ctx, target)
+	items, err := s.repo.ListInviteRolesForCompany(ctx, target)
+	if err != nil {
+		return nil, err
+	}
+	if !isPlatformCMS {
+		items = FilterEnterpriseInviteRoles(items)
+	}
+	return items, nil
 }
 
 func (s *adminService) ResendUserInvitation(ctx context.Context, req ResendUserInvitationRequest) error {

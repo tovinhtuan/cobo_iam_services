@@ -374,18 +374,51 @@ func (r *AdminRepository) RemoveRole(ctx context.Context, membershipID, roleID s
 }
 
 func (r *AdminRepository) AddDepartment(ctx context.Context, membershipID, departmentID string) error {
+	return r.UpsertDepartmentMembership(ctx, membershipID, departmentID, false)
+}
+
+func (r *AdminRepository) UpsertDepartmentMembership(ctx context.Context, membershipID, departmentID string, isFocal bool) error {
 	if err := r.ensureMembership(ctx, membershipID); err != nil {
 		return err
 	}
 	if err := r.ensureDepartmentForMembership(ctx, membershipID, departmentID); err != nil {
 		return err
 	}
+	focalVal := 0
+	if isFocal {
+		focalVal = 1
+	}
 	_, err := r.db.ExecContext(ctx, `
-		INSERT INTO department_memberships (membership_id, department_id, status)
-		VALUES (?, ?, 'active')
-		ON DUPLICATE KEY UPDATE status = 'active', updated_at = CURRENT_TIMESTAMP
-	`, membershipID, departmentID)
+		INSERT INTO department_memberships (membership_id, department_id, status, is_department_focal)
+		VALUES (?, ?, 'active', ?)
+		ON DUPLICATE KEY UPDATE
+		  status = 'active',
+		  is_department_focal = GREATEST(is_department_focal, VALUES(is_department_focal)),
+		  updated_at = CURRENT_TIMESTAMP
+	`, membershipID, departmentID, focalVal)
 	return err
+}
+
+func (r *AdminRepository) ListFocalDepartmentIDs(ctx context.Context, membershipID string) ([]string, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT department_id
+		FROM department_memberships
+		WHERE membership_id = ? AND status = 'active' AND is_department_focal = 1
+		ORDER BY department_id
+	`, membershipID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
 }
 
 func (r *AdminRepository) RemoveDepartment(ctx context.Context, membershipID, departmentID string) error {

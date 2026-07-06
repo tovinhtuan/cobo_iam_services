@@ -3030,3 +3030,18 @@
   - default Go build cache path was blocked by machine permissions, so verification used a workspace cache override
 - related cache:
   - `docs/ai-cache/create-employee-direct-flow-integration-summary-2026-06-18.md`
+
+## 2026-07-06 - Staff Invite T1/T2 migration ledger fix + QA closeout
+
+- task type: deploy fix + QA verification
+- objective: Ensure `0113_department_memberships_focal` applies on DEV; support DB verification for focal QA
+- implemented: Added `0113_department_memberships_focal.up.sql` to `migrations/run_dev_migrations.sh`; applied on DEV via `push-migration.sh`
+- verification: Column `department_memberships.is_department_focal` present on DEV; API/DB focal rows `is_department_focal=1` for invite + create paths
+- evidence: `../cobo_web_design/docs/ai-cache/staff-invite-t1-t2-implementation-2026-07-06/`
+
+## 2026-07-06 - Staff Invite T3/T4 permission validation hardening
+
+- task type: backend validation + tests
+- implemented: `validateEnterpriseInvitePermissions` denies read/rbac/system/cms/platform direct grants on invite/create
+- tests: `TestInviteUser_RejectsCMSPrefixPermission`, `TestInviteUser_RejectsRbacManageDirectPermission`, `TestInviteUser_AcceptsWorkflowAndAdHocPermissions`, `TestCreateUser_RejectsRbacManageDirectPermission`, `TestInviteUser_RejectsWorkflowReadInPayload`
+- evidence: `../cobo_web_design/docs/ai-cache/staff-invite-t3-t4-implementation-2026-07-06/`

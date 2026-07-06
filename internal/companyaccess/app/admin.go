@@ -212,6 +212,10 @@ type AdminRepository interface {
 	AddRole(ctx context.Context, membershipID, roleID string) error
 	RemoveRole(ctx context.Context, membershipID, roleID string) error
 	AddDepartment(ctx context.Context, membershipID, departmentID string) error
+	// UpsertDepartmentMembership links membership to department; isFocal marks department focal assignment.
+	UpsertDepartmentMembership(ctx context.Context, membershipID, departmentID string, isFocal bool) error
+	// ListFocalDepartmentIDs returns department IDs where membership is an active focal point.
+	ListFocalDepartmentIDs(ctx context.Context, membershipID string) ([]string, error)
 	RemoveDepartment(ctx context.Context, membershipID, departmentID string) error
 	AddTitle(ctx context.Context, membershipID, titleID string) error
 	RemoveTitle(ctx context.Context, membershipID, titleID string) error
@@ -381,6 +385,10 @@ type InviteUserRequest struct {
 	DepartmentID string `json:"department_id,omitempty"`
 	// TitleID optionally assigns one active company title to the created membership during invite.
 	TitleID string `json:"title_id,omitempty"`
+	// IsDepartmentFocal marks the membership as focal for FocalDepartmentIDs.
+	IsDepartmentFocal bool `json:"is_department_focal,omitempty"`
+	// FocalDepartmentIDs is required when IsDepartmentFocal is true.
+	FocalDepartmentIDs []string `json:"focal_department_ids,omitempty"`
 }
 
 type InviteUserResponse struct {
@@ -502,6 +510,10 @@ type CreateUserRequest struct {
 	Permissions  []string `json:"permissions,omitempty"`
 	DepartmentID string   `json:"department_id,omitempty"`
 	TitleID      string   `json:"title_id,omitempty"`
+	// IsDepartmentFocal marks the membership as focal for FocalDepartmentIDs.
+	IsDepartmentFocal bool `json:"is_department_focal,omitempty"`
+	// FocalDepartmentIDs is required when IsDepartmentFocal is true.
+	FocalDepartmentIDs []string `json:"focal_department_ids,omitempty"`
 }
 
 type CreateMembershipRequest struct {
