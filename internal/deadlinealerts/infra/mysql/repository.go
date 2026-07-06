@@ -22,8 +22,8 @@ func NewRepository(db *sql.DB) *Repository {
 	return &Repository{db: db, disclosure: disclosuremysql.NewRepository(db)}
 }
 
-func (r *Repository) ListRows(ctx context.Context, companyID string) ([]deadlinealertsapp.AlertRow, error) {
-	deptByRecord, err := r.listCurrentStepDepartments(ctx, companyID)
+func (r *Repository) ListRows(ctx context.Context, companyID string, scope deadlinealertsapp.DeadlineAlertAccessScope) ([]deadlinealertsapp.AlertRow, error) {
+	deptByRecord, err := r.listCurrentStepMeta(ctx, companyID)
 	if err != nil {
 		return nil, err
 	}
@@ -31,9 +31,13 @@ func (r *Repository) ListRows(ctx context.Context, companyID string) ([]deadline
 	if err != nil {
 		return nil, err
 	}
+	taskAssigneeRecords, err := r.listTaskAssigneeRecords(ctx, companyID, scope.MembershipID)
+	if err != nil {
+		return nil, err
+	}
 
-	// Keep SQL compact: DEV MySQL may use max_allowed_packet=2048; avoid large correlated subqueries.
-	rows, err := r.db.QueryContext(ctx, `
+	scopeClause, scopeArgs := deadlinealertsapp.BuildListRowsScopeSQL(scope)
+	query := `
 		SELECT
 			dr.company_id,
 			dr.record_id,
@@ -41,6 +45,7 @@ func (r *Repository) ListRows(ctx context.Context, companyID string) ([]deadline
 			dr.title,
 			COALESCE(dtv.name, ''),
 			dr.status,
+			COALESCE(dr.department_id, ''),
 			COALESCE(DATE_FORMAT(dr.planned_date, '%Y-%m-%d'), ''),
 			COALESCE(wi.workflow_instance_id, ''),
 			COALESCE(wi.current_step_code, ''),
@@ -61,9 +66,11 @@ func (r *Repository) ListRows(ctx context.Context, companyID string) ([]deadline
 		LEFT JOIN deadline_alert_confirmations dac ON dac.company_id = dr.company_id
 			AND dac.record_id = dr.record_id
 		WHERE dr.company_id = ?
-		  AND LOWER(TRIM(dr.status)) <> 'draft'
+		  AND LOWER(TRIM(dr.status)) <> 'draft'` + scopeClause + `
 		ORDER BY dr.created_at DESC
-	`, companyID)
+	`
+	args := append([]any{companyID}, scopeArgs...)
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -81,6 +88,7 @@ func (r *Repository) ListRows(ctx context.Context, companyID string) ([]deadline
 			&row.Title,
 			&row.TypeName,
 			&row.RecordStatus,
+			&row.RecordDepartmentID,
 			&row.PlannedDate,
 			&row.WorkflowInstanceID,
 			&row.CurrentStepCode,
@@ -90,7 +98,10 @@ func (r *Repository) ListRows(ctx context.Context, companyID string) ([]deadline
 		); err != nil {
 			return nil, err
 		}
-		row.CurrentStepDepartment = deptByRecord[row.RecordID]
+		meta := deptByRecord[row.RecordID]
+		row.CurrentStepDepartment = meta.department
+		row.CurrentStepName = meta.stepName
+		row.HasTaskAssignee = taskAssigneeRecords[row.RecordID]
 		if meta, ok := adHocByRecord[row.RecordID]; ok {
 			row.AdHocTitleLine = meta.titleLine
 			row.AdHocDeadlineDate = meta.dueDate
@@ -103,6 +114,37 @@ func (r *Repository) ListRows(ctx context.Context, companyID string) ([]deadline
 			row.ConfirmedAt = &ts
 		}
 		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repository) listTaskAssigneeRecords(ctx context.Context, companyID, membershipID string) (map[string]bool, error) {
+	out := map[string]bool{}
+	membershipID = strings.TrimSpace(membershipID)
+	if membershipID == "" {
+		return out, nil
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT DISTINCT wi.record_id
+		FROM workflow_tasks wt
+		INNER JOIN workflow_instances wi ON wi.workflow_instance_id = wt.workflow_instance_id
+			AND wi.company_id = wt.company_id
+		INNER JOIN disclosure_records dr ON dr.company_id = wi.company_id AND dr.record_id = wi.record_id
+		WHERE wt.company_id = ?
+		  AND wt.assignee_membership_id = ?
+		  AND LOWER(TRIM(dr.status)) <> 'draft'
+		  AND LOWER(TRIM(wt.status)) NOT IN ('completed', 'done', 'cancelled', 'skipped')
+	`, companyID, membershipID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var recordID string
+		if err := rows.Scan(&recordID); err != nil {
+			return nil, err
+		}
+		out[strings.TrimSpace(recordID)] = true
 	}
 	return out, rows.Err()
 }
@@ -169,7 +211,12 @@ func formatAdHocDueDate(finalDue sql.NullTime, proposedT0 sql.NullTime, proposed
 	return ""
 }
 
-func (r *Repository) listCurrentStepDepartments(ctx context.Context, companyID string) (map[string]string, error) {
+type currentStepMeta struct {
+	department string
+	stepName   string
+}
+
+func (r *Repository) listCurrentStepMeta(ctx context.Context, companyID string) (map[string]currentStepMeta, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT wi.record_id, wi.current_step_code, wi.snapshot_json
 		FROM workflow_instances wi
@@ -183,7 +230,7 @@ func (r *Repository) listCurrentStepDepartments(ctx context.Context, companyID s
 	}
 	defer rows.Close()
 
-	out := map[string]string{}
+	out := map[string]currentStepMeta{}
 	for rows.Next() {
 		var recordID, stepCode string
 		var snapshot []byte
@@ -191,10 +238,15 @@ func (r *Repository) listCurrentStepDepartments(ctx context.Context, companyID s
 			return nil, err
 		}
 		depts := deadlinealertsapp.ActiveDepartmentsFromSnapshot(stepCode, snapshot)
-		if len(depts) == 0 {
+		dept := ""
+		if len(depts) > 0 {
+			dept = depts[0]
+		}
+		stepName := deadlinealertsapp.CurrentStepNameFromSnapshot(stepCode, snapshot)
+		if dept == "" && stepName == "" {
 			continue
 		}
-		out[recordID] = depts[0]
+		out[recordID] = currentStepMeta{department: dept, stepName: stepName}
 	}
 	return out, rows.Err()
 }

@@ -6,6 +6,7 @@ import (
 
 	authapp "github.com/cobo/cobo_iam_services/internal/authorization/app"
 	disclosureapp "github.com/cobo/cobo_iam_services/internal/disclosure/app"
+	workflowapp "github.com/cobo/cobo_iam_services/internal/workflow/app"
 )
 
 type Subject struct {
@@ -33,6 +34,7 @@ type DeadlineAlertDTO struct {
 	DueDate            string   `json:"due_date"`
 	Status             string   `json:"status"` // UPCOMING|DUE_SOON|OVERDUE|PENDING_CONFIRM|DONE
 	ActiveDepartments  []string `json:"active_departments"`
+	CurrentStepName    string   `json:"current_step_name,omitempty"`
 	Source             string   `json:"source"`
 	TemplateCategory   string   `json:"template_category,omitempty"`
 }
@@ -67,10 +69,13 @@ type AlertRow struct {
 	TypeName           string
 	AdHocTitleLine     string
 	RecordStatus       string
+	RecordDepartmentID string
 	PlannedDate        string
+	HasTaskAssignee    bool
 	WorkflowInstanceID string
 	CurrentStepCode        string
 	CurrentStepDepartment  string
+	CurrentStepName        string
 	SnapshotJSON           []byte // populated only when full snapshot is required (not list query)
 	AdHocDeadlineDate  string
 	TemplateCategory   string
@@ -79,8 +84,15 @@ type AlertRow struct {
 	ConfirmedAt        *time.Time
 }
 
+type WorkflowInstanceRow struct {
+	WorkflowInstanceID string
+	T0Date             time.Time
+	SnapshotJSON       []byte
+	Timezone           string
+}
+
 type Repository interface {
-	ListRows(ctx context.Context, companyID string) ([]AlertRow, error)
+	ListRows(ctx context.Context, companyID string, scope DeadlineAlertAccessScope) ([]AlertRow, error)
 	GetCompanyDeadlineContext(ctx context.Context, companyID string) (disclosureapp.CompanyDeadlineContext, error)
 	// GetCompanyTypeDeadlineContext returns company context enriched with
 	// per-company cycle anchor override for the given type.
@@ -88,11 +100,19 @@ type Repository interface {
 	GetTypeDeadlineConfig(ctx context.Context, companyID, typeID string) (*disclosureapp.TemplateDeadlineConfig, error)
 	HasDisclosureRecord(ctx context.Context, companyID, recordID string) (bool, error)
 	ConfirmDeadlineAlert(ctx context.Context, companyID, recordID, confirmedBy, note, idempotencyKey string, at time.Time) error
+	GetWorkflowInstanceByRecord(ctx context.Context, companyID, recordID string) (*WorkflowInstanceRow, error)
+	GetEffectiveWorkflowSnapshot(ctx context.Context, companyID, typeID string) ([]workflowapp.StepSnapshot, error)
+	ListStepStates(ctx context.Context, workflowInstanceID string) (map[string]StepRuntimeState, error)
+	UpsertStepCompleted(ctx context.Context, companyID, workflowInstanceID, stepCode, membershipID string, at time.Time) error
+	UpsertStepIncomplete(ctx context.Context, companyID, workflowInstanceID, stepCode, membershipID, reason string, delayDays int, at time.Time) error
 }
 
 type Service interface {
 	ListDeadlineAlerts(ctx context.Context, req ListDeadlineAlertsRequest) (*ListDeadlineAlertsResponse, error)
 	ConfirmDeadlineAlert(ctx context.Context, req ConfirmDeadlineAlertRequest) (*ConfirmDeadlineAlertResponse, error)
+	ListDeadlineSteps(ctx context.Context, sub Subject, recordID string) (*ListDeadlineStepsResponse, error)
+	CompleteDeadlineStep(ctx context.Context, req CompleteStepRequest) (*ListDeadlineStepsResponse, error)
+	MarkDeadlineStepIncomplete(ctx context.Context, req MarkIncompleteStepRequest) (*ListDeadlineStepsResponse, error)
 }
 
 type service struct {

@@ -33,7 +33,13 @@ func (s *service) ListDeadlineAlerts(ctx context.Context, req ListDeadlineAlerts
 		pageSize = 100
 	}
 
-	rows, err := s.repo.ListRows(ctx, req.Subject.CompanyID)
+	eff, err := s.auth.GetEffectiveAccess(ctx, req.Subject.MembershipID, req.Subject.CompanyID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve effective access: %w", err)
+	}
+	accessScope := ResolveDeadlineAlertAccessScope(eff)
+
+	rows, err := s.repo.ListRows(ctx, req.Subject.CompanyID, accessScope)
 	if err != nil {
 		return nil, err
 	}
@@ -54,6 +60,9 @@ func (s *service) ListDeadlineAlerts(ctx context.Context, req ListDeadlineAlerts
 	var enriched []DeadlineAlertDTO
 	for _, row := range rows {
 		if isDraftRecordStatus(row.RecordStatus) {
+			continue
+		}
+		if !accessScope.AllowsRow(row) {
 			continue
 		}
 		dueDate, alertStatus, err := s.resolveDueDateAndStatus(ctx, row, companyCtx, now, typeConfigCache)
@@ -82,6 +91,7 @@ func (s *service) ListDeadlineAlerts(ctx context.Context, req ListDeadlineAlerts
 			DueDate:            dueDate,
 			Status:             alertStatus,
 			ActiveDepartments:  ActiveDepartmentsFromRow(row.CurrentStepCode, row.CurrentStepDepartment, row.SnapshotJSON),
+			CurrentStepName:    CurrentStepNameFromRow(row.CurrentStepCode, row.CurrentStepName, row.SnapshotJSON),
 			Source:             "disclosure_record",
 			TemplateCategory:   strings.TrimSpace(row.TemplateCategory),
 		})

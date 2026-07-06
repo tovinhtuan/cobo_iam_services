@@ -253,7 +253,7 @@ func (r *Repository) ListTypes(ctx context.Context, params disclosureapp.ListTyp
 		WHERE ` + whereClause
 
 	total := 0
-	if !params.LightweightOnly && len(params.TypeIDs) == 0 {
+	if len(params.TypeIDs) == 0 {
 		countSQL := `SELECT COUNT(*) ` + baseSQL
 		if err := r.db.QueryRowContext(ctx, countSQL, args...).Scan(&total); err != nil {
 			return nil, 0, err
@@ -268,7 +268,7 @@ func (r *Repository) ListTypes(ctx context.Context, params disclosureapp.ListTyp
 	} else {
 		dataSQL = `SELECT t.type_id, t.group_id, COALESCE(t.display_group_code, ''), t.company_id,
 		       COALESCE(t.is_mandatory, 0), COALESCE(t.review_status, ''),
-		       v.name, v.category, v.template_category, v.description, v.deadline_rule, v.tags_json,
+		       v.name, v.category, v.template_category, COALESCE(LEFT(v.description, 1024), ''), v.deadline_rule, v.tags_json,
 		       COALESCE(v.periodicity, ''), v.applicability_rules_json, t.created_at
 		` + baseSQL + `
 		ORDER BY ` + sortCol + ` ` + sortDir
@@ -343,9 +343,6 @@ func (r *Repository) ListTypes(ctx context.Context, params disclosureapp.ListTyp
 		return nil, 0, err
 	}
 	if params.LightweightOnly || len(typeIDs) == 0 {
-		if params.LightweightOnly {
-			total = len(out)
-		}
 		return out, total, nil
 	}
 	// Batch-load display_group_codes from junction table (DBA-001 / many-to-many).

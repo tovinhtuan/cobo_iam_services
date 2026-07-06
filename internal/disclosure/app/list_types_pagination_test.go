@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"testing"
 	"time"
@@ -23,6 +24,17 @@ func (r *listTypesPaginationRepo) ListTypes(_ context.Context, params ListTypesP
 	if params.LightweightOnly {
 		out := make([]DisclosureTypeSummaryDTO, len(r.light))
 		copy(out, r.light)
+		if params.Page > 0 && params.PageSize > 0 {
+			start := (params.Page - 1) * params.PageSize
+			if start >= len(out) {
+				return []DisclosureTypeSummaryDTO{}, len(r.light), nil
+			}
+			end := start + params.PageSize
+			if end > len(out) {
+				end = len(out)
+			}
+			return out[start:end], len(r.light), nil
+		}
 		return out, len(out), nil
 	}
 	if len(params.TypeIDs) > 0 {
@@ -87,6 +99,44 @@ func TestListTypes_PaginatesAfterLightweightApplicabilityPass(t *testing.T) {
 	}
 	if len(repo.calls) != 2 || !repo.calls[0].LightweightOnly || len(repo.calls[1].TypeIDs) != 2 {
 		t.Fatalf("unexpected repo calls: %+v", repo.calls)
+	}
+	if repo.calls[0].PageSize != listTypesLightweightChunkSize {
+		t.Fatalf("lightweight chunk size=%d want %d", repo.calls[0].PageSize, listTypesLightweightChunkSize)
+	}
+}
+
+func TestListTypes_LightweightCatalogUsesChunkedPages(t *testing.T) {
+	now := time.Now().UTC()
+	light := make([]DisclosureTypeSummaryDTO, 0, 55)
+	full := make(map[string]DisclosureTypeSummaryDTO, 55)
+	for i := 0; i < 55; i++ {
+		id := fmt.Sprintf("t-%02d", i)
+		light = append(light, DisclosureTypeSummaryDTO{TypeID: id, Scope: "global", Name: id, CreatedAt: now})
+		full[id] = DisclosureTypeSummaryDTO{TypeID: id, Name: id}
+	}
+	repo := &listTypesPaginationRepo{light: light, full: full}
+	svc := newListTypesPaginationService(repo)
+	resp, err := svc.ListTypes(context.Background(), ListTypesRequest{
+		Subject:          Subject{CompanyID: "company-001"},
+		Page:             1,
+		PageSize:         20,
+		PageProvided:     true,
+		PageSizeProvided: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Total != 55 || len(resp.Items) != 20 {
+		t.Fatalf("total=%d items=%d", resp.Total, len(resp.Items))
+	}
+	lightCalls := 0
+	for _, c := range repo.calls {
+		if c.LightweightOnly {
+			lightCalls++
+		}
+	}
+	if lightCalls < 2 {
+		t.Fatalf("expected chunked lightweight calls, got %d", lightCalls)
 	}
 }
 

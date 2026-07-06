@@ -385,6 +385,10 @@ func (s *service) ListDisplayGroups(ctx context.Context, req ListDisplayGroupsRe
 var allowedSortBy = map[string]bool{"name": true, "created_at": true}
 var allowedSortDir = map[string]bool{"asc": true, "desc": true}
 
+// listTypesLightweightChunkSize caps each MySQL round-trip for applicability filtering.
+// Keeps result sets small when max_allowed_packet is misconfigured on legacy DEV MySQL.
+const listTypesLightweightChunkSize = 50
+
 func (s *service) ListTypes(ctx context.Context, req ListTypesRequest) (*ListTypesResponse, error) {
 	if err := s.requireDisclosureCatalogRead(ctx, req.Subject); err != nil {
 		return nil, err
@@ -417,7 +421,7 @@ func (s *service) ListTypes(ctx context.Context, req ListTypesRequest) (*ListTyp
 	}
 
 	// Phase 1: lightweight rows for applicability filtering without loading the full catalog payload.
-	light, _, err := s.repo.ListTypes(ctx, ListTypesParams{
+	light, err := s.listTypesLightweightCatalog(ctx, ListTypesParams{
 		CompanyID:        req.Subject.CompanyID,
 		GroupID:          req.GroupID,
 		DisplayGroupCode: req.DisplayGroupCode,
@@ -474,6 +478,24 @@ func (s *service) ListTypes(ctx context.Context, req ListTypesRequest) (*ListTyp
 		enrichDeadlineRuleDisplaySummary(&ordered[i], catalog)
 	}
 	return &ListTypesResponse{Items: ordered, Total: total, Page: page, PageSize: pageSize}, nil
+}
+
+func (s *service) listTypesLightweightCatalog(ctx context.Context, base ListTypesParams) ([]DisclosureTypeSummaryDTO, error) {
+	base.LightweightOnly = true
+	base.PageSize = listTypesLightweightChunkSize
+	var all []DisclosureTypeSummaryDTO
+	for page := 1; ; page++ {
+		base.Page = page
+		chunk, total, err := s.repo.ListTypes(ctx, base)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, chunk...)
+		if len(chunk) == 0 || len(all) >= total {
+			break
+		}
+	}
+	return all, nil
 }
 
 func sortTypeSummaries(items []DisclosureTypeSummaryDTO, sortBy, sortDir string) {

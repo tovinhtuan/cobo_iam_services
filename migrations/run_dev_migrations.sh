@@ -111,6 +111,8 @@ seed_dev_identity_authorization.sql
 0108_delegated_admin_grants.up.sql
 0109_emergency_access_grants.up.sql
 0110_cleanup_enterprise_rbac_remaining_blocked_perms.up.sql
+0111_dev_deadline_alert_scope_qa_seed.up.sql
+0112_workflow_instance_step_runtime.up.sql
 "
 
 mysql_exec() {

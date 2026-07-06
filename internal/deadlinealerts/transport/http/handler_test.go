@@ -41,6 +41,18 @@ func (fakeSvc) ConfirmDeadlineAlert(_ context.Context, req deadlinealertsapp.Con
 	}, nil
 }
 
+func (fakeSvc) ListDeadlineSteps(_ context.Context, _ deadlinealertsapp.Subject, recordID string) (*deadlinealertsapp.ListDeadlineStepsResponse, error) {
+	return &deadlinealertsapp.ListDeadlineStepsResponse{RecordID: recordID, Steps: []deadlinealertsapp.DeadlineStepDTO{}}, nil
+}
+
+func (fakeSvc) CompleteDeadlineStep(_ context.Context, req deadlinealertsapp.CompleteStepRequest) (*deadlinealertsapp.ListDeadlineStepsResponse, error) {
+	return &deadlinealertsapp.ListDeadlineStepsResponse{RecordID: req.RecordID, Steps: []deadlinealertsapp.DeadlineStepDTO{}}, nil
+}
+
+func (fakeSvc) MarkDeadlineStepIncomplete(_ context.Context, req deadlinealertsapp.MarkIncompleteStepRequest) (*deadlinealertsapp.ListDeadlineStepsResponse, error) {
+	return &deadlinealertsapp.ListDeadlineStepsResponse{RecordID: req.RecordID, Steps: []deadlinealertsapp.DeadlineStepDTO{}}, nil
+}
+
 func TestListDeadlineAlerts_route(t *testing.T) {
 	mux := http.NewServeMux()
 	h := NewHandler(nil, fakeSvc{}, fakeInspector{})

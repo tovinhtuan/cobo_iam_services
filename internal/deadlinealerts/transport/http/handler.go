@@ -27,6 +27,9 @@ func NewHandler(log *slog.Logger, svc deadlinealertsapp.Service, inspector iamap
 func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/company/deadline-alerts", h.listDeadlineAlerts)
 	mux.HandleFunc("POST /api/v1/company/deadline-alerts/{id}/confirm", h.confirmDeadlineAlert)
+	mux.HandleFunc("GET /api/v1/company/deadlines/{record_id}/steps", h.listDeadlineSteps)
+	mux.HandleFunc("POST /api/v1/company/deadlines/{record_id}/steps/{step_code}/complete", h.completeDeadlineStep)
+	mux.HandleFunc("POST /api/v1/company/deadlines/{record_id}/steps/{step_code}/mark-incomplete", h.markDeadlineStepIncomplete)
 }
 
 func (h *Handler) listDeadlineAlerts(w http.ResponseWriter, r *http.Request) {
@@ -94,6 +97,83 @@ func (h *Handler) confirmDeadlineAlert(w http.ResponseWriter, r *http.Request) {
 		RecordID:       recordID,
 		Note:           strings.TrimSpace(body.Note),
 		IdempotencyKey: strings.TrimSpace(body.IdempotencyKey),
+	})
+	if err != nil {
+		httpx.WriteError(w, h.log, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) listDeadlineSteps(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subjectFromToken(r)
+	if err != nil {
+		httpx.WriteError(w, h.log, err)
+		return
+	}
+	recordID := strings.TrimSpace(r.PathValue("record_id"))
+	resp, err := h.svc.ListDeadlineSteps(r.Context(), sub, recordID)
+	if err != nil {
+		httpx.WriteError(w, h.log, err)
+		return
+	}
+	if resp.Steps == nil {
+		resp.Steps = []deadlinealertsapp.DeadlineStepDTO{}
+	}
+	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+type markIncompleteBody struct {
+	Reason    string `json:"reason"`
+	DelayDays int    `json:"delay_days"`
+}
+
+func (h *Handler) completeDeadlineStep(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subjectFromToken(r)
+	if err != nil {
+		httpx.WriteError(w, h.log, err)
+		return
+	}
+	recordID := strings.TrimSpace(r.PathValue("record_id"))
+	stepCode := strings.TrimSpace(r.PathValue("step_code"))
+	resp, err := h.svc.CompleteDeadlineStep(r.Context(), deadlinealertsapp.CompleteStepRequest{
+		Subject:  sub,
+		RecordID: recordID,
+		StepCode: stepCode,
+	})
+	if err != nil {
+		httpx.WriteError(w, h.log, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) markDeadlineStepIncomplete(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subjectFromToken(r)
+	if err != nil {
+		httpx.WriteError(w, h.log, err)
+		return
+	}
+	recordID := strings.TrimSpace(r.PathValue("record_id"))
+	stepCode := strings.TrimSpace(r.PathValue("step_code"))
+	var body markIncompleteBody
+	if r.Body != nil {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+			httpx.WriteJSON(w, http.StatusBadRequest, map[string]any{
+				"error": map[string]any{
+					"code":    "invalid_request",
+					"message": "invalid JSON body",
+				},
+			})
+			return
+		}
+	}
+	resp, err := h.svc.MarkDeadlineStepIncomplete(r.Context(), deadlinealertsapp.MarkIncompleteStepRequest{
+		Subject:   sub,
+		RecordID:  recordID,
+		StepCode:  stepCode,
+		Reason:    strings.TrimSpace(body.Reason),
+		DelayDays: body.DelayDays,
 	})
 	if err != nil {
 		httpx.WriteError(w, h.log, err)

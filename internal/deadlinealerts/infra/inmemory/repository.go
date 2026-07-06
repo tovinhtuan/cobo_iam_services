@@ -7,6 +7,7 @@ import (
 	deadlinealertsapp "github.com/cobo/cobo_iam_services/internal/deadlinealerts/app"
 	disclosureapp "github.com/cobo/cobo_iam_services/internal/disclosure/app"
 	disclosureinmem "github.com/cobo/cobo_iam_services/internal/disclosure/infra/inmemory"
+	workflowapp "github.com/cobo/cobo_iam_services/internal/workflow/app"
 )
 
 type Repository struct {
@@ -17,7 +18,7 @@ func NewRepository(disclosure *disclosureinmem.Repository) *Repository {
 	return &Repository{disclosure: disclosure}
 }
 
-func (r *Repository) ListRows(_ context.Context, _ string) ([]deadlinealertsapp.AlertRow, error) {
+func (r *Repository) ListRows(_ context.Context, _ string, _ deadlinealertsapp.DeadlineAlertAccessScope) ([]deadlinealertsapp.AlertRow, error) {
 	return nil, nil
 }
 
@@ -48,5 +49,25 @@ func (r *Repository) ConfirmDeadlineAlert(
 	_ string,
 	_ time.Time,
 ) error {
+	return nil
+}
+
+func (r *Repository) GetWorkflowInstanceByRecord(_ context.Context, _, _ string) (*deadlinealertsapp.WorkflowInstanceRow, error) {
+	return nil, nil
+}
+
+func (r *Repository) GetEffectiveWorkflowSnapshot(_ context.Context, _, _ string) ([]workflowapp.StepSnapshot, error) {
+	return nil, nil
+}
+
+func (r *Repository) ListStepStates(_ context.Context, _ string) (map[string]deadlinealertsapp.StepRuntimeState, error) {
+	return map[string]deadlinealertsapp.StepRuntimeState{}, nil
+}
+
+func (r *Repository) UpsertStepCompleted(_ context.Context, _, _, _, _ string, _ time.Time) error {
+	return nil
+}
+
+func (r *Repository) UpsertStepIncomplete(_ context.Context, _, _, _, _, _ string, _ int, _ time.Time) error {
 	return nil
 }

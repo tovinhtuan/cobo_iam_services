@@ -165,5 +165,6 @@ func defaultPolicies() map[string]authapp.ActionPolicy {
 		"template.workflow.override.reset":   {ActionCode: "template.workflow.override.reset", RequiredPermission: "template.workflow.override.reset", ScopeType: "*", WorkflowState: "*", EligibleActor: "*", EffectType: "allow", DenyReasonCode: "permission_denied"},
 		"company.view":                       {ActionCode: "company.view", RequiredPermission: "company.view", ScopeType: "*", WorkflowState: "*", EligibleActor: "*", EffectType: "allow", DenyReasonCode: "permission_denied"},
 		"company.edit":                       {ActionCode: "company.edit", RequiredPermission: "company.edit", ScopeType: "*", WorkflowState: "*", EligibleActor: "*", EffectType: "allow", DenyReasonCode: "permission_denied"},
+		"deadline.view":                      {ActionCode: "deadline.view", RequiredPermission: "deadline.view", ScopeType: "*", WorkflowState: "*", EligibleActor: "*", EffectType: "allow", DenyReasonCode: "permission_denied"},
 	}
 }
