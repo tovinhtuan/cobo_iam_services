@@ -41,7 +41,7 @@ node -e "const major = Number(process.versions.node.split('.')[0]); const ok = (
 .DEFAULT_GOAL := help
 .PHONY: help \
     be-build be-build-linux be-run be-run-worker be-test \
-    fe-install fe-dev fe-build fe-test fe-clean \
+    fe-install fe-dev fe-build fe-fix-dist-perms fe-fix-artifacts-perms fe-test fe-clean \
     dc-up dc-down dc-build dc-rebuild dc-logs dc-ps dc-restart \
     deploy-init deploy-be deploy-fe deploy-all push-migration \
     deploy-dev deploy-dev-be deploy-dev-fe deploy-dev-migrate deploy-dev-win \
@@ -83,7 +83,13 @@ fe-dev: ## Khởi động Vite dev server (port 3000)
 	@$(ensure_fe_env)
 	cd $(FE_DIR) && npm run dev
 
-fe-build: ## Production build → cobo_web_design/dist/
+fe-fix-dist-perms: ## Fix dist/ ownership when docker left root-owned files
+	@if [ -d $(FE_DIR)/dist ] && ! test -w $(FE_DIR)/dist; then \
+	  echo "==> Fixing $(FE_DIR)/dist permissions (root-owned from docker build)"; \
+	  docker run --rm -u 0 -v "$$(cd $(FE_DIR) && pwd)/dist:/dist" alpine chown -R $$(id -u):$$(id -g) /dist; \
+	fi
+
+fe-build: fe-fix-dist-perms ## Production build → cobo_web_design/dist/
 	@$(ensure_fe_env)
 	cd $(FE_DIR) && npm run build
 
@@ -150,7 +156,13 @@ deploy-be: be-build-linux ## [dev] Build Linux binary, SCP bin/ + configs/, rest
 	    cd $(DEV_PATH) && \
 	    docker compose -f docker-compose.artifacts.yml up -d --force-recreate --no-deps api worker"
 
-deploy-fe: fe-build ## [dev] Build FE, copy dist + nginx.conf, SCP, recreate web (bind-mount safe)
+fe-fix-artifacts-perms: ## Fix deploy-artifacts/web/dist ownership
+	@if [ -d $(ARTIFACTS)/web/dist ] && ! test -w $(ARTIFACTS)/web/dist; then \
+	  echo "==> Fixing $(ARTIFACTS)/web/dist permissions"; \
+	  docker run --rm -u 0 -v "$$(pwd)/$(ARTIFACTS)/web/dist:/dist" alpine chown -R $$(id -u):$$(id -g) /dist; \
+	fi
+
+deploy-fe: fe-build fe-fix-artifacts-perms ## [dev] Build FE, copy dist + nginx.conf, SCP, recreate web (bind-mount safe)
 	rm -rf $(ARTIFACTS)/web/dist
 	cp -r $(FE_DIR)/dist $(ARTIFACTS)/web/dist
 	$(SSH) "cd $(DEV_PATH) && docker compose -f docker-compose.artifacts.yml stop web 2>/dev/null || true"
