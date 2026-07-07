@@ -336,6 +336,9 @@ func TestCreateProposalRequiresPermission(t *testing.T) {
 	if !ok || httpErr.HTTPStatus != http.StatusForbidden {
 		t.Fatalf("expected 403 HTTPError, got %#v", err)
 	}
+	if httpErr.Message != "Missing permission ad_hoc_alert.propose" {
+		t.Fatalf("message = %q", httpErr.Message)
+	}
 	if auth.lastAction != "ad_hoc_alert.propose" {
 		t.Fatalf("expected propose action, got %q", auth.lastAction)
 	}
@@ -1033,10 +1036,11 @@ func TestCreateProposal_MissingController(t *testing.T) {
 	}
 }
 
-func TestCreateProposal_ControllerIsSelf(t *testing.T) {
+func TestCreateProposal_ControllerIsSelf_NoFocalReview(t *testing.T) {
 	repo := &fakeRepository{}
 	auth := &fakeAuthService{decision: authapp.DecisionAllow}
-	svc := newTestService(repo, &fakeRecordCreator{}, &fakeTypeCatalog{category: "irregular"}, auth)
+	mv := &fakeMembershipValidator{active: true, hasPerm: false}
+	svc := NewService(repo, &fakeRecordCreator{}, &fakeTypeCatalog{category: "irregular"}, fakeIDGen{}, false, auth, mv, nil, noopMetrics{})
 
 	_, err := svc.CreateProposal(context.Background(), CreateProposalRequest{
 		Subject:                       Subject{CompanyID: "company-001", MembershipID: "member-001", UserID: "user-001"},
@@ -1044,7 +1048,7 @@ func TestCreateProposal_ControllerIsSelf(t *testing.T) {
 		ProcessControllerMembershipID: "member-001", // same as creator
 	})
 	if err == nil {
-		t.Fatal("expected error for controller == creator")
+		t.Fatal("expected error for creator self-assign without focal_review")
 	}
 	httpErr, ok := err.(*perr.HTTPError)
 	if !ok || httpErr.HTTPStatus != http.StatusUnprocessableEntity {
@@ -1052,32 +1056,27 @@ func TestCreateProposal_ControllerIsSelf(t *testing.T) {
 	}
 }
 
-func TestCreateProposal_ControllerIsSelf_SoleReviewer_Returns422(t *testing.T) {
-	// D7 SoD safeguard: even a creator who holds ad_hoc_alert.focal_review
-	// cannot self-assign as the SOLE reviewer — at least one other reviewer
-	// must also be present.
+func TestCreateProposal_ControllerIsSelf_SoleReviewer_WithFocalReview_Allowed(t *testing.T) {
 	repo := &fakeRepository{}
 	auth := &fakeAuthService{decision: authapp.DecisionAllow}
 	mv := &fakeMembershipValidator{active: true, hasPerm: true, hasAdminRole: true}
 	svc := NewService(repo, &fakeRecordCreator{}, &fakeTypeCatalog{category: "irregular"}, fakeIDGen{}, false, auth, mv, nil, noopMetrics{})
 
-	_, err := svc.CreateProposal(context.Background(), CreateProposalRequest{
+	resp, err := svc.CreateProposal(context.Background(), CreateProposalRequest{
 		Subject:               Subject{CompanyID: "company-001", MembershipID: "member-001", UserID: "user-001"},
 		TypeID:                "dt-irregular",
 		ReviewerMembershipIDs: []string{"member-001"},
 	})
-	if err == nil {
-		t.Fatal("expected 422 for creator self-assigning as sole reviewer")
+	if err != nil {
+		t.Fatalf("CreateProposal() error = %v", err)
 	}
-	httpErr, ok := err.(*perr.HTTPError)
-	if !ok || httpErr.HTTPStatus != http.StatusUnprocessableEntity {
-		t.Fatalf("expected 422, got %#v", err)
+	if len(resp.ReviewerMembershipIDs) != 1 || resp.ReviewerMembershipIDs[0] != "member-001" {
+		t.Fatalf("expected sole self reviewer, got %v", resp.ReviewerMembershipIDs)
 	}
 }
 
 func TestCreateProposal_ControllerIsSelf_WithOtherReviewer_Allowed(t *testing.T) {
-	// D7: self-assign is allowed once >=1 other reviewer is also present, and
-	// the creator holds ad_hoc_alert.focal_review.
+	// Self-assign is allowed with focal_review; additional reviewers are optional.
 	repo := &fakeRepository{}
 	auth := &fakeAuthService{decision: authapp.DecisionAllow}
 	mv := &fakeMembershipValidator{active: true, hasPerm: true, hasAdminRole: true}
@@ -2066,5 +2065,63 @@ func TestProposalActions_EmitTransitionMetricWithExactLabels(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestCreateProposal_InvalidTypeID_ReturnsFieldError(t *testing.T) {
+	repo := &fakeRepository{}
+	typeCatalog := &fakeTypeCatalog{
+		err: perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "disclosure type not found", nil),
+	}
+	svc := newTestService(repo, &fakeRecordCreator{}, typeCatalog, &fakeAuthService{decision: authapp.DecisionAllow})
+
+	_, err := svc.CreateProposal(context.Background(), CreateProposalRequest{
+		Subject:               Subject{CompanyID: "company-001", MembershipID: "member-001", UserID: "user-001"},
+		TypeID:                "missing-type",
+		ReviewerMembershipIDs: []string{"member-reviewer"},
+	})
+	httpErr, ok := err.(*perr.HTTPError)
+	if !ok || httpErr.HTTPStatus != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %#v", err)
+	}
+	if httpErr.Details["field"] != "type_id" {
+		t.Fatalf("field = %v", httpErr.Details)
+	}
+}
+
+func TestCreateProposal_InvalidReviewer_ReturnsFieldError(t *testing.T) {
+	repo := &fakeRepository{}
+	mv := &fakeMembershipValidator{active: false, hasPerm: false}
+	svc := NewService(repo, &fakeRecordCreator{}, &fakeTypeCatalog{category: "irregular"}, fakeIDGen{}, false, &fakeAuthService{decision: authapp.DecisionAllow}, mv, nil, noopMetrics{})
+
+	_, err := svc.CreateProposal(context.Background(), CreateProposalRequest{
+		Subject:               Subject{CompanyID: "company-001", MembershipID: "member-001", UserID: "user-001"},
+		TypeID:                "dt-001",
+		ReviewerMembershipIDs: []string{"member-bad"},
+	})
+	httpErr, ok := err.(*perr.HTTPError)
+	if !ok || httpErr.HTTPStatus != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422, got %#v", err)
+	}
+	if httpErr.Details["field"] != "reviewer_membership_ids" {
+		t.Fatalf("field = %v", httpErr.Details)
+	}
+}
+
+func TestCreateProposal_SuccessWithChangeNote(t *testing.T) {
+	repo := &fakeRepository{}
+	svc := newTestService(repo, &fakeRecordCreator{}, &fakeTypeCatalog{category: "irregular"}, &fakeAuthService{decision: authapp.DecisionAllow})
+
+	resp, err := svc.CreateProposal(context.Background(), CreateProposalRequest{
+		Subject:               Subject{CompanyID: "company-001", MembershipID: "member-001", UserID: "user-001"},
+		TypeID:                "dt-irregular",
+		ChangeNote:            "Tiêu đề\nMô tả",
+		ReviewerMembershipIDs: []string{"member-controller"},
+	})
+	if err != nil {
+		t.Fatalf("CreateProposal: %v", err)
+	}
+	if resp.ChangeNote != "Tiêu đề\nMô tả" {
+		t.Fatalf("change_note = %q", resp.ChangeNote)
 	}
 }

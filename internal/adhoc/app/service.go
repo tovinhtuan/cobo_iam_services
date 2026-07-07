@@ -54,21 +54,27 @@ func safeNotify(proposalID string, fn func()) {
 
 func (s *service) CreateProposal(ctx context.Context, req CreateProposalRequest) (*ProposalDTO, error) {
 	if err := s.authorize(ctx, req.Subject, "ad_hoc_alert.propose", authapp.ResourceRef{Type: "ad_hoc_proposal"}); err != nil {
+		if he, ok := perr.AsHTTPError(err); ok && he.HTTPStatus == http.StatusForbidden {
+			return nil, newAdHocPermissionError("ad_hoc_alert.propose", "Missing permission ad_hoc_alert.propose")
+		}
 		return nil, err
 	}
 	req.TypeID = strings.TrimSpace(req.TypeID)
 	if req.TypeID == "" {
-		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "type_id is required", nil)
+		return nil, newAdHocFieldError(http.StatusBadRequest, perr.CodeInvalidRequest, "type_id", "type_id is required")
 	}
 	if s.typeCatalog == nil {
 		return nil, perr.NewHTTPError(http.StatusInternalServerError, perr.CodeInternal, "template catalog is unavailable", nil)
 	}
 	templateCategory, err := s.typeCatalog.GetTemplateCategory(ctx, req.Subject.CompanyID, req.TypeID)
 	if err != nil {
+		if he, ok := perr.AsHTTPError(err); ok && strings.Contains(strings.ToLower(he.Message), "disclosure type not found") {
+			return nil, newAdHocFieldError(http.StatusBadRequest, perr.CodeInvalidRequest, "type_id", "Disclosure type is not available for ad-hoc proposal")
+		}
 		return nil, mapRepositoryError(err)
 	}
 	if strings.TrimSpace(strings.ToLower(templateCategory)) != "irregular" {
-		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "ad-hoc proposals are only supported for irregular templates", nil)
+		return nil, newAdHocFieldError(http.StatusBadRequest, perr.CodeInvalidRequest, "type_id", "Disclosure type is not available for ad-hoc proposal")
 	}
 	// Phase 1: validate processing_days per step (must be > 0 when provided).
 	for _, o := range req.StepOverrides {
@@ -89,7 +95,7 @@ func (s *service) CreateProposal(ctx context.Context, req CreateProposalRequest)
 		}
 	}
 	if len(reviewerIDs) == 0 {
-		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "reviewer_membership_ids is required", nil)
+		return nil, newAdHocFieldError(http.StatusBadRequest, perr.CodeInvalidRequest, "reviewer_membership_ids", "reviewer_membership_ids is required")
 	}
 	seen := make(map[string]bool, len(reviewerIDs))
 	for _, id := range reviewerIDs {
@@ -104,11 +110,7 @@ func (s *service) CreateProposal(ctx context.Context, req CreateProposalRequest)
 			return nil, mapRepositoryError(fmt.Errorf("check creator reviewer eligibility: %w", err))
 		}
 		if !allowSelf {
-			return nil, perr.NewHTTPError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, "creator cannot self-assign as reviewer without ad_hoc_alert.focal_review", nil)
-		}
-		// D7 SoD safeguard: creator self-assigning requires >=1 other reviewer.
-		if len(reviewerIDs) < 2 {
-			return nil, perr.NewHTTPError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, "creator self-assigning as reviewer requires at least one other reviewer", nil)
+			return nil, newAdHocFieldError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, "reviewer_membership_ids", "creator cannot self-assign as reviewer without ad_hoc_alert.focal_review")
 		}
 	}
 	// [B1] Always validate via membershipValidator — no `!= nil` guard. A nil
@@ -119,11 +121,11 @@ func (s *service) CreateProposal(ctx context.Context, req CreateProposalRequest)
 	for _, id := range reviewerIDs {
 		active, err := s.membershipValidator.IsActiveMembership(ctx, req.Subject.CompanyID, id)
 		if err != nil || !active {
-			return nil, perr.NewHTTPError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, "reviewer membership not found or inactive: "+id, nil)
+			return nil, newAdHocFieldError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, "reviewer_membership_ids", "reviewer_membership_ids contains invalid reviewer")
 		}
 		hasPerm, err := s.membershipValidator.HasPermission(ctx, req.Subject.CompanyID, id, "ad_hoc_alert.focal_review")
 		if err != nil || !hasPerm {
-			return nil, perr.NewHTTPError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, "reviewer does not have ad_hoc_alert.focal_review: "+id, nil)
+			return nil, newAdHocFieldError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, "reviewer_membership_ids", "reviewer does not have ad_hoc_alert.focal_review")
 		}
 	}
 
@@ -614,10 +616,8 @@ func (s *service) ListEligibleReviewers(ctx context.Context, req ListEligibleRev
 	return s.membershipValidator.ListMembersWithPermission(ctx, req.Subject.CompanyID, "ad_hoc_alert.focal_review", excludeMembershipID)
 }
 
-// creatorMaySelfAssignReviewer implements D7: the creator may self-assign as a
-// reviewer only if they themselves hold ad_hoc_alert.focal_review. The >=1
-// other-reviewer SoD safeguard is enforced separately at the call site
-// (CreateProposal), since it depends on the full reviewer list, not just identity.
+// creatorMaySelfAssignReviewer: the creator may self-assign as reviewer only when
+// they hold ad_hoc_alert.focal_review. Sole self-reviewer is allowed.
 func (s *service) creatorMaySelfAssignReviewer(ctx context.Context, companyID, membershipID string) (bool, error) {
 	if s.membershipValidator == nil {
 		return false, nil
