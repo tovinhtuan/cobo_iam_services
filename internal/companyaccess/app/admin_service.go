@@ -890,14 +890,14 @@ func (s *adminService) DeleteMembership(ctx context.Context, req DeleteMembershi
 }
 
 func (s *adminService) ListDepartmentTeams(ctx context.Context, req ListDepartmentTeamsRequest) ([]TeamView, error) {
-	if err := s.authorize(ctx, req.Subject, "rbac.manage", ""); err != nil {
+	if err := s.requireRbacManage(ctx, req.Subject); err != nil {
 		return nil, err
 	}
 	return s.repo.ListDepartmentTeams(ctx, req.Subject.CompanyID, req.DepartmentID)
 }
 
 func (s *adminService) CreateTeam(ctx context.Context, req CreateTeamRequest) (*TeamView, error) {
-	if err := s.authorize(ctx, req.Subject, "rbac.manage", ""); err != nil {
+	if err := s.requireRbacManage(ctx, req.Subject); err != nil {
 		return nil, err
 	}
 	name := strings.TrimSpace(req.Name)
@@ -916,21 +916,21 @@ func (s *adminService) CreateTeam(ctx context.Context, req CreateTeamRequest) (*
 }
 
 func (s *adminService) UpdateTeam(ctx context.Context, req UpdateTeamRequest) (*TeamView, error) {
-	if err := s.authorize(ctx, req.Subject, "rbac.manage", ""); err != nil {
+	if err := s.requireRbacManage(ctx, req.Subject); err != nil {
 		return nil, err
 	}
 	return s.repo.PatchTeamRow(ctx, req.Subject.CompanyID, req.TeamID, req.Name, req.Status)
 }
 
 func (s *adminService) DeleteTeam(ctx context.Context, req DeleteTeamRequest) error {
-	if err := s.authorize(ctx, req.Subject, "rbac.manage", ""); err != nil {
+	if err := s.requireRbacManage(ctx, req.Subject); err != nil {
 		return err
 	}
 	return s.repo.DeleteTeamRow(ctx, req.Subject.CompanyID, req.TeamID)
 }
 
 func (s *adminService) AddTeamMember(ctx context.Context, req AddTeamMemberRequest) error {
-	if err := s.authorize(ctx, req.Subject, "rbac.manage", ""); err != nil {
+	if err := s.requireRbacManage(ctx, req.Subject); err != nil {
 		return err
 	}
 	// Member must belong to the parent department
@@ -945,7 +945,7 @@ func (s *adminService) AddTeamMember(ctx context.Context, req AddTeamMemberReque
 }
 
 func (s *adminService) RemoveTeamMember(ctx context.Context, req RemoveTeamMemberRequest) error {
-	if err := s.authorize(ctx, req.Subject, "rbac.manage", ""); err != nil {
+	if err := s.requireRbacManage(ctx, req.Subject); err != nil {
 		return err
 	}
 	return s.repo.RemoveTeamMember(ctx, req.Subject.CompanyID, req.TeamID, req.MembershipID)

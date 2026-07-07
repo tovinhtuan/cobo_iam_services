@@ -41,7 +41,7 @@ func seedMem(repo *cainmem.AdminRepository, membershipID, userID, companyID stri
 func allowedSvc(repo caapp.AdminRepository) caapp.AdminService {
 	return caapp.NewAdminService(
 		repo,
-		fakeAuthService{decision: authapp.DecisionAllow},
+		fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{"rbac.manage"}},
 		fixedIDGen("test-id"),
 	)
 }
@@ -320,5 +320,50 @@ func TestDeleteTeam_OK(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("DeleteTeam err=%v", err)
+	}
+}
+
+func TestListDepartmentTeams_UsesEffectivePermissionCheck(t *testing.T) {
+	repo := &d1Repo{AdminRepository: cainmem.NewAdminRepository(), teamCount: 0, memberInDept: true}
+	svc := caapp.NewAdminService(
+		repo,
+		fakeAuthService{
+			decision:    authapp.DecisionDeny,
+			permissions: []string{"rbac.manage"},
+		},
+		fixedIDGen("test-id"),
+	)
+
+	_, err := svc.ListDepartmentTeams(context.Background(), caapp.ListDepartmentTeamsRequest{
+		Subject:      caapp.AdminSubject{UserID: "u1", MembershipID: "m1", CompanyID: "c-1"},
+		DepartmentID: "dept-1",
+	})
+	if err != nil {
+		t.Fatalf("ListDepartmentTeams should allow with rbac.manage in effective access, err=%v", err)
+	}
+}
+
+func TestCreateTeam_DeniedWithoutRbacManage(t *testing.T) {
+	repo := &d1Repo{AdminRepository: cainmem.NewAdminRepository(), teamCount: 0, memberInDept: true}
+	svc := caapp.NewAdminService(
+		repo,
+		fakeAuthService{
+			decision:    authapp.DecisionAllow,
+			permissions: []string{"dashboard.view"},
+		},
+		fixedIDGen("test-id"),
+	)
+
+	_, err := svc.CreateTeam(context.Background(), caapp.CreateTeamRequest{
+		Subject:      caapp.AdminSubject{UserID: "u1", MembershipID: "m1", CompanyID: "c-1"},
+		DepartmentID: "dept-1",
+		Name:         "Team Beta",
+	})
+	if err == nil {
+		t.Fatal("expected rbac.manage required")
+	}
+	he, ok := perr.AsHTTPError(err)
+	if !ok || he.HTTPStatus != http.StatusForbidden {
+		t.Fatalf("want 403, got err=%v", err)
 	}
 }
