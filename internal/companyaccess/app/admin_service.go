@@ -97,6 +97,11 @@ func (s *adminService) CreateUser(ctx context.Context, req CreateUserRequest) (*
 		}
 		req.CompanyID = req.Subject.CompanyID
 	}
+	if req.CompanyID != "" {
+		if err := rejectEnterpriseRoleIDsPayload(req.RoleIDs); err != nil {
+			return nil, err
+		}
+	}
 	if req.CompanyID != "" && req.MembershipStatus == "" {
 		req.MembershipStatus = "active"
 	}
@@ -139,21 +144,26 @@ func (s *adminService) CreateUser(ctx context.Context, req CreateUserRequest) (*
 		MembershipStatus: req.MembershipStatus,
 	}
 	var inviteScope inviteScope
+	var deptIDs, titleIDs []string
+	var isFocal bool
+	var focalIDs []string
 	if req.CompanyID != "" {
 		scopeView, err := s.authorizeScopedInviteOrCreate(ctx, req.Subject, "admin.membership.create")
 		if err != nil {
 			return nil, err
 		}
 		inviteScope = scopeView.inviteScope
-		deptID, err := s.pickInviteDepartmentID(inviteScope, req.DepartmentID)
+		var pickDeptID string
+		deptIDs, titleIDs, pickDeptID, isFocal, focalIDs = prepareInviteOrgFromRequest(
+			req.DepartmentID, req.DepartmentIDs, req.TitleID, req.TitleIDs, req.IsDepartmentFocal, req.FocalDepartmentIDs,
+		)
+		deptID, err := s.pickInviteDepartmentID(inviteScope, pickDeptID)
 		if err != nil {
 			return nil, err
 		}
 		req.DepartmentID = deptID
-		req.FocalDepartmentIDs = normalizeFocalDepartmentIDs(req.FocalDepartmentIDs)
-		if req.IsDepartmentFocal && req.DepartmentID == "" && len(req.FocalDepartmentIDs) > 0 {
-			req.DepartmentID = req.FocalDepartmentIDs[0]
-		}
+		req.FocalDepartmentIDs = focalIDs
+		req.IsDepartmentFocal = isFocal
 		isPlatformCMS, err := s.isPlatformCMSOperator(ctx, req.Subject)
 		if err != nil {
 			return nil, err
@@ -195,10 +205,7 @@ func (s *adminService) CreateUser(ctx context.Context, req CreateUserRequest) (*
 		if err := s.grantDefaultPermissions(ctx, out.MembershipID, out.CompanyID, req.Subject.UserID); err != nil {
 			return nil, err
 		}
-		if err := s.assignInviteOrg(ctx, out.MembershipID, out.CompanyID, req.DepartmentID, req.IsDepartmentFocal, req.FocalDepartmentIDs, inviteScope); err != nil {
-			return nil, err
-		}
-		if err := s.assignInviteTitle(ctx, out.MembershipID, req.TitleID); err != nil {
+		if err := s.assignInviteOrg(ctx, out.MembershipID, out.CompanyID, deptIDs, titleIDs, isFocal, focalIDs, inviteScope); err != nil {
 			return nil, err
 		}
 	}
@@ -295,11 +302,16 @@ func (s *adminService) InviteUser(ctx context.Context, req InviteUserRequest) (*
 	if err != nil {
 		return nil, err
 	}
-	deptID, err := s.pickInviteDepartmentID(scopeView.inviteScope, req.DepartmentID)
+	deptIDs, titleIDs, pickDeptID, isFocal, focalIDs := prepareInviteOrgFromRequest(
+		req.DepartmentID, req.DepartmentIDs, req.TitleID, req.TitleIDs, req.IsDepartmentFocal, req.FocalDepartmentIDs,
+	)
+	deptID, err := s.pickInviteDepartmentID(scopeView.inviteScope, pickDeptID)
 	if err != nil {
 		return nil, err
 	}
 	req.DepartmentID = deptID
+	req.FocalDepartmentIDs = focalIDs
+	req.IsDepartmentFocal = isFocal
 	isWebAdmin, err := s.hasPermission(ctx, req.Subject, "rbac.manage")
 	if err != nil {
 		return nil, err
@@ -309,10 +321,6 @@ func (s *adminService) InviteUser(ctx context.Context, req InviteUserRequest) (*
 	req.CompanyID = strings.TrimSpace(req.CompanyID)
 	req.MembershipStatus = strings.TrimSpace(req.MembershipStatus)
 	req.TitleID = strings.TrimSpace(req.TitleID)
-	req.FocalDepartmentIDs = normalizeFocalDepartmentIDs(req.FocalDepartmentIDs)
-	if req.IsDepartmentFocal && req.DepartmentID == "" && len(req.FocalDepartmentIDs) > 0 {
-		req.DepartmentID = req.FocalDepartmentIDs[0]
-	}
 	if req.Email == "" {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "email is required", nil)
 	}
@@ -325,12 +333,17 @@ func (s *adminService) InviteUser(ctx context.Context, req InviteUserRequest) (*
 		}
 		req.CompanyID = req.Subject.CompanyID
 	}
+	if req.CompanyID != "" {
+		if err := rejectEnterpriseRoleIDsPayload(req.RoleIDs); err != nil {
+			return nil, err
+		}
+	}
 	// Platform web admin (rbac.manage) may invite without a company; enterprise admin is always
 	// scoped to their own company (forced above), so empty CompanyID is only possible for web admin.
 	if req.CompanyID == "" {
 		return s.inviteUserWithoutCompany(ctx, req)
 	}
-	return s.inviteUserWithCompany(ctx, req, scopeView.inviteScope)
+	return s.inviteUserWithCompany(ctx, req, scopeView.inviteScope, deptIDs, titleIDs, isFocal, focalIDs)
 }
 
 // inviteUserWithoutCompany creates a user + invitation with no membership.
@@ -409,7 +422,14 @@ func (s *adminService) inviteUserWithoutCompany(ctx context.Context, req InviteU
 }
 
 // inviteUserWithCompany is the original invite flow (with company + membership creation).
-func (s *adminService) inviteUserWithCompany(ctx context.Context, req InviteUserRequest, scope inviteScope) (*InviteUserResponse, error) {
+func (s *adminService) inviteUserWithCompany(
+	ctx context.Context,
+	req InviteUserRequest,
+	scope inviteScope,
+	deptIDs, titleIDs []string,
+	isFocal bool,
+	focalIDs []string,
+) (*InviteUserResponse, error) {
 	isPlatformCMS, err := s.isPlatformCMSOperator(ctx, req.Subject)
 	if err != nil {
 		return nil, err
@@ -473,10 +493,7 @@ func (s *adminService) inviteUserWithCompany(ctx context.Context, req InviteUser
 		if err := s.grantDefaultPermissions(ctx, m.MembershipID, req.CompanyID, req.CreatedByUserID); err != nil {
 			return nil, err
 		}
-		if err := s.assignInviteOrg(ctx, m.MembershipID, req.CompanyID, req.DepartmentID, req.IsDepartmentFocal, req.FocalDepartmentIDs, scope); err != nil {
-			return nil, err
-		}
-		if err := s.assignInviteTitle(ctx, m.MembershipID, req.TitleID); err != nil {
+		if err := s.assignInviteOrg(ctx, m.MembershipID, req.CompanyID, deptIDs, titleIDs, isFocal, focalIDs, scope); err != nil {
 			return nil, err
 		}
 		companyDisplay := ""
@@ -556,10 +573,7 @@ func (s *adminService) inviteUserWithCompany(ctx context.Context, req InviteUser
 	if err := s.grantDefaultPermissions(ctx, opts.MembershipID, req.CompanyID, createdBy); err != nil {
 		return nil, err
 	}
-	if err := s.assignInviteOrg(ctx, opts.MembershipID, req.CompanyID, req.DepartmentID, req.IsDepartmentFocal, req.FocalDepartmentIDs, scope); err != nil {
-		return nil, err
-	}
-	if err := s.assignInviteTitle(ctx, opts.MembershipID, req.TitleID); err != nil {
+	if err := s.assignInviteOrg(ctx, opts.MembershipID, req.CompanyID, deptIDs, titleIDs, isFocal, focalIDs, scope); err != nil {
 		return nil, err
 	}
 	if s.invMailer != nil {
@@ -1067,6 +1081,20 @@ func (s *adminService) ListCompanyMemberships(ctx context.Context, req ListCompa
 func (s *adminService) AssignRole(ctx context.Context, req AssignRoleRequest) error {
 	if err := s.authorize(ctx, req.Subject, "admin.membership.role.assign", req.MembershipID); err != nil {
 		return err
+	}
+	isPlatformCMS, err := s.isPlatformCMSOperator(ctx, req.Subject)
+	if err != nil {
+		return err
+	}
+	if !isPlatformCMS {
+		roles, err := s.repo.ListMembershipRoles(ctx, req.MembershipID)
+		if err != nil {
+			return err
+		}
+		primary, _, _ := partitionMembershipRoles(roles)
+		if primary != nil {
+			return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "enterprise staff allows one primary system role; use PUT /primary-role to replace", nil)
+		}
 	}
 	return s.repo.AddRole(ctx, req.MembershipID, req.RoleID)
 }

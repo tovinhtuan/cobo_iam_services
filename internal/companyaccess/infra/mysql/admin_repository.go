@@ -196,7 +196,7 @@ func (r *AdminRepository) ListMembershipsByCompany(ctx context.Context, companyI
 
 func (r *AdminRepository) listMembershipDeptViews(ctx context.Context, membershipID string) ([]caapp.DepartmentView, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT d.department_id, d.department_name
+		SELECT d.department_id, d.department_name, dm.is_department_focal
 		FROM department_memberships dm
 		INNER JOIN departments d ON d.department_id = dm.department_id
 		WHERE dm.membership_id = ? AND dm.status = 'active' AND d.status = 'active'
@@ -209,10 +209,12 @@ func (r *AdminRepository) listMembershipDeptViews(ctx context.Context, membershi
 	var out []caapp.DepartmentView
 	for rows.Next() {
 		var v caapp.DepartmentView
-		if err := rows.Scan(&v.DepartmentID, &v.DepartmentName); err != nil {
+		var isFocal int
+		if err := rows.Scan(&v.DepartmentID, &v.DepartmentName, &isFocal); err != nil {
 			return nil, err
 		}
 		v.Name = v.DepartmentName
+		v.IsDepartmentFocal = isFocal == 1
 		out = append(out, v)
 	}
 	return out, rows.Err()
@@ -263,6 +265,10 @@ func (r *AdminRepository) listMembershipRoleViews(ctx context.Context, membershi
 		out = append(out, v)
 	}
 	return out, rows.Err()
+}
+
+func (r *AdminRepository) ListMembershipRoles(ctx context.Context, membershipID string) ([]caapp.RoleView, error) {
+	return r.listMembershipRoleViews(ctx, membershipID)
 }
 
 func (r *AdminRepository) SetMembershipPrimaryAdmin(ctx context.Context, membershipID string) error {
@@ -419,6 +425,76 @@ func (r *AdminRepository) ListFocalDepartmentIDs(ctx context.Context, membership
 		out = append(out, id)
 	}
 	return out, rows.Err()
+}
+
+func (r *AdminRepository) ListActiveMembershipDepartmentIDs(ctx context.Context, membershipID string) ([]string, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT department_id
+		FROM department_memberships
+		WHERE membership_id = ? AND status = 'active'
+		ORDER BY department_id
+	`, membershipID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+func (r *AdminRepository) ListActiveMembershipTitleIDs(ctx context.Context, membershipID string) ([]string, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT title_id
+		FROM membership_titles
+		WHERE membership_id = ? AND status = 'active'
+		ORDER BY title_id
+	`, membershipID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+func (r *AdminRepository) SetDepartmentMembershipFocal(ctx context.Context, membershipID, departmentID string, isFocal bool) error {
+	if err := r.ensureMembership(ctx, membershipID); err != nil {
+		return err
+	}
+	focalVal := 0
+	if isFocal {
+		focalVal = 1
+	}
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE department_memberships
+		SET is_department_focal = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE membership_id = ? AND department_id = ? AND status = 'active'
+	`, focalVal, membershipID, departmentID)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		if isFocal {
+			return r.UpsertDepartmentMembership(ctx, membershipID, departmentID, true)
+		}
+		return perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "department membership not found", nil)
+	}
+	return nil
 }
 
 func (r *AdminRepository) RemoveDepartment(ctx context.Context, membershipID, departmentID string) error {

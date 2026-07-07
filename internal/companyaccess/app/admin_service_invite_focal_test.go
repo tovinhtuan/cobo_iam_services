@@ -371,6 +371,43 @@ func TestInviteUser_RejectsDeniedEnterpriseRoles(t *testing.T) {
 	}
 }
 
+func TestInviteUser_MultiDepartmentsTitlesAndFocal(t *testing.T) {
+	repo := cainmem.NewAdminRepository()
+	sub := caapp.AdminSubject{UserID: "u_admin", MembershipID: "m_admin", CompanyID: "c_001"}
+	repo.SeedDepartmentForCompany("c_001", caapp.DepartmentView{DepartmentID: "dep_a", Name: "Dept A", Status: "active"})
+	repo.SeedDepartmentForCompany("c_001", caapp.DepartmentView{DepartmentID: "dep_b", Name: "Dept B", Status: "active"})
+	repo.SeedTitleForCompany("c_001", caapp.TitleView{TitleID: "t1", Name: "Title 1", Status: "active"})
+	repo.SeedTitleForCompany("c_001", caapp.TitleView{TitleID: "t2", Name: "Title 2", Status: "active"})
+	svc := newEnterpriseInviteSvc(t, repo, sub)
+
+	out, err := svc.InviteUser(context.Background(), caapp.InviteUserRequest{
+		Subject:            sub,
+		Email:              "multi.org@example.com",
+		FullName:           "Multi Org",
+		CompanyID:          "c_001",
+		CreatedByUserID:    sub.UserID,
+		DepartmentIDs:      []string{"dep_a", "dep_b"},
+		TitleIDs:           []string{"t1", "t2"},
+		IsDepartmentFocal:  true,
+		FocalDepartmentIDs: []string{"dep_a", "dep_b"},
+	})
+	if err != nil {
+		t.Fatalf("InviteUser: %v", err)
+	}
+	deptIDs, err := repo.ListActiveMembershipDepartmentIDs(context.Background(), out.MembershipID)
+	if err != nil || len(deptIDs) != 2 {
+		t.Fatalf("deptIDs=%v err=%v", deptIDs, err)
+	}
+	titleIDs, err := repo.ListActiveMembershipTitleIDs(context.Background(), out.MembershipID)
+	if err != nil || len(titleIDs) != 2 {
+		t.Fatalf("titleIDs=%v err=%v", titleIDs, err)
+	}
+	focalIDs, err := repo.ListFocalDepartmentIDs(context.Background(), out.MembershipID)
+	if err != nil || len(focalIDs) != 2 {
+		t.Fatalf("focalIDs=%v err=%v", focalIDs, err)
+	}
+}
+
 func TestCreateUser_RejectsDeniedEnterpriseRole(t *testing.T) {
 	repo := cainmem.NewAdminRepository()
 	sub := caapp.AdminSubject{UserID: "u_admin", MembershipID: "m_admin", CompanyID: "c_001"}

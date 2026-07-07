@@ -62,12 +62,12 @@ func (s *adminService) validateEnterpriseInviteRole(ctx context.Context, company
 
 func validateEnterpriseInvitePermissions(perms []string) error {
 	deniedDirect := map[string]struct{}{
-		"rbac.manage":                      {},
-		"system.settings":                  {},
-		"template.workflow.override.read":  {},
-		"admin.membership.invite":          {},
-		"template.workflow.override.approve": {},
-		"template.workflow.override.reset": {},
+		"rbac.manage":                                       {},
+		"system.settings":                                   {},
+		"template.workflow.override.read":                   {},
+		"admin.membership.invite":                           {},
+		"template.workflow.override.approve":                {},
+		"template.workflow.override.reset":                  {},
 		"template.workflow.override.department_group.write": {},
 	}
 	for _, p := range perms {
@@ -107,32 +107,5 @@ func (s *adminService) assertFocalDepartmentsInInviteScope(scope inviteScope, fo
 			return perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "department_id not in invite scope", nil)
 		}
 	}
-	return nil
-}
-
-func (s *adminService) assignInviteOrg(ctx context.Context, membershipID, companyID, departmentID string, isDepartmentFocal bool, focalDepartmentIDs []string, scope inviteScope) error {
-	departmentID = strings.TrimSpace(departmentID)
-	focalDepartmentIDs = normalizeFocalDepartmentIDs(focalDepartmentIDs)
-
-	if err := s.validateInviteOrgFields(isDepartmentFocal, focalDepartmentIDs); err != nil {
-		return err
-	}
-	if err := s.assertFocalDepartmentsInInviteScope(scope, focalDepartmentIDs); err != nil {
-		return err
-	}
-
-	if departmentID != "" {
-		if err := s.repo.UpsertDepartmentMembership(ctx, membershipID, departmentID, false); err != nil {
-			return err
-		}
-	}
-	if isDepartmentFocal {
-		for _, deptID := range focalDepartmentIDs {
-			if err := s.repo.UpsertDepartmentMembership(ctx, membershipID, deptID, true); err != nil {
-				return err
-			}
-		}
-	}
-	_ = companyID
 	return nil
 }

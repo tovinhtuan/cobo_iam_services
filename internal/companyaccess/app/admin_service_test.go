@@ -200,6 +200,7 @@ func TestAdminService_CreateUser_WithOptionalMembership(t *testing.T) {
 
 func TestAdminService_CreateUser_AssignsMembershipSetup(t *testing.T) {
 	repo := cainmem.NewAdminRepository()
+	repo.SeedTitleForCompany("c_001", caapp.TitleView{TitleID: "title_legal_head", Name: "Legal Head", Status: "active"})
 	repo.SeedDepartment(caapp.DepartmentView{
 		DepartmentID:   "dep_legal",
 		DepartmentName: "Phap che",
@@ -567,6 +568,7 @@ func TestAdminService_InviteUser_AlreadyMemberSameCompany(t *testing.T) {
 
 func TestAdminService_InviteUser_AssignsTitleToMembership(t *testing.T) {
 	repo := cainmem.NewAdminRepository()
+	repo.SeedTitleForCompany("c_001", caapp.TitleView{TitleID: "title_legal_head", Name: "Legal Head", Status: "active"})
 	svc := caapp.NewAdminService(
 		repo,
 		fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{"system.settings", "rbac.manage"}},

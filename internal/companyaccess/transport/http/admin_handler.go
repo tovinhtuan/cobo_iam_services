@@ -72,10 +72,12 @@ func (h *AdminHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/admin/companies/{company_id}/memberships", h.listMemberships)
 	mux.HandleFunc("POST /api/v1/admin/memberships/{membership_id}/roles", h.assignRole)
 	mux.HandleFunc("DELETE /api/v1/admin/memberships/{membership_id}/roles/{role_id}", h.removeRole)
+	mux.HandleFunc("PUT /api/v1/admin/memberships/{membership_id}/primary-role", h.replaceMembershipPrimaryRole)
 	mux.HandleFunc("POST /api/v1/admin/memberships/{membership_id}/departments", h.assignDepartment)
 	mux.HandleFunc("DELETE /api/v1/admin/memberships/{membership_id}/departments/{department_id}", h.removeDepartment)
 	mux.HandleFunc("POST /api/v1/admin/memberships/{membership_id}/titles", h.assignTitle)
 	mux.HandleFunc("DELETE /api/v1/admin/memberships/{membership_id}/titles/{title_id}", h.removeTitle)
+	mux.HandleFunc("PUT /api/v1/admin/memberships/{membership_id}/org-assignments", h.updateMembershipOrgAssignments)
 	mux.HandleFunc("GET /api/v1/admin/permissions", h.listPermissions)
 	mux.HandleFunc("GET /api/v1/admin/roles", h.listRoles)
 	mux.HandleFunc("GET /api/v1/admin/roles/{role_id}/permissions", h.listRolePermissions)
@@ -167,9 +169,12 @@ func (h *AdminHandler) createUser(w http.ResponseWriter, r *http.Request) {
 		MembershipStatus string   `json:"membership_status"` // when company_id set
 		RoleID           string   `json:"role_id"`
 		RoleCode         string   `json:"role_code"`
+		RoleIDs          []string `json:"role_ids"`
 		Permissions      []string `json:"permissions"`
 		DepartmentID       string   `json:"department_id"`
+		DepartmentIDs      []string `json:"department_ids"`
 		TitleID            string   `json:"title_id"`
+		TitleIDs           []string `json:"title_ids"`
 		IsDepartmentFocal  bool     `json:"is_department_focal"`
 		FocalDepartmentIDs []string `json:"focal_department_ids"`
 	}
@@ -186,9 +191,12 @@ func (h *AdminHandler) createUser(w http.ResponseWriter, r *http.Request) {
 		MembershipStatus:   p.MembershipStatus,
 		RoleID:             p.RoleID,
 		RoleCode:           p.RoleCode,
+		RoleIDs:            p.RoleIDs,
 		Permissions:        p.Permissions,
 		DepartmentID:       p.DepartmentID,
+		DepartmentIDs:      p.DepartmentIDs,
 		TitleID:            p.TitleID,
+		TitleIDs:           p.TitleIDs,
 		IsDepartmentFocal:  p.IsDepartmentFocal,
 		FocalDepartmentIDs: p.FocalDepartmentIDs,
 	})
@@ -385,6 +393,27 @@ func (h *AdminHandler) removeRole(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"success": true})
 }
 
+func (h *AdminHandler) replaceMembershipPrimaryRole(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	mid := r.PathValue("membership_id")
+	var p struct {
+		RoleID string `json:"role_id"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&p)
+	if err := h.svc.ReplaceMembershipPrimaryRole(r.Context(), caapp.ReplaceMembershipPrimaryRoleRequest{
+		Subject: sub, MembershipID: mid, RoleID: p.RoleID,
+	}); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	h.auditLog(r, "admin.membership.primary_role.replace", "membership", mid)
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"success": true})
+}
+
 func (h *AdminHandler) assignDepartment(w http.ResponseWriter, r *http.Request) {
 	sub, err := h.subject(r)
 	if err != nil {
@@ -452,6 +481,33 @@ func (h *AdminHandler) removeTitle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.auditLog(r, "admin.membership.title.remove", "membership", mid)
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"success": true})
+}
+
+func (h *AdminHandler) updateMembershipOrgAssignments(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	mid := r.PathValue("membership_id")
+	var p struct {
+		DepartmentIDs      []string `json:"department_ids"`
+		TitleIDs           []string `json:"title_ids"`
+		FocalDepartmentIDs []string `json:"focal_department_ids"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&p)
+	if err := h.svc.UpdateMembershipOrgAssignments(r.Context(), caapp.UpdateMembershipOrgRequest{
+		Subject:            sub,
+		MembershipID:       mid,
+		DepartmentIDs:      p.DepartmentIDs,
+		TitleIDs:           p.TitleIDs,
+		FocalDepartmentIDs: p.FocalDepartmentIDs,
+	}); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	h.auditLog(r, "admin.membership.org.update", "membership", mid)
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"success": true})
 }
 
@@ -951,9 +1007,12 @@ func (h *AdminHandler) inviteUser(w http.ResponseWriter, r *http.Request) {
 		FullName           string   `json:"full_name"`
 		RoleID             string   `json:"role_id"`
 		RoleCode           string   `json:"role_code"`
+		RoleIDs            []string `json:"role_ids"`
 		Permissions        []string `json:"permissions"`
 		DepartmentID       string   `json:"department_id"`
+		DepartmentIDs      []string `json:"department_ids"`
 		TitleID            string   `json:"title_id"`
+		TitleIDs           []string `json:"title_ids"`
 		IsDepartmentFocal  bool     `json:"is_department_focal"`
 		FocalDepartmentIDs []string `json:"focal_department_ids"`
 	}
@@ -966,9 +1025,12 @@ func (h *AdminHandler) inviteUser(w http.ResponseWriter, r *http.Request) {
 		CreatedByUserID:    sub.UserID,
 		RoleID:             p.RoleID,
 		RoleCode:           p.RoleCode,
+		RoleIDs:            p.RoleIDs,
 		Permissions:        p.Permissions,
 		DepartmentID:       p.DepartmentID,
+		DepartmentIDs:      p.DepartmentIDs,
 		TitleID:            p.TitleID,
+		TitleIDs:           p.TitleIDs,
 		IsDepartmentFocal:  p.IsDepartmentFocal,
 		FocalDepartmentIDs: p.FocalDepartmentIDs,
 	})

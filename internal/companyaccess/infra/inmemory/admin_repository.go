@@ -39,6 +39,8 @@ type AdminRepository struct {
 	directPermissions map[string]caapp.DirectPermissionView // key: membershipID:permCode
 
 	departments map[string]caapp.DepartmentView // department_id -> view
+	titles      map[string]caapp.TitleView       // title_id -> view
+	titleCompany map[string]string
 
 	companies map[string]*caapp.PlatformCompanyDetail
 
@@ -74,6 +76,8 @@ func NewAdminRepository() *AdminRepository {
 		invitationsByUser:       map[string][]string{},
 		directPermissions:       map[string]caapp.DirectPermissionView{},
 		departments:             map[string]caapp.DepartmentView{},
+		titles:                  map[string]caapp.TitleView{},
+		titleCompany:            map[string]string{},
 		companies:               map[string]*caapp.PlatformCompanyDetail{},
 		companyFounder:          map[string]string{},
 		companyProvSource:       map[string]string{},
@@ -95,6 +99,19 @@ func (r *AdminRepository) SeedDepartmentForCompany(companyID string, d caapp.Dep
 	r.departments[d.DepartmentID] = d
 	if companyID != "" {
 		r.departmentCompany[d.DepartmentID] = companyID
+	}
+}
+
+// SeedTitleForCompany registers a title for validation tests.
+func (r *AdminRepository) SeedTitleForCompany(companyID string, t caapp.TitleView) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if t.Status == "" {
+		t.Status = "active"
+	}
+	r.titles[t.TitleID] = t
+	if companyID != "" {
+		r.titleCompany[t.TitleID] = companyID
 	}
 }
 
@@ -549,6 +566,23 @@ func (r *AdminRepository) RemoveRole(_ context.Context, membershipID, roleID str
 	delSet(r.rolesByMembership, membershipID, roleID)
 	return nil
 }
+
+func (r *AdminRepository) ListMembershipRoles(_ context.Context, membershipID string) ([]caapp.RoleView, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	roleIDs := r.rolesByMembership[membershipID]
+	out := make([]caapp.RoleView, 0, len(roleIDs))
+	for id := range roleIDs {
+		code := strings.TrimPrefix(id, "r_invite_")
+		if code == id {
+			code = id
+		}
+		out = append(out, caapp.RoleView{RoleID: id, RoleCode: code, RoleName: code})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].RoleName < out[j].RoleName })
+	return out, nil
+}
+
 func (r *AdminRepository) AddDepartment(_ context.Context, membershipID, departmentID string) error {
 	return r.UpsertDepartmentMembership(context.Background(), membershipID, departmentID, false)
 }
@@ -590,6 +624,51 @@ func (r *AdminRepository) ListFocalDepartmentIDs(_ context.Context, membershipID
 	}
 	sort.Strings(out)
 	return out, nil
+}
+func (r *AdminRepository) ListActiveMembershipDepartmentIDs(_ context.Context, membershipID string) ([]string, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	set := r.departmentsByMembership[membershipID]
+	out := make([]string, 0, len(set))
+	for deptID := range set {
+		out = append(out, deptID)
+	}
+	sort.Strings(out)
+	return out, nil
+}
+func (r *AdminRepository) ListActiveMembershipTitleIDs(_ context.Context, membershipID string) ([]string, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	set := r.titlesByMembership[membershipID]
+	out := make([]string, 0, len(set))
+	for titleID := range set {
+		out = append(out, titleID)
+	}
+	sort.Strings(out)
+	return out, nil
+}
+func (r *AdminRepository) SetDepartmentMembershipFocal(_ context.Context, membershipID, departmentID string, isFocal bool) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.memberships[membershipID]; !ok {
+		return perr.NewHTTPError(http.StatusNotFound, perr.CodeMembershipNotFound, "membership not found", nil)
+	}
+	deptSet := r.departmentsByMembership[membershipID]
+	if _, member := deptSet[departmentID]; !member {
+		if isFocal {
+			return r.UpsertDepartmentMembership(context.Background(), membershipID, departmentID, true)
+		}
+		return perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "department membership not found", nil)
+	}
+	if r.focalDepartmentsByMembership[membershipID] == nil {
+		r.focalDepartmentsByMembership[membershipID] = map[string]bool{}
+	}
+	if isFocal {
+		r.focalDepartmentsByMembership[membershipID][departmentID] = true
+	} else {
+		delete(r.focalDepartmentsByMembership[membershipID], departmentID)
+	}
+	return nil
 }
 func (r *AdminRepository) RemoveDepartment(_ context.Context, membershipID, departmentID string) error {
 	r.mu.Lock()
@@ -1219,8 +1298,23 @@ func (r *AdminRepository) CountDepartmentMembers(_ context.Context, _ string) (i
 
 // Title CRUD — in-memory stubs (used by unit tests; MySQL impl is the production path).
 
-func (r *AdminRepository) ListCompanyTitles(_ context.Context, _ string) ([]caapp.TitleView, error) {
-	return []caapp.TitleView{}, nil
+func (r *AdminRepository) ListCompanyTitles(_ context.Context, companyID string) ([]caapp.TitleView, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var out []caapp.TitleView
+	for id, t := range r.titles {
+		if companyID != "" {
+			if comp, ok := r.titleCompany[id]; ok && comp != companyID {
+				continue
+			}
+		}
+		if strings.TrimSpace(t.Status) == "inactive" {
+			continue
+		}
+		out = append(out, t)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].TitleID < out[j].TitleID })
+	return out, nil
 }
 
 func (r *AdminRepository) CreateTitleRow(_ context.Context, _, titleID, _, name string, sortOrder int) (*caapp.TitleView, error) {
