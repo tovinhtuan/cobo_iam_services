@@ -175,7 +175,7 @@ func TestListInviteRoles_EnterpriseFilter(t *testing.T) {
 	}
 	denied := map[string]struct{}{
 		"dept_lead": {}, "admin_web": {}, "cms_operator": {}, "full_access": {},
-		"truong_phong_ban": {}, "truong_nhom": {},
+		"truong_phong_ban": {}, "truong_nhom": {}, "self_reg_company_owner": {},
 	}
 	for _, item := range items {
 		if _, bad := denied[item.RoleCode]; bad {
@@ -338,6 +338,50 @@ func TestCreateUser_DepartmentFocal_Required(t *testing.T) {
 		FullName:          "No Focal Dept",
 		CompanyID:         "c_001",
 		IsDepartmentFocal: true,
+	})
+	he, ok := perr.AsHTTPError(err)
+	if !ok || he.HTTPStatus != http.StatusBadRequest {
+		t.Fatalf("want 400, got %v", err)
+	}
+}
+
+func TestInviteUser_RejectsDeniedEnterpriseRoles(t *testing.T) {
+	denied := []string{
+		"dept_lead", "truong_phong_ban", "truong_nhom",
+		"admin_web", "cms_operator", "full_access", "self_reg_company_owner",
+	}
+	for _, roleCode := range denied {
+		t.Run(roleCode, func(t *testing.T) {
+			repo := cainmem.NewAdminRepository()
+			sub := caapp.AdminSubject{UserID: "u_admin", MembershipID: "m_admin", CompanyID: "c_001"}
+			svc := newEnterpriseInviteSvc(t, repo, sub)
+			_, err := svc.InviteUser(context.Background(), caapp.InviteUserRequest{
+				Subject:         sub,
+				Email:           roleCode + "@example.com",
+				FullName:        "Denied Role",
+				CompanyID:       "c_001",
+				CreatedByUserID: sub.UserID,
+				RoleCode:        roleCode,
+			})
+			he, ok := perr.AsHTTPError(err)
+			if !ok || he.HTTPStatus != http.StatusBadRequest {
+				t.Fatalf("want 400, got %v", err)
+			}
+		})
+	}
+}
+
+func TestCreateUser_RejectsDeniedEnterpriseRole(t *testing.T) {
+	repo := cainmem.NewAdminRepository()
+	sub := caapp.AdminSubject{UserID: "u_admin", MembershipID: "m_admin", CompanyID: "c_001"}
+	svc := newEnterpriseInviteSvc(t, repo, sub)
+	_, err := svc.CreateUser(context.Background(), caapp.CreateUserRequest{
+		Subject:   sub,
+		LoginID:   "create.denied@example.com",
+		Password:  "StrongPass123!",
+		FullName:  "Denied",
+		CompanyID: "c_001",
+		RoleCode:  "truong_phong_ban",
 	})
 	he, ok := perr.AsHTTPError(err)
 	if !ok || he.HTTPStatus != http.StatusBadRequest {
