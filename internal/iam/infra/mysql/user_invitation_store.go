@@ -19,9 +19,9 @@ func (s *UserInvitationStore) PeekUserInvitation(ctx context.Context, rawToken s
 	return PeekUserInvitation(ctx, s.DB, rawToken, now)
 }
 
-func (s *UserInvitationStore) AcceptUserInvitation(ctx context.Context, rawToken string, bcryptPasswordHash string, now time.Time) (string, string, error) {
+func (s *UserInvitationStore) AcceptUserInvitation(ctx context.Context, rawToken string, bcryptPasswordHash string, now time.Time) (string, string, string, string, error) {
 	if s == nil || s.DB == nil {
-		return "", "", fmt.Errorf("invitation store not configured")
+		return "", "", "", "", fmt.Errorf("invitation store not configured")
 	}
 	return AcceptUserInvitation(ctx, s.DB, rawToken, bcryptPasswordHash, now)
 }

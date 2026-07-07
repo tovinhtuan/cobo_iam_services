@@ -48,8 +48,8 @@ type IdentityQueryService interface {
 // UserInvitationExecutor loads/consumes user_invitations rows (MySQL implementation in iam/infra/mysql).
 type UserInvitationExecutor interface {
 	PeekUserInvitation(ctx context.Context, rawToken string, now time.Time) (valid bool, reason string, emailHint string, expiresAtUTC time.Time, err error)
-	// AcceptUserInvitation consumes the token and returns (userID, loginID) to allow the caller to issue a session.
-	AcceptUserInvitation(ctx context.Context, rawToken string, bcryptPasswordHash string, now time.Time) (userID string, loginID string, err error)
+	// AcceptUserInvitation consumes the token and returns identity + invited company context for session bootstrap.
+	AcceptUserInvitation(ctx context.Context, rawToken string, bcryptPasswordHash string, now time.Time) (userID string, loginID string, companyID string, membershipID string, err error)
 }
 
 // LoginAttemptRecorder persists login success/failure for audit and rate-limit groundwork.
@@ -378,6 +378,8 @@ type AcceptUserInvitationResponse struct {
 	// FE should store tokens and bootstrap the session instead of redirecting to /login.
 	Session    *LoginSession `json:"session,omitempty"`
 	NextAction string        `json:"next_action,omitempty"`
+	// CurrentContext is the inviting company membership when available (backward-compatible optional field).
+	CurrentContext *TokenContext `json:"current_context,omitempty"`
 }
 
 type SelectCompanyRequest struct {

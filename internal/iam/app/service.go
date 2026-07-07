@@ -720,12 +720,18 @@ func (s *service) AcceptUserInvitation(ctx context.Context, req AcceptUserInvita
 		return nil, fmt.Errorf("hash password: %w", err)
 	}
 	now := time.Now().UTC()
-	acceptedUserID, _, err := s.invite.AcceptUserInvitation(ctx, token, string(hash), now)
+	acceptedUserID, _, inviteCompanyID, inviteMembershipID, err := s.invite.AcceptUserInvitation(ctx, token, string(hash), now)
 	if err != nil {
 		return nil, err
 	}
 
 	resp := &AcceptUserInvitationResponse{Success: true}
+	if strings.TrimSpace(inviteCompanyID) != "" && strings.TrimSpace(inviteMembershipID) != "" {
+		resp.CurrentContext = &TokenContext{
+			CompanyID:    strings.TrimSpace(inviteCompanyID),
+			MembershipID: strings.TrimSpace(inviteMembershipID),
+		}
+	}
 
 	// Best-effort auto-login: issue a session so FE can skip the /login redirect.
 	// If token issuance fails we still return success — FE falls back to manual login.
@@ -733,30 +739,38 @@ func (s *service) AcceptUserInvitation(ctx context.Context, req AcceptUserInvita
 		sid := s.idgen.NewUUID()
 		refreshTok, rtErr := s.tokens.IssueRefreshToken(ctx, sid, acceptedUserID)
 		if rtErr == nil {
-			allMem, memErr := s.memberships.GetMembershipsByUser(ctx, acceptedUserID)
-			if memErr != nil {
-				allMem = nil
-			}
-			active := make([]ca.MembershipView, 0, len(allMem))
-			for _, m := range allMem {
-				if strings.EqualFold(m.Status, "active") {
-					active = append(active, m)
-				}
-			}
 			var (
 				accessTok string
 				expiresIn int64
 				nextAct   string
 			)
-			if len(active) == 0 {
-				accessTok, expiresIn, _ = s.tokens.IssueAccessToken(ctx, AccessTokenClaims{Sub: acceptedUserID, SessionID: sid})
-				nextAct = "no_company_onboarding"
-			} else {
-				m := active[0]
+			if resp.CurrentContext != nil {
 				accessTok, expiresIn, _ = s.tokens.IssueAccessToken(ctx, AccessTokenClaims{
 					Sub: acceptedUserID, SessionID: sid,
-					CompanyID: m.CompanyID, MembershipID: m.MembershipID,
+					CompanyID: resp.CurrentContext.CompanyID, MembershipID: resp.CurrentContext.MembershipID,
 				})
+			} else {
+				allMem, memErr := s.memberships.GetMembershipsByUser(ctx, acceptedUserID)
+				if memErr != nil {
+					allMem = nil
+				}
+				active := make([]ca.MembershipView, 0, len(allMem))
+				for _, m := range allMem {
+					if strings.EqualFold(m.Status, "active") {
+						active = append(active, m)
+					}
+				}
+				if len(active) == 0 {
+					accessTok, expiresIn, _ = s.tokens.IssueAccessToken(ctx, AccessTokenClaims{Sub: acceptedUserID, SessionID: sid})
+					nextAct = "no_company_onboarding"
+				} else {
+					m := active[0]
+					accessTok, expiresIn, _ = s.tokens.IssueAccessToken(ctx, AccessTokenClaims{
+						Sub: acceptedUserID, SessionID: sid,
+						CompanyID: m.CompanyID, MembershipID: m.MembershipID,
+					})
+					resp.CurrentContext = &TokenContext{CompanyID: m.CompanyID, MembershipID: m.MembershipID}
+				}
 			}
 			if accessTok != "" {
 				_ = s.sessions.Create(ctx, CreateSessionParams{
