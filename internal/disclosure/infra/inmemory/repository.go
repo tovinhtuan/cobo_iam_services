@@ -19,6 +19,7 @@ type Repository struct {
 	items                     map[string]disclosureapp.RecordDTO
 	groups                    []disclosureapp.DisclosureGroupDTO
 	displayGroups             []disclosureapp.DisplayGroupDTO
+	templateDepartments       []disclosureapp.TemplateDepartmentDTO
 	displayGroupCodes         map[string]string
 	templateDisplayGroupCodes map[string][]string
 	catalog                   map[string]disclosureapp.DisclosureTypeDTO
@@ -45,6 +46,7 @@ func NewRepository() *Repository {
 		items:                     map[string]disclosureapp.RecordDTO{},
 		groups:                    disclosureapp.SeedDisclosureTypeGroups(),
 		displayGroups:             disclosureapp.SeedDisplayGroups(),
+		templateDepartments:       disclosureapp.SeedTemplateDepartments(),
 		displayGroupCodes:         map[string]string{},
 		templateDisplayGroupCodes: map[string][]string{},
 		catalog:                   map[string]disclosureapp.DisclosureTypeDTO{},

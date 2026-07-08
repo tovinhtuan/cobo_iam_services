@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	disclosureapp "github.com/cobo/cobo_iam_services/internal/disclosure/app"
@@ -384,6 +385,59 @@ func (r *Repository) getDisplayGroupByCode(ctx context.Context, code string) (*d
 		return nil, fmt.Errorf("get display group: %w", err)
 	}
 	d.IsActive = isActive == 1
+	d.IsSystem = isSystem == 1
+	return &d, nil
+}
+
+// ─── Template default department catalog ───────────────────────────────────────
+
+func (r *Repository) ListTemplateDepartments(ctx context.Context) ([]disclosureapp.TemplateDepartmentDTO, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT department_code, COALESCE(department_name,''), COALESCE(description,''), display_order, is_system
+		FROM workflow_template_departments
+		ORDER BY display_order ASC, department_name ASC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("list template departments: %w", err)
+	}
+	defer rows.Close()
+	out := make([]disclosureapp.TemplateDepartmentDTO, 0)
+	for rows.Next() {
+		var d disclosureapp.TemplateDepartmentDTO
+		var isSystem int
+		if err := rows.Scan(&d.DepartmentCode, &d.DepartmentName, &d.Description, &d.DisplayOrder, &isSystem); err != nil {
+			return nil, fmt.Errorf("scan template department: %w", err)
+		}
+		d.IsSystem = isSystem == 1
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repository) CreateTemplateDepartment(ctx context.Context, req disclosureapp.CmsTemplateDepartmentCreateRequest) (*disclosureapp.TemplateDepartmentDTO, error) {
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO workflow_template_departments (department_code, department_name, description, display_order, is_system)
+		VALUES (?, ?, ?, ?, 0)
+	`, req.Code, req.Name, req.Description, req.DisplayOrder)
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "duplicate") {
+			return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "department code already exists", nil)
+		}
+		return nil, fmt.Errorf("create template department: %w", err)
+	}
+	return r.getTemplateDepartmentByCode(ctx, req.Code)
+}
+
+func (r *Repository) getTemplateDepartmentByCode(ctx context.Context, code string) (*disclosureapp.TemplateDepartmentDTO, error) {
+	row := r.db.QueryRowContext(ctx, `
+		SELECT department_code, COALESCE(department_name,''), COALESCE(description,''), display_order, is_system
+		FROM workflow_template_departments WHERE department_code = ?
+	`, code)
+	var d disclosureapp.TemplateDepartmentDTO
+	var isSystem int
+	if err := row.Scan(&d.DepartmentCode, &d.DepartmentName, &d.Description, &d.DisplayOrder, &isSystem); err != nil {
+		return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "template department not found", nil)
+	}
 	d.IsSystem = isSystem == 1
 	return &d, nil
 }

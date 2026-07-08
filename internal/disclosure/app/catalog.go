@@ -199,6 +199,19 @@ func SeedDisplayGroups() []DisplayGroupDTO {
 	return out
 }
 
+var workflowTemplateDepartmentSeed = []TemplateDepartmentDTO{
+	{DepartmentCode: "dept-001", DepartmentName: "Phòng Pháp chế", Description: "Quản lý các vấn đề pháp lý và tuân thủ của doanh nghiệp.", DisplayOrder: 1, IsSystem: true},
+	{DepartmentCode: "dept-002", DepartmentName: "Phòng Quan hệ cổ đông (IR)", Description: "Phụ trách công bố thông tin và quan hệ với nhà đầu tư.", DisplayOrder: 2, IsSystem: true},
+	{DepartmentCode: "dept-003", DepartmentName: "Phòng Kế toán", Description: "Quản lý tài chính, kế toán và lập báo cáo tài chính.", DisplayOrder: 3, IsSystem: true},
+	{DepartmentCode: "dept-004", DepartmentName: "Ban Tổng Giám đốc", Description: "Ban điều hành cao nhất của công ty.", DisplayOrder: 4, IsSystem: true},
+}
+
+func SeedTemplateDepartments() []TemplateDepartmentDTO {
+	out := make([]TemplateDepartmentDTO, len(workflowTemplateDepartmentSeed))
+	copy(out, workflowTemplateDepartmentSeed)
+	return out
+}
+
 func SeedDisclosureTypeGroups() []DisclosureGroupDTO {
 	out := make([]DisclosureGroupDTO, len(disclosureTypeGroups))
 	copy(out, disclosureTypeGroups)

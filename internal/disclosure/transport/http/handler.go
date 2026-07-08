@@ -83,6 +83,8 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/platform/cms/display-groups", h.cmsCreateDisplayGroup)
 	mux.HandleFunc("PATCH /api/v1/platform/cms/display-groups/{code}", h.cmsUpdateDisplayGroup)
 	mux.HandleFunc("DELETE /api/v1/platform/cms/display-groups/{code}", h.cmsDeleteDisplayGroup)
+	mux.HandleFunc("GET /api/v1/platform/cms/workflow/template-departments", h.cmsListTemplateDepartments)
+	mux.HandleFunc("POST /api/v1/platform/cms/workflow/template-departments", h.cmsCreateTemplateDepartment)
 	mux.HandleFunc("GET /api/v1/platform/cms/deadline-rules", h.cmsListDeadlineRules)
 	mux.HandleFunc("POST /api/v1/platform/cms/deadline-rules", h.cmsCreateDeadlineRule)
 	mux.HandleFunc("PATCH /api/v1/platform/cms/deadline-rules/{rule_id}", h.cmsUpdateDeadlineRule)

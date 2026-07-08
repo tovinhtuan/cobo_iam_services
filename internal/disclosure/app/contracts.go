@@ -73,6 +73,8 @@ type Service interface {
 	CmsCreateDisplayGroup(ctx context.Context, req CmsDisplayGroupCreateRequest) (*DisplayGroupDTO, error)
 	CmsUpdateDisplayGroup(ctx context.Context, req CmsDisplayGroupUpdateRequest) (*DisplayGroupDTO, error)
 	CmsDeleteDisplayGroup(ctx context.Context, req CmsDisplayGroupDeleteRequest) error
+	CmsListTemplateDepartmentsCatalog(ctx context.Context, req ListDisplayGroupsRequest) (*ListTemplateDepartmentsResponse, error)
+	CmsCreateTemplateDepartment(ctx context.Context, req CmsTemplateDepartmentCreateRequest) (*TemplateDepartmentDTO, error)
 	CmsListDeadlineRules(ctx context.Context, req GetTemplateReferenceDataRequest) ([]CmsDeadlineRuleDTO, error)
 	CmsCreateDeadlineRule(ctx context.Context, req CmsDeadlineRuleCreateRequest) (*CmsDeadlineRuleDTO, error)
 	CmsUpdateDeadlineRule(ctx context.Context, req CmsDeadlineRuleUpdateRequest) (*CmsDeadlineRuleDTO, error)
@@ -165,6 +167,8 @@ type Repository interface {
 	CreateDisplayGroup(ctx context.Context, req CmsDisplayGroupCreateRequest) (*DisplayGroupDTO, error)
 	UpdateDisplayGroup(ctx context.Context, req CmsDisplayGroupUpdateRequest) (*DisplayGroupDTO, error)
 	DeleteDisplayGroup(ctx context.Context, code string) error
+	ListTemplateDepartments(ctx context.Context) ([]TemplateDepartmentDTO, error)
+	CreateTemplateDepartment(ctx context.Context, req CmsTemplateDepartmentCreateRequest) (*TemplateDepartmentDTO, error)
 	CreateDeadlineRule(ctx context.Context, req CmsDeadlineRuleCreateRequest, ruleID string) (*CmsDeadlineRuleDTO, error)
 	UpdateDeadlineRule(ctx context.Context, req CmsDeadlineRuleUpdateRequest) (*CmsDeadlineRuleDTO, error)
 	DeleteDeadlineRule(ctx context.Context, ruleID string) error
@@ -1127,6 +1131,28 @@ type CmsDisplayGroupUpdateRequest struct {
 type CmsDisplayGroupDeleteRequest struct {
 	Subject Subject
 	Code    string
+}
+
+// ─── Template default department catalog (global workflow) ───────────────────
+
+type TemplateDepartmentDTO struct {
+	DepartmentCode string `json:"department_code"`
+	DepartmentName string `json:"department_name"`
+	Description    string `json:"description"`
+	DisplayOrder   int    `json:"display_order"`
+	IsSystem       bool   `json:"is_system"`
+}
+
+type ListTemplateDepartmentsResponse struct {
+	Items []TemplateDepartmentDTO `json:"items"`
+}
+
+type CmsTemplateDepartmentCreateRequest struct {
+	Subject      Subject
+	Code         string `json:"code"`
+	Name         string `json:"name"`
+	Description  string `json:"description"`
+	DisplayOrder int    `json:"display_order"`
 }
 
 // ─── Deadline Rule Catalog CRUD ───────────────────────────────────────────────

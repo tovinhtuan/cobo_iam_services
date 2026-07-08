@@ -114,6 +114,8 @@ seed_dev_identity_authorization.sql
 0111_dev_deadline_alert_scope_qa_seed.up.sql
 0112_workflow_instance_step_runtime.up.sql
 0113_department_memberships_focal.up.sql
+0114_workflow_template_departments.up.sql
+0115_widen_global_workflow_department_id.up.sql
 "
 
 mysql_exec() {

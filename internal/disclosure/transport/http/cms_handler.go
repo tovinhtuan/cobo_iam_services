@@ -176,6 +176,41 @@ func (h *Handler) cmsDeleteDisplayGroup(w http.ResponseWriter, r *http.Request) 
 	httpx.WriteJSON(w, http.StatusOK, map[string]bool{"deleted": true})
 }
 
+func (h *Handler) cmsListTemplateDepartments(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subjectFromToken(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	resp, err := h.svc.CmsListTemplateDepartmentsCatalog(r.Context(), disclosureapp.ListDisplayGroupsRequest{Subject: sub})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) cmsCreateTemplateDepartment(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subjectFromToken(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	var req disclosureapp.CmsTemplateDepartmentCreateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	req.Subject = sub
+	resp, err := h.svc.CmsCreateTemplateDepartment(r.Context(), req)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	h.auditLog(r, sub, "cms_template_department.create", "workflow_template_department", resp.DepartmentCode, nil)
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"data": resp})
+}
+
 // ─── Deadline Rules ───────────────────────────────────────────────────────────
 
 func (h *Handler) cmsListDeadlineRules(w http.ResponseWriter, r *http.Request) {

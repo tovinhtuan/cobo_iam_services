@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	disclosureapp "github.com/cobo/cobo_iam_services/internal/disclosure/app"
@@ -216,4 +217,42 @@ func (r *Repository) DeleteDisplayGroup(_ context.Context, code string) error {
 		}
 	}
 	return perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "display group not found or is system-protected", nil)
+}
+
+// ─── Template default department catalog ───────────────────────────────────────
+
+func (r *Repository) ListTemplateDepartments(_ context.Context) ([]disclosureapp.TemplateDepartmentDTO, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]disclosureapp.TemplateDepartmentDTO, len(r.templateDepartments))
+	copy(out, r.templateDepartments)
+	return out, nil
+}
+
+func (r *Repository) CreateTemplateDepartment(_ context.Context, req disclosureapp.CmsTemplateDepartmentCreateRequest) (*disclosureapp.TemplateDepartmentDTO, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, d := range r.templateDepartments {
+		if d.DepartmentCode == req.Code {
+			return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "department code already exists", nil)
+		}
+		if strings.EqualFold(strings.TrimSpace(d.DepartmentName), strings.TrimSpace(req.Name)) {
+			return nil, &perr.HTTPError{
+				HTTPStatus: http.StatusConflict,
+				Code:       perr.CodeStateConflict,
+				Message:    "template department name already exists",
+				Details:    map[string]any{"field": "name"},
+			}
+		}
+	}
+	d := disclosureapp.TemplateDepartmentDTO{
+		DepartmentCode: req.Code,
+		DepartmentName: req.Name,
+		Description:    req.Description,
+		DisplayOrder:   req.DisplayOrder,
+		IsSystem:       false,
+	}
+	r.templateDepartments = append(r.templateDepartments, d)
+	cp := d
+	return &cp, nil
 }

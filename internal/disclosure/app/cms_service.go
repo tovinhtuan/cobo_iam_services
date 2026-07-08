@@ -152,6 +152,30 @@ func (s *service) CmsDeleteDisplayGroup(ctx context.Context, req CmsDisplayGroup
 	return s.repo.DeleteDisplayGroup(ctx, req.Code)
 }
 
+// CmsListTemplateDepartmentsCatalog lists template-level default departments for global workflows.
+func (s *service) CmsListTemplateDepartmentsCatalog(ctx context.Context, req ListDisplayGroupsRequest) (*ListTemplateDepartmentsResponse, error) {
+	if err := s.requireCMSTemplateRead(ctx, req.Subject); err != nil {
+		return nil, err
+	}
+	items, err := s.repo.ListTemplateDepartments(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &ListTemplateDepartmentsResponse{Items: items}, nil
+}
+
+// CmsCreateTemplateDepartment adds a template-level default department option.
+func (s *service) CmsCreateTemplateDepartment(ctx context.Context, req CmsTemplateDepartmentCreateRequest) (*TemplateDepartmentDTO, error) {
+	if err := s.requireCMSTemplateWrite(ctx, req.Subject); err != nil {
+		return nil, err
+	}
+	req.Code = strings.TrimSpace(req.Code)
+	if err := s.resolveTemplateDepartmentCreate(ctx, &req); err != nil {
+		return nil, err
+	}
+	return s.repo.CreateTemplateDepartment(ctx, req)
+}
+
 // CmsListDeadlineRules lists all deadline rules from the catalog.
 func (s *service) CmsListDeadlineRules(ctx context.Context, req GetTemplateReferenceDataRequest) ([]CmsDeadlineRuleDTO, error) {
 	if err := s.requireCMSTemplateRead(ctx, req.Subject); err != nil {
