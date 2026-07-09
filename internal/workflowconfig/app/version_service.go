@@ -85,8 +85,9 @@ type Clock func() time.Time
 
 // VersionService orchestrates publish/activate with validation.
 type VersionService struct {
-	repo VersionRepository
-	now  Clock
+	repo    VersionRepository
+	now     Clock
+	catalog *AssigneeRoleCatalogService
 }
 
 func NewVersionService(repo VersionRepository, clock Clock) *VersionService {
@@ -94,6 +95,22 @@ func NewVersionService(repo VersionRepository, clock Clock) *VersionService {
 		clock = time.Now
 	}
 	return &VersionService{repo: repo, now: clock}
+}
+
+func (s *VersionService) WithCatalog(catalog *AssigneeRoleCatalogService) *VersionService {
+	s.catalog = catalog
+	return s
+}
+
+func (s *VersionService) registryFor(ctx context.Context) *RoleRegistry {
+	if s.catalog == nil {
+		return DefaultRoleRegistry()
+	}
+	reg, err := s.catalog.MergedRegistry(ctx)
+	if err != nil || reg == nil {
+		return DefaultRoleRegistry()
+	}
+	return reg
 }
 
 // BuildManifestFromCurrentWorkflow returns the deterministic manifest of the current editable workflow.
@@ -134,7 +151,7 @@ func (s *VersionService) PublishVersion(ctx context.Context, typeID, changeNote,
 		return VersionInfo{}, err
 	}
 	// Reuse the Role Registry to reject invalid role / missing assignee at publish time.
-	if err := ValidateManifestRoles(m, DefaultRoleRegistry()); err != nil {
+	if err := ValidateManifestRoles(m, s.registryFor(ctx)); err != nil {
 		return VersionInfo{}, err
 	}
 	return s.repo.Publish(ctx, m, changeNote, actor, s.now())

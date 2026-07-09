@@ -438,14 +438,25 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 		setter.SetWorkflowBootstrap(disclosureworkflow.NewBootstrap(disclosureSvc, workflowSvc, true))
 	}
 	workflowHandler := workflowhttp.NewHandler(workflowSvc, tokenManager)
+	var assigneeRoleCatalogSvc *wfcapp.AssigneeRoleCatalogService
+	if pool != nil {
+		assigneeRoleCatalogSvc = wfcapp.NewAssigneeRoleCatalogService(wfcmysql.NewAssigneeRoleCatalogRepository(pool))
+		wfchttp.RegisterAssigneeRoleCatalog(mux, assigneeRoleCatalogSvc, tokenManager)
+	}
 	// Global workflow versioning lifecycle (publish ≠ activate). Registered ONLY when the flag is ON
 	// and a SQL pool exists; existing GET/PUT workflow APIs are unaffected. Versioning touches global
 	// tables only — never tenant override tables, never runtime instances.
 	if pool != nil && cfg.WorkflowVersioningEnabled {
 		versionSvc := wfcapp.NewVersionService(wfcmysql.NewVersionRepository(pool), nil)
+		if assigneeRoleCatalogSvc != nil {
+			versionSvc = versionSvc.WithCatalog(assigneeRoleCatalogSvc)
+		}
 		readinessSvc := wfcapp.NewReadinessService(versionSvc, wfcapp.DefaultRoleRegistry())
+		if assigneeRoleCatalogSvc != nil {
+			readinessSvc = readinessSvc.WithCatalog(assigneeRoleCatalogSvc)
+		}
 		configSvc := wfcapp.NewConfigService(versionSvc, readinessSvc)
-		wfchttp.NewHandler(versionSvc, configSvc, tokenManager).Register(mux)
+		wfchttp.NewHandler(versionSvc, configSvc, assigneeRoleCatalogSvc, tokenManager).Register(mux)
 	}
 	notificationSvc := notificationapp.NewService(notificationRepo, authSvc, id, outboxPublisher, notifOpts...)
 	notificationHandler := notificationhttp.NewHandler(notificationSvc, tokenManager)

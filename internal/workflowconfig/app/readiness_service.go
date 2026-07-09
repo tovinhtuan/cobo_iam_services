@@ -41,6 +41,7 @@ type ReadinessResult struct {
 type ReadinessService struct {
 	versions *VersionService
 	registry *RoleRegistry
+	catalog  *AssigneeRoleCatalogService
 }
 
 func NewReadinessService(versions *VersionService, registry *RoleRegistry) *ReadinessService {
@@ -48,6 +49,22 @@ func NewReadinessService(versions *VersionService, registry *RoleRegistry) *Read
 		registry = DefaultRoleRegistry()
 	}
 	return &ReadinessService{versions: versions, registry: registry}
+}
+
+func (s *ReadinessService) WithCatalog(catalog *AssigneeRoleCatalogService) *ReadinessService {
+	s.catalog = catalog
+	return s
+}
+
+func (s *ReadinessService) registryFor(ctx context.Context) *RoleRegistry {
+	if s.catalog == nil {
+		return s.registry
+	}
+	reg, err := s.catalog.MergedRegistry(ctx)
+	if err != nil || reg == nil {
+		return s.registry
+	}
+	return reg
 }
 
 // Evaluate runs all readiness checks for a type and returns an aggregated result.
@@ -78,7 +95,7 @@ func (s *ReadinessService) Evaluate(ctx context.Context, typeID string) (Readine
 		add(CheckUniqueStepKey, true, severityError, "")
 	}
 
-	if roleErr := ValidateManifestRoles(m, s.registry); roleErr != nil {
+	if roleErr := ValidateManifestRoles(m, s.registryFor(ctx)); roleErr != nil {
 		add(CheckValidRoles, false, severityError, roleErr.Error())
 	} else {
 		add(CheckValidRoles, true, severityError, "")
@@ -86,7 +103,7 @@ func (s *ReadinessService) Evaluate(ctx context.Context, typeID string) (Readine
 
 	// valid_assignees (platform-scoped): every step's role must be assignable (has an assignment
 	// scope). Company-level membership resolution is tenant scope and out of this batch.
-	assigneesOK, badStep := s.assigneesAssignable(m)
+	assigneesOK, badStep := s.assigneesAssignable(ctx, m)
 	add(CheckValidAssignees, assigneesOK, severityError, badStep)
 
 	if intErr := s.versions.ValidateActiveIntegrity(ctx, typeID); intErr != nil {
@@ -98,9 +115,10 @@ func (s *ReadinessService) Evaluate(ctx context.Context, typeID string) (Readine
 	return finalize(res), nil
 }
 
-func (s *ReadinessService) assigneesAssignable(m Manifest) (bool, string) {
+func (s *ReadinessService) assigneesAssignable(ctx context.Context, m Manifest) (bool, string) {
+	reg := s.registryFor(ctx)
 	for _, st := range m.Steps {
-		def, ok := s.registry.GetRole(st.Role)
+		def, ok := reg.GetRole(st.Role)
 		if !ok {
 			return false, "step " + st.StepKey + " has unknown role"
 		}

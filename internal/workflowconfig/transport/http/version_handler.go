@@ -18,11 +18,19 @@ import (
 type Handler struct {
 	svc       *wfcapp.VersionService
 	cfg       *wfcapp.ConfigService
+	catalog   *wfcapp.AssigneeRoleCatalogService
 	inspector iamapp.TokenInspector
 }
 
-func NewHandler(svc *wfcapp.VersionService, cfg *wfcapp.ConfigService, inspector iamapp.TokenInspector) *Handler {
-	return &Handler{svc: svc, cfg: cfg, inspector: inspector}
+func NewHandler(svc *wfcapp.VersionService, cfg *wfcapp.ConfigService, catalog *wfcapp.AssigneeRoleCatalogService, inspector iamapp.TokenInspector) *Handler {
+	return &Handler{svc: svc, cfg: cfg, catalog: catalog, inspector: inspector}
+}
+
+// RegisterAssigneeRoleCatalog wires GET/POST assignee role catalog routes (independent of workflow versioning).
+func RegisterAssigneeRoleCatalog(mux *http.ServeMux, catalog *wfcapp.AssigneeRoleCatalogService, inspector iamapp.TokenInspector) {
+	h := &Handler{catalog: catalog, inspector: inspector}
+	mux.HandleFunc("GET /api/v1/platform/cms/workflow/assignee-roles", h.assigneeRoles)
+	mux.HandleFunc("POST /api/v1/platform/cms/workflow/assignee-roles", h.assigneeRoles)
 }
 
 func (h *Handler) Register(mux *http.ServeMux) {
@@ -34,7 +42,6 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/platform/cms/templates/{type_id}/workflow/versions/{version_no}", h.versionDetail)
 	mux.HandleFunc("POST /api/v1/platform/cms/templates/{type_id}/workflow/publish", h.publish)
 	mux.HandleFunc("POST /api/v1/platform/cms/templates/{type_id}/workflow/versions/{version_no}/activate", h.activate)
-	mux.HandleFunc("GET /api/v1/platform/cms/workflow/assignee-roles", h.assigneeRoles)
 }
 
 func (h *Handler) configuration(w http.ResponseWriter, r *http.Request) {
