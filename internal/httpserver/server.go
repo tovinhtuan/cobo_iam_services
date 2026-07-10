@@ -74,6 +74,8 @@ import (
 	redispkg "github.com/cobo/cobo_iam_services/internal/platform/redis"
 	platformcmsapp "github.com/cobo/cobo_iam_services/internal/platformcms/app"
 	platformcmshttp "github.com/cobo/cobo_iam_services/internal/platformcms/transport/http"
+	portaldashboardapp "github.com/cobo/cobo_iam_services/internal/portaldashboard/app"
+	portaldashboardhttp "github.com/cobo/cobo_iam_services/internal/portaldashboard/transport/http"
 	reminderapp "github.com/cobo/cobo_iam_services/internal/reminder/app"
 	reminderemail "github.com/cobo/cobo_iam_services/internal/reminder/infra/email"
 	reminderinmem "github.com/cobo/cobo_iam_services/internal/reminder/infra/inmemory"
@@ -391,6 +393,7 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 	deadlineAlertsSvc := deadlinealertsapp.NewService(deadlineAlertsRepo, authSvc, deadlineCalc)
 	deadlineAlertsHandler := deadlinealertshttp.NewHandler(log, deadlineAlertsSvc, tokenManager)
 	var idemStore idempotency.Store
+	var adhocSvc adhocapp.Service
 	if pool != nil {
 		idemStore = idempotencymysql.NewStore(pool)
 		log.Info("disclosure submit/confirm idempotency enabled (Idempotency-Key header)")
@@ -607,12 +610,29 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 			cfg.PublicWebBaseURL, cfg.EmailShadowMode, cfg.AdhocEmailOutboxEnabled, cfg.AdhocEmailShadowRecipient,
 			adhocMetrics, log,
 		)
-		adhocSvc := adhocapp.NewService(adhocRepo, recordCreator, typeCatalog, id, cfg.WorkflowAdhocAutoApproveEnabled, authSvc, membershipValidator, proposalNotifier, adhocMetrics)
+		adhocSvc = adhocapp.NewService(adhocRepo, recordCreator, typeCatalog, id, cfg.WorkflowAdhocAutoApproveEnabled, authSvc, membershipValidator, proposalNotifier, adhocMetrics)
 		adhocHandler = adhochttp.NewHandler(log, adhocSvc, tokenManager, idemStore)
 		log.Info("ad-hoc proposal module enabled")
 	}
 
-	// Batch 2B Observability (Option B): expose DB-derived email-pipeline gauges
+	companyReader := portaldashboardapp.AdminCompanyReader{
+		GetName: adminRepo.GetCompanyName,
+	}
+	if platformGetter, ok := adminRepo.(interface {
+		GetCompanyPlatform(context.Context, string) (*companyaccessapp.PlatformCompanyDetail, error)
+	}); ok {
+		companyReader.GetCode = func(ctx context.Context, companyID string) (string, error) {
+			d, err := platformGetter.GetCompanyPlatform(ctx, companyID)
+			if err != nil || d == nil {
+				return "", err
+			}
+			return d.CompanyCode, nil
+		}
+	}
+	portalDashboardSvc := portaldashboardapp.NewService(authSvc, deadlineAlertsSvc, adhocSvc, inAppSvc, companyReader)
+	portalDashboardHandler := portaldashboardhttp.NewHandler(log, portalDashboardSvc, tokenManager)
+
+	// Batch 2B Observability
 	// on the API's existing /metrics. The worker (where EmailDispatchHandler runs)
 	// has no metrics endpoint; the API + shared MySQL are the authoritative alert
 	// source for failed_permanent / backlog / stale-processing. Scrape-driven, so
@@ -647,7 +667,7 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 		}
 	}
 
-	return muxRegisterHealthAndIAM(mux, log, sqlDB, iamHandler, meHandler, authHandler, disclosureHandler, workflowHandler, notificationHandler, reminderHandler, adminHandler, platformCMSHandler, adhocHandler, deadlineAlertsHandler)
+	return muxRegisterHealthAndIAM(mux, log, sqlDB, iamHandler, meHandler, authHandler, disclosureHandler, workflowHandler, notificationHandler, reminderHandler, adminHandler, platformCMSHandler, adhocHandler, deadlineAlertsHandler, portalDashboardHandler)
 }
 
 func muxRegisterHealthAndIAM(
@@ -665,6 +685,7 @@ func muxRegisterHealthAndIAM(
 	platformCMSHandler *platformcmshttp.Handler,
 	adhocHandler *adhochttp.Handler,
 	deadlineAlertsHandler *deadlinealertshttp.Handler,
+	portalDashboardHandler *portaldashboardhttp.Handler,
 ) error {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		httpx.WriteJSON(w, http.StatusOK, map[string]any{"status": "ok"})
@@ -698,6 +719,7 @@ func muxRegisterHealthAndIAM(
 		adhocHandler.Register(mux)
 	}
 	deadlineAlertsHandler.Register(mux)
+	portalDashboardHandler.Register(mux)
 	return nil
 }
 
