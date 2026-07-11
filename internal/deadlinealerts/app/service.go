@@ -56,8 +56,43 @@ func (s *service) ListDeadlineAlerts(ctx context.Context, req ListDeadlineAlerts
 	query := strings.ToLower(strings.TrimSpace(req.Query))
 	startDate := strings.TrimSpace(req.StartDate)
 	endDate := strings.TrimSpace(req.EndDate)
+	departmentID := strings.TrimSpace(req.DepartmentID)
+	displayGroupCode := strings.TrimSpace(req.DisplayGroupCode)
 
-	var enriched []DeadlineAlertDTO
+	companyDepts, deptErr := s.repo.ListCompanyDepartments(ctx, req.Subject.CompanyID)
+	if deptErr != nil {
+		return nil, deptErr
+	}
+	templateDepts, tplErr := s.repo.ListTemplateDepartments(ctx)
+	if tplErr != nil {
+		return nil, tplErr
+	}
+	deptDict := NewDepartmentDict(companyDepts, templateDepts)
+	departmentAliases := deptDict.FilterAliases(departmentID)
+
+	codesByType := map[string][]string{}
+	if displayGroupCode != "" {
+		typeIDs := make([]string, 0, len(rows))
+		seenType := map[string]struct{}{}
+		for _, row := range rows {
+			tid := strings.TrimSpace(row.TypeID)
+			if tid == "" {
+				continue
+			}
+			if _, ok := seenType[tid]; ok {
+				continue
+			}
+			seenType[tid] = struct{}{}
+			typeIDs = append(typeIDs, tid)
+		}
+		var codesErr error
+		codesByType, codesErr = s.repo.ListDisplayGroupCodesByTypeIDs(ctx, typeIDs)
+		if codesErr != nil {
+			return nil, codesErr
+		}
+	}
+
+	enriched := make([]DeadlineAlertDTO, 0)
 	for _, row := range rows {
 		if isDraftRecordStatus(row.RecordStatus) {
 			continue
@@ -75,13 +110,20 @@ func (s *service) ListDeadlineAlerts(ctx context.Context, req ListDeadlineAlerts
 		if statusFilter != "" && alertStatus != statusFilter {
 			continue
 		}
-		if query != "" && !strings.Contains(strings.ToLower(row.Title), query) {
+		if query != "" && !strings.Contains(strings.ToLower(DisplayAlertTitle(row)), query) && !strings.Contains(strings.ToLower(row.Title), query) {
 			continue
 		}
 		if !matchesDateRange(dueDate, startDate, endDate) {
 			continue
 		}
+		if departmentID != "" && !rowMatchesDepartmentAliases(row, departmentAliases) {
+			continue
+		}
+		if displayGroupCode != "" && !rowMatchesDisplayGroup(row.TypeID, displayGroupCode, codesByType) {
+			continue
+		}
 
+		rawDepts := ActiveDepartmentsFromRow(row.CurrentStepCode, row.CurrentStepDepartment, row.SnapshotJSON)
 		enriched = append(enriched, DeadlineAlertDTO{
 			AlertID:            row.RecordID,
 			RecordID:           row.RecordID,
@@ -90,7 +132,7 @@ func (s *service) ListDeadlineAlerts(ctx context.Context, req ListDeadlineAlerts
 			Title:              DisplayAlertTitle(row),
 			DueDate:            dueDate,
 			Status:             alertStatus,
-			ActiveDepartments:  ActiveDepartmentsFromRow(row.CurrentStepCode, row.CurrentStepDepartment, row.SnapshotJSON),
+			ActiveDepartments:  ResolveActiveDepartmentLabels(rawDepts, deptDict),
 			CurrentStepName:    CurrentStepNameFromRow(row.CurrentStepCode, row.CurrentStepName, row.SnapshotJSON),
 			Source:             "disclosure_record",
 			TemplateCategory:   strings.TrimSpace(row.TemplateCategory),
@@ -106,13 +148,107 @@ func (s *service) ListDeadlineAlerts(ctx context.Context, req ListDeadlineAlerts
 	if end > total {
 		end = total
 	}
+	items := enriched[start:end]
+	if items == nil {
+		items = []DeadlineAlertDTO{}
+	}
 
 	return &ListDeadlineAlertsResponse{
-		Items:    enriched[start:end],
+		Items:    items,
 		Page:     page,
 		PageSize: pageSize,
 		Total:    total,
 	}, nil
+}
+
+func (s *service) ListDeadlineAlertFilterOptions(ctx context.Context, sub Subject) (*DeadlineAlertFilterOptionsResponse, error) {
+	if strings.TrimSpace(sub.CompanyID) == "" {
+		return nil, perr.NewHTTPError(http.StatusUnprocessableEntity, perr.CodeCompanyContextRequired, "company_id is required", nil)
+	}
+	if err := s.authorizeView(ctx, sub); err != nil {
+		return nil, err
+	}
+	departments, err := s.repo.ListCompanyDepartments(ctx, sub.CompanyID)
+	if err != nil {
+		return nil, err
+	}
+	templateDepts, err := s.repo.ListTemplateDepartments(ctx)
+	if err != nil {
+		return nil, err
+	}
+	reportGroups, err := s.repo.ListReportGroupOptions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	departments = MergeDepartmentFilterOptions(departments, templateDepts)
+	if departments == nil {
+		departments = []DeadlineAlertFilterOptionDTO{}
+	}
+	if reportGroups == nil {
+		reportGroups = []DeadlineAlertFilterOptionDTO{}
+	}
+	return &DeadlineAlertFilterOptionsResponse{
+		Departments:  departments,
+		ReportGroups: reportGroups,
+	}, nil
+}
+
+func rowMatchesDepartmentAliases(row AlertRow, aliases []string) bool {
+	if len(aliases) == 0 {
+		return true
+	}
+	targets := map[string]struct{}{}
+	for _, a := range aliases {
+		key := strings.ToLower(strings.TrimSpace(a))
+		if key != "" {
+			targets[key] = struct{}{}
+		}
+	}
+	if len(targets) == 0 {
+		return true
+	}
+	match := func(v string) bool {
+		key := strings.ToLower(strings.TrimSpace(v))
+		if key == "" {
+			return false
+		}
+		_, ok := targets[key]
+		return ok
+	}
+	if match(row.RecordDepartmentID) || match(row.CurrentStepDepartment) {
+		return true
+	}
+	for _, d := range ActiveDepartmentsFromRow(row.CurrentStepCode, row.CurrentStepDepartment, row.SnapshotJSON) {
+		if match(d) {
+			return true
+		}
+	}
+	return false
+}
+
+func rowMatchesDepartment(row AlertRow, departmentID, departmentName string) bool {
+	aliases := make([]string, 0, 2)
+	if id := strings.TrimSpace(departmentID); id != "" {
+		aliases = append(aliases, id)
+	}
+	if name := strings.TrimSpace(departmentName); name != "" {
+		aliases = append(aliases, name)
+	}
+	return rowMatchesDepartmentAliases(row, aliases)
+}
+
+func rowMatchesDisplayGroup(typeID, displayGroupCode string, codesByType map[string][]string) bool {
+	want := strings.ToLower(strings.TrimSpace(displayGroupCode))
+	if want == "" {
+		return true
+	}
+	codes := codesByType[strings.TrimSpace(typeID)]
+	for _, code := range codes {
+		if strings.ToLower(strings.TrimSpace(code)) == want {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *service) authorize(ctx context.Context, sub Subject) error {

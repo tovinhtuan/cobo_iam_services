@@ -41,6 +41,15 @@ func TestDisplayAlertTitle(t *testing.T) {
 			},
 			want: "Báo cáo tài chính quý 1 — 2026-Q1",
 		},
+		{
+			name: "periodic prefers type name over submission/test record title",
+			row: AlertRow{
+				Title:            "Sprint3 Verify Submission 3",
+				TypeName:         "Báo cáo tài chính quý 1",
+				TemplateCategory: "periodic",
+			},
+			want: "Báo cáo tài chính quý 1",
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

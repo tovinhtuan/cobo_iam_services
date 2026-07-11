@@ -426,6 +426,9 @@ func (s *service) ListTypes(ctx context.Context, req ListTypesRequest) (*ListTyp
 		GroupID:          req.GroupID,
 		DisplayGroupCode: req.DisplayGroupCode,
 		Query:            req.Query,
+		Tags:             req.Tags,
+		Periodicity:      NormalizePeriodicityFilter(req.Periodicity),
+		DepartmentID:     strings.TrimSpace(req.DepartmentID),
 		SortBy:           sortBy,
 		SortDir:          sortDir,
 		LightweightOnly:  true,
@@ -478,6 +481,29 @@ func (s *service) ListTypes(ctx context.Context, req ListTypesRequest) (*ListTyp
 		enrichDeadlineRuleDisplaySummary(&ordered[i], catalog)
 	}
 	return &ListTypesResponse{Items: ordered, Total: total, Page: page, PageSize: pageSize}, nil
+}
+
+func (s *service) ListTypeFilterOptions(ctx context.Context, req ListTypeFilterOptionsRequest) (*ListTypeFilterOptionsResponse, error) {
+	if err := s.requireDisclosureCatalogRead(ctx, req.Subject); err != nil {
+		return nil, err
+	}
+	resp, err := s.repo.ListTypeFilterOptions(ctx, req.Subject.CompanyID)
+	if err != nil {
+		return nil, err
+	}
+	if resp == nil {
+		resp = &ListTypeFilterOptionsResponse{}
+	}
+	if resp.Tags == nil {
+		resp.Tags = []TypeFilterOptionDTO{}
+	}
+	if resp.Departments == nil {
+		resp.Departments = []TypeFilterOptionDTO{}
+	}
+	if len(resp.Frequencies) == 0 {
+		resp.Frequencies = DefaultFrequencyFilterOptions()
+	}
+	return resp, nil
 }
 
 func (s *service) listTypesLightweightCatalog(ctx context.Context, base ListTypesParams) ([]DisclosureTypeSummaryDTO, error) {

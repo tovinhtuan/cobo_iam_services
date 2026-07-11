@@ -324,3 +324,129 @@ func (r *Repository) ConfirmDeadlineAlert(
 	`, companyID, recordID, confirmedBy, at.UTC(), note, idempotencyKey)
 	return err
 }
+
+func (r *Repository) ListDisplayGroupCodesByTypeIDs(ctx context.Context, typeIDs []string) (map[string][]string, error) {
+	out := map[string][]string{}
+	if len(typeIDs) == 0 {
+		return out, nil
+	}
+	placeholders := make([]string, len(typeIDs))
+	args := make([]any, len(typeIDs))
+	for i, id := range typeIDs {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+	sqlText := `SELECT template_id, display_group_code FROM template_display_groups
+	             WHERE template_id IN (` + strings.Join(placeholders, ",") + `)
+	             ORDER BY template_id, display_order ASC`
+	rows, err := r.db.QueryContext(ctx, sqlText, args...)
+	if err != nil {
+		// Pre-migration environments may lack the junction table.
+		return out, nil
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var templateID, code string
+		if err := rows.Scan(&templateID, &code); err != nil {
+			return nil, err
+		}
+		out[templateID] = append(out[templateID], code)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repository) ListCompanyDepartments(ctx context.Context, companyID string) ([]deadlinealertsapp.DeadlineAlertFilterOptionDTO, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT department_id, COALESCE(department_code, ''), department_name
+		FROM departments
+		WHERE company_id = ?
+		  AND status = 'active'
+		ORDER BY sort_order ASC, department_name ASC
+	`, companyID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []deadlinealertsapp.DeadlineAlertFilterOptionDTO
+	for rows.Next() {
+		var id, code, name string
+		if err := rows.Scan(&id, &code, &name); err != nil {
+			return nil, err
+		}
+		id = strings.TrimSpace(id)
+		code = strings.TrimSpace(code)
+		name = strings.TrimSpace(name)
+		if id == "" || name == "" {
+			continue
+		}
+		if code == "" {
+			code = id
+		}
+		out = append(out, deadlinealertsapp.DeadlineAlertFilterOptionDTO{ID: id, Code: code, Name: name})
+	}
+	if out == nil {
+		out = []deadlinealertsapp.DeadlineAlertFilterOptionDTO{}
+	}
+	return out, rows.Err()
+}
+
+func (r *Repository) ListTemplateDepartments(ctx context.Context) ([]deadlinealertsapp.DeadlineAlertFilterOptionDTO, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT department_code, department_name
+		FROM workflow_template_departments
+		ORDER BY display_order ASC, department_code ASC
+	`)
+	if err != nil {
+		// Pre-migration environments may lack the catalog table.
+		return []deadlinealertsapp.DeadlineAlertFilterOptionDTO{}, nil
+	}
+	defer rows.Close()
+	var out []deadlinealertsapp.DeadlineAlertFilterOptionDTO
+	for rows.Next() {
+		var code, name string
+		if err := rows.Scan(&code, &name); err != nil {
+			return nil, err
+		}
+		code = strings.TrimSpace(code)
+		name = strings.TrimSpace(name)
+		if code == "" || name == "" {
+			continue
+		}
+		out = append(out, deadlinealertsapp.DeadlineAlertFilterOptionDTO{ID: code, Code: code, Name: name})
+	}
+	if out == nil {
+		out = []deadlinealertsapp.DeadlineAlertFilterOptionDTO{}
+	}
+	return out, rows.Err()
+}
+
+func (r *Repository) ListReportGroupOptions(ctx context.Context) ([]deadlinealertsapp.DeadlineAlertFilterOptionDTO, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT display_group_code,
+		       COALESCE(NULLIF(TRIM(name_vi), ''), NULLIF(TRIM(name_en), ''), display_group_code) AS name
+		FROM disclosure_display_groups
+		WHERE is_active = 1
+		ORDER BY display_order ASC, display_group_code ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []deadlinealertsapp.DeadlineAlertFilterOptionDTO
+	for rows.Next() {
+		var id, name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return nil, err
+		}
+		id = strings.TrimSpace(id)
+		name = strings.TrimSpace(name)
+		if id == "" {
+			continue
+		}
+		if name == "" {
+			name = id
+		}
+		out = append(out, deadlinealertsapp.DeadlineAlertFilterOptionDTO{ID: id, Name: name})
+	}
+	return out, rows.Err()
+}

@@ -15,7 +15,10 @@ func DisplayAlertTitle(row AlertRow) string {
 		if cycle := periodicCycleFromLegacyTitle(recordTitle); cycle != "" {
 			return typeName + " — " + cycle
 		}
-		if recordTitle != "" && !strings.HasPrefix(recordTitle, "[Tự động]") {
+		// Prefer disclosure type name as the business title. Record titles are often
+		// submission/test labels (e.g. "Sprint3 Verify Submission 3") and must not
+		// replace the catalog type name unless they already enrich it.
+		if recordTitle != "" && strings.HasPrefix(recordTitle, typeName) {
 			return recordTitle
 		}
 		return typeName

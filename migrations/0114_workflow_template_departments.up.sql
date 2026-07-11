@@ -1,6 +1,8 @@
 -- Platform catalog: template-level default/recommended departments for global workflow steps.
 -- These are NOT tenant company departments; companies may map/override at apply time.
 
+SET NAMES utf8mb4;
+
 CREATE TABLE IF NOT EXISTS workflow_template_departments (
   department_code VARCHAR(64)  NOT NULL PRIMARY KEY,
   department_name VARCHAR(255) NOT NULL,
@@ -17,4 +19,8 @@ VALUES
   ('dept-002', 'Phòng Quan hệ cổ đông (IR)', 'Phụ trách công bố thông tin và quan hệ với nhà đầu tư.', 2, 1),
   ('dept-003', 'Phòng Kế toán', 'Quản lý tài chính, kế toán và lập báo cáo tài chính.', 3, 1),
   ('dept-004', 'Ban Tổng Giám đốc', 'Ban điều hành cao nhất của công ty.', 4, 1)
-ON DUPLICATE KEY UPDATE department_name = VALUES(department_name);
+ON DUPLICATE KEY UPDATE
+  department_name = VALUES(department_name),
+  description = VALUES(description),
+  display_order = VALUES(display_order),
+  is_system = VALUES(is_system);

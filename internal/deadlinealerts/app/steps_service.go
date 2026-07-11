@@ -38,6 +38,9 @@ func (s *service) ListDeadlineSteps(ctx context.Context, sub Subject, recordID s
 	if err != nil {
 		return nil, err
 	}
+	if err := s.enrichStepDepartmentNames(ctx, sub.CompanyID, &resp); err != nil {
+		return nil, err
+	}
 	_ = row
 	return &resp, nil
 }
@@ -240,4 +243,34 @@ func snapshotHasStep(snapshot []workflowapp.StepSnapshot, stepCode string) bool 
 		}
 	}
 	return false
+}
+
+
+func (s *service) enrichStepDepartmentNames(ctx context.Context, companyID string, resp *ListDeadlineStepsResponse) error {
+	if resp == nil || len(resp.Steps) == 0 {
+		return nil
+	}
+	companyDepts, err := s.repo.ListCompanyDepartments(ctx, companyID)
+	if err != nil {
+		return err
+	}
+	templateDepts, err := s.repo.ListTemplateDepartments(ctx)
+	if err != nil {
+		return err
+	}
+	dict := NewDepartmentDict(companyDepts, templateDepts)
+	for i := range resp.Steps {
+		raw := strings.TrimSpace(resp.Steps[i].DepartmentName)
+		if raw == "" {
+			continue
+		}
+		if label := strings.TrimSpace(dict.ResolveLabel(raw)); label != "" {
+			resp.Steps[i].DepartmentName = label
+			continue
+		}
+		if LooksLikeTechnicalDepartmentRef(raw) {
+			resp.Steps[i].DepartmentName = ""
+		}
+	}
+	return nil
 }

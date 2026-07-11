@@ -208,6 +208,54 @@ func (r *Repository) ListTypes(_ context.Context, params disclosureapp.ListTypes
 		if query != "" && !strings.Contains(strings.ToLower(item.Name+" "+item.Description), query) {
 			continue
 		}
+		if len(params.Tags) > 0 {
+			matched := false
+			for _, want := range params.Tags {
+				want = strings.TrimSpace(want)
+				for _, have := range item.Tags {
+					if strings.EqualFold(strings.TrimSpace(have), want) {
+						matched = true
+						break
+					}
+				}
+				if matched {
+					break
+				}
+			}
+			if !matched {
+				continue
+			}
+		}
+		if freq := disclosureapp.NormalizePeriodicityFilter(params.Periodicity); freq != "" {
+			p := strings.ToLower(strings.TrimSpace(item.Periodicity))
+			tc := strings.ToLower(strings.TrimSpace(item.TemplateCategory))
+			ok := false
+			switch freq {
+			case "ad_hoc":
+				ok = p == "ad_hoc" || p == "event_based" || tc == "irregular" || tc == "custom"
+			case "yearly":
+				ok = p == "yearly" || p == "annual"
+			default:
+				ok = p == freq
+			}
+			if !ok {
+				continue
+			}
+		}
+		if dept := strings.TrimSpace(params.DepartmentID); dept != "" {
+			hasDept := false
+			if wf := r.globalWorkflows[item.TypeID]; wf != nil {
+				for _, step := range wf.Steps {
+					if strings.TrimSpace(step.DepartmentID) == dept {
+						hasDept = true
+						break
+					}
+				}
+			}
+			if !hasDept {
+				continue
+			}
+		}
 		scope := "company"
 		ownerCompanyID := r.catalogScope[item.TypeID]
 		if ownerCompanyID == "global" {
@@ -262,6 +310,50 @@ func (r *Repository) ListTypes(_ context.Context, params disclosureapp.ListTypes
 		out = out[start:end]
 	}
 	return out, total, nil
+}
+
+func (r *Repository) ListTypeFilterOptions(_ context.Context, companyID string) (*disclosureapp.ListTypeFilterOptionsResponse, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	_ = companyID
+	out := &disclosureapp.ListTypeFilterOptionsResponse{
+		Tags:        []disclosureapp.TypeFilterOptionDTO{},
+		Departments: []disclosureapp.TypeFilterOptionDTO{},
+		Frequencies: disclosureapp.DefaultFrequencyFilterOptions(),
+	}
+	tagSeen := map[string]struct{}{}
+	for _, item := range r.catalog {
+		for _, tag := range item.Tags {
+			tag = strings.TrimSpace(tag)
+			if tag == "" {
+				continue
+			}
+			key := strings.ToLower(tag)
+			if _, ok := tagSeen[key]; ok {
+				continue
+			}
+			tagSeen[key] = struct{}{}
+			out.Tags = append(out.Tags, disclosureapp.TypeFilterOptionDTO{ID: tag, Name: tag})
+		}
+	}
+	deptSeen := map[string]struct{}{}
+	for _, wf := range r.globalWorkflows {
+		if wf == nil {
+			continue
+		}
+		for _, step := range wf.Steps {
+			id := strings.TrimSpace(step.DepartmentID)
+			if id == "" {
+				continue
+			}
+			if _, ok := deptSeen[id]; ok {
+				continue
+			}
+			deptSeen[id] = struct{}{}
+			out.Departments = append(out.Departments, disclosureapp.TypeFilterOptionDTO{ID: id, Name: id})
+		}
+	}
+	return out, nil
 }
 
 func (r *Repository) GetTypeDetail(_ context.Context, companyID, typeID string) (*disclosureapp.DisclosureTypeDTO, error) {

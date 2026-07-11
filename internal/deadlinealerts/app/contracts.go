@@ -16,13 +16,26 @@ type Subject struct {
 }
 
 type ListDeadlineAlertsRequest struct {
-	Subject   Subject
-	Status    string // UPCOMING|DUE_SOON|OVERDUE|PENDING_CONFIRM|DONE or FE labels
-	Query     string
-	StartDate string // YYYY-MM-DD
-	EndDate   string // YYYY-MM-DD
-	Page      int
-	PageSize  int
+	Subject          Subject
+	Status           string // UPCOMING|DUE_SOON|OVERDUE|PENDING_CONFIRM|DONE or FE labels
+	Query            string
+	StartDate        string // YYYY-MM-DD
+	EndDate          string // YYYY-MM-DD
+	DepartmentID     string // optional: current-step / record department filter
+	DisplayGroupCode string // optional: template_display_groups filter
+	Page             int
+	PageSize         int
+}
+
+type DeadlineAlertFilterOptionDTO struct {
+	ID   string `json:"id"`
+	Code string `json:"code,omitempty"`
+	Name string `json:"name"`
+}
+
+type DeadlineAlertFilterOptionsResponse struct {
+	Departments  []DeadlineAlertFilterOptionDTO `json:"departments"`
+	ReportGroups []DeadlineAlertFilterOptionDTO `json:"report_groups"`
 }
 
 type DeadlineAlertDTO struct {
@@ -93,6 +106,10 @@ type WorkflowInstanceRow struct {
 
 type Repository interface {
 	ListRows(ctx context.Context, companyID string, scope DeadlineAlertAccessScope) ([]AlertRow, error)
+	ListDisplayGroupCodesByTypeIDs(ctx context.Context, typeIDs []string) (map[string][]string, error)
+	ListCompanyDepartments(ctx context.Context, companyID string) ([]DeadlineAlertFilterOptionDTO, error)
+	ListTemplateDepartments(ctx context.Context) ([]DeadlineAlertFilterOptionDTO, error)
+	ListReportGroupOptions(ctx context.Context) ([]DeadlineAlertFilterOptionDTO, error)
 	GetCompanyDeadlineContext(ctx context.Context, companyID string) (disclosureapp.CompanyDeadlineContext, error)
 	// GetCompanyTypeDeadlineContext returns company context enriched with
 	// per-company cycle anchor override for the given type.
@@ -109,6 +126,7 @@ type Repository interface {
 
 type Service interface {
 	ListDeadlineAlerts(ctx context.Context, req ListDeadlineAlertsRequest) (*ListDeadlineAlertsResponse, error)
+	ListDeadlineAlertFilterOptions(ctx context.Context, sub Subject) (*DeadlineAlertFilterOptionsResponse, error)
 	ConfirmDeadlineAlert(ctx context.Context, req ConfirmDeadlineAlertRequest) (*ConfirmDeadlineAlertResponse, error)
 	ListDeadlineSteps(ctx context.Context, sub Subject, recordID string) (*ListDeadlineStepsResponse, error)
 	CompleteDeadlineStep(ctx context.Context, req CompleteStepRequest) (*ListDeadlineStepsResponse, error)

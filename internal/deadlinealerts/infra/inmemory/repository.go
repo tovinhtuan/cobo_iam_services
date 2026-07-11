@@ -71,3 +71,19 @@ func (r *Repository) UpsertStepCompleted(_ context.Context, _, _, _, _ string, _
 func (r *Repository) UpsertStepIncomplete(_ context.Context, _, _, _, _, _ string, _ int, _ time.Time) error {
 	return nil
 }
+
+func (r *Repository) ListDisplayGroupCodesByTypeIDs(_ context.Context, _ []string) (map[string][]string, error) {
+	return map[string][]string{}, nil
+}
+
+func (r *Repository) ListCompanyDepartments(_ context.Context, _ string) ([]deadlinealertsapp.DeadlineAlertFilterOptionDTO, error) {
+	return []deadlinealertsapp.DeadlineAlertFilterOptionDTO{}, nil
+}
+
+func (r *Repository) ListTemplateDepartments(_ context.Context) ([]deadlinealertsapp.DeadlineAlertFilterOptionDTO, error) {
+	return []deadlinealertsapp.DeadlineAlertFilterOptionDTO{}, nil
+}
+
+func (r *Repository) ListReportGroupOptions(_ context.Context) ([]deadlinealertsapp.DeadlineAlertFilterOptionDTO, error) {
+	return []deadlinealertsapp.DeadlineAlertFilterOptionDTO{}, nil
+}

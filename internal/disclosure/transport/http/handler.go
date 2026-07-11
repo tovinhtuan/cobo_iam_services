@@ -37,6 +37,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/disclosures/{record_id}/confirm", h.confirmRecord)
 	mux.HandleFunc("GET /api/v1/disclosure-groups", h.listTypeGroups)
 	mux.HandleFunc("GET /api/v1/disclosure-types/display-groups", h.listDisplayGroups)
+	mux.HandleFunc("GET /api/v1/disclosure-types/filter-options", h.listTypeFilterOptions)
 	mux.HandleFunc("GET /api/v1/disclosure-types", h.listTypes)
 	mux.HandleFunc("GET /api/v1/disclosure-types/{type_id}", h.getTypeDetail)
 	mux.HandleFunc("GET /api/v1/admin/disclosure-types/reference-data", h.getTemplateReferenceData)
@@ -308,6 +309,9 @@ func (h *Handler) listTypes(w http.ResponseWriter, r *http.Request) {
 		GroupID:          strings.TrimSpace(r.URL.Query().Get("group_id")),
 		DisplayGroupCode: strings.TrimSpace(r.URL.Query().Get("display_group_code")),
 		Query:            strings.TrimSpace(r.URL.Query().Get("q")),
+		Tags:             disclosureapp.ParseTagQuery(r.URL.Query().Get("tag_ids")),
+		Periodicity:      strings.TrimSpace(r.URL.Query().Get("frequency")),
+		DepartmentID:     strings.TrimSpace(r.URL.Query().Get("department_id")),
 		Page:             page,
 		PageSize:         pageSize,
 		PageProvided:     pageRaw != "",
@@ -315,6 +319,20 @@ func (h *Handler) listTypes(w http.ResponseWriter, r *http.Request) {
 		SortBy:           strings.TrimSpace(r.URL.Query().Get("sort_by")),
 		SortDir:          strings.TrimSpace(r.URL.Query().Get("sort_dir")),
 	})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) listTypeFilterOptions(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subjectFromToken(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	resp, err := h.svc.ListTypeFilterOptions(r.Context(), disclosureapp.ListTypeFilterOptionsRequest{Subject: sub})
 	if err != nil {
 		httpx.WriteError(w, nil, err)
 		return

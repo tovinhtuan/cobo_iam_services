@@ -12,11 +12,43 @@ import (
 )
 
 type stubRepo struct {
-	rows []AlertRow
+	rows              []AlertRow
+	codesByType       map[string][]string
+	departments       []DeadlineAlertFilterOptionDTO
+	templateDepts     []DeadlineAlertFilterOptionDTO
+	reportGroups      []DeadlineAlertFilterOptionDTO
 }
 
 func (s *stubRepo) ListRows(_ context.Context, _ string, _ DeadlineAlertAccessScope) ([]AlertRow, error) {
 	return s.rows, nil
+}
+
+func (s *stubRepo) ListDisplayGroupCodesByTypeIDs(_ context.Context, _ []string) (map[string][]string, error) {
+	if s.codesByType == nil {
+		return map[string][]string{}, nil
+	}
+	return s.codesByType, nil
+}
+
+func (s *stubRepo) ListCompanyDepartments(_ context.Context, _ string) ([]DeadlineAlertFilterOptionDTO, error) {
+	if s.departments == nil {
+		return []DeadlineAlertFilterOptionDTO{}, nil
+	}
+	return s.departments, nil
+}
+
+func (s *stubRepo) ListTemplateDepartments(_ context.Context) ([]DeadlineAlertFilterOptionDTO, error) {
+	if s.templateDepts == nil {
+		return []DeadlineAlertFilterOptionDTO{}, nil
+	}
+	return s.templateDepts, nil
+}
+
+func (s *stubRepo) ListReportGroupOptions(_ context.Context) ([]DeadlineAlertFilterOptionDTO, error) {
+	if s.reportGroups == nil {
+		return []DeadlineAlertFilterOptionDTO{}, nil
+	}
+	return s.reportGroups, nil
 }
 
 func (s *stubRepo) GetCompanyDeadlineContext(_ context.Context, companyID string) (disclosureapp.CompanyDeadlineContext, error) {
@@ -230,6 +262,80 @@ func TestListDeadlineAlerts_adminViewAllStillSeesAllRows(t *testing.T) {
 	}
 	if resp.Total != 2 {
 		t.Fatalf("admin expected 2 rows, got %d", resp.Total)
+	}
+}
+
+func TestListDeadlineAlerts_filtersByDepartmentID(t *testing.T) {
+	repo := &stubRepo{
+		rows: []AlertRow{
+			{CompanyID: "c1", RecordID: "r-legal", Title: "Legal", RecordStatus: "submitted", PlannedDate: "2026-06-10", CurrentStepDepartment: "d_legal"},
+			{CompanyID: "c1", RecordID: "r-ir", Title: "IR", RecordStatus: "submitted", PlannedDate: "2026-06-11", CurrentStepDepartment: "d_ir"},
+		},
+		departments: []DeadlineAlertFilterOptionDTO{
+			{ID: "d_legal", Name: "Pháp chế"},
+			{ID: "d_ir", Name: "Quan hệ nhà đầu tư"},
+		},
+	}
+	svc := NewService(repo, allowAuthSvc(), disclosureapp.NewDeadlineCalculator(disclosureapp.NewHolidayCalendarFileProvider("configs/non_trading_days")))
+	svc.(*service).now = func() time.Time { return time.Date(2026, 5, 25, 0, 0, 0, 0, time.UTC) }
+
+	resp, err := svc.ListDeadlineAlerts(context.Background(), ListDeadlineAlertsRequest{
+		Subject:      Subject{UserID: "u1", MembershipID: "m_admin_001", CompanyID: "c_001"},
+		DepartmentID: "d_legal",
+		Page:         1, PageSize: 10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Total != 1 || resp.Items[0].RecordID != "r-legal" {
+		t.Fatalf("got %+v", resp)
+	}
+}
+
+func TestListDeadlineAlerts_filtersByDisplayGroupCode(t *testing.T) {
+	repo := &stubRepo{
+		rows: []AlertRow{
+			{CompanyID: "c1", RecordID: "r-periodic", Title: "Periodic", TypeID: "t1", RecordStatus: "submitted", PlannedDate: "2026-06-10"},
+			{CompanyID: "c1", RecordID: "r-irregular", Title: "Irregular", TypeID: "t2", RecordStatus: "submitted", PlannedDate: "2026-06-11"},
+		},
+		codesByType: map[string][]string{
+			"t1": {"periodic"},
+			"t2": {"irregular"},
+		},
+	}
+	svc := NewService(repo, allowAuthSvc(), disclosureapp.NewDeadlineCalculator(disclosureapp.NewHolidayCalendarFileProvider("configs/non_trading_days")))
+	svc.(*service).now = func() time.Time { return time.Date(2026, 5, 25, 0, 0, 0, 0, time.UTC) }
+
+	resp, err := svc.ListDeadlineAlerts(context.Background(), ListDeadlineAlertsRequest{
+		Subject:          Subject{UserID: "u1", MembershipID: "m_admin_001", CompanyID: "c_001"},
+		DisplayGroupCode: "periodic",
+		Page:             1, PageSize: 10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Total != 1 || resp.Items[0].RecordID != "r-periodic" {
+		t.Fatalf("got %+v", resp)
+	}
+}
+
+func TestListDeadlineAlertFilterOptions(t *testing.T) {
+	repo := &stubRepo{
+		departments:  []DeadlineAlertFilterOptionDTO{{ID: "d1", Name: "Pháp chế"}},
+		reportGroups: []DeadlineAlertFilterOptionDTO{{ID: "periodic", Name: "Thông tin định kỳ"}},
+	}
+	svc := NewService(repo, allowAuthSvc(), disclosureapp.NewDeadlineCalculator(disclosureapp.NewHolidayCalendarFileProvider("configs/non_trading_days")))
+	resp, err := svc.ListDeadlineAlertFilterOptions(context.Background(), Subject{
+		UserID: "u1", MembershipID: "m_admin_001", CompanyID: "c_001",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Departments) != 1 || resp.Departments[0].ID != "d1" {
+		t.Fatalf("departments %+v", resp.Departments)
+	}
+	if len(resp.ReportGroups) != 1 || resp.ReportGroups[0].ID != "periodic" {
+		t.Fatalf("report groups %+v", resp.ReportGroups)
 	}
 }
 

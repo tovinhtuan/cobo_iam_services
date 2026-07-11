@@ -237,6 +237,43 @@ func (r *Repository) ListTypes(ctx context.Context, params disclosureapp.ListTyp
 		like := "%" + strings.ToLower(query) + "%"
 		args = append(args, like, like)
 	}
+	if len(params.Tags) > 0 {
+		tagConds := make([]string, 0, len(params.Tags))
+		for _, tag := range params.Tags {
+			tag = strings.TrimSpace(tag)
+			if tag == "" {
+				continue
+			}
+			// tags_json is a JSON array of strings; match any selected tag (OR).
+			tagConds = append(tagConds, "JSON_CONTAINS(COALESCE(v.tags_json, JSON_ARRAY()), JSON_QUOTE(?), '$')")
+			args = append(args, tag)
+		}
+		if len(tagConds) > 0 {
+			conditions = append(conditions, "("+strings.Join(tagConds, " OR ")+")")
+		}
+	}
+	if freq := disclosureapp.NormalizePeriodicityFilter(params.Periodicity); freq != "" {
+		switch freq {
+		case "ad_hoc":
+			conditions = append(conditions,
+				"(LOWER(COALESCE(v.periodicity, '')) IN ('ad_hoc', 'event_based') OR LOWER(COALESCE(v.template_category, '')) IN ('irregular', 'custom'))")
+		case "yearly":
+			conditions = append(conditions, "LOWER(COALESCE(v.periodicity, '')) IN ('yearly', 'annual')")
+		default:
+			conditions = append(conditions, "LOWER(COALESCE(v.periodicity, '')) = ?")
+			args = append(args, freq)
+		}
+	}
+	if deptID := strings.TrimSpace(params.DepartmentID); deptID != "" {
+		conditions = append(conditions, `EXISTS (
+			SELECT 1 FROM global_workflows gw
+			INNER JOIN global_workflow_steps gws ON gws.workflow_id = gw.workflow_id
+			WHERE gw.type_id = t.type_id
+			  AND COALESCE(gw.is_active, 0) = 1
+			  AND gws.department_id = ?
+		)`)
+		args = append(args, deptID)
+	}
 	if len(params.TypeIDs) > 0 {
 		placeholders := make([]string, len(params.TypeIDs))
 		for i, id := range params.TypeIDs {
@@ -363,6 +400,94 @@ func (r *Repository) ListTypes(ctx context.Context, params disclosureapp.ListTyp
 		}
 	}
 	return out, total, nil
+}
+
+func (r *Repository) ListTypeFilterOptions(ctx context.Context, companyID string) (*disclosureapp.ListTypeFilterOptionsResponse, error) {
+	companyID = strings.TrimSpace(companyID)
+	out := &disclosureapp.ListTypeFilterOptionsResponse{
+		Tags:        []disclosureapp.TypeFilterOptionDTO{},
+		Departments: []disclosureapp.TypeFilterOptionDTO{},
+		Frequencies: disclosureapp.DefaultFrequencyFilterOptions(),
+	}
+
+	tagRows, err := r.db.QueryContext(ctx, `
+		SELECT COALESCE(v.tags_json, JSON_ARRAY())
+		FROM disclosure_types t
+		INNER JOIN disclosure_type_versions v
+			ON v.type_id = t.type_id AND v.version_no = t.active_version_no
+		WHERE (t.company_id IS NULL OR t.company_id = ?)
+	`, companyID)
+	if err != nil {
+		return nil, err
+	}
+	defer tagRows.Close()
+	tagSeen := map[string]struct{}{}
+	for tagRows.Next() {
+		var raw []byte
+		if err := tagRows.Scan(&raw); err != nil {
+			return nil, err
+		}
+		var tags []string
+		if err := decodeTags(raw, &tags); err != nil {
+			continue
+		}
+		for _, tag := range tags {
+			tag = strings.TrimSpace(tag)
+			if tag == "" {
+				continue
+			}
+			key := strings.ToLower(tag)
+			if _, ok := tagSeen[key]; ok {
+				continue
+			}
+			tagSeen[key] = struct{}{}
+			out.Tags = append(out.Tags, disclosureapp.TypeFilterOptionDTO{ID: tag, Name: tag})
+		}
+	}
+	if err := tagRows.Err(); err != nil {
+		return nil, err
+	}
+
+	deptRows, err := r.db.QueryContext(ctx, `
+		SELECT DISTINCT gws.department_id,
+		       COALESCE(NULLIF(d.department_name, ''), gws.department_id) AS department_name
+		FROM global_workflows gw
+		INNER JOIN global_workflow_steps gws ON gws.workflow_id = gw.workflow_id
+		INNER JOIN disclosure_types t ON t.type_id = gw.type_id
+		LEFT JOIN departments d
+			ON d.department_id = gws.department_id
+			AND d.company_id = ?
+			AND d.status != 'inactive'
+		WHERE (t.company_id IS NULL OR t.company_id = ?)
+		  AND COALESCE(gw.is_active, 0) = 1
+		  AND gws.department_id IS NOT NULL
+		  AND TRIM(gws.department_id) <> ''
+		ORDER BY department_name ASC
+	`, companyID, companyID)
+	if err != nil {
+		// Workflow/department tables may be unavailable in some environments — keep empty departments.
+		return out, nil
+	}
+	defer deptRows.Close()
+	for deptRows.Next() {
+		var id, name string
+		if err := deptRows.Scan(&id, &name); err != nil {
+			return nil, err
+		}
+		id = strings.TrimSpace(id)
+		name = strings.TrimSpace(name)
+		if id == "" {
+			continue
+		}
+		if name == "" {
+			name = "Chưa xác định"
+		}
+		out.Departments = append(out.Departments, disclosureapp.TypeFilterOptionDTO{ID: id, Name: name})
+	}
+	if err := deptRows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // batchLoadDisplayGroupCodes fetches display_group_codes for a set of type IDs from the

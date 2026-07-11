@@ -24,6 +24,7 @@ type Service interface {
 	ListTypeGroups(ctx context.Context, req ListTypeGroupsRequest) (*ListTypeGroupsResponse, error)
 	ListDisplayGroups(ctx context.Context, req ListDisplayGroupsRequest) (*ListDisplayGroupsResponse, error)
 	ListTypes(ctx context.Context, req ListTypesRequest) (*ListTypesResponse, error)
+	ListTypeFilterOptions(ctx context.Context, req ListTypeFilterOptionsRequest) (*ListTypeFilterOptionsResponse, error)
 	GetTypeDetail(ctx context.Context, req GetTypeDetailRequest) (*DisclosureTypeDTO, error)
 	GetTypeVersionDetail(ctx context.Context, req GetTypeVersionDetailRequest) (*DisclosureTypeDTO, error)
 	GetTemplateReferenceData(ctx context.Context, req GetTemplateReferenceDataRequest) (*GetTemplateReferenceDataResponse, error)
@@ -89,6 +90,7 @@ type Repository interface {
 	ListTypeGroups(ctx context.Context, companyID string) ([]DisclosureGroupDTO, error)
 	ListDisplayGroups(ctx context.Context) ([]DisplayGroupDTO, error)
 	ListTypes(ctx context.Context, params ListTypesParams) ([]DisclosureTypeSummaryDTO, int, error)
+	ListTypeFilterOptions(ctx context.Context, companyID string) (*ListTypeFilterOptionsResponse, error)
 	GetTypeDetail(ctx context.Context, companyID, typeID string) (*DisclosureTypeDTO, error)
 	GetTypeVersionDetail(ctx context.Context, companyID, typeID string, versionNo int) (*DisclosureTypeDTO, error)
 	HasActiveEnterpriseWorkflow(ctx context.Context, companyID, typeID string) (bool, error)
@@ -237,12 +239,18 @@ type ListTypesParams struct {
 	GroupID          string // legacy: filter by disclosure_types.group_id
 	DisplayGroupCode string // new model: filter via template_display_groups junction table
 	Query            string
-	Page             int      // 1-based; 0 → no SQL LIMIT (internal use)
-	PageSize         int      // effective only when Page > 0
-	SortBy           string   // "name" | "created_at"
-	SortDir          string   // "asc" | "desc"
-	TypeIDs          []string // optional: restrict to these type IDs
-	LightweightOnly  bool     // minimal columns; skips workflow/display-group batch loads
+	// Tags: OR within selected tags (JSON tags_json contains any). Empty = no tag filter.
+	Tags []string
+	// Periodicity: normalized frequency key (ad_hoc|daily|weekly|monthly|quarterly|yearly).
+	Periodicity string
+	// DepartmentID: types whose active global workflow has a step with this department_id.
+	DepartmentID string
+	Page            int      // 1-based; 0 → no SQL LIMIT (internal use)
+	PageSize        int      // effective only when Page > 0
+	SortBy          string   // "name" | "created_at"
+	SortDir         string   // "asc" | "desc"
+	TypeIDs         []string // optional: restrict to these type IDs
+	LightweightOnly bool     // minimal columns; skips workflow/display-group batch loads
 }
 
 type ListTypesRequest struct {
@@ -250,6 +258,9 @@ type ListTypesRequest struct {
 	GroupID          string
 	DisplayGroupCode string
 	Query            string
+	Tags             []string
+	Periodicity      string
+	DepartmentID     string
 	Page             int
 	PageSize         int
 	PageProvided     bool
@@ -263,6 +274,26 @@ type ListTypesResponse struct {
 	Total    int                        `json:"total"`
 	Page     int                        `json:"page"`
 	PageSize int                        `json:"page_size"`
+}
+
+type TypeFilterOptionDTO struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type FrequencyFilterOptionDTO struct {
+	Value string `json:"value"`
+	Label string `json:"label"`
+}
+
+type ListTypeFilterOptionsRequest struct {
+	Subject Subject
+}
+
+type ListTypeFilterOptionsResponse struct {
+	Tags         []TypeFilterOptionDTO      `json:"tags"`
+	Departments  []TypeFilterOptionDTO      `json:"departments"`
+	Frequencies  []FrequencyFilterOptionDTO `json:"frequencies"`
 }
 
 type GetTypeDetailRequest struct {

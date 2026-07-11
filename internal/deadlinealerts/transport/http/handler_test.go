@@ -32,6 +32,13 @@ func (fakeSvc) ListDeadlineAlerts(_ context.Context, _ deadlinealertsapp.ListDea
 	}, nil
 }
 
+func (fakeSvc) ListDeadlineAlertFilterOptions(_ context.Context, _ deadlinealertsapp.Subject) (*deadlinealertsapp.DeadlineAlertFilterOptionsResponse, error) {
+	return &deadlinealertsapp.DeadlineAlertFilterOptionsResponse{
+		Departments:  []deadlinealertsapp.DeadlineAlertFilterOptionDTO{{ID: "d1", Name: "Pháp chế"}},
+		ReportGroups: []deadlinealertsapp.DeadlineAlertFilterOptionDTO{{ID: "periodic", Name: "Thông tin định kỳ"}},
+	}, nil
+}
+
 func (fakeSvc) ConfirmDeadlineAlert(_ context.Context, req deadlinealertsapp.ConfirmDeadlineAlertRequest) (*deadlinealertsapp.ConfirmDeadlineAlertResponse, error) {
 	return &deadlinealertsapp.ConfirmDeadlineAlertResponse{
 		RecordID:    req.RecordID,

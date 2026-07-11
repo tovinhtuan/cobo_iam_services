@@ -26,6 +26,7 @@ func NewHandler(log *slog.Logger, svc deadlinealertsapp.Service, inspector iamap
 
 func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/company/deadline-alerts", h.listDeadlineAlerts)
+	mux.HandleFunc("GET /api/v1/company/deadline-alerts/filter-options", h.listDeadlineAlertFilterOptions)
 	mux.HandleFunc("POST /api/v1/company/deadline-alerts/{id}/confirm", h.confirmDeadlineAlert)
 	mux.HandleFunc("GET /api/v1/company/deadlines/{record_id}/steps", h.listDeadlineSteps)
 	mux.HandleFunc("POST /api/v1/company/deadlines/{record_id}/steps/{step_code}/complete", h.completeDeadlineStep)
@@ -41,13 +42,15 @@ func (h *Handler) listDeadlineAlerts(w http.ResponseWriter, r *http.Request) {
 	page, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("page")))
 	pageSize, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("page_size")))
 	resp, err := h.svc.ListDeadlineAlerts(r.Context(), deadlinealertsapp.ListDeadlineAlertsRequest{
-		Subject:   sub,
-		Status:    strings.TrimSpace(r.URL.Query().Get("status")),
-		Query:     strings.TrimSpace(r.URL.Query().Get("q")),
-		StartDate: strings.TrimSpace(r.URL.Query().Get("start_date")),
-		EndDate:   strings.TrimSpace(r.URL.Query().Get("end_date")),
-		Page:      page,
-		PageSize:  pageSize,
+		Subject:          sub,
+		Status:           strings.TrimSpace(r.URL.Query().Get("status")),
+		Query:            strings.TrimSpace(r.URL.Query().Get("q")),
+		StartDate:        strings.TrimSpace(r.URL.Query().Get("start_date")),
+		EndDate:          strings.TrimSpace(r.URL.Query().Get("end_date")),
+		DepartmentID:     strings.TrimSpace(r.URL.Query().Get("department_id")),
+		DisplayGroupCode: strings.TrimSpace(r.URL.Query().Get("display_group_code")),
+		Page:             page,
+		PageSize:         pageSize,
 	})
 	if err != nil {
 		httpx.WriteError(w, h.log, err)
@@ -55,6 +58,26 @@ func (h *Handler) listDeadlineAlerts(w http.ResponseWriter, r *http.Request) {
 	}
 	if resp.Items == nil {
 		resp.Items = []deadlinealertsapp.DeadlineAlertDTO{}
+	}
+	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) listDeadlineAlertFilterOptions(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subjectFromToken(r)
+	if err != nil {
+		httpx.WriteError(w, h.log, err)
+		return
+	}
+	resp, err := h.svc.ListDeadlineAlertFilterOptions(r.Context(), sub)
+	if err != nil {
+		httpx.WriteError(w, h.log, err)
+		return
+	}
+	if resp.Departments == nil {
+		resp.Departments = []deadlinealertsapp.DeadlineAlertFilterOptionDTO{}
+	}
+	if resp.ReportGroups == nil {
+		resp.ReportGroups = []deadlinealertsapp.DeadlineAlertFilterOptionDTO{}
 	}
 	httpx.WriteJSON(w, http.StatusOK, resp)
 }
