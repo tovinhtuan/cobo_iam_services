@@ -74,6 +74,9 @@ import (
 	redispkg "github.com/cobo/cobo_iam_services/internal/platform/redis"
 	platformcmsapp "github.com/cobo/cobo_iam_services/internal/platformcms/app"
 	platformcmshttp "github.com/cobo/cobo_iam_services/internal/platformcms/transport/http"
+	personalopsapp "github.com/cobo/cobo_iam_services/internal/personalops/app"
+	personalopsmysql "github.com/cobo/cobo_iam_services/internal/personalops/infra/mysql"
+	personalopshttp "github.com/cobo/cobo_iam_services/internal/personalops/transport/http"
 	portaldashboardapp "github.com/cobo/cobo_iam_services/internal/portaldashboard/app"
 	portaldashboardhttp "github.com/cobo/cobo_iam_services/internal/portaldashboard/transport/http"
 	reminderapp "github.com/cobo/cobo_iam_services/internal/reminder/app"
@@ -632,6 +635,17 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 	portalDashboardSvc := portaldashboardapp.NewService(authSvc, deadlineAlertsSvc, adhocSvc, inAppSvc, companyReader)
 	portalDashboardHandler := portaldashboardhttp.NewHandler(log, portalDashboardSvc, tokenManager)
 
+	var personalOpsMine personalopsapp.MineRepository = personalopsapp.EmptyMineRepository{}
+	if pool != nil {
+		personalOpsMine = personalopsmysql.NewRepository(pool)
+	}
+	personalOpsOpts := []personalopsapp.Option{
+		personalopsapp.WithContactReader(personalopsContactAdapter{profiles: adminRepo}),
+		personalopsapp.WithAvatarURLReader(personalopsAvatarAdapter{avatars: avatarSvc, baseURL: cfg.PublicAPIBaseURL}),
+	}
+	personalOpsSvc := personalopsapp.NewService(memberQuery, personalOpsMine, identity, authSvc, inAppSvc, personalOpsOpts...)
+	personalOpsHandler := personalopshttp.NewHandler(log, personalOpsSvc, tokenManager)
+
 	// Batch 2B Observability
 	// on the API's existing /metrics. The worker (where EmailDispatchHandler runs)
 	// has no metrics endpoint; the API + shared MySQL are the authoritative alert
@@ -667,7 +681,7 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 		}
 	}
 
-	return muxRegisterHealthAndIAM(mux, log, sqlDB, iamHandler, meHandler, authHandler, disclosureHandler, workflowHandler, notificationHandler, reminderHandler, adminHandler, platformCMSHandler, adhocHandler, deadlineAlertsHandler, portalDashboardHandler)
+	return muxRegisterHealthAndIAM(mux, log, sqlDB, iamHandler, meHandler, authHandler, disclosureHandler, workflowHandler, notificationHandler, reminderHandler, adminHandler, platformCMSHandler, adhocHandler, deadlineAlertsHandler, portalDashboardHandler, personalOpsHandler)
 }
 
 func muxRegisterHealthAndIAM(
@@ -686,6 +700,7 @@ func muxRegisterHealthAndIAM(
 	adhocHandler *adhochttp.Handler,
 	deadlineAlertsHandler *deadlinealertshttp.Handler,
 	portalDashboardHandler *portaldashboardhttp.Handler,
+	personalOpsHandler *personalopshttp.Handler,
 ) error {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		httpx.WriteJSON(w, http.StatusOK, map[string]any{"status": "ok"})
@@ -720,7 +735,54 @@ func muxRegisterHealthAndIAM(
 	}
 	deadlineAlertsHandler.Register(mux)
 	portalDashboardHandler.Register(mux)
+	personalOpsHandler.Register(mux)
 	return nil
+}
+
+type personalopsContactAdapter struct {
+	profiles interface {
+		GetAdminAccountSettings(ctx context.Context, userID string) (*companyaccessapp.AdminAccountSettingsView, error)
+	}
+}
+
+func (a personalopsContactAdapter) GetContact(ctx context.Context, userID string) (email, phone string, err error) {
+	if a.profiles == nil {
+		return "", "", nil
+	}
+	prof, err := a.profiles.GetAdminAccountSettings(ctx, userID)
+	if err != nil || prof == nil {
+		return "", "", err
+	}
+	return strings.TrimSpace(prof.Email), strings.TrimSpace(prof.Phone), nil
+}
+
+type personalopsAvatarAdapter struct {
+	avatars *iamapp.AvatarService
+	baseURL string
+}
+
+func (a personalopsAvatarAdapter) AvatarURL(ctx context.Context, userID string) (*string, error) {
+	if a.avatars == nil {
+		return nil, nil
+	}
+	urlAny, _, err := a.avatars.MeAvatarFields(ctx, userID, a.baseURL)
+	if err != nil {
+		return nil, err
+	}
+	if urlAny == nil {
+		return nil, nil
+	}
+	switch v := urlAny.(type) {
+	case string:
+		if strings.TrimSpace(v) == "" {
+			return nil, nil
+		}
+		return &v, nil
+	case *string:
+		return v, nil
+	default:
+		return nil, nil
+	}
 }
 
 // reminderInAppBridge adapts inappapp.Service to reminderapp.InAppNotificationCreator.

@@ -1,4 +1,22 @@
+﻿## 2026-07-13 - Personal Ops outcome/on_time Option B
+- migration 0120 completed_at forward-only; ConfirmRecord stamp; personalops ComputeOnTimeRate
+- DEV: sample_size=0 unavailable; docker build api PASS; deploy migrate+be
+- evidence (FE): personal-ops-outcome-ontime-due-parity-rebaseline-2026-07-10/
+
+## 2026-07-13 - Personal Ops finalization due/ad-hoc/index
+- due ResolveDeadline + ListApprovedAdHocDues; migration 0119
+- on_time remains unavailable
+- evidence (FE): personal-ops-finalization-mock1-e2e-2026-07-10/
+
 ﻿# Reusable Task Updates
+
+## 2026-07-13 - Personal Ops GET /api/v1/me/operational-overview
+- task type: implement BE aggregate API
+- objective: mine-scoped personal operational overview for Portal /app/profile
+- implemented: `internal/personalops` (domain/app/mysql/http); mine = open workflow_tasks.assignee_membership_id OR active assignments; wired in server.go
+- never expand via rbac.manage / CanViewAll
+- verification: `go test ./internal/personalops/...` PASS; `docker compose -f docker-compose.dev.yml build api` PASS; deploy-dev be PASS
+- evidence (FE): `docs/ai-cache/personal-info-operational-overview-api-wire-2026-07-10/`
 
 ## 2026-07-12 - Subscription upgrade Phase 1 QR instruction (IAM)
 - task type: implement platform CMS payment-instruction config

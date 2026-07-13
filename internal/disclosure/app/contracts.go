@@ -981,6 +981,10 @@ type RecordDTO struct {
 	UpdatedBy          string          `json:"updated_by"`
 	CreatedAt          time.Time       `json:"created_at"`
 	UpdatedAt          time.Time       `json:"updated_at"`
+	// CompletedAt is set once on terminal completion (forward-only). Nil for historical rows without capture.
+	CompletedAt *time.Time `json:"completed_at,omitempty"`
+	// CompletedSource labels the write path (e.g. confirm_record).
+	CompletedSource string `json:"completed_source,omitempty"`
 }
 
 // WorkflowBootstrapper creates a workflow instance when a disclosure record is submitted.

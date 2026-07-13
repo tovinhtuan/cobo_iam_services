@@ -1,0 +1,1 @@
+DROP INDEX idx_workflow_tasks_assignee_status ON workflow_tasks;

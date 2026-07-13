@@ -318,6 +318,8 @@ func (s *service) ConfirmRecord(ctx context.Context, req ConfirmRecordRequest) (
 	}
 	cur.Status = "Completed"
 	cur.UpdatedBy = req.Subject.UserID
+	// Forward-only outcome timestamp for personal-ops on_time_rate (no historical backfill).
+	StampCompletedAtIfNeeded(cur, "confirm_record", time.Now().UTC())
 	return s.repo.Update(ctx, *cur)
 }
 

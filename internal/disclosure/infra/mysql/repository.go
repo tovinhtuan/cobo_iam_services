@@ -65,11 +65,17 @@ func (r *Repository) Update(ctx context.Context, rec disclosureapp.RecordDTO) (*
 	if err != nil {
 		return nil, fmt.Errorf("marshal attachments: %w", err)
 	}
+	var completedAt any
+	if rec.CompletedAt != nil {
+		completedAt = rec.CompletedAt.UTC()
+	}
 	res, err := r.db.ExecContext(ctx, `
 		UPDATE disclosure_records
-		SET type_id = NULLIF(?, ''), department_id = ?, title = ?, summary = ?, content = ?, planned_date = NULLIF(?, ''), published_date = NULLIF(?, ''), status = ?, attachments_json = CAST(? AS JSON), evidence_link = NULLIF(?, ''), updated_by = ?
+		SET type_id = NULLIF(?, ''), department_id = ?, title = ?, summary = ?, content = ?, planned_date = NULLIF(?, ''), published_date = NULLIF(?, ''), status = ?, attachments_json = CAST(? AS JSON), evidence_link = NULLIF(?, ''), updated_by = ?,
+			completed_at = COALESCE(completed_at, ?),
+			completed_source = COALESCE(completed_source, NULLIF(?, ''))
 		WHERE record_id = ? AND company_id = ?
-	`, rec.TypeID, rec.DepartmentID, rec.Title, rec.Summary, rec.Content, rec.PlannedDate, rec.PublishedDate, rec.Status, string(attachmentsJSON), rec.EvidenceLink, rec.UpdatedBy, rec.RecordID, rec.CompanyID)
+	`, rec.TypeID, rec.DepartmentID, rec.Title, rec.Summary, rec.Content, rec.PlannedDate, rec.PublishedDate, rec.Status, string(attachmentsJSON), rec.EvidenceLink, rec.UpdatedBy, completedAt, rec.CompletedSource, rec.RecordID, rec.CompanyID)
 	if err != nil {
 		return nil, fmt.Errorf("disclosure update: %w", err)
 	}
@@ -92,17 +98,23 @@ func (r *Repository) FindByID(ctx context.Context, companyID, recordID string) (
 				ORDER BY wi.workflow_instance_id ASC
 				LIMIT 1
 			), ''),
-			dr.created_by, dr.updated_by, dr.created_at, dr.updated_at
+			dr.created_by, dr.updated_by, dr.created_at, dr.updated_at,
+			dr.completed_at, COALESCE(dr.completed_source, '')
 		FROM disclosure_records dr
 		WHERE dr.company_id = ? AND dr.record_id = ?
 	`, companyID, recordID)
 	var rec disclosureapp.RecordDTO
 	var attachmentsRaw []byte
-	if err := row.Scan(&rec.RecordID, &rec.CompanyID, &rec.TypeID, &rec.DepartmentID, &rec.Title, &rec.Summary, &rec.Content, &rec.PlannedDate, &rec.PublishedDate, &rec.Status, &attachmentsRaw, &rec.EvidenceLink, &rec.WorkflowInstanceID, &rec.CreatedBy, &rec.UpdatedBy, &rec.CreatedAt, &rec.UpdatedAt); err != nil {
+	var completedAt sql.NullTime
+	if err := row.Scan(&rec.RecordID, &rec.CompanyID, &rec.TypeID, &rec.DepartmentID, &rec.Title, &rec.Summary, &rec.Content, &rec.PlannedDate, &rec.PublishedDate, &rec.Status, &attachmentsRaw, &rec.EvidenceLink, &rec.WorkflowInstanceID, &rec.CreatedBy, &rec.UpdatedBy, &rec.CreatedAt, &rec.UpdatedAt, &completedAt, &rec.CompletedSource); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, perr.NewHTTPError(404, perr.CodeInvalidRequest, "record not found", nil)
 		}
 		return nil, err
+	}
+	if completedAt.Valid {
+		t := completedAt.Time.UTC()
+		rec.CompletedAt = &t
 	}
 	if err := decodeAttachments(attachmentsRaw, &rec.Attachments); err != nil {
 		return nil, fmt.Errorf("decode attachments: %w", err)

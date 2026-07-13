@@ -119,6 +119,8 @@ seed_dev_identity_authorization.sql
 0116_workflow_assignee_role_catalog.up.sql
 0117_fix_workflow_template_departments_unicode.up.sql
 0118_platform_subscription_upgrade_payment.up.sql
+0119_workflow_tasks_assignee_status_index.up.sql
+0120_disclosure_records_completed_at.up.sql
 "
 
 mysql_exec() {
