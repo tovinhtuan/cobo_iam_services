@@ -1,5 +1,14 @@
 ﻿# Reusable Task Updates
 
+## 2026-07-12 - Subscription upgrade Phase 1 QR instruction (IAM)
+- task type: implement platform CMS payment-instruction config
+- objective: global QR/hotline config + portal instruction API; no entitlement automation
+- implemented: migration 0118; `subscription_upgrade_payment` service/repo/handlers; audit actions; admin instruction routes
+- verification: `go test` SubscriptionUpgrade PASS; linux deploy DEV; migration applied; healthz/readyz OK
+- `BLOCKED:` local docker compose build api (daemon down)
+- evidence (FE repo): docs/ai-cache/subscription-upgrade-phase1-qr-instruction-2026-07-10/
+- soak: Phase 7D superseded
+
 ## 2026-07-11 - Deadline steps department_name enrichment
 - task type: bugfix
 - objective: steps API returns display department names (not raw `d1`)

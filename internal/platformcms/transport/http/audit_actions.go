@@ -20,6 +20,9 @@ const (
 	cmsActionAdminUsersAssignCompany       = "cms.admin.users.assign_company"
 	cmsActionAdminUsersPasswordReset       = "cms.admin.users.password_reset"
 	cmsActionAdminMembershipCreate         = "cms.admin.membership.create"
+	cmsActionSubscriptionUpgradeUpdate     = "cms.subscription_upgrade.update"
+	cmsActionSubscriptionUpgradeQRUpload   = "cms.subscription_upgrade.qr.upload"
+	cmsActionSubscriptionUpgradeQRDelete   = "cms.subscription_upgrade.qr.delete"
 )
 
 var cmsKnownActions = map[string]struct{}{
@@ -42,4 +45,7 @@ var cmsKnownActions = map[string]struct{}{
 	cmsActionAdminUsersAssignCompany:       {},
 	cmsActionAdminUsersPasswordReset:       {},
 	cmsActionAdminMembershipCreate:         {},
+	cmsActionSubscriptionUpgradeUpdate:     {},
+	cmsActionSubscriptionUpgradeQRUpload:   {},
+	cmsActionSubscriptionUpgradeQRDelete:   {},
 }

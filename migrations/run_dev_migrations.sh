@@ -118,6 +118,7 @@ seed_dev_identity_authorization.sql
 0115_widen_global_workflow_department_id.up.sql
 0116_workflow_assignee_role_catalog.up.sql
 0117_fix_workflow_template_departments_unicode.up.sql
+0118_platform_subscription_upgrade_payment.up.sql
 "
 
 mysql_exec() {

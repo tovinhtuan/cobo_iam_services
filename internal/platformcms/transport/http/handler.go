@@ -24,22 +24,24 @@ import (
 )
 
 type Handler struct {
-	inspector          iamapp.TokenInspector
-	authorizer         authapp.Service
-	adminSvc           companyaccessapp.AdminService
-	iamSvc             iamapp.Service
-	auditSvc           auditapp.Service
-	auditRepo          auditapp.Repository
-	disclosureSvc      disclosureapp.Service
-	disclosures        disclosureapp.Repository
-	holidaySvc         holidayapp.Service
-	listedCompanies    *marketapp.Service
-	alertConfigSvc     platformcmsapp.AlertConfigService
-	mediaRepo          cmsMediaRepository
-	mediaSigner        *cmsMediaSigner
-	mediaStorage       *cmsMediaDiskStorage
-	mediaPublicBaseURL string
-	metrics            *cmsMetrics
+	inspector              iamapp.TokenInspector
+	authorizer             authapp.Service
+	adminSvc               companyaccessapp.AdminService
+	iamSvc                 iamapp.Service
+	auditSvc               auditapp.Service
+	auditRepo              auditapp.Repository
+	disclosureSvc          disclosureapp.Service
+	disclosures            disclosureapp.Repository
+	holidaySvc             holidayapp.Service
+	listedCompanies        *marketapp.Service
+	alertConfigSvc         platformcmsapp.AlertConfigService
+	subscriptionUpgradeSvc platformcmsapp.SubscriptionUpgradePaymentService
+	upgradePaymentDB       *sql.DB
+	mediaRepo              cmsMediaRepository
+	mediaSigner            *cmsMediaSigner
+	mediaStorage           *cmsMediaDiskStorage
+	mediaPublicBaseURL     string
+	metrics                *cmsMetrics
 }
 
 type MediaOptions struct {
@@ -55,7 +57,7 @@ func NewHandler(inspector iamapp.TokenInspector, authorizer authapp.Service, adm
 	if err != nil {
 		panic(err)
 	}
-	return &Handler{
+	h := &Handler{
 		inspector:          inspector,
 		authorizer:         authorizer,
 		adminSvc:           adminSvc,
@@ -73,6 +75,14 @@ func NewHandler(inspector iamapp.TokenInspector, authorizer authapp.Service, adm
 		mediaPublicBaseURL: strings.TrimSpace(mediaOpts.PublicAPIBaseURL),
 		metrics:            newCMSMetrics(),
 	}
+	if mediaOpts.DB != nil {
+		h.upgradePaymentDB = mediaOpts.DB
+		h.subscriptionUpgradeSvc = platformcmsapp.NewSubscriptionUpgradePaymentService(
+			platformcmsapp.NewMySQLSubscriptionUpgradePaymentRepository(mediaOpts.DB),
+			mediaStorage,
+		)
+	}
+	return h
 }
 
 func (h *Handler) Register(mux *http.ServeMux) {
@@ -88,6 +98,13 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/platform/cms/media/{asset_id}/complete", h.observe("cms.media.upload.complete", h.completeMediaUpload))
 	mux.HandleFunc("GET /api/v1/platform/cms/media", h.observe("cms.media.list", h.listMedia))
 	mux.HandleFunc("DELETE /api/v1/platform/cms/media/{asset_id}", h.observe("cms.media.delete", h.deleteMedia))
+	mux.HandleFunc("GET /api/v1/platform/cms/settings/subscription-upgrade-payment", h.observe("cms.subscription_upgrade.get", h.getSubscriptionUpgradePayment))
+	mux.HandleFunc("PUT /api/v1/platform/cms/settings/subscription-upgrade-payment", h.observe("cms.subscription_upgrade.put", h.putSubscriptionUpgradePayment))
+	mux.HandleFunc("POST /api/v1/platform/cms/settings/subscription-upgrade-payment/qr", h.observe("cms.subscription_upgrade.qr.upload", h.uploadSubscriptionUpgradeQR))
+	mux.HandleFunc("DELETE /api/v1/platform/cms/settings/subscription-upgrade-payment/qr", h.observe("cms.subscription_upgrade.qr.delete", h.deleteSubscriptionUpgradeQR))
+	mux.HandleFunc("GET /api/v1/platform/cms/settings/subscription-upgrade-payment/qr", h.observe("cms.subscription_upgrade.qr.get", h.getCMSSubscriptionUpgradeQR))
+	mux.HandleFunc("GET /api/v1/admin/subscription-upgrade/payment-instruction", h.observe("admin.subscription_upgrade.instruction", h.getAdminSubscriptionUpgradeInstruction))
+	mux.HandleFunc("GET /api/v1/admin/subscription-upgrade/qr", h.observe("admin.subscription_upgrade.qr", h.getAdminSubscriptionUpgradeQR))
 	mux.HandleFunc("GET /api/v1/platform/cms/reviews", h.observe("cms.reviews.list", h.reviews))
 	mux.HandleFunc("POST /api/v1/platform/cms/reviews/{entry_id}", h.observe("cms.reviews.action", h.reviewAction))
 	mux.HandleFunc("GET /api/v1/platform/cms/schedules", h.observe("cms.schedules.list", h.schedules))

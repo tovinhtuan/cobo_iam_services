@@ -91,6 +91,14 @@ func (s *cmsMediaDiskStorage) Exists(objectKey string) bool {
 	return err == nil && !info.IsDir()
 }
 
+func (s *cmsMediaDiskStorage) Read(objectKey string) ([]byte, error) {
+	target, err := s.resolvePath(objectKey)
+	if err != nil {
+		return nil, err
+	}
+	return os.ReadFile(target)
+}
+
 func (s *cmsMediaDiskStorage) Delete(objectKey string) error {
 	target, err := s.resolvePath(objectKey)
 	if err != nil {
