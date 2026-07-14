@@ -1,4 +1,8 @@
-﻿## 2026-07-13 - Personal Ops outcome/on_time Option B
+## 2026-07-14 - Deadline rule display refine for Portal
+- task type: BE contract/display honesty
+- implemented: RefineDeadlineRuleDisplay + time_calculation_basis on DisclosureTypeDTO
+- verify: go test disclosure/app Deadline/Refine PASS; docker compose build api PASS; deploy be
+- sibling FE evidence: cobo_web_design/docs/ai-cache/deadline-rule-cms-to-portal-flow-audit-fix-2026-07-10/﻿## 2026-07-13 - Personal Ops outcome/on_time Option B
 - migration 0120 completed_at forward-only; ConfirmRecord stamp; personalops ComputeOnTimeRate
 - DEV: sample_size=0 unavailable; docker build api PASS; deploy migrate+be
 - evidence (FE): personal-ops-outcome-ontime-due-parity-rebaseline-2026-07-10/
@@ -3088,4 +3092,3 @@
 - implemented: `validateEnterpriseInvitePermissions` denies read/rbac/system/cms/platform direct grants on invite/create
 - tests: `TestInviteUser_RejectsCMSPrefixPermission`, `TestInviteUser_RejectsRbacManageDirectPermission`, `TestInviteUser_AcceptsWorkflowAndAdHocPermissions`, `TestCreateUser_RejectsRbacManageDirectPermission`, `TestInviteUser_RejectsWorkflowReadInPayload`
 - evidence: `../cobo_web_design/docs/ai-cache/staff-invite-t3-t4-implementation-2026-07-06/`
-

@@ -71,24 +71,25 @@ func TestCreateCompanyTemplate_AcceptsIrregularWithoutPeriodicity(t *testing.T) 
 	}
 }
 
-func TestCreateCompanyTemplate_RejectsDeadlineRuleOutsideCatalog(t *testing.T) {
+func TestCreateCompanyTemplate_AcceptsFreeTextDeadlineRule(t *testing.T) {
 	svc := newCompanyTemplateValidationService()
-	_, err := svc.CreateCompanyTemplate(context.Background(), CreateCompanyTemplateRequest{
+	resp, err := svc.CreateCompanyTemplate(context.Background(), CreateCompanyTemplateRequest{
 		Subject:          Subject{CompanyID: "company-001", MembershipID: "member-001"},
 		Name:             "Template C",
 		TemplateCategory: TemplateCategoryIrregular,
 		DeadlineRule:     "Trong vòng 5 ngày kể từ ngày sự kiện",
 	})
-	if err == nil {
-		t.Fatal("expected validation error")
+	if err != nil {
+		t.Fatalf("expected free-text deadline_rule to be accepted: %v", err)
 	}
-	herr, ok := err.(*perr.HTTPError)
-	if !ok {
-		t.Fatalf("expected *perr.HTTPError, got %T", err)
+	if resp.DeadlineRule != "Trong vòng 5 ngày kể từ ngày sự kiện" {
+		t.Fatalf("deadline_rule=%q", resp.DeadlineRule)
 	}
-	if herr.HTTPStatus != http.StatusBadRequest {
-		t.Fatalf("status=%d want %d", herr.HTTPStatus, http.StatusBadRequest)
-	}
+}
+
+// Legacy name kept: free text outside old catalog patterns is now accepted (display-only).
+func TestCreateCompanyTemplate_RejectsDeadlineRuleOutsideCatalog(t *testing.T) {
+	TestCreateCompanyTemplate_AcceptsFreeTextDeadlineRule(t)
 }
 
 func TestCreateCompanyTemplate_AcceptsCatalogDatePattern(t *testing.T) {

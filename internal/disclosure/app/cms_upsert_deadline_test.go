@@ -2,11 +2,9 @@ package app
 
 import (
 	"context"
-	"net/http"
 	"testing"
 
 	"github.com/cobo/cobo_iam_services/internal/disclosure/app/applicability"
-	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 	"github.com/cobo/cobo_iam_services/internal/platform/idgen"
 )
 
@@ -66,9 +64,28 @@ func baseUpsertRequest() UpsertTypeVersionRequest {
 	}
 }
 
-// TestUpsertTypeVersion_RejectsInvalidDeadlineRuleFormat verifies the CMS global
-// template write path validates deadline_rule against the catalog.
-// RED: This test should fail before the fix (deadline_rule not validated).
+// TestUpsertTypeVersion_AcceptsFreeTextDeadlineRule verifies display-only free text is allowed.
+func TestUpsertTypeVersion_AcceptsFreeTextDeadlineRule(t *testing.T) {
+	repo := &upsertDeadlineRepo{}
+	svc := newCMSUpsertDeadlineService(repo)
+
+	req := baseUpsertRequest()
+	req.DeadlineRule = "Trong vòng tối đa 20 ngày kể từ ngày kết thúc quý"
+
+	resp, err := svc.UpsertTypeVersion(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected error for free-text deadline_rule: %v", err)
+	}
+	if resp.TypeID != req.TypeID {
+		t.Errorf("type_id=%s want %s", resp.TypeID, req.TypeID)
+	}
+	if !repo.upsertCalled {
+		t.Error("UpsertTypeVersion should be called for free-text display deadline_rule")
+	}
+}
+
+// TestUpsertTypeVersion_RejectsInvalidDeadlineRuleFormat is retained as legacy name;
+// free-form text that previously failed catalog match must now be accepted.
 func TestUpsertTypeVersion_RejectsInvalidDeadlineRuleFormat(t *testing.T) {
 	repo := &upsertDeadlineRepo{}
 	svc := newCMSUpsertDeadlineService(repo)
@@ -77,18 +94,11 @@ func TestUpsertTypeVersion_RejectsInvalidDeadlineRuleFormat(t *testing.T) {
 	req.DeadlineRule = "5 ngay khong hop le"
 
 	_, err := svc.UpsertTypeVersion(context.Background(), req)
-	if err == nil {
-		t.Fatal("expected validation error for invalid deadline_rule; CMS path must validate deadline_rule format")
+	if err != nil {
+		t.Fatalf("expected free-text deadline_rule to be accepted as display-only, got %v", err)
 	}
-	herr, ok := err.(*perr.HTTPError)
-	if !ok {
-		t.Fatalf("expected *perr.HTTPError, got %T", err)
-	}
-	if herr.HTTPStatus != http.StatusBadRequest {
-		t.Errorf("status=%d want 400", herr.HTTPStatus)
-	}
-	if repo.upsertCalled {
-		t.Error("UpsertTypeVersion should not be called when deadline_rule is invalid")
+	if !repo.upsertCalled {
+		t.Error("UpsertTypeVersion should be called for display-only free text")
 	}
 }
 
@@ -173,25 +183,19 @@ func newCMSActivateDeadlineService(deadlineRule string) Service {
 	}, idgen.UUIDv7Generator{})
 }
 
-// TestActivateTypeVersion_RejectsInvalidDeadlineRule verifies the activate path
-// re-validates deadline_rule before publishing to Portal.
-// RED: This test should fail before the fix.
+// TestActivateTypeVersion_AcceptsFreeTextDeadlineRule verifies activate allows display-only text.
 func TestActivateTypeVersion_RejectsInvalidDeadlineRule(t *testing.T) {
-	svc := newCMSActivateDeadlineService("5 ngay khong hop le")
-	_, err := svc.ActivateTypeVersion(context.Background(), ActivateTypeVersionRequest{
+	svc := newCMSActivateDeadlineService("Trong vòng tối đa 20 ngày kể từ ngày kết thúc quý")
+	resp, err := svc.ActivateTypeVersion(context.Background(), ActivateTypeVersionRequest{
 		Subject:   Subject{UserID: "u-001", MembershipID: "m-001", CompanyID: "c-001"},
 		TypeID:    "dt-001",
 		VersionNo: 2,
 	})
-	if err == nil {
-		t.Fatal("expected validation error: activate should reject invalid deadline_rule")
+	if err != nil {
+		t.Fatalf("expected free-text deadline_rule to activate: %v", err)
 	}
-	herr, ok := err.(*perr.HTTPError)
-	if !ok {
-		t.Fatalf("expected *perr.HTTPError, got %T", err)
-	}
-	if herr.HTTPStatus != http.StatusBadRequest {
-		t.Errorf("status=%d want 400", herr.HTTPStatus)
+	if resp.VersionNo != 2 {
+		t.Errorf("version_no=%d want 2", resp.VersionNo)
 	}
 }
 

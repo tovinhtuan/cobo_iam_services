@@ -816,7 +816,9 @@ type DisclosureTypeDTO struct {
 	RequiredDocs          string                  `json:"required_docs"`
 	DeadlineRule          string                  `json:"deadline_rule"`
 	DeadlineRuleDisplay   string                  `json:"deadline_rule_display,omitempty"`
-	Periodicity           string                  `json:"periodicity"`
+	// TimeCalculationBasis is a derived VI label from deadline_config.t0_policy (e.g. "Ngày hệ thống").
+	TimeCalculationBasis string `json:"time_calculation_basis,omitempty"`
+	Periodicity          string `json:"periodicity"`
 	ChannelsText          string                  `json:"channels_text"`
 	Beneficiaries         string                  `json:"beneficiaries"`
 	ReceivingAuthorities  string                  `json:"receiving_authorities"`

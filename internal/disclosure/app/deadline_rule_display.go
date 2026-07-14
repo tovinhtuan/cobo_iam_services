@@ -10,9 +10,9 @@ var (
 	deadlineRuleDMValue = regexp.MustCompile(`^(\d{2}/\d{2})$`)
 )
 
-// FormatDeadlineRuleDisplay maps evaluated deadline_rule values (e.g. T+3, 31/03)
-// to human-readable Vietnamese labels from deadline_rule_catalog.
-// When no catalog pattern matches, the raw value is returned unchanged.
+// FormatDeadlineRuleDisplay maps compact legacy codes (e.g. T+3, 31/03) via catalog.
+// Deprecated for Portal display enrichment: product treats deadline_rule as free text.
+// Kept for reference-data / admin tooling compatibility.
 func FormatDeadlineRuleDisplay(deadlineRule string, catalog []DeadlineRuleCatalogDTO) string {
 	rule := strings.TrimSpace(deadlineRule)
 	if rule == "" {
@@ -46,16 +46,33 @@ func FormatDeadlineRuleDisplay(deadlineRule string, catalog []DeadlineRuleCatalo
 	return rule
 }
 
-func enrichDeadlineRuleDisplay(item *DisclosureTypeDTO, catalog []DeadlineRuleCatalogDTO) {
-	if item == nil {
-		return
+// T0PolicyBasisLabelVI returns the honest Vietnamese basis label for t0_policy (engine context only).
+func T0PolicyBasisLabelVI(t0Policy string) string {
+	switch strings.ToLower(strings.TrimSpace(t0Policy)) {
+	case "system_date":
+		return "Ngày hệ thống"
+	case "event_date":
+		return "Ngày sự kiện"
+	case "user_defined":
+		return "Ngày do người dùng xác định"
+	default:
+		return ""
 	}
-	item.DeadlineRuleDisplay = FormatDeadlineRuleDisplay(item.DeadlineRule, catalog)
 }
 
-func enrichDeadlineRuleDisplaySummary(item *DisclosureTypeSummaryDTO, catalog []DeadlineRuleCatalogDTO) {
+// enrichDeadlineRuleDisplay sets deadline_rule_display to the raw admin text (display-only SoT).
+// Does not expand catalog phrases, does not use deadline_config / t0_policy for Portal copy.
+func enrichDeadlineRuleDisplay(item *DisclosureTypeDTO, _ []DeadlineRuleCatalogDTO) {
 	if item == nil {
 		return
 	}
-	item.DeadlineRuleDisplay = FormatDeadlineRuleDisplay(item.DeadlineRule, catalog)
+	item.DeadlineRuleDisplay = strings.TrimSpace(item.DeadlineRule)
+	// Do not populate TimeCalculationBasis from engine t0 — Portal display-only UX hides basis.
+}
+
+func enrichDeadlineRuleDisplaySummary(item *DisclosureTypeSummaryDTO, _ []DeadlineRuleCatalogDTO) {
+	if item == nil {
+		return
+	}
+	item.DeadlineRuleDisplay = strings.TrimSpace(item.DeadlineRule)
 }
