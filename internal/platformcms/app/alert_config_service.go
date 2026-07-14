@@ -12,6 +12,12 @@ import (
 	reminderapp "github.com/cobo/cobo_iam_services/internal/reminder/app"
 )
 
+// Platform default template keys when CMS Alert Email UI is hidden.
+const (
+	DefaultDeadlineAlertTemplateKey     = "reminder.deadline_approaching"
+	DefaultWorkflowStepAlertTemplateKey = "reminder.workflow_step_due"
+)
+
 // AlertKindConfigDTO is the per-kind config returned by GET.
 type AlertKindConfigDTO struct {
 	Enabled     bool   `json:"enabled"`
@@ -71,18 +77,30 @@ func (s *alertConfigService) GetAlertConfig(ctx context.Context, typeID string) 
 		return nil, err
 	}
 	dto := &AlertConfigDTO{
-		TypeID:       typeID,
-		Deadline:     AlertKindConfigDTO{},
-		WorkflowStep: AlertKindConfigDTO{},
+		TypeID: typeID,
+		Deadline: AlertKindConfigDTO{
+			Enabled:     true,
+			TemplateKey: DefaultDeadlineAlertTemplateKey,
+		},
+		WorkflowStep: AlertKindConfigDTO{
+			Enabled:     true,
+			TemplateKey: DefaultWorkflowStepAlertTemplateKey,
+		},
 	}
+	hasDeadline := false
+	hasWorkflow := false
 	for _, r := range rows {
 		switch r.AlertKind {
 		case reminderapp.AlertKindDeadline:
+			hasDeadline = true
 			dto.Deadline = AlertKindConfigDTO{Enabled: r.Enabled, TemplateKey: r.TemplateKey}
 		case reminderapp.AlertKindWorkflowStep:
+			hasWorkflow = true
 			dto.WorkflowStep = AlertKindConfigDTO{Enabled: r.Enabled, TemplateKey: r.TemplateKey}
 		}
 	}
+	_ = hasDeadline
+	_ = hasWorkflow
 	return dto, nil
 }
 
@@ -105,13 +123,9 @@ func (s *alertConfigService) UpsertAlertConfig(ctx context.Context, req UpsertAl
 		}
 	}
 
-	// Validate each enabled kind has a valid template key.
-	if err := s.validateKind(ctx, req.Deadline); err != nil {
-		return err
-	}
-	if err := s.validateKind(ctx, req.WorkflowStep); err != nil {
-		return err
-	}
+	// Product decision: Alert Email always ON (CMS UI hidden). Override OFF → ON.
+	deadline := s.normalizeAlertKindForPlatformOn(ctx, req.Deadline, DefaultDeadlineAlertTemplateKey)
+	workflow := s.normalizeAlertKindForPlatformOn(ctx, req.WorkflowStep, DefaultWorkflowStepAlertTemplateKey)
 
 	actorID := strings.TrimSpace(req.ActorID)
 	if actorID == "" {
@@ -123,8 +137,8 @@ func (s *alertConfigService) UpsertAlertConfig(ctx context.Context, req UpsertAl
 		kind string
 		in   AlertKindConfigInput
 	}{
-		{reminderapp.AlertKindDeadline, req.Deadline},
-		{reminderapp.AlertKindWorkflowStep, req.WorkflowStep},
+		{reminderapp.AlertKindDeadline, deadline},
+		{reminderapp.AlertKindWorkflowStep, workflow},
 	}
 	for _, k := range kinds {
 		if err := s.repo.Upsert(ctx, reminderapp.AlertTemplateConfig{
@@ -153,4 +167,25 @@ func (s *alertConfigService) validateKind(ctx context.Context, in AlertKindConfi
 			"template key not found: "+key, nil)
 	}
 	return nil
+}
+
+// normalizeAlertKindForPlatformOn forces enabled=true and fills default template key when blank.
+// If a non-empty key fails registry validation, falls back to enabled=true with empty key
+// (runtime still sends using fallback template code; empty key does not skip).
+func (s *alertConfigService) normalizeAlertKindForPlatformOn(
+	ctx context.Context,
+	in AlertKindConfigInput,
+	defaultKey string,
+) AlertKindConfigInput {
+	out := AlertKindConfigInput{
+		Enabled:     true,
+		TemplateKey: strings.TrimSpace(in.TemplateKey),
+	}
+	if out.TemplateKey == "" {
+		out.TemplateKey = defaultKey
+	}
+	if err := s.validateKind(ctx, out); err != nil {
+		return AlertKindConfigInput{Enabled: true, TemplateKey: ""}
+	}
+	return out
 }

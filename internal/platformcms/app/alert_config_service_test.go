@@ -88,11 +88,11 @@ func TestGetAlertConfig_NoRows_ReturnsDefault(t *testing.T) {
 	if dto.TypeID != "dt-test" {
 		t.Errorf("TypeID = %q, want %q", dto.TypeID, "dt-test")
 	}
-	if dto.Deadline.Enabled || dto.Deadline.TemplateKey != "" {
-		t.Errorf("expected default deadline config, got %+v", dto.Deadline)
+	if !dto.Deadline.Enabled || dto.Deadline.TemplateKey != DefaultDeadlineAlertTemplateKey {
+		t.Errorf("expected default-ON deadline config, got %+v", dto.Deadline)
 	}
-	if dto.WorkflowStep.Enabled || dto.WorkflowStep.TemplateKey != "" {
-		t.Errorf("expected default workflowStep config, got %+v", dto.WorkflowStep)
+	if !dto.WorkflowStep.Enabled || dto.WorkflowStep.TemplateKey != DefaultWorkflowStepAlertTemplateKey {
+		t.Errorf("expected default-ON workflowStep config, got %+v", dto.WorkflowStep)
 	}
 }
 
@@ -140,27 +140,26 @@ func TestUpsertAlertConfig_HappyPath(t *testing.T) {
 	}
 }
 
-func TestUpsertAlertConfig_InvalidTemplateKey_Returns422(t *testing.T) {
+func TestUpsertAlertConfig_InvalidTemplateKey_FallsBackToEmptyOn(t *testing.T) {
 	repo := &fakeAlertConfigRepo{}
 	registry := &fakeRegistry{validKeys: map[string]struct{}{}} // nothing valid
 	svc := newTestSvc(repo, registry)
 
+	// Platform default-ON path: invalid key soft-falls back to enabled + empty key.
 	err := svc.UpsertAlertConfig(context.Background(), UpsertAlertConfigRequest{
-		TypeID:   "dt-x",
-		Deadline: AlertKindConfigInput{Enabled: true, TemplateKey: "nonexistent.key"},
+		TypeID:       "dt-x",
+		Deadline:     AlertKindConfigInput{Enabled: true, TemplateKey: "nonexistent.key"},
+		WorkflowStep: AlertKindConfigInput{Enabled: true, TemplateKey: ""},
 	})
-	if err == nil {
-		t.Fatal("expected error for invalid template key")
+	if err != nil {
+		t.Fatalf("expected soft fallback, got error: %v", err)
 	}
-	var he *perr.HTTPError
-	if !errors.As(err, &he) {
-		t.Fatalf("expected HTTPError, got %T", err)
+	cfg, err := repo.GetByTypeAndKind(context.Background(), "dt-x", reminderapp.AlertKindDeadline)
+	if err != nil || cfg == nil {
+		t.Fatalf("expected deadline row, err=%v cfg=%v", err, cfg)
 	}
-	if he.HTTPStatus != http.StatusUnprocessableEntity {
-		t.Errorf("HTTP status = %d, want 422", he.HTTPStatus)
-	}
-	if he.Code != perr.CodeTemplateKeyNotFound {
-		t.Errorf("error code = %q, want TEMPLATE_KEY_NOT_FOUND", he.Code)
+	if !cfg.Enabled || cfg.TemplateKey != "" {
+		t.Fatalf("expected enabled empty-key fallback, got %+v", cfg)
 	}
 }
 
@@ -169,14 +168,46 @@ func TestUpsertAlertConfig_DisabledWithEmptyKey_Allowed(t *testing.T) {
 	registry := &fakeRegistry{validKeys: map[string]struct{}{}}
 	svc := newTestSvc(repo, registry)
 
-	// enabled=false + empty key must be allowed.
+	// Request OFF is overridden to ON; empty registry falls back to enabled+empty key.
 	err := svc.UpsertAlertConfig(context.Background(), UpsertAlertConfigRequest{
 		TypeID:       "dt-x",
 		Deadline:     AlertKindConfigInput{Enabled: false, TemplateKey: ""},
 		WorkflowStep: AlertKindConfigInput{Enabled: false, TemplateKey: ""},
 	})
 	if err != nil {
-		t.Fatalf("expected no error for disabled kind with empty key, got: %v", err)
+		t.Fatalf("expected no error when forcing ON with empty registry, got: %v", err)
+	}
+	rows, _ := repo.GetByTypeID(context.Background(), "dt-x")
+	if len(rows) != 2 {
+		t.Fatalf("expected 2 rows, got %d", len(rows))
+	}
+	for _, r := range rows {
+		if !r.Enabled {
+			t.Fatalf("expected enabled=true after platform override, got %+v", r)
+		}
+	}
+}
+
+func TestUpsertAlertConfig_ForcesEnabledOn(t *testing.T) {
+	repo := &fakeAlertConfigRepo{}
+	registry := &fakeRegistry{validKeys: map[string]struct{}{
+		"reminder.deadline_approaching": {},
+		"reminder.workflow_step_due":    {},
+	}}
+	svc := newTestSvc(repo, registry)
+	err := svc.UpsertAlertConfig(context.Background(), UpsertAlertConfigRequest{
+		TypeID:       "dt-force-on",
+		Deadline:     AlertKindConfigInput{Enabled: false, TemplateKey: "reminder.deadline_approaching"},
+		WorkflowStep: AlertKindConfigInput{Enabled: false, TemplateKey: "reminder.workflow_step_due"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	rows, _ := repo.GetByTypeID(context.Background(), "dt-force-on")
+	for _, r := range rows {
+		if !r.Enabled {
+			t.Fatalf("expected forced ON, got %+v", r)
+		}
 	}
 }
 
