@@ -63,6 +63,8 @@ func normalizeTemplateWorkflowConfig(config map[string]any) []WorkflowStepDTO {
 		step := WorkflowStepDTO{
 			StepID:          firstNonBlankString(row["step_id"], row["id"]),
 			Stage:           strings.TrimSpace(fmt.Sprint(row["stage"])),
+			Description:     optionalTrimmedString(row["description"]),
+			Instructions:    optionalTrimmedString(row["instructions"]),
 			DepartmentID:    strings.TrimSpace(fmt.Sprint(row["department_id"])),
 			AssigneeRoleIds: normalizeStringSlice(row["assignee_role_ids"]),
 			DueRule:         strings.TrimSpace(fmt.Sprint(row["due_rule"])),
@@ -232,4 +234,15 @@ func firstNonBlankString(values ...any) string {
 		}
 	}
 	return ""
+}
+
+func optionalTrimmedString(raw any) string {
+	if raw == nil {
+		return ""
+	}
+	value := strings.TrimSpace(fmt.Sprint(raw))
+	if value == "" || value == "<nil>" {
+		return ""
+	}
+	return value
 }

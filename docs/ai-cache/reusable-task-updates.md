@@ -1,3 +1,8 @@
+## 2026-07-15 - CMS Workflow step reorder + description/instructions
+- BE: mig 0121 global_workflow_steps.description; wired in cms_repository/cms_service
+- FE evidence: ../cobo_web_design/docs/ai-cache/cms-workflow-step-reorder-description-instructions-2026-07-10/
+- deploy: push-migration 0121 applied; docker compose build api PASS
+
 ﻿## 2026-07-15 - CMS Alert Email default ON
 - BE alert_config_service force enabled; Get missing defaults ON; paired FE hide UI
 

@@ -471,6 +471,7 @@ type WorkflowStepReminderConfig struct {
 type WorkflowStepDTO struct {
 	StepID          string                      `json:"step_id"`
 	Stage           string                      `json:"stage"`
+	Description     string                      `json:"description,omitempty"`
 	Instructions    string                      `json:"instructions,omitempty"`
 	DepartmentID    string                      `json:"department_id"`
 	AssigneeRoleIds []string                    `json:"assignee_role_ids"`
@@ -1097,6 +1098,7 @@ type GlobalWorkflowStepInput struct {
 	// new steps. Never reused once retired. See Phase 13 STEP_KEY_SPECIFICATION.
 	StepKey         string   `json:"step_key,omitempty"`
 	Stage           string   `json:"stage"`
+	Description     string   `json:"description,omitempty"`
 	Instructions    string   `json:"instructions,omitempty"`
 	DepartmentID    string   `json:"department_id"`
 	AssigneeRoleIds []string `json:"assignee_role_ids"`

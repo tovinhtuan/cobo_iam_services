@@ -30,6 +30,7 @@ type ManifestStep struct {
 	StepKey        string `json:"step_key"`
 	Stage          string `json:"stage"`
 	Name           string `json:"name"`
+	Description    string `json:"description,omitempty"`
 	Instructions   string `json:"instructions,omitempty"`
 	Role           string `json:"role"`
 	DepartmentID   string `json:"department_id"`

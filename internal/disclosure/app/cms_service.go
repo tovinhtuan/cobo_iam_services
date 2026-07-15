@@ -55,6 +55,13 @@ func (s *service) CmsUpsertGlobalWorkflow(ctx context.Context, req CmsUpsertGlob
 	}
 	const maxWorkflowStepInstructionsLen = 2000
 	for i, step := range req.Steps {
+		if len(step.Description) > maxWorkflowStepInstructionsLen {
+			return nil, &perr.HTTPError{
+				HTTPStatus: http.StatusBadRequest, Code: perr.CodeInvalidRequest,
+				Message: "workflow step description must be at most 2000 characters",
+				Details: map[string]any{"step_index": i, "field": "description"},
+			}
+		}
 		if len(step.Instructions) > maxWorkflowStepInstructionsLen {
 			return nil, &perr.HTTPError{
 				HTTPStatus: http.StatusBadRequest, Code: perr.CodeInvalidRequest,
