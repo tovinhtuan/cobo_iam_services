@@ -91,6 +91,106 @@ func TestIntegration_healthz(t *testing.T) {
 	}
 }
 
+func TestIntegration_internalReminderDispatch_requiresToken(t *testing.T) {
+	cfg := testAPIConfig()
+	cfg.InternalReminderToken = "test-internal-token"
+	srv := httptest.NewServer(newTestHandlerWithDeps(t, nil, cfg, nil))
+	defer srv.Close()
+
+	body := bytes.NewBufferString(`{"occurrence_id":"x","idempotency_key":"y","recipient_emails":["a@example.com"]}`)
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/internal/reminders/dispatch", body)
+	req.Header.Set("Content-Type", "application/json")
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusUnauthorized {
+		b, _ := io.ReadAll(res.Body)
+		t.Fatalf("status=%d body=%s", res.StatusCode, b)
+	}
+}
+
+func TestIntegration_internalReminderDispatch_rejectsWrongToken(t *testing.T) {
+	cfg := testAPIConfig()
+	cfg.InternalReminderToken = "test-internal-token"
+	srv := httptest.NewServer(newTestHandlerWithDeps(t, nil, cfg, nil))
+	defer srv.Close()
+
+	body := bytes.NewBufferString(`{"occurrence_id":"x","idempotency_key":"y","recipient_emails":["a@example.com"]}`)
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/internal/reminders/dispatch", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Internal-Token", "wrong-token")
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusUnauthorized {
+		b, _ := io.ReadAll(res.Body)
+		t.Fatalf("status=%d body=%s", res.StatusCode, b)
+	}
+}
+
+func TestIntegration_internalReminderDispatch_acceptsValidTokenAndReachesHandler(t *testing.T) {
+	cfg := testAPIConfig()
+	cfg.InternalReminderToken = "test-internal-token"
+	srv := httptest.NewServer(newTestHandlerWithDeps(t, nil, cfg, nil))
+	defer srv.Close()
+
+	body := bytes.NewBufferString(`{"occurrence_id":"x","idempotency_key":"y","recipient_emails":["a@example.com"]}`)
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/internal/reminders/dispatch", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Internal-Token", "test-internal-token")
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	// Service layer should handle now; auth layer no longer blocks.
+	if res.StatusCode == http.StatusUnauthorized {
+		b, _ := io.ReadAll(res.Body)
+		t.Fatalf("unexpected unauthorized body=%s", b)
+	}
+}
+
+func TestNew_failsWhenInternalTokenEmptyOutsideTest(t *testing.T) {
+	cfg := testAPIConfig()
+	cfg.Env = "development"
+	cfg.InternalReminderToken = ""
+	log := logger.New("error")
+	_, cleanup, err := httpserver.New(context.Background(), httpserver.Deps{
+		Log:    log,
+		Config: cfg,
+		DB:     nil,
+	})
+	if cleanup != nil {
+		cleanup()
+	}
+	if err == nil || !strings.Contains(err.Error(), "INTERNAL_REMINDER_TOKEN") {
+		t.Fatalf("expected INTERNAL_REMINDER_TOKEN error, got %v", err)
+	}
+}
+
+func TestNew_failsWhenCMSMediaSecretDefaultOutsideTest(t *testing.T) {
+	cfg := testAPIConfig()
+	cfg.Env = "development"
+	cfg.InternalReminderToken = "ok-token"
+	cfg.CMSMediaUploadSigningSecret = "dev-cms-media-secret"
+	log := logger.New("error")
+	_, cleanup, err := httpserver.New(context.Background(), httpserver.Deps{
+		Log:    log,
+		Config: cfg,
+		DB:     nil,
+	})
+	if cleanup != nil {
+		cleanup()
+	}
+	if err == nil || !strings.Contains(err.Error(), "CMS_MEDIA_UPLOAD_SIGNING_SECRET") {
+		t.Fatalf("expected CMS_MEDIA_UPLOAD_SIGNING_SECRET error, got %v", err)
+	}
+}
+
 func TestIntegration_readyz_noDatabase(t *testing.T) {
 	srv := httptest.NewServer(newTestHandler(t, nil))
 	defer srv.Close()

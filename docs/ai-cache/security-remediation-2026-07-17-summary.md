@@ -1,0 +1,32 @@
+# Security Remediation Summary — 2026-07-17
+
+- task type: implement
+- objective: fix high security blocker COBO-SEC-001 and retest medium exposures on DEV
+- implemented/discovered:
+  - fixed internal reminder dispatch auth bypass by enforcing mandatory `X-Internal-Token` with constant-time check
+  - wired `INTERNAL_REMINDER_TOKEN` from config to reminder handler (removed empty hardcode)
+  - added startup/runtime fail-close guard for empty internal token outside local/test runtime
+  - protected `/metrics` from unauthenticated public access (private-source allowlist + token fallback)
+  - enforced CMS media signing secret fail-safe outside local/test runtime
+  - created dated accepted plan for login/refresh rate limiting (follow-up batch)
+- affected repos/files/modules:
+  - `internal/reminder/transport/http/handler.go`
+  - `internal/httpserver/server.go`
+  - `internal/platform/config/config.go`
+  - `internal/platformcms/transport/http/media_security.go`
+  - `internal/httpserver/server_test.go`
+  - `internal/httpserver/metrics_protection_test.go`
+- contracts/behaviors/constraints/decisions:
+  - `/internal/reminders/dispatch` now requires token before any business body handling
+  - empty internal token no longer accepted in public-like runtime
+  - `/metrics` no longer returns unauthenticated 200 from public Internet
+  - default CMS media secret rejected outside local/test
+- build/verification result:
+  - targeted tests passed
+  - security-sensitive package tests passed
+  - required docker build passed: `docker compose -f docker-compose.dev.yml build api`
+  - deployed to DEV with `make deploy-be`
+  - runtime retest passed for high finding + selected medium/regression matrix
+- remaining gaps/risks/next steps:
+  - login/refresh rate-limit still pending implementation (planned 2026-07-19)
+  - unverified mini-retest areas (stored XSS runtime, SSRF, replay/race, same-tenant horizontal object-id) remain tracked

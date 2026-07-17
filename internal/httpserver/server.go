@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -182,6 +183,9 @@ func buildListedCompaniesService(cfg config.Config, vnstockDB *sql.DB, log *slog
 }
 
 func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr TokenManager, sqlDB pingDB, projectionStore authprojection.SnapshotStore, outboxRepo platformoutbox.Repository, pool *sql.DB, outboxSQL *outboxmysql.Repository, vnstockDB *sql.DB) error {
+	if err := validateSecurityCriticalConfig(cfg); err != nil {
+		return err
+	}
 	listedCompaniesSvc := buildListedCompaniesService(cfg, vnstockDB, log)
 	id := idgen.UUIDv7Generator{}
 	var auditRepo auditapp.Repository = auditinmem.NewRepository()
@@ -530,7 +534,7 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 	}
 	reminderSvcOpts = append(reminderSvcOpts, reminderapp.WithInAppCreator(&reminderInAppBridge{svc: inAppSvc}))
 	reminderSvc := reminderapp.NewService(reminderConfigRepo, reminderOccurrenceRepo, reminderAttemptRepo, reminderSvcOpts...)
-	reminderHandler := reminderhttp.NewHandler(reminderSvc, tokenManager, "", cfg.Env)
+	reminderHandler := reminderhttp.NewHandler(reminderSvc, tokenManager, cfg.InternalReminderToken, cfg.Env)
 	if pool != nil {
 		mysqlAdmin := adminRepo.(*camysql.AdminRepository)
 		adminOpts = append(adminOpts,
@@ -681,12 +685,40 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 		}
 	}
 
-	return muxRegisterHealthAndIAM(mux, log, sqlDB, iamHandler, meHandler, authHandler, disclosureHandler, workflowHandler, notificationHandler, reminderHandler, adminHandler, platformCMSHandler, adhocHandler, deadlineAlertsHandler, portalDashboardHandler, personalOpsHandler)
+	return muxRegisterHealthAndIAM(mux, log, cfg, sqlDB, iamHandler, meHandler, authHandler, disclosureHandler, workflowHandler, notificationHandler, reminderHandler, adminHandler, platformCMSHandler, adhocHandler, deadlineAlertsHandler, portalDashboardHandler, personalOpsHandler)
+}
+
+func validateSecurityCriticalConfig(cfg config.Config) error {
+	if strings.TrimSpace(cfg.InternalReminderToken) == "" &&
+		!cfg.InternalAuthAllowEmptyForTest &&
+		!isLocalOrTestRuntime(cfg.Env, cfg.PublicAPIBaseURL) {
+		return fmt.Errorf("INTERNAL_REMINDER_TOKEN is required outside local/test runtime")
+	}
+	// Allow blank/default media secret only for explicit test env.
+	mediaSecret := strings.TrimSpace(cfg.CMSMediaUploadSigningSecret)
+	if !isLocalOrTestRuntime(cfg.Env, cfg.PublicAPIBaseURL) {
+		if mediaSecret == "" {
+			return fmt.Errorf("CMS_MEDIA_UPLOAD_SIGNING_SECRET must not be empty")
+		}
+		if strings.EqualFold(mediaSecret, "dev-cms-media-secret") {
+			return fmt.Errorf("CMS_MEDIA_UPLOAD_SIGNING_SECRET default value is not allowed outside local/test runtime")
+		}
+	}
+	return nil
+}
+
+func isLocalOrTestRuntime(env, publicAPIBaseURL string) bool {
+	if strings.EqualFold(strings.TrimSpace(env), "test") {
+		return true
+	}
+	base := strings.ToLower(strings.TrimSpace(publicAPIBaseURL))
+	return strings.Contains(base, "localhost") || strings.Contains(base, "127.0.0.1")
 }
 
 func muxRegisterHealthAndIAM(
 	mux *http.ServeMux,
 	log *slog.Logger,
+	cfg config.Config,
 	sqlDB pingDB,
 	iamHandler *iamhttp.Handler,
 	meHandler *iamhttp.MeHandler,
@@ -705,7 +737,7 @@ func muxRegisterHealthAndIAM(
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		httpx.WriteJSON(w, http.StatusOK, map[string]any{"status": "ok"})
 	})
-	mux.Handle("/metrics", promhttp.Handler())
+	mux.Handle("/metrics", protectMetricsHandler(promhttp.Handler(), cfg.InternalReminderToken))
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
 		if sqlDB == nil {
 			httpx.WriteJSON(w, http.StatusServiceUnavailable, map[string]any{
@@ -737,6 +769,42 @@ func muxRegisterHealthAndIAM(
 	portalDashboardHandler.Register(mux)
 	personalOpsHandler.Register(mux)
 	return nil
+}
+
+func protectMetricsHandler(next http.Handler, internalToken string) http.Handler {
+	trimmedToken := strings.TrimSpace(internalToken)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isInternalSource(r.RemoteAddr) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		// Explicit token fallback for non-private sources (e.g. remote trusted scraper).
+		if trimmedToken != "" {
+			token := strings.TrimSpace(r.Header.Get("X-Internal-Token"))
+			if token != "" && token == trimmedToken {
+				next.ServeHTTP(w, r)
+				return
+			}
+		}
+		httpx.WriteJSON(w, http.StatusUnauthorized, map[string]any{
+			"error": map[string]any{
+				"code":    "UNAUTHORIZED",
+				"message": "metrics endpoint requires internal access",
+			},
+		})
+	})
+}
+
+func isInternalSource(remoteAddr string) bool {
+	host, _, err := net.SplitHostPort(strings.TrimSpace(remoteAddr))
+	if err != nil {
+		host = strings.TrimSpace(remoteAddr)
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	return ip.IsLoopback() || ip.IsPrivate()
 }
 
 type personalopsContactAdapter struct {

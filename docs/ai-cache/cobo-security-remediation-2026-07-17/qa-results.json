@@ -1,0 +1,34 @@
+{
+  "phase": "CoBo Security Remediation",
+  "overallVerdict": "CONDITIONAL_PASS",
+  "highFinding": {
+    "id": "COBO-SEC-001",
+    "internalDispatchRequiresAuth": true,
+    "missingTokenReturns401": true,
+    "wrongTokenReturns401or403": true,
+    "emptyInternalTokenRejectedAtStartup": true,
+    "validTokenPathStillWorks": true
+  },
+  "mediumFindings": {
+    "metricsNoLongerPublic200": true,
+    "loginRefreshRateLimitImplementedOrPlanAccepted": true,
+    "cmsMediaDefaultSecretRejectedOutsideLocal": true,
+    "tokenStorageRiskPlanCreated": true
+  },
+  "regression": {
+    "healthzPass": true,
+    "readyzPass": true,
+    "frontendPass": true,
+    "portalUserCannotActivateCms": true,
+    "guestProtectedApi401": true,
+    "crossTenantScopeStillPass": true,
+    "browserSmokePass": true,
+    "unexpected5xx": 0,
+    "consoleSevere": 0
+  },
+  "evidence": {
+    "tokensMasked": true,
+    "commandsLogged": true,
+    "networkLogsSanitized": true
+  }
+}

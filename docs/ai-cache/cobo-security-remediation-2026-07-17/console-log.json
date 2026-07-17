@@ -1,0 +1,7 @@
+{
+  "browserSmoke": {
+    "severe": 0,
+    "unexpected5xx": 0,
+    "source": "browser smoke subagent run on DEV routes"
+  }
+}

@@ -1,0 +1,10 @@
+go test ./internal/platform/config ./internal/httpserver -run "TestIntegration_internalReminderDispatch|TestNew_failsWhen|TestProtectMetricsHandler|TestLoad_" -count=1
+go test ./internal/reminder/... ./internal/authorization/... ./internal/disclosure/... -count=1
+docker compose -f docker-compose.dev.yml build api
+ssh -p 21239 root@88.216.208.0 '... set INTERNAL_REMINDER_TOKEN and CMS_MEDIA_UPLOAD_SIGNING_SECRET ...'
+make deploy-be
+curl -fsS http://88.216.208.0:8080/healthz
+curl -fsS http://88.216.208.0:8080/readyz
+curl -i -X POST http://88.216.208.0:8080/internal/reminders/dispatch (no token / wrong token / valid token masked)
+curl -i http://88.216.208.0:8080/metrics
+curl runtime regression matrix (guest401, portal403, cross-tenant counts)

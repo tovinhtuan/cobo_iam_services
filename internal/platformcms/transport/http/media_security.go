@@ -19,9 +19,6 @@ type cmsMediaSigner struct {
 
 func newCMSMediaSigner(secret string, ttl time.Duration) *cmsMediaSigner {
 	secret = strings.TrimSpace(secret)
-	if secret == "" {
-		secret = "dev-cms-media-secret"
-	}
 	if ttl <= 0 {
 		ttl = 10 * time.Minute
 	}

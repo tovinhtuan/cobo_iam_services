@@ -1,6 +1,7 @@
 package http
 
 import (
+	"crypto/hmac"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -169,8 +170,7 @@ func (h *Handler) getReminderHistory(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) dispatchOccurrence(w http.ResponseWriter, r *http.Request) {
-	token := strings.TrimSpace(r.Header.Get("X-Internal-Token"))
-	if h.internalToken != "" && token != h.internalToken {
+	if !h.authorizeInternalRequest(r) {
 		httpx.WriteJSON(w, http.StatusUnauthorized, map[string]any{
 			"error": map[string]any{
 				"code":    "UNAUTHORIZED",
@@ -203,8 +203,7 @@ func (h *Handler) seedOccurrence(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	token := strings.TrimSpace(r.Header.Get("X-Internal-Token"))
-	if h.internalToken != "" && token != h.internalToken {
+	if !h.authorizeInternalRequest(r) {
 		httpx.WriteJSON(w, http.StatusUnauthorized, map[string]any{
 			"error": map[string]any{
 				"code":    "UNAUTHORIZED",
@@ -249,4 +248,13 @@ func bearerToken(h string) string {
 		return strings.TrimSpace(parts[1])
 	}
 	return h
+}
+
+func (h *Handler) authorizeInternalRequest(r *http.Request) bool {
+	token := strings.TrimSpace(r.Header.Get("X-Internal-Token"))
+	expected := strings.TrimSpace(h.internalToken)
+	if expected == "" || token == "" {
+		return false
+	}
+	return hmac.Equal([]byte(token), []byte(expected))
 }

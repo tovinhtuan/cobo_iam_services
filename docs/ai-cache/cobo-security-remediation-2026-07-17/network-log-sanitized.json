@@ -1,0 +1,26 @@
+{
+  "sensitiveMasked": true,
+  "samples": [
+    {
+      "endpoint": "/internal/reminders/dispatch",
+      "scenario": "missing_token",
+      "status": 401
+    },
+    {
+      "endpoint": "/internal/reminders/dispatch",
+      "scenario": "wrong_token",
+      "status": 401
+    },
+    {
+      "endpoint": "/internal/reminders/dispatch",
+      "scenario": "valid_token_masked",
+      "status": 400,
+      "note": "handler reached; business validation response"
+    },
+    {
+      "endpoint": "/metrics",
+      "scenario": "public_request",
+      "status": 401
+    }
+  ]
+}

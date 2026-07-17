@@ -12,6 +12,8 @@ import (
 type Config struct {
 	ServiceName string
 	Env         string
+	// InternalAuthAllowEmptyForTest allows insecure empty internal tokens only when explicitly set (test harness).
+	InternalAuthAllowEmptyForTest bool
 
 	// API
 	HTTPAddr         string
@@ -85,6 +87,8 @@ type Config struct {
 
 	// Public API base URL used when backend emits externally callable URLs.
 	PublicAPIBaseURL string
+	// InternalReminderToken protects /internal reminder dispatch endpoints.
+	InternalReminderToken string
 
 	// LoginPasswordRSAPrivateKeyPEM optional PEM (PKCS#1 or PKCS#8) RSA private key.
 	// When set, GET /api/v1/auth/login-password-key exposes the public half and login accepts password_cipher.
@@ -226,6 +230,8 @@ func Load() (Config, error) {
 		PublicWebBaseURL:              getenv("PUBLIC_WEB_BASE_URL", "http://localhost:5173"),
 		SupportEmail:                  getenv("SUPPORT_EMAIL", "support@cobo.vn"),
 		PublicAPIBaseURL:              getenv("PUBLIC_API_BASE_URL", "http://localhost:8080"),
+		InternalReminderToken:         strings.TrimSpace(os.Getenv("INTERNAL_REMINDER_TOKEN")),
+		InternalAuthAllowEmptyForTest: boolEnv("INTERNAL_AUTH_ALLOW_EMPTY_FOR_TEST", false),
 		UserInvitationTokenTTL:        durationEnv("USER_INVITATION_TOKEN_TTL", 72*time.Hour),
 		EmailVerificationOTPTTL:       durationEnv("EMAIL_VERIFICATION_OTP_TTL", 15*time.Minute),
 		InviteDefaultRoleCode:         getenv("INVITE_DEFAULT_ROLE_CODE", "user_thuong"),
@@ -296,6 +302,12 @@ func Load() (Config, error) {
 	if !strings.EqualFold(strings.TrimSpace(cfg.Env), "development") && strings.TrimSpace(cfg.UserAvatarUploadSigningSecret) == "" {
 		return Config{}, fmt.Errorf("USER_AVATAR_UPLOAD_SIGNING_SECRET is required when ENV is not development")
 	}
+	if err := validateInternalReminderToken(cfg); err != nil {
+		return Config{}, err
+	}
+	if err := validateCMSMediaSigningSecret(cfg); err != nil {
+		return Config{}, err
+	}
 	switch cfg.AccessTokenMode {
 	case "opaque", "jwt", "dual":
 	default:
@@ -330,6 +342,38 @@ func Load() (Config, error) {
 	}
 	cfg.LoginPasswordRSAPrivateKeyPEM = pem
 	return cfg, nil
+}
+
+func validateInternalReminderToken(cfg Config) error {
+	token := strings.TrimSpace(cfg.InternalReminderToken)
+	if token != "" {
+		return nil
+	}
+	// Local/test harness can opt-in; public runtimes fail closed.
+	if cfg.InternalAuthAllowEmptyForTest || isLocalOrTestRuntime(cfg.Env, cfg.PublicAPIBaseURL) {
+		return nil
+	}
+	return fmt.Errorf("INTERNAL_REMINDER_TOKEN is required outside local/test runtime")
+}
+
+func validateCMSMediaSigningSecret(cfg Config) error {
+	secret := strings.TrimSpace(cfg.CMSMediaUploadSigningSecret)
+	if secret == "" {
+		return fmt.Errorf("CMS_MEDIA_UPLOAD_SIGNING_SECRET must not be empty")
+	}
+	if strings.EqualFold(secret, "dev-cms-media-secret") &&
+		!isLocalOrTestRuntime(cfg.Env, cfg.PublicAPIBaseURL) {
+		return fmt.Errorf("CMS_MEDIA_UPLOAD_SIGNING_SECRET default value is not allowed outside local/test runtime")
+	}
+	return nil
+}
+
+func isLocalOrTestRuntime(env, publicAPIBaseURL string) bool {
+	if strings.EqualFold(strings.TrimSpace(env), "test") {
+		return true
+	}
+	base := strings.ToLower(strings.TrimSpace(publicAPIBaseURL))
+	return strings.Contains(base, "localhost") || strings.Contains(base, "127.0.0.1")
 }
 
 // validatePublicWebBaseURL rejects localhost/empty URLs in non-development
