@@ -155,11 +155,21 @@ type WorkflowInstanceDTO struct {
 	T0Policy           string         `json:"t0_policy,omitempty"`
 }
 
+// TaskAssigneeDTO is additive display metadata for portal responsibility views.
+// Does not expose password, tokens, or private profile fields.
+type TaskAssigneeDTO struct {
+	MembershipID   string `json:"membership_id,omitempty"`
+	DisplayName    string `json:"display_name,omitempty"`
+	Email          string `json:"email,omitempty"`
+	DepartmentName string `json:"department_name,omitempty"`
+}
+
 type TaskDTO struct {
-	TaskID               string `json:"task_id"`
-	CompanyID            string `json:"company_id"`
-	WorkflowInstanceID   string `json:"workflow_instance_id"`
-	StepCode             string `json:"step_code"`
-	AssigneeMembershipID string `json:"assignee_membership_id"`
-	Status               string `json:"status"`
+	TaskID               string           `json:"task_id"`
+	CompanyID            string           `json:"company_id"`
+	WorkflowInstanceID   string           `json:"workflow_instance_id"`
+	StepCode             string           `json:"step_code"`
+	AssigneeMembershipID string           `json:"assignee_membership_id"`
+	Status               string           `json:"status"`
+	Assignee             *TaskAssigneeDTO `json:"assignee,omitempty"`
 }

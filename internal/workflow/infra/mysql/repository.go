@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 	workflowapp "github.com/cobo/cobo_iam_services/internal/workflow/app"
@@ -153,8 +154,32 @@ func (r *Repository) UpdateTask(ctx context.Context, task workflowapp.TaskDTO) (
 
 func (r *Repository) ListTasksByInstance(ctx context.Context, companyID, workflowInstanceID string) ([]workflowapp.TaskDTO, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT task_id, company_id, workflow_instance_id, step_code, assignee_membership_id, status
-		FROM workflow_tasks WHERE company_id = ? AND workflow_instance_id = ?
+		SELECT
+			wt.task_id,
+			wt.company_id,
+			wt.workflow_instance_id,
+			wt.step_code,
+			wt.assignee_membership_id,
+			wt.status,
+			COALESCE(NULLIF(u.full_name, ''), '') AS assignee_display_name,
+			COALESCE(NULLIF(u.email, ''), NULLIF(u.login_id, ''), '') AS assignee_email,
+			(
+				SELECT COALESCE(NULLIF(d.department_name, ''), '')
+				FROM department_memberships dm
+				INNER JOIN departments d
+					ON d.department_id = dm.department_id
+					AND d.company_id = wt.company_id
+				WHERE dm.membership_id = wt.assignee_membership_id
+					AND dm.status = 'active'
+				ORDER BY d.department_name ASC
+				LIMIT 1
+			) AS assignee_department_name
+		FROM workflow_tasks wt
+		LEFT JOIN memberships m
+			ON m.membership_id = wt.assignee_membership_id
+			AND m.company_id = wt.company_id
+		LEFT JOIN users u ON u.user_id = m.user_id
+		WHERE wt.company_id = ? AND wt.workflow_instance_id = ?
 	`, companyID, workflowInstanceID)
 	if err != nil {
 		return nil, err
@@ -163,8 +188,34 @@ func (r *Repository) ListTasksByInstance(ctx context.Context, companyID, workflo
 	var out []workflowapp.TaskDTO
 	for rows.Next() {
 		var t workflowapp.TaskDTO
-		if err := rows.Scan(&t.TaskID, &t.CompanyID, &t.WorkflowInstanceID, &t.StepCode, &t.AssigneeMembershipID, &t.Status); err != nil {
+		var displayName, email, departmentName string
+		if err := rows.Scan(
+			&t.TaskID,
+			&t.CompanyID,
+			&t.WorkflowInstanceID,
+			&t.StepCode,
+			&t.AssigneeMembershipID,
+			&t.Status,
+			&displayName,
+			&email,
+			&departmentName,
+		); err != nil {
 			return nil, err
+		}
+		if strings.TrimSpace(t.AssigneeMembershipID) != "" {
+			assignee := &workflowapp.TaskAssigneeDTO{
+				MembershipID: strings.TrimSpace(t.AssigneeMembershipID),
+			}
+			if v := strings.TrimSpace(displayName); v != "" {
+				assignee.DisplayName = v
+			}
+			if v := strings.TrimSpace(email); v != "" {
+				assignee.Email = v
+			}
+			if v := strings.TrimSpace(departmentName); v != "" {
+				assignee.DepartmentName = v
+			}
+			t.Assignee = assignee
 		}
 		out = append(out, t)
 	}
