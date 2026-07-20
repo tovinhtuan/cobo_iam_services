@@ -961,6 +961,7 @@ type DisclosureTypeVersionDTO struct {
 	TypeID      string    `json:"type_id"`
 	VersionNo   int       `json:"version_no"`
 	IsActive    bool      `json:"is_active"`
+	IsReleased  bool      `json:"is_released"`
 	ChangeNote  string    `json:"change_note"`
 	UpdatedBy   string    `json:"updated_by"`
 	ActivatedAt time.Time `json:"activated_at"`

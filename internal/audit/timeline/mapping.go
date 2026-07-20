@@ -1,5 +1,7 @@
 package timeline
 
+import "strings"
+
 type actionMeta struct {
 	Summary    string
 	Domain     string
@@ -8,6 +10,11 @@ type actionMeta struct {
 }
 
 var knownActions = map[string]actionMeta{
+	"login_success":                        {Summary: "Đăng nhập thành công", Domain: "identity", Category: "auth", ActionLink: ""},
+	"select_company":                       {Summary: "Chuyển công ty đang làm việc", Domain: "identity", Category: "auth", ActionLink: ""},
+	"select_company_failure":               {Summary: "Chuyển công ty thất bại", Domain: "identity", Category: "auth", ActionLink: ""},
+	"cms_workflow.upsert":                  {Summary: "Cập nhật workflow mẫu", Domain: "configuration", Category: "cms_workflow", ActionLink: "/app/admin/audit"},
+	"cms_workflow.delete":                  {Summary: "Xóa workflow mẫu", Domain: "configuration", Category: "cms_workflow", ActionLink: "/app/admin/audit"},
 	"admin.user.create":                    {Summary: "Tạo người dùng", Domain: "identity", Category: "user_management", ActionLink: "/app/admin?tab=users"},
 	"admin.user.invite":                    {Summary: "Mời người dùng", Domain: "identity", Category: "user_management", ActionLink: "/app/admin?tab=users"},
 	"admin.user.resend_invitation":         {Summary: "Gửi lại lời mời", Domain: "identity", Category: "user_management", ActionLink: "/app/admin?tab=users"},
@@ -66,13 +73,103 @@ var knownActions = map[string]actionMeta{
 }
 
 func lookupAction(action string) actionMeta {
+	action = strings.TrimSpace(action)
 	if m, ok := knownActions[action]; ok {
 		return m
 	}
+	// Prefix heuristics for uncatalogued but common families.
+	switch {
+	case strings.HasPrefix(action, "login"):
+		return actionMeta{Summary: "Đăng nhập", Domain: "identity", Category: "auth", ActionLink: ""}
+	case strings.Contains(action, "select_company"):
+		return actionMeta{Summary: "Chuyển công ty đang làm việc", Domain: "identity", Category: "auth", ActionLink: ""}
+	case strings.Contains(action, "cms_workflow") || strings.Contains(action, "workflow"):
+		return actionMeta{Summary: "Cập nhật workflow mẫu", Domain: "configuration", Category: "cms_workflow", ActionLink: "/app/admin/audit"}
+	case strings.Contains(action, "department"):
+		return actionMeta{Summary: "Thao tác phòng ban", Domain: "org", Category: "org_structure", ActionLink: "/app/admin?tab=org"}
+	}
 	return actionMeta{
-		Summary:    "Thay đổi cấu hình",
+		Summary:    "Hoạt động hệ thống",
 		Domain:     "configuration",
 		Category:   "configuration_change",
 		ActionLink: "/app/admin/audit",
 	}
+}
+
+var resourceTypeLabels = map[string]string{
+	"disclosure_type": "loại thông tin báo cáo",
+	"department":      "phòng ban",
+	"company":         "doanh nghiệp",
+	"user":            "người dùng",
+	"membership":      "thành viên",
+	"role":            "vai trò",
+	"title":           "chức danh",
+	"team":            "nhóm",
+	"workflow":        "workflow mẫu",
+}
+
+// ResourceTypeLabel returns a short Vietnamese label for a resource type code.
+func ResourceTypeLabel(resourceType string) string {
+	key := strings.TrimSpace(resourceType)
+	if key == "" {
+		return ""
+	}
+	if label, ok := resourceTypeLabels[key]; ok {
+		return label
+	}
+	if label, ok := resourceTypeLabels[strings.ToLower(key)]; ok {
+		return label
+	}
+	return ""
+}
+
+// FriendlyDescription builds a user-facing description without raw UUIDs/codes.
+func FriendlyDescription(action, resourceType string) string {
+	summary := SummaryForAction(action)
+	rt := ResourceTypeLabel(resourceType)
+	if rt != "" {
+		return "Bạn đã thực hiện: " + strings.ToLower(summary) + " liên quan đến " + rt + "."
+	}
+	return "Bạn đã thực hiện: " + strings.ToLower(summary) + "."
+}
+
+// DomainLabel returns a Vietnamese domain label when known.
+func DomainLabel(domain string) string {
+	switch strings.TrimSpace(domain) {
+	case "identity":
+		return "Người dùng & tài khoản"
+	case "configuration":
+		return "Cấu hình"
+	case "org":
+		return "Cơ cấu tổ chức"
+	case "disclosure":
+		return "Công bố thông tin"
+	case "workflow":
+		return "Workflow"
+	case "rbac":
+		return "Phân quyền"
+	case "notification":
+		return "Cảnh báo"
+	case "company":
+		return "Doanh nghiệp"
+	case "account":
+		return "Tài khoản"
+	default:
+		return strings.TrimSpace(domain)
+	}
+}
+
+// SummaryForAction returns a human-readable summary for an audit action code.
+func SummaryForAction(action string) string {
+	return lookupAction(strings.TrimSpace(action)).Summary
+}
+
+// DomainForAction returns the domain code for an audit action.
+func DomainForAction(action string) string {
+	return lookupAction(strings.TrimSpace(action)).Domain
+}
+
+// ActionLinkFor returns a deep link for an audit action when known.
+func ActionLinkFor(action string) string {
+	return lookupAction(strings.TrimSpace(action)).ActionLink
 }

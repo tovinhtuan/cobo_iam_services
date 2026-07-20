@@ -860,16 +860,25 @@ func (r *Repository) UpsertTypeVersion(ctx context.Context, req disclosureapp.Up
 			return nil, err
 		}
 	}
-	var maxVersion sql.NullInt64
-	if err := tx.QueryRowContext(ctx, `
-		SELECT COALESCE(MAX(version_no), 0) FROM disclosure_type_versions WHERE type_id = ?
-	`, req.TypeID).Scan(&maxVersion); err != nil {
-		return nil, err
+
+	activeVersionNo := 0
+	if currentVersion.Valid {
+		activeVersionNo = int(currentVersion.Int64)
 	}
-	nextVersion := int(maxVersion.Int64) + 1
-	if nextVersion < 1 {
-		nextVersion = 1
+	// First create / no portal active yet → new row becomes active+released.
+	nextIsActive := !typeExists || activeVersionNo <= 0
+
+	// Single open draft: highest mutable (not released) version that is not portal-active.
+	var openDraft sql.NullInt64
+	if typeExists && activeVersionNo > 0 {
+		if err := tx.QueryRowContext(ctx, `
+			SELECT MAX(version_no) FROM disclosure_type_versions
+			WHERE type_id = ? AND version_no <> ? AND COALESCE(is_released, 0) = 0
+		`, req.TypeID, activeVersionNo).Scan(&openDraft); err != nil {
+			return nil, err
+		}
 	}
+
 	tagsJSON, err := json.Marshal(req.Tags)
 	if err != nil {
 		return nil, fmt.Errorf("marshal tags: %w", err)
@@ -895,33 +904,87 @@ func (r *Repository) UpsertTypeVersion(ctx context.Context, req disclosureapp.Up
 		return nil, err
 	}
 	now := time.Now().UTC()
-	nextIsActive := !typeExists || !currentVersion.Valid || currentVersion.Int64 <= 0
-	// Insert with empty description first: combined INSERT packet (many TEXT/JSON columns + preset blocks)
-	// exceeds DEV MySQL max_allowed_packet (~8KB) when description is ~2.5KB+; follow-up UPDATE stays under limit.
 	versionDescription := strings.TrimSpace(req.Description)
-	_, err = tx.ExecContext(ctx, `
-		INSERT INTO disclosure_type_versions (
-			type_id, version_no, name, category, template_category, deadline_strategy, description, legal_basis, applicability, implementation_content,
-			implementation_notes, special_cases, report_content, required_docs, deadline_rule, periodicity, channels_text,
-			beneficiaries, receiving_authorities, format, legal_risks_text, general_info, deadline_config_json, legal_bases_json, checklist_json, tags_json, applicability_rules_json, change_note, updated_by, activated_at
-		) VALUES (?, ?, ?, ?, ?, ?, '', NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
-		          NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
-		          NULLIF(?, ''), NULLIF(?, ''), CAST(? AS JSON), CAST(? AS JSON), CAST(? AS JSON), CAST(? AS JSON), CAST(? AS JSON), NULLIF(?, ''), ?, ?)
-	`, req.TypeID, nextVersion, req.Name, req.Category, req.TemplateCategory, req.DeadlineStrategy,
-		req.LegalBasis, req.Applicability, req.ImplementationContent, req.ImplementationNotes, req.SpecialCases, req.ReportContent,
-		req.RequiredDocs, req.DeadlineRule, req.Periodicity, req.ChannelsText, req.Beneficiaries, req.ReceivingAuthorities,
-		req.Format, req.LegalRisksText, req.GeneralInfo, string(deadlineConfigJSON), string(legalBasesJSON), string(checklistJSON), string(tagsJSON), string(applicabilityRulesJSON), changeNote, req.Subject.UserID, now)
-	if err != nil {
-		return nil, err
-	}
-	if versionDescription != "" {
+
+	var targetVersion int
+	overwriteDraft := openDraft.Valid && openDraft.Int64 > 0 && !nextIsActive
+	if overwriteDraft {
+		targetVersion = int(openDraft.Int64)
 		if _, err := tx.ExecContext(ctx, `
-			UPDATE disclosure_type_versions SET description = ?
+			UPDATE disclosure_type_versions SET
+				name = ?, category = ?, template_category = ?, deadline_strategy = ?,
+				description = '', legal_basis = NULLIF(?, ''), applicability = NULLIF(?, ''),
+				implementation_content = NULLIF(?, ''), implementation_notes = NULLIF(?, ''),
+				special_cases = NULLIF(?, ''), report_content = NULLIF(?, ''), required_docs = NULLIF(?, ''),
+				deadline_rule = NULLIF(?, ''), periodicity = NULLIF(?, ''), channels_text = NULLIF(?, ''),
+				beneficiaries = NULLIF(?, ''), receiving_authorities = NULLIF(?, ''), format = NULLIF(?, ''),
+				legal_risks_text = NULLIF(?, ''), general_info = NULLIF(?, ''),
+				deadline_config_json = CAST(? AS JSON), legal_bases_json = CAST(? AS JSON),
+				checklist_json = CAST(? AS JSON), tags_json = CAST(? AS JSON),
+				applicability_rules_json = CAST(? AS JSON), change_note = NULLIF(?, ''),
+				updated_by = ?, is_released = 0
 			WHERE type_id = ? AND version_no = ?
-		`, versionDescription, req.TypeID, nextVersion); err != nil {
+		`, req.Name, req.Category, req.TemplateCategory, req.DeadlineStrategy,
+			req.LegalBasis, req.Applicability, req.ImplementationContent, req.ImplementationNotes, req.SpecialCases, req.ReportContent,
+			req.RequiredDocs, req.DeadlineRule, req.Periodicity, req.ChannelsText, req.Beneficiaries, req.ReceivingAuthorities,
+			req.Format, req.LegalRisksText, req.GeneralInfo, string(deadlineConfigJSON), string(legalBasesJSON), string(checklistJSON), string(tagsJSON), string(applicabilityRulesJSON), changeNote, req.Subject.UserID,
+			req.TypeID, targetVersion); err != nil {
 			return nil, err
 		}
+		if versionDescription != "" {
+			if _, err := tx.ExecContext(ctx, `
+				UPDATE disclosure_type_versions SET description = ?
+				WHERE type_id = ? AND version_no = ?
+			`, versionDescription, req.TypeID, targetVersion); err != nil {
+				return nil, err
+			}
+		}
+		if _, err := tx.ExecContext(ctx, `
+			DELETE FROM disclosure_template_blocks WHERE type_id = ? AND version_no = ?
+		`, req.TypeID, targetVersion); err != nil {
+			return nil, err
+		}
+	} else {
+		var maxVersion sql.NullInt64
+		if err := tx.QueryRowContext(ctx, `
+			SELECT COALESCE(MAX(version_no), 0) FROM disclosure_type_versions WHERE type_id = ?
+		`, req.TypeID).Scan(&maxVersion); err != nil {
+			return nil, err
+		}
+		targetVersion = int(maxVersion.Int64) + 1
+		if targetVersion < 1 {
+			targetVersion = 1
+		}
+		isReleased := 0
+		if nextIsActive {
+			isReleased = 1
+		}
+		// Insert with empty description first: combined INSERT packet can exceed max_allowed_packet.
+		_, err = tx.ExecContext(ctx, `
+			INSERT INTO disclosure_type_versions (
+				type_id, version_no, name, category, template_category, deadline_strategy, description, legal_basis, applicability, implementation_content,
+				implementation_notes, special_cases, report_content, required_docs, deadline_rule, periodicity, channels_text,
+				beneficiaries, receiving_authorities, format, legal_risks_text, general_info, deadline_config_json, legal_bases_json, checklist_json, tags_json, applicability_rules_json, change_note, is_released, updated_by, activated_at
+			) VALUES (?, ?, ?, ?, ?, ?, '', NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
+			          NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
+			          NULLIF(?, ''), NULLIF(?, ''), CAST(? AS JSON), CAST(? AS JSON), CAST(? AS JSON), CAST(? AS JSON), CAST(? AS JSON), NULLIF(?, ''), ?, ?, ?)
+		`, req.TypeID, targetVersion, req.Name, req.Category, req.TemplateCategory, req.DeadlineStrategy,
+			req.LegalBasis, req.Applicability, req.ImplementationContent, req.ImplementationNotes, req.SpecialCases, req.ReportContent,
+			req.RequiredDocs, req.DeadlineRule, req.Periodicity, req.ChannelsText, req.Beneficiaries, req.ReceivingAuthorities,
+			req.Format, req.LegalRisksText, req.GeneralInfo, string(deadlineConfigJSON), string(legalBasesJSON), string(checklistJSON), string(tagsJSON), string(applicabilityRulesJSON), changeNote, isReleased, req.Subject.UserID, now)
+		if err != nil {
+			return nil, err
+		}
+		if versionDescription != "" {
+			if _, err := tx.ExecContext(ctx, `
+				UPDATE disclosure_type_versions SET description = ?
+				WHERE type_id = ? AND version_no = ?
+			`, versionDescription, req.TypeID, targetVersion); err != nil {
+				return nil, err
+			}
+		}
 	}
+
 	for _, block := range blocks {
 		configJSON, err := json.Marshal(block.Config)
 		if err != nil {
@@ -942,21 +1005,20 @@ func (r *Repository) UpsertTypeVersion(ctx context.Context, req disclosureapp.Up
 			INSERT INTO disclosure_template_blocks (
 				type_id, version_no, block_id, block_key, block_type, title, name_en, name_vi, description, config_json, validation_json, display_order, enabled
 			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS JSON), CAST(? AS JSON), ?, ?)
-		`, req.TypeID, nextVersion, block.BlockID, block.BlockKey, block.BlockType, title, nullIfBlank(nameEn), nullIfBlank(nameVi), nullIfBlank(desc), string(configJSON), string(validationJSON), block.DisplayOrder, block.Enabled); err != nil {
+		`, req.TypeID, targetVersion, block.BlockID, block.BlockKey, block.BlockType, title, nullIfBlank(nameEn), nullIfBlank(nameVi), nullIfBlank(desc), string(configJSON), string(validationJSON), block.DisplayOrder, block.Enabled); err != nil {
 			return nil, err
 		}
 	}
-	activeVersionNo := 0
+
+	persistedActive := activeVersionNo
 	if nextIsActive {
-		activeVersionNo = nextVersion
-	} else if currentVersion.Valid {
-		activeVersionNo = int(currentVersion.Int64)
+		persistedActive = targetVersion
 	}
 	_, err = tx.ExecContext(ctx, `
 		UPDATE disclosure_types
 		SET group_id = ?, active_version_no = ?, status = 'active', updated_at = CURRENT_TIMESTAMP
 		WHERE type_id = ?
-	`, groupID, activeVersionNo, req.TypeID)
+	`, groupID, persistedActive, req.TypeID)
 	if err != nil {
 		return nil, err
 	}
@@ -968,7 +1030,7 @@ func (r *Repository) UpsertTypeVersion(ctx context.Context, req disclosureapp.Up
 	}
 	return &disclosureapp.UpsertTypeVersionResponse{
 		TypeID:      req.TypeID,
-		VersionNo:   nextVersion,
+		VersionNo:   targetVersion,
 		IsActive:    nextIsActive,
 		UpdatedBy:   req.Subject.UserID,
 		ActivatedAt: now,
@@ -977,10 +1039,23 @@ func (r *Repository) UpsertTypeVersion(ctx context.Context, req disclosureapp.Up
 
 func (r *Repository) ListTypeVersions(ctx context.Context, companyID, typeID string) ([]disclosureapp.DisclosureTypeVersionDTO, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT v.type_id, v.version_no, (v.version_no = t.active_version_no) AS is_active, COALESCE(v.change_note, ''), v.updated_by, v.activated_at
+		SELECT v.type_id, v.version_no,
+		       (v.version_no = t.active_version_no) AS is_active,
+		       COALESCE(v.is_released, 0) AS is_released,
+		       COALESCE(v.change_note, ''), v.updated_by, v.activated_at
 		FROM disclosure_type_versions v
 		INNER JOIN disclosure_types t ON t.type_id = v.type_id
 		WHERE v.type_id = ? AND (t.company_id IS NULL OR t.company_id = ?)
+		  AND (
+		    v.version_no = t.active_version_no
+		    OR COALESCE(v.is_released, 0) = 1
+		    OR v.version_no = (
+		      SELECT MAX(v2.version_no) FROM disclosure_type_versions v2
+		      WHERE v2.type_id = v.type_id
+		        AND v2.version_no <> t.active_version_no
+		        AND COALESCE(v2.is_released, 0) = 0
+		    )
+		  )
 		ORDER BY v.version_no DESC
 	`, typeID, companyID)
 	if err != nil {
@@ -990,9 +1065,11 @@ func (r *Repository) ListTypeVersions(ctx context.Context, companyID, typeID str
 	out := make([]disclosureapp.DisclosureTypeVersionDTO, 0)
 	for rows.Next() {
 		var item disclosureapp.DisclosureTypeVersionDTO
-		if err := rows.Scan(&item.TypeID, &item.VersionNo, &item.IsActive, &item.ChangeNote, &item.UpdatedBy, &item.ActivatedAt); err != nil {
+		var isReleased int
+		if err := rows.Scan(&item.TypeID, &item.VersionNo, &item.IsActive, &isReleased, &item.ChangeNote, &item.UpdatedBy, &item.ActivatedAt); err != nil {
 			return nil, err
 		}
+		item.IsReleased = isReleased == 1
 		out = append(out, item)
 	}
 	if len(out) == 0 {
@@ -1031,9 +1108,10 @@ func (r *Repository) ActivateTypeVersion(ctx context.Context, req disclosureapp.
 	_, err = tx.ExecContext(ctx, `
 		UPDATE disclosure_type_versions
 		SET updated_by = CASE WHEN version_no = ? THEN ? ELSE updated_by END,
-		    activated_at = CASE WHEN version_no = ? THEN ? ELSE activated_at END
+		    activated_at = CASE WHEN version_no = ? THEN ? ELSE activated_at END,
+		    is_released = CASE WHEN version_no = ? THEN 1 ELSE is_released END
 		WHERE type_id = ?
-	`, req.VersionNo, req.Subject.UserID, req.VersionNo, now, req.TypeID)
+	`, req.VersionNo, req.Subject.UserID, req.VersionNo, now, req.VersionNo, req.TypeID)
 	if err != nil {
 		return nil, err
 	}

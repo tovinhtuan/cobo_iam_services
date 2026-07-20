@@ -13,9 +13,7 @@ func Normalize(entry auditapp.Entry) TimelineEvent {
 		UserID:       strings.TrimSpace(entry.ActorUserID),
 		MembershipID: strings.TrimSpace(entry.ActorMembershipID),
 	}
-	if actor.UserID != "" {
-		actor.Display = actor.UserID
-	}
+	// Do not mirror UUID into Display — FE shows a friendly fallback when empty.
 	ev := TimelineEvent{
 		ID:           entry.EventID,
 		OccurredAt:   entry.OccurredAt,

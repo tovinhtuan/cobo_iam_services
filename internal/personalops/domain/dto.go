@@ -9,6 +9,7 @@ type OverviewResponse struct {
 	RoleAssignments  []RoleAssignment     `json:"role_assignments"`
 	AdminScopes      []AdminScope         `json:"admin_scopes"`
 	Activities       []ActivityItem       `json:"activities"`
+	ActivityLog      []ActivityItem       `json:"activity_log"`
 	Meta             MetaBlock            `json:"meta"`
 }
 
@@ -98,12 +99,16 @@ type AdminScope struct {
 }
 
 type ActivityItem struct {
-	ID          string `json:"id"`
-	Title       string `json:"title"`
-	Description string `json:"description,omitempty"`
-	CreatedAt   string `json:"created_at"`
-	Href        string `json:"href"`
-	Source      string `json:"source"`
+	ID           string `json:"id"`
+	Title        string `json:"title"`
+	Description  string `json:"description,omitempty"`
+	CreatedAt    string `json:"created_at"`
+	Href         string `json:"href"`
+	Source       string `json:"source"`
+	Action       string `json:"action,omitempty"`
+	ResourceType string `json:"resource_type,omitempty"`
+	ResourceID   string `json:"resource_id,omitempty"`
+	Domain       string `json:"domain,omitempty"`
 }
 
 type Warning struct {

@@ -9,6 +9,8 @@ import (
 	"time"
 
 	authapp "github.com/cobo/cobo_iam_services/internal/authorization/app"
+	auditapp "github.com/cobo/cobo_iam_services/internal/audit/app"
+	"github.com/cobo/cobo_iam_services/internal/audit/timeline"
 	caapp "github.com/cobo/cobo_iam_services/internal/companyaccess/app"
 	iamapp "github.com/cobo/cobo_iam_services/internal/iam/app"
 	inappapp "github.com/cobo/cobo_iam_services/internal/inappnotification/app"
@@ -49,6 +51,10 @@ type InAppLister interface {
 	List(ctx context.Context, userID, companyID string) ([]inappapp.InAppNotification, error)
 }
 
+type AuditLister interface {
+	ListFiltered(ctx context.Context, filter auditapp.ListFilter) ([]auditapp.Entry, error)
+}
+
 type service struct {
 	members   caapp.MembershipQueryService
 	mine      MineRepository
@@ -58,6 +64,7 @@ type service struct {
 	emailVer  EmailVerifiedReader // optional
 	auth      Authorizer // optional — admin scopes
 	inApp     InAppLister // optional
+	audit     AuditLister // optional — personal activity log
 	clock     Clock
 	loc       *time.Location
 }
@@ -98,8 +105,12 @@ func WithAvatarURLReader(a AvatarURLReader) Option {
 	return func(s *service) { s.avatar = a }
 }
 
-func WithEmailVerifiedReader(e EmailVerifiedReader) Option {
-	return func(s *service) { s.emailVer = e }
+func WithInAppLister(l InAppLister) Option {
+	return func(s *service) { s.inApp = l }
+}
+
+func WithAuditLister(a AuditLister) Option {
+	return func(s *service) { s.audit = a }
 }
 
 func WithClock(c Clock) Option {
@@ -266,7 +277,7 @@ func (s *service) GetOperationalOverview(ctx context.Context, sub Subject) (*dom
 	partial = true // forward-only outcome + workflow due absent remain non-blocking gaps
 
 	myTasks := s.buildMyTasks(mineTasks, now)
-	activities, actPartial, actWarn := s.buildActivities(ctx, sub.UserID, active, sub.CompanyID)
+	activities, actPartial, actWarn := s.buildReportActivities(ctx, sub.UserID, active, sub.CompanyID)
 	if actPartial {
 		partial = true
 	}
@@ -274,6 +285,15 @@ func (s *service) GetOperationalOverview(ctx context.Context, sub Subject) (*dom
 		warnings = append(warnings, *actWarn)
 	} else if s.inApp != nil {
 		sources = append(sources, "in_app_notifications")
+	}
+	activityLog, logPartial, logWarn := s.buildActivityLog(ctx, sub.UserID)
+	if logPartial {
+		partial = true
+	}
+	if logWarn != nil {
+		warnings = append(warnings, *logWarn)
+	} else if s.audit != nil {
+		sources = append(sources, "audit_logs")
 	}
 
 	var assignedMetric, overdueMetric domain.Metric
@@ -299,6 +319,7 @@ func (s *service) GetOperationalOverview(ctx context.Context, sub Subject) (*dom
 		RoleAssignments:  roleAssignments,
 		AdminScopes:      adminScopes,
 		Activities:       activities,
+		ActivityLog:      activityLog,
 		Meta: domain.MetaBlock{
 			GeneratedAt: now.UTC().Format(time.RFC3339),
 			Partial:     partial,
@@ -559,7 +580,7 @@ func (s *service) buildMyTasks(tasks []MineTask, now time.Time) []domain.MyTaskI
 	return out
 }
 
-func (s *service) buildActivities(ctx context.Context, userID string, active []caapp.MembershipView, preferredCompanyID string) ([]domain.ActivityItem, bool, *domain.Warning) {
+func (s *service) buildReportActivities(ctx context.Context, userID string, active []caapp.MembershipView, preferredCompanyID string) ([]domain.ActivityItem, bool, *domain.Warning) {
 	if s.inApp == nil {
 		w := warn("activities_unavailable", "Nguồn in-app notifications không sẵn sàng.")
 		return []domain.ActivityItem{}, true, &w
@@ -589,6 +610,9 @@ func (s *service) buildActivities(ctx context.Context, userID string, active []c
 			if len(collected) >= activitiesLimit {
 				break
 			}
+			if !isReportRelatedNotification(n) {
+				continue
+			}
 			href := "/app/profile"
 			if n.ResourceType != nil && n.ResourceID != nil &&
 				strings.EqualFold(strings.TrimSpace(*n.ResourceType), inappapp.ResourceTypeDisclosure) {
@@ -605,14 +629,75 @@ func (s *service) buildActivities(ctx context.Context, userID string, active []c
 		}
 	}
 	if firstErr != nil && len(collected) == 0 {
-		w := warn("activities_unavailable", "Không tải được hoạt động gần đây.")
+		w := warn("activities_unavailable", "Không tải được hoạt động báo cáo gần đây.")
 		return []domain.ActivityItem{}, true, &w
 	}
 	if firstErr != nil {
-		w := warn("activities_partial", "Một phần hoạt động theo công ty không tải được.")
+		w := warn("activities_partial", "Một phần hoạt động báo cáo theo công ty không tải được.")
 		return collected, true, &w
 	}
 	return collected, false, nil
+}
+
+func isReportRelatedNotification(n inappapp.InAppNotification) bool {
+	kind := strings.ToLower(strings.TrimSpace(n.Kind))
+	switch {
+	case strings.HasPrefix(kind, "reminder."):
+		return true
+	case strings.HasPrefix(kind, "adhoc."):
+		return true
+	case strings.HasPrefix(kind, "disclosure."):
+		return true
+	case strings.HasPrefix(kind, "workflow."):
+		return true
+	case strings.HasPrefix(kind, "deadline."):
+		return true
+	}
+	if n.ResourceType != nil {
+		rt := strings.ToLower(strings.TrimSpace(*n.ResourceType))
+		if rt == inappapp.ResourceTypeDisclosure || rt == inappapp.ResourceTypeAdHocProposal {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *service) buildActivityLog(ctx context.Context, userID string) ([]domain.ActivityItem, bool, *domain.Warning) {
+	if s.audit == nil {
+		w := warn("activity_log_unavailable", "Nguồn audit log không sẵn sàng.")
+		return []domain.ActivityItem{}, true, &w
+	}
+	entries, err := s.audit.ListFiltered(ctx, auditapp.ListFilter{
+		ActorUserID: strings.TrimSpace(userID),
+		Limit:       activitiesLimit,
+	})
+	if err != nil {
+		w := warn("activity_log_unavailable", "Không tải được lịch sử thao tác của bạn.")
+		return []domain.ActivityItem{}, true, &w
+	}
+	out := make([]domain.ActivityItem, 0, len(entries))
+	for _, e := range entries {
+		title := timeline.SummaryForAction(e.Action)
+		desc := timeline.FriendlyDescription(e.Action, e.ResourceType)
+		href := timeline.ActionLinkFor(e.Action)
+		// Profile history deep-links into admin audit with a back marker when a link exists.
+		if href == "/app/admin/audit" {
+			href = "/app/admin/audit?from=profile-history"
+		}
+		out = append(out, domain.ActivityItem{
+			ID:           e.EventID,
+			Title:        title,
+			Description:  desc,
+			CreatedAt:    e.OccurredAt,
+			Href:         href,
+			Source:       "audit_logs",
+			Action:       e.Action,
+			ResourceType: e.ResourceType,
+			ResourceID:   e.ResourceID,
+			Domain:       timeline.DomainForAction(e.Action),
+		})
+	}
+	return out, false, nil
 }
 
 func ensureEmptySlices(resp *domain.OverviewResponse) {
@@ -630,6 +715,9 @@ func ensureEmptySlices(resp *domain.OverviewResponse) {
 	}
 	if resp.Activities == nil {
 		resp.Activities = []domain.ActivityItem{}
+	}
+	if resp.ActivityLog == nil {
+		resp.ActivityLog = []domain.ActivityItem{}
 	}
 	if resp.Meta.Warnings == nil {
 		resp.Meta.Warnings = []domain.Warning{}

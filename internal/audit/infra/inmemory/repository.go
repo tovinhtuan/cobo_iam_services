@@ -48,6 +48,7 @@ func (r *Repository) ListFiltered(_ context.Context, filter auditapp.ListFilter)
 	toTime, hasTo := parseRFC3339(filter.ToOccurredAt)
 	cursorTime, hasCursor := parseRFC3339(filter.Cursor)
 	companyID := strings.TrimSpace(filter.CompanyID)
+	actorUserID := strings.TrimSpace(filter.ActorUserID)
 	action := strings.TrimSpace(filter.Action)
 	resourceType := strings.TrimSpace(filter.ResourceType)
 	resourceID := strings.TrimSpace(filter.ResourceID)
@@ -64,6 +65,9 @@ func (r *Repository) ListFiltered(_ context.Context, filter auditapp.ListFilter)
 			continue
 		}
 		if companyID != "" && !strings.EqualFold(strings.TrimSpace(item.CompanyID), companyID) {
+			continue
+		}
+		if actorUserID != "" && !strings.EqualFold(strings.TrimSpace(item.ActorUserID), actorUserID) {
 			continue
 		}
 		if !matchActionFilter(item.Action, action, filter.ActionPrefix, filter.RequireAdminPrefix) {

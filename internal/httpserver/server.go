@@ -646,6 +646,7 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 	personalOpsOpts := []personalopsapp.Option{
 		personalopsapp.WithContactReader(personalopsContactAdapter{profiles: adminRepo}),
 		personalopsapp.WithAvatarURLReader(personalopsAvatarAdapter{avatars: avatarSvc, baseURL: cfg.PublicAPIBaseURL}),
+		personalopsapp.WithAuditLister(auditRepo),
 	}
 	personalOpsSvc := personalopsapp.NewService(memberQuery, personalOpsMine, identity, authSvc, inAppSvc, personalOpsOpts...)
 	personalOpsHandler := personalopshttp.NewHandler(log, personalOpsSvc, tokenManager)

@@ -1,3 +1,9 @@
+## 2026-07-20 - Portal profile/audit UX + back navigation
+- task type: cross-repo UX (audit labels + personalops activity_log copy)
+- implemented: timeline knownActions (`login_success`, `select_company`, `cms_workflow.*`); FriendlyDescription; Normalize no UUID display; activity_log optional action/resource fields
+- paired FE: ../cobo_web_design/docs/ai-cache/portal-profile-audit-ux-back-navigation-2026-07-17/
+- verify: go timeline/personalops PASS; docker api build PASS; DEV deploy all PASS; security 401/401
+
 ## 2026-07-15 - CMS Workflow step reorder + description/instructions
 - BE: mig 0121 global_workflow_steps.description; wired in cms_repository/cms_service
 - FE evidence: ../cobo_web_design/docs/ai-cache/cms-workflow-step-reorder-description-instructions-2026-07-10/

@@ -100,6 +100,7 @@ func NewRepository() *Repository {
 				TypeID:      item.TypeID,
 				VersionNo:   1,
 				IsActive:    true,
+				IsReleased:  true,
 				ChangeNote:  "seed",
 				UpdatedBy:   "system",
 				ActivatedAt: time.Now().UTC(),
@@ -439,12 +440,35 @@ func (r *Repository) UpsertTypeVersion(_ context.Context, req disclosureapp.Upse
 	defer r.mu.Unlock()
 
 	current, existed := r.catalog[req.TypeID]
-	versionNo := 1
+	activeVersionNo := 0
 	for _, ver := range r.versions[req.TypeID] {
-		if ver.VersionNo >= versionNo {
-			versionNo = ver.VersionNo + 1
+		if ver.IsActive {
+			activeVersionNo = ver.VersionNo
+			break
 		}
 	}
+	nextIsActive := !existed || activeVersionNo <= 0
+
+	openDraftNo := 0
+	if existed && activeVersionNo > 0 {
+		for _, ver := range r.versions[req.TypeID] {
+			if ver.VersionNo != activeVersionNo && !ver.IsReleased && ver.VersionNo > openDraftNo {
+				openDraftNo = ver.VersionNo
+			}
+		}
+	}
+
+	overwriteDraft := openDraftNo > 0 && !nextIsActive
+	versionNo := openDraftNo
+	if !overwriteDraft {
+		versionNo = 1
+		for _, ver := range r.versions[req.TypeID] {
+			if ver.VersionNo >= versionNo {
+				versionNo = ver.VersionNo + 1
+			}
+		}
+	}
+
 	next := disclosureapp.DisclosureTypeDTO{
 		VersionNo:             versionNo,
 		TypeID:                req.TypeID,
@@ -492,25 +516,41 @@ func (r *Repository) UpsertTypeVersion(_ context.Context, req disclosureapp.Upse
 		r.catalogScope[req.TypeID] = "global"
 	}
 
-	nextIsActive := !existed
 	vs := r.versions[req.TypeID]
-	if nextIsActive {
-		for i := range vs {
-			vs[i].IsActive = false
-		}
-	}
 	now := time.Now().UTC()
-	vs = append(vs, disclosureapp.DisclosureTypeVersionDTO{
-		TypeID:      req.TypeID,
-		VersionNo:   versionNo,
-		IsActive:    nextIsActive,
-		ChangeNote:  strings.TrimSpace(req.ChangeNote),
-		UpdatedBy:   req.Subject.UserID,
-		ActivatedAt: now,
-	})
-	r.versions[req.TypeID] = vs
-	if !nextIsActive && existed {
-		r.catalog[req.TypeID] = current
+	if overwriteDraft {
+		for i := range vs {
+			if vs[i].VersionNo == versionNo {
+				vs[i].ChangeNote = strings.TrimSpace(req.ChangeNote)
+				vs[i].UpdatedBy = req.Subject.UserID
+				vs[i].ActivatedAt = now
+				vs[i].IsReleased = false
+				vs[i].IsActive = false
+			}
+		}
+		r.versions[req.TypeID] = vs
+		if existed {
+			r.catalog[req.TypeID] = current
+		}
+	} else {
+		if nextIsActive {
+			for i := range vs {
+				vs[i].IsActive = false
+			}
+		}
+		vs = append(vs, disclosureapp.DisclosureTypeVersionDTO{
+			TypeID:      req.TypeID,
+			VersionNo:   versionNo,
+			IsActive:    nextIsActive,
+			IsReleased:  nextIsActive,
+			ChangeNote:  strings.TrimSpace(req.ChangeNote),
+			UpdatedBy:   req.Subject.UserID,
+			ActivatedAt: now,
+		})
+		r.versions[req.TypeID] = vs
+		if !nextIsActive && existed {
+			r.catalog[req.TypeID] = current
+		}
 	}
 
 	return &disclosureapp.UpsertTypeVersionResponse{
@@ -546,12 +586,28 @@ func (r *Repository) ListTypeVersions(_ context.Context, companyID, typeID strin
 		return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "disclosure type not found", nil)
 	}
 	vs := r.versions[typeID]
-	out := make([]disclosureapp.DisclosureTypeVersionDTO, len(vs))
-	copy(out, vs)
-	slices.SortFunc(out, func(a, b disclosureapp.DisclosureTypeVersionDTO) int {
+	activeNo := 0
+	openDraftNo := 0
+	for _, ver := range vs {
+		if ver.IsActive {
+			activeNo = ver.VersionNo
+		}
+	}
+	for _, ver := range vs {
+		if ver.VersionNo != activeNo && !ver.IsReleased && ver.VersionNo > openDraftNo {
+			openDraftNo = ver.VersionNo
+		}
+	}
+	filtered := make([]disclosureapp.DisclosureTypeVersionDTO, 0, len(vs))
+	for _, ver := range vs {
+		if ver.IsActive || ver.IsReleased || ver.VersionNo == openDraftNo {
+			filtered = append(filtered, ver)
+		}
+	}
+	slices.SortFunc(filtered, func(a, b disclosureapp.DisclosureTypeVersionDTO) int {
 		return b.VersionNo - a.VersionNo
 	})
-	return out, nil
+	return filtered, nil
 }
 
 func (r *Repository) ActivateTypeVersion(_ context.Context, req disclosureapp.ActivateTypeVersionRequest) (*disclosureapp.ActivateTypeVersionResponse, error) {
@@ -577,6 +633,7 @@ func (r *Repository) ActivateTypeVersion(_ context.Context, req disclosureapp.Ac
 	}
 	now := time.Now().UTC()
 	vs[target].IsActive = true
+	vs[target].IsReleased = true
 	vs[target].UpdatedBy = req.Subject.UserID
 	vs[target].ActivatedAt = now
 	r.versions[req.TypeID] = vs

@@ -112,6 +112,7 @@ func (r *Repository) ListFiltered(ctx context.Context, filter auditapp.ListFilte
 
 	args := []any{
 		companyID, companyID,
+		strings.TrimSpace(filter.ActorUserID), strings.TrimSpace(filter.ActorUserID),
 		resourceType, resourceType,
 		resourceID, resourceID,
 		fromOccurredAt, fromOccurredAt,
@@ -128,6 +129,7 @@ func (r *Repository) ListFiltered(ctx context.Context, filter auditapp.ListFilte
 		       effective_permissions_snapshot, effective_scope_snapshot, metadata_json
 		FROM audit_logs
 		WHERE (? = '' OR company_id = ?)
+		  AND (? = '' OR actor_user_id = ?)
 		  AND (? = '' OR resource_type = ?)
 		  AND (? = '' OR resource_id = ?)
 		  AND (? = '' OR occurred_at >= ?)

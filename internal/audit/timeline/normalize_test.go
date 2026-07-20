@@ -1,6 +1,7 @@
 package timeline_test
 
 import (
+	"strings"
 	"testing"
 
 	auditapp "github.com/cobo/cobo_iam_services/internal/audit/app"
@@ -26,8 +27,27 @@ func TestNormalizeKnownAction(t *testing.T) {
 
 func TestNormalizeUnknownAction(t *testing.T) {
 	ev := timeline.Normalize(auditapp.Entry{Action: "admin.custom.thing"})
-	if ev.Summary != "Thay đổi cấu hình" || ev.Category != "configuration_change" {
+	if ev.Summary != "Hoạt động hệ thống" || ev.Category != "configuration_change" {
 		t.Fatalf("unexpected: %+v", ev)
+	}
+	if ev.Actor.Display != "" {
+		t.Fatalf("actor display must not mirror raw user id, got %q", ev.Actor.Display)
+	}
+}
+
+func TestSummaryForAuthAndCmsActions(t *testing.T) {
+	if got := timeline.SummaryForAction("login_success"); got != "Đăng nhập thành công" {
+		t.Fatalf("login_success: %q", got)
+	}
+	if got := timeline.SummaryForAction("select_company"); got != "Chuyển công ty đang làm việc" {
+		t.Fatalf("select_company: %q", got)
+	}
+	if got := timeline.SummaryForAction("cms_workflow.upsert"); got != "Cập nhật workflow mẫu" {
+		t.Fatalf("cms_workflow.upsert: %q", got)
+	}
+	desc := timeline.FriendlyDescription("cms_workflow.upsert", "disclosure_type")
+	if !strings.Contains(desc, "workflow") || strings.Contains(desc, "disclosure_type") {
+		t.Fatalf("friendly desc should be humanized, got %q", desc)
 	}
 }
 
