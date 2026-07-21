@@ -42,6 +42,7 @@ func (r *AdminRepository) ListRoles(ctx context.Context, companyID string) ([]ca
 	companyID = strings.TrimSpace(companyID)
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT r.role_id, r.role_code, r.role_name, r.status, r.company_id,
+		       r.role_type, r.is_protected, r.description,
 		       r.created_at, r.updated_at,
 		       COALESCE(pc.cnt, 0) AS permission_count,
 		       COALESCE(mc.cnt, 0) AS member_count
@@ -72,14 +73,22 @@ func (r *AdminRepository) ListRoles(ctx context.Context, companyID string) ([]ca
 	for rows.Next() {
 		var item caapp.RoleListItem
 		var companyIDNull sql.NullString
+		var descriptionNull sql.NullString
+		var isProtected int
 		if err := rows.Scan(
 			&item.RoleID, &item.RoleCode, &item.RoleName, &item.Status, &companyIDNull,
+			&item.RoleType, &isProtected, &descriptionNull,
 			&item.CreatedAt, &item.UpdatedAt,
 			&item.PermissionCount, &item.MemberCount,
 		); err != nil {
 			return nil, err
 		}
-		item.Description = ""
+		item.IsProtected = isProtected != 0
+		if descriptionNull.Valid {
+			item.Description = descriptionNull.String
+		} else {
+			item.Description = ""
+		}
 		if companyIDNull.Valid && strings.TrimSpace(companyIDNull.String) != "" {
 			item.Scope = "company"
 			item.IsBuiltin = false
@@ -89,6 +98,7 @@ func (r *AdminRepository) ListRoles(ctx context.Context, companyID string) ([]ca
 		}
 		item.CreatedAt = item.CreatedAt.UTC()
 		item.UpdatedAt = item.UpdatedAt.UTC()
+		caapp.FinalizeRoleListItem(&item)
 		out = append(out, item)
 	}
 	return out, rows.Err()

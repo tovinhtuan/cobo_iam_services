@@ -11,6 +11,11 @@ import (
 
 func TestAdminService_ListRolesPermissionsStructured(t *testing.T) {
 	repo := cainmem.NewAdminRepository()
+	repo.SeedRole(caapp.RoleListItem{
+		RoleID: "custom_test", RoleCode: "custom_test", RoleName: "Custom",
+		Status: "active", Scope: "company",
+		RoleType: caapp.RoleTypeTenantCustom, IsProtected: false, IsBuiltin: false,
+	})
 	svc := caapp.NewAdminService(
 		repo,
 		fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{"rbac.manage", "system.settings"}},
@@ -33,21 +38,35 @@ func TestAdminService_ListRolesPermissionsStructured(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListRoles: %v", err)
 	}
-	if len(roles) == 0 {
-		t.Fatal("expected roles")
+	var customRoleID string
+	for _, r := range roles {
+		if r.RoleType == caapp.RoleTypeTenantCustom && !r.IsProtected {
+			customRoleID = r.RoleID
+			break
+		}
 	}
-	if roles[0].RoleID == "" || roles[0].RoleCode == "" {
-		t.Fatalf("unexpected role item: %+v", roles[0])
+	if customRoleID == "" {
+		t.Fatal("expected unprotected custom role")
 	}
 
-	roleID := roles[0].RoleID
+	var permID string
+	for _, p := range perms {
+		if p.PermissionCode == "disclosure.view" {
+			permID = p.PermissionID
+			break
+		}
+	}
+	if permID == "" {
+		t.Fatal("expected disclosure.view permission")
+	}
+
 	if err := svc.AssignRolePermission(context.Background(), caapp.AssignRolePermissionRequest{
-		Subject: sub, RoleID: roleID, PermissionID: perms[0].PermissionID,
+		Subject: sub, RoleID: customRoleID, PermissionID: permID,
 	}); err != nil {
 		t.Fatalf("AssignRolePermission: %v", err)
 	}
 
-	matrix, err := svc.ListRolePermissions(context.Background(), caapp.ListRolePermissionsRequest{Subject: sub, RoleID: roleID})
+	matrix, err := svc.ListRolePermissions(context.Background(), caapp.ListRolePermissionsRequest{Subject: sub, RoleID: customRoleID})
 	if err != nil {
 		t.Fatalf("ListRolePermissions: %v", err)
 	}

@@ -79,6 +79,7 @@ func (h *AdminHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/v1/admin/memberships/{membership_id}/titles/{title_id}", h.removeTitle)
 	mux.HandleFunc("PUT /api/v1/admin/memberships/{membership_id}/org-assignments", h.updateMembershipOrgAssignments)
 	mux.HandleFunc("GET /api/v1/admin/permissions", h.listPermissions)
+	mux.HandleFunc("GET /api/v1/admin/rbac/grantable-permissions", h.listGrantablePermissions)
 	mux.HandleFunc("GET /api/v1/admin/roles", h.listRoles)
 	mux.HandleFunc("GET /api/v1/admin/roles/{role_id}/permissions", h.listRolePermissions)
 	mux.HandleFunc("POST /api/v1/admin/roles/{role_id}/permissions", h.assignRolePermission)
@@ -518,6 +519,20 @@ func (h *AdminHandler) listPermissions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	items, err := h.svc.ListPermissions(r.Context(), caapp.AdminSubjectRequest{Subject: sub})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (h *AdminHandler) listGrantablePermissions(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	items, err := h.svc.ListGrantablePermissions(r.Context(), caapp.AdminSubjectRequest{Subject: sub})
 	if err != nil {
 		httpx.WriteError(w, nil, err)
 		return

@@ -52,6 +52,7 @@ type AdminService interface {
 	RemoveTitleMember(ctx context.Context, req RemoveTitleMemberRequest) error
 
 	ListPermissions(ctx context.Context, req AdminSubjectRequest) ([]PermissionListItem, error)
+	ListGrantablePermissions(ctx context.Context, req AdminSubjectRequest) ([]GrantablePermissionItem, error)
 	ListRoles(ctx context.Context, req AdminSubjectRequest) ([]RoleListItem, error)
 	ListRolePermissions(ctx context.Context, req ListRolePermissionsRequest) (*RolePermissionsView, error)
 	AssignRolePermission(ctx context.Context, req AssignRolePermissionRequest) error

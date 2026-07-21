@@ -72,6 +72,35 @@ func buildScopeTestService(t *testing.T) (caapp.AdminService, *cainmem.AdminRepo
 	return svc, repo, sub
 }
 
+func seedUnprotectedCustomRole(repo *cainmem.AdminRepository) string {
+	roleID := "custom_ops_role"
+	repo.SeedRole(caapp.RoleListItem{
+		RoleID:      roleID,
+		RoleCode:    "custom_ops",
+		RoleName:    "Custom Ops",
+		Status:      "active",
+		Scope:       "company",
+		RoleType:    caapp.RoleTypeTenantCustom,
+		IsProtected: false,
+		IsBuiltin:   false,
+	})
+	return roleID
+}
+
+func assertProtectedRoleReadOnly(t *testing.T, err error) {
+	t.Helper()
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	he, ok := perr.AsHTTPError(err)
+	if !ok {
+		t.Fatalf("expected HTTPError, got %T: %v", err, err)
+	}
+	if he.Code != perr.CodeProtectedRoleReadOnly {
+		t.Errorf("expected protected_role_read_only, got %s", he.Code)
+	}
+}
+
 // TestListPermissions_NoCMSModule verifies enterprise RBAC matrix has no 'cms' module.
 func TestListPermissions_NoCMSModule(t *testing.T) {
 	svc, _, sub := buildScopeTestService(t)
@@ -149,19 +178,10 @@ func TestAssignRolePermission_RejectCMSTemplateRead(t *testing.T) {
 		RoleID:       roles[0].RoleID,
 		PermissionID: "cms.template.read",
 	})
-	if err == nil {
-		t.Fatal("expected error for CMS permission assignment, got nil")
-	}
-	he, ok := perr.AsHTTPError(err)
-	if !ok {
-		t.Fatalf("expected HTTPError, got %T: %v", err, err)
-	}
-	if he.Code != perr.CodePermissionOutOfEnterpriseScope {
-		t.Errorf("expected PERMISSION_OUT_OF_ENTERPRISE_SCOPE, got %s", he.Code)
-	}
+	assertProtectedRoleReadOnly(t, err)
 }
 
-// TestAssignRolePermission_RejectPlatformCmsView verifies platform.cms.view is rejected.
+// TestAssignRolePermission_RejectPlatformCmsView verifies platform.cms.view is rejected on protected role.
 func TestAssignRolePermission_RejectPlatformCmsView(t *testing.T) {
 	svc, _, sub := buildScopeTestService(t)
 	roles, _ := svc.ListRoles(context.Background(), caapp.AdminSubjectRequest{Subject: sub})
@@ -173,7 +193,7 @@ func TestAssignRolePermission_RejectPlatformCmsView(t *testing.T) {
 		RoleID:       roles[0].RoleID,
 		PermissionID: "platform.cms.view",
 	})
-	assertPermissionOutOfEnterpriseScope(t, err)
+	assertProtectedRoleReadOnly(t, err)
 }
 
 // TestAssignRolePermission_RejectDisclosureTypeConfigWrite verifies disclosure_type.config.write is rejected.
@@ -188,10 +208,10 @@ func TestAssignRolePermission_RejectDisclosureTypeConfigWrite(t *testing.T) {
 		RoleID:       roles[0].RoleID,
 		PermissionID: "disclosure_type.config.write",
 	})
-	assertPermissionOutOfEnterpriseScope(t, err)
+	assertProtectedRoleReadOnly(t, err)
 }
 
-// TestAssignRolePermission_AllBlockedCodesRejected checks every blocked code is rejected.
+// TestAssignRolePermission_AllBlockedCodesRejected checks protected role guard on default roles.
 func TestAssignRolePermission_AllBlockedCodesRejected(t *testing.T) {
 	svc, _, sub := buildScopeTestService(t)
 	roles, _ := svc.ListRoles(context.Background(), caapp.AdminSubjectRequest{Subject: sub})
@@ -205,44 +225,35 @@ func TestAssignRolePermission_AllBlockedCodesRejected(t *testing.T) {
 			RoleID:       roleID,
 			PermissionID: code,
 		})
-		if err == nil {
-			t.Errorf("assign %s: expected rejection, got nil", code)
-			continue
-		}
-		he, ok := perr.AsHTTPError(err)
-		if !ok || he.Code != perr.CodePermissionOutOfEnterpriseScope {
-			t.Errorf("assign %s: expected PERMISSION_OUT_OF_ENTERPRISE_SCOPE, got %v", code, err)
-		}
+		assertProtectedRoleReadOnly(t, err)
 	}
 }
 
-// TestAssignRolePermission_AcceptRbacManage verifies rbac.manage is accepted.
-func TestAssignRolePermission_AcceptRbacManage(t *testing.T) {
-	svc, _, sub := buildScopeTestService(t)
-	roles, _ := svc.ListRoles(context.Background(), caapp.AdminSubjectRequest{Subject: sub})
-	if len(roles) == 0 {
-		t.Fatal("no roles")
-	}
+// TestAssignRolePermission_RejectRbacManageOnCustomRole verifies rbac.manage is rejected on unprotected custom role.
+func TestAssignRolePermission_RejectRbacManageOnCustomRole(t *testing.T) {
+	svc, repo, sub := buildScopeTestService(t)
+	roleID := seedUnprotectedCustomRole(repo)
 	err := svc.AssignRolePermission(context.Background(), caapp.AssignRolePermissionRequest{
 		Subject:      sub,
-		RoleID:       roles[0].RoleID,
+		RoleID:       roleID,
 		PermissionID: "rbac.manage",
 	})
-	if err != nil {
-		t.Errorf("AssignRolePermission rbac.manage: unexpected error: %v", err)
+	if err == nil {
+		t.Fatal("expected rejection")
+	}
+	he, ok := perr.AsHTTPError(err)
+	if !ok || he.Code != perr.CodePermissionNotGrantable {
+		t.Fatalf("expected permission_not_grantable, got %v", err)
 	}
 }
 
-// TestAssignRolePermission_AcceptCompanyView verifies company.view is accepted.
+// TestAssignRolePermission_AcceptCompanyView verifies company.view is accepted on custom role.
 func TestAssignRolePermission_AcceptCompanyView(t *testing.T) {
-	svc, _, sub := buildScopeTestService(t)
-	roles, _ := svc.ListRoles(context.Background(), caapp.AdminSubjectRequest{Subject: sub})
-	if len(roles) == 0 {
-		t.Fatal("no roles")
-	}
+	svc, repo, sub := buildScopeTestService(t)
+	roleID := seedUnprotectedCustomRole(repo)
 	err := svc.AssignRolePermission(context.Background(), caapp.AssignRolePermissionRequest{
 		Subject:      sub,
-		RoleID:       roles[0].RoleID,
+		RoleID:       roleID,
 		PermissionID: "company.view",
 	})
 	if err != nil {
@@ -250,16 +261,13 @@ func TestAssignRolePermission_AcceptCompanyView(t *testing.T) {
 	}
 }
 
-// TestAssignRolePermission_AcceptDeptManage verifies dept.manage is accepted.
+// TestAssignRolePermission_AcceptDeptManage verifies dept.manage is accepted on custom role.
 func TestAssignRolePermission_AcceptDeptManage(t *testing.T) {
-	svc, _, sub := buildScopeTestService(t)
-	roles, _ := svc.ListRoles(context.Background(), caapp.AdminSubjectRequest{Subject: sub})
-	if len(roles) == 0 {
-		t.Fatal("no roles")
-	}
+	svc, repo, sub := buildScopeTestService(t)
+	roleID := seedUnprotectedCustomRole(repo)
 	err := svc.AssignRolePermission(context.Background(), caapp.AssignRolePermissionRequest{
 		Subject:      sub,
-		RoleID:       roles[0].RoleID,
+		RoleID:       roleID,
 		PermissionID: "dept.manage",
 	})
 	if err != nil {
@@ -270,14 +278,11 @@ func TestAssignRolePermission_AcceptDeptManage(t *testing.T) {
 // TestAssignRolePermission_AcceptDisclosureTypeManage verifies disclosure_type.manage is accepted
 // (enterprise permission — manage company's own disclosure types, NOT CMS config).
 func TestAssignRolePermission_AcceptDisclosureTypeManage(t *testing.T) {
-	svc, _, sub := buildScopeTestService(t)
-	roles, _ := svc.ListRoles(context.Background(), caapp.AdminSubjectRequest{Subject: sub})
-	if len(roles) == 0 {
-		t.Fatal("no roles")
-	}
+	svc, repo, sub := buildScopeTestService(t)
+	roleID := seedUnprotectedCustomRole(repo)
 	err := svc.AssignRolePermission(context.Background(), caapp.AssignRolePermissionRequest{
 		Subject:      sub,
-		RoleID:       roles[0].RoleID,
+		RoleID:       roleID,
 		PermissionID: "disclosure_type.manage",
 	})
 	if err != nil {
@@ -286,16 +291,13 @@ func TestAssignRolePermission_AcceptDisclosureTypeManage(t *testing.T) {
 }
 
 // TestAssignRolePermission_AcceptTemplateWorkflowOverrideRead verifies
-// template.workflow.override.read is accepted (enterprise override of company workflow templates).
+// template.workflow.override.read is accepted on custom role.
 func TestAssignRolePermission_AcceptTemplateWorkflowOverrideRead(t *testing.T) {
-	svc, _, sub := buildScopeTestService(t)
-	roles, _ := svc.ListRoles(context.Background(), caapp.AdminSubjectRequest{Subject: sub})
-	if len(roles) == 0 {
-		t.Fatal("no roles")
-	}
+	svc, repo, sub := buildScopeTestService(t)
+	roleID := seedUnprotectedCustomRole(repo)
 	err := svc.AssignRolePermission(context.Background(), caapp.AssignRolePermissionRequest{
 		Subject:      sub,
-		RoleID:       roles[0].RoleID,
+		RoleID:       roleID,
 		PermissionID: "template.workflow.override.read",
 	})
 	if err != nil {

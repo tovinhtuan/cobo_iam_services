@@ -64,6 +64,12 @@ const (
 	CodeApprovalRouted        Code = "APPROVAL_ROUTED"
 	// Enterprise RBAC scope boundary — permission belongs to CMS/Platform, not enterprise.
 	CodePermissionOutOfEnterpriseScope Code = "PERMISSION_OUT_OF_ENTERPRISE_SCOPE"
+	// RBAC Phase B — protected/default role mutation guard.
+	CodeProtectedRoleReadOnly Code = "protected_role_read_only"
+	// RBAC Phase B — permission tier not grantable on custom role matrix.
+	CodePermissionNotGrantable Code = "permission_not_grantable"
+	// RBAC Phase B — high-risk permission requires approval workflow (MVP: reject assign).
+	CodeHighRiskPermissionRequiresApproval Code = "high_risk_permission_requires_approval"
 )
 
 // HTTPError is returned to clients as JSON { "error": { ... } }.

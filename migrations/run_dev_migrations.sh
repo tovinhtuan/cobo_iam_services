@@ -122,6 +122,7 @@ seed_dev_identity_authorization.sql
 0119_workflow_tasks_assignee_status_index.up.sql
 0120_disclosure_records_completed_at.up.sql
 0121_workflow_step_description.up.sql
+0123_roles_classification.up.sql
 "
 
 mysql_exec() {

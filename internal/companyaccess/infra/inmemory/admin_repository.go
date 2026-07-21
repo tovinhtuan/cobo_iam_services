@@ -29,6 +29,7 @@ type AdminRepository struct {
 	permissions     map[string]struct{}
 	permissionMeta  map[string]caapp.PermissionListItem // code → full metadata (for tests)
 	roles           map[string]struct{}
+	roleMeta        map[string]caapp.RoleListItem // role_id → metadata (for tests)
 	rolePermissions map[string]map[string]struct{}
 
 	resourceScopeRules    []map[string]any
@@ -69,6 +70,7 @@ func NewAdminRepository() *AdminRepository {
 		permissions:             map[string]struct{}{"dashboard.view": {}, "disclosure.view": {}, "disclosure.approve": {}, "rbac.manage": {}, "system.settings": {}},
 		permissionMeta:          map[string]caapp.PermissionListItem{},
 		roles:                   map[string]struct{}{"company_admin": {}, "disclosure_approver": {}, "department_staff": {}},
+		roleMeta:                map[string]caapp.RoleListItem{},
 		rolePermissions:         map[string]map[string]struct{}{},
 		resourceScopeRules:      []map[string]any{},
 		workflowAssigneeRules:   []map[string]any{},
@@ -698,6 +700,18 @@ func (r *AdminRepository) SeedPermission(item caapp.PermissionListItem) {
 	r.permissionMeta[item.PermissionCode] = item
 }
 
+// SeedRole registers a role with classification metadata for RBAC mutation tests.
+func (r *AdminRepository) SeedRole(item caapp.RoleListItem) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	roleID := strings.TrimSpace(item.RoleID)
+	if roleID == "" {
+		return
+	}
+	r.roles[roleID] = struct{}{}
+	r.roleMeta[roleID] = item
+}
+
 func (r *AdminRepository) ListPermissions(_ context.Context) ([]caapp.PermissionListItem, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -736,7 +750,7 @@ func (r *AdminRepository) ListRoles(_ context.Context, companyID string) ([]caap
 		if perms, ok := r.rolePermissions[roleID]; ok {
 			permCount = len(perms)
 		}
-		out = append(out, caapp.RoleListItem{
+		item := caapp.RoleListItem{
 			RoleID:          roleID,
 			RoleCode:        roleID,
 			RoleName:        roleID,
@@ -747,9 +761,31 @@ func (r *AdminRepository) ListRoles(_ context.Context, companyID string) ([]caap
 			MemberCount:     memberCount,
 			CreatedAt:       now,
 			UpdatedAt:       now,
-		})
+		}
+		if meta, ok := r.roleMeta[roleID]; ok {
+			if meta.RoleCode != "" {
+				item.RoleCode = meta.RoleCode
+			}
+			if meta.RoleName != "" {
+				item.RoleName = meta.RoleName
+			}
+			if meta.Status != "" {
+				item.Status = meta.Status
+			}
+			if meta.Scope != "" {
+				item.Scope = meta.Scope
+			}
+			item.RoleType = meta.RoleType
+			item.IsProtected = meta.IsProtected
+			item.IsBuiltin = meta.IsBuiltin
+			item.Description = meta.Description
+		}
+		out = append(out, item)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].RoleCode < out[j].RoleCode })
+	for i := range out {
+		caapp.FinalizeRoleListItem(&out[i])
+	}
 	_ = companyID
 	return out, nil
 }

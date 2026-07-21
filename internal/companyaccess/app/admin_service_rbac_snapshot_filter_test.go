@@ -61,7 +61,19 @@ func seedSnapshotFilterAdmin(t *testing.T, repo *cainmem.AdminRepository) (caapp
 	// Legacy: directly add the blocked permission to the role bypassing the service filter
 	_ = repo.AddRolePermission(context.Background(), "company_admin", "perm_cms_template_read")
 
-	return sub, "perm_rbac_manage", "perm_cms_template_read"
+	repo.SeedRole(caapp.RoleListItem{
+		RoleID: "custom_sf_role", RoleCode: "custom_sf", RoleName: "Custom SF",
+		Status: "active", Scope: "company",
+		RoleType: caapp.RoleTypeTenantCustom, IsProtected: false, IsBuiltin: false,
+	})
+	repo.SeedPermission(caapp.PermissionListItem{
+		PermissionID:   "perm_disclosure_view",
+		PermissionCode: "disclosure.view",
+		PermissionName: "View disclosure",
+		ModuleName:     "disclosure",
+	})
+
+	return sub, "perm_disclosure_view", "perm_cms_template_read"
 }
 
 // TestRBACSnapshot_ExcludesCMSTemplateRead verifies that captureRBACMatrixVersion
@@ -73,7 +85,7 @@ func TestRBACSnapshot_ExcludesCMSTemplateRead(t *testing.T) {
 
 	// Trigger snapshot capture via AssignRolePermission (uses enterprise perm)
 	if err := svc.AssignRolePermission(context.Background(), caapp.AssignRolePermissionRequest{
-		Subject: sub, RoleID: "company_admin", PermissionID: enterprisePermID,
+		Subject: sub, RoleID: "custom_sf_role", PermissionID: enterprisePermID,
 	}); err != nil {
 		t.Fatalf("assign enterprise perm: %v", err)
 	}
@@ -152,14 +164,14 @@ func TestRBACRollback_DoesNotReintroduceCMSPermission(t *testing.T) {
 	// Step 1: Capture a snapshot while cms perm is "in DB" (legacy state).
 	// We do this by first triggering via AssignRolePermission on the enterprise perm.
 	if err := svc.AssignRolePermission(context.Background(), caapp.AssignRolePermissionRequest{
-		Subject: sub, RoleID: "company_admin", PermissionID: enterprisePermID,
+		Subject: sub, RoleID: "custom_sf_role", PermissionID: enterprisePermID,
 	}); err != nil {
 		t.Fatalf("assign: %v", err)
 	}
 
 	// Step 2: Remove the enterprise perm from the role so state changes.
 	if err := svc.RemoveRolePermission(context.Background(), caapp.RemoveRolePermissionRequest{
-		Subject: sub, RoleID: "company_admin", PermissionID: enterprisePermID,
+		Subject: sub, RoleID: "custom_sf_role", PermissionID: enterprisePermID,
 	}); err != nil {
 		t.Fatalf("remove: %v", err)
 	}
@@ -259,12 +271,16 @@ func TestFilterEnterpriseRBACSnapshotJSON_DirectPermissions(t *testing.T) {
 	assertSnapshotNoCMSPermissions(t, detail.SnapshotJSON, "post-rollback snapshot")
 }
 
-// TestAssignBlockedPermission_StillReturnsOutOfScope ensures that the prior
-// AssignRolePermission guard continues to work after the snapshot filter changes.
+// TestAssignBlockedPermission_StillReturnsOutOfScope ensures CMS permissions are rejected on custom role.
 func TestAssignBlockedPermission_StillReturnsOutOfScope(t *testing.T) {
 	repo := cainmem.NewAdminRepository()
 	sub := caapp.AdminSubject{UserID: "u_aob", MembershipID: "m_aob", CompanyID: "c_aob"}
 	seedInviteScopedSubject(t, repo, sub)
+	repo.SeedRole(caapp.RoleListItem{
+		RoleID: "custom_aob", RoleCode: "custom_aob", RoleName: "Custom",
+		Status: "active", Scope: "company",
+		RoleType: caapp.RoleTypeTenantCustom, IsProtected: false, IsBuiltin: false,
+	})
 	repo.SeedPermission(caapp.PermissionListItem{
 		PermissionID:   "perm_cms_tpl_read",
 		PermissionCode: "cms.template.read",
@@ -273,23 +289,14 @@ func TestAssignBlockedPermission_StillReturnsOutOfScope(t *testing.T) {
 	svc := newSnapshotFilterSvc(t, repo)
 
 	err := svc.AssignRolePermission(context.Background(), caapp.AssignRolePermissionRequest{
-		Subject: sub, RoleID: "company_admin", PermissionID: "perm_cms_tpl_read",
+		Subject: sub, RoleID: "custom_aob", PermissionID: "perm_cms_tpl_read",
 	})
 	if err == nil {
-		t.Fatal("expected PERMISSION_OUT_OF_ENTERPRISE_SCOPE error, got nil")
+		t.Fatal("expected scope/tier rejection error, got nil")
 	}
-	herr, ok := err.(interface{ GetCode() string })
-	if !ok {
-		type coder interface{ GetCode() string }
-		_, ok = err.(coder)
-	}
-	// Check error message contains the expected code
 	if !strings.Contains(err.Error(), "PERMISSION_OUT_OF_ENTERPRISE_SCOPE") &&
-		!strings.Contains(err.Error(), "out_of_enterprise_scope") &&
-		!strings.Contains(err.Error(), "out of enterprise scope") {
-		// Accept any representation of the scope rejection
-		_ = herr
-		// At minimum the error must not be nil (already asserted above)
+		!strings.Contains(err.Error(), "permission_not_grantable") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

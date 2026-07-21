@@ -1156,11 +1156,34 @@ func (s *adminService) ListPermissions(ctx context.Context, req AdminSubjectRequ
 	}
 	return out, nil
 }
+func (s *adminService) ListGrantablePermissions(ctx context.Context, req AdminSubjectRequest) ([]GrantablePermissionItem, error) {
+	if err := s.authorize(ctx, req.Subject, "admin.permissions.list", ""); err != nil {
+		return nil, err
+	}
+	all, err := s.repo.ListPermissions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	enterprise := make([]PermissionListItem, 0, len(all))
+	for _, p := range all {
+		if IsEnterprisePermission(p.PermissionCode, p.ModuleName) {
+			enterprise = append(enterprise, p)
+		}
+	}
+	return BuildGrantableCatalogItems(enterprise), nil
+}
 func (s *adminService) ListRoles(ctx context.Context, req AdminSubjectRequest) ([]RoleListItem, error) {
 	if err := s.authorize(ctx, req.Subject, "admin.roles.list", ""); err != nil {
 		return nil, err
 	}
-	return s.repo.ListRoles(ctx, req.Subject.CompanyID)
+	roles, err := s.repo.ListRoles(ctx, req.Subject.CompanyID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range roles {
+		FinalizeRoleListItem(&roles[i])
+	}
+	return roles, nil
 }
 func (s *adminService) ListRolePermissions(ctx context.Context, req ListRolePermissionsRequest) (*RolePermissionsView, error) {
 	if err := s.authorize(ctx, req.Subject, "admin.roles.list", ""); err != nil {
@@ -1183,6 +1206,13 @@ func (s *adminService) AssignRolePermission(ctx context.Context, req AssignRoleP
 	if err := s.authorize(ctx, req.Subject, "admin.role.permission.assign", req.RoleID); err != nil {
 		return err
 	}
+	role, err := s.roleForRBACMutation(ctx, req.Subject, req.RoleID)
+	if err != nil {
+		return err
+	}
+	if IsRoleProtectedForMutation(role) {
+		return ErrProtectedRoleReadOnly()
+	}
 	perm, err := s.permissionItemByID(ctx, req.PermissionID)
 	if err != nil {
 		return err
@@ -1195,6 +1225,10 @@ func (s *adminService) AssignRolePermission(ctx context.Context, req AssignRoleP
 			nil,
 		)
 	}
+	grantPolicy := LookupGrantPolicy(perm.PermissionCode)
+	if err := ValidateAssignPermissionGrant(grantPolicy); err != nil {
+		return err
+	}
 	if err := s.repo.AddRolePermission(ctx, req.RoleID, req.PermissionID); err != nil {
 		return err
 	}
@@ -1204,6 +1238,13 @@ func (s *adminService) AssignRolePermission(ctx context.Context, req AssignRoleP
 func (s *adminService) RemoveRolePermission(ctx context.Context, req RemoveRolePermissionRequest) error {
 	if err := s.authorize(ctx, req.Subject, "admin.role.permission.remove", req.RoleID); err != nil {
 		return err
+	}
+	role, err := s.roleForRBACMutation(ctx, req.Subject, req.RoleID)
+	if err != nil {
+		return err
+	}
+	if IsRoleProtectedForMutation(role) {
+		return ErrProtectedRoleReadOnly()
 	}
 	code, err := s.permissionCodeByID(ctx, req.PermissionID)
 	if err != nil {
@@ -1660,6 +1701,32 @@ func (s *adminService) CreateSelfServiceCompany(ctx context.Context, req CreateS
 // RollbackSelfServiceBootstrap compensates a committed bootstrap when session/token update fails.
 func (s *adminService) RollbackSelfServiceBootstrap(ctx context.Context, companyID, userID string) error {
 	return s.repo.RollbackBootstrapSelfServiceCompany(ctx, companyID, userID)
+}
+
+func (s *adminService) roleForRBACMutation(ctx context.Context, sub AdminSubject, roleID string) (*RoleListItem, error) {
+	roleID = strings.TrimSpace(roleID)
+	if roleID == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "role_id required", nil)
+	}
+	ok, err := s.repo.RoleAccessibleByCompany(ctx, sub.CompanyID, roleID)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeNotFound, "role not found", nil)
+	}
+	roles, err := s.repo.ListRoles(ctx, sub.CompanyID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range roles {
+		if roles[i].RoleID == roleID {
+			item := roles[i]
+			FinalizeRoleListItem(&item)
+			return &item, nil
+		}
+	}
+	return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeNotFound, "role not found", nil)
 }
 
 func (s *adminService) authorize(ctx context.Context, sub AdminSubject, action, resourceID string) error {

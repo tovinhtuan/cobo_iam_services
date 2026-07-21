@@ -30,8 +30,13 @@ func seedRbacAdmin(t *testing.T, repo *cainmem.AdminRepository) caapp.AdminSubje
 	sub := caapp.AdminSubject{UserID: "u_ver", MembershipID: "m_ver", CompanyID: "c_ver"}
 	seedInviteScopedSubject(t, repo, sub)
 	_ = repo.AddRolePermission(context.Background(), "company_admin", "rbac.manage")
-	// Seed enterprise permissions used by versioning tests for AssignRolePermission.
-	for _, code := range []string{"perm_disclosure_read", "perm_disclosure_write"} {
+	repo.SeedRole(caapp.RoleListItem{
+		RoleID: "custom_ver_role", RoleCode: "custom_ver", RoleName: "Custom Ver",
+		Status: "active", Scope: "company",
+		RoleType: caapp.RoleTypeTenantCustom, IsProtected: false, IsBuiltin: false,
+	})
+	// Seed enterprise grantable permissions used by versioning tests for AssignRolePermission.
+	for _, code := range []string{"disclosure.view", "disclosure.edit"} {
 		repo.SeedPermission(caapp.PermissionListItem{
 			PermissionID:   code,
 			PermissionCode: code,
@@ -118,7 +123,7 @@ func TestRBACMutation_CreatesMatrixSnapshot(t *testing.T) {
 	sub := seedRbacAdmin(t, repo)
 	svc := newVersioningSvc(t, repo)
 	if err := svc.AssignRolePermission(context.Background(), caapp.AssignRolePermissionRequest{
-		Subject: sub, RoleID: "company_admin", PermissionID: "perm_disclosure_read",
+		Subject: sub, RoleID: "custom_ver_role", PermissionID: "disclosure.view",
 	}); err != nil {
 		t.Fatalf("assign: %v", err)
 	}
@@ -167,10 +172,10 @@ func TestCompareVersions_ReadOnly(t *testing.T) {
 	sub := seedRbacAdmin(t, repo)
 	svc := newVersioningSvc(t, repo)
 	_ = svc.AssignRolePermission(context.Background(), caapp.AssignRolePermissionRequest{
-		Subject: sub, RoleID: "company_admin", PermissionID: "perm_disclosure_read",
+		Subject: sub, RoleID: "custom_ver_role", PermissionID: "disclosure.view",
 	})
 	_ = svc.AssignRolePermission(context.Background(), caapp.AssignRolePermissionRequest{
-		Subject: sub, RoleID: "company_admin", PermissionID: "perm_disclosure_write",
+		Subject: sub, RoleID: "custom_ver_role", PermissionID: "disclosure.edit",
 	})
 	cmp, err := svc.CompareRBACMatrixVersions(context.Background(), caapp.CompareRBACMatrixVersionsRequest{
 		Subject: sub, FromVersionNo: 1, ToVersionNo: 2,
@@ -191,7 +196,7 @@ func TestAuditMetadata_NoSnapshotJSON(t *testing.T) {
 		decision: authapp.DecisionAllow, permissions: []string{"rbac.manage"},
 	}, fixedIDGen("ver-2"), caapp.WithAuditRepository(auditRepo))
 	_ = svc.AssignRolePermission(context.Background(), caapp.AssignRolePermissionRequest{
-		Subject: sub, RoleID: "company_admin", PermissionID: "perm_disclosure_read",
+		Subject: sub, RoleID: "custom_ver_role", PermissionID: "disclosure.view",
 	})
 	entries, _ := auditRepo.ListByCompany(context.Background(), sub.CompanyID, "", "", "", "", "", "", 50)
 	for _, e := range entries {

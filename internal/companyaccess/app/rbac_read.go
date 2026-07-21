@@ -1,6 +1,20 @@
 package app
 
-import "time"
+import (
+	"strings"
+	"time"
+)
+
+const (
+	RoleTypeSystemGlobal  = "system_global"
+	RoleTypeTenantDefault = "tenant_default"
+	RoleTypeTenantCustom  = "tenant_custom"
+)
+
+var protectedTenantDefaultRoleCodes = map[string]struct{}{
+	"admin_doanh_nghiep": {},
+	"user_thuong":        {},
+}
 
 // RoleListItem is the structured row for GET /api/v1/admin/roles.
 type RoleListItem struct {
@@ -9,12 +23,50 @@ type RoleListItem struct {
 	RoleName        string    `json:"role_name"`
 	Description     string    `json:"description"`
 	Status          string    `json:"status"`
+	RoleType        string    `json:"role_type"`
+	IsProtected     bool      `json:"is_protected"`
+	IsEditable      bool      `json:"is_editable"`
 	Scope           string    `json:"scope"`
 	IsBuiltin       bool      `json:"is_builtin"`
 	PermissionCount int       `json:"permission_count"`
 	MemberCount     int       `json:"member_count"`
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`
+}
+
+// FinalizeRoleListItem fills classification fields and computes is_editable.
+// is_builtin keeps legacy semantics: global roles (company_id NULL) only.
+func FinalizeRoleListItem(item *RoleListItem) {
+	if item == nil {
+		return
+	}
+	inferRoleClassification(item)
+	item.IsEditable = item.RoleType == RoleTypeTenantCustom &&
+		!item.IsProtected &&
+		strings.EqualFold(strings.TrimSpace(item.Status), "active")
+}
+
+func inferRoleClassification(item *RoleListItem) {
+	roleType := strings.TrimSpace(item.RoleType)
+	if roleType == "" {
+		if item.IsBuiltin || item.Scope == "global" {
+			roleType = RoleTypeSystemGlobal
+		} else if _, ok := protectedTenantDefaultRoleCodes[strings.TrimSpace(item.RoleCode)]; ok {
+			roleType = RoleTypeTenantDefault
+		} else if item.Scope == "company" {
+			roleType = RoleTypeTenantDefault
+		} else {
+			roleType = RoleTypeSystemGlobal
+		}
+		item.RoleType = roleType
+	}
+	// When is_protected was not loaded from DB (zero value), infer safe defaults.
+	if !item.IsProtected {
+		switch roleType {
+		case RoleTypeSystemGlobal, RoleTypeTenantDefault:
+			item.IsProtected = true
+		}
+	}
 }
 
 // PermissionListItem is the structured row for GET /api/v1/admin/permissions.
