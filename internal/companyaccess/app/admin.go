@@ -57,6 +57,11 @@ type AdminService interface {
 	ListRolePermissions(ctx context.Context, req ListRolePermissionsRequest) (*RolePermissionsView, error)
 	AssignRolePermission(ctx context.Context, req AssignRolePermissionRequest) error
 	RemoveRolePermission(ctx context.Context, req RemoveRolePermissionRequest) error
+	// Phase C — company-scoped tenant_custom role CRUD + clone (no member assign).
+	CreateCustomRole(ctx context.Context, req CreateCustomRoleRequest) (*RoleListItem, error)
+	UpdateCustomRole(ctx context.Context, req UpdateCustomRoleRequest) (*RoleListItem, error)
+	InactivateCustomRole(ctx context.Context, req InactivateCustomRoleRequest) error
+	CloneRole(ctx context.Context, req CloneRoleRequest) (*CloneRoleResult, error)
 
 	CreateResourceScopeRule(ctx context.Context, req CreateResourceScopeRuleRequest) error
 	CreateWorkflowAssigneeRule(ctx context.Context, req CreateWorkflowAssigneeRuleRequest) error
@@ -265,6 +270,12 @@ type AdminRepository interface {
 	RoleAccessibleByCompany(ctx context.Context, companyID, roleID string) (bool, error)
 	AddRolePermission(ctx context.Context, roleID, permissionID string) error
 	RemoveRolePermission(ctx context.Context, roleID, permissionID string) error
+	// Phase C — tenant_custom role persistence.
+	CreateTenantCustomRole(ctx context.Context, in CreateTenantCustomRoleInput) (*RoleListItem, error)
+	UpdateTenantCustomRoleMetadata(ctx context.Context, companyID, roleID, roleName, description, updatedBy string) (*RoleListItem, error)
+	InactivateTenantCustomRole(ctx context.Context, companyID, roleID, updatedBy string) error
+	CountActiveMembershipsForRole(ctx context.Context, companyID, roleID string) (int, error)
+	GetCompanyRoleByID(ctx context.Context, companyID, roleID string) (*RoleListItem, error)
 
 	AddResourceScopeRule(ctx context.Context, rule map[string]any) error
 	AddWorkflowAssigneeRule(ctx context.Context, rule map[string]any) error
@@ -438,6 +449,9 @@ type InviteRoleOption struct {
 	RoleID   string `json:"role_id"`
 	RoleCode string `json:"role_code"`
 	RoleName string `json:"role_name"`
+	// RoleType is tenant_default | tenant_custom | system_global (Phase E badges).
+	RoleType string `json:"role_type,omitempty"`
+	Status   string `json:"status,omitempty"`
 	// DefaultPermissions lists grantable permission codes pre-checked for this role at invite time.
 	DefaultPermissions []string `json:"default_permissions"`
 }

@@ -70,6 +70,15 @@ const (
 	CodePermissionNotGrantable Code = "permission_not_grantable"
 	// RBAC Phase B — high-risk permission requires approval workflow (MVP: reject assign).
 	CodeHighRiskPermissionRequiresApproval Code = "high_risk_permission_requires_approval"
+	// RBAC Phase C — custom role soft-delete blocked when memberships still use the role.
+	CodeRoleInUse Code = "role_in_use"
+	// RBAC Phase C — role_name validation failure.
+	CodeInvalidRoleName Code = "invalid_role_name"
+	// RBAC Phase E — primary role assignment eligibility / lockout.
+	CodeRoleNotAssignable           Code = "role_not_assignable"
+	CodeRoleInactive                Code = "role_inactive"
+	CodeSelfRoleChangeBlocked       Code = "self_role_change_blocked"
+	CodeLastAdminRoleChangeBlocked  Code = "last_admin_role_change_blocked"
 )
 
 // HTTPError is returned to clients as JSON { "error": { ... } }.

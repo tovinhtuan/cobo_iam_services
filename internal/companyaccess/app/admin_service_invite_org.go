@@ -27,7 +27,14 @@ func normalizeFocalDepartmentIDs(ids []string) []string {
 
 func (s *adminService) validateEnterpriseInviteRole(ctx context.Context, companyID, roleID, roleCode, defaultRoleCode string, isPlatformCMS bool) (string, error) {
 	if isPlatformCMS {
-		return s.repo.LookupRoleIDForInvite(ctx, companyID, roleID, roleCode, defaultRoleCode)
+		resolved, err := s.repo.LookupRoleIDForInvite(ctx, companyID, roleID, roleCode, defaultRoleCode)
+		if err != nil {
+			return "", err
+		}
+		if _, err := s.assertRoleAssignableForMembership(ctx, companyID, resolved); err != nil {
+			return "", err
+		}
+		return resolved, nil
 	}
 	checkCode := strings.TrimSpace(strings.ToLower(roleCode))
 	if checkCode != "" && IsEnterpriseInviteRoleDenied(checkCode) {
@@ -56,6 +63,10 @@ func (s *adminService) validateEnterpriseInviteRole(ctx context.Context, company
 		if role.RoleID == roleIDResolved && IsEnterpriseInviteRoleDenied(role.RoleCode) {
 			return "", perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "department focal must be assigned via focal_department_ids, not dept_lead system role", nil)
 		}
+	}
+	// Phase E: active same-company tenant_custom / tenant_default / selectable system_global.
+	if _, err := s.assertRoleAssignableForMembership(ctx, companyID, roleIDResolved); err != nil {
+		return "", err
 	}
 	return roleIDResolved, nil
 }

@@ -232,8 +232,24 @@ func (r *AdminRepository) InviteUserWithMembership(_ context.Context, u caapp.Us
 
 func (r *AdminRepository) LookupRoleIDForInvite(_ context.Context, companyID, preferRoleID, preferRoleCode, defaultRoleCode string) (string, error) {
 	_ = companyID
-	if strings.TrimSpace(preferRoleID) != "" {
-		return strings.TrimSpace(preferRoleID), nil
+	preferRoleID = strings.TrimSpace(preferRoleID)
+	if preferRoleID != "" {
+		r.mu.RLock()
+		defer r.mu.RUnlock()
+		if meta, ok := r.roleMeta[preferRoleID]; ok {
+			if !strings.EqualFold(strings.TrimSpace(meta.Status), "active") && strings.TrimSpace(meta.Status) != "" {
+				return "", perr.NewHTTPError(http.StatusUnprocessableEntity, perr.CodeRoleInactive, "role is inactive", nil)
+			}
+			return preferRoleID, nil
+		}
+		if strings.HasPrefix(preferRoleID, "r_invite_") {
+			// Preserve historical Lookup behavior: accept invented invite role IDs.
+			return preferRoleID, nil
+		}
+		if _, ok := r.roles[preferRoleID]; ok {
+			return preferRoleID, nil
+		}
+		return "", perr.NewHTTPError(http.StatusNotFound, perr.CodeNotFound, "role not found", nil)
 	}
 	code := strings.TrimSpace(preferRoleCode)
 	if code == "" {
@@ -255,15 +271,44 @@ func (r *AdminRepository) ListInviteRolesForCompany(_ context.Context, companyID
 	}
 	sort.Strings(codes)
 	out := make([]caapp.InviteRoleOption, 0, len(codes))
-	for _, code := range codes {
+	for _, key := range codes {
+		if meta, ok := r.roleMeta[key]; ok {
+			if strings.TrimSpace(meta.Status) != "" && !strings.EqualFold(meta.Status, "active") {
+				continue
+			}
+			roleType := meta.RoleType
+			if roleType == "" {
+				roleType = caapp.RoleTypeTenantDefault
+			}
+			out = append(out, caapp.InviteRoleOption{
+				RoleID:             key,
+				RoleCode:           firstNonEmpty(meta.RoleCode, key),
+				RoleName:           firstNonEmpty(meta.RoleName, meta.RoleCode, key),
+				RoleType:           roleType,
+				Status:             "active",
+				DefaultPermissions: []string{},
+			})
+			continue
+		}
 		out = append(out, caapp.InviteRoleOption{
-			RoleID:             "r_invite_" + code,
-			RoleCode:           code,
-			RoleName:           code,
+			RoleID:             "r_invite_" + key,
+			RoleCode:           key,
+			RoleName:           key,
+			RoleType:           caapp.RoleTypeTenantDefault,
+			Status:             "active",
 			DefaultPermissions: []string{},
 		})
 	}
 	return out, nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 func (r *AdminRepository) InviteUserWithoutCompany(_ context.Context, u caapp.UserView, invitationID, tokenHash, _ string, _ time.Time) (*caapp.UserView, error) {
@@ -579,7 +624,21 @@ func (r *AdminRepository) ListMembershipRoles(_ context.Context, membershipID st
 		if code == id {
 			code = id
 		}
-		out = append(out, caapp.RoleView{RoleID: id, RoleCode: code, RoleName: code})
+		roleType := ""
+		name := code
+		if meta, ok := r.roleMeta[id]; ok {
+			if meta.RoleCode != "" {
+				code = meta.RoleCode
+			}
+			if meta.RoleName != "" {
+				name = meta.RoleName
+			}
+			roleType = meta.RoleType
+		}
+		if roleType == "" {
+			roleType = caapp.RoleTypeTenantDefault
+		}
+		out = append(out, caapp.RoleView{RoleID: id, RoleCode: code, RoleName: name, RoleType: roleType})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].RoleName < out[j].RoleName })
 	return out, nil
@@ -780,6 +839,9 @@ func (r *AdminRepository) ListRoles(_ context.Context, companyID string) ([]caap
 			item.IsBuiltin = meta.IsBuiltin
 			item.Description = meta.Description
 		}
+		if !strings.EqualFold(item.Status, "active") {
+			continue
+		}
 		out = append(out, item)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].RoleCode < out[j].RoleCode })
@@ -800,20 +862,35 @@ func (r *AdminRepository) RoleAccessibleByCompany(_ context.Context, _, roleID s
 func (r *AdminRepository) ListRolePermissions(_ context.Context, _, roleID string) (*caapp.RolePermissionsView, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	if _, ok := r.roles[roleID]; !ok {
+	roleID = strings.TrimSpace(roleID)
+	permKey := roleID
+	if strings.HasPrefix(roleID, "r_invite_") {
+		permKey = strings.TrimPrefix(roleID, "r_invite_")
+	}
+	_, hasRole := r.roles[roleID]
+	_, hasCode := r.roles[permKey]
+	_, hasMeta := r.roleMeta[roleID]
+	if !hasRole && !hasCode && !hasMeta && !strings.HasPrefix(roleID, "r_invite_") {
 		return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "role not found", nil)
 	}
 	perms := make([]caapp.PermissionListItem, 0)
-	if set, ok := r.rolePermissions[roleID]; ok {
-		for code := range set {
-			perms = append(perms, caapp.PermissionListItem{
-				PermissionID:   code,
-				PermissionCode: code,
-				PermissionName: code,
-				ModuleName:     "general",
-				RiskLevel:      caapp.PermissionRiskLevel(code),
-				IsGrantable:    caapp.IsGrantablePermission(code),
-			})
+	seen := map[string]struct{}{}
+	for _, key := range []string{roleID, permKey} {
+		if set, ok := r.rolePermissions[key]; ok {
+			for code := range set {
+				if _, dup := seen[code]; dup {
+					continue
+				}
+				seen[code] = struct{}{}
+				perms = append(perms, caapp.PermissionListItem{
+					PermissionID:   code,
+					PermissionCode: code,
+					PermissionName: code,
+					ModuleName:     "general",
+					RiskLevel:      caapp.PermissionRiskLevel(code),
+					IsGrantable:    caapp.IsGrantablePermission(code),
+				})
+			}
 		}
 	}
 	sort.Slice(perms, func(i, j int) bool { return perms[i].PermissionCode < perms[j].PermissionCode })
@@ -857,6 +934,123 @@ func (r *AdminRepository) RemoveRolePermission(_ context.Context, roleID, permis
 	defer r.mu.Unlock()
 	delSet(r.rolePermissions, roleID, permissionID)
 	return nil
+}
+
+func (r *AdminRepository) CreateTenantCustomRole(_ context.Context, in caapp.CreateTenantCustomRoleInput) (*caapp.RoleListItem, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	roleID := strings.TrimSpace(in.RoleID)
+	if roleID == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "role_id required", nil)
+	}
+	now := time.Now().UTC()
+	item := caapp.RoleListItem{
+		RoleID:      roleID,
+		RoleCode:    in.RoleCode,
+		RoleName:    in.RoleName,
+		Description: in.Description,
+		Status:      "active",
+		RoleType:    caapp.RoleTypeTenantCustom,
+		IsProtected: false,
+		IsBuiltin:   false,
+		Scope:       "company",
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	r.roles[roleID] = struct{}{}
+	r.roleMeta[roleID] = item
+	caapp.FinalizeRoleListItem(&item)
+	return &item, nil
+}
+
+func (r *AdminRepository) UpdateTenantCustomRoleMetadata(_ context.Context, _, roleID, roleName, description, _ string) (*caapp.RoleListItem, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	meta, ok := r.roleMeta[roleID]
+	if !ok {
+		return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeNotFound, "role not found", nil)
+	}
+	if meta.RoleType != caapp.RoleTypeTenantCustom || meta.IsProtected {
+		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodeProtectedRoleReadOnly, "protected", nil)
+	}
+	meta.RoleName = roleName
+	meta.Description = description
+	meta.UpdatedAt = time.Now().UTC()
+	r.roleMeta[roleID] = meta
+	caapp.FinalizeRoleListItem(&meta)
+	return &meta, nil
+}
+
+func (r *AdminRepository) InactivateTenantCustomRole(_ context.Context, _, roleID, _ string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	meta, ok := r.roleMeta[roleID]
+	if !ok {
+		return perr.NewHTTPError(http.StatusNotFound, perr.CodeNotFound, "role not found", nil)
+	}
+	if meta.RoleType != caapp.RoleTypeTenantCustom || meta.IsProtected {
+		return perr.NewHTTPError(http.StatusForbidden, perr.CodeProtectedRoleReadOnly, "protected", nil)
+	}
+	meta.Status = "inactive"
+	meta.UpdatedAt = time.Now().UTC()
+	r.roleMeta[roleID] = meta
+	return nil
+}
+
+func (r *AdminRepository) CountActiveMembershipsForRole(_ context.Context, _, roleID string) (int, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	n := 0
+	for _, roleSet := range r.rolesByMembership {
+		if _, ok := roleSet[roleID]; ok {
+			n++
+		}
+	}
+	return n, nil
+}
+
+func (r *AdminRepository) GetCompanyRoleByID(_ context.Context, _, roleID string) (*caapp.RoleListItem, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	roleID = strings.TrimSpace(roleID)
+	if roleID == "" {
+		return nil, nil
+	}
+	if meta, ok := r.roleMeta[roleID]; ok {
+		item := meta
+		if perms, ok := r.rolePermissions[roleID]; ok {
+			item.PermissionCount = len(perms)
+		}
+		for _, roleSet := range r.rolesByMembership {
+			if _, ok := roleSet[roleID]; ok {
+				item.MemberCount++
+			}
+		}
+		caapp.FinalizeRoleListItem(&item)
+		return &item, nil
+	}
+	// Legacy invite seed: invite IDs are r_invite_<code>. LookupRoleIDForInvite may invent
+	// these IDs before a roles row exists in the in-memory map — keep that behavior.
+	if strings.HasPrefix(roleID, "r_invite_") {
+		code := strings.TrimPrefix(roleID, "r_invite_")
+		item := caapp.RoleListItem{
+			RoleID: roleID, RoleCode: code, RoleName: code,
+			Status: "active", Scope: "global", IsBuiltin: true,
+			RoleType: caapp.RoleTypeTenantDefault, IsProtected: true,
+		}
+		caapp.FinalizeRoleListItem(&item)
+		return &item, nil
+	}
+	if _, ok := r.roles[roleID]; ok {
+		item := caapp.RoleListItem{
+			RoleID: roleID, RoleCode: roleID, RoleName: roleID,
+			Status: "active", Scope: "global", IsBuiltin: true,
+			RoleType: caapp.RoleTypeSystemGlobal, IsProtected: true,
+		}
+		caapp.FinalizeRoleListItem(&item)
+		return &item, nil
+	}
+	return nil, nil
 }
 
 func (r *AdminRepository) AddResourceScopeRule(_ context.Context, rule map[string]any) error {

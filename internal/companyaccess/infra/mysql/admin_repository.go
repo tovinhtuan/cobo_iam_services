@@ -246,7 +246,7 @@ func (r *AdminRepository) listMembershipTitleViews(ctx context.Context, membersh
 
 func (r *AdminRepository) listMembershipRoleViews(ctx context.Context, membershipID string) ([]caapp.RoleView, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT r.role_id, r.role_code, r.role_name
+		SELECT r.role_id, r.role_code, r.role_name, COALESCE(NULLIF(TRIM(r.role_type), ''), '')
 		FROM membership_roles mr
 		INNER JOIN roles r ON r.role_id = mr.role_id
 		WHERE mr.membership_id = ? AND mr.status = 'active' AND r.status = 'active'
@@ -259,8 +259,13 @@ func (r *AdminRepository) listMembershipRoleViews(ctx context.Context, membershi
 	var out []caapp.RoleView
 	for rows.Next() {
 		var v caapp.RoleView
-		if err := rows.Scan(&v.RoleID, &v.RoleCode, &v.RoleName); err != nil {
+		if err := rows.Scan(&v.RoleID, &v.RoleCode, &v.RoleName, &v.RoleType); err != nil {
 			return nil, err
+		}
+		if v.RoleType == "" {
+			tmp := caapp.RoleListItem{RoleCode: v.RoleCode, RoleType: "", Scope: "global", IsBuiltin: true}
+			caapp.FinalizeRoleListItem(&tmp)
+			v.RoleType = tmp.RoleType
 		}
 		out = append(out, v)
 	}
@@ -780,11 +785,13 @@ func (r *AdminRepository) ListInviteRolesForCompany(ctx context.Context, company
 	}
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT r.role_id, r.role_code, r.role_name,
+		       COALESCE(NULLIF(TRIM(r.role_type), ''), '') AS role_type,
+		       r.status,
 		       COALESCE(GROUP_CONCAT(rdgp.permission_code ORDER BY rdgp.permission_code SEPARATOR ','), '') AS default_permissions
 		FROM roles r
 		LEFT JOIN role_default_grant_permissions rdgp ON rdgp.role_id = r.role_id
 		WHERE r.status = 'active' AND (r.company_id IS NULL OR r.company_id = ?)
-		GROUP BY r.role_id, r.role_code, r.role_name
+		GROUP BY r.role_id, r.role_code, r.role_name, r.role_type, r.status
 		ORDER BY r.role_code
 	`, companyID)
 	if err != nil {
@@ -795,8 +802,13 @@ func (r *AdminRepository) ListInviteRolesForCompany(ctx context.Context, company
 	for rows.Next() {
 		var o caapp.InviteRoleOption
 		var defaultPermsCSV string
-		if err := rows.Scan(&o.RoleID, &o.RoleCode, &o.RoleName, &defaultPermsCSV); err != nil {
+		if err := rows.Scan(&o.RoleID, &o.RoleCode, &o.RoleName, &o.RoleType, &o.Status, &defaultPermsCSV); err != nil {
 			return nil, err
+		}
+		if o.RoleType == "" {
+			tmp := caapp.RoleListItem{RoleCode: o.RoleCode, RoleType: "", Scope: "global", IsBuiltin: true}
+			caapp.FinalizeRoleListItem(&tmp)
+			o.RoleType = tmp.RoleType
 		}
 		if defaultPermsCSV != "" {
 			o.DefaultPermissions = strings.Split(defaultPermsCSV, ",")

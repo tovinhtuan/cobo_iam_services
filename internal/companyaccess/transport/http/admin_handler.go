@@ -81,6 +81,10 @@ func (h *AdminHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/admin/permissions", h.listPermissions)
 	mux.HandleFunc("GET /api/v1/admin/rbac/grantable-permissions", h.listGrantablePermissions)
 	mux.HandleFunc("GET /api/v1/admin/roles", h.listRoles)
+	mux.HandleFunc("POST /api/v1/admin/roles", h.createCustomRole)
+	mux.HandleFunc("PATCH /api/v1/admin/roles/{role_id}", h.updateCustomRole)
+	mux.HandleFunc("DELETE /api/v1/admin/roles/{role_id}", h.inactivateCustomRole)
+	mux.HandleFunc("POST /api/v1/admin/roles/{role_id}/clone", h.cloneRole)
 	mux.HandleFunc("GET /api/v1/admin/roles/{role_id}/permissions", h.listRolePermissions)
 	mux.HandleFunc("POST /api/v1/admin/roles/{role_id}/permissions", h.assignRolePermission)
 	mux.HandleFunc("DELETE /api/v1/admin/roles/{role_id}/permissions/{permission_id}", h.removeRolePermission)
@@ -552,6 +556,89 @@ func (h *AdminHandler) listRoles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (h *AdminHandler) createCustomRole(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	var p struct {
+		RoleName    string `json:"role_name"`
+		Description string `json:"description"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&p)
+	role, err := h.svc.CreateCustomRole(r.Context(), caapp.CreateCustomRoleRequest{
+		Subject: sub, RoleName: p.RoleName, Description: p.Description,
+	})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	h.auditLog(r, "admin.role.create", "role", role.RoleID)
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"role": role})
+}
+
+func (h *AdminHandler) updateCustomRole(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	rid := strings.TrimSpace(r.PathValue("role_id"))
+	var p struct {
+		RoleName    *string `json:"role_name"`
+		Description *string `json:"description"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&p)
+	role, err := h.svc.UpdateCustomRole(r.Context(), caapp.UpdateCustomRoleRequest{
+		Subject: sub, RoleID: rid, RoleName: p.RoleName, Description: p.Description,
+	})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	h.auditLog(r, "admin.role.update", "role", rid)
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"role": role})
+}
+
+func (h *AdminHandler) inactivateCustomRole(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	rid := strings.TrimSpace(r.PathValue("role_id"))
+	if err := h.svc.InactivateCustomRole(r.Context(), caapp.InactivateCustomRoleRequest{Subject: sub, RoleID: rid}); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	h.auditLog(r, "admin.role.inactivate", "role", rid)
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"success": true})
+}
+
+func (h *AdminHandler) cloneRole(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subject(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	sourceID := strings.TrimSpace(r.PathValue("role_id"))
+	var p struct {
+		RoleName    string `json:"role_name"`
+		Description string `json:"description"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&p)
+	out, err := h.svc.CloneRole(r.Context(), caapp.CloneRoleRequest{
+		Subject: sub, SourceRoleID: sourceID, RoleName: p.RoleName, Description: p.Description,
+	})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	h.auditLog(r, "admin.role.clone", "role", out.Role.RoleID)
+	httpx.WriteJSON(w, http.StatusCreated, out)
 }
 
 func (h *AdminHandler) listRolePermissions(w http.ResponseWriter, r *http.Request) {

@@ -40,6 +40,8 @@ type RoleView struct {
 	RoleID   string `json:"role_id"`
 	RoleCode string `json:"role_code,omitempty"`
 	RoleName string `json:"role_name,omitempty"`
+	// RoleType is optional enrichment for FE badges (Phase E).
+	RoleType string `json:"role_type,omitempty"`
 }
 
 type TitleView struct {

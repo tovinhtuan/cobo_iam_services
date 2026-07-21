@@ -64,6 +64,17 @@ func (s *adminService) ReplaceMembershipPrimaryRole(ctx context.Context, req Rep
 		if _, err := s.validateEnterpriseInviteRole(ctx, member.CompanyID, roleID, "", "user_thuong", false); err != nil {
 			return err
 		}
+	} else {
+		// Platform CMS still must not assign inactive / cross-tenant roles.
+		if _, err := s.assertRoleAssignableForMembership(ctx, member.CompanyID, roleID); err != nil {
+			return err
+		}
+	}
+
+	if err := s.assertPrimaryRoleChangeLockout(ctx, MembershipActor{
+		MembershipID: req.Subject.MembershipID,
+	}, req.MembershipID, member.CompanyID, roleID); err != nil {
+		return err
 	}
 
 	roles, err := s.repo.ListMembershipRoles(ctx, req.MembershipID)
