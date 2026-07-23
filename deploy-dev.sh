@@ -272,13 +272,18 @@ deploy_be() {
 # BƯỚC 5: Deploy FE (gọi make deploy-fe như Makefile định nghĩa)
 # =============================================================================
 deploy_fe() {
-  log_step "Deploy FE: npm run build + SCP dist + restart web"
+  log_step "Deploy FE: Vite flag preflight + npm run build + SCP dist + restart web"
   cd "$MAKEFILE_DIR"
+  # Belt-and-suspenders: Makefile deploy-fe also sources ensure-dev-fe-vite-flags.sh
+  if ! . ./scripts/ensure-dev-fe-vite-flags.sh; then
+    log_error "DEV FE Vite flag preflight thất bại"
+    exit 1
+  fi
   if ! make deploy-fe; then
     log_error "make deploy-fe thất bại"
     exit 1
   fi
-  log_ok "FE deployed"
+  log_ok "FE deployed (Personal Ops / Dashboard V2 flags enforced)"
 }
 
 # =============================================================================

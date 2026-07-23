@@ -369,8 +369,23 @@ function Invoke-DeployBe {
 }
 
 function Invoke-DeployFe {
-  Write-Step 'Deploy FE: npm run build + SCP dist + restart web'
+  Write-Step 'Deploy FE: Vite flag preflight + npm run build + SCP dist + restart web'
   Test-NodeToolchain
+
+  # DEV FE hardening — mirror scripts/ensure-dev-fe-vite-flags.sh (DEV-only path).
+  if (-not $env:VITE_PERSONAL_OPS_V2) { $env:VITE_PERSONAL_OPS_V2 = 'true' }
+  if (-not $env:VITE_DASHBOARD_OPERATIONAL_V2) { $env:VITE_DASHBOARD_OPERATIONAL_V2 = 'true' }
+  if (-not $env:VITE_DASHBOARD_OVERVIEW_API_ENABLED) { $env:VITE_DASHBOARD_OVERVIEW_API_ENABLED = 'true' }
+  Write-Host "[deploy-dev][fe] VITE_PERSONAL_OPS_V2=$($env:VITE_PERSONAL_OPS_V2)"
+  Write-Host "[deploy-dev][fe] VITE_DASHBOARD_OPERATIONAL_V2=$($env:VITE_DASHBOARD_OPERATIONAL_V2)"
+  Write-Host "[deploy-dev][fe] VITE_DASHBOARD_OVERVIEW_API_ENABLED=$($env:VITE_DASHBOARD_OVERVIEW_API_ENABLED)"
+  if ($env:ALLOW_LEGACY_DEV_FLAGS -ne 'true') {
+    if ($env:VITE_PERSONAL_OPS_V2 -ne 'true' -or $env:VITE_DASHBOARD_OPERATIONAL_V2 -ne 'true' -or $env:VITE_DASHBOARD_OVERVIEW_API_ENABLED -ne 'true') {
+      throw 'DEV FE Vite flags must be true (or set ALLOW_LEGACY_DEV_FLAGS=true for intentional legacy rollback)'
+    }
+  } else {
+    Write-WarnMsg 'ALLOW_LEGACY_DEV_FLAGS=true — DEV may compile Legacy Profile'
+  }
 
   Push-Location $FeDir
   try {

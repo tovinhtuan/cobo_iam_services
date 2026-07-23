@@ -222,26 +222,34 @@ make dev-ps
 
 ## BƯỚC 3 — Deploy Frontend (React build)
 
-> **Làm gì:** `npm run build` → copy dist → SCP lên server → restart nginx web container
+> **Làm gì:** preflight Vite flags → `npm run build` → copy dist → SCP lên server → restart nginx web container → smoke Personal Ops V2
 
 Từ `cobo_iam_services/`:
 
 ```bash
 make deploy-fe
+# hoặc
+sh deploy-dev.sh fe --skip-tests
 ```
+
+**Vite flags bắt buộc trên DEV** (mặc định `true` trong `deploy-fe` / `deploy-dev.sh fe`; không cần export tay):
+
+```text
+VITE_PERSONAL_OPS_V2=true
+VITE_DASHBOARD_OPERATIONAL_V2=true
+VITE_DASHBOARD_OVERVIEW_API_ENABLED=true
+```
+
+Thiếu flags → `/app/profile` compile ra Legacy Profile (incident 2026-07-21). Override cố ý: `ALLOW_LEGACY_DEV_FLAGS=true` (có warning). Bare `make fe-build` / `npm run build` **không** gắn flags — chỉ path deploy DEV.
 
 **Output mong đợi:**
 ```
+# 0. [deploy-dev][fe] VITE_* = true + preflight OK
 # 1. Build FE (từ ../cobo_web_design/)
-cd ../cobo_web_design && npm run build
-# → dist/ được tạo ra
-
 # 2. Copy dist vào deploy-artifacts/web/dist/
-
 # 3. SCP dist + nginx.conf lên server
-
 # 4. Restart web container
-docker compose restart web
+# 5. smoke-dev-fe-profile-v2 (personal-ops-root trong live JS)
 ```
 
 **Nếu `npm run build` thất bại:**
@@ -254,8 +262,9 @@ npm run build        # xem lỗi cụ thể
 
 **Verify sau bước này:**
 ```bash
-# Kiểm tra web container đang running
 make dev-ps
+make smoke-dev-fe-profile-v2
+# hoặc: sh scripts/smoke-dev-fe-profile-v2.sh
 ```
 
 ---

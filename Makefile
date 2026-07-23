@@ -45,6 +45,7 @@ node -e "const major = Number(process.versions.node.split('.')[0]); const ok = (
     dc-up dc-down dc-build dc-rebuild dc-logs dc-ps dc-restart \
     deploy-init deploy-be deploy-fe deploy-all push-migration \
     deploy-dev deploy-dev-be deploy-dev-fe deploy-dev-migrate deploy-dev-win \
+    ensure-dev-fe-vite-flags smoke-dev-fe-profile-v2 \
     dev-up dev-down dev-ps dev-logs dev-restart dev-ssh dev-fix-web-perms
 
 # ─────────────────────────────────────────────────────────────────────
@@ -162,7 +163,18 @@ fe-fix-artifacts-perms: ## Fix deploy-artifacts/web/dist ownership
 	  docker run --rm -u 0 -v "$$(pwd)/$(ARTIFACTS)/web/dist:/dist" alpine chown -R $$(id -u):$$(id -g) /dist; \
 	fi
 
-deploy-fe: fe-build fe-fix-artifacts-perms ## [dev] Build FE, copy dist + nginx.conf, SCP, recreate web (bind-mount safe)
+# DEV FE Vite flags (Personal Ops / Dashboard V2). Used only by deploy-fe — not bare fe-build.
+# Override intentionally: ALLOW_LEGACY_DEV_FLAGS=true (emits warning; not for normal DEV).
+ensure-dev-fe-vite-flags: ## [dev] Default + validate required VITE_* flags for DEV FE deploy
+	@. ./scripts/ensure-dev-fe-vite-flags.sh
+
+smoke-dev-fe-profile-v2: ## [dev] Fail if live DEV FE lacks Personal Ops V2 markers
+	@sh ./scripts/smoke-dev-fe-profile-v2.sh
+
+deploy-fe: fe-fix-dist-perms fe-fix-artifacts-perms ## [dev] Build FE (with VITE flags), copy dist + nginx.conf, SCP, recreate web
+	@. ./scripts/ensure-dev-fe-vite-flags.sh && \
+	  $(ensure_fe_env) && \
+	  cd $(FE_DIR) && npm run build
 	rm -rf $(ARTIFACTS)/web/dist
 	cp -r $(FE_DIR)/dist $(ARTIFACTS)/web/dist
 	$(SSH) "cd $(DEV_PATH) && docker compose -f docker-compose.artifacts.yml stop web 2>/dev/null || true"
@@ -171,6 +183,7 @@ deploy-fe: fe-build fe-fix-artifacts-perms ## [dev] Build FE, copy dist + nginx.
 	$(SCP)    $(ARTIFACTS)/web/nginx.conf $(DEV_USER)@$(DEV_HOST):$(DEV_PATH)/web/nginx.conf
 	$(SCP) scripts/fix-dev-web-perms.sh $(DEV_USER)@$(DEV_HOST):$(DEV_PATH)/fix-dev-web-perms.sh
 	$(SSH) "sed -i 's/\r$$//' $(DEV_PATH)/fix-dev-web-perms.sh && chmod +x $(DEV_PATH)/fix-dev-web-perms.sh && sh $(DEV_PATH)/fix-dev-web-perms.sh $(DEV_PATH)"
+	@sh ./scripts/smoke-dev-fe-profile-v2.sh
 
 deploy-all: deploy-be deploy-fe ## [dev] Deploy cả BE + FE lên dev
 
