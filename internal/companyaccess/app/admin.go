@@ -710,9 +710,10 @@ type PatchOwnCompanyRequest struct {
 	IsListed                      *bool   `json:"is_listed"`
 	IsLargePublic                 *bool   `json:"is_large_public"`
 	IsNonLargePublic              *bool   `json:"is_non_large_public"`
-	HasSubsidiaries               *bool   `json:"has_subsidiaries"`
-	HasSubordinateAccountingUnits *bool   `json:"has_subordinate_accounting_units"`
-	BusinessSector                *string `json:"business_sector"`
+	HasSubsidiaries               *bool     `json:"has_subsidiaries"`
+	HasSubordinateAccountingUnits *bool     `json:"has_subordinate_accounting_units"`
+	BusinessSectors               *[]string `json:"business_sectors"`
+	BusinessSector                *string   `json:"business_sector"` // deprecated
 }
 
 // DirectPermissionView is one active direct grant row returned by ListDirectPermissions.

@@ -1327,8 +1327,20 @@ func (r *AdminRepository) UpdateCompanyPlatform(_ context.Context, req caapp.Upd
 	if req.HasSubordinateAccountingUnits != nil {
 		c.HasSubordinateAccountingUnits = *req.HasSubordinateAccountingUnits
 	}
-	if req.BusinessSector != nil {
+	if req.BusinessSectors != nil {
+		c.BusinessSectors = append([]string{}, (*req.BusinessSectors)...)
+		if len(c.BusinessSectors) > 0 {
+			c.BusinessSector = c.BusinessSectors[0]
+		} else {
+			c.BusinessSector = ""
+		}
+	} else if req.BusinessSector != nil {
 		c.BusinessSector = strings.TrimSpace(*req.BusinessSector)
+		if c.BusinessSector == "" {
+			c.BusinessSectors = []string{}
+		} else {
+			c.BusinessSectors = []string{c.BusinessSector}
+		}
 	}
 	return nil
 }

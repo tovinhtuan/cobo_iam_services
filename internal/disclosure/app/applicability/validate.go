@@ -63,3 +63,12 @@ func ValidateBusinessSectorPatch(raw *string) error {
 	}
 	return nil
 }
+
+// ValidateBusinessSectorsPatch validates PATCH business_sectors array.
+func ValidateBusinessSectorsPatch(raw *[]string) error {
+	if raw == nil {
+		return nil
+	}
+	_, err := NormalizeBusinessSectors(*raw)
+	return err
+}

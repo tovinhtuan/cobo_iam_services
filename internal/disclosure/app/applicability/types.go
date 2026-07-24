@@ -68,5 +68,8 @@ type CompanyApplicabilityProfile struct {
 	IsNonLargePublic              bool
 	HasSubsidiaries               bool
 	HasSubordinateAccountingUnits bool
-	BusinessSector                *BusinessSector
+	// BusinessSectors is the multi-value source of truth (canonical order).
+	BusinessSectors []BusinessSector
+	// BusinessSector is the deprecated primary sector (first of BusinessSectors) for legacy callers.
+	BusinessSector *BusinessSector
 }

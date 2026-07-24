@@ -86,3 +86,23 @@ func TestGraceNullRules(t *testing.T) {
 		t.Fatal("null rules should fail when strict filter on")
 	}
 }
+
+func TestIsApplicable_MultiSectorAnyMatch(t *testing.T) {
+	rules := &TemplateApplicabilityRules{
+		ApplicableCompanyClasses: []CompanyClass{CompanyClassListed},
+		ApplicableSectors:        []BusinessSector{BusinessSectorService},
+	}
+	profile := CompanyApplicabilityProfile{
+		IsListed: true,
+		BusinessSectors: []BusinessSector{
+			BusinessSectorCommercial, BusinessSectorService,
+		},
+	}
+	if !IsApplicable(rules, profile, true) {
+		t.Fatal("expected any-overlap match")
+	}
+	profile.BusinessSectors = []BusinessSector{BusinessSectorManufacturing}
+	if IsApplicable(rules, profile, true) {
+		t.Fatal("expected no match")
+	}
+}

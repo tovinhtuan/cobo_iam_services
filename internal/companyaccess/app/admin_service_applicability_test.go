@@ -83,4 +83,71 @@ func TestGetOwnCompany_ApplicabilityDefaults_CP4(t *testing.T) {
 	if out.BusinessSector != "" {
 		t.Fatalf("expected empty sector got %q", out.BusinessSector)
 	}
+	if len(out.BusinessSectors) != 0 {
+		t.Fatalf("expected empty business_sectors got %#v", out.BusinessSectors)
+	}
+}
+
+func TestPatchOwnCompany_BusinessSectors_Multi(t *testing.T) {
+	repo := cainmem.NewAdminRepository()
+	seedCompany(repo, "c-own", "CoBo VN")
+	svc := caapp.NewAdminService(repo, fakeAuthService{decision: authapp.DecisionAllow}, fixedIDGen("x"))
+
+	sectors := []string{"manufacturing", "commercial", "service", "commercial"}
+	out, err := svc.PatchOwnCompany(context.Background(), caapp.PatchOwnCompanyRequest{
+		Subject:         caapp.AdminSubject{UserID: "u1", MembershipID: "m1", CompanyID: "c-own"},
+		BusinessSectors: &sectors,
+	})
+	if err != nil {
+		t.Fatalf("PatchOwnCompany err=%v", err)
+	}
+	want := []string{"commercial", "service", "manufacturing"}
+	if len(out.BusinessSectors) != len(want) {
+		t.Fatalf("BusinessSectors=%#v", out.BusinessSectors)
+	}
+	for i := range want {
+		if out.BusinessSectors[i] != want[i] {
+			t.Fatalf("BusinessSectors[%d]=%q want %q", i, out.BusinessSectors[i], want[i])
+		}
+	}
+	if out.BusinessSector != "commercial" {
+		t.Fatalf("legacy BusinessSector=%q", out.BusinessSector)
+	}
+}
+
+func TestPatchOwnCompany_InvalidBusinessSectors(t *testing.T) {
+	repo := cainmem.NewAdminRepository()
+	seedCompany(repo, "c-own", "CoBo VN")
+	svc := caapp.NewAdminService(repo, fakeAuthService{decision: authapp.DecisionAllow}, fixedIDGen("x"))
+
+	bad := []string{"trade"}
+	_, err := svc.PatchOwnCompany(context.Background(), caapp.PatchOwnCompanyRequest{
+		Subject:         caapp.AdminSubject{UserID: "u1", MembershipID: "m1", CompanyID: "c-own"},
+		BusinessSectors: &bad,
+	})
+	if err == nil {
+		t.Fatal("expected error for invalid business_sectors")
+	}
+	he, ok := perr.AsHTTPError(err)
+	if !ok || he.HTTPStatus != http.StatusBadRequest {
+		t.Fatalf("expected 400 got %v", err)
+	}
+}
+
+func TestPatchOwnCompany_LegacyBusinessSectorMapsToArray(t *testing.T) {
+	repo := cainmem.NewAdminRepository()
+	seedCompany(repo, "c-own", "CoBo VN")
+	svc := caapp.NewAdminService(repo, fakeAuthService{decision: authapp.DecisionAllow}, fixedIDGen("x"))
+
+	sector := "manufacturing"
+	out, err := svc.PatchOwnCompany(context.Background(), caapp.PatchOwnCompanyRequest{
+		Subject:        caapp.AdminSubject{UserID: "u1", MembershipID: "m1", CompanyID: "c-own"},
+		BusinessSector: &sector,
+	})
+	if err != nil {
+		t.Fatalf("PatchOwnCompany err=%v", err)
+	}
+	if len(out.BusinessSectors) != 1 || out.BusinessSectors[0] != "manufacturing" {
+		t.Fatalf("BusinessSectors=%#v", out.BusinessSectors)
+	}
 }

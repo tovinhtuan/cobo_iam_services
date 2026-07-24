@@ -42,10 +42,11 @@ type PlatformCompanyDetail struct {
 	IsListed                      bool   `json:"is_listed"`
 	IsLargePublic                 bool   `json:"is_large_public"`
 	IsNonLargePublic              bool   `json:"is_non_large_public"`
-	HasSubsidiaries               bool   `json:"has_subsidiaries"`
-	HasSubordinateAccountingUnits bool   `json:"has_subordinate_accounting_units"`
-	BusinessSector                string `json:"business_sector,omitempty"`
-	MemberCount        int    `json:"member_count"`
+	HasSubsidiaries               bool     `json:"has_subsidiaries"`
+	HasSubordinateAccountingUnits bool     `json:"has_subordinate_accounting_units"`
+	BusinessSectors               []string `json:"business_sectors"`
+	BusinessSector                string   `json:"business_sector,omitempty"` // deprecated: first of business_sectors
+	MemberCount                   int      `json:"member_count"`
 	DisclosureCount    int    `json:"disclosure_count"`
 	TemplateCount      int    `json:"template_count"`
 	CreatedAtRFC3339   string `json:"created_at"`
@@ -89,7 +90,8 @@ type UpdatePlatformCompanyRequest struct {
 	IsNonLargePublic              *bool
 	HasSubsidiaries               *bool
 	HasSubordinateAccountingUnits *bool
-	BusinessSector                *string
+	BusinessSectors               *[]string
+	BusinessSector                *string // deprecated single-value write path
 }
 
 type SetPlatformCompanyStatusRequest struct {

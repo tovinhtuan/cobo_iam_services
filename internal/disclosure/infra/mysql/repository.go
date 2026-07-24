@@ -1585,13 +1585,14 @@ func (r *Repository) GetCompanyApplicabilityProfile(ctx context.Context, company
 	row := r.db.QueryRowContext(ctx, `
 		SELECT COALESCE(is_listed, 0), COALESCE(is_large_public, 0), COALESCE(is_non_large_public, 0),
 			COALESCE(has_subsidiaries, 0), COALESCE(has_subordinate_accounting_units, 0),
-			COALESCE(business_sector, '')
+			COALESCE(business_sector, ''), business_sectors
 		FROM companies
 		WHERE company_id = ?
 	`, companyID)
 	var isListed, isLargePublic, isNonLargePublic, hasSubsidiaries, hasSubordinateAccountingUnits int
 	var businessSector string
-	if err := row.Scan(&isListed, &isLargePublic, &isNonLargePublic, &hasSubsidiaries, &hasSubordinateAccountingUnits, &businessSector); err != nil {
+	var businessSectorsJSON []byte
+	if err := row.Scan(&isListed, &isLargePublic, &isNonLargePublic, &hasSubsidiaries, &hasSubordinateAccountingUnits, &businessSector, &businessSectorsJSON); err != nil {
 		if err == sql.ErrNoRows {
 			return applicability.CompanyApplicabilityProfile{}, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "company not found", nil)
 		}
@@ -1601,6 +1602,7 @@ func (r *Repository) GetCompanyApplicabilityProfile(ctx context.Context, company
 		isListed == 1, isLargePublic == 1, isNonLargePublic == 1,
 		hasSubsidiaries == 1, hasSubordinateAccountingUnits == 1,
 		businessSector,
+		businessSectorsJSON,
 	), nil
 }
 

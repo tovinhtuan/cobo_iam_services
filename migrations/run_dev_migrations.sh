@@ -123,6 +123,7 @@ seed_dev_identity_authorization.sql
 0120_disclosure_records_completed_at.up.sql
 0121_workflow_step_description.up.sql
 0123_roles_classification.up.sql
+0124_company_business_sectors_multi.up.sql
 "
 
 mysql_exec() {

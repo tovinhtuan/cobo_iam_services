@@ -14,6 +14,7 @@ import (
 	"github.com/cobo/cobo_iam_services/internal/companyaccess/conflict"
 	"github.com/cobo/cobo_iam_services/internal/companyaccess/configversion"
 	"github.com/cobo/cobo_iam_services/internal/companyaccess/dependency"
+	"github.com/cobo/cobo_iam_services/internal/disclosure/app/applicability"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 	"github.com/cobo/cobo_iam_services/internal/platform/idgen"
 	"github.com/cobo/cobo_iam_services/internal/platform/refreshtoken"
@@ -1494,15 +1495,33 @@ func (s *adminService) PatchOwnCompany(ctx context.Context, req PatchOwnCompanyR
 		return nil, err
 	}
 	// VerificationStatus and Status are intentionally absent — only platform admins may change those.
-	if req.BusinessSector != nil {
+	var sectorsPtr *[]string
+	var legacySectorPtr *string
+	if req.BusinessSectors != nil {
+		normalized, err := applicability.NormalizeBusinessSectors(*req.BusinessSectors)
+		if err != nil {
+			return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "invalid business_sectors", nil)
+		}
+		strs := applicability.BusinessSectorsToStrings(normalized)
+		sectorsPtr = &strs
+		primary := applicability.PrimaryBusinessSector(normalized)
+		legacySectorPtr = &primary
+	} else if req.BusinessSector != nil {
 		v := strings.TrimSpace(*req.BusinessSector)
 		if v != "" {
-			if v != "commercial" && v != "service" && v != "manufacturing" {
+			normalized, err := applicability.NormalizeBusinessSectors([]string{v})
+			if err != nil {
 				return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "invalid business_sector", nil)
 			}
+			strs := applicability.BusinessSectorsToStrings(normalized)
+			sectorsPtr = &strs
+			primary := applicability.PrimaryBusinessSector(normalized)
+			legacySectorPtr = &primary
 		} else {
-			empty := ""
-			req.BusinessSector = &empty
+			empty := []string{}
+			sectorsPtr = &empty
+			blank := ""
+			legacySectorPtr = &blank
 		}
 	}
 	if err := s.repo.UpdateCompanyPlatform(ctx, UpdatePlatformCompanyRequest{
@@ -1520,7 +1539,8 @@ func (s *adminService) PatchOwnCompany(ctx context.Context, req PatchOwnCompanyR
 		IsNonLargePublic:              req.IsNonLargePublic,
 		HasSubsidiaries:               req.HasSubsidiaries,
 		HasSubordinateAccountingUnits: req.HasSubordinateAccountingUnits,
-		BusinessSector:                req.BusinessSector,
+		BusinessSectors:               sectorsPtr,
+		BusinessSector:                legacySectorPtr,
 	}); err != nil {
 		return nil, err
 	}

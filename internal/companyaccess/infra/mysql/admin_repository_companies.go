@@ -3,12 +3,14 @@ package mysql
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
 	caapp "github.com/cobo/cobo_iam_services/internal/companyaccess/app"
+	"github.com/cobo/cobo_iam_services/internal/disclosure/app/applicability"
 	iamregmysql "github.com/cobo/cobo_iam_services/internal/iam/registrationmysql"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 )
@@ -133,20 +135,21 @@ func (r *AdminRepository) GetCompanyPlatform(ctx context.Context, companyID stri
 			COALESCE(address, ''), COALESCE(phone, ''), COALESCE(contact_email, ''), COALESCE(representative_name, ''),
 			COALESCE(is_listed, 0), COALESCE(is_large_public, 0), COALESCE(is_non_large_public, 0),
 			COALESCE(has_subsidiaries, 0), COALESCE(has_subordinate_accounting_units, 0),
-			COALESCE(business_sector, ''),
+			COALESCE(business_sector, ''), business_sectors,
 			created_at, updated_at
 		FROM companies WHERE company_id = ?
 	`, companyID)
 	var d caapp.PlatformCompanyDetail
 	var created, updated time.Time
 	var businessSector sql.NullString
+	var businessSectorsJSON []byte
 	if err := row.Scan(
 		&d.CompanyID, &d.CompanyCode, &d.CompanyName, &d.Status, &d.VerificationStatus,
 		&d.TaxCode, &d.RegistrationNumber,
 		&d.Address, &d.Phone, &d.ContactEmail, &d.RepresentativeName,
 		&d.IsListed, &d.IsLargePublic, &d.IsNonLargePublic,
 		&d.HasSubsidiaries, &d.HasSubordinateAccountingUnits,
-		&businessSector,
+		&businessSector, &businessSectorsJSON,
 		&created, &updated,
 	); err != nil {
 		if err == sql.ErrNoRows {
@@ -156,8 +159,9 @@ func (r *AdminRepository) GetCompanyPlatform(ctx context.Context, companyID stri
 	}
 	d.CreatedAtRFC3339 = created.UTC().Format(time.RFC3339)
 	d.UpdatedAtRFC3339 = updated.UTC().Format(time.RFC3339)
-	if businessSector.Valid {
-		d.BusinessSector = businessSector.String
+	d.BusinessSectors = decodeBusinessSectors(businessSectorsJSON, businessSector)
+	if len(d.BusinessSectors) > 0 {
+		d.BusinessSector = d.BusinessSectors[0]
 	}
 
 	if err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM memberships WHERE company_id = ? AND LOWER(TRIM(membership_status)) = 'active'`, companyID).Scan(&d.MemberCount); err != nil {
@@ -236,13 +240,41 @@ func (r *AdminRepository) UpdateCompanyPlatform(ctx context.Context, req caapp.U
 		sets = append(sets, "has_subordinate_accounting_units = ?")
 		args = append(args, boolToTiny(*req.HasSubordinateAccountingUnits))
 	}
-	if req.BusinessSector != nil {
-		v := strings.TrimSpace(*req.BusinessSector)
-		if v == "" {
+	if req.BusinessSectors != nil {
+		payload, err := json.Marshal(*req.BusinessSectors)
+		if err != nil {
+			return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "invalid business_sectors", err)
+		}
+		sets = append(sets, "business_sectors = CAST(? AS JSON)")
+		args = append(args, string(payload))
+		if req.BusinessSector != nil {
+			v := strings.TrimSpace(*req.BusinessSector)
+			if v == "" {
+				sets = append(sets, "business_sector = NULL")
+			} else {
+				sets = append(sets, "business_sector = ?")
+				args = append(args, v)
+			}
+		} else if len(*req.BusinessSectors) == 0 {
 			sets = append(sets, "business_sector = NULL")
 		} else {
 			sets = append(sets, "business_sector = ?")
+			args = append(args, (*req.BusinessSectors)[0])
+		}
+	} else if req.BusinessSector != nil {
+		v := strings.TrimSpace(*req.BusinessSector)
+		if v == "" {
+			sets = append(sets, "business_sector = NULL")
+			sets = append(sets, "business_sectors = CAST('[]' AS JSON)")
+		} else {
+			sets = append(sets, "business_sector = ?")
 			args = append(args, v)
+			payload, err := json.Marshal([]string{v})
+			if err != nil {
+				return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "invalid business_sector", err)
+			}
+			sets = append(sets, "business_sectors = CAST(? AS JSON)")
+			args = append(args, string(payload))
 		}
 	}
 	if len(sets) == 0 {
@@ -277,6 +309,23 @@ func boolToTiny(v bool) int {
 		return 1
 	}
 	return 0
+}
+
+func decodeBusinessSectors(rawJSON []byte, legacy sql.NullString) []string {
+	if len(rawJSON) > 0 {
+		if sectors, err := applicability.ParseBusinessSectorsJSON(rawJSON); err == nil && sectors != nil {
+			return applicability.BusinessSectorsToStrings(sectors)
+		}
+	}
+	if legacy.Valid {
+		v := strings.TrimSpace(legacy.String)
+		if v != "" {
+			if sectors, err := applicability.NormalizeBusinessSectors([]string{v}); err == nil {
+				return applicability.BusinessSectorsToStrings(sectors)
+			}
+		}
+	}
+	return []string{}
 }
 
 func (r *AdminRepository) SetCompanyStatusPlatform(ctx context.Context, companyID, status string) error {

@@ -50,17 +50,21 @@ func IsApplicable(rules *TemplateApplicabilityRules, profile CompanyApplicabilit
 	if !classMatch {
 		return false
 	}
-	if profile.BusinessSector == nil {
+	sectors := profile.BusinessSectors
+	if len(sectors) == 0 && profile.BusinessSector != nil {
+		sectors = []BusinessSector{*profile.BusinessSector}
+	}
+	if len(sectors) == 0 {
 		return false
 	}
-	sectorMatch := false
-	for _, allowed := range rules.ApplicableSectors {
-		if *profile.BusinessSector == allowed {
-			sectorMatch = true
-			break
+	for _, companySector := range sectors {
+		for _, allowed := range rules.ApplicableSectors {
+			if companySector == allowed {
+				return true
+			}
 		}
 	}
-	return sectorMatch
+	return false
 }
 
 // ResolveDeadlineDays returns effective N from applicability rules.
