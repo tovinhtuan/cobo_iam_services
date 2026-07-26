@@ -37,6 +37,42 @@ func TestBuildOverview_onTimeUnavailable(t *testing.T) {
 	if resp.Kpis[KpiOpenOverdue].Value == nil || *resp.Kpis[KpiOpenOverdue].Value != 2 {
 		t.Fatalf("open_overdue: %+v", resp.Kpis[KpiOpenOverdue])
 	}
+	if resp.DeadlineHealth.OnTimeCount != 0 {
+		t.Fatalf("on_time_count want 0 got %d", resp.DeadlineHealth.OnTimeCount)
+	}
+}
+
+func TestBuildOverview_onTimeCountDedupesOpenNonOverdue(t *testing.T) {
+	now := time.Date(2026, 7, 10, 0, 0, 0, 0, time.UTC)
+	dr, _ := domain.ParseRange(domain.ParseRangeInput{Range: "30d", Now: now})
+	resp := buildOverview(
+		domain.CompanyBrief{ID: "c1"},
+		dr,
+		deadlineFetch{
+			overdue: []deadlinealertsapp.DeadlineAlertDTO{{RecordID: "late1", Status: "OVERDUE", DueDate: "2026-07-01"}},
+			dueSoon: []deadlinealertsapp.DeadlineAlertDTO{
+				{RecordID: "a", Status: "DUE_SOON", DueDate: "2026-07-11"},
+				{RecordID: "b", Status: "DUE_SOON", DueDate: "2026-07-12"},
+			},
+			pendingConfirm: []deadlinealertsapp.DeadlineAlertDTO{{RecordID: "a", Status: "PENDING_CONFIRM", DueDate: "2026-07-11"}},
+			upcoming:       []deadlinealertsapp.DeadlineAlertDTO{{RecordID: "c", Status: "UPCOMING", DueDate: "2026-07-20"}},
+		},
+		adHocFetch{skipped: true},
+		inAppFetch{},
+	)
+	// a,b,c unique — overdue excluded from on_time_count
+	if resp.DeadlineHealth.OnTimeCount != 3 {
+		t.Fatalf("on_time_count: %d", resp.DeadlineHealth.OnTimeCount)
+	}
+	if resp.DeadlineHealth.OnTimeRate.Accuracy != AccuracyUnavailable {
+		t.Fatalf("percent on_time_rate still unavailable: %+v", resp.DeadlineHealth.OnTimeRate)
+	}
+}
+
+func TestCountOnTimeOpenAlerts_empty(t *testing.T) {
+	if n := countOnTimeOpenAlerts(nil, nil); n != 0 {
+		t.Fatalf("empty want 0 got %d", n)
+	}
 }
 
 func TestBuildOverview_needsActionDedupe(t *testing.T) {

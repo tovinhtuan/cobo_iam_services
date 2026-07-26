@@ -152,7 +152,8 @@ func buildOverview(
 		))
 	}
 
-	// on_time_rate — unavailable (no completion timestamp definition)
+	// on_time_rate (percent of completed-on-time) remains unavailable in overview —
+	// completion sampling is Personal Ops. The health block uses on_time_count instead.
 	kpis[KpiOnTimeRate] = mapKpi(unavailableKpi("percent", ReasonCompletionTimestampOrDefinitionMissing))
 
 	overdueItems := deadlines.overdue
@@ -161,6 +162,7 @@ func buildOverview(
 	if totalOverdue == 0 {
 		totalOverdue = len(overdueItems)
 	}
+	onTimeCount := countOnTimeOpenAlerts(deadlines.dueSoon, deadlines.pendingConfirm, deadlines.upcoming)
 
 	openAlerts := append(append(deadlines.dueSoon, deadlines.pendingConfirm...), deadlines.upcoming...)
 	immediate := buildImmediateActions(deadlines.overdue, deadlines.dueSoon, deadlines.pendingConfirm, append(adHoc.pendingFocal, adHoc.pendingAdmin...), 10, ref)
@@ -191,7 +193,8 @@ func buildOverview(
 		LastUpdatedAt: time.Now().UTC().Format(time.RFC3339),
 		Kpis:          kpis,
 		DeadlineHealth: domain.DeadlineHealthBlock{
-			OnTimeRate: mapKpi(unavailableKpi("percent", ReasonCompletionTimestampOrDefinitionMissing)),
+			OnTimeRate:        mapKpi(unavailableKpi("percent", ReasonCompletionTimestampOrDefinitionMissing)),
+			OnTimeCount:       onTimeCount,
 			OverdueAgeBuckets: buckets,
 			TotalOverdue:      totalOverdue,
 			Source:            SourceDeadlineAlerts,
@@ -360,6 +363,25 @@ func bucketOverdueAge(overdue []deadlinealertsapp.DeadlineAlertDTO, ref time.Tim
 		out = append(out, domain.OverdueBucket{Key: key, Count: counts[key], Percent: pct})
 	}
 	return out
+}
+
+// countOnTimeOpenAlerts counts open, non-overdue deadline alerts in the selected range.
+// Dedupes by RecordID across DUE_SOON / PENDING_CONFIRM / UPCOMING.
+func countOnTimeOpenAlerts(groups ...[]deadlinealertsapp.DeadlineAlertDTO) int {
+	seen := map[string]struct{}{}
+	for _, group := range groups {
+		for _, a := range group {
+			id := strings.TrimSpace(a.RecordID)
+			if id == "" {
+				continue
+			}
+			if _, ok := seen[id]; ok {
+				continue
+			}
+			seen[id] = struct{}{}
+		}
+	}
+	return len(seen)
 }
 
 func buildImmediateActions(

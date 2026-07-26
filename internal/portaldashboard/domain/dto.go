@@ -38,11 +38,12 @@ type KpiMetric struct {
 }
 
 type DeadlineHealthBlock struct {
-	OnTimeRate       KpiMetric        `json:"on_time_rate"`
+	OnTimeRate        KpiMetric       `json:"on_time_rate"`
+	OnTimeCount       int             `json:"on_time_count"`
 	OverdueAgeBuckets []OverdueBucket `json:"overdue_age_buckets"`
-	TotalOverdue     int              `json:"total_overdue"`
-	Source           string           `json:"source"`
-	Accuracy         string           `json:"accuracy"`
+	TotalOverdue      int             `json:"total_overdue"`
+	Source            string          `json:"source"`
+	Accuracy          string          `json:"accuracy"`
 }
 
 type OverdueBucket struct {
