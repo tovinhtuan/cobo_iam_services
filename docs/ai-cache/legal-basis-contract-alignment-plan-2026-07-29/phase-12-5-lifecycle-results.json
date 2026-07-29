@@ -92,6 +92,6 @@
     "noDeployment": true,
     "noProduction": true
   },
-  "commits": {"implementation": "0c6dcca", "evidence": "PENDING"},
+  "commits": {"implementation": "0c6dcca", "evidence": "bf3f6ae (BE) / 6265bf9 (FE docs)"},
   "verdict": "PASS_WITH_NON_BLOCKING_GAPS"
 }

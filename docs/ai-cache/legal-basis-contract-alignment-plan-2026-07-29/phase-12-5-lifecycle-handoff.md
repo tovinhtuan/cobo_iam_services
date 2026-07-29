@@ -96,7 +96,8 @@ PASS — no FE/migration/Docker/company DTO expansion.
 ## 27. Commits
 
 - Implementation (BE): `0c6dcca` — `fix(legal-basis): preserve data across template lifecycle`
-- Evidence: (after docs commit)
+- Evidence (BE): `bf3f6ae` — `docs(legal-basis): add Phase 12.5 lifecycle evidence`
+- Evidence (FE plan folder): `6265bf9` — same message
 
 ## 28. Remaining Phase 12.6 gaps
 
