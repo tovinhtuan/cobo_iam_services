@@ -15,6 +15,7 @@ import (
 	disclosureapp "github.com/cobo/cobo_iam_services/internal/disclosure/app"
 	"github.com/cobo/cobo_iam_services/internal/disclosure/app/applicability"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
+	"github.com/cobo/cobo_iam_services/internal/platform/idgen"
 )
 
 // isDuplicateRecordIDError reports whether err is a MySQL duplicate-key error
@@ -919,6 +920,44 @@ func (r *Repository) UpsertTypeVersion(ctx context.Context, req disclosureapp.Up
 			return nil, err
 		}
 		req.LegalBases = existing
+	}
+	// Phase 12.5: new independent version must deep-copy prior structured bases and regen IDs.
+	if !overwriteDraft {
+		var maxVersion sql.NullInt64
+		if err := tx.QueryRowContext(ctx, `
+			SELECT COALESCE(MAX(version_no), 0) FROM disclosure_type_versions WHERE type_id = ?
+		`, req.TypeID).Scan(&maxVersion); err != nil {
+			return nil, err
+		}
+		prevVersion := int(maxVersion.Int64)
+		if prevVersion >= 1 {
+			idg := idgen.UUIDv7Generator{}
+			if req.PreserveLegalBases {
+				var raw []byte
+				var prevFlat sql.NullString
+				if err := tx.QueryRowContext(ctx, `
+					SELECT COALESCE(legal_bases_json, JSON_ARRAY()), COALESCE(legal_basis, '')
+					FROM disclosure_type_versions WHERE type_id = ? AND version_no = ?
+				`, req.TypeID, prevVersion).Scan(&raw, &prevFlat); err != nil {
+					return nil, err
+				}
+				var existing []disclosureapp.LegalBasisDTO
+				if err := decodeJSONList(raw, &existing); err != nil {
+					return nil, err
+				}
+				bases, flat, _ := disclosureapp.PrepareLegalBasesForNewVersion(
+					ctx, req.TypeID, existing, prevFlat.String, nil, req.LegalBasis, true, idg,
+				)
+				req.LegalBases = bases
+				req.LegalBasis = flat
+			} else if len(req.LegalBases) > 0 {
+				bases, flat, _ := disclosureapp.PrepareLegalBasesForNewVersion(
+					ctx, req.TypeID, nil, "", req.LegalBases, req.LegalBasis, false, idg,
+				)
+				req.LegalBases = bases
+				req.LegalBasis = flat
+			}
+		}
 	}
 	legalBasesJSON, err := json.Marshal(req.LegalBases)
 	if err != nil {

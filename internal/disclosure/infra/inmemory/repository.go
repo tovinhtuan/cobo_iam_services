@@ -12,6 +12,7 @@ import (
 	disclosureapp "github.com/cobo/cobo_iam_services/internal/disclosure/app"
 	"github.com/cobo/cobo_iam_services/internal/disclosure/app/applicability"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
+	"github.com/cobo/cobo_iam_services/internal/platform/idgen"
 )
 
 type Repository struct {
@@ -435,7 +436,7 @@ func (r *Repository) GetTypeVersionDetail(_ context.Context, companyID, typeID s
 	return &cp, nil
 }
 
-func (r *Repository) UpsertTypeVersion(_ context.Context, req disclosureapp.UpsertTypeVersionRequest) (*disclosureapp.UpsertTypeVersionResponse, error) {
+func (r *Repository) UpsertTypeVersion(ctx context.Context, req disclosureapp.UpsertTypeVersionRequest) (*disclosureapp.UpsertTypeVersionResponse, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -472,6 +473,44 @@ func (r *Repository) UpsertTypeVersion(_ context.Context, req disclosureapp.Upse
 		if byVer, ok := r.catalogByVer[req.TypeID]; ok {
 			if existing, ok := byVer[versionNo]; ok {
 				req.LegalBases = slices.Clone(existing.LegalBases)
+			}
+		}
+	}
+	// Phase 12.5: independent version deep-copy + ID regeneration.
+	if !overwriteDraft && versionNo > 1 {
+		idg := idgen.UUIDv7Generator{}
+		prevNo := versionNo - 1
+		// Prefer exact prior max version from catalog map if version numbers are dense;
+		// fall back to highest existing version number.
+		var prev *disclosureapp.DisclosureTypeDTO
+		if byVer, ok := r.catalogByVer[req.TypeID]; ok {
+			if item, ok := byVer[prevNo]; ok {
+				cp := item
+				prev = &cp
+			} else {
+				best := 0
+				for n, item := range byVer {
+					if n > best {
+						best = n
+						cp := item
+						prev = &cp
+					}
+				}
+			}
+		}
+		if prev != nil {
+			if req.PreserveLegalBases {
+				bases, flat, _ := disclosureapp.PrepareLegalBasesForNewVersion(
+					ctx, req.TypeID, prev.LegalBases, prev.LegalBasis, nil, req.LegalBasis, true, idg,
+				)
+				req.LegalBases = bases
+				req.LegalBasis = flat
+			} else if len(req.LegalBases) > 0 {
+				bases, flat, _ := disclosureapp.PrepareLegalBasesForNewVersion(
+					ctx, req.TypeID, nil, "", req.LegalBases, req.LegalBasis, false, idg,
+				)
+				req.LegalBases = bases
+				req.LegalBasis = flat
 			}
 		}
 	}
