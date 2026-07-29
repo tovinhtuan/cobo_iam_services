@@ -95,3 +95,7 @@ CMS add/edit/remove/reorder; legacy card import; validation; dirty guard; tenant
 | DEV RO inventory dry-run | PASS_READ_ONLY_DRY_RUN (gov: FAIL_SCOPE_CREEP) |
 | Controlled backfill apply tests | **Designed** in `phase-12-6b-test-plan.md` — **not executed** |
 | DEV mutation | **0** (Plan docs only; `BACKFILL_PLAN_READY`) |
+
+## Phase 12.6B-I (2026-07-29)
+
+Guarded backfill tooling implemented (`legal_basis_backfill` + cmds). Verdict **TOOL_READY_FOR_CONTROLLED_EXECUTION**. DEV apply **not** executed; SQL DEV wiring deferred to 12.6B-E.

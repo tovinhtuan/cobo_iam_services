@@ -52,3 +52,7 @@ Do **not** run migration `0122` as part of 12.6B.
 ## Rejected alternative
 
 Permanent no-backfill-only is allowed as product choice later, but **default plan includes** A/B/C/E after dry-run (OD-4).
+
+## Phase 12.6B-I (2026-07-29)
+
+Guarded backfill tooling implemented (`legal_basis_backfill` + cmds). Verdict **TOOL_READY_FOR_CONTROLLED_EXECUTION**. DEV apply **not** executed; SQL DEV wiring deferred to 12.6B-E.

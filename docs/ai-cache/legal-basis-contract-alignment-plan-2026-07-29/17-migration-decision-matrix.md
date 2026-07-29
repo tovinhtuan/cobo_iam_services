@@ -47,3 +47,7 @@ No full legal text in logs.
 | Migration 0122 / `is_released` | **Out of scope** for this apply |
 | Apply execution | Blocked until Approvals 3–4 + explicit user phrase |
 | Evidence | `phase-12-6b-*` |
+
+## Phase 12.6B-I (2026-07-29)
+
+Guarded backfill tooling implemented (`legal_basis_backfill` + cmds). Verdict **TOOL_READY_FOR_CONTROLLED_EXECUTION**. DEV apply **not** executed; SQL DEV wiring deferred to 12.6B-E.

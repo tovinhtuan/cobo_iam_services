@@ -167,5 +167,7 @@
   },
   "awaitingReadOnlyDSNForPhase126A": false,
   "phase12_6b_plan": "BACKFILL_PLAN_READY",
-  "awaitingUserConfirmationBeforePhase126BApply": true
+  "awaitingUserConfirmationBeforePhase126BApply": true,
+  "phase12_6b_i": "TOOL_READY_FOR_CONTROLLED_EXECUTION",
+  "awaitingUserConfirmationBeforePhase126BE": true
 }

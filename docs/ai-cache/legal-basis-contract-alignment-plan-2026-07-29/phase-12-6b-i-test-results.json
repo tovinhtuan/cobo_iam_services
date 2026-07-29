@@ -1,0 +1,17 @@
+{
+  "phase": "12.6B-I",
+  "targeted": {
+    "legal_basis_backfill": "PASS",
+    "legal_basis_inventory": "PASS",
+    "disclosure/app": "PASS"
+  },
+  "disclosureTree": "PASS",
+  "fullSuite": "FAIL_PREEXISTING",
+  "fullSuiteFailures": [
+    "internal/companyaccess/app",
+    "internal/companyaccess/transport/http",
+    "internal/httpserver",
+    "internal/notification/app"
+  ],
+  "note": "Pre-existing unrelated failures; legal basis packages PASS"
+}

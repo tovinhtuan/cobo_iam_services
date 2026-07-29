@@ -39,16 +39,21 @@
     "postWriteAcceptance": false
   },
   "scope": {
-    "docsOnly": true,
+    "docsOnly": false,
     "databaseWrites": 0,
     "migrationExecuted": false,
     "dockerBuildExecuted": false,
     "deploymentExecuted": false
   },
   "execution": {
-    "backfillImplemented": false,
+    "backfillImplemented": true,
     "backfillExecuted": false,
     "rollbackExecuted": false
   },
-  "verdict": "BACKFILL_PLAN_READY"
+  "verdict": "TOOL_READY_FOR_CONTROLLED_EXECUTION",
+  "phase12_6b_i": {
+    "verdict": "TOOL_READY_FOR_CONTROLLED_EXECUTION",
+    "devSQLWiring": false,
+    "devWrites": 0
+  }
 }

@@ -1,0 +1,69 @@
+{
+  "phase": "Phase 12.6B-I - Guarded DEV Backfill Tool Implementation",
+  "baseline": {
+    "branch": "recovery/lost-changes-audit-20260717-153324",
+    "backendCommit": "2d9a5b7",
+    "goVersion": "go1.24.9"
+  },
+  "workingTree": {
+    "classified": true,
+    "unrelatedUnresolvedFiles": []
+  },
+  "auditSemantics": {
+    "updatedByType": "VARCHAR(64) NOT NULL no FK",
+    "updatedByDecision": "PRESERVE_EXISTING",
+    "updatedAtDecision": "COLUMN_ABSENT_NOOP",
+    "locked": true
+  },
+  "tooling": {
+    "planMode": true,
+    "applyCommand": true,
+    "snapshotWriter": true,
+    "snapshotReader": true,
+    "allowlistValidator": true,
+    "environmentGuard": true,
+    "freshnessRecheck": true,
+    "casTransaction": true,
+    "postWriteVerifier": true,
+    "rollbackCommand": true,
+    "devSQLWiring": false
+  },
+  "safety": {
+    "defaultApply": false,
+    "wildcardSupported": false,
+    "productionAllowed": false,
+    "exactExpectedRecords": 6,
+    "confirmTokenRequired": true,
+    "rawLegalTextLogged": false
+  },
+  "tests": {
+    "targeted": "PASS",
+    "integrationSynthetic": "PASS",
+    "full": "FAIL_PREEXISTING_UNRELATED",
+    "vet": "PASS",
+    "build": "PASS"
+  },
+  "scope": {
+    "devDatabaseWrites": 0,
+    "backfillExecuted": false,
+    "rollbackExecuted": false,
+    "snapshotDevCaptured": false,
+    "migrationExecuted": false,
+    "dockerBuildExecuted": false,
+    "deploymentExecuted": false,
+    "productionTouched": false
+  },
+  "commits": {
+    "safety": "2d9a5b7",
+    "implementation": "PENDING",
+    "evidence": "PENDING"
+  },
+  "readiness": {
+    "toolReady": true,
+    "snapshotApprovalPending": true,
+    "devMutationApprovalPending": true,
+    "executionWindowPending": true,
+    "devSQLWiringPending": true
+  },
+  "verdict": "TOOL_READY_FOR_CONTROLLED_EXECUTION"
+}

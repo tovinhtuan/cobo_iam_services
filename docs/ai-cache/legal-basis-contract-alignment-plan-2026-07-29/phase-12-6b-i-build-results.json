@@ -1,0 +1,12 @@
+{
+  "gofmt": "PASS",
+  "vet": "PASS",
+  "build": {
+    "legal-basis-backfill": "PASS",
+    "legal-basis-rollback": "PASS",
+    "legal-basis-verify": "PASS",
+    "legal-basis-inventory": "PASS"
+  },
+  "dockerBuild": "NOT_RUN",
+  "devApply": "NOT_RUN"
+}

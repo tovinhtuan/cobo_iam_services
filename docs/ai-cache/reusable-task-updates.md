@@ -3135,3 +3135,12 @@
 - dataset: 6 Group A GLOBAL active v1; WRAP_LEGACY_FLAT; flat-after-wrap=OD-7 projection
 - verdict: **BACKFILL_PLAN_READY**
 - remaining: Approvals 3–4 + explicit mutate phrase before implementation/execution
+
+## 2026-07-29 - Phase 12.6B-I guarded backfill tooling
+
+- task type: backend implement (no DEV mutate)
+- objective: implement fail-closed backfill/rollback/verify tooling for exact 6-record allowlist
+- implemented: legal_basis_backfill package + cmds; inventory SQL safety committed; updated_by PRESERVE locked
+- verification: targeted/disclosure PASS; full suite pre-existing unrelated fails; vet/build PASS; DEV writes=0
+- verdict: TOOL_READY_FOR_CONTROLLED_EXECUTION
+- next: Phase 12.6B-E after explicit mutate approval + SQL wiring
