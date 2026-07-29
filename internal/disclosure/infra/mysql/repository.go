@@ -181,7 +181,6 @@ func (r *Repository) ListDisplayGroups(ctx context.Context) ([]disclosureapp.Dis
 	return out, rows.Err()
 }
 
-
 func (r *Repository) ListTypeGroups(ctx context.Context, _ string) ([]disclosureapp.DisclosureGroupDTO, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT group_id, name, description, icon, display_order
@@ -883,10 +882,6 @@ func (r *Repository) UpsertTypeVersion(ctx context.Context, req disclosureapp.Up
 	if err != nil {
 		return nil, fmt.Errorf("marshal tags: %w", err)
 	}
-	legalBasesJSON, err := json.Marshal(req.LegalBases)
-	if err != nil {
-		return nil, fmt.Errorf("marshal legal bases: %w", err)
-	}
 	checklistJSON, err := json.Marshal(req.Checklist)
 	if err != nil {
 		return nil, fmt.Errorf("marshal checklist: %w", err)
@@ -910,6 +905,26 @@ func (r *Repository) UpsertTypeVersion(ctx context.Context, req disclosureapp.Up
 	overwriteDraft := openDraft.Valid && openDraft.Int64 > 0 && !nextIsActive
 	if overwriteDraft {
 		targetVersion = int(openDraft.Int64)
+	}
+	if req.PreserveLegalBases && overwriteDraft {
+		var raw []byte
+		if err := tx.QueryRowContext(ctx, `
+			SELECT COALESCE(legal_bases_json, JSON_ARRAY()) FROM disclosure_type_versions
+			WHERE type_id = ? AND version_no = ?
+		`, req.TypeID, targetVersion).Scan(&raw); err != nil {
+			return nil, err
+		}
+		var existing []disclosureapp.LegalBasisDTO
+		if err := decodeJSONList(raw, &existing); err != nil {
+			return nil, err
+		}
+		req.LegalBases = existing
+	}
+	legalBasesJSON, err := json.Marshal(req.LegalBases)
+	if err != nil {
+		return nil, fmt.Errorf("marshal legal bases: %w", err)
+	}
+	if overwriteDraft {
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE disclosure_type_versions SET
 				name = ?, category = ?, template_category = ?, deadline_strategy = ?,

@@ -29,11 +29,11 @@ import (
 	platformoutbox "github.com/cobo/cobo_iam_services/internal/platform/outbox"
 	outboxinmem "github.com/cobo/cobo_iam_services/internal/platform/outbox/inmemory"
 	outboxmysql "github.com/cobo/cobo_iam_services/internal/platform/outbox/mysql"
-	"github.com/cobo/cobo_iam_services/internal/subscription/entitlement"
 	reminderapp "github.com/cobo/cobo_iam_services/internal/reminder/app"
 	reminderemail "github.com/cobo/cobo_iam_services/internal/reminder/infra/email"
 	remindermysql "github.com/cobo/cobo_iam_services/internal/reminder/infra/mysql"
 	reminderobserve "github.com/cobo/cobo_iam_services/internal/reminder/infra/observe"
+	"github.com/cobo/cobo_iam_services/internal/subscription/entitlement"
 	workflowapp "github.com/cobo/cobo_iam_services/internal/workflow/app"
 	workflowmysql "github.com/cobo/cobo_iam_services/internal/workflow/infra/mysql"
 )
@@ -133,6 +133,9 @@ func main() {
 			idgen.UUIDv7Generator{},
 			disclosureapp.WithTemplateApplicabilityStrictFilter(cfg.TemplateApplicabilityStrictFilter),
 			disclosureapp.WithDeadlineEngineV2Shadow(cfg.DeadlineEngineV2Shadow),
+			disclosureapp.WithLegalBasisStructuredWriteEnabled(cfg.LegalBasisStructuredWriteEnabled),
+			disclosureapp.WithLegalBasisLegacyFallbackEnabled(cfg.LegalBasisLegacyFallbackEnabled),
+			disclosureapp.WithLegalBasisDivergenceWarningEnabled(cfg.LegalBasisDivergenceWarningEnabled),
 		)
 		var workflowSvc workflowapp.Service
 		if cfg.WorkflowSnapshotEnabled {

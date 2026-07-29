@@ -60,9 +60,11 @@ import (
 	notificationregistry "github.com/cobo/cobo_iam_services/internal/notification/infra/registry"
 	notificationsmtp "github.com/cobo/cobo_iam_services/internal/notification/infra/smtp"
 	notificationhttp "github.com/cobo/cobo_iam_services/internal/notification/transport/http"
+	personalopsapp "github.com/cobo/cobo_iam_services/internal/personalops/app"
+	personalopsmysql "github.com/cobo/cobo_iam_services/internal/personalops/infra/mysql"
+	personalopshttp "github.com/cobo/cobo_iam_services/internal/personalops/transport/http"
 	platformclock "github.com/cobo/cobo_iam_services/internal/platform/clock"
 	"github.com/cobo/cobo_iam_services/internal/platform/config"
-	"github.com/cobo/cobo_iam_services/internal/subscription/entitlement"
 	"github.com/cobo/cobo_iam_services/internal/platform/db"
 	"github.com/cobo/cobo_iam_services/internal/platform/httpx"
 	"github.com/cobo/cobo_iam_services/internal/platform/idempotency"
@@ -75,9 +77,6 @@ import (
 	redispkg "github.com/cobo/cobo_iam_services/internal/platform/redis"
 	platformcmsapp "github.com/cobo/cobo_iam_services/internal/platformcms/app"
 	platformcmshttp "github.com/cobo/cobo_iam_services/internal/platformcms/transport/http"
-	personalopsapp "github.com/cobo/cobo_iam_services/internal/personalops/app"
-	personalopsmysql "github.com/cobo/cobo_iam_services/internal/personalops/infra/mysql"
-	personalopshttp "github.com/cobo/cobo_iam_services/internal/personalops/transport/http"
 	portaldashboardapp "github.com/cobo/cobo_iam_services/internal/portaldashboard/app"
 	portaldashboardhttp "github.com/cobo/cobo_iam_services/internal/portaldashboard/transport/http"
 	reminderapp "github.com/cobo/cobo_iam_services/internal/reminder/app"
@@ -87,6 +86,7 @@ import (
 	remindermysql "github.com/cobo/cobo_iam_services/internal/reminder/infra/mysql"
 	reminderobserve "github.com/cobo/cobo_iam_services/internal/reminder/infra/observe"
 	reminderhttp "github.com/cobo/cobo_iam_services/internal/reminder/transport/http"
+	"github.com/cobo/cobo_iam_services/internal/subscription/entitlement"
 	workflowapp "github.com/cobo/cobo_iam_services/internal/workflow/app"
 	workflowinmem "github.com/cobo/cobo_iam_services/internal/workflow/infra/inmemory"
 	workflowmysql "github.com/cobo/cobo_iam_services/internal/workflow/infra/mysql"
@@ -361,6 +361,9 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 	disclosureOpts = append(disclosureOpts, disclosureapp.WithWorkflowGroupsEnabled(cfg.WorkflowGroupsEnabled))
 	disclosureOpts = append(disclosureOpts, disclosureapp.WithTemplateApplicabilityStrictFilter(cfg.TemplateApplicabilityStrictFilter))
 	disclosureOpts = append(disclosureOpts, disclosureapp.WithDeadlineEngineV2Shadow(cfg.DeadlineEngineV2Shadow))
+	disclosureOpts = append(disclosureOpts, disclosureapp.WithLegalBasisStructuredWriteEnabled(cfg.LegalBasisStructuredWriteEnabled))
+	disclosureOpts = append(disclosureOpts, disclosureapp.WithLegalBasisLegacyFallbackEnabled(cfg.LegalBasisLegacyFallbackEnabled))
+	disclosureOpts = append(disclosureOpts, disclosureapp.WithLegalBasisDivergenceWarningEnabled(cfg.LegalBasisDivergenceWarningEnabled))
 	tierLookup := func(ctx context.Context, userID string) string {
 		if identity == nil {
 			return ""

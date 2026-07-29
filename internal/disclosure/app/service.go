@@ -16,16 +16,19 @@ import (
 )
 
 type service struct {
-	repo                  Repository
-	auth                  authapp.Service
-	idg                   idgen.Generator
-	calculator            *DeadlineCalculator
-	holidayProvider       HolidayCalendarProvider
-	deadlineEngineAdapter DeadlineEngineAdapter
-	shadowRunner          *deadlineEngineShadowRunner
+	repo                               Repository
+	auth                               authapp.Service
+	idg                                idgen.Generator
+	calculator                         *DeadlineCalculator
+	holidayProvider                    HolidayCalendarProvider
+	deadlineEngineAdapter              DeadlineEngineAdapter
+	shadowRunner                       *deadlineEngineShadowRunner
 	workflowGroupsEnabled              bool
 	templateApplicabilityStrictFilter  bool
 	deadlineEngineV2Shadow             bool
+	legalBasisStructuredWriteEnabled   bool
+	legalBasisLegacyFallbackEnabled    bool
+	legalBasisDivergenceWarningEnabled bool
 	tierLookup                         func(ctx context.Context, userID string) string
 	workflowBootstrap                  WorkflowBootstrapper
 }
@@ -69,6 +72,30 @@ func WithTemplateApplicabilityStrictFilter(enabled bool) ServiceOption {
 	}
 }
 
+// WithLegalBasisStructuredWriteEnabled gates Phase 12.2 structured write precedence
+// (LEGAL_BASIS_STRUCTURED_WRITE_ENABLED). Default false.
+func WithLegalBasisStructuredWriteEnabled(enabled bool) ServiceOption {
+	return func(s *service) {
+		s.legalBasisStructuredWriteEnabled = enabled
+	}
+}
+
+// WithLegalBasisLegacyFallbackEnabled gates OD-2 synthesize on read
+// (LEGAL_BASIS_LEGACY_FALLBACK_ENABLED). Default true.
+func WithLegalBasisLegacyFallbackEnabled(enabled bool) ServiceOption {
+	return func(s *service) {
+		s.legalBasisLegacyFallbackEnabled = enabled
+	}
+}
+
+// WithLegalBasisDivergenceWarningEnabled gates divergence warning logs
+// (LEGAL_BASIS_DIVERGENCE_WARNING_ENABLED). Default true.
+func WithLegalBasisDivergenceWarningEnabled(enabled bool) ServiceOption {
+	return func(s *service) {
+		s.legalBasisDivergenceWarningEnabled = enabled
+	}
+}
+
 // WithSubscriptionTierLookup injects a function that returns the subscription tier for a user.
 // Used for server-side template quota enforcement. If not set, quota is not enforced.
 func WithSubscriptionTierLookup(fn func(ctx context.Context, userID string) string) ServiceOption {
@@ -104,11 +131,13 @@ const (
 func NewService(repo Repository, auth authapp.Service, idg idgen.Generator, opts ...ServiceOption) Service {
 	holidayProvider := NewHolidayCalendarFileProvider(filepath.Join("configs", "non_trading_days"))
 	s := &service{
-		repo:            repo,
-		auth:            auth,
-		idg:             idg,
-		calculator:      NewDeadlineCalculator(holidayProvider),
-		holidayProvider: holidayProvider,
+		repo:                               repo,
+		auth:                               auth,
+		idg:                                idg,
+		calculator:                         NewDeadlineCalculator(holidayProvider),
+		holidayProvider:                    holidayProvider,
+		legalBasisLegacyFallbackEnabled:    true,
+		legalBasisDivergenceWarningEnabled: true,
 	}
 	for _, o := range opts {
 		o(s)
@@ -563,6 +592,7 @@ func (s *service) GetTypeDetail(ctx context.Context, req GetTypeDetailRequest) (
 	if err != nil {
 		return nil, err
 	}
+	ApplyLegalBasisReadCompat(ctx, item, s.legalBasisLegacyFallbackEnabled, s.legalBasisDivergenceWarningEnabled)
 	enrichDeadlineRuleDisplay(item, s.loadDeadlineRuleCatalog(ctx))
 	if item.DeadlineConfig == nil {
 		return item, nil
@@ -625,7 +655,12 @@ func (s *service) GetTypeVersionDetail(ctx context.Context, req GetTypeVersionDe
 	if req.VersionNo <= 0 {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "version_no must be > 0", nil)
 	}
-	return s.repo.GetTypeVersionDetail(ctx, req.Subject.CompanyID, req.TypeID, req.VersionNo)
+	item, err := s.repo.GetTypeVersionDetail(ctx, req.Subject.CompanyID, req.TypeID, req.VersionNo)
+	if err != nil {
+		return nil, err
+	}
+	ApplyLegalBasisReadCompat(ctx, item, s.legalBasisLegacyFallbackEnabled, s.legalBasisDivergenceWarningEnabled)
+	return item, nil
 }
 
 func (s *service) GetTemplateReferenceData(ctx context.Context, req GetTemplateReferenceDataRequest) (*GetTemplateReferenceDataResponse, error) {
@@ -684,7 +719,6 @@ func (s *service) UpsertTypeVersion(ctx context.Context, req UpsertTypeVersionRe
 	req.DeadlineStrategy = strings.TrimSpace(req.DeadlineStrategy)
 	req.DeadlineRule = strings.TrimSpace(req.DeadlineRule)
 	req.Periodicity = strings.TrimSpace(req.Periodicity)
-	req.LegalBases = sanitizeLegalBases(req.LegalBases)
 	req.Checklist = sanitizeChecklist(req.Checklist)
 	if req.TypeID == "" {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "type_id is required", nil)
@@ -715,6 +749,10 @@ func (s *service) UpsertTypeVersion(ctx context.Context, req UpsertTypeVersionRe
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "company scope only supports custom template category", nil)
 	}
 	ApplyTemplateFlatBlockSync(&req, s.idg)
+	if err := ResolveLegalBasisWrite(ctx, &req, s.legalBasisStructuredWriteEnabled, s.idg); err != nil {
+		return nil, err
+	}
+	syncLegalBasisBlockDescriptionFromFlat(&req)
 	HydrateTemplateBlocksBilingualForPersistence(req.Blocks)
 	validateFn := validateTemplateMatrix
 	if req.Scope == templateScopeGlobal {

@@ -244,7 +244,7 @@ type ListTypesParams struct {
 	// Periodicity: normalized frequency key (ad_hoc|daily|weekly|monthly|quarterly|yearly).
 	Periodicity string
 	// DepartmentID: types whose active global workflow has a step with this department_id.
-	DepartmentID string
+	DepartmentID    string
 	Page            int      // 1-based; 0 → no SQL LIMIT (internal use)
 	PageSize        int      // effective only when Page > 0
 	SortBy          string   // "name" | "created_at"
@@ -291,9 +291,9 @@ type ListTypeFilterOptionsRequest struct {
 }
 
 type ListTypeFilterOptionsResponse struct {
-	Tags         []TypeFilterOptionDTO      `json:"tags"`
-	Departments  []TypeFilterOptionDTO      `json:"departments"`
-	Frequencies  []FrequencyFilterOptionDTO `json:"frequencies"`
+	Tags        []TypeFilterOptionDTO      `json:"tags"`
+	Departments []TypeFilterOptionDTO      `json:"departments"`
+	Frequencies []FrequencyFilterOptionDTO `json:"frequencies"`
 }
 
 type GetTypeDetailRequest struct {
@@ -325,37 +325,43 @@ type GetTemplateReferenceDataResponse struct {
 
 type UpsertTypeVersionRequest struct {
 	Subject               Subject
-	TypeID                string                                    `json:"type_id"`
-	Scope                 string                                    `json:"scope"`
-	GroupID               string                                    `json:"group_id"`
-	Name                  string                                    `json:"name"`
-	Category              string                                    `json:"category"`
-	TemplateCategory      string                                    `json:"template_category"`
-	DeadlineStrategy      string                                    `json:"deadline_strategy"`
-	Description           string                                    `json:"description"`
-	LegalBasis            string                                    `json:"legal_basis"`
-	Applicability         string                                    `json:"applicability"`
-	ImplementationContent string                                    `json:"implementation_content"`
-	ImplementationNotes   string                                    `json:"implementation_notes"`
-	SpecialCases          string                                    `json:"special_cases"`
-	ReportContent         string                                    `json:"report_content"`
-	RequiredDocs          string                                    `json:"required_docs"`
-	DeadlineRule          string                                    `json:"deadline_rule"`
-	Periodicity           string                                    `json:"periodicity"`
-	ChannelsText          string                                    `json:"channels_text"`
-	Beneficiaries         string                                    `json:"beneficiaries"`
-	ReceivingAuthorities  string                                    `json:"receiving_authorities"`
-	Format                string                                    `json:"format"`
-	LegalRisksText        string                                    `json:"legal_risks_text"`
-	GeneralInfo           string                                    `json:"general_info"`
-	LegalBases            []LegalBasisDTO                           `json:"legal_bases"`
-	Checklist             []ChecklistItemDTO                        `json:"checklist"`
-	Tags                  []string                                  `json:"tags"`
-	DeadlineConfig        *TemplateDeadlineConfig                   `json:"deadline_config,omitempty"`
-	Blocks                []TemplateBlockDTO                        `json:"blocks"`
-	DisplayGroupCodes     []string                                  `json:"display_group_codes"`
-	ChangeNote            string                                    `json:"change_note"`
-	ApplicabilityRules    *applicability.TemplateApplicabilityRules `json:"applicability_rules,omitempty"`
+	TypeID                string          `json:"type_id"`
+	Scope                 string          `json:"scope"`
+	GroupID               string          `json:"group_id"`
+	Name                  string          `json:"name"`
+	Category              string          `json:"category"`
+	TemplateCategory      string          `json:"template_category"`
+	DeadlineStrategy      string          `json:"deadline_strategy"`
+	Description           string          `json:"description"`
+	LegalBasis            string          `json:"legal_basis"`
+	Applicability         string          `json:"applicability"`
+	ImplementationContent string          `json:"implementation_content"`
+	ImplementationNotes   string          `json:"implementation_notes"`
+	SpecialCases          string          `json:"special_cases"`
+	ReportContent         string          `json:"report_content"`
+	RequiredDocs          string          `json:"required_docs"`
+	DeadlineRule          string          `json:"deadline_rule"`
+	Periodicity           string          `json:"periodicity"`
+	ChannelsText          string          `json:"channels_text"`
+	Beneficiaries         string          `json:"beneficiaries"`
+	ReceivingAuthorities  string          `json:"receiving_authorities"`
+	Format                string          `json:"format"`
+	LegalRisksText        string          `json:"legal_risks_text"`
+	GeneralInfo           string          `json:"general_info"`
+	LegalBases            []LegalBasisDTO `json:"legal_bases"`
+	// LegalBasesProvided is true when the JSON body included key "legal_bases" (including null/[]).
+	// Set by HTTP decoder; Go unit tests should set it when simulating structured clients.
+	LegalBasesProvided bool `json:"-"`
+	// PreserveLegalBases asks repository to keep existing legal_bases_json on draft overwrite
+	// when the client omitted legal_bases (Phase 12.2 omitted vs empty semantics).
+	PreserveLegalBases bool                                      `json:"-"`
+	Checklist          []ChecklistItemDTO                        `json:"checklist"`
+	Tags               []string                                  `json:"tags"`
+	DeadlineConfig     *TemplateDeadlineConfig                   `json:"deadline_config,omitempty"`
+	Blocks             []TemplateBlockDTO                        `json:"blocks"`
+	DisplayGroupCodes  []string                                  `json:"display_group_codes"`
+	ChangeNote         string                                    `json:"change_note"`
+	ApplicabilityRules *applicability.TemplateApplicabilityRules `json:"applicability_rules,omitempty"`
 }
 
 type UpsertTypeVersionResponse struct {
@@ -798,40 +804,40 @@ type DisclosureTypeSummaryDTO struct {
 }
 
 type DisclosureTypeDTO struct {
-	VersionNo             int                     `json:"version_no"`
-	TypeID                string                  `json:"type_id"`
-	GroupID               string                  `json:"group_id"`
-	Scope                 string                  `json:"scope"`
-	OwnerCompanyID        string                  `json:"owner_company_id"`
-	Name                  string                  `json:"name"`
-	Category              string                  `json:"category"`
-	TemplateCategory      string                  `json:"template_category"`
-	DeadlineStrategy      string                  `json:"deadline_strategy"`
-	Description           string                  `json:"description"`
-	LegalBasis            string                  `json:"legal_basis"`
-	Applicability         string                  `json:"applicability"`
-	ImplementationContent string                  `json:"implementation_content"`
-	ImplementationNotes   string                  `json:"implementation_notes"`
-	SpecialCases          string                  `json:"special_cases"`
-	ReportContent         string                  `json:"report_content"`
-	RequiredDocs          string                  `json:"required_docs"`
-	DeadlineRule          string                  `json:"deadline_rule"`
-	DeadlineRuleDisplay   string                  `json:"deadline_rule_display,omitempty"`
+	VersionNo             int    `json:"version_no"`
+	TypeID                string `json:"type_id"`
+	GroupID               string `json:"group_id"`
+	Scope                 string `json:"scope"`
+	OwnerCompanyID        string `json:"owner_company_id"`
+	Name                  string `json:"name"`
+	Category              string `json:"category"`
+	TemplateCategory      string `json:"template_category"`
+	DeadlineStrategy      string `json:"deadline_strategy"`
+	Description           string `json:"description"`
+	LegalBasis            string `json:"legal_basis"`
+	Applicability         string `json:"applicability"`
+	ImplementationContent string `json:"implementation_content"`
+	ImplementationNotes   string `json:"implementation_notes"`
+	SpecialCases          string `json:"special_cases"`
+	ReportContent         string `json:"report_content"`
+	RequiredDocs          string `json:"required_docs"`
+	DeadlineRule          string `json:"deadline_rule"`
+	DeadlineRuleDisplay   string `json:"deadline_rule_display,omitempty"`
 	// TimeCalculationBasis is a derived VI label from deadline_config.t0_policy (e.g. "Ngày hệ thống").
-	TimeCalculationBasis string `json:"time_calculation_basis,omitempty"`
-	Periodicity          string `json:"periodicity"`
-	ChannelsText          string                  `json:"channels_text"`
-	Beneficiaries         string                  `json:"beneficiaries"`
-	ReceivingAuthorities  string                  `json:"receiving_authorities"`
-	Format                string                  `json:"format"`
-	LegalRisksText        string                  `json:"legal_risks_text"`
-	GeneralInfo           string                  `json:"general_info"`
-	DeadlineConfig        *TemplateDeadlineConfig `json:"deadline_config,omitempty"`
-	DeadlineSummary       *DeadlineSummaryDTO     `json:"deadline_summary,omitempty"`
-	LegalBases            []LegalBasisDTO         `json:"legal_bases"`
-	Checklist             []ChecklistItemDTO      `json:"checklist"`
-	Tags                  []string                `json:"tags"`
-	Blocks                []TemplateBlockDTO      `json:"blocks"`
+	TimeCalculationBasis string                  `json:"time_calculation_basis,omitempty"`
+	Periodicity          string                  `json:"periodicity"`
+	ChannelsText         string                  `json:"channels_text"`
+	Beneficiaries        string                  `json:"beneficiaries"`
+	ReceivingAuthorities string                  `json:"receiving_authorities"`
+	Format               string                  `json:"format"`
+	LegalRisksText       string                  `json:"legal_risks_text"`
+	GeneralInfo          string                  `json:"general_info"`
+	DeadlineConfig       *TemplateDeadlineConfig `json:"deadline_config,omitempty"`
+	DeadlineSummary      *DeadlineSummaryDTO     `json:"deadline_summary,omitempty"`
+	LegalBases           []LegalBasisDTO         `json:"legal_bases"`
+	Checklist            []ChecklistItemDTO      `json:"checklist"`
+	Tags                 []string                `json:"tags"`
+	Blocks               []TemplateBlockDTO      `json:"blocks"`
 	// Deprecated: use DisplayGroupCodes. Kept for compatibility window (BE-008).
 	DisplayGroupCode   string                                    `json:"display_group_code,omitempty"`
 	DisplayGroupCodes  []string                                  `json:"display_group_codes"`

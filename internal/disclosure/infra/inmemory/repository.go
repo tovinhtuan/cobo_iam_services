@@ -468,6 +468,13 @@ func (r *Repository) UpsertTypeVersion(_ context.Context, req disclosureapp.Upse
 			}
 		}
 	}
+	if req.PreserveLegalBases && overwriteDraft {
+		if byVer, ok := r.catalogByVer[req.TypeID]; ok {
+			if existing, ok := byVer[versionNo]; ok {
+				req.LegalBases = slices.Clone(existing.LegalBases)
+			}
+		}
+	}
 
 	next := disclosureapp.DisclosureTypeDTO{
 		VersionNo:             versionNo,
@@ -1083,7 +1090,7 @@ func (r *Repository) GetGlobalWorkflowVersionManifest(_ context.Context, typeID 
 }
 
 // SetGlobalWorkflowVersionManifestForTest is a white-box test helper (same convention as Batch
-//2's SetOverrideBaseMetadataForTest) — there is no production write path for this map, since the
+// 2's SetOverrideBaseMetadataForTest) — there is no production write path for this map, since the
 // real MySQL repository reads global_workflow_versions directly and this in-memory repo has no
 // equivalent versions table to derive it from.
 func (r *Repository) SetGlobalWorkflowVersionManifestForTest(typeID string, versionNo int, steps []disclosureapp.GlobalWorkflowStepInput) {

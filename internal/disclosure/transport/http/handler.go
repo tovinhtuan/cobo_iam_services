@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -363,10 +364,21 @@ func (h *Handler) upsertTypeVersion(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, nil, err)
 		return
 	}
-	var payload disclosureapp.UpsertTypeVersionRequest
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+	rawBody, err := io.ReadAll(r.Body)
+	if err != nil {
 		httpx.WriteError(w, nil, err)
 		return
+	}
+	var payload disclosureapp.UpsertTypeVersionRequest
+	if err := json.Unmarshal(rawBody, &payload); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	var rawKeys map[string]json.RawMessage
+	if err := json.Unmarshal(rawBody, &rawKeys); err == nil {
+		if _, ok := rawKeys["legal_bases"]; ok {
+			payload.LegalBasesProvided = true
+		}
 	}
 	payload.Subject = sub
 	payload.TypeID = strings.TrimSpace(r.PathValue("type_id"))
