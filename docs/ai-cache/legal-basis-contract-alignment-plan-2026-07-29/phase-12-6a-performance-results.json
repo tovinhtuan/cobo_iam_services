@@ -1,4 +1,6 @@
 {
-  "status": "NOT_RUN",
-  "reason": "BLOCKED_READ_ONLY_ACCESS"
+  "batchSize": 200,
+  "durationMs": 3,
+  "queryCount": 32,
+  "rowsPerSec": 1985.5708565851953
 }

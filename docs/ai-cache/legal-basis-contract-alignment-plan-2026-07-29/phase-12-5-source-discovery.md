@@ -1,10 +1,10 @@
 # Phase 12.5 — Source discovery (Legal Basis lifecycle)
 
-**Date:** 2026-07-29  
-**Repo:** `cobo_iam_services`  
-**Baseline:** branch `recovery/lost-changes-audit-20260717-153324`, HEAD `25351bd`  
-**Go:** go.mod `1.23.0` / runtime `go1.24.9`  
-**Dirty tree:** clean  
+**Date:** 2026-07-29
+**Repo:** `cobo_iam_services`
+**Baseline:** branch `recovery/lost-changes-audit-20260717-153324`, HEAD `25351bd`
+**Go:** go.mod `1.23.0` / runtime `go1.24.9`
+**Dirty tree:** clean
 
 **User gate:** Clone / Global→company endpoints **do not exist** → document **N/A no-op**; do **not** invent endpoints. Minimal fix = new-version deep-copy + ID regen (+ tests).
 

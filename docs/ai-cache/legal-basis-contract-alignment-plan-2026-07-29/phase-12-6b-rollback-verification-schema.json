@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "LegalBasisBackfillRollbackVerificationV1",
+  "type": "object",
+  "required": [
+    "environment",
+    "rowsRestored",
+    "inventoryAfter",
+    "checksumMatch",
+    "verdict"
+  ],
+  "properties": {
+    "environment": {
+      "const": "DEV"
+    },
+    "rowsRestored": {
+      "const": 6
+    },
+    "inventoryAfter": {
+      "type": "object",
+      "properties": {
+        "A": {
+          "const": 6
+        },
+        "C": {
+          "const": 0
+        },
+        "D": {
+          "const": 0
+        }
+      }
+    },
+    "checksumMatch": {
+      "const": true
+    },
+    "staleRefused": {
+      "type": "boolean"
+    },
+    "verdict": {
+      "enum": [
+        "ROLLBACK_PASS",
+        "ROLLBACK_FAIL",
+        "ROLLBACK_REFUSED_STALE"
+      ]
+    }
+  }
+}

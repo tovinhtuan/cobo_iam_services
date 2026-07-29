@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "phase-12-6b-snapshot-schema.json",
+  "title": "LegalBasisBackfillSnapshotV1",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "environment",
+    "databaseName",
+    "hostAlias",
+    "snapshotTimestamp",
+    "allowlistAlgorithmVersion",
+    "records",
+    "snapshotChecksum"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "const": "1"
+    },
+    "environment": {
+      "const": "DEV"
+    },
+    "databaseName": {
+      "const": "cobo_iam"
+    },
+    "hostAlias": {
+      "type": "string"
+    },
+    "snapshotTimestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "allowlistAlgorithmVersion": {
+      "const": "v1-wrap-legacy-flat"
+    },
+    "recordCount": {
+      "const": 6
+    },
+    "snapshotChecksum": {
+      "type": "string",
+      "minLength": 16,
+      "description": "Integrity hash of canonical snapshot payload; store outside git"
+    },
+    "records": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "items": {
+        "type": "object",
+        "required": [
+          "record_id",
+          "disclosure_type_id",
+          "version_no",
+          "legal_basis",
+          "legal_bases_json",
+          "activated_at",
+          "updated_by",
+          "row_checksum"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "record_id": {
+            "type": "string"
+          },
+          "disclosure_type_id": {
+            "type": "string"
+          },
+          "version_no": {
+            "type": "integer"
+          },
+          "legal_basis": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "RAW — never commit to git"
+          },
+          "legal_bases_json": {
+            "description": "RAW JSON bytes or null — never commit to git"
+          },
+          "activated_at": {
+            "type": "string"
+          },
+          "updated_by": {
+            "type": "string"
+          },
+          "row_checksum": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

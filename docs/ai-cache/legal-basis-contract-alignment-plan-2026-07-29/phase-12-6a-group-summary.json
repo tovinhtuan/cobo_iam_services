@@ -1,35 +1,68 @@
 {
-  "phase": "Phase 12.6A - Legacy Legal Basis Inventory",
-  "environment": "DEV",
-  "dataset": {"table": "disclosure_type_versions JOIN disclosure_types", "filter": "all versions (planned)", "cutoff": null, "total": null},
-  "groups": {
-    "A": {"count": null, "percent": null},
-    "B": {"count": null, "percent": null},
-    "C": {"count": null, "percent": null},
-    "D": {"count": null, "percent": null},
-    "E": {"count": null, "percent": null}
-  },
   "anomalies": {
-    "malformedJson": null,
-    "invalidItems": null,
-    "projectionOverflow": null,
-    "exactDuplicates": null,
-    "duplicateIds": null
+    "duplicateIds": 0,
+    "exactDuplicates": 0,
+    "invalidItems": 0,
+    "malformedJson": 0,
+    "projectionOverflow": 0
+  },
+  "dataset": {
+    "cutoff": "2026-07-29T08:49:58Z",
+    "filter": "all non-deleted versions (types.status retained; no soft-delete column)",
+    "table": "disclosure_type_versions JOIN disclosure_types",
+    "total": 6
   },
   "dryRun": {
-    "autoEligible": null,
-    "manualReview": null,
-    "blocked": null,
-    "noOp": null,
-    "idempotent": false
+    "actionCounts": {
+      "WRAP_LEGACY_FLAT": 6
+    },
+    "autoEligible": 6,
+    "blocked": 0,
+    "idempotent": true,
+    "manualReview": 0,
+    "noOp": 0
   },
+  "environment": "DEV",
+  "groups": {
+    "A": {
+      "count": 6,
+      "percent": 100
+    },
+    "B": {
+      "count": 0,
+      "percent": 0
+    },
+    "C": {
+      "count": 0,
+      "percent": 0
+    },
+    "D": {
+      "count": 0,
+      "percent": 0
+    },
+    "E": {
+      "count": 0,
+      "percent": 0
+    }
+  },
+  "phase": "Phase 12.6A - Legacy Legal Basis Inventory",
   "safety": {
-    "readOnlyConnection": false,
-    "selectStatements": 0,
-    "writeStatements": 0,
+    "connectionSource": "docker-compose.dev.yml:mysql published 127.0.0.1:3306 / db=cobo_iam / user=c***",
     "databaseMutations": 0,
+    "deploymentExecuted": false,
+    "engineVersion": "8.0.46",
     "migrationExecuted": false,
-    "deploymentExecuted": false
+    "readOnlyConnection": true,
+    "selectStatements": 32,
+    "writeStatements": 0
   },
-  "verdict": "BLOCKED_READ_ONLY_ACCESS"
+  "sqlApprox": {
+    "A": 6,
+    "B": 0,
+    "E": 0,
+    "analyzerMatchApprox": true,
+    "both_CD": 0,
+    "total": 6
+  },
+  "verdict": "PASS_READ_ONLY_DRY_RUN"
 }

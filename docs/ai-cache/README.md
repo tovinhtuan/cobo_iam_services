@@ -135,3 +135,7 @@ Before marking this done, run premerge-system-review and report missing validati
    - contracts/behaviors/constraints/decisions
    - build/verification result (nếu có)
    - remaining gaps/risks/next steps
+## Legal Basis Phase 12.6 (IAM mirror)
+
+- Phase 12.6A: operational `PASS_READ_ONLY_DRY_RUN`; governance `FAIL_SCOPE_CREEP` — see plan folder `phase-12-6a-scope-exception.md`
+- Phase 12.6B-Plan: `BACKFILL_PLAN_READY` — `phase-12-6b-plan-handoff.md` (docs only; no apply)

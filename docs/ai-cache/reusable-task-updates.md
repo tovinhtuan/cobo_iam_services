@@ -3112,3 +3112,26 @@
 - evidence: `../cobo_web_design/docs/ai-cache/staff-invite-t3-t4-implementation-2026-07-06/`
 
 
+
+## 2026-07-29 - Phase 12.6A legal basis inventory (Docker DEV read-only)
+
+- task type: backend tooling + DEV inventory (read-only)
+- objective: Phase 12.6A Groups A–E inventory + in-memory dry-run using Docker DEV compose DB config (not MYSQL_READONLY_DSN)
+- implemented/discovered:
+  - SQL allowlist interceptor (`ValidateReadOnlySQL` + `AllowlistConnector`)
+  - CLI `--docker-dev` → published `127.0.0.1:3306` / db `cobo_iam` / masked user; app credential allowed only with READ ONLY tx + allowlist
+  - Live inventory: total=6, A=6, B=C=D=E=0; dry-run WRAP_LEGACY_FLAT×6; idempotent; mutations=0
+  - DEV missing `is_released` (0122); probe + approximate via active version pointer
+- affected: `cmd/legal-basis-inventory`, `internal/disclosure/app/legal_basis_inventory/*`, plan evidence under `docs/ai-cache/legal-basis-contract-alignment-plan-2026-07-29/`
+- constraints: no `--apply`; no Compose edits; no container recreate for inventory; no Phase 12.6B
+- verification: `go test ./internal/disclosure/app/legal_basis_inventory/` PASS; tool build PASS; `docker compose -f docker-compose.dev.yml build api` EXIT 0; verdict **PASS_READ_ONLY_DRY_RUN**
+- remaining: human review dry-run preview before 12.6B; apply migration 0122 on DEV separately if product needs `is_released`
+
+## 2026-07-29 - Phase 12.6B-Plan Controlled DEV backfill (docs only)
+
+- task type: planning / docs
+- objective: lock exact 6-record allowlist, dataset boundary ALL_6, snapshot/CAS/txn/rollback/runbook; close 12.6A dual verdict
+- implemented: `phase-12-6b-*` design pack + 12.6A scope-exception; no apply tool; no DB write; no Docker build
+- dataset: 6 Group A GLOBAL active v1; WRAP_LEGACY_FLAT; flat-after-wrap=OD-7 projection
+- verdict: **BACKFILL_PLAN_READY**
+- remaining: Approvals 3–4 + explicit mutate phrase before implementation/execution

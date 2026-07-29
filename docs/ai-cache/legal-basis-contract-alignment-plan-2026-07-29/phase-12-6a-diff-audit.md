@@ -1,17 +1,17 @@
 # Phase 12.6A — Diff audit
 
-## Allowed (this phase)
+## Code (cobo_iam_services)
 
-| Path | Reason |
-| --- | --- |
-| `cmd/legal-basis-inventory/` | Read-only inventory CLI (no --apply) |
-| `internal/disclosure/app/legal_basis_inventory/` | Classify/dry-run helpers + tests |
-| `docs/ai-cache/.../phase-12-6a-*` | Evidence |
+- `cmd/legal-basis-inventory/main.go` — `--docker-dev`, allowlisted Open, SET SESSION READ ONLY + RR inventory tx, schema probe for `is_released`, Groups A–E dry-run reports
+- `internal/disclosure/app/legal_basis_inventory/sql_allowlist.go` (+ tests) — fail-closed SQL allowlist interceptor
+- Existing analyzer: `classify.go` / `classify_test.go`
 
-## Forbidden — unchanged
+## Not touched
 
-Migration apply, backfill executor, FE, Docker/deploy, runtime API behavior, company DTO.
+- No write repository / migration / API handler mutation
+- No Phase 12.6B apply tool
+- Docker Compose files **not** modified; containers **not** recreated for inventory (MySQL was already running / previously started with approval)
 
-## Verdict
+## Evidence
 
-Tooling scope **PASS**. Overall phase verdict **BLOCKED_READ_ONLY_ACCESS** (no DEV inventory run).
+See `phase-12-6a-*.json` / `.md` in this directory (mirrored under cobo_web_design plan folder).

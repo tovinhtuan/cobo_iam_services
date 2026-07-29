@@ -1,16 +1,64 @@
 {
-  "phase": "Phase 12.6A",
-  "analyzerUnit": {
-    "package": "internal/disclosure/app/legal_basis_inventory",
-    "status": "PASS",
-    "command": "go test ./internal/disclosure/app/legal_basis_inventory/ -count=1"
-  },
-  "cliBuild": {
-    "command": "go build ./cmd/legal-basis-inventory",
-    "status": "PASS"
-  },
-  "devInventory": {
-    "status": "NOT_RUN",
-    "reason": "BLOCKED_READ_ONLY_ACCESS"
-  }
+  "phase": "12.6A",
+  "ranAt": "2026-07-29T08:50:27Z",
+  "packages": [
+    "internal/disclosure/app/legal_basis_inventory"
+  ],
+  "tests": [
+    {
+      "name": "TestClassify_GroupsAE",
+      "result": "PASS"
+    },
+    {
+      "name": "TestClassify_GroupC_and_D",
+      "result": "PASS"
+    },
+    {
+      "name": "TestClassify_MalformedJSON",
+      "result": "PASS"
+    },
+    {
+      "name": "TestClassify_MixedInvalidItems_StillB",
+      "result": "PASS"
+    },
+    {
+      "name": "TestClassify_OverflowBlocked",
+      "result": "PASS"
+    },
+    {
+      "name": "TestIdempotency_A_to_C",
+      "result": "PASS"
+    },
+    {
+      "name": "TestIdempotency_D_unchanged",
+      "result": "PASS"
+    },
+    {
+      "name": "TestReconcile_Partition",
+      "result": "PASS"
+    },
+    {
+      "name": "TestRedaction_NoFullTextInResultJSON",
+      "result": "PASS"
+    },
+    {
+      "name": "TestValidateReadOnlySQL_Allowlist",
+      "result": "PASS"
+    },
+    {
+      "name": "TestValidateReadOnlySQL_Forbidden",
+      "result": "PASS"
+    },
+    {
+      "name": "TestValidateReadOnlySQL_CommentStripStillRejectsWrite",
+      "result": "PASS"
+    }
+  ],
+  "allPassed": true,
+  "toolBuild": "PASS",
+  "allowlistTests": "PASS",
+  "forbiddenSQLTests": "PASS",
+  "analyzerTests": "PASS",
+  "inventoryCLI": "--docker-dev PASS_READ_ONLY_DRY_RUN",
+  "databaseMutations": 0
 }

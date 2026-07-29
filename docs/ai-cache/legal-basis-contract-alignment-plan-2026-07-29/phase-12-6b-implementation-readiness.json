@@ -1,0 +1,54 @@
+{
+  "phase": "Phase 12.6B-Plan - Controlled DEV Legal Basis Backfill",
+  "environment": "DEV",
+  "phase12_6a": {
+    "operationalVerdict": "PASS_READ_ONLY_DRY_RUN",
+    "governanceVerdict": "FAIL_SCOPE_CREEP",
+    "databaseMutations": 0,
+    "inventoryValid": true,
+    "rerunRequiredBeforePlan": false
+  },
+  "dataset": {
+    "expectedRecords": 6,
+    "groupA": 6,
+    "groupB": 0,
+    "groupC": 0,
+    "groupD": 0,
+    "groupE": 0,
+    "boundaryDecision": "LOCKED_ALL_6",
+    "allowlistLocked": true,
+    "freshnessRecheckStatus": "MATCH"
+  },
+  "design": {
+    "snapshotReady": true,
+    "rollbackReady": true,
+    "transactionStrategyLocked": true,
+    "casPreconditionsLocked": true,
+    "postWriteVerificationLocked": true,
+    "concurrencyStrategyLocked": true,
+    "stopConditionsLocked": true,
+    "flatAfterWrap": "OD7_PROJECTION",
+    "auditActor": "system:legal-basis-backfill-12.6b",
+    "migration0122": "NOT_IN_SCOPE"
+  },
+  "approvals": {
+    "datasetBoundary": true,
+    "snapshotRollback": true,
+    "devMutation": false,
+    "executionWindow": false,
+    "postWriteAcceptance": false
+  },
+  "scope": {
+    "docsOnly": true,
+    "databaseWrites": 0,
+    "migrationExecuted": false,
+    "dockerBuildExecuted": false,
+    "deploymentExecuted": false
+  },
+  "execution": {
+    "backfillImplemented": false,
+    "backfillExecuted": false,
+    "rollbackExecuted": false
+  },
+  "verdict": "BACKFILL_PLAN_READY"
+}

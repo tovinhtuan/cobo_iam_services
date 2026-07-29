@@ -1,8 +1,8 @@
 # Phase 12.2 — Source discovery
 
-**Date:** 2026-07-29  
-**Baseline:** `b164b64` / `recovery/lost-changes-audit-20260717-153324`  
-**Go:** go.mod `1.23.0` (runtime go1.24.9)  
+**Date:** 2026-07-29
+**Baseline:** `b164b64` / `recovery/lost-changes-audit-20260717-153324`
+**Go:** go.mod `1.23.0` (runtime go1.24.9)
 **Working tree:** clean at start
 
 ## Contract references (SoT)

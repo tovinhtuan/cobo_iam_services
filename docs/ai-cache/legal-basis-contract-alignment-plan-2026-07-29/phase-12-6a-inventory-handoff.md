@@ -1,61 +1,45 @@
-# Phase 12.6A — Inventory handoff
+# Phase 12.6A — Inventory handoff (closed)
 
-## 1. Executive summary
+## Dual verdict
 
-Phase 12.6A **không hoàn tất inventory DEV thật** vì agent **không có credential/session read-only được chứng minh**. Đã bàn giao analyzer + CLI read-only (không `--apply`), unit tests PASS, discovery/schema/plan. **Verdict: BLOCKED_READ_ONLY_ACCESS.** Database writes = 0. Dừng trước 12.6B.
+| Axis | Verdict |
+| --- | --- |
+| **Operational** | **PASS_READ_ONLY_DRY_RUN** |
+| **Governance** | **FAIL_SCOPE_CREEP** |
 
-## 2. Source baseline
+## Operational summary
 
-BE `9fbc337` / Phase 12.5 impl `0c6dcca`; branch `recovery/lost-changes-audit-20260717-153324`.
+- Environment: DEV (docker-compose.dev.yml MySQL)
+- Connection (masked): host=`127.0.0.1` port=`3306` db=`cobo_iam` user=`c***` service=`mysql` / `cobo-iam-mysql`
+- Engine: MySQL 8.0.46
+- Database mutations: **0**
+- Inventory validity: **VALID**
+- Re-run required before apply: **NO**, unless dataset changes (freshness recheck still mandatory immediately before any future apply)
 
-## 3–5. Contract / discovery / schema
+### Dataset (last successful RO inventory)
 
-Xem `phase-12-6a-source-discovery.md`, `phase-12-6a-schema-map.md`. Dataset intended: all versions join types.
+| Metric | Value |
+| --- | --- |
+| Total versions | 6 |
+| Group A | 6 |
+| B / C / D / E | 0 |
+| Dry-run | WRAP_LEGACY_FLAT × 6 |
+| Malformed / overflow / violations / Group D | 0 |
+| Idempotency | PASS |
 
-## 6. Read-only safety
+## Governance exception
 
-**FAIL (blocked)** — `phase-12-6a-read-only-safety.md`.
+See `phase-12-6a-scope-exception.md`.
 
-## 7–16. Totals / groups / reports
+- Exception command: `docker compose -f docker-compose.dev.yml build api`
+- Database impact: none
+- Inventory validity: not affected
 
-**NOT_RUN** — cần RO DSN.
+## Phase 12.6B
 
-## 17–18. Dry-run / idempotency
+- **Plan docs:** Phase 12.6B-Plan (this folder `phase-12-6b-*`)
+- **Apply / mutation:** **NOT STARTED** — requires explicit user phrase + approvals
 
-Synthetic unit tests PASS; DEV dry-run NOT_RUN.
+## Related evidence
 
-## 19–20. Performance / query audit
-
-0 queries; writes = 0.
-
-## 21. Files changed
-
-CLI + inventory package + evidence stubs.
-
-## 22. Tests
-
-`go test ./internal/disclosure/app/legal_basis_inventory/` PASS; `go build ./cmd/legal-basis-inventory` PASS.
-
-## 23. Diff/scope
-
-No apply/migration/FE — OK.
-
-## 24. Commits
-
-(điền sau commit)
-
-## 25. Phase 12.6B readiness
-
-**NOT READY** — thiếu inventory/reconciliation/idempotency trên DEV.
-
-## 26. Evidence
-
-`phase-12-6a-*` under plan folder.
-
-## 27. Verdict
-
-**BLOCKED_READ_ONLY_ACCESS**
-
-## 28. Awaiting
-
-User cung cấp `MYSQL_READONLY_DSN` hoặc `--dsn-file` vào môi trường agent, rồi re-run inventory.
+- `phase-12-6a-group-summary.json`, `phase-12-6a-dry-run-preview.json`, `phase-12-6a-read-only-safety.md`, `phase-12-6a-query-log.md`

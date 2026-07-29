@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "LegalBasisBackfillPostWriteVerificationV1",
+  "type": "object",
+  "required": [
+    "environment",
+    "rowsAffected",
+    "inventoryAfter",
+    "perRecord",
+    "anomalies",
+    "verdict"
+  ],
+  "properties": {
+    "environment": {
+      "const": "DEV"
+    },
+    "rowsAffected": {
+      "const": 6
+    },
+    "inventoryAfter": {
+      "type": "object",
+      "required": [
+        "total",
+        "A",
+        "B",
+        "C",
+        "D",
+        "E"
+      ],
+      "properties": {
+        "total": {
+          "const": 6
+        },
+        "A": {
+          "const": 0
+        },
+        "B": {
+          "const": 0
+        },
+        "C": {
+          "const": 6
+        },
+        "D": {
+          "const": 0
+        },
+        "E": {
+          "const": 0
+        }
+      }
+    },
+    "perRecord": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "items": {
+        "type": "object",
+        "required": [
+          "record_id",
+          "structuredCount",
+          "titleEqualsLegacyLabel",
+          "summaryHashMatchesOriginalFlatHash",
+          "metadataEmpty",
+          "idIsUuidNotDisplay",
+          "projectionEqualsLegalBasis",
+          "projectionHash",
+          "group"
+        ],
+        "properties": {
+          "record_id": {
+            "type": "string"
+          },
+          "structuredCount": {
+            "const": 1
+          },
+          "titleEqualsLegacyLabel": {
+            "const": true
+          },
+          "summaryHashMatchesOriginalFlatHash": {
+            "const": true
+          },
+          "metadataEmpty": {
+            "const": true
+          },
+          "idIsUuidNotDisplay": {
+            "const": true
+          },
+          "projectionEqualsLegalBasis": {
+            "const": true
+          },
+          "projectionHash": {
+            "const": "06a6705c2f2481b5"
+          },
+          "group": {
+            "const": "C"
+          }
+        }
+      }
+    },
+    "anomalies": {
+      "type": "object",
+      "properties": {
+        "malformedJson": {
+          "const": 0
+        },
+        "projectionOverflow": {
+          "const": 0
+        },
+        "contractViolations": {
+          "const": 0
+        }
+      }
+    },
+    "uuidUniqueness": {
+      "const": true
+    },
+    "verdict": {
+      "enum": [
+        "POST_WRITE_PASS",
+        "POST_WRITE_FAIL"
+      ]
+    }
+  }
+}

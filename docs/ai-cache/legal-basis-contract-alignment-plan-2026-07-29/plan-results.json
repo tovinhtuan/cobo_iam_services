@@ -1,0 +1,171 @@
+{
+  "phase": "Phase 12 - Legal Basis Contract Alignment Planning",
+  "phase12_1a": "CONTRACT_LOCKED",
+  "baseline": {
+    "frontendCommit": "4396860",
+    "backendCommit": "b164b64",
+    "branch": "recovery/lost-changes-audit-20260717-153324",
+    "upstreamAudit": "legal-basis-cms-tenant-audit-2026-07-29",
+    "upstreamVerdict": "PARTIALLY_CONFIRMED"
+  },
+  "currentState": {
+    "cmsWriteModel": "legal_basis",
+    "tenantReadModel": "legal_bases_with_legacy_fallback",
+    "backendDualField": true,
+    "dataLossConfirmed": false,
+    "capabilityMismatchConfirmed": true
+  },
+  "decision": {
+    "optionChosen": "B",
+    "adrStatus": "Accepted",
+    "canonicalField": "legal_bases",
+    "legacyField": "legal_basis",
+    "readPriority": [
+      "valid legal_bases[]",
+      "synthesize from legal_basis (title=Cơ sở pháp lý)",
+      "empty"
+    ],
+    "writeStrategy": "structured_authoritative_ignore_client_flat_derive_projection",
+    "deprecationStrategy": "deprecate_flat_CMS_authoring_keep_legal_basis_response_projection",
+    "persistence": "reuse_legal_bases_json_plus_legal_basis_text",
+    "projection": "title_else_summary_join_double_newline_max_8000",
+    "groupD": "no_auto_mutate_manual_only"
+  },
+  "targetDto": {
+    "wireType": "LegalBasisDTO (existing)",
+    "fields": [
+      "id",
+      "title",
+      "code",
+      "authority",
+      "issue_date",
+      "summary",
+      "link"
+    ],
+    "requiredFields": [
+      "title_or_summary"
+    ],
+    "optionalFields": [
+      "id",
+      "code",
+      "authority",
+      "issue_date",
+      "summary",
+      "link"
+    ],
+    "minItems": 0,
+    "maxItems": 20,
+    "limits": {
+      "title": 500,
+      "code": 100,
+      "authority": 200,
+      "summary": 8000,
+      "link": 2048,
+      "legal_basis_projection": 8000
+    },
+    "futureFieldsNotInDto": [
+      "document_type",
+      "effective_date",
+      "expiry_date",
+      "status",
+      "sort_order_explicit",
+      "is_legacy_projection",
+      "source_legal_basis_id"
+    ],
+    "noMetadataInferenceFromFreeText": true,
+    "dtoLocked": true
+  },
+  "migration": {
+    "required": true,
+    "strategy": "A_wrap; B_project; C_normalize; D_manual_report; E_noop",
+    "timing": "hybrid_dual_read_then_write_then_dry_run_then_ABC_E",
+    "idempotent": true,
+    "rollbackDefined": true,
+    "dryRunFirst": true,
+    "productionInPhase12": false,
+    "policyLocked": true
+  },
+  "rollout": {
+    "phases": [
+      "12.1-contract-lock",
+      "12.1A-final-contract-lock",
+      "12.2-backend-compat",
+      "12.3-cms-editor",
+      "12.4-tenant-normalizer",
+      "12.5-lifecycle",
+      "12.6-backfill-dev",
+      "12.7-dev-e2e",
+      "12.8-deprecation"
+    ],
+    "featureFlags": {
+      "LEGAL_BASIS_STRUCTURED_WRITE_ENABLED": "KEEP",
+      "LEGAL_BASIS_STRUCTURED_CMS_ENABLED": "KEEP",
+      "LEGAL_BASIS_LEGACY_FALLBACK_ENABLED": "KEEP",
+      "LEGAL_BASIS_DIVERGENCE_WARNING_ENABLED": "KEEP"
+    },
+    "productionIncluded": false,
+    "backendPhase12_2Ready": true,
+    "backendPhase12_2Implemented": true,
+    "cmsPhase12_3Implemented": true,
+    "tenantPhase12_4Implemented": true,
+    "lifecyclePhase12_5Implemented": true,
+    "inventoryPhase12_6aOperationalPass": true,
+    "backfillPhase12_6bPlanReady": true,
+    "backfillPhase12_6bExecuted": false
+  },
+  "tests": {
+    "unitCases": 18,
+    "apiCases": 14,
+    "migrationCases": 10,
+    "frontendCases": 12,
+    "e2eCases": 10,
+    "goldenCasesDoc": "16-projection-golden-cases.md"
+  },
+  "openDecisions": [],
+  "openDecisionsResolved": [
+    "OD-1",
+    "OD-2",
+    "OD-3",
+    "OD-4",
+    "OD-5",
+    "OD-6",
+    "OD-7"
+  ],
+  "contract": {
+    "planningOnly": true,
+    "docsOnlyPhase121A": true,
+    "noCodeChange": true,
+    "noDatabaseMutation": true,
+    "noDeployment": true,
+    "noProduction": true,
+    "dtoLocked": true,
+    "readPrecedenceLocked": true,
+    "writePrecedenceLocked": true,
+    "projectionLocked": true,
+    "divergenceHandlingLocked": true,
+    "lifecycleIdSemanticsLocked": true,
+    "migrationPolicyLocked": true,
+    "validationLocked": true,
+    "companyTemplateBehaviorLocked": true
+  },
+  "verdict": "CONTRACT_LOCKED",
+  "supersedesVerdict": "PLAN_READY_WITH_OPEN_DECISIONS",
+  "awaitingUserConfirmationBeforeImplementation": true,
+  "phase12_2": "PASS_WITH_NON_BLOCKING_GAPS",
+  "awaitingUserConfirmationBeforePhase123": true,
+  "phase12_3": "PASS_WITH_NON_BLOCKING_GAPS",
+  "awaitingUserConfirmationBeforePhase124": true,
+  "phase12_4": "PASS_WITH_NON_BLOCKING_GAPS",
+  "awaitingUserConfirmationBeforePhase125": true,
+  "phase12_5": "PASS_WITH_NON_BLOCKING_GAPS",
+  "awaitingUserConfirmationBeforePhase126": true,
+  "phase12_6a": {
+    "operationalVerdict": "PASS_READ_ONLY_DRY_RUN",
+    "governanceVerdict": "FAIL_SCOPE_CREEP",
+    "databaseMutations": 0,
+    "inventoryValid": true
+  },
+  "awaitingReadOnlyDSNForPhase126A": false,
+  "phase12_6b_plan": "BACKFILL_PLAN_READY",
+  "awaitingUserConfirmationBeforePhase126BApply": true
+}

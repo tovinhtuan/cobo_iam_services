@@ -1,10 +1,14 @@
 {
-  "total": null,
-  "groups": {"A": null, "B": null, "C": null, "D": null, "E": null},
-  "sumGroups": null,
-  "unclassified": null,
-  "overlap": null,
-  "sqlVsAnalyzerMatch": false,
-  "status": "NOT_RUN",
-  "reason": "BLOCKED_READ_ONLY_ACCESS"
+  "total": 6,
+  "groups": {
+    "A": 6,
+    "B": 0,
+    "C": 0,
+    "D": 0,
+    "E": 0
+  },
+  "sumGroups": 6,
+  "unclassified": 0,
+  "overlap": 0,
+  "sqlVsAnalyzerMatch": true
 }
