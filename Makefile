@@ -172,6 +172,7 @@ smoke-dev-fe-profile-v2: ## [dev] Fail if live DEV FE lacks Personal Ops V2 mark
 	@sh ./scripts/smoke-dev-fe-profile-v2.sh
 
 deploy-fe: fe-fix-dist-perms fe-fix-artifacts-perms ## [dev] Build FE (Vite flags), SCP dist+nginx, web-only perms/up (never recreate api)
+	@sh ./scripts/test-deploy-fe-isolation.sh
 	@. ./scripts/ensure-dev-fe-vite-flags.sh && \
 	  $(ensure_fe_env) && \
 	  cd $(FE_DIR) && npm run build
@@ -183,7 +184,6 @@ deploy-fe: fe-fix-dist-perms fe-fix-artifacts-perms ## [dev] Build FE (Vite flag
 	$(SCP)    $(ARTIFACTS)/web/nginx.conf $(DEV_USER)@$(DEV_HOST):$(DEV_PATH)/web/nginx.conf
 	$(SCP) scripts/fix-dev-web-perms.sh $(DEV_USER)@$(DEV_HOST):$(DEV_PATH)/fix-dev-web-perms.sh
 	$(SSH) "sed -i 's/\r$$//' $(DEV_PATH)/fix-dev-web-perms.sh && chmod +x $(DEV_PATH)/fix-dev-web-perms.sh && sh $(DEV_PATH)/fix-dev-web-perms.sh $(DEV_PATH)"
-	@sh ./scripts/test-deploy-fe-isolation.sh
 	@sh ./scripts/smoke-dev-fe-profile-v2.sh
 
 deploy-all: deploy-be deploy-fe ## [dev] Deploy cả BE + FE lên dev
