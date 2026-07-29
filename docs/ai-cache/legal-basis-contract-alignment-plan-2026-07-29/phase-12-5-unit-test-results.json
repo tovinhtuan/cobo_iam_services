@@ -1,0 +1,18 @@
+{
+  "phase": "Phase 12.5 unit tests",
+  "package": "internal/disclosure/app",
+  "files": [
+    "legal_basis_lifecycle_test.go",
+    "legal_basis_compat_test.go (pre-existing)"
+  ],
+  "cases": [
+    "DeepCopyLegalBases_Isolation",
+    "RegenerateLegalBasisIDs_AllNewAndUnique",
+    "PrepareLegalBasesForNewVersion_PreserveStructured",
+    "PrepareLegalBasesForNewVersion_LegacyOnly",
+    "PrepareLegalBasesForNewVersion_ProvidedRegen",
+    "PrepareLegalBasesForNewVersion_MixedInvalidDropped"
+  ],
+  "status": "PASS",
+  "command": "go test ./internal/disclosure/app/ -count=1 -run 'LegalBasis|PrepareLegal|DeepCopy|Regenerate'"
+}

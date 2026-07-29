@@ -1,0 +1,42 @@
+{
+  "phase": "Phase 12.5 integration / contract matrix",
+  "infra": "in-memory repository (no live DB)",
+  "limitation": "MySQL httpserver integration tests fail pre-existing; not used for Phase 12.5 proof",
+  "cases": [
+    {
+      "id": "L2_L6_L4",
+      "name": "SameDraftPreserveIDsAndNewVersionRegenerates",
+      "covers": ["same-draft preserve", "field edit", "reorder", "activate", "new version preserve+regen"],
+      "status": "PASS"
+    },
+    {
+      "id": "L10",
+      "name": "NewVersionLegacyOnlyFlat",
+      "covers": ["legacy-only no invent structured"],
+      "status": "PASS"
+    },
+    {
+      "id": "L6_clear",
+      "name": "ExplicitEmptyClearsOnNewVersion",
+      "covers": ["legal_bases [] clears"],
+      "status": "PASS"
+    }
+  ],
+  "matrixCoverage": {
+    "L1_create_draft": "covered via v1 upsert in L2 test",
+    "L2_update_same_draft": "PASS",
+    "L3_publish": "N/A mutate — status-only (documented)",
+    "L4_activate": "PASS",
+    "L5_archive": "N/A mutate — status-only (documented)",
+    "L6_new_version": "PASS",
+    "L7_clone": "N/A path absent",
+    "L8_global_company": "N/A path absent",
+    "L9_company_edit": "flat-only public API unchanged (A)",
+    "L10_legacy": "PASS",
+    "L11_empty": "PASS explicit clear",
+    "L12_divergent": "unit Prepare + projection normalize on target"
+  },
+  "passed": 3,
+  "failed": 0,
+  "status": "PASS"
+}

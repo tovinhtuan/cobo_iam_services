@@ -1,0 +1,21 @@
+{
+  "phase": "Phase 12.5 ID semantics",
+  "rules": {
+    "sameDraft": "preserve",
+    "publishActivateArchive": "preserve (no content rewrite)",
+    "newVersion": "regenerate",
+    "clone": "N/A",
+    "globalToCompany": "N/A",
+    "companyEdit": "public flat; structured untouched by company UPDATE"
+  },
+  "results": {
+    "sameDraftPreserved": true,
+    "fieldEditPreservesID": true,
+    "reorderPreservesID": true,
+    "newVersionRegeneratesAndUnique": true,
+    "activateDoesNotChangeIDs": true,
+    "sourceAggregateUnchanged": true
+  },
+  "generator": "idgen.UUIDv7Generator",
+  "status": "PASS"
+}

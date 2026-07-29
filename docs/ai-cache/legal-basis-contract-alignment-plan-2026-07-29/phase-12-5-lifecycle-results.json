@@ -1,0 +1,97 @@
+{
+  "phase": "Phase 12.5 - Legal Basis Lifecycle Preservation",
+  "baseline": {
+    "branch": "recovery/lost-changes-audit-20260717-153324",
+    "commit": "25351bd",
+    "goVersion": "go1.24.9 (go.mod 1.23.0)",
+    "frontendPhase124": "4c4fe37"
+  },
+  "discovery": {
+    "operations": [
+      "create_draft",
+      "update_same_draft",
+      "publish_company_status",
+      "activate",
+      "archive",
+      "create_new_version",
+      "clone_absent",
+      "global_to_company_absent",
+      "company_flat_create_update"
+    ],
+    "gapsFound": [
+      "new_version_omit_wiped_legal_bases_json",
+      "new_version_no_id_regen_when_client_resent_ids"
+    ],
+    "noOpOperations": [
+      "publish",
+      "activate",
+      "archive",
+      "clone_path_absent_documented_N/A",
+      "global_to_company_path_absent_documented_N/A",
+      "company_public_flat_dto"
+    ]
+  },
+  "idSemantics": {
+    "sameDraftPreserved": true,
+    "publishPreserved": true,
+    "activatePreserved": true,
+    "archivePreserved": true,
+    "newVersionRegenerated": true,
+    "cloneRegenerated": false,
+    "cloneNote": "N/A — no clone endpoint; not invented",
+    "globalToCompanyRegenerated": false,
+    "globalToCompanyNote": "N/A — no internal copy path; not invented",
+    "companyEditPreserved": true
+  },
+  "dataIntegrity": {
+    "allFieldsPreserved": true,
+    "arrayOrderPreserved": true,
+    "deepCopyIsolation": true,
+    "projectionConsistent": true,
+    "sourceUnchanged": true,
+    "sharedReferencesDetected": false
+  },
+  "legacyCompatibility": {
+    "legacyOnlySupported": true,
+    "divergentSourceHandled": true,
+    "sourceAutoRepaired": false,
+    "companyFlatRequestExpanded": false
+  },
+  "tests": {
+    "unit": {
+      "command": "go test ./internal/disclosure/app/ -run 'LegalBasis|PrepareLegal|DeepCopy|Regenerate'",
+      "status": "PASS"
+    },
+    "integration": {
+      "cases": 3,
+      "passed": 3,
+      "failed": 0,
+      "status": "PASS",
+      "note": "in-memory repository lifecycle tests; no live MySQL E2E"
+    },
+    "full": {
+      "command": "go test ./...",
+      "status": "PASS_WITH_PREEXISTING_FAILURES",
+      "failingPackages": [
+        "internal/companyaccess/app",
+        "internal/companyaccess/transport/http",
+        "internal/httpserver",
+        "internal/notification/app"
+      ],
+      "disclosurePackages": "ALL_PASS"
+    },
+    "vet": {"command": "go vet ./...", "status": "PASS"},
+    "build": {"command": "go build ./...", "status": "PASS"}
+  },
+  "scope": {
+    "backendLifecycleOnly": true,
+    "noFrontendChange": true,
+    "noMigration": true,
+    "noDatabaseMutation": true,
+    "noDockerBuild": true,
+    "noDeployment": true,
+    "noProduction": true
+  },
+  "commits": {"implementation": "0c6dcca", "evidence": "PENDING"},
+  "verdict": "PASS_WITH_NON_BLOCKING_GAPS"
+}
