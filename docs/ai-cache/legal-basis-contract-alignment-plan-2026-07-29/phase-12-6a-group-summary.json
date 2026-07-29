@@ -1,0 +1,35 @@
+{
+  "phase": "Phase 12.6A - Legacy Legal Basis Inventory",
+  "environment": "DEV",
+  "dataset": {"table": "disclosure_type_versions JOIN disclosure_types", "filter": "all versions (planned)", "cutoff": null, "total": null},
+  "groups": {
+    "A": {"count": null, "percent": null},
+    "B": {"count": null, "percent": null},
+    "C": {"count": null, "percent": null},
+    "D": {"count": null, "percent": null},
+    "E": {"count": null, "percent": null}
+  },
+  "anomalies": {
+    "malformedJson": null,
+    "invalidItems": null,
+    "projectionOverflow": null,
+    "exactDuplicates": null,
+    "duplicateIds": null
+  },
+  "dryRun": {
+    "autoEligible": null,
+    "manualReview": null,
+    "blocked": null,
+    "noOp": null,
+    "idempotent": false
+  },
+  "safety": {
+    "readOnlyConnection": false,
+    "selectStatements": 0,
+    "writeStatements": 0,
+    "databaseMutations": 0,
+    "migrationExecuted": false,
+    "deploymentExecuted": false
+  },
+  "verdict": "BLOCKED_READ_ONLY_ACCESS"
+}

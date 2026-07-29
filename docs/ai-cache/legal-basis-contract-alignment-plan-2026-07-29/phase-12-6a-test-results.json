@@ -1,0 +1,16 @@
+{
+  "phase": "Phase 12.6A",
+  "analyzerUnit": {
+    "package": "internal/disclosure/app/legal_basis_inventory",
+    "status": "PASS",
+    "command": "go test ./internal/disclosure/app/legal_basis_inventory/ -count=1"
+  },
+  "cliBuild": {
+    "command": "go build ./cmd/legal-basis-inventory",
+    "status": "PASS"
+  },
+  "devInventory": {
+    "status": "NOT_RUN",
+    "reason": "BLOCKED_READ_ONLY_ACCESS"
+  }
+}
