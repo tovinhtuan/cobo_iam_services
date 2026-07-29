@@ -1,0 +1,38 @@
+{
+  "phase": "12.7",
+  "mysqlPre": {
+    "id": "bbc16f5a400e564660fd4b61a9b6136ce8424b4e8425d790bf6a751c906d437d",
+    "startedAt": "2026-07-11T08:34:02.303701286Z"
+  },
+  "mysqlPostBe": {
+    "id": "bbc16f5a400e564660fd4b61a9b6136ce8424b4e8425d790bf6a751c906d437d",
+    "startedAt": "2026-07-11T08:34:02.303701286Z",
+    "unchanged": true
+  },
+  "mysqlPostFe": {
+    "id": "bbc16f5a400e564660fd4b61a9b6136ce8424b4e8425d790bf6a751c906d437d",
+    "startedAt": "2026-07-11T08:34:02.303701286Z",
+    "unchanged": true
+  },
+  "apiPreBe": {
+    "id": "c4c6f5658ca2439f5a67264048afb1d0068d0cd6c2b701da0608cc6d2ed29b92",
+    "startedAt": "2026-07-28T10:44:26.881164947Z"
+  },
+  "apiPostBe": {
+    "id": "048292f2624b131a601f5985c2d71d921c0e8a6898fe38c933c5caa73f6a0b37",
+    "startedAt": "2026-07-29T09:57:33.829725691Z",
+    "recreatedAsPlanned": true
+  },
+  "apiPostFe": {
+    "id": "048292f2624b131a601f5985c2d71d921c0e8a6898fe38c933c5caa73f6a0b37",
+    "unchangedVsPostBe": true
+  },
+  "webPreFe": {
+    "id": "bd2f7015529d098bd7bce10a1306108c38861de0798456dd686165cd69d328af"
+  },
+  "feDeployIsolationScript": "PASS",
+  "apiUnexpectedlyRecreatedByFeDeploy": false,
+  "mysqlRecreated": false,
+  "migrateServiceInvoked": false,
+  "verdict": "PASS_DEPLOYMENT_ISOLATION"
+}

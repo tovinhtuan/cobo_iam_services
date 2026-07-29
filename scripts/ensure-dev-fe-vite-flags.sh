@@ -16,10 +16,13 @@ set -eu
 export VITE_PERSONAL_OPS_V2="${VITE_PERSONAL_OPS_V2:-true}"
 export VITE_DASHBOARD_OPERATIONAL_V2="${VITE_DASHBOARD_OPERATIONAL_V2:-true}"
 export VITE_DASHBOARD_OVERVIEW_API_ENABLED="${VITE_DASHBOARD_OVERVIEW_API_ENABLED:-true}"
+# Phase 12.7+: structured Legal Basis CMS editor (build-time).
+export VITE_LEGAL_BASIS_STRUCTURED_CMS_ENABLED="${VITE_LEGAL_BASIS_STRUCTURED_CMS_ENABLED:-true}"
 
 echo "[deploy-dev][fe] VITE_PERSONAL_OPS_V2=${VITE_PERSONAL_OPS_V2}"
 echo "[deploy-dev][fe] VITE_DASHBOARD_OPERATIONAL_V2=${VITE_DASHBOARD_OPERATIONAL_V2}"
 echo "[deploy-dev][fe] VITE_DASHBOARD_OVERVIEW_API_ENABLED=${VITE_DASHBOARD_OVERVIEW_API_ENABLED}"
+echo "[deploy-dev][fe] VITE_LEGAL_BASIS_STRUCTURED_CMS_ENABLED=${VITE_LEGAL_BASIS_STRUCTURED_CMS_ENABLED}"
 
 if [ "${ALLOW_LEGACY_DEV_FLAGS:-false}" = "true" ]; then
   echo "[deploy-dev][fe] WARNING: ALLOW_LEGACY_DEV_FLAGS=true — DEV may compile Legacy Profile / old dashboard paths."
@@ -39,6 +42,11 @@ fail=0
 }
 [ "${VITE_DASHBOARD_OVERVIEW_API_ENABLED}" = "true" ] || {
   echo "ERROR: VITE_DASHBOARD_OVERVIEW_API_ENABLED must be true for DEV FE deploy (got: '${VITE_DASHBOARD_OVERVIEW_API_ENABLED}')."
+  fail=1
+}
+[ "${VITE_LEGAL_BASIS_STRUCTURED_CMS_ENABLED}" = "true" ] || {
+  echo "ERROR: VITE_LEGAL_BASIS_STRUCTURED_CMS_ENABLED must be true for DEV FE deploy (got: '${VITE_LEGAL_BASIS_STRUCTURED_CMS_ENABLED}')."
+  echo "       Set ALLOW_LEGACY_DEV_FLAGS=true only for intentional Legal Basis CMS textarea rollback."
   fail=1
 }
 

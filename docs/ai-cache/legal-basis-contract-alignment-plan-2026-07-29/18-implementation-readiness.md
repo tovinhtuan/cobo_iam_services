@@ -56,3 +56,10 @@ Phase 12.2: backend only. No CMS/tenant UI, no migration, no DEV deploy.
 ## Phase 12.6B-I (2026-07-29)
 
 Guarded backfill tooling implemented (`legal_basis_backfill` + cmds). Verdict **TOOL_READY_FOR_CONTROLLED_EXECUTION**. DEV apply **not** executed; SQL DEV wiring deferred to 12.6B-E.
+
+
+## Phase 12.7 readiness update (2026-07-29)
+
+- DEV E2E verdict: **PASS_DEV_E2E_WITH_NON_BLOCKING_GAPS**
+- Backfill apply: still **DEFERRED** / not a functional blocker
+- Evidence: `phase-12-7-dev-e2e-handoff.md`

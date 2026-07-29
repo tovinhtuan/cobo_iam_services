@@ -135,6 +135,10 @@ services:
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM: ${SMTP_FROM:-no-reply@cobo.local}
       EMAIL_TEMPLATE_SOURCE: embed
+      # Phase 12.7 Legal Basis rollout (legacy fallback ON; publish-required stays OFF / unset).
+      LEGAL_BASIS_STRUCTURED_WRITE_ENABLED: "true"
+      LEGAL_BASIS_LEGACY_FALLBACK_ENABLED: "true"
+      LEGAL_BASIS_DIVERGENCE_WARNING_ENABLED: "true"
     ports:
       - "8080:8080"
     volumes:

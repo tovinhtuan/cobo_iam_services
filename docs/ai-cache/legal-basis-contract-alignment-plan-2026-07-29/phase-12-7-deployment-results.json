@@ -1,0 +1,47 @@
+{
+  "phase": "12.7",
+  "environment": "DEV",
+  "backend": {
+    "deployed": true,
+    "method": "make deploy-be",
+    "sourceCommit": "c6dd866",
+    "startedAt": "2026-07-29T09:56:50Z",
+    "endedAt": "2026-07-29T09:57:34Z",
+    "apiContainerIdAfter": "048292f2624b131a601f5985c2d71d921c0e8a6898fe38c933c5caa73f6a0b37",
+    "workerContainerIdAfter": "4813a214d09c5df4dbecb545940a862272d567aaec9c21db432d9d83ab24cd1d",
+    "flags": {
+      "LEGAL_BASIS_STRUCTURED_WRITE_ENABLED": "true",
+      "LEGAL_BASIS_LEGACY_FALLBACK_ENABLED": "true",
+      "LEGAL_BASIS_DIVERGENCE_WARNING_ENABLED": "true"
+    },
+    "healthz": 200,
+    "readyz": 200,
+    "startupLog": "api listening :8080",
+    "missingColumnErrors": 0,
+    "panic": 0,
+    "migrationExecuted": false,
+    "backfillExecuted": false
+  },
+  "frontend": {
+    "deployed": true,
+    "method": "make deploy-fe",
+    "sourceCommit": "73f4642",
+    "startedAt": "2026-07-29T09:57:55Z",
+    "endedAt": "2026-07-29T09:58:12Z",
+    "viteFlags": {
+      "VITE_LEGAL_BASIS_STRUCTURED_CMS_ENABLED": "true",
+      "VITE_PERSONAL_OPS_V2": "true",
+      "VITE_DASHBOARD_OPERATIONAL_V2": "true",
+      "VITE_DASHBOARD_OVERVIEW_API_ENABLED": "true"
+    },
+    "bundle": "index-DCFMoj3X.js",
+    "feHttp": 200,
+    "personalOpsSmoke": "PASS"
+  },
+  "rollbackBackupsOnHost": {
+    "api": "/root/cobo_project/bin/api.bak-phase127",
+    "worker": "/root/cobo_project/bin/worker.bak-phase127",
+    "compose": "/root/cobo_project/docker-compose.artifacts.yml.bak-phase127",
+    "webDist": "/root/cobo_project/web/dist.bak-phase127"
+  }
+}

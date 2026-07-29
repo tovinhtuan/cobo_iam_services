@@ -1,0 +1,82 @@
+{
+  "phase": "Phase 12.7 - DEV Legal Basis End-to-End Round Trip",
+  "environment": "DEV",
+  "baseline": {
+    "branch": "recovery/lost-changes-audit-20260717-153324",
+    "frontendCommit": "73f4642",
+    "backendCommit": "c6dd866",
+    "frontendPreviousImage": "sha256:2f07d83bf561b506400dc183b1b2003803e39efbd22451f848adaba14d28c7c7",
+    "backendPreviousImage": "sha256:0f1b9d3e87d53a198fc12bdac633a58bc39764ec5ef4294f5c2fc7e09913e060",
+    "frontendPreviousApiContainer": "c4c6f5658ca2",
+    "backendRollbackBinary": "/root/cobo_project/bin/api.bak-phase127"
+  },
+  "deployment": {
+    "backendDeployed": true,
+    "frontendDeployed": true,
+    "mysqlRecreated": false,
+    "apiUnexpectedlyRecreatedByFeDeploy": false,
+    "migrationExecuted": false,
+    "backfillExecuted": false,
+    "productionTouched": false,
+    "backendApiContainerAfter": "048292f2624b131a601f5985c2d71d921c0e8a6898fe38c933c5caa73f6a0b37"
+  },
+  "flags": {
+    "structuredCms": true,
+    "structuredWrite": true,
+    "legacyFallback": true,
+    "requireOnPublish": false
+  },
+  "cmsRoundTrip": {
+    "itemsCreated": 2,
+    "requestStructured": true,
+    "savePassed": true,
+    "reloadPassed": true,
+    "orderPreserved": true,
+    "metadataPreserved": true
+  },
+  "persistence": {
+    "structuredJsonStored": true,
+    "itemCount": 2,
+    "projectionMatched": true,
+    "directDatabaseWrites": 0
+  },
+  "lifecycle": {
+    "publishPreserved": null,
+    "activatePreserved": null,
+    "activateBlockedByWorkflow": true,
+    "newVersionTested": false,
+    "newVersionIdsRegenerated": null
+  },
+  "tenant": {
+    "cardsExpected": 2,
+    "cardsRendered": 2,
+    "orderMatched": true,
+    "metadataMatched": true,
+    "duplicateFallback": false,
+    "writeRequests": 0
+  },
+  "legacyFallback": {
+    "tested": true,
+    "singleCardRendered": true,
+    "recordMutated": false
+  },
+  "quality": {
+    "criticalConsoleErrors": 0,
+    "http5xx": 0,
+    "visualQa": "PASS_WITH_NON_BLOCKING_GAPS",
+    "postDeployHealth": "PASS"
+  },
+  "rollback": {
+    "required": false,
+    "executed": false,
+    "status": "NOT_REQUIRED"
+  },
+  "backfillToolStatus": "TOOL_CORE_READY_WITH_EXECUTION_DEFERRED",
+  "nonBlockingGaps": [
+    "Activate returns 422 TEMPLATE_NO_WORKFLOW (enterprise_workflow required) — outside Legal Basis contract scope",
+    "New-version UI control N/A on create entity",
+    "Two non-critical resource 404 console messages",
+    "Initial reload assertion missed content tab; follow-up authenticated CMS edit reload verified codes/titles"
+  ],
+  "verdict": "PASS_DEV_E2E_WITH_NON_BLOCKING_GAPS"
+}
