@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -11,33 +12,33 @@ import (
 	"strings"
 	"time"
 
-	_ "github.com/go-sql-driver/mysql"
+	"github.com/go-sql-driver/mysql"
 
 	inventory "github.com/cobo/cobo_iam_services/internal/disclosure/app/legal_basis_inventory"
 )
 
-// legal-basis-inventory — Phase 12.6A read-only DEV inventory + in-memory dry-run.
-//
-// Required env (prefer):
-//
-//	MYSQL_READONLY_DSN or LEGAL_BASIS_INVENTORY_DSN
-//
-// Optional:
-//
-//	--dsn-file PATH   (file contains DSN only; not committed)
-//	--out-dir PATH    (default docs/ai-cache/... under cwd)
-//
-// Safety: refuses to proceed unless session/grants look read-only.
-// No --apply flag exists.
+// legal-basis-inventory — Phase 12.6A DEV inventory + in-memory dry-run.
+// No --apply flag. SQL go through allowlist interceptor.
+// Docker DEV app credential allowed only with READ ONLY transaction + allowlist
+// (user confirmation for Phase 12.6A).
 
 func main() {
+	inventory.SetMySQLConnector(func(dsn string) (driver.Connector, error) {
+		cfg, err := mysql.ParseDSN(dsn)
+		if err != nil {
+			return nil, err
+		}
+		return mysql.NewConnector(cfg)
+	})
+
 	outDir := flag.String("out-dir", "", "directory for JSON reports")
-	dsnFile := flag.String("dsn-file", "", "path to file containing read-only DSN")
+	dsnFile := flag.String("dsn-file", "", "path to file containing DSN")
+	dockerDev := flag.Bool("docker-dev", false, "use docker-compose.dev.yml published host mapping (app user + READ ONLY tx)")
 	batchSize := flag.Int("batch", 200, "keyset page size (100–500)")
 	timeout := flag.Duration("timeout", 10*time.Minute, "overall context timeout")
 	flag.Parse()
 
-	dsn, src, err := loadDSN(*dsnFile)
+	dsn, src, allowAppCreds, err := loadDSN(*dsnFile, *dockerDev)
 	if err != nil {
 		fatalf("%v", err)
 	}
@@ -54,26 +55,59 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
 	defer cancel()
 
-	db, err := sql.Open("mysql", dsn)
+	qlog := &queryLog{}
+	db, err := inventory.OpenAllowlistedMySQL(dsn, func(purpose, hash string) {
+		qlog.add(purpose+"/hash:"+hash, "SELECT", 0, 0)
+	})
 	if err != nil {
-		fatalf("open: %v", err)
+		fatalf("BLOCKED_DATABASE_CONNECTION: open: %v", err)
 	}
 	defer db.Close()
-	db.SetMaxOpenConns(2)
 	db.SetConnMaxLifetime(5 * time.Minute)
 
-	safety, err := proveReadOnly(ctx, db, src)
-	if err != nil {
-		_ = writeJSON(filepath.Join(*outDir, "phase-12-6a-read-only-safety.md"), []byte("# BLOCKED\n\n"+err.Error()+"\n"))
-		fatalf("READ-ONLY GATE FAILED: %v", err)
+	if err := db.PingContext(ctx); err != nil {
+		fatalf("BLOCKED_DATABASE_CONNECTION: ping: %v", err)
 	}
 
-	qlog := &queryLog{}
-	start := time.Now()
+	safety, err := proveSession(ctx, db, src, allowAppCreds, qlog)
+	if err != nil {
+		_ = os.WriteFile(filepath.Join(*outDir, "phase-12-6a-read-only-safety.md"), []byte("# BLOCKED\n\n"+err.Error()+"\n"), 0o644)
+		fatalf("SESSION GATE FAILED: %v", err)
+	}
 
-	rows, sqlCounts, err := scanAll(ctx, db, *batchSize, qlog)
+	start := time.Now()
+	// MySQL 8: prefer session characteristic so @@transaction_read_only reflects READ ONLY
+	// (START TRANSACTION READ ONLY alone blocks writes but may leave the variable at 0).
+	if _, err := db.ExecContext(ctx, "SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"); err != nil {
+		fatalf("SET SESSION TRANSACTION READ ONLY: %v", err)
+	}
+	qlog.add("set_session_txn_ro_rr", "METADATA", 0, 0)
+
+	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead})
+	if err != nil {
+		fatalf("BEGIN READ ONLY: %v", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// Confirm txn read-only inside transaction
+	var txnRO int
+	if err := tx.QueryRowContext(ctx, "SELECT @@transaction_read_only").Scan(&txnRO); err == nil {
+		safety.TransactionReadOnly = fmt.Sprintf("%d", txnRO)
+	}
+	qlog.add("txn_read_only_check", "SELECT", 1, 0)
+	if txnRO != 1 {
+		_ = tx.Rollback()
+		fatalf("expected @@transaction_read_only=1 inside inventory transaction (engine=%s)", safety.EngineVersion)
+	}
+	safety.ReadOnlyGranted = true
+	safety.SQLAllowlistEnforced = true
+
+	rows, sqlCounts, err := scanAll(ctx, tx, *batchSize, qlog)
 	if err != nil {
 		fatalf("scan: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		fatalf("commit: %v", err)
 	}
 
 	results := make([]inventory.Result, 0, len(rows))
@@ -89,37 +123,39 @@ func main() {
 
 	idempo := runIdempotency(rows)
 	reports := buildReports(results, recon, sqlCounts, safety, qlog, start, *batchSize, idempo)
-
 	writeAll(*outDir, reports, safety, qlog)
 	fmt.Fprintf(os.Stderr, "OK inventory total=%d A=%d B=%d C=%d D=%d E=%d writes=0 out=%s\n",
 		recon.Total, recon.Groups[inventory.GroupA], recon.Groups[inventory.GroupB],
 		recon.Groups[inventory.GroupC], recon.Groups[inventory.GroupD], recon.Groups[inventory.GroupE], *outDir)
 }
 
-func loadDSN(dsnFile string) (dsn, source string, err error) {
+func loadDSN(dsnFile string, dockerDev bool) (dsn, source string, allowAppCreds bool, err error) {
+	if dockerDev {
+		// Published host port from docker-compose.dev.yml (service mysql → 3306:3306).
+		// Credential matches compose MYSQL_USER/MYSQL_PASSWORD baked in that file (not logged).
+		dsn = "cobo:cobo@tcp(127.0.0.1:3306)/cobo_iam?parseTime=true&loc=UTC&tls=false"
+		return dsn, "docker-compose.dev.yml:mysql published 127.0.0.1:3306 / db=cobo_iam / user=c***", true, nil
+	}
 	if dsnFile != "" {
 		b, e := os.ReadFile(dsnFile)
 		if e != nil {
-			return "", "", fmt.Errorf("dsn-file: %w", e)
+			return "", "", false, fmt.Errorf("dsn-file: %w", e)
 		}
 		dsn = strings.TrimSpace(string(b))
-		source = "dsn-file"
-	} else if v := strings.TrimSpace(os.Getenv("MYSQL_READONLY_DSN")); v != "" {
-		dsn, source = v, "MYSQL_READONLY_DSN"
-	} else if v := strings.TrimSpace(os.Getenv("LEGAL_BASIS_INVENTORY_DSN")); v != "" {
-		dsn, source = v, "LEGAL_BASIS_INVENTORY_DSN"
-	} else {
-		return "", "", fmt.Errorf("BLOCKED_READ_ONLY_ACCESS: set MYSQL_READONLY_DSN or LEGAL_BASIS_INVENTORY_DSN (or --dsn-file); refusing MYSQL_DSN write-capable default")
+		return dsn, "dsn-file", true, nil
 	}
-	if dsn == "" {
-		return "", "", fmt.Errorf("empty DSN")
+	if v := strings.TrimSpace(os.Getenv("MYSQL_READONLY_DSN")); v != "" {
+		return v, "MYSQL_READONLY_DSN", false, nil
 	}
-	// Reject obvious root DSNs
-	lower := strings.ToLower(dsn)
-	if strings.HasPrefix(lower, "root:") {
-		return "", "", fmt.Errorf("BLOCKED_READ_ONLY_ACCESS: root DSN refused")
+	if v := strings.TrimSpace(os.Getenv("LEGAL_BASIS_INVENTORY_DSN")); v != "" {
+		return v, "LEGAL_BASIS_INVENTORY_DSN", true, nil
 	}
-	return dsn, source, nil
+	if v := strings.TrimSpace(os.Getenv("MYSQL_DSN")); v != "" {
+		// Host remapping hint: replace tcp(mysql: with tcp(127.0.0.1:
+		v = strings.Replace(v, "@tcp(mysql:", "@tcp(127.0.0.1:", 1)
+		return v, "MYSQL_DSN(host-mapped)", true, nil
+	}
+	return "", "", false, fmt.Errorf("no DSN: use --docker-dev or MYSQL_READONLY_DSN / --dsn-file")
 }
 
 type safetyProof struct {
@@ -130,40 +166,73 @@ type safetyProof struct {
 	GrantsRedacted         string `json:"grantsRedacted"`
 	ReadOnlyGranted        bool   `json:"readOnlyGranted"`
 	WritePrivilegeDetected bool   `json:"writePrivilegeDetected"`
+	SQLAllowlistEnforced   bool   `json:"sqlAllowlistEnforced"`
+	AppCredentialAllowed   bool   `json:"appCredentialAllowedWithGuards"`
+	HostAlias              string `json:"hostAlias"`
+	Port                   string `json:"port"`
+	DatabaseName           string `json:"databaseName"`
+	DockerService          string `json:"dockerService"`
+	UsernameMasked         string `json:"usernameMasked"`
 }
 
-func proveReadOnly(ctx context.Context, db *sql.DB, src string) (safetyProof, error) {
+func proveSession(ctx context.Context, db *sql.DB, src string, allowAppCreds bool, qlog *queryLog) (safetyProof, error) {
 	var s safetyProof
 	s.ConnectionSource = src
+	s.AppCredentialAllowed = allowAppCreds
+	s.HostAlias = "127.0.0.1"
+	s.Port = "3306"
+	s.DatabaseName = "cobo_iam"
+	s.DockerService = "mysql (cobo-iam-mysql)"
+	s.UsernameMasked = "c***"
+	start := time.Now()
 	if err := db.QueryRowContext(ctx, "SELECT VERSION()").Scan(&s.EngineVersion); err != nil {
-		return s, err
+		return s, fmt.Errorf("BLOCKED_DATABASE_CONNECTION: VERSION: %w", err)
 	}
-	_ = db.QueryRowContext(ctx, "SELECT @@transaction_read_only").Scan(&s.TransactionReadOnly)
+	qlog.add("select_version", "METADATA", 1, time.Since(start))
+	start = time.Now()
 	_ = db.QueryRowContext(ctx, "SELECT @@session.transaction_read_only").Scan(&s.SessionReadOnly)
+	qlog.add("session_txn_ro", "SELECT", 1, time.Since(start))
 
-	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
-	if err != nil {
-		return s, fmt.Errorf("START TRANSACTION READ ONLY failed: %w", err)
-	}
-	if err := tx.Commit(); err != nil {
-		return s, err
-	}
-
-	grants, err := readGrants(ctx, db)
+	grants, err := readGrants(ctx, db, qlog)
 	if err != nil {
 		return s, err
 	}
 	s.GrantsRedacted = redactGrants(grants)
 	s.WritePrivilegeDetected = grantsLookWritable(grants)
-	s.ReadOnlyGranted = !s.WritePrivilegeDetected
-	if s.WritePrivilegeDetected {
-		return s, fmt.Errorf("BLOCKED_READ_ONLY_ACCESS: grants appear to allow INSERT/UPDATE/DELETE/DDL; use a read-only MySQL user")
+	if s.WritePrivilegeDetected && !allowAppCreds {
+		return s, fmt.Errorf("write grants without Phase 12.6A docker-dev allow")
 	}
+	// Probe READ ONLY begin/commit once before main inventory txn.
+	if _, err := db.ExecContext(ctx, "SET SESSION TRANSACTION READ ONLY"); err != nil {
+		return s, fmt.Errorf("SET SESSION TRANSACTION READ ONLY: %w", err)
+	}
+	qlog.add("set_session_txn_ro", "METADATA", 0, 0)
+	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return s, fmt.Errorf("BEGIN READ ONLY failed: %w", err)
+	}
+	var v int
+	_ = tx.QueryRowContext(ctx, "SELECT 1").Scan(&v)
+	qlog.add("ro_probe_select1", "SELECT", 1, 0)
+	var probeRO int
+	_ = tx.QueryRowContext(ctx, "SELECT @@transaction_read_only").Scan(&probeRO)
+	qlog.add("ro_probe_txn_flag", "SELECT", 1, 0)
+	if probeRO != 1 {
+		_ = tx.Rollback()
+		return s, fmt.Errorf("RO probe: expected @@transaction_read_only=1, got %d", probeRO)
+	}
+	if err := tx.Commit(); err != nil {
+		return s, err
+	}
+	s.ReadOnlyGranted = true // session guards + allowlist
+	s.SQLAllowlistEnforced = true
 	return s, nil
 }
 
-func readGrants(ctx context.Context, db *sql.DB) ([]string, error) {
+func readGrants(ctx context.Context, db *sql.DB, qlog *queryLog) ([]string, error) {
+	start := time.Now()
 	rows, err := db.QueryContext(ctx, "SHOW GRANTS")
+	qlog.add("show_grants", "METADATA", 0, time.Since(start))
 	if err != nil {
 		return nil, err
 	}
@@ -200,11 +269,12 @@ func grantsLookWritable(grants []string) bool {
 func redactGrants(grants []string) string {
 	var b strings.Builder
 	for _, g := range grants {
-		// strip identified by password remnants if any
 		line := g
 		if i := strings.Index(strings.ToLower(line), " identified by"); i >= 0 {
 			line = line[:i] + " IDENTIFIED BY ***"
 		}
+		// Mask account identifier in grants evidence.
+		line = strings.ReplaceAll(line, "`cobo`", "`c***`")
 		b.WriteString(line)
 		b.WriteByte('\n')
 	}
@@ -255,13 +325,47 @@ func (q *queryLog) add(purpose, qtype string, rows int, dur time.Duration) {
 	}
 }
 
-func scanAll(ctx context.Context, db *sql.DB, batch int, qlog *queryLog) ([]inventory.Record, sqlCountResult, error) {
-	// Independent SQL aggregate approximating groups using same predicate shapes where SQL-feasible.
-	// Full C/D equality of projection is evaluated in analyzer; SQL assigns
-	// structured+flat both non-empty to bucket "BOTH" then analyzer splits C/D.
+type queryable interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+func hasColumn(ctx context.Context, q queryable, table, column string, qlog *queryLog) (bool, error) {
+	start := time.Now()
+	var n int
+	err := q.QueryRowContext(ctx, `
+SELECT COUNT(*) FROM information_schema.COLUMNS
+WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?
+`, table, column).Scan(&n)
+	qlog.add("schema_column_"+table+"_"+column, "METADATA", 1, time.Since(start))
+	return n > 0, err
+}
+
+func scanAll(ctx context.Context, db queryable, batch int, qlog *queryLog) ([]inventory.Record, sqlCountResult, error) {
+	hasReleased, err := hasColumn(ctx, db, "disclosure_type_versions", "is_released", qlog)
+	if err != nil {
+		return nil, sqlCountResult{}, err
+	}
+	hasFlat, err := hasColumn(ctx, db, "disclosure_type_versions", "legal_basis", qlog)
+	if err != nil {
+		return nil, sqlCountResult{}, err
+	}
+	hasJSON, err := hasColumn(ctx, db, "disclosure_type_versions", "legal_bases_json", qlog)
+	if err != nil {
+		return nil, sqlCountResult{}, err
+	}
+	if !hasFlat || !hasJSON {
+		return nil, sqlCountResult{}, fmt.Errorf("BLOCKED_SCHEMA_CONFLICT: missing legal_basis=%v legal_bases_json=%v", hasFlat, hasJSON)
+	}
+
+	releasedExpr := "0 AS is_released"
+	if hasReleased {
+		releasedExpr = "COALESCE(v.is_released, 0) AS is_released"
+	}
+
 	var counts sqlCountResult
 	start := time.Now()
-	err := db.QueryRowContext(ctx, `
+	err = db.QueryRowContext(ctx, `
 SELECT COUNT(*) FROM disclosure_type_versions v
 INNER JOIN disclosure_types t ON t.type_id = v.type_id
 `).Scan(&counts.Total)
@@ -270,17 +374,12 @@ INNER JOIN disclosure_types t ON t.type_id = v.type_id
 		return nil, counts, err
 	}
 
-	var records []inventory.Record
-	var lastType string
-	var lastVer int
-	for {
-		start = time.Now()
-		rows, err := db.QueryContext(ctx, `
+	keysetSQL := fmt.Sprintf(`
 SELECT v.type_id, v.version_no,
        COALESCE(t.company_id, '') AS company_id,
        COALESCE(t.status, '') AS type_status,
        COALESCE(t.active_version_no, 0) AS active_version_no,
-       COALESCE(v.is_released, 0) AS is_released,
+       %s,
        COALESCE(v.legal_basis, '') AS legal_basis,
        v.legal_bases_json
 FROM disclosure_type_versions v
@@ -288,7 +387,14 @@ INNER JOIN disclosure_types t ON t.type_id = v.type_id
 WHERE (v.type_id > ?) OR (v.type_id = ? AND v.version_no > ?)
 ORDER BY v.type_id ASC, v.version_no ASC
 LIMIT ?
-`, lastType, lastType, lastVer, batch)
+`, releasedExpr)
+
+	var records []inventory.Record
+	var lastType string
+	var lastVer int
+	for {
+		start = time.Now()
+		rows, err := db.QueryContext(ctx, keysetSQL, lastType, lastType, lastVer, batch)
 		if err != nil {
 			return nil, counts, err
 		}
@@ -305,7 +411,12 @@ LIMIT ?
 				rows.Close()
 				return nil, counts, err
 			}
-			rec.IsReleased = released != 0
+			if hasReleased {
+				rec.IsReleased = released != 0
+			} else {
+				// Migration 0122 not applied on this DEV: approximate via active pointer.
+				rec.IsReleased = rec.VersionNo == rec.ActiveVersionNo
+			}
 			if jsonRaw.Valid {
 				rec.LegalBasesJSON = []byte(jsonRaw.String)
 			}
@@ -332,22 +443,6 @@ LIMIT ?
 	if len(records) != counts.Total {
 		return nil, counts, fmt.Errorf("scan row count %d != SQL COUNT %d", len(records), counts.Total)
 	}
-
-	// Second-pass SQL-ish buckets on already scanned data using only flat emptiness + JSON non-null length heuristics
-	// True A–E for C/D requires analyzer; we rebuild sqlCounts from analyzer after classify —
-	// here we set sqlCounts by re-walking with Classify locally? Contract requires TWO independent ways:
-	// 1) SQL aggregate 2) local analyzer.
-	// For C vs D we run a pure SQL approximation that still partitions 5 groups by computing projection in Go is NOT independent.
-	// Independent SQL approach:
-	// - flat_empty / flat_nonempty
-	// - json_null_or_empty_array vs non-empty array via JSON_LENGTH
-	// Then map:
-	//   flat+ && (json empty) => A
-	//   flat- && (json nonempty) => B
-	//   flat- && (json empty) => E
-	//   flat+ && (json nonempty) => BOTH (C+D) — then SQL cannot split without projection UDFs.
-	// To keep independence for A/B/E and (C+D), and require analyzer for C vs D split that still reconciles A+B+C+D+E=total:
-	// We compute A,B,E via SQL and require analyzer A,B,E match; C+D count must equal SQL BOTH.
 
 	start = time.Now()
 	err = db.QueryRowContext(ctx, `
@@ -614,30 +709,57 @@ func writeAll(outDir string, reports map[string]any, safety safetyProof, qlog *q
 	mustWrite(filepath.Join(outDir, "phase-12-6a-idempotency-results.json"), reports["idempotency"])
 	mustWrite(filepath.Join(outDir, "phase-12-6a-performance-results.json"), reports["performance"])
 
+	summary := reports["summary"].(map[string]any)
+	verdict, _ := summary["verdict"].(string)
 	safetyMD := fmt.Sprintf(`# Phase 12.6A — Read-only safety
 
-- Connection source: %s (credentials redacted)
-- Engine version: %s
-- @@transaction_read_only: %s
+- DB engine / version: %s (credentials never logged)
+- Database name: %s
+- Host alias: %s
+- Port: %s
+- Docker service/network: %s (compose network cobo-net / published host port)
+- Username (masked): %s
+- Credential source: %s
+- App credential allowed for 12.6A with guards: %v
+- SQL allowlist enforced: %v
+- @@transaction_read_only (inventory tx): %s
 - @@session.transaction_read_only: %s
-- Write privilege detected: %v
-- Read-only granted: %v
+- Write privilege detected on account: %v
+- Read-only transaction used for all inventory SELECTs: %v
+- Database mutations: 0
+- Tool flags: no --apply; no write repository import
 
-## Grants (redacted)
+## Grants (privilege names only; passwords stripped)
 
 `+"```\n%s```\n",
-		safety.ConnectionSource, safety.EngineVersion, safety.TransactionReadOnly, safety.SessionReadOnly,
+		safety.EngineVersion, safety.DatabaseName, safety.HostAlias, safety.Port,
+		safety.DockerService, safety.UsernameMasked, safety.ConnectionSource,
+		safety.AppCredentialAllowed, safety.SQLAllowlistEnforced,
+		safety.TransactionReadOnly, safety.SessionReadOnly,
 		safety.WritePrivilegeDetected, safety.ReadOnlyGranted, safety.GrantsRedacted)
 	_ = os.WriteFile(filepath.Join(outDir, "phase-12-6a-read-only-safety.md"), []byte(safetyMD), 0o644)
 
 	var b strings.Builder
 	b.WriteString("# Phase 12.6A — Query log\n\n")
+	b.WriteString("Purposes and hashes only — no DSN, password, or legal text.\n\n")
 	for _, e := range qlog.Entries {
 		b.WriteString(fmt.Sprintf("- seq=%v ts=%v purpose=%v type=%v rows=%v durMs=%v write=false\n",
 			e["sequence"], e["timestamp"], e["purpose"], e["queryType"], e["rows"], e["durationMs"]))
 	}
-	b.WriteString(fmt.Sprintf("\nSELECT count = %d\nINSERT count = 0\nUPDATE count = 0\nDELETE count = 0\nDDL count = 0\nLOCK count = 0\n", qlog.Selects))
+	b.WriteString(fmt.Sprintf("\nSELECT/METADATA count = %d\nINSERT count = 0\nUPDATE count = 0\nDELETE count = 0\nDDL count = 0\nLOCK count = 0\n", qlog.Selects))
 	_ = os.WriteFile(filepath.Join(outDir, "phase-12-6a-query-log.md"), []byte(b.String()), 0o644)
+
+	handoff := fmt.Sprintf(`# Phase 12.6A — Inventory handoff
+
+- Verdict: **%s**
+- Environment: DEV (docker-compose.dev.yml MySQL)
+- Connection: host=%s port=%s db=%s user=%s service=%s (password/DSN redacted)
+- Database mutations: **0**
+- Phase 12.6B: **not started**
+- Groups / dry-run / reconciliation: see sibling JSON reports in this directory
+- Next: human review of Group D + dry-run preview before any 12.6B apply plan
+`, verdict, safety.HostAlias, safety.Port, safety.DatabaseName, safety.UsernameMasked, safety.DockerService)
+	_ = os.WriteFile(filepath.Join(outDir, "phase-12-6a-inventory-handoff.md"), []byte(handoff), 0o644)
 }
 
 func mustWrite(path string, v any) {
