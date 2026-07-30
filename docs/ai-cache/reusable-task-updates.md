@@ -1,3 +1,10 @@
+## 2026-07-30 - Workflow Readiness Copy Consistency (FE-only DEV)
+
+- task type: FE presentation (no BE DTO/engine change)
+- note: readiness API still returns `no active global workflow…` for empty versioning; FE maps State A when effective exists
+- evidence (FE): `cobo_web_design/docs/ai-cache/workflow-readiness-copy-consistency-2026-07-30/`
+- verdict: **PASS_WORKFLOW_READINESS_COPY_CONSISTENCY**
+
 ## 2026-07-30 - Workflow alert tasks 500 + CMS dual-source UX (DEV)
 
 - task type: remediation (BE tasks Scan NULL + FE dual-source panel)
