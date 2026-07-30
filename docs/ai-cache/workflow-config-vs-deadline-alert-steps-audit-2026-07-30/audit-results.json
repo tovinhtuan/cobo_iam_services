@@ -1,0 +1,68 @@
+{
+  "issue": "Workflow configuration differs from deadline alert steps",
+  "environment": "DEV",
+  "entity": {
+    "typeId": "qa-monthly-deadline-alert-202607-1785382733",
+    "companyId": "c_001",
+    "period": "2026-07",
+    "recordId": "019fb134-b0d8-7f35-894c-120dd3dddbe5",
+    "cycleId": "019fb134-b0c8-7e92-869c-bfc13f49accc",
+    "workflowInstanceId": "019fb134-b0e2-78e5-9561-1a55cd48d2bd"
+  },
+  "versions": {
+    "templateActiveVersion": "1",
+    "cmsWorkflowVersion": "none",
+    "effectiveWorkflowVersion": "global_template:1",
+    "snapshotWorkflowVersion": "global_template",
+    "runtimeWorkflowVersion": "global_template"
+  },
+  "steps": {
+    "cmsCount": 0,
+    "effectiveCount": 4,
+    "snapshotCount": 4,
+    "runtimeTaskCount": 1,
+    "alertApiCount": 4,
+    "alertUiCount": 1,
+    "semanticMatch": true,
+    "orderMatch": true,
+    "actorMatch": true,
+    "labelOnlyDifference": false,
+    "cmsGlobalVsEffectiveDifferentSoT": true
+  },
+  "timing": {
+    "workflowConfiguredAt": "enterprise_workflow on template v1 (pre-materialize)",
+    "workflowActivatedAt": "portal active v1",
+    "recordMaterializedAt": "2026-07-30 04:07:28",
+    "configChangedAfterMaterialization": false
+  },
+  "rootCause": {
+    "code": "RC-4",
+    "confirmed": true,
+    "evidence": [
+      "CMS configuration empty / global_workflows=0",
+      "effective-workflow source=global_template 4 steps",
+      "snapshot_json 4 steps match effective",
+      "alert steps API 4 steps match snapshot",
+      "list UI shows current_step_name only"
+    ]
+  },
+  "contributing": [
+    "RC-2",
+    "tasks_endpoint_500_blocks_detail_ui"
+  ],
+  "impact": {
+    "scope": "types with enterprise_workflow but no global_workflow versions; dual-SoT UX",
+    "severity": "P3",
+    "detailUiTasks500Severity": "P2",
+    "dataLossObserved": false
+  },
+  "scopeSafety": {
+    "codeChanged": false,
+    "databaseMutated": false,
+    "migrationExecuted": false,
+    "deploymentExecuted": false,
+    "productionTouched": false,
+    "directSqlWrites": 0
+  },
+  "verdict": "EXPECTED_RUNTIME_REPRESENTATION"
+}

@@ -1,0 +1,284 @@
+{
+  "configuration": {
+    "status": 200,
+    "body": {
+      "data": {
+        "workflow": {
+          "type_id": "",
+          "workflow_id": "",
+          "version_no": 0,
+          "steps": null
+        },
+        "versions": [],
+        "readiness": {
+          "ready": false,
+          "score": 0,
+          "blocking_errors": [
+            "no active global workflow for type \"qa-monthly-deadline-alert-202607-1785382733\""
+          ],
+          "warnings": [],
+          "checks": [
+            {
+              "key": "workflow_exists",
+              "pass": false,
+              "severity": "error",
+              "message": "no active global workflow for type \"qa-monthly-deadline-alert-202607-1785382733\""
+            }
+          ]
+        },
+        "lifecycle": {
+          "draft": {
+            "exists": false,
+            "step_count": 0
+          },
+          "published": null,
+          "active": null,
+          "can_publish": false,
+          "can_activate": false
+        },
+        "governance": {
+          "status": "draft",
+          "published_version_no": null,
+          "active_version_no": null,
+          "total_versions": 0
+        }
+      }
+    }
+  },
+  "effective": {
+    "status": 200,
+    "body": {
+      "data": {
+        "type_id": "qa-monthly-deadline-alert-202607-1785382733",
+        "company_id": "c_001",
+        "source": "global_template",
+        "version_no": 1,
+        "workflow": [
+          {
+            "step_id": "wf-step-1780040944730-4ytw97",
+            "stage": "Tiếp nhận thông tin",
+            "department_id": "dept-004",
+            "assignee_role_ids": [
+              "role-reviewer"
+            ],
+            "due_rule": "<nil>",
+            "processing_days": 1,
+            "documents": [],
+            "display_order": 1
+          },
+          {
+            "step_id": "wf-step-1780040972266-8dij6p",
+            "stage": "Chuẩn bị hồ sơ",
+            "department_id": "dept-003",
+            "assignee_role_ids": [
+              "role-finance-reviewer"
+            ],
+            "due_rule": "<nil>",
+            "processing_days": 5,
+            "documents": [],
+            "display_order": 2
+          },
+          {
+            "step_id": "wf-step-1780040991507-2z1h2q",
+            "stage": "Pháp chế rà soát",
+            "department_id": "dept-001",
+            "assignee_role_ids": [
+              "role-legal-reviewer"
+            ],
+            "due_rule": "<nil>",
+            "processing_days": 10,
+            "documents": [],
+            "display_order": 3
+          },
+          {
+            "step_id": "wf-step-1780041023021-xmk7go",
+            "stage": "Phê duyệt",
+            "department_id": "dept-004",
+            "assignee_role_ids": [
+              "role-approver"
+            ],
+            "due_rule": "<nil>",
+            "processing_days": 12,
+            "documents": [],
+            "display_order": 4
+          }
+        ]
+      }
+    }
+  },
+  "alerts": {
+    "status": 200,
+    "body": {
+      "items": [
+        {
+          "alert_id": "019fb134-b0d8-7f35-894c-120dd3dddbe5",
+          "record_id": "019fb134-b0d8-7f35-894c-120dd3dddbe5",
+          "workflow_instance_id": "019fb134-b0e2-78e5-9561-1a55cd48d2bd",
+          "type_id": "qa-monthly-deadline-alert-202607-1785382733",
+          "title": "QA - Báo cáo hoạt động tháng 7/2026 - Cảnh báo thời hạn - 1785382733 — 2026-07",
+          "due_date": "2026-07-31",
+          "status": "UPCOMING",
+          "active_departments": [
+            "Ban Tổng Giám đốc"
+          ],
+          "current_step_name": "Tiếp nhận thông tin",
+          "source": "disclosure_record",
+          "template_category": "periodic"
+        }
+      ],
+      "page": 1,
+      "page_size": 20,
+      "total": 1
+    }
+  },
+  "steps": {
+    "status": 200,
+    "body": {
+      "record_id": "019fb134-b0d8-7f35-894c-120dd3dddbe5",
+      "current_step_code": "wf-step-1780040944730-4ytw97",
+      "steps": [
+        {
+          "step_code": "wf-step-1780040944730-4ytw97",
+          "step_name": "Tiếp nhận thông tin",
+          "order": 1,
+          "department_name": "Ban Tổng Giám đốc",
+          "planned_start_date": "2026-07-01",
+          "planned_end_date": "2026-07-01",
+          "duration_days": 1,
+          "status": "current",
+          "is_current_by_time": true,
+          "is_completed": false,
+          "is_locked": false,
+          "is_future": false,
+          "is_delayed": false,
+          "delay_days": 0,
+          "available_actions": [
+            "complete",
+            "mark_incomplete"
+          ]
+        },
+        {
+          "step_code": "wf-step-1780040972266-8dij6p",
+          "step_name": "Chuẩn bị hồ sơ",
+          "order": 2,
+          "department_name": "Phòng Kế toán",
+          "planned_start_date": "2026-07-02",
+          "planned_end_date": "2026-07-06",
+          "duration_days": 5,
+          "status": "overdue",
+          "is_current_by_time": false,
+          "is_completed": false,
+          "is_locked": true,
+          "is_future": false,
+          "is_delayed": false,
+          "delay_days": 0,
+          "available_actions": null,
+          "lock_reason": "past_incomplete"
+        },
+        {
+          "step_code": "wf-step-1780040991507-2z1h2q",
+          "step_name": "Pháp chế rà soát",
+          "order": 3,
+          "department_name": "Phòng Pháp chế",
+          "planned_start_date": "2026-07-07",
+          "planned_end_date": "2026-07-16",
+          "duration_days": 10,
+          "status": "overdue",
+          "is_current_by_time": false,
+          "is_completed": false,
+          "is_locked": true,
+          "is_future": false,
+          "is_delayed": false,
+          "delay_days": 0,
+          "available_actions": null,
+          "lock_reason": "past_incomplete"
+        },
+        {
+          "step_code": "wf-step-1780041023021-xmk7go",
+          "step_name": "Phê duyệt",
+          "order": 4,
+          "department_name": "Ban Tổng Giám đốc",
+          "planned_start_date": "2026-07-17",
+          "planned_end_date": "2026-07-28",
+          "duration_days": 12,
+          "status": "overdue",
+          "is_current_by_time": false,
+          "is_completed": false,
+          "is_locked": true,
+          "is_future": false,
+          "is_delayed": false,
+          "delay_days": 0,
+          "available_actions": null,
+          "lock_reason": "past_incomplete"
+        }
+      ]
+    }
+  },
+  "instance": {
+    "status": 200,
+    "body": {
+      "data": {
+        "workflow_instance_id": "019fb134-b0e2-78e5-9561-1a55cd48d2bd",
+        "company_id": "c_001",
+        "record_id": "019fb134-b0d8-7f35-894c-120dd3dddbe5",
+        "status": "in_progress",
+        "current_step_code": "wf-step-1780040944730-4ytw97",
+        "created_by": "m_system_oneshot",
+        "snapshot": [
+          {
+            "step_id": "wf-step-1780040944730-4ytw97",
+            "step_code": "wf-step-1780040944730-4ytw97",
+            "stage": "Tiếp nhận thông tin",
+            "department": "dept-004",
+            "assignee_role": "role-reviewer",
+            "due_rule": "<nil>",
+            "display_order": 1,
+            "processing_days": 1
+          },
+          {
+            "step_id": "wf-step-1780040972266-8dij6p",
+            "step_code": "wf-step-1780040972266-8dij6p",
+            "stage": "Chuẩn bị hồ sơ",
+            "department": "dept-003",
+            "assignee_role": "role-finance-reviewer",
+            "due_rule": "<nil>",
+            "display_order": 2,
+            "processing_days": 5
+          },
+          {
+            "step_id": "wf-step-1780040991507-2z1h2q",
+            "step_code": "wf-step-1780040991507-2z1h2q",
+            "stage": "Pháp chế rà soát",
+            "department": "dept-001",
+            "assignee_role": "role-legal-reviewer",
+            "due_rule": "<nil>",
+            "display_order": 3,
+            "processing_days": 10
+          },
+          {
+            "step_id": "wf-step-1780041023021-xmk7go",
+            "step_code": "wf-step-1780041023021-xmk7go",
+            "stage": "Phê duyệt",
+            "department": "dept-004",
+            "assignee_role": "role-approver",
+            "due_rule": "<nil>",
+            "display_order": 4,
+            "processing_days": 12
+          }
+        ],
+        "workflow_source": "global_template",
+        "t0_date": "2026-07-01T00:00:00Z",
+        "t0_policy": "user_defined"
+      }
+    }
+  },
+  "tasks": {
+    "status": 500,
+    "body": {
+      "error": {
+        "code": "INTERNAL_ERROR",
+        "message": "Internal server error"
+      }
+    }
+  }
+}

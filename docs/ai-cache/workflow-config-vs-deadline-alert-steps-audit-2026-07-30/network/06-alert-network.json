@@ -1,0 +1,941 @@
+[
+  {
+    "url": "http://88.216.208.0:3000/api/v1/company/deadline-alerts/filter-options",
+    "status": 200,
+    "method": "GET",
+    "body": {
+      "departments": [
+        {
+          "id": "019f1734-9479-7e72-9655-b8ad9976aa2c",
+          "code": "019f1734-9479-7e78-9fcf-254eae54d1c8",
+          "name": "AuditDept S2REG_1782800718811"
+        },
+        {
+          "id": "019f1735-d40e-7034-940d-b424ee4048df",
+          "code": "019f1735-d40e-7039-be72-28fbb1ea7886",
+          "name": "AuditDept S2REG_1782800800708"
+        },
+        {
+          "id": "d_ir",
+          "code": "ir",
+          "name": "IR"
+        },
+        {
+          "id": "d_legal",
+          "code": "legal",
+          "name": "Legal"
+        },
+        {
+          "id": "019e6bdf-62b3-7b15-bff9-75230829a124",
+          "code": "019e6bdf-62b3-7b1d-9d45-ca264d0d7ea3",
+          "name": "Phòng Công nghệ Thông tin"
+        },
+        {
+          "id": "019f7eb1-a639-70d9-b3dc-4fd383121fff",
+          "code": "019f7eb1-a639-70df-9677-d1b56e90f9c1",
+          "name": "QA_RESP_20260720_Phòng Kế toán"
+        },
+        {
+          "id": "019f7eb2-6e24-7328-b5d2-d6cc222e7de6",
+          "code": "019f7eb2-6e24-732e-b7fa-fc2cde2988cd",
+          "name": "QA_RESP_20260720_Phòng Pháp chế"
+        },
+        {
+          "id": "019f7eb2-6e76-7e52-b5d2-44124aef99ea",
+          "code": "019f7eb2-6e76-7e57-808b-a79eb8edd5dc",
+          "name": "QA_RESP_20260720_Phòng Kiểm soát nội bộ"
+        },
+        {
+          "id": "019f7eb2-6eb2-7856-93a1-d69468fa03b9",
+          "code": "019f7eb2-6eb2-785c-93ab-fe724d024f06",
+          "name": "QA_RESP_20260720_Ban Tổng Giám đốc"
+        },
+        {
+          "id": "019f7eb2-6f04-7dab-af80-e0a1c9188625",
+          "code": "019f7eb2-6f04-7db1-a83d-1e77564a830e",
+          "name": "QA_RESP_20260720_Bộ phận Công bố thông tin"
+        },
+        {
+          "id": "tpl_dept_phong_qa_default_template_assignee_qc_1783480046",
+          "code": "tpl_dept_phong_qa_default_template_assignee_qc_1783480046",
+          "name": "Phòng QA Default Template ASSIGNEE_QC_1783480046658"
+        },
+        {
+          "id": "tpl_dept_phong_qa_default_template_assignee_qc_1783480150448",
+          "code": "tpl_dept_phong_qa_default_template_assignee_qc_1783480150448",
+          "name": "Phòng QA Default Template ASSIGNEE_QC_1783480150448"
+        },
+        {
+          "id": "tpl_dept_phong_qa_default_ten_role_dept_fix_1783483161656",
+          "code": "tpl_dept_phong_qa_default_ten_role_dept_fix_1783483161656",
+          "name": "Phòng QA Default Tên ROLE_DEPT_FIX_1783483161656"
+        },
+        {
+          "id": "tpl_dept_phong_qa_default_ten_role_final_1783484737840",
+          "code": "tpl_dept_phong_qa_default_ten_role_final_1783484737840",
+          "name": "Phòng QA Default Tên ROLE_FINAL_1783484737840"
+        },
+        {
+          "id": "tpl_dept_phong_qa_default_ten_role_final_1783484924421",
+          "code": "tpl_dept_phong_qa_default_ten_role_final_1783484924421",
+          "name": "Phòng QA Default Tên ROLE_FINAL_1783484924421"
+        },
+        {
+          "id": "tpl_dept_phong_qa_inline_role_inline_1783564309794",
+          "code": "tpl_dept_phong_qa_inline_role_inline_1783564309794",
+          "name": "Phòng QA Inline ROLE_INLINE_1783564309794"
+        },
+        {
+          "id": "tpl_dept_phong_qa_inline_role_inline_1783564360853",
+          "code": "tpl_dept_phong_qa_inline_role_inline_1783564360853",
+          "name": "Phòng QA Inline ROLE_INLINE_1783564360853"
+        },
+        {
+          "id": "dept-001",
+          "code": "dept-001",
+          "name": "Phòng Pháp chế"
+        },
+        {
+          "id": "dept-002",
+          "code": "dept-002",
+          "name": "Phòng Quan hệ cổ đông (IR)"
+        },
+        {
+          "id": "dept-003",
+          "code": "dept-003",
+          "name": "Phòng Kế toán"
+        },
+        {
+          "id": "dept-004",
+          "code": "dept-004",
+          "name": "Ban Tổng Giám đốc"
+        }
+      ],
+      "report_groups": [
+        {
+          "id": "display_groups_008",
+          "name": "Nhóm thêm test"
+        },
+        {
+          "id": "display_groups_001",
+          "name": "Tuân thủ, Quản trị & Quản lý Rủi ro"
+        },
+        {
+          "id": "display_groups_002",
+          "name": "Chiến lược, Điều hành & Nhân sự"
+        },
+        {
+          "id": "display_groups_003",
+          "name": "Tài chính, Kinh doanh"
+        },
+        {
+          "id": "display_groups_004",
+          "name": "Vận hành, Quy trình, Quản lý Dự án"
+        },
+        {
+          "id": "display_groups_005",
+          "name": "Bán hàng, Marketing & Dịch vụ Khách hàng"
+        },
+        {
+          "id": "display_groups_006",
+          "name": "Nghiên cứu, Công nghệ & Số hoá"
+        },
+        {
+          "id": "display_groups_007",
+          "name": "Tùy chỉnh doanh nghiệp"
+        }
+      ]
+    }
+  },
+  {
+    "url": "http://88.216.208.0:3000/api/v1/company/deadline-alerts?page=1&page_size=100",
+    "status": 200,
+    "method": "GET",
+    "body": {
+      "items": [
+        {
+          "alert_id": "019fb134-b0d8-7f35-894c-120dd3dddbe5",
+          "record_id": "019fb134-b0d8-7f35-894c-120dd3dddbe5",
+          "workflow_instance_id": "019fb134-b0e2-78e5-9561-1a55cd48d2bd",
+          "type_id": "qa-monthly-deadline-alert-202607-1785382733",
+          "title": "QA - Báo cáo hoạt động tháng 7/2026 - Cảnh báo thời hạn - 1785382733 — 2026-07",
+          "due_date": "2026-07-31",
+          "status": "UPCOMING",
+          "active_departments": [
+            "Ban Tổng Giám đốc"
+          ],
+          "current_step_name": "Tiếp nhận thông tin",
+          "source": "disclosure_record",
+          "template_category": "periodic"
+        },
+        {
+          "alert_id": "019f7eb2-9cdf-7115-bd2b-e7dec1b63fd5",
+          "record_id": "019f7eb2-9cdf-7115-bd2b-e7dec1b63fd5",
+          "workflow_instance_id": "019f7eb2-9d25-7b8f-8bd4-02ac71916d5a",
+          "type_id": "bao-cao-quy-2",
+          "title": "Báo cáo Quý 2",
+          "due_date": "2026-07-01",
+          "status": "OVERDUE",
+          "active_departments": [
+            "Phòng Pháp chế"
+          ],
+          "current_step_name": "Xác định nghĩa vụ",
+          "source": "disclosure_record",
+          "template_category": "periodic"
+        },
+        {
+          "alert_id": "019f7eb2-35de-75f4-8696-f738a2d412f9",
+          "record_id": "019f7eb2-35de-75f4-8696-f738a2d412f9",
+          "workflow_instance_id": "019f7eb2-367f-7bae-a03e-05764e94be5e",
+          "type_id": "bao-cao-quy-2",
+          "title": "Báo cáo Quý 2",
+          "due_date": "2026-07-01",
+          "status": "OVERDUE",
+          "active_departments": [
+            "Phòng Pháp chế"
+          ],
+          "current_step_name": "Xác định nghĩa vụ",
+          "source": "disclosure_record",
+          "template_category": "periodic"
+        },
+        {
+          "alert_id": "019f7eb1-da0b-77e6-a7ce-55b365b4f8b4",
+          "record_id": "019f7eb1-da0b-77e6-a7ce-55b365b4f8b4",
+          "workflow_instance_id": "019f7eb1-ea42-7c1d-9358-8135921ccba6",
+          "type_id": "",
+          "title": "QA_RESP_20260720_Báo cáo trách nhiệm đa phòng ban",
+          "due_date": "2026-07-01",
+          "status": "OVERDUE",
+          "active_departments": [
+            "Phòng Pháp chế"
+          ],
+          "current_step_name": "Xác định nghĩa vụ",
+          "source": "disclosure_record"
+        },
+        {
+          "alert_id": "019f64fa-bae9-72d9-a30d-c9f33c252140",
+          "record_id": "019f64fa-bae9-72d9-a30d-c9f33c252140",
+          "workflow_instance_id": "019f64fa-bb47-72ed-b73d-de3b28eda044",
+          "type_id": "bao-cao-quy-2",
+          "title": "Báo cáo Quý 2 - QA 2026-07-15",
+          "due_date": "2026-07-15",
+          "status": "OVERDUE",
+          "active_departments": [
+            "Phòng Pháp chế"
+          ],
+          "current_step_name": "Xác định nghĩa vụ",
+          "source": "disclosure_record",
+          "template_category": "periodic"
+        },
+        {
+          "alert_id": "314d60c8-62fe-5798-9ff0-47b773d1a834",
+          "record_id": "314d60c8-62fe-5798-9ff0-47b773d1a834",
+          "workflow_instance_id": "019ebad9-7782-7489-b990-ad546b3ea39d",
+          "type_id": "bao-cao-de-xuat-chien-luoc-phat-trien-su-kien-1-6",
+          "title": "QA-MCP-1781251266 adhoc",
+          "due_date": "2026-06-20",
+          "status": "PENDING_CONFIRM",
+          "active_departments": [],
+          "source": "disclosure_record",
+          "template_category": "ad_hoc"
+        },
+        {
+          "alert_id": "019ebad9-671e-766a-aecf-c7a460904a5c",
+          "record_id": "019ebad9-671e-766a-aecf-c7a460904a5c",
+          "workflow_instance_id": "019ebad9-687b-795d-ace2-017a8c29ba83",
+          "type_id": "dt-event-major-change",
+          "title": "QA-MCP-1781251266-IRREGULAR",
+          "due_date": "2026-06-20",
+          "status": "PENDING_CONFIRM",
+          "active_departments": [],
+          "source": "disclosure_record"
+        },
+        {
+          "alert_id": "019ebad2-70a7-7090-a6ce-b6734abe6d0a",
+          "record_id": "019ebad2-70a7-7090-a6ce-b6734abe6d0a",
+          "workflow_instance_id": "019ebad2-71dd-7afc-bff6-207d12f0b9df",
+          "type_id": "dt-event-major-change",
+          "title": "QA-MCP-IRREGULAR-1781250812",
+          "due_date": "2026-06-20",
+          "status": "PENDING_CONFIRM",
+          "active_departments": [],
+          "source": "disclosure_record"
+        },
+        {
+          "alert_id": "e51c04b0-7e5a-5d01-9691-b7767f415a91",
+          "record_id": "e51c04b0-7e5a-5d01-9691-b7767f415a91",
+          "workflow_instance_id": "019eb39a-68f9-77e2-a084-99fcda983d95",
+          "type_id": "dt-co-1781129701156127711",
+          "title": "E2E BatchB Approve",
+          "due_date": "2026-06-25",
+          "status": "PENDING_CONFIRM",
+          "active_departments": [],
+          "source": "disclosure_record"
+        },
+        {
+          "alert_id": "ced05e58-bd15-5dc1-9ba3-535aa1c3dc4f",
+          "record_id": "ced05e58-bd15-5dc1-9ba3-535aa1c3dc4f",
+          "workflow_instance_id": "019eb218-44fc-76ea-a2cd-60264db3c692",
+          "type_id": "bao-cao-de-xuat-chien-luoc-phat-trien-su-kien-1-6",
+          "title": "E2E FINAL QA Reject",
+          "due_date": "2026-06-25",
+          "status": "PENDING_CONFIRM",
+          "active_departments": [],
+          "source": "disclosure_record",
+          "template_category": "ad_hoc"
+        },
+        {
+          "alert_id": "03cb5fcb-ebe1-5623-9fd7-622327cde551",
+          "record_id": "03cb5fcb-ebe1-5623-9fd7-622327cde551",
+          "workflow_instance_id": "019eb217-52e6-7529-b4b6-7c1a675cbd32",
+          "type_id": "bao-cao-de-xuat-chien-luoc-phat-trien-su-kien-1-6",
+          "title": "E2E FINAL QA Approve",
+          "due_date": "2026-06-22",
+          "status": "PENDING_CONFIRM",
+          "active_departments": [],
+          "source": "disclosure_record",
+          "template_category": "ad_hoc"
+        },
+        {
+          "alert_id": "8321c53a-d83c-5648-b2a5-5ad6f996150f",
+          "record_id": "8321c53a-d83c-5648-b2a5-5ad6f996150f",
+          "workflow_instance_id": "019eacba-0113-7402-88a4-8e2063d1fe03",
+          "type_id": "bao-cao-de-xuat-chien-luoc-phat-trien-su-kien-1-6",
+          "title": "P0 Email Test - Q2 2026 Strategy Report",
+          "due_date": "2026-07-30",
+          "status": "PENDING_CONFIRM",
+          "active_departments": [],
+          "source": "disclosure_record",
+          "template_category": "ad_hoc"
+        },
+        {
+          "alert_id": "7adb4fd9-0a81-5167-a967-f794055b9dfd",
+          "record_id": "7adb4fd9-0a81-5167-a967-f794055b9dfd",
+          "workflow_instance_id": "019ea998-6a23-7d68-b2e7-70d1e6bebf8e",
+          "type_id": "dt-sys-board-resolution",
+          "title": "QA Phase 6 — rollback verification",
+          "due_date": "2026-07-30",
+          "status": "PENDING_CONFIRM",
+          "active_departments": [],
+          "source": "disclosure_record",
+          "template_category": "ad_hoc"
+        },
+        {
+          "alert_id": "374a6c57-2b50-582b-b82c-ae7a13e265a4",
+          "record_id": "374a6c57-2b50-582b-b82c-ae7a13e265a4",
+          "workflow_instance_id": "019ea997-2d81-76a9-9b29-cb60fa81477c",
+          "type_id": "dt-sys-board-resolution",
+          "title": "QA Case C — outbox cutover test",
+          "due_date": "2026-07-30",
+          "status": "PENDING_CONFIRM",
+          "active_departments": [],
+          "source": "disclosure_record",
+          "template_category": "ad_hoc"
+        },
+        {
+          "alert_id": "9975fd9d-06db-5846-9359-7291afc2a86f",
+          "record_id": "9975fd9d-06db-5846-9359-7291afc2a86f",
+          "workflow_instance_id": "019ea994-ede9-7a2f-9114-540f55cc22fb",
+          "type_id": "dt-sys-board-resolution",
+          "title": "QA Case B — shadow mode test",
+          "due_date": "2026-07-30",
+          "status": "PENDING_CONFIRM",
+          "active_departments": [],
+          "source": "disclosure_record",
+          "template_category": "ad_hoc"
+        },
+        {
+          "alert_id": "665e30b6-5206-5c1b-9a77-53254dc71b2d",
+          "record_id": "665e30b6-5206-5c1b-9a77-53254dc71b2d",
+          "workflow_instance_id": "019ea993-491e-7aea-a815-9480cb10e8e0",
+          "type_id": "dt-sys-board-resolution",
+          "title": "QA Case A — legacy email receipt test",
+          "due_date": "2026-07-30",
+          "status": "PENDING_CONFIRM",
+          "active_departments": [],
+          "source": "disclosure_record",
+          "template_category": "ad_hoc"
+        },
+        {
+          "alert_id": "e9733537-78bf-5d55-ae84-eacd16f1196a",
+          "record_id": "e9733537-78bf-5d55-ae84-eacd16f1196a",
+          "workflow_instance_id": "019ea98e-6447-7269-8f97-afcfe9692bb5",
+          "type_id": "dt-sys-board-resolution",
+          "title": "QA Case A — legacy email baseline test",
+          "due_date": "2026-07-30",
+          "status": "PENDING_CONFIRM",
+          "active_departments": [],
+          "source": "disclosure_record",
+          "template_category": "ad_hoc"
+        },
+        {
+          "alert_id": "qa_q4_no_wf_1779871044",
+          "record_id": "qa_q4_no_wf_1779871044",
+          "type_id": "dt-sys-board-resolution",
+          "title": "QA Q4 no workflow instance",
+          "due_date": "2026-05-27",
+          "status": "PENDING_CONFIRM",
+          "active_departments": [],
+          "source": "disclosure_record",
+          "template_category": "ad_hoc"
+        },
+        {
+          "alert_id": "019e688c-8c59-79a6-a733-f9208752723a",
+          "record_id": "019e688c-8c59-79a6-a733-f9208752723a",
+          "workflow_instance_id": "019e688c-8c5d-780f-a50d-c51fde0bed82",
+          "type_id": "bao-cao-tai-chinh-quy-2",
+          "title": "Báo cáo tài chính quý 2/2026",
+          "due_date": "2026-05-12",
+          "status": "PENDING_CONFIRM",
+          "active_departments": [
+            "Ban Tổng Giám đốc"
+          ],
+          "current_step_name": "Tiệp nhận thông tin",
+          "source": "disclosure_record",
+          "template_category": "periodic"
+        },
+        {
+          "alert_id": "019e6883-a03b-7932-8662-043480d3412a",
+          "record_id": "019e6883-a03b-7932-8662-043480d3412a",
+          "workflow_instance_id": "019e6883-a041-719d-8e12-f1883a8a93d3",
+          "type_id": "bao-cao-su-co-he-thong",
+          "title": "P0 QA Q10 empty wf",
+          "due_date": "2026-06-03",
+          "status": "PENDING_CONFIRM",
+          "active_departments": [
+            "Ban Tổng Giám đốc"
+          ],
+          "current_step_name": "Bước 1",
+          "source": "disclosure_record",
+          "template_category": "ad_hoc"
+        },
+        {
+          "alert_id": "019e6882-b4d8-733e-9f70-75d06816db13",
+          "record_id": "019e6882-b4d8-733e-9f70-75d06816db13",
+          "workflow_instance_id": "019e6882-b4dc-7888-88fe-98f103eb60ab",
+          "type_id": "dt-sys-board-resolution",
+          "title": "P0 QA Q1 snapshot test",
+          "due_date": "2026-06-10",
+          "status": "PENDING_CONFIRM",
+          "active_departments": [],
+          "current_step_name": "Họp",
+          "source": "disclosure_record",
+          "template_category": "ad_hoc"
+        },
+        {
+          "alert_id": "019e6515-cb0b-7aec-a756-e2484e7d7405",
+          "record_id": "019e6515-cb0b-7aec-a756-e2484e7d7405",
+          "workflow_instance_id": "019e6515-cb10-78c3-b470-134d5153a2d8",
+          "type_id": "dt-sys-board-resolution",
+          "title": "Nghị quyết Hội đồng quản trị wwf",
+          "due_date": "2026-05-29",
+          "status": "DONE",
+          "active_departments": [],
+          "source": "disclosure_record",
+          "template_category": "ad_hoc"
+        },
+        {
+          "alert_id": "rec_smoke_wf_c001",
+          "record_id": "rec_smoke_wf_c001",
+          "workflow_instance_id": "wf_smoke_c001_001",
+          "type_id": "dt-custom-obligation",
+          "title": "Smoke workflow — in progress",
+          "due_date": "2026-06-01",
+          "status": "OVERDUE",
+          "active_departments": [],
+          "source": "disclosure_record"
+        }
+      ],
+      "page": 1,
+      "page_size": 100,
+      "total": 23
+    }
+  },
+  {
+    "url": "http://88.216.208.0:3000/api/v1/company/deadline-alerts?q=QA+-+B%C3%A1o+c%C3%A1o+ho%E1%BA%A1t+%C4%91%E1%BB%99ng+th%C3%A1ng&page=1&page_size=100",
+    "status": 200,
+    "method": "GET",
+    "body": {
+      "items": [
+        {
+          "alert_id": "019fb134-b0d8-7f35-894c-120dd3dddbe5",
+          "record_id": "019fb134-b0d8-7f35-894c-120dd3dddbe5",
+          "workflow_instance_id": "019fb134-b0e2-78e5-9561-1a55cd48d2bd",
+          "type_id": "qa-monthly-deadline-alert-202607-1785382733",
+          "title": "QA - Báo cáo hoạt động tháng 7/2026 - Cảnh báo thời hạn - 1785382733 — 2026-07",
+          "due_date": "2026-07-31",
+          "status": "UPCOMING",
+          "active_departments": [
+            "Ban Tổng Giám đốc"
+          ],
+          "current_step_name": "Tiếp nhận thông tin",
+          "source": "disclosure_record",
+          "template_category": "periodic"
+        }
+      ],
+      "page": 1,
+      "page_size": 100,
+      "total": 1
+    }
+  },
+  {
+    "url": "http://88.216.208.0:3000/api/v1/company/deadline-alerts?page=1&page_size=200",
+    "status": 200,
+    "method": "GET",
+    "body": {
+      "items": [
+        {
+          "alert_id": "019fb134-b0d8-7f35-894c-120dd3dddbe5",
+          "record_id": "019fb134-b0d8-7f35-894c-120dd3dddbe5",
+          "workflow_instance_id": "019fb134-b0e2-78e5-9561-1a55cd48d2bd",
+          "type_id": "qa-monthly-deadline-alert-202607-1785382733",
+          "title": "QA - Báo cáo hoạt động tháng 7/2026 - Cảnh báo thời hạn - 1785382733 — 2026-07",
+          "due_date": "2026-07-31",
+          "status": "UPCOMING",
+          "active_departments": [
+            "Ban Tổng Giám đốc"
+          ],
+          "current_step_name": "Tiếp nhận thông tin",
+          "source": "disclosure_record",
+          "template_category": "periodic"
+        },
+        {
+          "alert_id": "019f7eb2-9cdf-7115-bd2b-e7dec1b63fd5",
+          "record_id": "019f7eb2-9cdf-7115-bd2b-e7dec1b63fd5",
+          "workflow_instance_id": "019f7eb2-9d25-7b8f-8bd4-02ac71916d5a",
+          "type_id": "bao-cao-quy-2",
+          "title": "Báo cáo Quý 2",
+          "due_date": "2026-07-01",
+          "status": "OVERDUE",
+          "active_departments": [
+            "Phòng Pháp chế"
+          ],
+          "current_step_name": "Xác định nghĩa vụ",
+          "source": "disclosure_record",
+          "template_category": "periodic"
+        },
+        {
+          "alert_id": "019f7eb2-35de-75f4-8696-f738a2d412f9",
+          "record_id": "019f7eb2-35de-75f4-8696-f738a2d412f9",
+          "workflow_instance_id": "019f7eb2-367f-7bae-a03e-05764e94be5e",
+          "type_id": "bao-cao-quy-2",
+          "title": "Báo cáo Quý 2",
+          "due_date": "2026-07-01",
+          "status": "OVERDUE",
+          "active_departments": [
+            "Phòng Pháp chế"
+          ],
+          "current_step_name": "Xác định nghĩa vụ",
+          "source": "disclosure_record",
+          "template_category": "periodic"
+        },
+        {
+          "alert_id": "019f7eb1-da0b-77e6-a7ce-55b365b4f8b4",
+          "record_id": "019f7eb1-da0b-77e6-a7ce-55b365b4f8b4",
+          "workflow_instance_id": "019f7eb1-ea42-7c1d-9358-8135921ccba6",
+          "type_id": "",
+          "title": "QA_RESP_20260720_Báo cáo trách nhiệm đa phòng ban",
+          "due_date": "2026-07-01",
+          "status": "OVERDUE",
+          "active_departments": [
+            "Phòng Pháp chế"
+          ],
+          "current_step_name": "Xác định nghĩa vụ",
+          "source": "disclosure_record"
+        },
+        {
+          "alert_id": "019f64fa-bae9-72d9-a30d-c9f33c252140",
+          "record_id": "019f64fa-bae9-72d9-a30d-c9f33c252140",
+          "workflow_instance_id": "019f64fa-bb47-72ed-b73d-de3b28eda044",
+          "type_id": "bao-cao-quy-2",
+          "title": "Báo cáo Quý 2 - QA 2026-07-15",
+          "due_date": "2026-07-15",
+          "status": "OVERDUE",
+          "active_departments": [
+            "Phòng Pháp chế"
+          ],
+          "current_step_name": "Xác định nghĩa vụ",
+          "source": "disclosure_record",
+          "template_category": "periodic"
+        },
+        {
+          "alert_id": "314d60c8-62fe-5798-9ff0-47b773d1a834",
+          "record_id": "314d60c8-62fe-5798-9ff0-47b773d1a834",
+          "workflow_instance_id": "019ebad9-7782-7489-b990-ad546b3ea39d",
+          "type_id": "bao-cao-de-xuat-chien-luoc-phat-trien-su-kien-1-6",
+          "title": "QA-MCP-1781251266 adhoc",
+          "due_date": "2026-06-20",
+          "status": "PENDING_CONFIRM",
+          "active_departments": [],
+          "source": "disclosure_record",
+          "template_category": "ad_hoc"
+        },
+        {
+          "alert_id": "019ebad9-671e-766a-aecf-c7a460904a5c",
+          "record_id": "019ebad9-671e-766a-aecf-c7a460904a5c",
+          "workflow_instance_id": "019ebad9-687b-795d-ace2-017a8c29ba83",
+          "type_id": "dt-event-major-change",
+          "title": "QA-MCP-1781251266-IRREGULAR",
+          "due_date": "2026-06-20",
+          "status": "PENDING_CONFIRM",
+          "active_departments": [],
+          "source": "disclosure_record"
+        },
+        {
+          "alert_id": "019ebad2-70a7-7090-a6ce-b6734abe6d0a",
+          "record_id": "019ebad2-70a7-7090-a6ce-b6734abe6d0a",
+          "workflow_instance_id": "019ebad2-71dd-7afc-bff6-207d12f0b9df",
+          "type_id": "dt-event-major-change",
+          "title": "QA-MCP-IRREGULAR-1781250812",
+          "due_date": "2026-06-20",
+          "status": "PENDING_CONFIRM",
+          "active_departments": [],
+          "source": "disclosure_record"
+        },
+        {
+          "alert_id": "e51c04b0-7e5a-5d01-9691-b7767f415a91",
+          "record_id": "e51c04b0-7e5a-5d01-9691-b7767f415a91",
+          "workflow_instance_id": "019eb39a-68f9-77e2-a084-99fcda983d95",
+          "type_id": "dt-co-1781129701156127711",
+          "title": "E2E BatchB Approve",
+          "due_date": "2026-06-25",
+          "status": "PENDING_CONFIRM",
+          "active_departments": [],
+          "source": "disclosure_record"
+        },
+        {
+          "alert_id": "ced05e58-bd15-5dc1-9ba3-535aa1c3dc4f",
+          "record_id": "ced05e58-bd15-5dc1-9ba3-535aa1c3dc4f",
+          "workflow_instance_id": "019eb218-44fc-76ea-a2cd-60264db3c692",
+          "type_id": "bao-cao-de-xuat-chien-luoc-phat-trien-su-kien-1-6",
+          "title": "E2E FINAL QA Reject",
+          "due_date": "2026-06-25",
+          "status": "PENDING_CONFIRM",
+          "active_departments": [],
+          "source": "disclosure_record",
+          "template_category": "ad_hoc"
+        },
+        {
+          "alert_id": "03cb5fcb-ebe1-5623-9fd7-622327cde551",
+          "record_id": "03cb5fcb-ebe1-5623-9fd7-622327cde551",
+          "workflow_instance_id": "019eb217-52e6-7529-b4b6-7c1a675cbd32",
+          "type_id": "bao-cao-de-xuat-chien-luoc-phat-trien-su-kien-1-6",
+          "title": "E2E FINAL QA Approve",
+          "due_date": "2026-06-22",
+          "status": "PENDING_CONFIRM",
+          "active_departments": [],
+          "source": "disclosure_record",
+          "template_category": "ad_hoc"
+        },
+        {
+          "alert_id": "8321c53a-d83c-5648-b2a5-5ad6f996150f",
+          "record_id": "8321c53a-d83c-5648-b2a5-5ad6f996150f",
+          "workflow_instance_id": "019eacba-0113-7402-88a4-8e2063d1fe03",
+          "type_id": "bao-cao-de-xuat-chien-luoc-phat-trien-su-kien-1-6",
+          "title": "P0 Email Test - Q2 2026 Strategy Report",
+          "due_date": "2026-07-30",
+          "status": "PENDING_CONFIRM",
+          "active_departments": [],
+          "source": "disclosure_record",
+          "template_category": "ad_hoc"
+        },
+        {
+          "alert_id": "7adb4fd9-0a81-5167-a967-f794055b9dfd",
+          "record_id": "7adb4fd9-0a81-5167-a967-f794055b9dfd",
+          "workflow_instance_id": "019ea998-6a23-7d68-b2e7-70d1e6bebf8e",
+          "type_id": "dt-sys-board-resolution",
+          "title": "QA Phase 6 — rollback verification",
+          "due_date": "2026-07-30",
+          "status": "PENDING_CONFIRM",
+          "active_departments": [],
+          "source": "disclosure_record",
+          "template_category": "ad_hoc"
+        },
+        {
+          "alert_id": "374a6c57-2b50-582b-b82c-ae7a13e265a4",
+          "record_id": "374a6c57-2b50-582b-b82c-ae7a13e265a4",
+          "workflow_instance_id": "019ea997-2d81-76a9-9b29-cb60fa81477c",
+          "type_id": "dt-sys-board-resolution",
+          "title": "QA Case C — outbox cutover test",
+          "due_date": "2026-07-30",
+          "status": "PENDING_CONFIRM",
+          "active_departments": [],
+          "source": "disclosure_record",
+          "template_category": "ad_hoc"
+        },
+        {
+          "alert_id": "9975fd9d-06db-5846-9359-7291afc2a86f",
+          "record_id": "9975fd9d-06db-5846-9359-7291afc2a86f",
+          "workflow_instance_id": "019ea994-ede9-7a2f-9114-540f55cc22fb",
+          "type_id": "dt-sys-board-resolution",
+          "title": "QA Case B — shadow mode test",
+          "due_date": "2026-07-30",
+          "status": "PENDING_CONFIRM",
+          "active_departments": [],
+          "source": "disclosure_record",
+          "template_category": "ad_hoc"
+        },
+        {
+          "alert_id": "665e30b6-5206-5c1b-9a77-53254dc71b2d",
+          "record_id": "665e30b6-5206-5c1b-9a77-53254dc71b2d",
+          "workflow_instance_id": "019ea993-491e-7aea-a815-9480cb10e8e0",
+          "type_id": "dt-sys-board-resolution",
+          "title": "QA Case A — legacy email receipt test",
+          "due_date": "2026-07-30",
+          "status": "PENDING_CONFIRM",
+          "active_departments": [],
+          "source": "disclosure_record",
+          "template_category": "ad_hoc"
+        },
+        {
+          "alert_id": "e9733537-78bf-5d55-ae84-eacd16f1196a",
+          "record_id": "e9733537-78bf-5d55-ae84-eacd16f1196a",
+          "workflow_instance_id": "019ea98e-6447-7269-8f97-afcfe9692bb5",
+          "type_id": "dt-sys-board-resolution",
+          "title": "QA Case A — legacy email baseline test",
+          "due_date": "2026-07-30",
+          "status": "PENDING_CONFIRM",
+          "active_departments": [],
+          "source": "disclosure_record",
+          "template_category": "ad_hoc"
+        },
+        {
+          "alert_id": "qa_q4_no_wf_1779871044",
+          "record_id": "qa_q4_no_wf_1779871044",
+          "type_id": "dt-sys-board-resolution",
+          "title": "QA Q4 no workflow instance",
+          "due_date": "2026-05-27",
+          "status": "PENDING_CONFIRM",
+          "active_departments": [],
+          "source": "disclosure_record",
+          "template_category": "ad_hoc"
+        },
+        {
+          "alert_id": "019e688c-8c59-79a6-a733-f9208752723a",
+          "record_id": "019e688c-8c59-79a6-a733-f9208752723a",
+          "workflow_instance_id": "019e688c-8c5d-780f-a50d-c51fde0bed82",
+          "type_id": "bao-cao-tai-chinh-quy-2",
+          "title": "Báo cáo tài chính quý 2/2026",
+          "due_date": "2026-05-12",
+          "status": "PENDING_CONFIRM",
+          "active_departments": [
+            "Ban Tổng Giám đốc"
+          ],
+          "current_step_name": "Tiệp nhận thông tin",
+          "source": "disclosure_record",
+          "template_category": "periodic"
+        },
+        {
+          "alert_id": "019e6883-a03b-7932-8662-043480d3412a",
+          "record_id": "019e6883-a03b-7932-8662-043480d3412a",
+          "workflow_instance_id": "019e6883-a041-719d-8e12-f1883a8a93d3",
+          "type_id": "bao-cao-su-co-he-thong",
+          "title": "P0 QA Q10 empty wf",
+          "due_date": "2026-06-03",
+          "status": "PENDING_CONFIRM",
+          "active_departments": [
+            "Ban Tổng Giám đốc"
+          ],
+          "current_step_name": "Bước 1",
+          "source": "disclosure_record",
+          "template_category": "ad_hoc"
+        },
+        {
+          "alert_id": "019e6882-b4d8-733e-9f70-75d06816db13",
+          "record_id": "019e6882-b4d8-733e-9f70-75d06816db13",
+          "workflow_instance_id": "019e6882-b4dc-7888-88fe-98f103eb60ab",
+          "type_id": "dt-sys-board-resolution",
+          "title": "P0 QA Q1 snapshot test",
+          "due_date": "2026-06-10",
+          "status": "PENDING_CONFIRM",
+          "active_departments": [],
+          "current_step_name": "Họp",
+          "source": "disclosure_record",
+          "template_category": "ad_hoc"
+        },
+        {
+          "alert_id": "019e6515-cb0b-7aec-a756-e2484e7d7405",
+          "record_id": "019e6515-cb0b-7aec-a756-e2484e7d7405",
+          "workflow_instance_id": "019e6515-cb10-78c3-b470-134d5153a2d8",
+          "type_id": "dt-sys-board-resolution",
+          "title": "Nghị quyết Hội đồng quản trị wwf",
+          "due_date": "2026-05-29",
+          "status": "DONE",
+          "active_departments": [],
+          "source": "disclosure_record",
+          "template_category": "ad_hoc"
+        },
+        {
+          "alert_id": "rec_smoke_wf_c001",
+          "record_id": "rec_smoke_wf_c001",
+          "workflow_instance_id": "wf_smoke_c001_001",
+          "type_id": "dt-custom-obligation",
+          "title": "Smoke workflow — in progress",
+          "due_date": "2026-06-01",
+          "status": "OVERDUE",
+          "active_departments": [],
+          "source": "disclosure_record"
+        }
+      ],
+      "page": 1,
+      "page_size": 100,
+      "total": 23
+    }
+  },
+  {
+    "url": "http://88.216.208.0:3000/api/v1/company/deadlines/019fb134-b0d8-7f35-894c-120dd3dddbe5/steps",
+    "status": 200,
+    "method": "GET",
+    "body": {
+      "record_id": "019fb134-b0d8-7f35-894c-120dd3dddbe5",
+      "current_step_code": "wf-step-1780040944730-4ytw97",
+      "steps": [
+        {
+          "step_code": "wf-step-1780040944730-4ytw97",
+          "step_name": "Tiếp nhận thông tin",
+          "order": 1,
+          "department_name": "Ban Tổng Giám đốc",
+          "planned_start_date": "2026-07-01",
+          "planned_end_date": "2026-07-01",
+          "duration_days": 1,
+          "status": "current",
+          "is_current_by_time": true,
+          "is_completed": false,
+          "is_locked": false,
+          "is_future": false,
+          "is_delayed": false,
+          "delay_days": 0,
+          "available_actions": [
+            "complete",
+            "mark_incomplete"
+          ]
+        },
+        {
+          "step_code": "wf-step-1780040972266-8dij6p",
+          "step_name": "Chuẩn bị hồ sơ",
+          "order": 2,
+          "department_name": "Phòng Kế toán",
+          "planned_start_date": "2026-07-02",
+          "planned_end_date": "2026-07-06",
+          "duration_days": 5,
+          "status": "overdue",
+          "is_current_by_time": false,
+          "is_completed": false,
+          "is_locked": true,
+          "is_future": false,
+          "is_delayed": false,
+          "delay_days": 0,
+          "available_actions": null,
+          "lock_reason": "past_incomplete"
+        },
+        {
+          "step_code": "wf-step-1780040991507-2z1h2q",
+          "step_name": "Pháp chế rà soát",
+          "order": 3,
+          "department_name": "Phòng Pháp chế",
+          "planned_start_date": "2026-07-07",
+          "planned_end_date": "2026-07-16",
+          "duration_days": 10,
+          "status": "overdue",
+          "is_current_by_time": false,
+          "is_completed": false,
+          "is_locked": true,
+          "is_future": false,
+          "is_delayed": false,
+          "delay_days": 0,
+          "available_actions": null,
+          "lock_reason": "past_incomplete"
+        },
+        {
+          "step_code": "wf-step-1780041023021-xmk7go",
+          "step_name": "Phê duyệt",
+          "order": 4,
+          "department_name": "Ban Tổng Giám đốc",
+          "planned_start_date": "2026-07-17",
+          "planned_end_date": "2026-07-28",
+          "duration_days": 12,
+          "status": "overdue",
+          "is_current_by_time": false,
+          "is_completed": false,
+          "is_locked": true,
+          "is_future": false,
+          "is_delayed": false,
+          "delay_days": 0,
+          "available_actions": null,
+          "lock_reason": "past_incomplete"
+        }
+      ]
+    }
+  },
+  {
+    "url": "http://88.216.208.0:3000/api/v1/workflows/instances/019fb134-b0e2-78e5-9561-1a55cd48d2bd",
+    "status": 200,
+    "method": "GET",
+    "body": {
+      "data": {
+        "workflow_instance_id": "019fb134-b0e2-78e5-9561-1a55cd48d2bd",
+        "company_id": "c_001",
+        "record_id": "019fb134-b0d8-7f35-894c-120dd3dddbe5",
+        "status": "in_progress",
+        "current_step_code": "wf-step-1780040944730-4ytw97",
+        "created_by": "m_system_oneshot",
+        "snapshot": [
+          {
+            "step_id": "wf-step-1780040944730-4ytw97",
+            "step_code": "wf-step-1780040944730-4ytw97",
+            "stage": "Tiếp nhận thông tin",
+            "department": "dept-004",
+            "assignee_role": "role-reviewer",
+            "due_rule": "<nil>",
+            "display_order": 1,
+            "processing_days": 1
+          },
+          {
+            "step_id": "wf-step-1780040972266-8dij6p",
+            "step_code": "wf-step-1780040972266-8dij6p",
+            "stage": "Chuẩn bị hồ sơ",
+            "department": "dept-003",
+            "assignee_role": "role-finance-reviewer",
+            "due_rule": "<nil>",
+            "display_order": 2,
+            "processing_days": 5
+          },
+          {
+            "step_id": "wf-step-1780040991507-2z1h2q",
+            "step_code": "wf-step-1780040991507-2z1h2q",
+            "stage": "Pháp chế rà soát",
+            "department": "dept-001",
+            "assignee_role": "role-legal-reviewer",
+            "due_rule": "<nil>",
+            "display_order": 3,
+            "processing_days": 10
+          },
+          {
+            "step_id": "wf-step-1780041023021-xmk7go",
+            "step_code": "wf-step-1780041023021-xmk7go",
+            "stage": "Phê duyệt",
+            "department": "dept-004",
+            "assignee_role": "role-approver",
+            "due_rule": "<nil>",
+            "display_order": 4,
+            "processing_days": 12
+          }
+        ],
+        "workflow_source": "global_template",
+        "t0_date": "2026-07-01T00:00:00Z",
+        "t0_policy": "user_defined"
+      }
+    }
+  },
+  {
+    "url": "http://88.216.208.0:3000/api/v1/workflows/instances/019fb134-b0e2-78e5-9561-1a55cd48d2bd/tasks",
+    "status": 500,
+    "method": "GET",
+    "body": {
+      "error": {
+        "code": "INTERNAL_ERROR",
+        "message": "Internal server error"
+      }
+    }
+  }
+]

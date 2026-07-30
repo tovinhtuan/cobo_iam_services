@@ -135,6 +135,24 @@ func TestConfiguration_AggregateShape(t *testing.T) {
 	}
 }
 
+// Empty / unknown type_id must not surface as NotFound — HTTP layer returns 200 empty aggregate.
+func TestConfiguration_EmptyAggregateNoError(t *testing.T) {
+	repo := newFakeRepo(wfc.Manifest{})
+	vs := wfc.NewVersionService(repo, fixedClock())
+	rs := wfc.NewReadinessService(vs, wfc.DefaultRoleRegistry())
+	cs := wfc.NewConfigService(vs, rs)
+	cfgData, err := cs.Configuration(context.Background(), "type-without-workflow-rows")
+	if err != nil {
+		t.Fatalf("Configuration empty must not error: %v", err)
+	}
+	if cfgData.Versions == nil {
+		t.Fatal("Versions slice must be non-nil empty")
+	}
+	if len(cfgData.Versions) != 0 {
+		t.Fatalf("versions = %d, want 0", len(cfgData.Versions))
+	}
+}
+
 // 5. version detail returns the manifest (via GetPublishedVersion).
 func TestVersionDetail_ReturnsManifest(t *testing.T) {
 	vs, _, _ := buildServices(sampleManifest())

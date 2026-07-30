@@ -1,0 +1,52 @@
+{
+  "cmsCount": 4,
+  "alertCount": 7,
+  "cmsUrls": [
+    {
+      "status": 200,
+      "url": "http://88.216.208.0:3000/api/v1/platform/cms/templates/qa-monthly-deadline-alert-202607-1785382733/workflow/configuration"
+    },
+    {
+      "status": 200,
+      "url": "http://88.216.208.0:3000/api/v1/platform/cms/templates/qa-monthly-deadline-alert-202607-1785382733/workflow/configuration"
+    },
+    {
+      "status": 200,
+      "url": "http://88.216.208.0:3000/api/v1/platform/cms/workflow/assignee-roles"
+    },
+    {
+      "status": 200,
+      "url": "http://88.216.208.0:3000/api/v1/platform/cms/workflow/template-departments"
+    }
+  ],
+  "alertUrls": [
+    {
+      "status": 200,
+      "url": "http://88.216.208.0:3000/api/v1/company/deadline-alerts/filter-options"
+    },
+    {
+      "status": 200,
+      "url": "http://88.216.208.0:3000/api/v1/company/deadline-alerts?page=1&page_size=100"
+    },
+    {
+      "status": 200,
+      "url": "http://88.216.208.0:3000/api/v1/company/deadline-alerts?q=QA+-+B%C3%A1o+c%C3%A1o+ho%E1%BA%A1t+%C4%91%E1%BB%99ng+th%C3%A1ng&page=1&page_size=100"
+    },
+    {
+      "status": 200,
+      "url": "http://88.216.208.0:3000/api/v1/company/deadline-alerts?page=1&page_size=200"
+    },
+    {
+      "status": 200,
+      "url": "http://88.216.208.0:3000/api/v1/company/deadlines/019fb134-b0d8-7f35-894c-120dd3dddbe5/steps"
+    },
+    {
+      "status": 200,
+      "url": "http://88.216.208.0:3000/api/v1/workflows/instances/019fb134-b0e2-78e5-9561-1a55cd48d2bd"
+    },
+    {
+      "status": 500,
+      "url": "http://88.216.208.0:3000/api/v1/workflows/instances/019fb134-b0e2-78e5-9561-1a55cd48d2bd/tasks"
+    }
+  ]
+}

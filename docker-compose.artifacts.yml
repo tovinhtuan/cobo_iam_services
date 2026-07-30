@@ -120,6 +120,8 @@ services:
       WORKFLOW_SNAPSHOT_ENABLED: "true"
       WORKFLOW_TIMELINE_ENABLED: "true"
       WORKFLOW_REMINDERS_ENABLED: "true"
+      # Global workflow versioning (publish≠activate). Registers CMS .../workflow/configuration routes.
+      WORKFLOW_VERSIONING_ENABLED: "true"
       COMPANY_SELF_CREATE_ENABLED: "true"
       COMPANY_PROVISION_IDEMPOTENCY_REQUIRED: "true"
       VNSTOCK_MARKET_ENABLED: "true"

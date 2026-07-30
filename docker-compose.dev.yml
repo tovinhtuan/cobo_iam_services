@@ -84,6 +84,8 @@ services:
       WORKFLOW_DRAFT_ETAG_MODE: enforce
       WORKFLOW_SNAPSHOT_ENABLED: "true"
       WORKFLOW_ADHOC_ENABLED: "true"
+      # Local parity with DEV artifacts: registers CMS workflow configuration routes.
+      WORKFLOW_VERSIONING_ENABLED: "true"
       PERIODIC_SEEDING_ENABLED: "true"
       LOGIN_PASSWORD_RSA_PRIVATE_KEY_PEM_FILE: /app/configs/login_password_rsa_dev.pem
       LOGIN_PASSWORD_RSA_KEY_ID: dev

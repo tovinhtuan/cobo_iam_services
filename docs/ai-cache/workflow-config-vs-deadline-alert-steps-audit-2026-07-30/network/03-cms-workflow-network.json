@@ -1,0 +1,284 @@
+[
+  {
+    "url": "http://88.216.208.0:3000/api/v1/platform/cms/templates/qa-monthly-deadline-alert-202607-1785382733/workflow/configuration",
+    "status": 200,
+    "method": "GET",
+    "body": {
+      "data": {
+        "workflow": {
+          "type_id": "",
+          "workflow_id": "",
+          "version_no": 0,
+          "steps": null
+        },
+        "versions": [],
+        "readiness": {
+          "ready": false,
+          "score": 0,
+          "blocking_errors": [
+            "no active global workflow for type \"qa-monthly-deadline-alert-202607-1785382733\""
+          ],
+          "warnings": [],
+          "checks": [
+            {
+              "key": "workflow_exists",
+              "pass": false,
+              "severity": "error",
+              "message": "no active global workflow for type \"qa-monthly-deadline-alert-202607-1785382733\""
+            }
+          ]
+        },
+        "lifecycle": {
+          "draft": {
+            "exists": false,
+            "step_count": 0
+          },
+          "published": null,
+          "active": null,
+          "can_publish": false,
+          "can_activate": false
+        },
+        "governance": {
+          "status": "draft",
+          "published_version_no": null,
+          "active_version_no": null,
+          "total_versions": 0
+        }
+      }
+    }
+  },
+  {
+    "url": "http://88.216.208.0:3000/api/v1/platform/cms/templates/qa-monthly-deadline-alert-202607-1785382733/workflow/configuration",
+    "status": 200,
+    "method": "GET",
+    "body": {
+      "data": {
+        "workflow": {
+          "type_id": "",
+          "workflow_id": "",
+          "version_no": 0,
+          "steps": null
+        },
+        "versions": [],
+        "readiness": {
+          "ready": false,
+          "score": 0,
+          "blocking_errors": [
+            "no active global workflow for type \"qa-monthly-deadline-alert-202607-1785382733\""
+          ],
+          "warnings": [],
+          "checks": [
+            {
+              "key": "workflow_exists",
+              "pass": false,
+              "severity": "error",
+              "message": "no active global workflow for type \"qa-monthly-deadline-alert-202607-1785382733\""
+            }
+          ]
+        },
+        "lifecycle": {
+          "draft": {
+            "exists": false,
+            "step_count": 0
+          },
+          "published": null,
+          "active": null,
+          "can_publish": false,
+          "can_activate": false
+        },
+        "governance": {
+          "status": "draft",
+          "published_version_no": null,
+          "active_version_no": null,
+          "total_versions": 0
+        }
+      }
+    }
+  },
+  {
+    "url": "http://88.216.208.0:3000/api/v1/platform/cms/workflow/assignee-roles",
+    "status": 200,
+    "method": "GET",
+    "body": {
+      "data": {
+        "items": [
+          {
+            "id": "role-approver",
+            "code": "approver",
+            "name": "Người phê duyệt",
+            "description": "Approval role. At least one approval role must exist in a workflow (mandatory).",
+            "assignable": true,
+            "creatable": false
+          },
+          {
+            "id": "compliance_officer",
+            "code": "compliance_officer",
+            "name": "Cán bộ tuân thủ",
+            "description": "Compliance officer. NOT_FOUND_IN_SOURCE as a seeded role ('compliance' appears in display groups only).",
+            "assignable": true,
+            "creatable": false
+          },
+          {
+            "id": "confirmer",
+            "code": "confirmer",
+            "name": "Người xác nhận",
+            "description": "Confirm role. PARTIAL_IN_SOURCE — workflow.confirm action exists; no seeded role.",
+            "assignable": true,
+            "creatable": false
+          },
+          {
+            "id": "owner",
+            "code": "disclosure_owner",
+            "name": "Chủ hồ sơ công bố",
+            "description": "The disclosure record owner (creator). System-assigned; tenant cannot reassign.",
+            "assignable": false,
+            "creatable": false
+          },
+          {
+            "id": "role-finance-reviewer",
+            "code": "finance_reviewer",
+            "name": "Kế toán rà soát",
+            "description": "Finance review role.",
+            "assignable": true,
+            "creatable": false
+          },
+          {
+            "id": "role-legal-reviewer",
+            "code": "legal_reviewer",
+            "name": "Pháp chế rà soát",
+            "description": "Legal review role.",
+            "assignable": true,
+            "creatable": false
+          },
+          {
+            "id": "role-reviewer",
+            "code": "reviewer",
+            "name": "Người rà soát",
+            "description": "Review role.",
+            "assignable": true,
+            "creatable": false
+          },
+          {
+            "id": "system_reviewer",
+            "code": "system_reviewer",
+            "name": "System Reviewer",
+            "description": "Platform/automated review actor. NOT_FOUND_IN_SOURCE — baseline-defined (Phase 13A).",
+            "assignable": false,
+            "creatable": false
+          },
+          {
+            "id": "wf_role_nguoi_kiem_tra_phap_che_api",
+            "code": "wf_role_nguoi_kiem_tra_phap_che_api",
+            "name": "Người kiểm tra pháp chế API",
+            "description": "",
+            "assignable": true,
+            "creatable": true
+          },
+          {
+            "id": "wf_role_nguoi_kiem_tra_phap_che_role_inline_1783564309794",
+            "code": "wf_role_nguoi_kiem_tra_phap_che_role_inline_1783564309794",
+            "name": "Người kiểm tra pháp chế ROLE_INLINE_1783564309794",
+            "description": "",
+            "assignable": true,
+            "creatable": true
+          },
+          {
+            "id": "wf_role_nguoi_kiem_tra_phap_che_role_inline_1783564360853",
+            "code": "wf_role_nguoi_kiem_tra_phap_che_role_inline_1783564360853",
+            "name": "Người kiểm tra pháp chế ROLE_INLINE_1783564360853",
+            "description": "",
+            "assignable": true,
+            "creatable": true
+          }
+        ],
+        "note": "Workflow assignee roles are template metadata only; not IAM Roles & Permissions."
+      }
+    }
+  },
+  {
+    "url": "http://88.216.208.0:3000/api/v1/platform/cms/workflow/template-departments",
+    "status": 200,
+    "method": "GET",
+    "body": {
+      "items": [
+        {
+          "department_code": "tpl_dept_phong_qa_default_template_assignee_qc_1783480046",
+          "department_name": "Phòng QA Default Template ASSIGNEE_QC_1783480046658",
+          "description": "",
+          "display_order": 0,
+          "is_system": false
+        },
+        {
+          "department_code": "tpl_dept_phong_qa_default_template_assignee_qc_1783480150448",
+          "department_name": "Phòng QA Default Template ASSIGNEE_QC_1783480150448",
+          "description": "",
+          "display_order": 0,
+          "is_system": false
+        },
+        {
+          "department_code": "tpl_dept_phong_qa_default_ten_role_dept_fix_1783483161656",
+          "department_name": "Phòng QA Default Tên ROLE_DEPT_FIX_1783483161656",
+          "description": "",
+          "display_order": 0,
+          "is_system": false
+        },
+        {
+          "department_code": "tpl_dept_phong_qa_default_ten_role_final_1783484737840",
+          "department_name": "Phòng QA Default Tên ROLE_FINAL_1783484737840",
+          "description": "",
+          "display_order": 0,
+          "is_system": false
+        },
+        {
+          "department_code": "tpl_dept_phong_qa_default_ten_role_final_1783484924421",
+          "department_name": "Phòng QA Default Tên ROLE_FINAL_1783484924421",
+          "description": "",
+          "display_order": 0,
+          "is_system": false
+        },
+        {
+          "department_code": "tpl_dept_phong_qa_inline_role_inline_1783564309794",
+          "department_name": "Phòng QA Inline ROLE_INLINE_1783564309794",
+          "description": "",
+          "display_order": 0,
+          "is_system": false
+        },
+        {
+          "department_code": "tpl_dept_phong_qa_inline_role_inline_1783564360853",
+          "department_name": "Phòng QA Inline ROLE_INLINE_1783564360853",
+          "description": "",
+          "display_order": 0,
+          "is_system": false
+        },
+        {
+          "department_code": "dept-001",
+          "department_name": "Phòng Pháp chế",
+          "description": "Quản lý các vấn đề pháp lý và tuân thủ của doanh nghiệp.",
+          "display_order": 1,
+          "is_system": true
+        },
+        {
+          "department_code": "dept-002",
+          "department_name": "Phòng Quan hệ cổ đông (IR)",
+          "description": "Phụ trách công bố thông tin và quan hệ với nhà đầu tư.",
+          "display_order": 2,
+          "is_system": true
+        },
+        {
+          "department_code": "dept-003",
+          "department_name": "Phòng Kế toán",
+          "description": "Quản lý tài chính, kế toán và lập báo cáo tài chính.",
+          "display_order": 3,
+          "is_system": true
+        },
+        {
+          "department_code": "dept-004",
+          "department_name": "Ban Tổng Giám đốc",
+          "description": "Ban điều hành cao nhất của công ty.",
+          "display_order": 4,
+          "is_system": true
+        }
+      ]
+    }
+  }
+]
