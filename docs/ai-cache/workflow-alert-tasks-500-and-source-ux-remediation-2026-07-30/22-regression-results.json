@@ -1,0 +1,6 @@
+{
+  "healthz": "ok",
+  "readyz": "ready",
+  "http5xx": 0,
+  "qaAlertUpcoming": true
+}

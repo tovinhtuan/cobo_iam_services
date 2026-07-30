@@ -1,0 +1,22 @@
+{
+  "api": {
+    "id": "8d8e84e9764e11f3259655d977d8ace3674e480bc945f20c89a7e6908f59b690",
+    "startedAt": "2026-07-30T02:29:32.573518702Z",
+    "image": "cobo-iam-runtime"
+  },
+  "worker": {
+    "id": "4813a214d09c5df4dbecb545940a862272d567aaec9c21db432d9d83ab24cd1d",
+    "startedAt": "2026-07-29T09:57:33.829263803Z",
+    "image": "cobo-iam-runtime"
+  },
+  "web": {
+    "id": "bd2f7015529d098bd7bce10a1306108c38861de0798456dd686165cd69d328af",
+    "startedAt": "2026-07-30T02:30:00.445582166Z",
+    "image": "nginx:alpine"
+  },
+  "mysql": {
+    "id": "bbc16f5a400e564660fd4b61a9b6136ce8424b4e8425d790bf6a751c906d437d",
+    "startedAt": "2026-07-11T08:34:02.303701286Z",
+    "image": "mysql:8.0"
+  }
+}

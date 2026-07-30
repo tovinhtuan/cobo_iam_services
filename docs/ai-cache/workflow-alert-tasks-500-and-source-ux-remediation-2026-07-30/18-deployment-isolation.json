@@ -1,0 +1,5 @@
+{
+  "mysqlIdUnchanged": true,
+  "workerIdUnchanged": true,
+  "verdict": "PASS_DEPLOYMENT_ISOLATION"
+}

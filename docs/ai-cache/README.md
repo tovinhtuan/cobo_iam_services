@@ -34,6 +34,19 @@ Before marking the task done, run a pre-merge review and report risks, gaps, and
 ```
 
 
+
+
+## Workflow alert tasks 500 + source UX (DEV)
+
+- Verdict **PASS_TASKS_API_AND_WORKFLOW_SOURCE_UX** (2026-07-30): `docs/ai-cache/workflow-alert-tasks-500-and-source-ux-remediation-2026-07-30/`
+- T500-RC4 NULL department Scan; CMS dual-source Global Template v1 · 4 steps; no rematerialize
+
+## Workflow config vs deadline alert steps (DEV audit)
+
+- Verdict **EXPECTED_RUNTIME_REPRESENTATION** (2026-07-30): `docs/ai-cache/workflow-config-vs-deadline-alert-steps-audit-2026-07-30/`
+- RC-4 dual-SoT; snapshot/alert steps match effective; CMS global config empty
+- Paired FE screenshots under same folder name in `cobo_web_design`
+
 ## Guarded periodic one-shot materialization (DEV)
 
 - Verdict **PASS_ONE_SHOT_MATERIALIZATION_AND_ALERT_E2E** (2026-07-30): `docs/ai-cache/guarded-periodic-one-shot-materialization-2026-07-30/`

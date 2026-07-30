@@ -1,3 +1,19 @@
+## 2026-07-30 - Workflow alert tasks 500 + CMS dual-source UX (DEV)
+
+- task type: remediation (BE tasks Scan NULL + FE dual-source panel)
+- root cause: **T500-RC4** — department subquery NULL scanned into string → 500; system assignee m_system_oneshot fail-soft
+- verified: tasks 200 + actor_type=SYSTEM; detail UI 4 steps; CMS versioning empty vs Global Template v1 · 4 steps; snapshot/task unchanged; API-only + FE web-only isolation PASS
+- evidence: `docs/ai-cache/workflow-alert-tasks-500-and-source-ux-remediation-2026-07-30/`
+- verdict: **PASS_TASKS_API_AND_WORKFLOW_SOURCE_UX**
+
+## 2026-07-30 - Workflow config vs deadline alert steps audit (DEV)
+
+- task type: audit-only (paired FE evidence)
+- entity: qa-monthly-deadline-alert-202607-1785382733 / c_001 / record 019fb134-b0d8-…
+- RC-4 dual-SoT: CMS global_workflows=0; effective+snapshot+steps API = global_template 4 steps match; list current-step-only; tasks endpoint 500
+- evidence: `docs/ai-cache/workflow-config-vs-deadline-alert-steps-audit-2026-07-30/`
+- verdict: **EXPECTED_RUNTIME_REPRESENTATION**; no code/DB/migration/deploy
+
 ## 2026-07-30 - Guarded periodic one-shot materialization (DEV)
 
 - task type: BE implement + DEV CLI apply + paired FE E2E

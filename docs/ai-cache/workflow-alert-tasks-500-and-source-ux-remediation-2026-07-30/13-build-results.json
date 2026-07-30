@@ -1,0 +1,5 @@
+{
+  "go_build": "PASS",
+  "npm_run_build": "PASS",
+  "gofmt": "PASS"
+}

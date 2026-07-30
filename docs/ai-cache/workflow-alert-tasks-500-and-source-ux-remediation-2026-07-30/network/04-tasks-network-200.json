@@ -1,0 +1,23 @@
+[
+  {
+    "url": "http://88.216.208.0:3000/api/v1/workflows/instances/019fb134-b0e2-78e5-9561-1a55cd48d2bd/tasks",
+    "status": 200,
+    "body": {
+      "data": [
+        {
+          "task_id": "019fb134-b0e4-76bf-abb2-6f1b2c03869b",
+          "company_id": "c_001",
+          "workflow_instance_id": "019fb134-b0e2-78e5-9561-1a55cd48d2bd",
+          "step_code": "wf-step-1780040944730-4ytw97",
+          "assignee_membership_id": "m_system_oneshot",
+          "status": "pending",
+          "assignee": {
+            "membership_id": "m_system_oneshot",
+            "actor_type": "SYSTEM",
+            "display_name": "Hệ thống"
+          }
+        }
+      ]
+    }
+  }
+]

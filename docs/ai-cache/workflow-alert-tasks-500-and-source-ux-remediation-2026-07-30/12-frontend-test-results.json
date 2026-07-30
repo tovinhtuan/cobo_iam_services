@@ -1,0 +1,6 @@
+{
+  "WorkflowDualSourcePanel": "PASS",
+  "WorkflowConfigurationPage": "PASS",
+  "npm_run_build": "PASS",
+  "tsc_preexisting_unrelated": "FAIL_CLASSIFIED"
+}

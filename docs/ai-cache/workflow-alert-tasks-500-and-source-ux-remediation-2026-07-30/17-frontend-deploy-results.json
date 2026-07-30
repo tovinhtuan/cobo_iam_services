@@ -1,0 +1,5 @@
+{
+  "method": "make deploy-fe",
+  "webOnly": true,
+  "apiRecreatedByFe": false
+}

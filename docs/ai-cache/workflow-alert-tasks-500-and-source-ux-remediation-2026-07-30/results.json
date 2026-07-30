@@ -1,0 +1,59 @@
+{
+  "phase": "Workflow Alert Tasks 500 and Source UX Remediation",
+  "environment": "DEV",
+  "entity": {
+    "typeId": "qa-monthly-deadline-alert-202607-1785382733",
+    "companyId": "c_001",
+    "period": "2026-07",
+    "recordId": "019fb134-b0d8-7f35-894c-120dd3dddbe5",
+    "instanceId": "019fb134-b0e2-78e5-9561-1a55cd48d2bd",
+    "taskId": "019fb134-b0e4-76bf-abb2-6f1b2c03869b"
+  },
+  "tasksDefect": {
+    "rootCauseCode": "T500-RC4",
+    "confirmed": true,
+    "beforeStatus": 500,
+    "afterStatus": 200,
+    "taskCount": 1,
+    "systemActorHandled": true,
+    "detailUiPassed": true,
+    "logEvidence": "sql: Scan error on column index 8, name assignee_department_name: converting NULL to string is unsupported"
+  },
+  "workflowUx": {
+    "versioningEmptyShown": true,
+    "effectiveSourceShown": true,
+    "effectiveVersionShown": true,
+    "effectiveStepCountShown": true,
+    "dualSourceHelperShown": true
+  },
+  "preservation": {
+    "snapshotUnchanged": true,
+    "snapshotMd5": "2d9bd37ecd2bcae96a66266606feac1b",
+    "taskCountUnchanged": true,
+    "taskStatusUnchanged": true,
+    "effectiveWorkflowSteps": 4,
+    "rematerialized": false
+  },
+  "deployment": {
+    "apiDeployed": true,
+    "frontendDeployed": true,
+    "mysqlRecreated": false,
+    "workerRecreated": false,
+    "productionTouched": false,
+    "apiOnlyRecreate": true
+  },
+  "safety": {
+    "directDatabaseWrites": 0,
+    "applicationDataMutations": 0,
+    "migrationExecuted": false
+  },
+  "quality": {
+    "backendTests": "PASS",
+    "frontendTests": "PASS",
+    "builds": "PASS",
+    "http5xx": 0,
+    "criticalConsoleErrors": 0,
+    "dockerComposeBuildApi": "BLOCKED: used approved deploy-be path (linux binary SCP + api recreate); not docker compose build"
+  },
+  "verdict": "PASS_TASKS_API_AND_WORKFLOW_SOURCE_UX"
+}

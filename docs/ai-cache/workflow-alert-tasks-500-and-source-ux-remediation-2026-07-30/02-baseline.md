@@ -1,0 +1,4 @@
+# Baseline
+BE/FE branch recovery/lost-changes-audit-20260717-153324
+Pre: BE 4da86a1 FE 698344c
+Flags: WORKFLOW_VERSIONING_ENABLED=true, WORKFLOW_SNAPSHOT_ENABLED=true, PERIODIC_SEEDING_ENABLED=false

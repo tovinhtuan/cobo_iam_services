@@ -1,0 +1,7 @@
+{
+  "method": "scp_api_binary",
+  "compose": "up -d --force-recreate --no-deps api",
+  "workerRecreated": false,
+  "mysqlSame": true,
+  "healthz": "ok"
+}
