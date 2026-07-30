@@ -1,0 +1,14 @@
+{
+  "mode": "PREVIEW",
+  "mutations": 0,
+  "due_date": "2026-07-31",
+  "planned_actions_first_run": [
+    "CREATE_PERIODIC_CYCLE",
+    "CREATE_DISCLOSURE_RECORD"
+  ],
+  "post_preview_db_counts": {
+    "cycles": 0,
+    "records": 0
+  },
+  "passed": true
+}

@@ -1,0 +1,9 @@
+{
+  "method": "scp_cli_binary",
+  "remote_path": "/root/cobo_project/bin/periodic-materialize-one",
+  "make_deploy_be": false,
+  "api_recreate": false,
+  "mysql_restart": false,
+  "fe_deploy": false,
+  "result": "PASS_ISOLATED_CLI"
+}

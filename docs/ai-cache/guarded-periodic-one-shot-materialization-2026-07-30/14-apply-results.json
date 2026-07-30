@@ -1,0 +1,13 @@
+{
+  "mode": "APPLY",
+  "status": "MATERIALIZED",
+  "cycle_created": true,
+  "record_created": true,
+  "mutations": 2,
+  "transaction_committed": true,
+  "cycle_id": "019fb134-b0c8-7e92-869c-bfc13f49accc",
+  "record_id": "019fb134-b0d8-7f35-894c-120dd3dddbe5",
+  "due_date": "2026-07-31",
+  "direct_sql_writes": 0,
+  "application_level_mutations": 2
+}

@@ -1,0 +1,11 @@
+{
+  "endpoint": "GET /api/v1/company/deadline-alerts",
+  "auth": "cms.operator@example.com via /api/v1/auth/login",
+  "query": "QA - Báo cáo hoạt động tháng",
+  "http": 200,
+  "item_count": 1,
+  "type_id": "qa-monthly-deadline-alert-202607-1785382733",
+  "status": "UPCOMING",
+  "due_date": "2026-07-31",
+  "pending_confirm_filter_count": 0
+}

@@ -1,0 +1,17 @@
+{
+  "mysql_id": "bbc16f5a400e564660fd4b61a9b6136ce8424b4e8425d790bf6a751c906d437d",
+  "mysql_started": "2026-07-11T08:34:02.303701286Z",
+  "flags": {
+    "PERIODIC_SEEDING_ENABLED": false,
+    "DEADLINE_ENGINE_V2": false,
+    "DEADLINE_ENGINE_V2_SHADOW": true,
+    "WORKFLOW_VERSIONING_ENABLED": true
+  },
+  "pre_apply_counts": {
+    "cycles": 0,
+    "records": 0,
+    "alert_qa": 0
+  },
+  "healthz": "ok",
+  "readyz": "ready"
+}

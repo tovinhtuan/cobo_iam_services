@@ -1,0 +1,9 @@
+{
+  "preview_status": "NO_OP_ALREADY_MATERIALIZED",
+  "apply_status": "NO_OP_ALREADY_MATERIALIZED",
+  "mutations": 0,
+  "cycle_count": 1,
+  "record_count": 1,
+  "duplicates": 0,
+  "passed": true
+}

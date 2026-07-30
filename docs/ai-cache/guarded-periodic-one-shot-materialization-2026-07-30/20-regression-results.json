@@ -1,0 +1,7 @@
+{
+  "healthz": "ok",
+  "readyz": "ready",
+  "http5xx": 0,
+  "PERIODIC_SEEDING_ENABLED": false,
+  "notes": "Smoke healthz/readyz PASS; FE UI deadlines page loaded without critical console errors in Playwright session"
+}

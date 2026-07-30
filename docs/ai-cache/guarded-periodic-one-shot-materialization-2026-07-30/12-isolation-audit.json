@@ -1,0 +1,6 @@
+{
+  "mysql_id_unchanged": true,
+  "mysql_started_unchanged": "2026-07-11T08:34:02.303701286Z",
+  "PERIODIC_SEEDING_ENABLED": false,
+  "verdict": "PASS_DEPLOYMENT_ISOLATION"
+}

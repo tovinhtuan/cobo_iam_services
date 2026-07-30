@@ -33,6 +33,13 @@ Do not skip validation, authorization, idempotency, migration safety, or observa
 Before marking the task done, run a pre-merge review and report risks, gaps, and verification steps.
 ```
 
+
+## Guarded periodic one-shot materialization (DEV)
+
+- Verdict **PASS_ONE_SHOT_MATERIALIZATION_AND_ALERT_E2E** (2026-07-30): `docs/ai-cache/guarded-periodic-one-shot-materialization-2026-07-30/`
+- CLI one-shot exact QA scope; production calculator/materializer; seeding remains OFF
+- Paired FE UI evidence under same folder name in `cobo_web_design`
+
 ## Prompt tái sử dụng theo từng tình huống
 
 ### 1) Khi xây feature mới từ đầu
@@ -135,6 +142,30 @@ Before marking this done, run premerge-system-review and report missing validati
    - contracts/behaviors/constraints/decisions
    - build/verification result (nếu có)
    - remaining gaps/risks/next steps
+## Workflow Configuration load 404 (DEV)
+
+- Canonical audit (FE pack): `../cobo_web_design/docs/ai-cache/workflow-config-load-404-audit-2026-07-30/`
+- Remediation (FE pack): `../cobo_web_design/docs/ai-cache/workflow-config-load-404-remediation-2026-07-30/` — DEV flag ON, isolation PASS
+- **ROOT_CAUSE_CONFIRMED** RC-4 then remediated: `WORKFLOW_VERSIONING_ENABLED` was OFF → routes not registered
+- Mirror note: `reusable-task-updates.md` (2026-07-30)
+
+## Current-month periodic deadline alert E2E (DEV)
+
+- Canonical FE pack: `../cobo_web_design/docs/ai-cache/current-month-periodic-deadline-alert-e2e-2026-07-30/`
+- Verdict: **BLOCKED_PERIODIC_MATERIALIZATION** — QA active; seeding remains OFF
+- Materialization later unblocked by guarded one-shot pack above
+
+## Q2 Financial Report Deadline Alert E2E (DEV)
+
+- Canonical (FE pack): `../cobo_web_design/docs/ai-cache/q2-financial-report-deadline-alert-e2e-2026-07-30/`
+- Verdict: **BLOCKED_DEADLINE_CONTRACT** — no PERIOD_END in deadline engine/CMS; seeding remains OFF
+
+## Deadline alert — active report missing? (DEV)
+
+- Canonical audit (FE pack): `../cobo_web_design/docs/ai-cache/deadline-alert-active-report-audit-2026-07-30/`
+- Verdict: **EXPECTED_BEHAVIOR_CONFIRMED** (RC-1) — `bao-cao-tai-chinh-quy-2` on `c_001` returns `PENDING_CONFIRM`, not open OVERDUE
+- Flags on DEV: `PERIODIC_SEEDING_ENABLED=false`, `DEADLINE_ENGINE_V2=false` (shadow true)
+
 ## Legal Basis Phase 12.6 (IAM mirror)
 
 - Phase 12.6A: operational `PASS_READ_ONLY_DRY_RUN`; governance `FAIL_SCOPE_CREEP` — see plan folder `phase-12-6a-scope-exception.md`

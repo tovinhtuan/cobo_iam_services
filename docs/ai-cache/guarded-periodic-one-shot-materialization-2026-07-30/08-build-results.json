@@ -1,0 +1,7 @@
+{
+  "go_build_cmd_api": "PASS",
+  "go_build_cmd_periodic_materialize_one": "PASS",
+  "gofmt": "PASS",
+  "git_diff_check": "PASS",
+  "docker_compose_build_api": "BLOCKED: CLI-only deploy isolation (no API source runtime change required)"
+}

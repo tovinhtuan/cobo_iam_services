@@ -1,0 +1,74 @@
+{
+  "phase": "Guarded Periodic One-shot Materialization",
+  "environment": "DEV",
+  "scope": {
+    "typeId": "qa-monthly-deadline-alert-202607-1785382733",
+    "companyId": "c_001",
+    "period": "2026-07"
+  },
+  "implementation": {
+    "usesProductionMaterializer": true,
+    "usesProductionCalculator": true,
+    "exactAllowlist": true,
+    "wildcardSupported": false,
+    "defaultDryRun": true,
+    "confirmTokenRequired": true,
+    "transactional": true,
+    "idempotent": true
+  },
+  "preview": {
+    "passed": true,
+    "mutations": 0,
+    "plannedCycleCreate": true,
+    "plannedRecordCreate": true,
+    "dueDate": "2026-07-31"
+  },
+  "apply": {
+    "executed": true,
+    "cycleCreated": true,
+    "recordCreated": true,
+    "transactionCommitted": true,
+    "cycleId": "019fb134-b0c8-7e92-869c-bfc13f49accc",
+    "recordId": "019fb134-b0d8-7f35-894c-120dd3dddbe5"
+  },
+  "data": {
+    "cycleCount": 1,
+    "recordCount": 1,
+    "duplicates": 0,
+    "status": "PendingReview",
+    "dueDate": "2026-07-31",
+    "cycleStart": "2026-07-01",
+    "cycleLabel": "2026-07"
+  },
+  "alert": {
+    "apiReturnsItem": true,
+    "apiStatus": "UPCOMING",
+    "searchNote": "q=title fragment; type_id-only may return 0",
+    "allFilterVisible": true,
+    "matchingFilterVisible": true,
+    "pendingConfirmVisible": false,
+    "uiDueDateMatched": true
+  },
+  "safety": {
+    "globalSeedingChanged": false,
+    "PERIODIC_SEEDING_ENABLED": false,
+    "directSqlWrites": 0,
+    "migrationExecuted": false,
+    "mysqlRecreated": false,
+    "productionTouched": false,
+    "apiImageRecreated": false,
+    "deployMode": "CLI_SCP_ONLY"
+  },
+  "quality": {
+    "tests": "PASS",
+    "oneshotPackage": "PASS",
+    "disclosurePackages": "PASS",
+    "build": "PASS",
+    "apiBuild": "PASS",
+    "cliBuild": "PASS",
+    "dockerComposeBuildApi": "BLOCKED: phase isolation — CLI SCP only; API image unchanged",
+    "criticalConsoleErrors": 0,
+    "http5xx": 0
+  },
+  "verdict": "PASS_ONE_SHOT_MATERIALIZATION_AND_ALERT_E2E"
+}

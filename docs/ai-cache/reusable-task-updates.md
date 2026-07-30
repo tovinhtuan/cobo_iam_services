@@ -1,3 +1,44 @@
+## 2026-07-30 - Guarded periodic one-shot materialization (DEV)
+
+- task type: BE implement + DEV CLI apply + paired FE E2E
+- package: `internal/disclosure/app/periodic_oneshot` + `cmd/periodic-materialize-one`
+- scope: type `qa-monthly-deadline-alert-202607-1785382733` / company `c_001` / period `2026-07`
+- verified: MATERIALIZED 1 cycle+1 record due 2026-07-31; API UPCOMING; UI Sắp tới; idempotent NO_OP; PERIODIC_SEEDING_ENABLED=false; MySQL ID unchanged; direct SQL=0
+- evidence: `docs/ai-cache/guarded-periodic-one-shot-materialization-2026-07-30/` (mirrored FE)
+- verdict: **PASS_ONE_SHOT_MATERIALIZATION_AND_ALERT_E2E**
+
+## 2026-07-30 - Current-month periodic deadline alert DEV E2E
+
+- paired FE: `../cobo_web_design/docs/ai-cache/current-month-periodic-deadline-alert-e2e-2026-07-30/`
+- QA `qa-monthly-deadline-alert-202607-1785382733` active PERIODIC monthly N=23; no materialize (PERIODIC_SEEDING_ENABLED=false)
+- verdict: **BLOCKED_PERIODIC_MATERIALIZATION**; no seeding flip / DB write / migration / production
+
+## 2026-07-30 - Q2 Financial Report Deadline Alert DEV E2E
+
+- paired FE evidence: `../cobo_web_design/docs/ai-cache/q2-financial-report-deadline-alert-e2e-2026-07-30/`
+- blocker: PERIOD_END + 30 CALENDAR_DAYS unsupported; calculator/CMS lack PERIOD_END; PERIODIC_SEEDING_ENABLED=false
+- verdict: **BLOCKED_DEADLINE_CONTRACT**; no code/DB/migration/backfill/production
+
+## 2026-07-30 - Deadline alert active-report audit (DEV)
+
+- task type: audit-only (cross-repo); paired FE evidence `../cobo_web_design/docs/ai-cache/deadline-alert-active-report-audit-2026-07-30/`
+- discovered: alerts from `disclosure_records` (not template-active alone); `bao-cao-tai-chinh-quy-2` Q2/2026 Completed → `PENDING_CONFIRM` due 2026-05-12; Overdue filter empty by design
+- flags: `PERIODIC_SEEDING_ENABLED=false` (existing cycles already present)
+- verdict: **EXPECTED_BEHAVIOR_CONFIRMED** RC-1; no code/DB/migration/deploy
+
+## 2026-07-30 - Workflow Configuration 404 remediation (DEV)
+
+- paired FE evidence: `../cobo_web_design/docs/ai-cache/workflow-config-load-404-remediation-2026-07-30/`
+- DEV: `WORKFLOW_VERSIONING_ENABLED=true` via `docker-compose.artifacts.yml`; API recreate `--no-deps`; configuration 200 empty; no materialize; isolation PASS
+- verdict: **PASS_DEV_REMEDIATION_WITH_NON_BLOCKING_GAPS**
+
+## 2026-07-30 - Workflow Configuration load 404 audit (DEV)
+
+- task type: audit-only (cross-repo); paired evidence in FE `docs/ai-cache/workflow-config-load-404-audit-2026-07-30/`
+- discovered: `WORKFLOW_VERSIONING_ENABLED` unset on DEV → `wfchttp.Register` skipped → `GET .../workflow/configuration` → Go `404 page not found`; ConfigService would 200 empty if registered; effective-workflow separate source
+- verdict: **ROOT_CAUSE_CONFIRMED** RC-4; awaiting user confirm before env enable / FE gate
+- scope: no code/DB/migration/deploy
+
 ## 2026-07-20 - Portal profile/audit UX + back navigation
 - task type: cross-repo UX (audit labels + personalops activity_log copy)
 - implemented: timeline knownActions (`login_success`, `select_company`, `cms_workflow.*`); FriendlyDescription; Normalize no UUID display; activity_log optional action/resource fields

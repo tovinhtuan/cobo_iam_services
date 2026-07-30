@@ -1,0 +1,6 @@
+{
+  "periodic_oneshot": "PASS",
+  "internal/disclosure/...": "PASS",
+  "go_vet_oneshot_cli": "PASS",
+  "notes": "Full go test ./... not required gate; changed packages PASS"
+}

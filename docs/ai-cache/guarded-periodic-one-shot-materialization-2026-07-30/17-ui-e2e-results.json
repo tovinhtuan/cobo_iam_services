@@ -1,0 +1,18 @@
+{
+  "route": "/app/deadlines",
+  "user": "cms.operator@example.com",
+  "company": "Company X / c_001",
+  "search": "QA - Báo cáo hoạt động tháng",
+  "all_filter_visible": true,
+  "upcoming_filter_visible": true,
+  "pending_confirm_visible": false,
+  "due_date_ui": "2026-07-31",
+  "badge": "Sắp tới",
+  "screenshots": [
+    "04-alert-all-filter.png",
+    "05-alert-card-details.png",
+    "06-alert-status-filter.png",
+    "07-no-pending-confirm.png"
+  ],
+  "passed": true
+}
