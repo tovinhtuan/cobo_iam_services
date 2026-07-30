@@ -1303,6 +1303,18 @@ func (r *Repository) ListActivePeriodicTypes(_ context.Context) ([]disclosureapp
 	return nil, nil
 }
 
+func (r *Repository) GetPeriodicCycle(_ context.Context, _, _, _ string) (*disclosureapp.PeriodicCycleRow, error) {
+	return nil, nil
+}
+
+func (r *Repository) InsertPeriodicCycle(_ context.Context, _ disclosureapp.PeriodicCycleRow) error {
+	return nil
+}
+
+func (r *Repository) DeleteUnmaterializedPeriodicCycle(_ context.Context, _ string) error {
+	return nil
+}
+
 func (r *Repository) UpsertPeriodicCycle(_ context.Context, _ disclosureapp.PeriodicCycleRow) error {
 	return nil
 }

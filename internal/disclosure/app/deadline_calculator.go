@@ -218,6 +218,16 @@ func (c *DeadlineCalculator) resolveStartDate(company CompanyDeadlineContext, cu
 	return stripTime(time.Date(year, time.Month(month), day, 0, 0, 0, 0, c.location)), nil
 }
 
+// AddDurationInclusive exposes production inclusive duration math for guarded tooling.
+func (c *DeadlineCalculator) AddDurationInclusive(
+	ctx context.Context,
+	start time.Time,
+	duration int,
+	durationType string,
+) (time.Time, error) {
+	return c.addDurationInclusive(ctx, start, duration, durationType)
+}
+
 func (c *DeadlineCalculator) addDurationInclusive(
 	ctx context.Context,
 	start time.Time,

@@ -2093,6 +2093,61 @@ func (r *Repository) UpsertPeriodicCycle(ctx context.Context, in disclosureapp.P
 	return nil
 }
 
+func (r *Repository) GetPeriodicCycle(ctx context.Context, typeID, companyID, cycleLabel string) (*disclosureapp.PeriodicCycleRow, error) {
+	const q = `
+		SELECT pc.cycle_id, pc.type_id, COALESCE(dtv.name, ''), pc.company_id, pc.cycle_label,
+		       pc.cycle_start, pc.due_date, COALESCE(pc.record_id, '')
+		FROM periodic_cycles pc
+		LEFT JOIN disclosure_types dt ON dt.type_id = pc.type_id
+		LEFT JOIN disclosure_type_versions dtv ON dtv.type_id = dt.type_id AND dtv.version_no = dt.active_version_no
+		WHERE pc.type_id = ? AND pc.company_id = ? AND pc.cycle_label = ?
+		LIMIT 1`
+	var row disclosureapp.PeriodicCycleRow
+	var cycleStart, dueDate sql.NullTime
+	err := r.db.QueryRowContext(ctx, q, typeID, companyID, cycleLabel).Scan(
+		&row.CycleID, &row.TypeID, &row.TypeName, &row.CompanyID, &row.CycleLabel, &cycleStart, &dueDate, &row.RecordID,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get periodic cycle: %w", err)
+	}
+	if cycleStart.Valid {
+		row.CycleStart = dateOnlyUTC(cycleStart.Time)
+	}
+	if dueDate.Valid {
+		row.DueDate = dateOnlyUTC(dueDate.Time)
+	}
+	return &row, nil
+}
+
+func (r *Repository) InsertPeriodicCycle(ctx context.Context, in disclosureapp.PeriodicCycleRow) error {
+	var cycleStart any
+	if !in.CycleStart.IsZero() {
+		cycleStart = in.CycleStart.Format("2006-01-02")
+	}
+	const q = `
+		INSERT INTO periodic_cycles (cycle_id, type_id, company_id, cycle_label, cycle_start, due_date)
+		VALUES (?, ?, ?, ?, ?, ?)`
+	_, err := r.db.ExecContext(ctx, q, in.CycleID, in.TypeID, in.CompanyID, in.CycleLabel, cycleStart, in.DueDate.Format("2006-01-02"))
+	if err != nil {
+		return fmt.Errorf("insert periodic cycle: %w", err)
+	}
+	return nil
+}
+
+func (r *Repository) DeleteUnmaterializedPeriodicCycle(ctx context.Context, cycleID string) error {
+	const q = `
+		DELETE FROM periodic_cycles
+		WHERE cycle_id = ? AND record_id IS NULL`
+	_, err := r.db.ExecContext(ctx, q, cycleID)
+	if err != nil {
+		return fmt.Errorf("delete unmaterialized periodic cycle: %w", err)
+	}
+	return nil
+}
+
 func (r *Repository) ListPendingCycles(ctx context.Context, asOf time.Time, bufferDays int) ([]disclosureapp.PeriodicCycleRow, error) {
 	cutoff := asOf.AddDate(0, 0, bufferDays).Format("2006-01-02")
 	const q = `

@@ -147,6 +147,9 @@ type Repository interface {
 	// Periodic auto-creation support.
 	ListActivePeriodicTypes(ctx context.Context) ([]PeriodicTypeRow, error)
 	UpsertPeriodicCycle(ctx context.Context, in PeriodicCycleRow) error
+	GetPeriodicCycle(ctx context.Context, typeID, companyID, cycleLabel string) (*PeriodicCycleRow, error)
+	InsertPeriodicCycle(ctx context.Context, in PeriodicCycleRow) error
+	DeleteUnmaterializedPeriodicCycle(ctx context.Context, cycleID string) error
 	ListPendingCycles(ctx context.Context, asOf time.Time, bufferDays int) ([]PeriodicCycleRow, error)
 	TryClaimPeriodicCycle(ctx context.Context, cycleID string) (bool, error)
 	ReleasePeriodicCycleClaim(ctx context.Context, cycleID string) error
