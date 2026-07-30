@@ -115,15 +115,15 @@ type StepMilestoneRow struct {
 }
 
 type CreateWorkflowInstanceRequest struct {
-	Subject        Subject
-	RecordID       string         `json:"record_id"`
+	Subject  Subject
+	RecordID string `json:"record_id"`
 	// Optional: filled by caller when WORKFLOW_SNAPSHOT_ENABLED=true.
 	Snapshot       []StepSnapshot `json:"snapshot,omitempty"`
 	WorkflowSource string         `json:"workflow_source,omitempty"` // system_template | company_override
 	T0Date         *time.Time     `json:"t0_date,omitempty"`
 	T0Policy       string         `json:"t0_policy,omitempty"`
 	// Optional: pre-computed milestones from timeline computation (when WORKFLOW_TIMELINE_ENABLED=true).
-	Milestones     []StepMilestoneRow `json:"milestones,omitempty"`
+	Milestones []StepMilestoneRow `json:"milestones,omitempty"`
 }
 
 type TaskActionRequest struct {
@@ -158,7 +158,10 @@ type WorkflowInstanceDTO struct {
 // TaskAssigneeDTO is additive display metadata for portal responsibility views.
 // Does not expose password, tokens, or private profile fields.
 type TaskAssigneeDTO struct {
-	MembershipID   string `json:"membership_id,omitempty"`
+	MembershipID string `json:"membership_id,omitempty"`
+	// ActorType is empty for normal members; "SYSTEM" for synthetic/system assignees
+	// (e.g. m_system_oneshot) that may not resolve to a users row.
+	ActorType      string `json:"actor_type,omitempty"`
 	DisplayName    string `json:"display_name,omitempty"`
 	Email          string `json:"email,omitempty"`
 	DepartmentName string `json:"department_name,omitempty"`
