@@ -1,3 +1,13 @@
+## 2026-07-31 - Config-driven enterprise deadline rule plan (PLAN_ONLY)
+
+- task type: plan-only (fixed-vs-generic + Portal semantic display)
+- objective: Portal shows **whatever rule production resolver selected** (not subsidiaries-only hardcode)
+- discovered: CMS **Model B** fixed `deadline_by_structure` map + toggle; resolver derives one criterion (subsidiaries>units>simple); no priority/dynamic rules
+- recommended: **Option A** expose generic `resolved_deadline_rule`; Option C generic engine = separate roadmap
+- QA: `use_structure_deadline=false` → must not show structure labels despite both company flags true
+- evidence: `cobo_web_design/docs/ai-cache/config-driven-enterprise-deadline-rule-plan-2026-07-31/`
+- verdict: **PLAN_READY_FOR_REVIEW**
+
 ## 2026-07-31 - Portal enterprise deadline rule solution plan (PLAN_ONLY)
 
 - task type: plan-only audit (FE/BE/contract/runtime)
