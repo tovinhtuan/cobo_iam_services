@@ -1,0 +1,16 @@
+{
+  "backend": {
+    "disclosurePackages": "PASS",
+    "vet": "PASS",
+    "buildApi": "PASS",
+    "diffCheck": "PASS",
+    "fullGoTest": "FAIL_PREEXISTING_notification"
+  },
+  "frontend": {
+    "npmCi": "PASS",
+    "targetedConsistency": "PASS",
+    "build": "PASS",
+    "diffCheck": "PASS",
+    "fullSuite": "NOT_RE_RUN_PHASE4_KNOWN_PREEXISTING"
+  }
+}

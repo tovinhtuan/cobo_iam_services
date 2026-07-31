@@ -1,0 +1,11 @@
+{
+  "command": "go test ./internal/disclosure/... -count=1",
+  "result": "PASS",
+  "phase4Matrix": "PASS (applicability/phase4_consistency_matrix_test.go C1–C9)",
+  "vet": "PASS",
+  "buildApi": "PASS",
+  "fullGoTestDotDot": {
+    "notificationApp": "FAIL_PREEXISTING TestContract_VariableParity",
+    "baseline": "661413d"
+  }
+}

@@ -1,24 +1,16 @@
 {
-  "phase": "Resolved Deadline Rule \u2014 Backend",
+  "phase": "Resolved Deadline Rule — Business Consistency",
   "environment": "LOCAL_TEST_ONLY",
-  "mode": "PHASE_2",
-  "contract": {
-    "configModel": "FIXED_CRITERION_MAP",
-    "ruleCodesPreserved": true,
-    "resolutionSourcesPreserved": true,
-    "precedencePreserved": true,
-    "baseDateSource": "CYCLE_START"
-  },
-  "implementation": {
-    "productionResolveStructureReused": true,
-    "productionResolveDeadlineDaysReused": true,
-    "productionCalculatorReused": true,
-    "secondResolverCreated": false,
-    "semanticDtoAdded": true,
-    "existingFieldsChanged": false
+  "mode": "PHASE_4",
+  "chain": {
+    "cmsConfigToResolver": true,
+    "resolverToDto": true,
+    "dtoToNormalizer": true,
+    "normalizerToFormatter": true,
+    "formatterToComponent": true
   },
   "cases": {
-    "toggleOffDefault": true,
+    "toggleOffBothFlagsDefault": true,
     "subsidiariesOverride": true,
     "subordinateOverride": true,
     "bothFlagsSubsidiariesWins": true,
@@ -27,38 +19,45 @@
     "noRule": true,
     "workingDays": true,
     "calendarDays": true,
-    "cycleStartBase": true,
-    "dueDateNullable": true,
-    "companyIsolation": true
+    "cycleStart": true,
+    "dueDatePresent": true,
+    "dueDateAbsent": true,
+    "missingDtoFallback": true,
+    "unknownEnumsSafe": true
+  },
+  "legacyFallback": {
+    "dtoTakesPriority": true,
+    "doesNotInspectCompanyFlags": true,
+    "doesNotClaimCriterion": true,
+    "doesNotClaimPeriodEnd": true,
+    "safeForRollingDeployment": true,
+    "residualCmsFreeTextPassthrough": true
+  },
+  "companyContext": {
+    "companyIdentityInRequest": true,
+    "companyIdentityInCacheKey": true,
+    "lateResponseProtected": true,
+    "staleRuleNotShownAsFinal": true,
+    "twoCompanyTestPassed": true
   },
   "quality": {
-    "targetedDisclosureDeadlineTests": "PASS",
-    "goVet": "PASS",
-    "goBuildApi": "PASS",
-    "dockerComposeApiBuild": "PASS",
-    "gitDiffCheck": "PASS",
-    "fullGoTestDotDot": "FAIL",
-    "fullGoTestReason": "pre-existing notification/app TestContract_VariableParity",
-    "baselineProvenAt": "661413d",
-    "doNotClaimAllBackendTestsPass": true
+    "backendTargetedTests": "PASS",
+    "backendFullTests": "FAIL_PREEXISTING_notification",
+    "frontendNpmCi": "PASS",
+    "frontendTargetedTests": "PASS",
+    "frontendFullTests": "KNOWN_PREEXISTING_NOT_RE_RUN",
+    "backendBuild": "PASS",
+    "frontendBuild": "PASS",
+    "diffCheck": "PASS"
   },
   "safety": {
-    "frontendChanged": false,
-    "calculatorSemanticsChanged": false,
-    "precedenceChanged": false,
+    "featureBehaviorChanged": false,
     "databaseMutated": false,
     "migrationExecuted": false,
     "deploymentExecuted": false,
     "productionTouched": false
   },
-  "commits": [
-    "1522839 feat(deadline): expose resolved deadline rule on type detail",
-    "9f03953 docs(deadline): add phase 2 resolved rule backend evidence"
-  ],
-  "verdict": "PHASE_2_BACKEND_READY",
-  "awaiting": "user_confirmation_for_phase_3",
-  "preconditionCorrection": {
-    "handoffCorrected": true,
-    "baselineEvidence": "18-phase-2-baseline-test-evidence.md"
-  }
+  "commits": [],
+  "verdict": "PHASE_4_CONSISTENCY_READY",
+  "awaiting": "user_confirmation_for_phase_5"
 }

@@ -1,0 +1,12 @@
+{
+  "npmCi": "PASS",
+  "targeted": {
+    "crossLayer": "PASS",
+    "companyCache": "PASS",
+    "formatter": "PASS (prior)",
+    "section": "PASS (prior)",
+    "normalizer": "PASS (prior)"
+  },
+  "crossLayerFile": "resolvedDeadlineConsistency.crossLayer.test.tsx",
+  "fixtures": "src/pages/portal/disclosure-detail/__fixtures__/resolvedDeadlineConsistency.json"
+}

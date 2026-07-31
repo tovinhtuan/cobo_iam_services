@@ -1,3 +1,9 @@
+## 2026-07-31 - Resolved deadline rule by company (Phase 4 CONSISTENCY)
+
+- task type: consistency matrix tests (BE applicability + FE mirror docs)
+- added: `internal/disclosure/app/applicability/phase4_consistency_matrix_test.go`
+- verdict: **PHASE_4_CONSISTENCY_READY**
+
 ## 2026-07-31 - Resolved deadline rule by company (Phase 3 FRONTEND)
 
 - task type: FE-only (BE pointer)
