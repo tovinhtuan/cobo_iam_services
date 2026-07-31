@@ -1,0 +1,12 @@
+{
+  "deadlineengine": "PASS",
+  "periodic_oneshot": "PASS",
+  "disclosure_transport_http": "PASS",
+  "disclosure_app_shadow_getTypeDetail": "PASS (package ok)",
+  "calculator_tests": "PASS (in disclosure/app)",
+  "notification_unrelated_fail": "PREEXISTING — not regression from this change",
+  "fe_changed": false,
+  "migration": false,
+  "db_mutation": false,
+  "deploy": false
+}

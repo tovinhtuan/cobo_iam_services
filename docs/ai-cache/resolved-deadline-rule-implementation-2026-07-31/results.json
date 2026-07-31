@@ -1,0 +1,55 @@
+{
+  "phase": "Resolved Deadline Rule — Backend",
+  "environment": "LOCAL_TEST_ONLY",
+  "mode": "PHASE_2",
+  "contract": {
+    "configModel": "FIXED_CRITERION_MAP",
+    "ruleCodesPreserved": true,
+    "resolutionSourcesPreserved": true,
+    "precedencePreserved": true,
+    "baseDateSource": "CYCLE_START"
+  },
+  "implementation": {
+    "productionResolveStructureReused": true,
+    "productionResolveDeadlineDaysReused": true,
+    "productionCalculatorReused": true,
+    "secondResolverCreated": false,
+    "semanticDtoAdded": true,
+    "existingFieldsChanged": false
+  },
+  "cases": {
+    "toggleOffDefault": true,
+    "subsidiariesOverride": true,
+    "subordinateOverride": true,
+    "bothFlagsSubsidiariesWins": true,
+    "simpleStructure": true,
+    "structureFallbackDefault": true,
+    "noRule": true,
+    "workingDays": true,
+    "calendarDays": true,
+    "cycleStartBase": true,
+    "dueDateNullable": true,
+    "companyIsolation": true
+  },
+  "quality": {
+    "targetedTests": "PASS",
+    "fullTests": "FAIL_PREEXISTING_UNRELATED_notification_app",
+    "disclosurePackageTests": "PASS",
+    "vet": "PASS",
+    "build": "PASS",
+    "dockerComposeApiBuild": "PASS",
+    "diffCheck": "PASS"
+  },
+  "safety": {
+    "frontendChanged": false,
+    "calculatorSemanticsChanged": false,
+    "precedenceChanged": false,
+    "databaseMutated": false,
+    "migrationExecuted": false,
+    "deploymentExecuted": false,
+    "productionTouched": false
+  },
+  "commits": [],
+  "verdict": "PHASE_2_BACKEND_READY",
+  "awaiting": "user_confirmation_for_phase_3"
+}

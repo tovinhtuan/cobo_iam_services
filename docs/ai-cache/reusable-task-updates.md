@@ -1,3 +1,19 @@
+## 2026-07-31 - Resolved deadline rule by company (Phase 2 BACKEND)
+
+- task type: backend additive API (Option A)
+- implemented: `resolved_deadline_rule` on GetTypeDetail; `ResolveDeadlineRule` + `ResolveDeadlineDays` wrapper; CYCLE_START; nullable due_date from summary
+- verified: disclosure packages PASS; go vet/build PASS; docker compose build api PASS; `go test ./...` FAIL pre-existing notification meta.yaml only
+- evidence: `docs/ai-cache/resolved-deadline-rule-implementation-2026-07-31/` (08–17)
+- verdict: **PHASE_2_BACKEND_READY** (await Phase 3)
+
+## 2026-07-31 - Resolved deadline rule by company (Phase 1 CONTRACT LOCK)
+
+- task type: contract + source lock (no BE code)
+- objective: Option A semantic `resolved_deadline_rule` on type detail
+- locked enums/sources in FE pack; BE mirror: `docs/ai-cache/resolved-deadline-rule-implementation-2026-07-31/00-phase-1-pointer.md`
+- baseline HEAD: `661413d`
+- verdict: **PHASE_1_CONTRACT_READY** (await Phase 2)
+
 ## 2026-07-31 - Config-driven enterprise deadline rule plan (PLAN_ONLY)
 
 - task type: plan-only (fixed-vs-generic + Portal semantic display)

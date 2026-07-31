@@ -1,0 +1,31 @@
+{
+  "phase": 2,
+  "targeted": {
+    "commands": [
+      "go test ./internal/disclosure/app/applicability/ ./internal/disclosure/app/ -count=1",
+      "go test ./internal/disclosure/... ./cmd/... -count=1"
+    ],
+    "result": "PASS",
+    "cases": {
+      "toggleOffDefault": true,
+      "subsidiariesOverride": true,
+      "subordinateOverride": true,
+      "bothFlagsSubsidiariesWins": true,
+      "simpleStructure": true,
+      "structureFallbackDefault": true,
+      "noRule": true,
+      "workingDays": true,
+      "calendarDays": true,
+      "cycleStartBase": true,
+      "dueDateNullable": true,
+      "companyIsolation": true
+    }
+  },
+  "fullGoTestDotDot": {
+    "command": "go test ./... -count=1",
+    "result": "FAIL_PREEXISTING_UNRELATED",
+    "failingPackage": "internal/notification/app",
+    "failingTest": "TestContract_VariableParity/workflow.approved",
+    "note": "workflow_instance_id declared in meta.yaml unused — unrelated to deadline DTO"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "gofmt": "PASS",
+  "vet": {"command": "go vet ./...", "exitCode": 0},
+  "build": {"command": "go build -o /tmp/cobo-api-p2 ./cmd/api", "exitCode": 0},
+  "dockerComposeApi": {
+    "command": "docker compose -f docker-compose.dev.yml build api",
+    "exitCode": 0,
+    "image": "cobo_iam_services-api"
+  },
+  "diffCheck": {"command": "git diff --check", "exitCode": 0}
+}
