@@ -1,3 +1,10 @@
+## 2026-07-31 - Resolved deadline rule by company (Phase 3 FRONTEND)
+
+- task type: FE-only (BE pointer)
+- note: Phase 2 full-suite FAIL corrected with baseline evidence at 661413d
+- FE verdict: **PHASE_3_FRONTEND_READY** — see cobo_web_design evidence pack
+- no BE implementation in Phase 3
+
 ## 2026-07-31 - Resolved deadline rule by company (Phase 2 BACKEND)
 
 - task type: backend additive API (Option A)

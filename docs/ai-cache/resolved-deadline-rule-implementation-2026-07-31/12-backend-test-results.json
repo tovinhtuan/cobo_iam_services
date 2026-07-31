@@ -1,31 +1,28 @@
 {
   "phase": 2,
+  "correctedAt": "2026-07-31",
   "targeted": {
     "commands": [
       "go test ./internal/disclosure/app/applicability/ ./internal/disclosure/app/ -count=1",
       "go test ./internal/disclosure/... ./cmd/... -count=1"
     ],
-    "result": "PASS",
-    "cases": {
-      "toggleOffDefault": true,
-      "subsidiariesOverride": true,
-      "subordinateOverride": true,
-      "bothFlagsSubsidiariesWins": true,
-      "simpleStructure": true,
-      "structureFallbackDefault": true,
-      "noRule": true,
-      "workingDays": true,
-      "calendarDays": true,
-      "cycleStartBase": true,
-      "dueDateNullable": true,
-      "companyIsolation": true
-    }
+    "result": "PASS"
+  },
+  "gates": {
+    "goVet": "PASS",
+    "goBuildApi": "PASS",
+    "dockerComposeApiBuild": "PASS",
+    "gitDiffCheck": "PASS"
   },
   "fullGoTestDotDot": {
     "command": "go test ./... -count=1",
-    "result": "FAIL_PREEXISTING_UNRELATED",
+    "result": "FAIL",
+    "reason": "pre-existing notification/app TestContract_VariableParity",
     "failingPackage": "internal/notification/app",
     "failingTest": "TestContract_VariableParity/workflow.approved",
-    "note": "workflow_instance_id declared in meta.yaml unused — unrelated to deadline DTO"
+    "baselineProven": true,
+    "baselineCommit": "661413d",
+    "baselineEvidence": "18-phase-2-baseline-test-evidence.md",
+    "doNotSay": "all backend tests PASS"
   }
 }

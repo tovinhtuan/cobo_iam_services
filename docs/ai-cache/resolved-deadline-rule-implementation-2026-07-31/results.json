@@ -1,5 +1,5 @@
 {
-  "phase": "Resolved Deadline Rule — Backend",
+  "phase": "Resolved Deadline Rule \u2014 Backend",
   "environment": "LOCAL_TEST_ONLY",
   "mode": "PHASE_2",
   "contract": {
@@ -32,13 +32,15 @@
     "companyIsolation": true
   },
   "quality": {
-    "targetedTests": "PASS",
-    "fullTests": "FAIL_PREEXISTING_UNRELATED_notification_app",
-    "disclosurePackageTests": "PASS",
-    "vet": "PASS",
-    "build": "PASS",
+    "targetedDisclosureDeadlineTests": "PASS",
+    "goVet": "PASS",
+    "goBuildApi": "PASS",
     "dockerComposeApiBuild": "PASS",
-    "diffCheck": "PASS"
+    "gitDiffCheck": "PASS",
+    "fullGoTestDotDot": "FAIL",
+    "fullGoTestReason": "pre-existing notification/app TestContract_VariableParity",
+    "baselineProvenAt": "661413d",
+    "doNotClaimAllBackendTestsPass": true
   },
   "safety": {
     "frontendChanged": false,
@@ -54,5 +56,9 @@
     "9f03953 docs(deadline): add phase 2 resolved rule backend evidence"
   ],
   "verdict": "PHASE_2_BACKEND_READY",
-  "awaiting": "user_confirmation_for_phase_3"
+  "awaiting": "user_confirmation_for_phase_3",
+  "preconditionCorrection": {
+    "handoffCorrected": true,
+    "baselineEvidence": "18-phase-2-baseline-test-evidence.md"
+  }
 }
