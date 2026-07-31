@@ -594,6 +594,19 @@ func (s *service) GetTypeDetail(ctx context.Context, req GetTypeDetailRequest) (
 	}
 	ApplyLegalBasisReadCompat(ctx, item, s.legalBasisLegacyFallbackEnabled, s.legalBasisDivergenceWarningEnabled)
 	enrichDeadlineRuleDisplay(item, s.loadDeadlineRuleCatalog(ctx))
+
+	var companyProfile applicability.CompanyApplicabilityProfile
+	haveCompanyProfile := false
+	if item.ApplicabilityRules != nil {
+		if profile, profileErr := s.repo.GetCompanyApplicabilityProfile(ctx, req.Subject.CompanyID); profileErr == nil {
+			companyProfile = profile
+			haveCompanyProfile = true
+			item.ResolvedDeadlineRule = buildResolvedDeadlineRuleDTO(
+				item.ApplicabilityRules, companyProfile, item.Periodicity, item.DeadlineConfig,
+			)
+		}
+	}
+
 	if item.DeadlineConfig == nil {
 		return item, nil
 	}
@@ -611,8 +624,8 @@ func (s *service) GetTypeDetail(ctx context.Context, req GetTypeDetailRequest) (
 	deadlineCfg := item.DeadlineConfig
 	if item.ApplicabilityRules != nil && deadlineCfg != nil && deadlineCfg.DeadlineMode == DeadlineModePeriodic {
 		cfgCopy := *deadlineCfg
-		if profile, profileErr := s.repo.GetCompanyApplicabilityProfile(ctx, req.Subject.CompanyID); profileErr == nil {
-			if days, ok := applicability.ResolveDeadlineDays(item.ApplicabilityRules, profile); ok {
+		if haveCompanyProfile {
+			if days, ok := applicability.ResolveDeadlineDays(item.ApplicabilityRules, companyProfile); ok {
 				cfgCopy.DeadlineDays = days
 			}
 			cfgCopy.DeadlineDurationType = applicability.ResolveDeadlineDurationType(item.ApplicabilityRules)
@@ -630,12 +643,16 @@ func (s *service) GetTypeDetail(ctx context.Context, req GetTypeDetailRequest) (
 		return item, nil
 	}
 	item.DeadlineSummary = summary
+	attachResolvedDueDate(item.ResolvedDeadlineRule, summary)
 	// Batch 5B Phase A (shadow only, see deadlineengine_shadow.go): does not
 	// modify item/summary or the API response. Guarded so the default
 	// (DEADLINE_ENGINE_V2_SHADOW=false) issues zero extra repo calls.
 	if summary != nil && s.shadowRunner != nil && s.shadowRunner.enabled {
-		profile, profileErr := s.repo.GetCompanyApplicabilityProfile(ctx, req.Subject.CompanyID)
-		if profileErr == nil {
+		if haveCompanyProfile {
+			s.shadowRunner.portalPreview(ctx, req.Subject.CompanyID, req.TypeID,
+				item.DeadlineConfig, item.ApplicabilityRules, item.TemplateCategory,
+				companyCtx, companyProfile, summary.StartDate, summary.DeadlineDate, now)
+		} else if profile, profileErr := s.repo.GetCompanyApplicabilityProfile(ctx, req.Subject.CompanyID); profileErr == nil {
 			s.shadowRunner.portalPreview(ctx, req.Subject.CompanyID, req.TypeID,
 				item.DeadlineConfig, item.ApplicabilityRules, item.TemplateCategory,
 				companyCtx, profile, summary.StartDate, summary.DeadlineDate, now)

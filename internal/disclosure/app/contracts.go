@@ -848,6 +848,22 @@ type DisclosureTypeDTO struct {
 	HasWorkflow        bool                                      `json:"has_workflow"`
 	ReviewStatus       string                                    `json:"review_status,omitempty"`
 	ApplicabilityRules *applicability.TemplateApplicabilityRules `json:"applicability_rules,omitempty"`
+	// ResolvedDeadlineRule is the live semantic outcome of production ResolveStructure /
+	// ResolveDeadlineDays for the authenticated company (additive; omit when unavailable).
+	ResolvedDeadlineRule *ResolvedDeadlineRuleDTO `json:"resolved_deadline_rule,omitempty"`
+}
+
+// ResolvedDeadlineRuleDTO is the Portal-facing semantic deadline rule (Option A).
+// Existing deadline_rule / deadline_summary fields are unchanged.
+type ResolvedDeadlineRuleDTO struct {
+	RuleCode         string  `json:"rule_code,omitempty"`
+	RuleLabelKey     string  `json:"rule_label_key,omitempty"`
+	ResolutionSource string  `json:"resolution_source"`
+	ResolvedDays     *int    `json:"resolved_days,omitempty"`
+	DayType          string  `json:"day_type,omitempty"`
+	BaseDateSource   string  `json:"base_date_source,omitempty"`
+	Periodicity      string  `json:"periodicity,omitempty"`
+	DueDate          *string `json:"due_date,omitempty"`
 }
 
 type DeadlineSummaryDTO struct {

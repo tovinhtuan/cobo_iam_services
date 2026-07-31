@@ -17,6 +17,9 @@ const (
 	NonTradingPolicyMoveNextWorking  = "MOVE_TO_NEXT_WORKING_DAY"
 
 	BaseDateSourceCompanyEstablished = "COMPANY_ESTABLISHED_DATE"
+	// BaseDateSourceCycleStart is the semantic base for PERIODIC calculatePeriodic (cycleStart + N).
+	// Not currently written onto DeadlineSummaryDTO.BaseDateSource; used by resolved_deadline_rule.
+	BaseDateSourceCycleStart = "CYCLE_START"
 
 	DurationTypeWorkingDays  = "WORKING_DAYS"
 	DurationTypeCalendarDays = "CALENDAR_DAYS"

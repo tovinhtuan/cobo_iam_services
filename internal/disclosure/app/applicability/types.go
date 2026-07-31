@@ -22,9 +22,18 @@ const (
 type StructureCriterion string
 
 const (
-	StructureHasSubsidiaries    StructureCriterion = "has_subsidiaries"
+	StructureHasSubsidiaries     StructureCriterion = "has_subsidiaries"
 	StructureHasSubordinateUnits StructureCriterion = "has_subordinate_units"
-	StructureSimpleStructure    StructureCriterion = "simple_structure"
+	StructureSimpleStructure     StructureCriterion = "simple_structure"
+
+	// RuleCodeDefault is the semantic code when template default deadline_days applies
+	// (toggle off, or structure miss with valid default fallback). Not a StructureCriterion.
+	RuleCodeDefault = "DEFAULT"
+
+	ResolutionSourceDefaultTemplateRule      = "DEFAULT_TEMPLATE_RULE"
+	ResolutionSourceStructureOverride        = "STRUCTURE_OVERRIDE"
+	ResolutionSourceStructureFallbackDefault = "STRUCTURE_FALLBACK_DEFAULT"
+	ResolutionSourceNoRule                   = "NO_RULE"
 )
 
 var (
@@ -49,9 +58,9 @@ type StructureDeadlineEntry struct {
 
 // TemplateApplicabilityRules is persisted on disclosure_type_versions.applicability_rules_json.
 type TemplateApplicabilityRules struct {
-	ApplicableCompanyClasses []CompanyClass                                 `json:"applicable_company_classes"`
-	ApplicableSectors        []BusinessSector                               `json:"applicable_sectors"`
-	DeadlineByStructure      map[StructureCriterion]StructureDeadlineEntry  `json:"deadline_by_structure,omitempty"`
+	ApplicableCompanyClasses []CompanyClass                                `json:"applicable_company_classes"`
+	ApplicableSectors        []BusinessSector                              `json:"applicable_sectors"`
+	DeadlineByStructure      map[StructureCriterion]StructureDeadlineEntry `json:"deadline_by_structure,omitempty"`
 
 	// DeadlineDays is the source-of-truth N (số ngày công bố) for Deadline Engine V2.
 	DeadlineDays int `json:"deadline_days,omitempty"`
