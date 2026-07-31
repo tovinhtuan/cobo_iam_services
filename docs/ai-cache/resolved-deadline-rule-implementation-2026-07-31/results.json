@@ -49,7 +49,10 @@
     "deploymentExecuted": false,
     "productionTouched": false
   },
-  "commits": [],
+  "commits": [
+    "1522839 feat(deadline): expose resolved deadline rule on type detail",
+    "9f03953 docs(deadline): add phase 2 resolved rule backend evidence"
+  ],
   "verdict": "PHASE_2_BACKEND_READY",
   "awaiting": "user_confirmation_for_phase_3"
 }
