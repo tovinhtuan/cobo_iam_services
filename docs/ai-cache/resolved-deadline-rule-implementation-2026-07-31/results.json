@@ -57,7 +57,12 @@
     "deploymentExecuted": false,
     "productionTouched": false
   },
-  "commits": [],
+  "commits": [
+    "FE 10bb0e8 test(deadline): verify resolved rule cross-layer consistency",
+    "FE cf70830 docs(deadline): add phase 4 consistency evidence",
+    "BE e9a1119 test(deadline): verify resolved rule cross-layer consistency",
+    "BE 4dabbdf docs(deadline): add phase 4 consistency evidence"
+  ],
   "verdict": "PHASE_4_CONSISTENCY_READY",
   "awaiting": "user_confirmation_for_phase_5"
 }
