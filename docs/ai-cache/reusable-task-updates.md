@@ -1,3 +1,13 @@
+## 2026-07-31 - Portal enterprise deadline rule solution plan (PLAN_ONLY)
+
+- task type: plan-only audit (FE/BE/contract/runtime)
+- objective: enable Portal “Kỳ hạn công bố/báo cáo” to show enterprise-resolved rule semantics
+- discovered: section uses CMS `deadline_rule` only; BE already resolves N + `deadline_summary` (cycleStart + WORKING_DAYS); structure precedence subsidiaries>units>simple; QA toggle use_structure_deadline=false
+- recommended: Option A additive `resolved_deadline_rule` DTO; FE localize; no calculator/migration change
+- open: base-date wording vs engine (GAP-6); both-flags product confirm; due-date display
+- evidence: `cobo_web_design/docs/ai-cache/portal-enterprise-deadline-rule-solution-plan-2026-07-31/`
+- verdict: **PLAN_READY_FOR_REVIEW**
+
 ## 2026-07-30 - Workflow Readiness Copy Consistency (FE-only DEV)
 
 - task type: FE presentation (no BE DTO/engine change)
