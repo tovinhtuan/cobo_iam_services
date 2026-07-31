@@ -1,3 +1,14 @@
+## 2026-07-31 - Resolved deadline rule (Phase 6 Authenticated DEV Business E2E)
+
+- task type: pointer only; canonical evidence in FE pack 72–89
+- verdict: **PASS_WITH_FIXTURE_LIMITATIONS** (await user review; no Phase 7)
+
+## 2026-07-31 - Resolved deadline rule (Phase 5 DEV DEPLOYMENT)
+
+- task type: DEV deploy pointer (canonical evidence in FE pack)
+- deployed API-only from `e2e3f1c`; FE `0bc028a` via make deploy-fe (see FE 51–71)
+- verdict: **PHASE_5_DEV_DEPLOYMENT_READY** (await Phase 6)
+
 ## 2026-07-31 - Resolved deadline rule by company (Phase 4 CONSISTENCY)
 
 - task type: consistency matrix tests (BE applicability + FE mirror docs)
