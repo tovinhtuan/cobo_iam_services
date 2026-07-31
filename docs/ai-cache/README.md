@@ -41,6 +41,11 @@ Before marking the task done, run a pre-merge review and report risks, gaps, and
 - Verdict **PASS_TASKS_API_AND_WORKFLOW_SOURCE_UX** (2026-07-30): `docs/ai-cache/workflow-alert-tasks-500-and-source-ux-remediation-2026-07-30/`
 - T500-RC4 NULL department Scan; CMS dual-source Global Template v1 · 4 steps; no rematerialize
 
+## Resolved deadline rule by company (Phase 5 DEV deploy)
+
+- Verdict **PHASE_5_DEV_DEPLOYMENT_READY** (2026-07-31): pointer `00-phase-5-pointer.md`; full evidence in FE pack `cobo_web_design/.../resolved-deadline-rule-implementation-2026-07-31/`
+- API-only additive deploy from `e2e3f1c`; worker/MySQL unchanged; no migration; await Phase 6
+
 ## Resolved deadline rule by company (Phase 2 backend)
 
 - Verdict **PHASE_2_BACKEND_READY** (2026-07-31): `docs/ai-cache/resolved-deadline-rule-implementation-2026-07-31/`

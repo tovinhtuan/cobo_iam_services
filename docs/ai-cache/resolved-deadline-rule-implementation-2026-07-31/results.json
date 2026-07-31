@@ -1,68 +1,20 @@
 {
-  "phase": "Resolved Deadline Rule — Business Consistency",
-  "environment": "LOCAL_TEST_ONLY",
-  "mode": "PHASE_4",
-  "chain": {
-    "cmsConfigToResolver": true,
-    "resolverToDto": true,
-    "dtoToNormalizer": true,
-    "normalizerToFormatter": true,
-    "formatterToComponent": true
+  "phase": "Resolved Deadline Rule — DEV Deployment",
+  "environment": "DEV",
+  "mode": "PHASE_5",
+  "canonicalEvidence": "cobo_web_design/docs/ai-cache/resolved-deadline-rule-implementation-2026-07-31/",
+  "source": {
+    "backendCommit": "e2e3f1c",
+    "frontendCommit": "0bc028a"
   },
-  "cases": {
-    "toggleOffBothFlagsDefault": true,
-    "subsidiariesOverride": true,
-    "subordinateOverride": true,
-    "bothFlagsSubsidiariesWins": true,
-    "simpleStructure": true,
-    "structureFallbackDefault": true,
-    "noRule": true,
-    "workingDays": true,
-    "calendarDays": true,
-    "cycleStart": true,
-    "dueDatePresent": true,
-    "dueDateAbsent": true,
-    "missingDtoFallback": true,
-    "unknownEnumsSafe": true
+  "backendDeployment": {
+    "deployed": true,
+    "method": "scp_api_binary_no_deps_api",
+    "newContainerId": "b41ab9e6ae1b7f989c9afd010711dc2b07c82379f93456c23dd194935a6fa278",
+    "artifactSha256": "17c848e393bee99409183e67f04f66586bbcbe23f73bc516225780e4c7d9e288",
+    "workerUnchanged": true,
+    "mysqlUnchanged": true
   },
-  "legacyFallback": {
-    "dtoTakesPriority": true,
-    "doesNotInspectCompanyFlags": true,
-    "doesNotClaimCriterion": true,
-    "doesNotClaimPeriodEnd": true,
-    "safeForRollingDeployment": true,
-    "residualCmsFreeTextPassthrough": true
-  },
-  "companyContext": {
-    "companyIdentityInRequest": true,
-    "companyIdentityInCacheKey": true,
-    "lateResponseProtected": true,
-    "staleRuleNotShownAsFinal": true,
-    "twoCompanyTestPassed": true
-  },
-  "quality": {
-    "backendTargetedTests": "PASS",
-    "backendFullTests": "FAIL_PREEXISTING_notification",
-    "frontendNpmCi": "PASS",
-    "frontendTargetedTests": "PASS",
-    "frontendFullTests": "KNOWN_PREEXISTING_NOT_RE_RUN",
-    "backendBuild": "PASS",
-    "frontendBuild": "PASS",
-    "diffCheck": "PASS"
-  },
-  "safety": {
-    "featureBehaviorChanged": false,
-    "databaseMutated": false,
-    "migrationExecuted": false,
-    "deploymentExecuted": false,
-    "productionTouched": false
-  },
-  "commits": [
-    "FE 10bb0e8 test(deadline): verify resolved rule cross-layer consistency",
-    "FE cf70830 docs(deadline): add phase 4 consistency evidence",
-    "BE e9a1119 test(deadline): verify resolved rule cross-layer consistency",
-    "BE 4dabbdf docs(deadline): add phase 4 consistency evidence"
-  ],
-  "verdict": "PHASE_4_CONSISTENCY_READY",
-  "awaiting": "user_confirmation_for_phase_5"
+  "verdict": "PHASE_5_DEV_DEPLOYMENT_READY",
+  "awaiting": "user_confirmation_for_phase_6"
 }
