@@ -1,3 +1,8 @@
+## 2026-07-31 - Resolved deadline rule (Phase 7 FINAL HANDOFF)
+
+- task type: pointer only; canonical evidence in FE pack 90–106
+- verdict: **PASS_RESOLVED_DEADLINE_RULE_BY_COMPANY_WITH_FIXTURE_LIMITATIONS** (await user review; stop)
+
 ## 2026-07-31 - Resolved deadline rule (Phase 6 Authenticated DEV Business E2E)
 
 - task type: pointer only; canonical evidence in FE pack 72–89
