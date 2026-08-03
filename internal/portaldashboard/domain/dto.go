@@ -35,6 +35,9 @@ type KpiMetric struct {
 	Source   *string  `json:"source"`
 	Accuracy string   `json:"accuracy"`
 	Reason   *string  `json:"reason"`
+	// Additive on-time sample fields (dashboard KPI tooltip). Omitempty for old clients.
+	CompletedOnTime *int `json:"completed_on_time,omitempty"`
+	CompletedTotal  *int `json:"completed_total,omitempty"`
 }
 
 type DeadlineHealthBlock struct {

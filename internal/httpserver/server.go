@@ -78,6 +78,7 @@ import (
 	platformcmsapp "github.com/cobo/cobo_iam_services/internal/platformcms/app"
 	platformcmshttp "github.com/cobo/cobo_iam_services/internal/platformcms/transport/http"
 	portaldashboardapp "github.com/cobo/cobo_iam_services/internal/portaldashboard/app"
+	portaldashboardmysql "github.com/cobo/cobo_iam_services/internal/portaldashboard/infra/mysql"
 	portaldashboardhttp "github.com/cobo/cobo_iam_services/internal/portaldashboard/transport/http"
 	reminderapp "github.com/cobo/cobo_iam_services/internal/reminder/app"
 	reminderemail "github.com/cobo/cobo_iam_services/internal/reminder/infra/email"
@@ -639,7 +640,11 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 			return d.CompanyCode, nil
 		}
 	}
-	portalDashboardSvc := portaldashboardapp.NewService(authSvc, deadlineAlertsSvc, adhocSvc, inAppSvc, companyReader)
+	var portalDashboardCompletedAt portaldashboardapp.CompletedAtReader
+	if pool != nil {
+		portalDashboardCompletedAt = portaldashboardmysql.NewCompletedAtRepository(pool)
+	}
+	portalDashboardSvc := portaldashboardapp.NewService(authSvc, deadlineAlertsSvc, adhocSvc, inAppSvc, companyReader, portalDashboardCompletedAt)
 	portalDashboardHandler := portaldashboardhttp.NewHandler(log, portalDashboardSvc, tokenManager)
 
 	var personalOpsMine personalopsapp.MineRepository = personalopsapp.EmptyMineRepository{}

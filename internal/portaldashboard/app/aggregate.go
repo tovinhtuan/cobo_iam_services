@@ -13,13 +13,17 @@ import (
 )
 
 type deadlineFetch struct {
-	overdue        []deadlinealertsapp.DeadlineAlertDTO
-	dueSoon        []deadlinealertsapp.DeadlineAlertDTO
-	pendingConfirm []deadlinealertsapp.DeadlineAlertDTO
-	upcoming       []deadlinealertsapp.DeadlineAlertDTO
-	dueIn7Days     int
-	overdueTotal   int
-	err            error
+	overdue            []deadlinealertsapp.DeadlineAlertDTO
+	dueSoon            []deadlinealertsapp.DeadlineAlertDTO
+	pendingConfirm     []deadlinealertsapp.DeadlineAlertDTO
+	upcoming           []deadlinealertsapp.DeadlineAlertDTO
+	done               []deadlinealertsapp.DeadlineAlertDTO
+	dueIn7Days         int
+	overdueTotal       int
+	dueSoonTotal       int
+	pendingConfirmTotal int
+	upcomingTotal      int
+	err                error
 }
 
 type adHocFetch struct {
@@ -55,61 +59,45 @@ func buildOverview(
 	deadlines deadlineFetch,
 	adHoc adHocFetch,
 	inApp inAppFetch,
+	completion completionFetch,
 ) domain.OverviewResponse {
 	ref := dr.Now
 	kpis := map[string]domain.KpiMetric{}
 
-	// open_overdue — exact
-	if deadlines.err != nil {
-		kpis[KpiOpenOverdue] = mapKpi(unavailableKpi("count", "deadline_source_unavailable"))
-	} else {
-		kpis[KpiOpenOverdue] = mapKpi(countKpi(
-			float64(deadlines.overdueTotal),
-			"count",
-			severityFromOverdueCount(deadlines.overdueTotal),
-			SourceDeadlineAlerts,
-			AccuracyExact,
-		))
-	}
-
-	// needs_action_now — estimate (deadline exact + optional ad-hoc)
-	needsIDs := map[string]struct{}{}
-	for _, a := range deadlines.overdue {
-		needsIDs[a.RecordID] = struct{}{}
-	}
-	for _, a := range deadlines.dueSoon {
-		if daysUntilDue(a.DueDate, ref) <= 1 {
+	// needs_action_now — same membership set as immediate_actions (Totals; panel may be capped).
+	// Status buckets are mutually exclusive; ad-hoc pending is additive. Overlap with other KPI cards is expected.
+	needsAlertTotal := deadlines.overdueTotal + deadlines.dueSoonTotal + deadlines.pendingConfirmTotal
+	if needsAlertTotal == 0 {
+		needsIDs := map[string]struct{}{}
+		for _, a := range deadlines.overdue {
 			needsIDs[a.RecordID] = struct{}{}
 		}
-	}
-	for _, a := range deadlines.pendingConfirm {
-		needsIDs[a.RecordID] = struct{}{}
-	}
-	adHocInNeeds := 0
-	for _, p := range append(adHoc.pendingFocal, adHoc.pendingAdmin...) {
-		key := "adhoc:" + p.ProposalID
-		if _, ok := needsIDs[key]; !ok {
-			needsIDs[key] = struct{}{}
-			adHocInNeeds++
+		for _, a := range deadlines.dueSoon {
+			needsIDs[a.RecordID] = struct{}{}
 		}
+		for _, a := range deadlines.pendingConfirm {
+			needsIDs[a.RecordID] = struct{}{}
+		}
+		needsAlertTotal = len(needsIDs)
 	}
+	needsCount := needsAlertTotal + adHoc.pendingTotal
 	needsAccuracy := AccuracyExact
-	if adHocInNeeds > 0 {
+	if adHoc.pendingTotal > 0 {
 		needsAccuracy = AccuracyEstimate
 	}
 	if deadlines.err != nil {
 		kpis[KpiNeedsActionNow] = mapKpi(unavailableKpi("count", "deadline_source_unavailable"))
 	} else {
 		kpis[KpiNeedsActionNow] = mapKpi(countKpi(
-			float64(len(needsIDs)),
+			float64(needsCount),
 			"count",
-			severityFromNeedsAction(len(needsIDs)),
+			severityFromNeedsAction(needsCount),
 			SourceDeadlineAlerts,
 			needsAccuracy,
 		))
 	}
 
-	// due_next_7_days — exact from BE due date window
+	// due_next_7_days — non-overdue open (DUE_SOON + UPCOMING) in [today, today+7]
 	if deadlines.err != nil {
 		kpis[KpiDueNext7Days] = mapKpi(unavailableKpi("count", "deadline_source_unavailable"))
 	} else {
@@ -122,39 +110,58 @@ func buildOverview(
 		))
 	}
 
-	// blocked_or_exception — estimate from rejected ad-hoc + escalation notifications
-	blockedCount := 0.0
-	blockedAccuracy := AccuracyUnavailable
-	if adHoc.skipped && inApp.err != nil {
-		kpis[KpiBlockedOrException] = mapKpi(unavailableKpi("count", ReasonOfficialDefinitionRequired))
-	} else {
-		blockedCount = float64(adHoc.rejectedTotal) + float64(countEscalationNotifications(inApp.items))
-		blockedAccuracy = AccuracyEstimate
-		kpis[KpiBlockedOrException] = mapKpi(countKpi(
-			blockedCount,
-			"count",
-			severityFromBlockedEstimate(int(blockedCount)),
-			SourceDerived,
-			blockedAccuracy,
-		))
-	}
-
-	// pending_approval
-	if adHoc.skipped && adHoc.pendingTotal == 0 {
-		kpis[KpiPendingApproval] = mapKpi(unavailableKpi("count", ReasonOfficialDefinitionRequired))
+	// pending_approval wire → processing open alerts (may overlap needs/incomplete views)
+	processingTotal := deadlines.overdueTotal + deadlines.dueSoonTotal + deadlines.upcomingTotal + deadlines.pendingConfirmTotal
+	if deadlines.err != nil {
+		kpis[KpiPendingApproval] = mapKpi(unavailableKpi("count", "deadline_source_unavailable"))
 	} else {
 		kpis[KpiPendingApproval] = mapKpi(countKpi(
-			float64(adHoc.pendingTotal),
+			float64(processingTotal),
 			"count",
-			severityFromPendingApproval(adHoc.pendingTotal),
-			SourceAdHoc,
-			AccuracyEstimate,
+			severityFromPendingApproval(processingTotal),
+			SourceDeadlineAlerts,
+			AccuracyExact,
 		))
 	}
 
-	// on_time_rate (percent of completed-on-time) remains unavailable in overview —
-	// completion sampling is Personal Ops. The health block uses on_time_count instead.
-	kpis[KpiOnTimeRate] = mapKpi(unavailableKpi("percent", ReasonCompletionTimestampOrDefinitionMissing))
+	// open_overdue wire → completed & overdue (completed_at day > due day); exclusive vs incomplete overdue
+	if deadlines.err != nil {
+		kpis[KpiOpenOverdue] = mapKpi(unavailableKpi("count", "deadline_source_unavailable"))
+	} else if !completion.ok {
+		kpis[KpiOpenOverdue] = mapKpi(unavailableKpi("count", ReasonCompletionSourceUnavailable))
+	} else {
+		kpis[KpiOpenOverdue] = mapKpi(countKpi(
+			float64(completion.completedOverdue),
+			"count",
+			severityFromOverdueCount(completion.completedOverdue),
+			SourceDisclosureCompletedAt,
+			AccuracyExact,
+		))
+	}
+
+	// blocked_or_exception wire → incomplete & overdue (OVERDUE open); exclusive vs completed overdue
+	if deadlines.err != nil {
+		kpis[KpiBlockedOrException] = mapKpi(unavailableKpi("count", "deadline_source_unavailable"))
+	} else {
+		kpis[KpiBlockedOrException] = mapKpi(countKpi(
+			float64(deadlines.overdueTotal),
+			"count",
+			severityFromBlockedEstimate(deadlines.overdueTotal),
+			SourceDeadlineAlerts,
+			AccuracyExact,
+		))
+	}
+
+	// on_time_rate — completed on-time / completed with valid due+completed_at; denom 0 → 0%
+	if !completion.ok {
+		kpis[KpiOnTimeRate] = mapKpi(unavailableKpi("percent", ReasonCompletionSourceUnavailable))
+	} else {
+		pct := onTimeRatePercent(completion.completedOnTime, completion.completedTotal)
+		m := mapKpi(countKpi(pct, "percent", severityFromOnTimeRate(pct, completion.completedTotal), SourceDisclosureCompletedAt, AccuracyExact))
+		m.CompletedOnTime = intPtr(completion.completedOnTime)
+		m.CompletedTotal = intPtr(completion.completedTotal)
+		kpis[KpiOnTimeRate] = m
+	}
 
 	overdueItems := deadlines.overdue
 	buckets := bucketOverdueAge(overdueItems, ref)
@@ -179,6 +186,12 @@ func buildOverview(
 	if inApp.warn != "" {
 		meta.Warnings = append(meta.Warnings, inApp.warn)
 		meta.Partial = true
+	}
+	if !completion.ok {
+		meta.Warnings = append(meta.Warnings, "completion stats unavailable for on-time / completed-overdue KPIs")
+		meta.Partial = true
+	} else {
+		meta.Sources = append(meta.Sources, SourceDisclosureCompletedAt)
 	}
 	if !adHoc.skipped {
 		meta.Sources = append(meta.Sources, SourceAdHoc)
@@ -299,6 +312,13 @@ func severityFromPendingApproval(n int) string {
 		return "neutral"
 	}
 	return "success"
+}
+
+func severityFromOnTimeRate(pct float64, sample int) string {
+	if sample <= 0 {
+		return "neutral"
+	}
+	return severityFromRate(pct)
 }
 
 func severityFromRate(rate float64) string {

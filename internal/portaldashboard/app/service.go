@@ -29,11 +29,12 @@ type Service interface {
 }
 
 type service struct {
-	auth      authapp.Service
-	deadlines deadlinealertsapp.Service
-	adHoc     adhocapp.Service // nil when ad-hoc feature disabled
-	inApp     inappapp.Service
-	company   CompanyReader // optional
+	auth        authapp.Service
+	deadlines   deadlinealertsapp.Service
+	adHoc       adhocapp.Service // nil when ad-hoc feature disabled
+	inApp       inappapp.Service
+	company     CompanyReader // optional
+	completedAt CompletedAtReader // optional; when nil completion KPIs unavailable
 }
 
 func NewService(
@@ -42,8 +43,9 @@ func NewService(
 	adHoc adhocapp.Service,
 	inApp inappapp.Service,
 	company CompanyReader,
+	completedAt CompletedAtReader,
 ) Service {
-	return &service{auth: auth, deadlines: deadlines, adHoc: adHoc, inApp: inApp, company: company}
+	return &service{auth: auth, deadlines: deadlines, adHoc: adHoc, inApp: inApp, company: company, completedAt: completedAt}
 }
 
 type GetOverviewRequest struct {
@@ -92,7 +94,9 @@ func (s *service) GetOverview(ctx context.Context, sub Subject, rangeInput domai
 
 	inApp := s.fetchInApp(ctx, sub.UserID, sub.CompanyID)
 
-	resp := buildOverview(company, dr, deadlines, adHoc, inApp)
+	completion := s.fetchCompletion(ctx, deadlineSub, dr, deadlines)
+
+	resp := buildOverview(company, dr, deadlines, adHoc, inApp, completion)
 	return &resp, nil
 }
 
@@ -149,7 +153,8 @@ func (s *service) fetchDeadlines(ctx context.Context, sub deadlinealertsapp.Subj
 
 	start7, end7 := domain.Next7DaysWindow(dr)
 	dueIn7 := 0
-	for _, st := range []string{"OVERDUE", "DUE_SOON", "UPCOMING", "PENDING_CONFIRM"} {
+	// Non-terminal upcoming window only (exclude OVERDUE / PENDING_CONFIRM).
+	for _, st := range []string{"DUE_SOON", "UPCOMING"} {
 		r, err := s.deadlines.ListDeadlineAlerts(ctx, deadlinealertsapp.ListDeadlineAlertsRequest{
 			Subject:   sub,
 			Status:    st,
@@ -164,13 +169,77 @@ func (s *service) fetchDeadlines(ctx context.Context, sub deadlinealertsapp.Subj
 		dueIn7 += r.Total
 	}
 
+	doneItems, err := s.listAllDeadlineAlerts(ctx, sub, "DONE", dr.From, dr.To)
+	if err != nil {
+		return out, err
+	}
+
 	out.overdue = overdueResp.Items
 	out.dueSoon = dueSoonResp.Items
 	out.pendingConfirm = pendingResp.Items
 	out.upcoming = upcomingResp.Items
+	out.done = doneItems
 	out.overdueTotal = overdueResp.Total
+	out.dueSoonTotal = dueSoonResp.Total
+	out.pendingConfirmTotal = pendingResp.Total
+	out.upcomingTotal = upcomingResp.Total
 	out.dueIn7Days = dueIn7
 	return out, nil
+}
+
+func (s *service) listAllDeadlineAlerts(
+	ctx context.Context,
+	sub deadlinealertsapp.Subject,
+	status, start, end string,
+) ([]deadlinealertsapp.DeadlineAlertDTO, error) {
+	const pageSize = 100
+	var all []deadlinealertsapp.DeadlineAlertDTO
+	page := 1
+	for {
+		resp, err := s.deadlines.ListDeadlineAlerts(ctx, deadlinealertsapp.ListDeadlineAlertsRequest{
+			Subject:   sub,
+			Status:    status,
+			StartDate: start,
+			EndDate:   end,
+			Page:      page,
+			PageSize:  pageSize,
+		})
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, resp.Items...)
+		if len(resp.Items) < pageSize || len(all) >= resp.Total {
+			break
+		}
+		page++
+		if page > 50 {
+			break
+		}
+	}
+	return all, nil
+}
+
+func (s *service) fetchCompletion(
+	ctx context.Context,
+	sub deadlinealertsapp.Subject,
+	dr domain.DateRange,
+	deadlines deadlineFetch,
+) completionFetch {
+	if s.completedAt == nil {
+		return completionFetch{ok: false, err: fmt.Errorf("completed_at reader not configured")}
+	}
+	// DueDate already resolved by deadlinealerts (terminal: planned then ad-hoc).
+	candidates := append([]deadlinealertsapp.DeadlineAlertDTO{}, deadlines.done...)
+	candidates = append(candidates, deadlines.pendingConfirm...)
+	ids := make([]string, 0, len(candidates))
+	for _, a := range candidates {
+		ids = append(ids, a.RecordID)
+	}
+	completedMap, err := s.completedAt.MapCompletedAt(ctx, sub.CompanyID, ids)
+	if err != nil {
+		return completionFetch{ok: false, err: err}
+	}
+	return computeCompletionFromAlerts(candidates, completedMap, dr.Loc)
 }
 
 func (s *service) fetchAdHoc(ctx context.Context, sub adhocapp.Subject) adHocFetch {
