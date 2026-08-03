@@ -1,3 +1,11 @@
+## 2026-08-03 - Company Premium Backend implementation plan
+
+- task type: source audit + phase implementation plan only (no code/migration/deploy)
+- discovered: CompanyTierResolver = max member `user_subscription_tiers` (`COMPANY_TIER_RESOLVER_NOT_BILLING_SOT`); paid-plan Case B; GetOwnCompany + `/me/companies` lack plan; recommend A+B shared `companyplan.Reader`
+- evidence: `docs/ai-cache/company-premium-backend-implementation-plan-2026-08-03/`
+- verdict: **COMPANY_PREMIUM_IMPLEMENTATION_PLAN_READY**
+- next: Product/Backend/Security approve SoT (B1 vs C) then Phase 0
+
 ## 2026-08-03 - Operational Dashboard real KPI — DEV coordinated deploy + smoke
 
 - task type: DEV coordinated BE+FE deploy + authenticated smoke; pointer only in this repo

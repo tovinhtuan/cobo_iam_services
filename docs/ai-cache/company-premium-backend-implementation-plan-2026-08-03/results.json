@@ -1,0 +1,79 @@
+{
+  "task": "Company Premium Backend Implementation Plan",
+  "mode": "SOURCE_AUDIT_AND_IMPLEMENTATION_PLAN_ONLY",
+  "backend": {
+    "repo": "cobo_iam_services",
+    "branch": "recovery/lost-changes-audit-20260717-153324",
+    "baselineCommit": "9284a31e05ed79da416cd33cfc89ded64dc74442",
+    "workingTreeClean": false,
+    "dirtyClassification": "GENERATED_ARTIFACT deploy-artifacts/web/dist only",
+    "sourceChanged": false
+  },
+  "frontend": {
+    "repo": "cobo_web_design",
+    "branch": "recovery/lost-changes-audit-20260717-153324",
+    "baselineCommit": "b6631498fe6b348bdb59e314c69199683293870b",
+    "sourceChanged": false
+  },
+  "discovery": {
+    "companyTierResolverLocated": true,
+    "companyTierResolverSemantics": "COMPANY_TIER_RESOLVER_NOT_BILLING_SOT — max active member user_subscription_tiers",
+    "paidPlanSourceCase": "B",
+    "companyProfileEndpointLocated": true,
+    "authorizedCompaniesEndpointLocated": true,
+    "selectedCompanyContractLocated": true,
+    "permissionModelLocated": true,
+    "cacheModelLocated": true,
+    "cacheModelNote": "no plan cache today; effective-access cache unrelated"
+  },
+  "domain": {
+    "userTierSeparatedFromCompanyPlan": true,
+    "entitlementSeparatedFromBilling": true,
+    "sourceOfTruthRecommended": "Case C company_subscriptions long-term; Case B1 entitlement display only with Product approval",
+    "productDecisionsRemaining": [
+      "sot_b1_vs_c",
+      "free_vs_omit",
+      "enterprise_badge",
+      "status_enum",
+      "display_name_owner",
+      "remove_personal_premium_timing"
+    ],
+    "securityDecisionsRemaining": [
+      "platform_cms_company_detail_plan_exposure"
+    ]
+  },
+  "api": {
+    "optionsCompared": [
+      "A_GetOwnCompany",
+      "B_me_companies",
+      "C_dedicated_plan",
+      "D_conflict_widgets_rejected"
+    ],
+    "recommendedOption": "A_plus_B_shared_companyplan_Reader",
+    "recommendedStatus": "RECOMMENDED_PENDING_APPROVAL",
+    "schemaProposed": true,
+    "nullSemanticsDefined": true,
+    "statusEnumDefined": true,
+    "backwardCompatibilityDefined": true
+  },
+  "implementationPlan": {
+    "exactFilesMapped": true,
+    "phasesDefined": true,
+    "testsDefined": true,
+    "migrationImpactDefined": true,
+    "cacheDefined": true,
+    "observabilityDefined": true,
+    "rolloutDefined": true,
+    "rollbackDefined": true,
+    "feFollowUpDefined": true
+  },
+  "safety": {
+    "backendSourceChanged": false,
+    "frontendSourceChanged": false,
+    "migrationExecuted": false,
+    "deploymentExecuted": false,
+    "productionTouched": false,
+    "unrelatedFilesDiscarded": false
+  },
+  "verdict": "COMPANY_PREMIUM_IMPLEMENTATION_PLAN_READY"
+}

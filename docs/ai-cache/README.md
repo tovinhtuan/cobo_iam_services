@@ -36,6 +36,11 @@ Before marking the task done, run a pre-merge review and report risks, gaps, and
 
 
 
+## Company Premium Backend implementation plan (2026-08-03)
+
+- Verdict **COMPANY_PREMIUM_IMPLEMENTATION_PLAN_READY**: `docs/ai-cache/company-premium-backend-implementation-plan-2026-08-03/`
+- Deep audit @ `9284a31`; Case B paid-plan source; A+B API `RECOMMENDED_PENDING_APPROVAL`; exact file map + phases; no source/migration/deploy
+
 ## Operational Dashboard real KPI aggregation (2026-08-03)
 
 - Verdict **DASHBOARD_REAL_KPI_IMPLEMENTATION_READY** — pointer `docs/ai-cache/dashboard-kpi-real-aggregation-2026-08-03/`; canonical pack in FE sibling
