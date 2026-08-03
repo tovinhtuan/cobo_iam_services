@@ -46,5 +46,11 @@
     "deploymentExecuted": false,
     "productionTouched": false
   },
+  "commits": [
+    {"repo": "cobo_iam_services", "sha": "11531dd", "message": "feat(dashboard): calculate operational alert KPIs from real data"},
+    {"repo": "cobo_web_design", "sha": "89b0c11", "message": "fix(portal): align dashboard KPI labels order and on-time rate"},
+    {"repo": "cobo_web_design", "sha": "3e37d7b", "message": "docs(dashboard): add real KPI aggregation evidence"},
+    {"repo": "cobo_iam_services", "sha": "71a14d8", "message": "docs(dashboard): add real KPI aggregation evidence"}
+  ],
   "verdict": "DASHBOARD_REAL_KPI_IMPLEMENTATION_READY"
 }
