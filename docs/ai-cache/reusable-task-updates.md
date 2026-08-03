@@ -1,3 +1,11 @@
+## 2026-08-03 - Operational Dashboard real KPI aggregation
+
+- task type: BE portaldashboard completion KPIs + FE sibling
+- evidence (FE canonical): `../cobo_web_design/docs/ai-cache/dashboard-kpi-real-aggregation-2026-08-03/`
+- BE pointer: `docs/ai-cache/dashboard-kpi-real-aggregation-2026-08-03/`
+- verified: `go test ./internal/portaldashboard/...` PASS; `go build ./cmd/api` PASS; `docker compose -f docker-compose.dev.yml build api` PASS; `go test ./...` PARTIAL pre-existing
+- verdict: **DASHBOARD_REAL_KPI_IMPLEMENTATION_READY**
+
 ## 2026-07-31 - Resolved deadline rule (Phase 7 FINAL HANDOFF)
 
 - task type: pointer only; canonical evidence in FE pack 90–106
