@@ -1,56 +1,12 @@
 {
-  "task": "Operational Dashboard Real KPI Aggregation",
-  "environment": "LOCAL_TEST_ONLY",
-  "mode": "SOURCE_IMPLEMENTATION",
-  "contract": {
-    "labelsUpdated": true,
-    "orderUpdated": true,
-    "realAggregation": true,
-    "onTimeDenominator": "COMPLETED_WITH_VALID_DUE_AND_COMPLETED_AT",
-    "zeroDenominatorDisplaysZeroPercent": true,
-    "tooltipImplemented": true,
-    "consumerAudit": "REMAP_IN_PLACE_ALLOWED",
-    "dueDateAlignment": "ALIGNED_VIA_DEADLINEALERTS_DUEDATE"
-  },
-  "kpis": {
-    "immediateAction": true,
-    "dueWithin7Days": true,
-    "processingAlerts": true,
-    "completedOverdue": true,
-    "incompleteOverdue": true,
-    "onTimeRate": true
-  },
-  "guards": {
-    "stateTransitionsChanged": false,
-    "deadlineCalculationChanged": false,
-    "workflowLogicChanged": false,
-    "permissionsChanged": false,
-    "otherDashboardSectionsChanged": false,
-    "databaseSchemaChanged": false,
-    "overlapCardsDocumented": true,
-    "completedVsIncompleteExclusive": true
-  },
-  "quality": {
-    "backendTargetedTests": "PASS",
-    "frontendTargetedTests": "PASS",
-    "backendFullSuite": "PARTIAL_PREEXISTING_FAILURES",
-    "frontendFullSuite": "PARTIAL_PREEXISTING_FAILURES",
-    "backendBuild": "PASS",
-    "frontendBuild": "PASS",
-    "dockerComposeBuildApi": "PASS",
-    "diffCheck": "PASS"
-  },
-  "safety": {
-    "migrationExecuted": false,
-    "databaseMutated": false,
-    "deploymentExecuted": false,
-    "productionTouched": false
-  },
-  "commits": [
-    {"repo": "cobo_iam_services", "sha": "11531dd", "message": "feat(dashboard): calculate operational alert KPIs from real data"},
-    {"repo": "cobo_web_design", "sha": "89b0c11", "message": "fix(portal): align dashboard KPI labels order and on-time rate"},
-    {"repo": "cobo_web_design", "sha": "3e37d7b", "message": "docs(dashboard): add real KPI aggregation evidence"},
-    {"repo": "cobo_iam_services", "sha": "71a14d8", "message": "docs(dashboard): add real KPI aggregation evidence"}
-  ],
-  "verdict": "DASHBOARD_REAL_KPI_IMPLEMENTATION_READY"
+  "task": "Operational Dashboard Real KPI — DEV Coordinated Deployment",
+  "environment": "DEV",
+  "mode": "COORDINATED_BE_FE_DEPLOY_AND_SMOKE",
+  "canonicalEvidence": "../cobo_web_design/docs/ai-cache/dashboard-kpi-real-aggregation-2026-08-03/",
+  "backendDeployedSourceSha": "bcbe14ffcbef03904ba6aa389ca081b17cbe0a12",
+  "backendFeatureCommit": "11531dd",
+  "frontendDeployedSourceSha": "2160dd17e2deb5640e98fc6894a19b6904b6e7f3",
+  "frontendFeatureCommit": "89b0c11",
+  "verdict": "PASS_WITH_DATA_LIMITATIONS",
+  "note": "Full results.json and smoke artifacts live in FE sibling pack"
 }

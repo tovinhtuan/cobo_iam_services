@@ -1,3 +1,10 @@
+## 2026-08-03 - Operational Dashboard real KPI — DEV coordinated deploy + smoke
+
+- task type: DEV coordinated BE+FE deploy + authenticated smoke; pointer only in this repo
+- canonical: `../cobo_web_design/docs/ai-cache/dashboard-kpi-real-aggregation-2026-08-03/` (`20`–`43`)
+- BE: source `bcbe14f` / feature `11531dd`; API-only recreate; worker/MySQL unchanged
+- verdict: **PASS_WITH_DATA_LIMITATIONS**
+
 ## 2026-08-03 - Operational Dashboard real KPI aggregation
 
 - task type: BE portaldashboard completion KPIs + FE sibling

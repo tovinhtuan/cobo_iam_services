@@ -39,6 +39,7 @@ Before marking the task done, run a pre-merge review and report risks, gaps, and
 ## Operational Dashboard real KPI aggregation (2026-08-03)
 
 - Verdict **DASHBOARD_REAL_KPI_IMPLEMENTATION_READY** — pointer `docs/ai-cache/dashboard-kpi-real-aggregation-2026-08-03/`; canonical pack in FE sibling
+- DEV deploy smoke **PASS_WITH_DATA_LIMITATIONS** — see `20-dev-deploy-pointer.md` + FE `results.json`
 - Remap overview KPIs + completed_at read-only; no migration/deploy
 
 ## Workflow alert tasks 500 + source UX (DEV)
