@@ -1,3 +1,13 @@
+## 2026-08-04 - Company Premium Phase 1 domain + migration foundation
+
+- task type: Case C domain/repo foundation + schema/fixtures (no API/deploy/DEV migrate)
+- decisions: reader returns full status; overlap reject via TX+FOR UPDATE; fixtures c_001 Premium / c_002 none; migrations 0125+0126
+- package: `internal/subscription/companyplan`
+- verified: `go test ./internal/subscription/...` PASS; vet/gofmt/diff-check PASS
+- evidence: `docs/ai-cache/company-premium-implementation-2026-08-04/` (`03`–`05`)
+- verdict: **PHASE_1_DOMAIN_FOUNDATION_READY**
+- next: await confirmation → Phase 2 (wire Reader; still no HTTP until Phase 3)
+
 ## 2026-08-04 - Company Premium Phase 0 contract lock
 
 - task type: approval gate + contract lock only (no code/migration/deploy)
