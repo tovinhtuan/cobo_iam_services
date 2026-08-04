@@ -1,0 +1,55 @@
+{
+  "capturedAtUTC": "2026-08-04T03:15:01Z",
+  "repo": "cobo_iam_services",
+  "branch": "recovery/lost-changes-audit-20260717-153324",
+  "head": "dd0ff1ece41025fece6b2d70f1afe54bc25940e2",
+  "phase4Commits": {
+    "fix": "439207a",
+    "docs": "dd0ff1e"
+  },
+  "dirtyTree": {
+    "clean": true,
+    "classification": []
+  },
+  "devTarget": {
+    "host": "88.216.208.0",
+    "sshPort": 21239,
+    "path": "/root/cobo_project",
+    "hostname": "avi-server1"
+  },
+  "api": {
+    "containerId": "7ef9acc3e491",
+    "imageSha256": "0f1b9d3e87d53a198fc12bdac633a58bc39764ec5ef4294f5c2fc7e09913e060",
+    "startedAt": "2026-08-03T02:48:24.555929915Z",
+    "binarySha256": "c827dc4e56e6ea03a0fed9be582f6d65af9be2de83edfb09e78faaca84529de8",
+    "healthz": "ok",
+    "readyz": "ready"
+  },
+  "worker": {
+    "containerId": "4813a214d09c",
+    "imageSha256": "0f1b9d3e87d53a198fc12bdac633a58bc39764ec5ef4294f5c2fc7e09913e060",
+    "startedAt": "2026-07-29T09:57:33.829263803Z"
+  },
+  "frontend": {
+    "containerName": "cobo-web-design",
+    "containerId": "bd2f7015529d",
+    "asset": "index--sUVChju.js",
+    "assetSha256": "f42656a3e16f4e78e4c69fe7593fa235a6e9cc91bea1d7164145e025cdb468bf"
+  },
+  "mysql": {
+    "containerId": "bbc16f5a400e",
+    "version": "8.0.46",
+    "startedAt": "2026-07-11T08:34:02.303701286Z",
+    "latestMigrationObserved": "0124_company_business_sectors_multi.up.sql",
+    "companySubscriptionsExists": false,
+    "devFixtureRows": 0,
+    "companiesC001C002Present": true
+  },
+  "rollback": {
+    "previousApiBinarySha256": "c827dc4e56e6ea03a0fed9be582f6d65af9be2de83edfb09e78faaca84529de8",
+    "previousApiContainerId": "7ef9acc3e491",
+    "approvedMigrateCommand": "make deploy-dev MODE=migrate",
+    "approvedDeployCommand": "make deploy-dev MODE=be"
+  },
+  "secretsRecorded": false
+}

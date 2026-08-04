@@ -1,0 +1,25 @@
+{
+  "command": "make deploy-dev MODE=migrate",
+  "exitCode": 0,
+  "startedAtUTC": "2026-08-04T03:16:29Z",
+  "endedAtUTC": "2026-08-04T03:17:20Z",
+  "applied": [
+    {
+      "file": "0125_company_subscriptions.up.sql",
+      "executedAt": "2026-08-04 03:17:12",
+      "result": "PASS"
+    },
+    {
+      "file": "seed_dev_company_subscriptions.sql",
+      "executedAt": "2026-08-04 03:17:15",
+      "result": "PASS"
+    }
+  ],
+  "apiRestartedDuringMigrate": false,
+  "workerRestartedDuringMigrate": false,
+  "frontendRestartedDuringMigrate": false,
+  "mysqlRestartedDuringMigrate": false,
+  "healthzAfter": "ok",
+  "readyzAfter": "ready",
+  "secretsInLog": false
+}

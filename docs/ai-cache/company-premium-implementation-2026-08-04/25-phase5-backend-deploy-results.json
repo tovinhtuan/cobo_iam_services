@@ -1,0 +1,34 @@
+{
+  "command": "make deploy-dev MODE=be",
+  "exitCode": 0,
+  "deployedAtUTC": "2026-08-04T03:20:20Z",
+  "sourceHead": "dd0ff1ece41025fece6b2d70f1afe54bc25940e2",
+  "api": {
+    "previousContainerId": "7ef9acc3e491",
+    "previousStartedAt": "2026-08-03T02:48:24.555929915Z",
+    "previousBinarySha256": "c827dc4e56e6ea03a0fed9be582f6d65af9be2de83edfb09e78faaca84529de8",
+    "newContainerId": "0c395a626c6f",
+    "newStartedAt": "2026-08-04T03:20:20.717051498Z",
+    "newBinarySha256": "2358961fea42b49ab2e2c02e65b8bdc7ac7cdc0409f9a6ffdf7426a6344a5067",
+    "healthz": "ok",
+    "readyz": "ready"
+  },
+  "worker": {
+    "recreatedByApprovedMakefile": true,
+    "previousStartedAt": "2026-07-29T09:57:33.829263803Z",
+    "newStartedAt": "2026-08-04T03:20:20.718329208Z",
+    "newContainerId": "6bd60e40709a",
+    "sourceChangeInPhase5": false
+  },
+  "frontend": {
+    "deployed": false,
+    "containerId": "bd2f7015529d",
+    "startedAt": "2026-08-03T10:21:42.820369272Z",
+    "assetSha256Unchanged": "f42656a3e16f4e78e4c69fe7593fa235a6e9cc91bea1d7164145e025cdb468bf"
+  },
+  "mysql": {
+    "restarted": false,
+    "startedAt": "2026-07-11T08:34:02.303701286Z"
+  },
+  "localDockerComposeBuildApi": "PASS"
+}

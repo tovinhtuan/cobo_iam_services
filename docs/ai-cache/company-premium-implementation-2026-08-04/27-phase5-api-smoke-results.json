@@ -1,0 +1,51 @@
+{
+  "baseUrl": "http://88.216.208.0:8080",
+  "accountsUsed": [
+    "user@example.com",
+    "admin.dn@example.com",
+    "platform.tenant.admin@example.com"
+  ],
+  "credentialsStored": false,
+  "tokensStored": false,
+  "checks": {
+    "healthz": { "pass": true, "status": 200 },
+    "readyz": { "pass": true, "status": 200 },
+    "unauthenticatedGetOwnCompany": { "pass": true, "status": 401 },
+    "getOwnCompanyPremiumC001": {
+      "pass": true,
+      "account": "user@example.com",
+      "plan": {
+        "code": "PREMIUM",
+        "display_name": "Premium",
+        "status": "ACTIVE",
+        "source": "COMPANY_SUBSCRIPTION"
+      }
+    },
+    "getOwnCompanyNoPlanC002": {
+      "pass": true,
+      "account": "platform.tenant.admin@example.com",
+      "plan": null,
+      "planKeyPresent": true
+    },
+    "meCompaniesMixed": {
+      "pass": true,
+      "account": "user@example.com",
+      "c001": "PREMIUM/ACTIVE",
+      "c002": null
+    },
+    "contractConsistencyC001": { "pass": true },
+    "patchOwnCompanyRuntime": {
+      "pass": true,
+      "account": "admin.dn@example.com",
+      "planPreserved": true,
+      "restored": true
+    },
+    "cmsPlatformDetailNotEnriched": {
+      "pass": true,
+      "path": "/api/v1/platform/cms/admin/companies/c_001",
+      "wrapper": "data",
+      "data.plan": null
+    }
+  },
+  "verdict": "API_SMOKE_PASS"
+}

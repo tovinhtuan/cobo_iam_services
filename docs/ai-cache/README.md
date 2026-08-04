@@ -36,12 +36,17 @@ Before marking the task done, run a pre-merge review and report risks, gaps, and
 
 
 
+## Company Premium implementation — Phase 5 Backend DEV (2026-08-04)
+
+- Verdict **PHASE_5_BACKEND_DEV_READY**: `docs/ai-cache/company-premium-implementation-2026-08-04/` (`20`–`35`)
+- DEV migrate 0125 + seed; live concurrency PASS_DEV; API deployed `dd0ff1e`; smoke/authz/FE compat PASS
+- Awaiting user confirmation before Phase 6 Frontend
+
 ## Company Premium implementation — Phase 4 backend quality (2026-08-04)
 
 - Verdict **PHASE_4_BACKEND_QUALITY_READY**: `docs/ai-cache/company-premium-implementation-2026-08-04/` (`14`–`19`)
 - PatchOwnCompany plan-before-mutation fix; STRICT/security/migration static gates; task failures 0
-- `go test ./...` NOT_FULL_PASS (8 pre-existing); open risk `MYSQL_CONCURRENCY_VALIDATION_PENDING_PHASE_5`
-- Awaiting user confirmation before Phase 5 DEV migrate/deploy
+- Phase 5 complete — see entry above
 
 ## Company Premium implementation — Phase 3 API exposure (2026-08-04)
 

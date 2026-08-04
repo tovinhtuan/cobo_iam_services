@@ -1,0 +1,26 @@
+{
+  "test": "TestMySQLCreate_ConcurrentOverlap_EmptyCompany",
+  "command": "MYSQL_TEST_DSN=cobo:***@tcp(127.0.0.1:13306)/cobo_iam?parseTime=true&loc=UTC go test ./internal/subscription/companyplan/ -count=1 -v -run TestMySQLCreate_ConcurrentOverlap_EmptyCompany",
+  "accessPath": "SSH local port-forward 13306->DEV mysql:3306",
+  "mysqlUser": "cobo",
+  "mysqlVersion": "8.0.46",
+  "skipped": false,
+  "exitCode": 0,
+  "result": "PASS",
+  "observed": {
+    "isolation": "REPEATABLE_READ",
+    "lockStrategy": "companies.FOR_UPDATE+occupying.FOR_UPDATE",
+    "globalLock": false,
+    "expectedOutcome": "1 success + 1 ErrOverlap"
+  },
+  "cleanup": {
+    "concurrencyTestRowsRemaining": 0,
+    "tempCompaniesRemaining": 0,
+    "devFixtureIntact": true,
+    "postTestManualCleanup": true,
+    "note": "one leftover concurrency_test row cleaned via approved docker exec after test"
+  },
+  "riskCleared": "MYSQL_CONCURRENCY_VALIDATION_PASS_DEV",
+  "previousRisk": "MYSQL_CONCURRENCY_VALIDATION_PENDING_PHASE_5",
+  "note": "root@% lacks INSERT on companies from docker-bridge host; cobo@% ALL on cobo_iam used for live proof"
+}

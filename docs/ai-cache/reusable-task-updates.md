@@ -1,3 +1,13 @@
+## 2026-08-04 - Company Premium Phase 5 Backend DEV migrate/deploy/smoke
+
+- task type: DEV migration + live concurrency + API deploy + authenticated smoke
+- target: `88.216.208.0` via `make deploy-dev MODE=migrate` then `MODE=be`
+- verified: 0125+seed applied; concurrency PASS_DEV; healthz/readyz; GetOwn/me plan contract; FE asset unchanged
+- risk cleared: `MYSQL_CONCURRENCY_VALIDATION_PASS_DEV`
+- evidence: `docs/ai-cache/company-premium-implementation-2026-08-04/` (`20`–`35`)
+- verdict: **PHASE_5_BACKEND_DEV_READY**
+- next: await confirmation → Phase 6 Frontend
+
 ## 2026-08-04 - Company Premium Phase 4 backend quality + Patch safety
 
 - task type: quality/security/migration static + PatchOwnCompany response-safety fix

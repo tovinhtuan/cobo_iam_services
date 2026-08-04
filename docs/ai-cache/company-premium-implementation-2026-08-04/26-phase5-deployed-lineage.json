@@ -1,0 +1,19 @@
+{
+  "deployedCommit": "dd0ff1ece41025fece6b2d70f1afe54bc25940e2",
+  "phaseCommitsIncluded": [
+    "11b2fd4",
+    "2d2f185",
+    "a1a4db2",
+    "4a42fff",
+    "439207a",
+    "dd0ff1e"
+  ],
+  "apiBinarySha256": "2358961fea42b49ab2e2c02e65b8bdc7ac7cdc0409f9a6ffdf7426a6344a5067",
+  "rollbackBinarySha256": "c827dc4e56e6ea03a0fed9be582f6d65af9be2de83edfb09e78faaca84529de8",
+  "migrationApplied": [
+    "0125_company_subscriptions.up.sql",
+    "seed_dev_company_subscriptions.sql"
+  ],
+  "frontendCommitDeployedInThisPhase": null,
+  "productionTouched": false
+}

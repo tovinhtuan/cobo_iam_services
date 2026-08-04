@@ -1,0 +1,23 @@
+{
+  "companyId": "c_001",
+  "resolveWindow": "same session / consecutive requests",
+  "getOwnCompanyPlan": {
+    "code": "PREMIUM",
+    "display_name": "Premium",
+    "status": "ACTIVE",
+    "source": "COMPANY_SUBSCRIPTION"
+  },
+  "meCompaniesItemPlan": {
+    "code": "PREMIUM",
+    "display_name": "Premium",
+    "status": "ACTIVE",
+    "source": "COMPANY_SUBSCRIPTION"
+  },
+  "equal": true,
+  "c002": {
+    "getOwnCompanyPlan": null,
+    "meCompaniesItemPlan": null,
+    "equal": true
+  },
+  "verdict": "CONTRACT_CONSISTENCY_PASS"
+}

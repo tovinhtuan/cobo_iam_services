@@ -1,0 +1,14 @@
+{
+  "window": "since API recreate 2026-08-04T03:20:20Z plus smoke window",
+  "panic": false,
+  "unknownTableErrors": false,
+  "companySubscriptionsFkErrors": false,
+  "nPlusOneSymptoms": false,
+  "billingSensitiveLogFields": false,
+  "startupListening": true,
+  "notes": [
+    "No panic/FATAL/unknown table lines in recent api logs",
+    "Tokens redacted when sampling logs",
+    "STRICT outage behavior not induced on shared DEV"
+  ]
+}
