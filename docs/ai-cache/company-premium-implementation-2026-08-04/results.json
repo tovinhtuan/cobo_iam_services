@@ -12,7 +12,10 @@
     "trialShowsPremiumBadge": false,
     "apiShape": "additive_plan_on_GetOwnCompany_and_me_companies",
     "sharedReader": true,
-    "nextMigrationProposed": "0125_company_subscriptions"
+    "nextMigrationProposed": "0125_company_subscriptions",
+    "readerReturnsFullStatus": true,
+    "badgeFilterLocation": "frontend_only",
+    "overlapPolicy": "reject_occupying_windows"
   },
   "phase0": {
     "status": "COMPLETE",
@@ -25,10 +28,18 @@
     "verdict": "PHASE_0_CONTRACT_LOCKED"
   },
   "phase1": {
-    "status": "NOT_STARTED",
-    "domainImplemented": false,
-    "migrationImplemented": false,
-    "testsPass": false
+    "status": "COMPLETE",
+    "domainImplemented": true,
+    "migrationImplemented": true,
+    "migrationNumbers": [
+      "0125",
+      "0126"
+    ],
+    "testsPass": true,
+    "apiExposed": false,
+    "devMigrationApplied": false,
+    "deployed": false,
+    "verdict": "PHASE_1_DOMAIN_FOUNDATION_READY"
   },
   "phase2": {
     "status": "NOT_STARTED",
@@ -79,6 +90,6 @@
     "backendSourceChanged": false,
     "frontendSourceChanged": false
   },
-  "verdict": "PHASE_0_CONTRACT_LOCKED",
-  "awaiting": "user_confirmation_to_start_phase_1"
+  "verdict": "PHASE_1_DOMAIN_FOUNDATION_READY",
+  "awaiting": "user_confirmation_to_start_phase_2"
 }

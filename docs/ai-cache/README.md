@@ -36,6 +36,12 @@ Before marking the task done, run a pre-merge review and report risks, gaps, and
 
 
 
+## Company Premium implementation — Phase 1 domain foundation (2026-08-04)
+
+- Verdict **PHASE_1_DOMAIN_FOUNDATION_READY**: `docs/ai-cache/company-premium-implementation-2026-08-04/` (`03`–`05`)
+- Package `internal/subscription/companyplan`; migrations `0125` schema + `0126` DEV fixtures; tests PASS; no API/deploy/migrate-DEV
+- Awaiting user confirmation before Phase 2 (shared Reader wiring — already in package; HTTP still unwired)
+
 ## Company Premium implementation — Phase 0 contract lock (2026-08-04)
 
 - Verdict **PHASE_0_CONTRACT_LOCKED**: `docs/ai-cache/company-premium-implementation-2026-08-04/`

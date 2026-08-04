@@ -1,0 +1,10 @@
+{
+  "command": "go test ./internal/subscription/companyplan/... -count=1",
+  "exit": 0,
+  "package": "ok",
+  "vet": "go vet ./internal/subscription/companyplan/... PASS",
+  "gofmt": "applied",
+  "diffCheck": "PASS",
+  "subscriptionTree": "go test ./internal/subscription/... PASS",
+  "note": "No MySQL integration test in Phase 1; MemoryRepository covers overlap/read/cleanup semantics"
+}
