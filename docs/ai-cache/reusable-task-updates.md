@@ -1,3 +1,13 @@
+## 2026-08-04 - Company Premium Phase 3 API exposure
+
+- task type: additive `plan` on GetOwnCompany + `/me/companies`
+- decisions: STRICT enrichment errors (never silent null); shared PlanDTO; batch GetEffectivePlans; CMS detail not enriched
+- verified: targeted handler/service tests PASS; `go test ./internal/subscription/...` PASS; docker compose build api PASS
+- open risk: `MYSQL_CONCURRENCY_VALIDATION_PENDING_PHASE_5` (not claimed verified)
+- evidence: `docs/ai-cache/company-premium-implementation-2026-08-04/` (`10`–`13`)
+- verdict: **PHASE_3_API_EXPOSURE_READY**
+- next: await confirmation → Phase 4
+
 ## 2026-08-04 - Company Premium Phase 2 shared Reader + hardening
 
 - task type: shared Reader service, DEV seed retraction of 0126, overlap gap-lock fix

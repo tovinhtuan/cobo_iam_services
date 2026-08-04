@@ -36,11 +36,18 @@ Before marking the task done, run a pre-merge review and report risks, gaps, and
 
 
 
+## Company Premium implementation — Phase 3 API exposure (2026-08-04)
+
+- Verdict **PHASE_3_API_EXPOSURE_READY**: `docs/ai-cache/company-premium-implementation-2026-08-04/` (`10`–`13`)
+- Additive `plan` on GetOwnCompany + `/me/companies`; STRICT enrichment errors; batch reader; no FE/deploy/migrate-DEV
+- Open risk carried: `MYSQL_CONCURRENCY_VALIDATION_PENDING_PHASE_5` (not Phase 3 gate)
+- Awaiting user confirmation before Phase 4
+
 ## Company Premium implementation — Phase 2 shared Reader (2026-08-04)
 
 - Verdict **PHASE_2_SHARED_READER_READY** (+ `MYSQL_CONCURRENCY_VALIDATION_PENDING_PHASE_5`): `docs/ai-cache/company-premium-implementation-2026-08-04/` (`06`–`09`)
 - Shared `companyplan.Service`; 0126 retracted → DEV seed; parent-company FOR UPDATE; no API/FE/deploy
-- Awaiting user confirmation before Phase 3 (API exposure)
+- Phase 3 API exposure complete — see entry above
 
 ## Company Premium implementation — Phase 1 domain foundation (2026-08-04)
 

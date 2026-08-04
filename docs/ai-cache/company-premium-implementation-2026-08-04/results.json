@@ -17,51 +17,36 @@
     "badgeFilterLocation": "frontend_only",
     "overlapPolicy": "reject_occupying_windows",
     "devFixtureMechanism": "seed_dev_company_subscriptions.sql",
-    "numberedDevFixture0126": "RETRACTED_PHASE_2"
+    "numberedDevFixture0126": "RETRACTED_PHASE_2",
+    "planEnrichmentErrorPolicy": "STRICT"
   },
   "phase0": {
     "status": "COMPLETE",
-    "approvalGatePass": true,
-    "baselineVerified": true,
-    "contractLocked": true,
-    "sourceCodeWritten": false,
-    "migrationWritten": false,
-    "deployed": false,
     "verdict": "PHASE_0_CONTRACT_LOCKED"
   },
   "phase1": {
     "status": "COMPLETE",
-    "domainImplemented": true,
-    "migrationImplemented": true,
     "migrationNumbers": ["0125"],
-    "testsPass": true,
-    "apiExposed": false,
-    "devMigrationApplied": false,
-    "deployed": false,
     "verdict": "PHASE_1_DOMAIN_FOUNDATION_READY"
   },
   "phase2": {
     "status": "COMPLETE",
-    "readerImplemented": true,
-    "repositoryHardened": true,
-    "repositoriesReimplemented": false,
-    "devFixtureMovedToSeed": true,
-    "parentCompanyForUpdate": true,
-    "batchReader": true,
-    "cacheAdded": false,
-    "apiExposed": false,
-    "devMigrationApplied": false,
-    "deployed": false,
-    "testsPass": true,
     "mysqlConcurrencyValidation": "MYSQL_CONCURRENCY_VALIDATION_PENDING_PHASE_5",
     "verdict": "PHASE_2_SHARED_READER_READY"
   },
   "phase3": {
-    "status": "NOT_STARTED",
-    "companyProfilePlanExposed": false,
-    "meCompaniesPlanExposed": false,
-    "authzPass": false,
-    "contractTestsPass": false
+    "status": "COMPLETE",
+    "companyProfilePlanExposed": true,
+    "meCompaniesPlanExposed": true,
+    "batchOnMeCompanies": true,
+    "errorPolicy": "STRICT",
+    "cmsPlatformDetailEnriched": false,
+    "authzPass": true,
+    "contractTestsPass": true,
+    "devMigrationApplied": false,
+    "deployed": false,
+    "frontendChanged": false,
+    "verdict": "PHASE_3_API_EXPOSURE_READY"
   },
   "phase4": {
     "status": "NOT_STARTED",
@@ -70,28 +55,11 @@
   },
   "phase5": {
     "status": "NOT_STARTED",
-    "migrationAppliedDev": false,
-    "backendDeployedDev": false,
-    "apiSmokePass": false,
     "mysqlConcurrencyRevalidationRequired": true
   },
-  "phase6": {
-    "status": "NOT_STARTED",
-    "personalPremiumRemoved": false,
-    "companyPremiumImplemented": false,
-    "switchNoStalePass": false,
-    "testsPass": false
-  },
-  "phase7": {
-    "status": "NOT_STARTED",
-    "frontendDeployedDev": false,
-    "authenticatedSmokePass": false,
-    "responsivePass": false
-  },
-  "phase8": {
-    "status": "NOT_STARTED",
-    "finalEvidenceComplete": false
-  },
+  "phase6": { "status": "NOT_STARTED" },
+  "phase7": { "status": "NOT_STARTED" },
+  "phase8": { "status": "NOT_STARTED" },
   "safety": {
     "productionTouched": false,
     "fallbackToUserTierUsed": false,
@@ -100,7 +68,7 @@
     "backendSourceChanged": true,
     "frontendSourceChanged": false
   },
-  "verdict": "PHASE_2_SHARED_READER_READY",
+  "verdict": "PHASE_3_API_EXPOSURE_READY",
   "openRisks": ["MYSQL_CONCURRENCY_VALIDATION_PENDING_PHASE_5"],
-  "awaiting": "user_confirmation_to_start_phase_3_api_exposure"
+  "awaiting": "user_confirmation_to_start_phase_4"
 }
