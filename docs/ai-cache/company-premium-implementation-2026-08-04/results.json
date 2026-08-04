@@ -77,7 +77,9 @@
     "evidenceRepo": "cobo_web_design",
     "evidencePath": "docs/ai-cache/company-premium-fe-dev-2026-08-04/",
     "deployedAsset": "index-BgDmCxEY.js",
-    "backendRestarted": false
+    "backendRestarted": false,
+    "switch503RevalidationPass": true,
+    "nginxRateFix": "api_per_ip_20rps_burst40"
   },
   "phase8": {
     "status": "NOT_STARTED"

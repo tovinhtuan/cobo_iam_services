@@ -1,3 +1,10 @@
+## 2026-08-04 - Company Premium Phase 7.1 nginx rate-limit fix
+
+- root cause: FE nginx `api_per_ip` 5r/s caused 503 during company-switch refresh storm
+- fix: `deploy-artifacts/web/nginx.conf` → 20r/s burst40; web recreate only
+- evidence FE: `../cobo_web_design/docs/ai-cache/company-premium-fe-dev-2026-08-04/` (`17`–`20`)
+- verdict: **PHASE_7_COMPANY_PREMIUM_DEV_READY**
+
 ## 2026-08-04 - Company Premium Phase 7 FE DEV deploy (pointer)
 
 - task type: pointer — FE evidence in cobo_web_design
