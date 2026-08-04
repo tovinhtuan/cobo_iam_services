@@ -36,12 +36,19 @@ Before marking the task done, run a pre-merge review and report risks, gaps, and
 
 
 
+## Company Premium implementation — Phase 4 backend quality (2026-08-04)
+
+- Verdict **PHASE_4_BACKEND_QUALITY_READY**: `docs/ai-cache/company-premium-implementation-2026-08-04/` (`14`–`19`)
+- PatchOwnCompany plan-before-mutation fix; STRICT/security/migration static gates; task failures 0
+- `go test ./...` NOT_FULL_PASS (8 pre-existing); open risk `MYSQL_CONCURRENCY_VALIDATION_PENDING_PHASE_5`
+- Awaiting user confirmation before Phase 5 DEV migrate/deploy
+
 ## Company Premium implementation — Phase 3 API exposure (2026-08-04)
 
 - Verdict **PHASE_3_API_EXPOSURE_READY**: `docs/ai-cache/company-premium-implementation-2026-08-04/` (`10`–`13`)
 - Additive `plan` on GetOwnCompany + `/me/companies`; STRICT enrichment errors; batch reader; no FE/deploy/migrate-DEV
 - Open risk carried: `MYSQL_CONCURRENCY_VALIDATION_PENDING_PHASE_5` (not Phase 3 gate)
-- Awaiting user confirmation before Phase 4
+- Phase 4 complete — see entry above
 
 ## Company Premium implementation — Phase 2 shared Reader (2026-08-04)
 

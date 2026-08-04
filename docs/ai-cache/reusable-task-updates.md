@@ -1,3 +1,14 @@
+## 2026-08-04 - Company Premium Phase 4 backend quality + Patch safety
+
+- task type: quality/security/migration static + PatchOwnCompany response-safety fix
+- decisions: resolve plan before PATCH mutation (option b); STRICT unchanged; no DEV apply
+- verified: task-related failures 0; subscription/plan/me/owncompany targeted PASS; docker build api PASS
+- full `go test ./...`: NOT_FULL_PASS — 8 pre-existing failures (see 14-phase4-quality-results.json)
+- open risk: `MYSQL_CONCURRENCY_VALIDATION_PENDING_PHASE_5`
+- evidence: `docs/ai-cache/company-premium-implementation-2026-08-04/` (`14`–`19`)
+- verdict: **PHASE_4_BACKEND_QUALITY_READY**
+- next: await confirmation → Phase 5 DEV migration/deployment
+
 ## 2026-08-04 - Company Premium Phase 3 API exposure
 
 - task type: additive `plan` on GetOwnCompany + `/me/companies`

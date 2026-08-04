@@ -3,55 +3,33 @@
   "mode": "PHASED_WITH_CONFIRMATION",
   "contract": {
     "caseCApproved": true,
-    "caseCApprovalSource": "user_instruction_2026-08-04",
-    "historicalDecisionLogAlone": "NOT_APPROVED_WOULD_BLOCK",
     "sourceOfTruth": "company_subscriptions",
     "noPlanSemantics": "plan:null",
     "fallbackToUserTier": false,
     "badgeRule": "PREMIUM+ACTIVE+COMPANY_SUBSCRIPTION",
-    "trialShowsPremiumBadge": false,
-    "apiShape": "additive_plan_on_GetOwnCompany_and_me_companies",
     "sharedReader": true,
-    "nextMigrationProposed": "0125_company_subscriptions",
-    "readerReturnsFullStatus": true,
-    "badgeFilterLocation": "frontend_only",
-    "overlapPolicy": "reject_occupying_windows",
-    "devFixtureMechanism": "seed_dev_company_subscriptions.sql",
-    "numberedDevFixture0126": "RETRACTED_PHASE_2",
-    "planEnrichmentErrorPolicy": "STRICT"
+    "planEnrichmentErrorPolicy": "STRICT",
+    "patchOwnCompanyPlanOrder": "resolve_before_mutation"
   },
-  "phase0": {
-    "status": "COMPLETE",
-    "verdict": "PHASE_0_CONTRACT_LOCKED"
-  },
-  "phase1": {
-    "status": "COMPLETE",
-    "migrationNumbers": ["0125"],
-    "verdict": "PHASE_1_DOMAIN_FOUNDATION_READY"
-  },
+  "phase0": { "status": "COMPLETE", "verdict": "PHASE_0_CONTRACT_LOCKED" },
+  "phase1": { "status": "COMPLETE", "verdict": "PHASE_1_DOMAIN_FOUNDATION_READY" },
   "phase2": {
     "status": "COMPLETE",
     "mysqlConcurrencyValidation": "MYSQL_CONCURRENCY_VALIDATION_PENDING_PHASE_5",
     "verdict": "PHASE_2_SHARED_READER_READY"
   },
-  "phase3": {
-    "status": "COMPLETE",
-    "companyProfilePlanExposed": true,
-    "meCompaniesPlanExposed": true,
-    "batchOnMeCompanies": true,
-    "errorPolicy": "STRICT",
-    "cmsPlatformDetailEnriched": false,
-    "authzPass": true,
-    "contractTestsPass": true,
-    "devMigrationApplied": false,
-    "deployed": false,
-    "frontendChanged": false,
-    "verdict": "PHASE_3_API_EXPOSURE_READY"
-  },
+  "phase3": { "status": "COMPLETE", "verdict": "PHASE_3_API_EXPOSURE_READY" },
   "phase4": {
-    "status": "NOT_STARTED",
-    "backendQualityPass": false,
-    "migrationValidationPass": false
+    "status": "COMPLETE",
+    "patchResponseSafetyFixed": true,
+    "migrationStaticValidationPass": true,
+    "devMigrationApplied": false,
+    "securityRegressionPass": true,
+    "taskRelatedFailures": 0,
+    "fullRepoTestPass": false,
+    "fullRepoPreExistingFailures": 8,
+    "mysqlConcurrencyValidation": "MYSQL_CONCURRENCY_VALIDATION_PENDING_PHASE_5",
+    "verdict": "PHASE_4_BACKEND_QUALITY_READY"
   },
   "phase5": {
     "status": "NOT_STARTED",
@@ -63,12 +41,11 @@
   "safety": {
     "productionTouched": false,
     "fallbackToUserTierUsed": false,
-    "unrelatedFilesDiscarded": false,
-    "credentialsStored": false,
-    "backendSourceChanged": true,
-    "frontendSourceChanged": false
+    "frontendSourceChanged": false,
+    "devMigrationApplied": false,
+    "deployed": false
   },
-  "verdict": "PHASE_3_API_EXPOSURE_READY",
+  "verdict": "PHASE_4_BACKEND_QUALITY_READY",
   "openRisks": ["MYSQL_CONCURRENCY_VALIDATION_PENDING_PHASE_5"],
-  "awaiting": "user_confirmation_to_start_phase_4"
+  "awaiting": "user_confirmation_to_start_phase_5_dev_migration_deployment"
 }

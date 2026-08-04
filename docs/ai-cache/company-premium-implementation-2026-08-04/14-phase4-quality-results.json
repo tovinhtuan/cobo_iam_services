@@ -1,0 +1,52 @@
+{
+  "phase": 4,
+  "verdict": "PHASE_4_BACKEND_QUALITY_READY",
+  "date": "2026-08-04",
+  "patchOwnCompanyFix": {
+    "bug": "post_commit_plan_reader_500",
+    "remediation": "resolve_plan_before_mutation",
+    "option": "b",
+    "strictPreserved": true
+  },
+  "mysqlConcurrency": "MYSQL_CONCURRENCY_VALIDATION_PENDING_PHASE_5",
+  "disposableMySQL": false,
+  "devMigrationApplied": false,
+  "devSeedApplied": false,
+  "deployed": false,
+  "frontendChanged": false,
+  "gates": {
+    "taskRelatedFailures": 0,
+    "goTestSubscription": "PASS",
+    "goTestCompanyPlanTargeted": "PASS",
+    "goTestGetOwnPatchMePlan": "PASS",
+    "goTestMigration0125Static": "PASS",
+    "goVetAffected": "PASS",
+    "gofmt": "PASS",
+    "gitDiffCheck": "PASS",
+    "dockerComposeBuildApi": "PASS",
+    "goTestDotDotDot": "NOT_FULL_PASS"
+  },
+  "fullRepoFailures": {
+    "count": 8,
+    "preExisting": true,
+    "tests": [
+      "TestUpdateNotificationRule_TierEnforcement_FlagOffAllowsPremium",
+      "TestCreateSelfServiceCompany_FeatureFlagOff",
+      "TestIntegration_platformCMSPrefix_dashboardCollectionsEntries",
+      "TestIntegration_platformCMSPrefix_entriesReviewsSchedulesContract",
+      "TestIntegration_disclosureTypeCatalog_adminUpsertAndVersioning",
+      "TestIntegration_disclosureTypeDetail_deadlineSummaryFixedDateWarnOnlyTimezone",
+      "TestIntegration_disclosureTypeDetail_deadlineSummaryFixedDateMoveNextWorkingDay",
+      "TestContract_VariableParity/workflow.approved"
+    ],
+    "packages": [
+      "internal/companyaccess/app",
+      "internal/companyaccess/transport/http",
+      "internal/httpserver",
+      "internal/notification/app"
+    ]
+  },
+  "operationalConsequence": {
+    "companyplanReadOutage": "/me/companies and GetOwnCompany return HTTP 500 (STRICT); list not partially degraded"
+  }
+}
