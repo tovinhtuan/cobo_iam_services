@@ -76,13 +76,28 @@ func (r *mysqlRepository) Create(ctx context.Context, plan CompanyPlan) error {
 	if err := ValidateCreate(plan); err != nil {
 		return err
 	}
-	tx, err := r.db.BeginTx(ctx, nil)
+	// REPEATABLE READ (InnoDB default): parent companies row lock serializes writers
+	// even when the company has zero subscription rows (SELECT … FOR UPDATE on empty
+	// company_subscriptions alone does not block concurrent inserts of a new company_id).
+	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead})
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	// Serialize writers per company: lock occupying rows (and a sentinel scan).
+	var lockedCompany string
+	err = tx.QueryRowContext(ctx,
+		`SELECT company_id FROM companies WHERE company_id = ? FOR UPDATE`,
+		plan.CompanyID,
+	).Scan(&lockedCompany)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrCompanyNotFound
+	}
+	if err != nil {
+		return err
+	}
+
+	// Also lock existing occupying rows for the company (predictable lock order after parent).
 	lockQ := `
 		SELECT id FROM company_subscriptions
 		WHERE company_id = ?

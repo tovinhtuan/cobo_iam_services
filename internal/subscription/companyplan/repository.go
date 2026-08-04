@@ -12,6 +12,9 @@ var ErrOverlap = errors.New("company_subscription_window_overlap")
 // ErrInvalidPlan is returned for invalid code/status/window inputs.
 var ErrInvalidPlan = errors.New("company_subscription_invalid")
 
+// ErrCompanyNotFound is returned when Create cannot lock the parent companies row.
+var ErrCompanyNotFound = errors.New("company_subscription_company_not_found")
+
 // Reader resolves commercial company plans. No plan → (nil, nil).
 // Does not apply Portal badge filtering; returns actual status when a covering row exists.
 type Reader interface {

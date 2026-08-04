@@ -124,6 +124,8 @@ seed_dev_identity_authorization.sql
 0121_workflow_step_description.up.sql
 0123_roles_classification.up.sql
 0124_company_business_sectors_multi.up.sql
+0125_company_subscriptions.up.sql
+seed_dev_company_subscriptions.sql
 "
 
 mysql_exec() {
