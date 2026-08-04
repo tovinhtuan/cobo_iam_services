@@ -15,7 +15,9 @@
     "nextMigrationProposed": "0125_company_subscriptions",
     "readerReturnsFullStatus": true,
     "badgeFilterLocation": "frontend_only",
-    "overlapPolicy": "reject_occupying_windows"
+    "overlapPolicy": "reject_occupying_windows",
+    "devFixtureMechanism": "seed_dev_company_subscriptions.sql",
+    "numberedDevFixture0126": "RETRACTED_PHASE_2"
   },
   "phase0": {
     "status": "COMPLETE",
@@ -31,10 +33,7 @@
     "status": "COMPLETE",
     "domainImplemented": true,
     "migrationImplemented": true,
-    "migrationNumbers": [
-      "0125",
-      "0126"
-    ],
+    "migrationNumbers": ["0125"],
     "testsPass": true,
     "apiExposed": false,
     "devMigrationApplied": false,
@@ -42,10 +41,20 @@
     "verdict": "PHASE_1_DOMAIN_FOUNDATION_READY"
   },
   "phase2": {
-    "status": "NOT_STARTED",
-    "readerImplemented": false,
-    "repositoryImplemented": false,
-    "testsPass": false
+    "status": "COMPLETE",
+    "readerImplemented": true,
+    "repositoryHardened": true,
+    "repositoriesReimplemented": false,
+    "devFixtureMovedToSeed": true,
+    "parentCompanyForUpdate": true,
+    "batchReader": true,
+    "cacheAdded": false,
+    "apiExposed": false,
+    "devMigrationApplied": false,
+    "deployed": false,
+    "testsPass": true,
+    "mysqlConcurrencyValidation": "MYSQL_CONCURRENCY_VALIDATION_PENDING_PHASE_5",
+    "verdict": "PHASE_2_SHARED_READER_READY"
   },
   "phase3": {
     "status": "NOT_STARTED",
@@ -63,7 +72,8 @@
     "status": "NOT_STARTED",
     "migrationAppliedDev": false,
     "backendDeployedDev": false,
-    "apiSmokePass": false
+    "apiSmokePass": false,
+    "mysqlConcurrencyRevalidationRequired": true
   },
   "phase6": {
     "status": "NOT_STARTED",
@@ -87,9 +97,10 @@
     "fallbackToUserTierUsed": false,
     "unrelatedFilesDiscarded": false,
     "credentialsStored": false,
-    "backendSourceChanged": false,
+    "backendSourceChanged": true,
     "frontendSourceChanged": false
   },
-  "verdict": "PHASE_1_DOMAIN_FOUNDATION_READY",
-  "awaiting": "user_confirmation_to_start_phase_2"
+  "verdict": "PHASE_2_SHARED_READER_READY",
+  "openRisks": ["MYSQL_CONCURRENCY_VALIDATION_PENDING_PHASE_5"],
+  "awaiting": "user_confirmation_to_start_phase_3_api_exposure"
 }

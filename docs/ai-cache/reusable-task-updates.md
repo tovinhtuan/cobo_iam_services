@@ -1,12 +1,22 @@
+## 2026-08-04 - Company Premium Phase 2 shared Reader + hardening
+
+- task type: shared Reader service, DEV seed retraction of 0126, overlap gap-lock fix
+- decisions: seed via `seed_dev_company_subscriptions.sql` only; Create locks `companies` FOR UPDATE; no cache; batch dedupe/empty short-circuit
+- risk: `MYSQL_CONCURRENCY_VALIDATION_PENDING_PHASE_5` (MySQL unavailable locally)
+- verified: `go test ./internal/subscription/...` PASS (concurrency SKIP); vet/gofmt/diff-check; docker build api (see 07)
+- evidence: `docs/ai-cache/company-premium-implementation-2026-08-04/` (`06`–`09`)
+- verdict: **PHASE_2_SHARED_READER_READY**
+- next: await confirmation → Phase 3 API exposure only
+
 ## 2026-08-04 - Company Premium Phase 1 domain + migration foundation
 
 - task type: Case C domain/repo foundation + schema/fixtures (no API/deploy/DEV migrate)
-- decisions: reader returns full status; overlap reject via TX+FOR UPDATE; fixtures c_001 Premium / c_002 none; migrations 0125+0126
+- decisions: reader returns full status; overlap reject via TX+FOR UPDATE; fixtures c_001 Premium / c_002 none; schema 0125 (0126 retracted Phase 2 → seed)
 - package: `internal/subscription/companyplan`
 - verified: `go test ./internal/subscription/...` PASS; vet/gofmt/diff-check PASS
 - evidence: `docs/ai-cache/company-premium-implementation-2026-08-04/` (`03`–`05`)
 - verdict: **PHASE_1_DOMAIN_FOUNDATION_READY**
-- next: await confirmation → Phase 2 (wire Reader; still no HTTP until Phase 3)
+- next: Phase 2 complete — see entry above
 
 ## 2026-08-04 - Company Premium Phase 0 contract lock
 

@@ -4,7 +4,7 @@
 
 1. **Reader returns full commercial plan** covering `at` with actual `status`; `nil` only when no covering record. Badge filtering is FE-only (`PREMIUM`+`ACTIVE`+`COMPANY_SUBSCRIPTION`).
 2. **Overlap = reject** for occupying statuses (`ACTIVE`|`TRIAL`|`SUSPENDED`) with intersecting half-open windows. Enforcement: `BEGIN` → `SELECT … FOR UPDATE` → validate → `INSERT` → `COMMIT`. No partial unique index.
-3. **DEV fixtures:** migration `0126_dev_company_subscription_fixtures` — `c_001` PREMIUM ACTIVE (`origin=dev_fixture`); `c_002` no row. Cleanup: `.down.sql` or `DELETE … WHERE origin='dev_fixture'`.
+3. **DEV fixtures (Phase 1 draft used numbered `0126`; Phase 2 corrected):** must **not** live on shared numbered migration chain. Canonical: `migrations/seed_dev_company_subscriptions.sql` via `run_dev_migrations.sh` only — `c_001` PREMIUM ACTIVE (`origin=dev_fixture`); `c_002` no row. Cleanup: `DELETE … WHERE origin='dev_fixture'`.
 4. **Migration number:** verified latest on HEAD was `0124` → schema `0125_company_subscriptions`.
 
 ## Delivered
@@ -20,7 +20,7 @@
 
 ### Migrations
 - `0125_company_subscriptions.up.sql` / `.down.sql`
-- `0126_dev_company_subscription_fixtures.up.sql` / `.down.sql`
+- ~~`0126_dev_company_subscription_fixtures.*`~~ — **retracted in Phase 2**; replaced by `seed_dev_company_subscriptions.sql`
 
 ## Explicitly not done
 - API exposure / handler wiring
