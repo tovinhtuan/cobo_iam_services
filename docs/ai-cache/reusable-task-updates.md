@@ -1,3 +1,12 @@
+## 2026-08-04 - Company Premium Phase 0 contract lock
+
+- task type: approval gate + contract lock only (no code/migration/deploy)
+- Case C: approved via user instruction elevating prior recommendation; historical decision log alone was not approval
+- locked: `company_subscriptions` SoT; additive `plan` / `plan:null`; shared Reader; A+B endpoints; badge PREMIUM+ACTIVE only; no user-tier fallback
+- evidence: `docs/ai-cache/company-premium-implementation-2026-08-04/`
+- verdict: **PHASE_0_CONTRACT_LOCKED**
+- next: await user confirmation → Phase 1 domain + migration foundation
+
 ## 2026-08-03 - Company Premium Backend implementation plan
 
 - task type: source audit + phase implementation plan only (no code/migration/deploy)

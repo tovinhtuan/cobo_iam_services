@@ -1,0 +1,84 @@
+{
+  "task": "Company Premium End-to-End Implementation",
+  "mode": "PHASED_WITH_CONFIRMATION",
+  "contract": {
+    "caseCApproved": true,
+    "caseCApprovalSource": "user_instruction_2026-08-04",
+    "historicalDecisionLogAlone": "NOT_APPROVED_WOULD_BLOCK",
+    "sourceOfTruth": "company_subscriptions",
+    "noPlanSemantics": "plan:null",
+    "fallbackToUserTier": false,
+    "badgeRule": "PREMIUM+ACTIVE+COMPANY_SUBSCRIPTION",
+    "trialShowsPremiumBadge": false,
+    "apiShape": "additive_plan_on_GetOwnCompany_and_me_companies",
+    "sharedReader": true,
+    "nextMigrationProposed": "0125_company_subscriptions"
+  },
+  "phase0": {
+    "status": "COMPLETE",
+    "approvalGatePass": true,
+    "baselineVerified": true,
+    "contractLocked": true,
+    "sourceCodeWritten": false,
+    "migrationWritten": false,
+    "deployed": false,
+    "verdict": "PHASE_0_CONTRACT_LOCKED"
+  },
+  "phase1": {
+    "status": "NOT_STARTED",
+    "domainImplemented": false,
+    "migrationImplemented": false,
+    "testsPass": false
+  },
+  "phase2": {
+    "status": "NOT_STARTED",
+    "readerImplemented": false,
+    "repositoryImplemented": false,
+    "testsPass": false
+  },
+  "phase3": {
+    "status": "NOT_STARTED",
+    "companyProfilePlanExposed": false,
+    "meCompaniesPlanExposed": false,
+    "authzPass": false,
+    "contractTestsPass": false
+  },
+  "phase4": {
+    "status": "NOT_STARTED",
+    "backendQualityPass": false,
+    "migrationValidationPass": false
+  },
+  "phase5": {
+    "status": "NOT_STARTED",
+    "migrationAppliedDev": false,
+    "backendDeployedDev": false,
+    "apiSmokePass": false
+  },
+  "phase6": {
+    "status": "NOT_STARTED",
+    "personalPremiumRemoved": false,
+    "companyPremiumImplemented": false,
+    "switchNoStalePass": false,
+    "testsPass": false
+  },
+  "phase7": {
+    "status": "NOT_STARTED",
+    "frontendDeployedDev": false,
+    "authenticatedSmokePass": false,
+    "responsivePass": false
+  },
+  "phase8": {
+    "status": "NOT_STARTED",
+    "finalEvidenceComplete": false
+  },
+  "safety": {
+    "productionTouched": false,
+    "fallbackToUserTierUsed": false,
+    "unrelatedFilesDiscarded": false,
+    "credentialsStored": false,
+    "backendSourceChanged": false,
+    "frontendSourceChanged": false
+  },
+  "verdict": "PHASE_0_CONTRACT_LOCKED",
+  "awaiting": "user_confirmation_to_start_phase_1"
+}

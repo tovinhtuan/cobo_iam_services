@@ -36,6 +36,12 @@ Before marking the task done, run a pre-merge review and report risks, gaps, and
 
 
 
+## Company Premium implementation — Phase 0 contract lock (2026-08-04)
+
+- Verdict **PHASE_0_CONTRACT_LOCKED**: `docs/ai-cache/company-premium-implementation-2026-08-04/`
+- Case C approved via user instruction 2026-08-04; `company_subscriptions` SoT; `plan: null` no-plan; badge = PREMIUM+ACTIVE+COMPANY_SUBSCRIPTION
+- Awaiting user confirmation before Phase 1 (domain + migration)
+
 ## Company Premium Backend implementation plan (2026-08-03)
 
 - Verdict **COMPANY_PREMIUM_IMPLEMENTATION_PLAN_READY**: `docs/ai-cache/company-premium-backend-implementation-plan-2026-08-03/`

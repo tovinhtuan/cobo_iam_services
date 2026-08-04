@@ -1,0 +1,29 @@
+{
+  "capturedAt": "2026-08-04T02:05:11Z",
+  "backend": {
+    "repo": "cobo_iam_services",
+    "path": "/home/icom/go/src/myself/backend_api_cobo/cobo_iam_services",
+    "branch": "recovery/lost-changes-audit-20260717-153324",
+    "head": "98696cf91522cd483568f5fd2896857b695f0049",
+    "knownPlanDocsCommit": "3219312",
+    "knownDiscoveryBaseline": "9284a31",
+    "driftNote": "HEAD moved 9284a31 → 98696cf (fix avatar lineage); plan docs 3219312 still in history; working tree clean",
+    "workingTreeClean": true,
+    "dirtyClassification": []
+  },
+  "frontend": {
+    "repo": "cobo_web_design",
+    "path": "/home/icom/go/src/myself/backend_api_cobo/cobo_web_design",
+    "branch": "recovery/lost-changes-audit-20260717-153324",
+    "head": "02703b965ef89bd1a2d200354fd2ba1859b56f8d",
+    "lineage": [
+      "b663149",
+      "2f8ee63",
+      "02703b9"
+    ],
+    "workingTreeClean": true,
+    "phase0SourceChanged": false
+  },
+  "priorPlanPack": "docs/ai-cache/company-premium-backend-implementation-plan-2026-08-03/",
+  "diffCheck": "PASS_EMPTY"
+}
