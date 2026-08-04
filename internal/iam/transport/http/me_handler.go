@@ -9,10 +9,11 @@ import (
 
 	authapp "github.com/cobo/cobo_iam_services/internal/authorization/app"
 	caapp "github.com/cobo/cobo_iam_services/internal/companyaccess/app"
-	inappapp "github.com/cobo/cobo_iam_services/internal/inappnotification/app"
 	iamapp "github.com/cobo/cobo_iam_services/internal/iam/app"
 	"github.com/cobo/cobo_iam_services/internal/iam/loginpassword"
+	inappapp "github.com/cobo/cobo_iam_services/internal/inappnotification/app"
 	"github.com/cobo/cobo_iam_services/internal/platform/httpx"
+	"github.com/cobo/cobo_iam_services/internal/subscription/companyplan"
 )
 
 type MeHandler struct {
@@ -27,6 +28,8 @@ type MeHandler struct {
 	avatars          *iamapp.AvatarService
 	inAppNotifSvc    inappapp.Service
 	publicAPIBaseURL string
+	companyPlans     companyplan.Reader
+	companyPlanNow   func() time.Time
 }
 
 func NewMeHandler(
@@ -58,6 +61,24 @@ func NewMeHandler(
 // WithInAppNotifications wires the in-app notification service into MeHandler.
 func (m *MeHandler) WithInAppNotifications(svc inappapp.Service) {
 	m.inAppNotifSvc = svc
+}
+
+// WithCompanyPlanReader wires Case C commercial plan enrichment for /me/companies.
+// STRICT: reader errors fail the request; never silent plan:null.
+func (m *MeHandler) WithCompanyPlanReader(r companyplan.Reader) {
+	m.companyPlans = r
+}
+
+// WithCompanyPlanNow overrides the resolve timestamp for plan enrichment (tests).
+func (m *MeHandler) WithCompanyPlanNow(now func() time.Time) {
+	m.companyPlanNow = now
+}
+
+func (m *MeHandler) resolveCompanyPlanAt() time.Time {
+	if m.companyPlanNow != nil {
+		return m.companyPlanNow().UTC()
+	}
+	return time.Now().UTC()
 }
 
 func (m *MeHandler) Register(mux *http.ServeMux) {
@@ -139,9 +160,9 @@ func (m *MeHandler) me(w http.ResponseWriter, r *http.Request) {
 		userPayload["avatar_updated_at"] = avatarUpdatedAt
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{
-		"user":                    userPayload,
-		"contact":                 m.loadContactBlock(r.Context(), claims.Sub),
-		"profile_schema_version":  1,
+		"user":                   userPayload,
+		"contact":                m.loadContactBlock(r.Context(), claims.Sub),
+		"profile_schema_version": 1,
 		"current_context": map[string]any{
 			"company_id":    claims.CompanyID,
 			"membership_id": claims.MembershipID,
@@ -165,6 +186,24 @@ func (m *MeHandler) companies(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, m.h.log, err)
 		return
 	}
+
+	// Batch plan lookup for authorized membership company IDs only (no arbitrary lookup, no N+1).
+	plansByCompany := map[string]*companyplan.CompanyPlan{}
+	if m.companyPlans != nil && len(items) > 0 {
+		ids := make([]string, 0, len(items))
+		for _, it := range items {
+			ids = append(ids, it.CompanyID)
+		}
+		plansByCompany, err = m.companyPlans.GetEffectivePlans(r.Context(), ids, m.resolveCompanyPlanAt())
+		if err != nil {
+			httpx.WriteError(w, m.h.log, caapp.MapCompanyPlanReadError(err))
+			return
+		}
+		if plansByCompany == nil {
+			plansByCompany = map[string]*companyplan.CompanyPlan{}
+		}
+	}
+
 	out := make([]map[string]any, 0, len(items))
 	for _, it := range items {
 		entry := map[string]any{
@@ -176,6 +215,7 @@ func (m *MeHandler) companies(w http.ResponseWriter, r *http.Request) {
 			"roles":             []string{},
 			"titles":            []string{},
 			"address":           m.companyAddress(r.Context(), it.CompanyID),
+			"plan":              companyplan.ToPlanDTO(plansByCompany[it.CompanyID]),
 		}
 		if roles, err := m.members.GetMembershipRoles(r.Context(), it.MembershipID); err == nil {
 			entry["roles"] = roles

@@ -88,6 +88,12 @@ func TestGetOwnCompany_Handler_200(t *testing.T) {
 	if body["company_name"] != "Test Corp" {
 		t.Fatalf("company_name=%v want Test Corp", body["company_name"])
 	}
+	if _, ok := body["plan"]; !ok {
+		t.Fatal("plan key must always exist on GetOwnCompany")
+	}
+	if body["plan"] != nil {
+		t.Fatalf("plan=%v want null when no companyplan reader wired", body["plan"])
+	}
 }
 
 func TestGetOwnCompany_Handler_404WhenNoCompany(t *testing.T) {

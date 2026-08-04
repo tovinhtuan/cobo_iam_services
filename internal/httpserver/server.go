@@ -87,6 +87,7 @@ import (
 	remindermysql "github.com/cobo/cobo_iam_services/internal/reminder/infra/mysql"
 	reminderobserve "github.com/cobo/cobo_iam_services/internal/reminder/infra/observe"
 	reminderhttp "github.com/cobo/cobo_iam_services/internal/reminder/transport/http"
+	"github.com/cobo/cobo_iam_services/internal/subscription/companyplan"
 	"github.com/cobo/cobo_iam_services/internal/subscription/entitlement"
 	workflowapp "github.com/cobo/cobo_iam_services/internal/workflow/app"
 	workflowinmem "github.com/cobo/cobo_iam_services/internal/workflow/infra/inmemory"
@@ -341,8 +342,16 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 		n.SetInAppNotifier(inAppSvc)
 	}
 
+	// Case C commercial plan reader (shared by GetOwnCompany + /me/companies). No cache.
+	var companyPlanRepo companyplan.Repository = companyplan.NewMemoryRepository()
+	if pool != nil {
+		companyPlanRepo = companyplan.NewMySQLRepository(pool)
+	}
+	companyPlanReader := companyplan.NewService(companyPlanRepo)
+
 	meHandler := iamhttp.NewMeHandler(iamHandler, identity, memberQuery, authSvc, adminRepo, pool, iamSvc, loginPWD, avatarSvc, cfg.PublicAPIBaseURL)
 	meHandler.WithInAppNotifications(inAppSvc)
+	meHandler.WithCompanyPlanReader(companyPlanReader)
 
 	var disclosureRepo disclosureapp.Repository = disclosureinmem.NewRepository()
 	var workflowRepo workflowapp.Repository = workflowinmem.NewRepository()
@@ -560,6 +569,7 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 	adminOpts = append(adminOpts, companyaccessapp.WithSubscriptionTierEnforcementEnabled(cfg.SubscriptionTierEnforcementEnabled))
 	adminOpts = append(adminOpts, companyaccessapp.WithAuditRepository(auditRepo))
 	adminOpts = append(adminOpts, companyaccessapp.WithEffectiveAccessCache(projectionStore))
+	adminOpts = append(adminOpts, companyaccessapp.WithCompanyPlanReader(companyPlanReader))
 	adminSvc := companyaccessapp.NewAdminService(adminRepo, authSvc, id, adminOpts...)
 	adminHandler := companyaccesshttp.NewAdminHandler(adminSvc, tokenManager, auditSvc)
 	adminHandler.WithTokenIssuer(tokenManager, sessionRepo)

@@ -9,46 +9,49 @@ import (
 	"strings"
 	"time"
 
-	authapp "github.com/cobo/cobo_iam_services/internal/authorization/app"
 	auditapp "github.com/cobo/cobo_iam_services/internal/audit/app"
-	"github.com/cobo/cobo_iam_services/internal/companyaccess/conflict"
+	authapp "github.com/cobo/cobo_iam_services/internal/authorization/app"
 	"github.com/cobo/cobo_iam_services/internal/companyaccess/configversion"
+	"github.com/cobo/cobo_iam_services/internal/companyaccess/conflict"
 	"github.com/cobo/cobo_iam_services/internal/companyaccess/dependency"
 	"github.com/cobo/cobo_iam_services/internal/disclosure/app/applicability"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 	"github.com/cobo/cobo_iam_services/internal/platform/idgen"
 	"github.com/cobo/cobo_iam_services/internal/platform/refreshtoken"
+	"github.com/cobo/cobo_iam_services/internal/subscription/companyplan"
 	"golang.org/x/crypto/bcrypt"
 )
 
 type adminService struct {
-	repo                             AdminRepository
-	auth                             authapp.Service
-	idg                              idgen.Generator
-	invMailer                        InvitationMailer
-	emailVerifIssuer                 EmailVerificationIssuer
-	inviteTTL                        time.Duration
-	inviteDefaultRoleCode            string
-	tierLookup                       func(ctx context.Context, userID string) string
-	notificationRulesConsumerEnabled bool
+	repo                               AdminRepository
+	auth                               authapp.Service
+	idg                                idgen.Generator
+	invMailer                          InvitationMailer
+	emailVerifIssuer                   EmailVerificationIssuer
+	inviteTTL                          time.Duration
+	inviteDefaultRoleCode              string
+	tierLookup                         func(ctx context.Context, userID string) string
+	notificationRulesConsumerEnabled   bool
 	subscriptionTierEnforcementEnabled bool
-	dispatchSimulator                NotificationDispatchSimulator
-	conflictReader                   conflict.SnapshotReader
-	dependencyReader                 dependency.Reader
-	auditRepo                        auditapp.Repository
-	companyTierLookup                func(ctx context.Context, companyID string) string
-	effectiveAccessCache             EffectiveAccessCache
-	exportStore                      *configExportStore
+	dispatchSimulator                  NotificationDispatchSimulator
+	conflictReader                     conflict.SnapshotReader
+	dependencyReader                   dependency.Reader
+	auditRepo                          auditapp.Repository
+	companyTierLookup                  func(ctx context.Context, companyID string) string
+	effectiveAccessCache               EffectiveAccessCache
+	exportStore                        *configExportStore
+	companyPlan                        companyplan.Reader
+	companyPlanNow                     func() time.Time
 }
 
 func NewAdminService(repo AdminRepository, auth authapp.Service, idg idgen.Generator, opts ...AdminOption) AdminService {
 	s := &adminService{
-		repo:        repo,
-		auth:        auth,
-		idg:         idg,
-		inviteTTL:   72 * time.Hour,
+		repo:                  repo,
+		auth:                  auth,
+		idg:                   idg,
+		inviteTTL:             72 * time.Hour,
 		inviteDefaultRoleCode: "user_thuong",
-		exportStore: newConfigExportStore(),
+		exportStore:           newConfigExportStore(),
 	}
 	for _, o := range opts {
 		if o != nil {
@@ -1484,7 +1487,14 @@ func (s *adminService) GetOwnCompany(ctx context.Context, req GetOwnCompanyReque
 	if err := s.authorize(ctx, req.Subject, "company.view", req.Subject.CompanyID); err != nil {
 		return nil, err
 	}
-	return s.repo.GetCompanyPlatform(ctx, req.Subject.CompanyID)
+	detail, err := s.repo.GetCompanyPlatform(ctx, req.Subject.CompanyID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.attachOwnCompanyPlan(ctx, req.Subject.CompanyID, detail); err != nil {
+		return nil, err
+	}
+	return detail, nil
 }
 
 func (s *adminService) PatchOwnCompany(ctx context.Context, req PatchOwnCompanyRequest) (*PlatformCompanyDetail, error) {
@@ -1544,7 +1554,14 @@ func (s *adminService) PatchOwnCompany(ctx context.Context, req PatchOwnCompanyR
 	}); err != nil {
 		return nil, err
 	}
-	return s.repo.GetCompanyPlatform(ctx, req.Subject.CompanyID)
+	detail, err := s.repo.GetCompanyPlatform(ctx, req.Subject.CompanyID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.attachOwnCompanyPlan(ctx, req.Subject.CompanyID, detail); err != nil {
+		return nil, err
+	}
+	return detail, nil
 }
 
 func (s *adminService) AddDirectPermission(ctx context.Context, req AddDirectPermissionRequest) error {

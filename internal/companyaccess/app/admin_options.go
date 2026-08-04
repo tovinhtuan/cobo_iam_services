@@ -8,6 +8,7 @@ import (
 	auditapp "github.com/cobo/cobo_iam_services/internal/audit/app"
 	"github.com/cobo/cobo_iam_services/internal/companyaccess/conflict"
 	"github.com/cobo/cobo_iam_services/internal/companyaccess/dependency"
+	"github.com/cobo/cobo_iam_services/internal/subscription/companyplan"
 )
 
 // AdminOption configures AdminService construction.
@@ -104,5 +105,20 @@ func WithAuditRepository(repo auditapp.Repository) AdminOption {
 func WithEffectiveAccessCache(cache EffectiveAccessCache) AdminOption {
 	return func(s *adminService) {
 		s.effectiveAccessCache = cache
+	}
+}
+
+// WithCompanyPlanReader wires Case C commercial plan enrichment for GetOwnCompany / PatchOwnCompany.
+// Read failures use STRICT policy (propagate); never silent plan:null.
+func WithCompanyPlanReader(r companyplan.Reader) AdminOption {
+	return func(s *adminService) {
+		s.companyPlan = r
+	}
+}
+
+// WithCompanyPlanNow overrides the resolve timestamp for plan enrichment (tests / consistency).
+func WithCompanyPlanNow(now func() time.Time) AdminOption {
+	return func(s *adminService) {
+		s.companyPlanNow = now
 	}
 }
