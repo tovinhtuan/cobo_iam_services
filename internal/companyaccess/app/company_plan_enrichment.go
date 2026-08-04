@@ -29,18 +29,28 @@ func (s *adminService) resolveCompanyPlanAt() time.Time {
 	return time.Now().UTC()
 }
 
+// resolveOwnCompanyPlanDTO loads the commercial plan DTO for response enrichment.
+// Callers that mutate company state MUST invoke this BEFORE the mutation so a
+// STRICT reader failure cannot turn a committed update into HTTP 500.
+func (s *adminService) resolveOwnCompanyPlanDTO(ctx context.Context, companyID string) (*companyplan.PlanDTO, error) {
+	if s.companyPlan == nil {
+		return nil, nil
+	}
+	plan, err := s.companyPlan.GetEffectivePlan(ctx, companyID, s.resolveCompanyPlanAt())
+	if err != nil {
+		return nil, MapCompanyPlanReadError(err)
+	}
+	return companyplan.ToPlanDTO(plan), nil
+}
+
 func (s *adminService) attachOwnCompanyPlan(ctx context.Context, companyID string, detail *PlatformCompanyDetail) error {
 	if detail == nil {
 		return nil
 	}
-	detail.Plan = nil
-	if s.companyPlan == nil {
-		return nil
-	}
-	plan, err := s.companyPlan.GetEffectivePlan(ctx, companyID, s.resolveCompanyPlanAt())
+	dto, err := s.resolveOwnCompanyPlanDTO(ctx, companyID)
 	if err != nil {
-		return MapCompanyPlanReadError(err)
+		return err
 	}
-	detail.Plan = companyplan.ToPlanDTO(plan)
+	detail.Plan = dto
 	return nil
 }

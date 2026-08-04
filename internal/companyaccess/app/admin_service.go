@@ -1504,6 +1504,12 @@ func (s *adminService) PatchOwnCompany(ctx context.Context, req PatchOwnCompanyR
 	if err := s.authorize(ctx, req.Subject, "company.edit", req.Subject.CompanyID); err != nil {
 		return nil, err
 	}
+	// Resolve plan BEFORE mutation (STRICT). Patch does not change company_subscriptions;
+	// pre-read is semantically correct and prevents committed-update + plan-500.
+	planDTO, err := s.resolveOwnCompanyPlanDTO(ctx, req.Subject.CompanyID)
+	if err != nil {
+		return nil, err
+	}
 	// VerificationStatus and Status are intentionally absent — only platform admins may change those.
 	var sectorsPtr *[]string
 	var legacySectorPtr *string
@@ -1558,9 +1564,7 @@ func (s *adminService) PatchOwnCompany(ctx context.Context, req PatchOwnCompanyR
 	if err != nil {
 		return nil, err
 	}
-	if err := s.attachOwnCompanyPlan(ctx, req.Subject.CompanyID, detail); err != nil {
-		return nil, err
-	}
+	detail.Plan = planDTO
 	return detail, nil
 }
 
