@@ -1,3 +1,11 @@
+## 2026-08-04 - Company Premium Phase 8 final handoff
+
+- task type: evidence/finalization only — no runtime/source deploy
+- reconciled Phase 0–7.1 lineage, nginx -T 20r/s burst40, API contract, deferred items, rollback
+- evidence: `docs/ai-cache/company-premium-implementation-2026-08-04/` (`36`–`46`)
+- FE mirror: `../cobo_web_design/docs/ai-cache/company-premium-fe-dev-2026-08-04/` (`21`–`23`)
+- verdict: **COMPANY_PREMIUM_DEV_READY**
+
 ## 2026-08-04 - Company Premium Phase 7.1 nginx rate-limit fix
 
 - root cause: FE nginx `api_per_ip` 5r/s caused 503 during company-switch refresh storm

@@ -36,11 +36,17 @@ Before marking the task done, run a pre-merge review and report risks, gaps, and
 
 
 
+## Company Premium End-to-End — Phase 8 final handoff (2026-08-04)
+
+- Verdict **COMPANY_PREMIUM_DEV_READY**: `docs/ai-cache/company-premium-implementation-2026-08-04/` (`36`–`46`, `results.json`)
+- Lineage + contract + nginx + security + rollback reconciled; Phase 8 docs-only; Production untouched
+- FE mirror: `../cobo_web_design/docs/ai-cache/company-premium-fe-dev-2026-08-04/` (`21`–`23`)
+
 ## Company Premium implementation — Phase 5 Backend DEV (2026-08-04)
 
 - Verdict **PHASE_5_BACKEND_DEV_READY**: `docs/ai-cache/company-premium-implementation-2026-08-04/` (`20`–`35`)
 - DEV migrate 0125 + seed; live concurrency PASS_DEV; API deployed `dd0ff1e`; smoke/authz/FE compat PASS
-- Awaiting user confirmation before Phase 6 Frontend
+- Superseded by Phase 8 final verdict above
 
 ## Company Premium implementation — Phase 4 backend quality (2026-08-04)
 

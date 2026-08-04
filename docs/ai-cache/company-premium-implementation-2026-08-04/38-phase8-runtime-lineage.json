@@ -1,0 +1,50 @@
+{
+  "environment": "DEV",
+  "host": "88.216.208.0",
+  "productionTouched": false,
+  "backend": {
+    "deployedSourceCommit": "dd0ff1ece41025fece6b2d70f1afe54bc25940e2",
+    "apiBinarySha256": "2358961fea42b49ab2e2c02e65b8bdc7ac7cdc0409f9a6ffdf7426a6344a5067",
+    "apiStartedAt": "2026-08-04T03:20:20.717051498Z",
+    "workerStartedAt": "2026-08-04T03:20:20.718329208Z",
+    "mysqlStartedAt": "2026-07-11T08:34:02.303701286Z",
+    "healthz": 200,
+    "readyz": 200,
+    "migration0125": "applied",
+    "seedDevCompanySubscriptions": "applied",
+    "fixtureC001": "PREMIUM/ACTIVE/dev_fixture",
+    "fixtureC002Rows": 0
+  },
+  "frontend": {
+    "deployedSourceCommit": "1eeed38040284d86b6eaecb829b4eca3c2116fa4",
+    "deployedAsset": "index-BgDmCxEY.js",
+    "deployedAssetSha256": "d2ebcfa6a46d984eb5dbb4686a871b6ce4629a87d8981f63766f07f706a247db",
+    "assetHttp": 200,
+    "feRootHttp": 200,
+    "bundleMarkers": {
+      "company-premium-badge": true,
+      "COMPANY_SUBSCRIPTION": true
+    },
+    "webStartedAt": "2026-08-04T06:26:24.827109366Z",
+    "webStartedAtReason": "Phase 7.1 nginx force-recreate --no-deps web"
+  },
+  "nginx": {
+    "sourceCommit": "6d93e75c782d89e0f3b110fd8c49576c3145a550",
+    "runtimeLoaded": {
+      "api_per_ip_rate": "20r/s",
+      "api_per_ip_burst": 40,
+      "limit_conn_api": 40,
+      "rateLimitStillEnabled": true,
+      "nginxTOk": true
+    },
+    "matchesSource": true
+  },
+  "phase8OptionalOneRoundSwitch": {
+    "account": "platform.tenant.admin@example.com",
+    "sequence": "c_001→c_002→c_001",
+    "meEffectiveAccessCompaniesAdminAll200": true,
+    "c001PlanPremium": true,
+    "c002PlanNull": true,
+    "credentialsStored": false
+  }
+}

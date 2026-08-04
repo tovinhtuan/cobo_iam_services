@@ -1,0 +1,26 @@
+{
+  "phase6ExactTargetedSet": {
+    "files": 8,
+    "tests": 60,
+    "pass": true,
+    "missingInPhase7RegressionCommand": "CompanyProfilePage.labels.test.tsx (3 tests)",
+    "reconciledInPhase71": true
+  },
+  "taskRelatedFailures": 0,
+  "fullSuite": {
+    "status": "NOT_FULL_PASS",
+    "note": "Pre-existing failures remain; not fixed in Company Premium phases",
+    "documentedGroups": [
+      "DisclosureTypeDetail*",
+      "PortalLayout.createCompany",
+      "loginErrorMessage"
+    ]
+  },
+  "mysqlConcurrency": "MYSQL_CONCURRENCY_VALIDATION_PASS_DEV",
+  "phase71SwitchRounds": {
+    "rounds": 10,
+    "http5xx": 0,
+    "toastFails": 0,
+    "staleBadge": 0
+  }
+}

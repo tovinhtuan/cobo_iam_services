@@ -1,5 +1,6 @@
 {
   "task": "Company Premium End-to-End Implementation",
+  "environment": "DEV",
   "mode": "PHASED_WITH_CONFIRMATION",
   "contract": {
     "caseCApproved": true,
@@ -11,90 +12,68 @@
     "planEnrichmentErrorPolicy": "STRICT",
     "patchOwnCompanyPlanOrder": "resolve_before_mutation"
   },
-  "phase0": {
-    "status": "COMPLETE",
-    "verdict": "PHASE_0_CONTRACT_LOCKED"
+  "phase0": "PHASE_0_CONTRACT_LOCKED",
+  "phase1": "PHASE_1_DOMAIN_FOUNDATION_READY",
+  "phase2": "PHASE_2_SHARED_READER_READY",
+  "phase3": "PHASE_3_API_EXPOSURE_READY",
+  "phase4": "PHASE_4_BACKEND_QUALITY_READY",
+  "phase5": "PHASE_5_BACKEND_DEV_READY",
+  "phase6": "PHASE_6_FRONTEND_CONSUMER_READY",
+  "phase7": "PHASE_7_COMPANY_PREMIUM_DEV_READY",
+  "phase8": "PHASE_8_FINAL_HANDOFF_READY",
+  "backend": {
+    "commercialSource": "company_subscriptions",
+    "deployedCommit": "dd0ff1e",
+    "deployedCommitFull": "dd0ff1ece41025fece6b2d70f1afe54bc25940e2",
+    "apiBinarySha256": "2358961fea42b49ab2e2c02e65b8bdc7ac7cdc0409f9a6ffdf7426a6344a5067",
+    "strictReaderPolicy": true,
+    "mysqlConcurrency": "MYSQL_CONCURRENCY_VALIDATION_PASS_DEV",
+    "apiContractPass": true
   },
-  "phase1": {
-    "status": "COMPLETE",
-    "verdict": "PHASE_1_DOMAIN_FOUNDATION_READY"
-  },
-  "phase2": {
-    "status": "COMPLETE",
-    "verdict": "PHASE_2_SHARED_READER_READY"
-  },
-  "phase3": {
-    "status": "COMPLETE",
-    "verdict": "PHASE_3_API_EXPOSURE_READY"
-  },
-  "phase4": {
-    "status": "COMPLETE",
-    "verdict": "PHASE_4_BACKEND_QUALITY_READY"
-  },
-  "phase5": {
-    "status": "COMPLETE",
-    "preDeploySnapshotCaptured": true,
-    "migrationPrecheckPass": true,
-    "migration0125AppliedDev": true,
-    "devSeedApplied": true,
-    "schemaInspectionPass": true,
-    "fixtureC001PremiumPass": true,
-    "fixtureC002NoPlanPass": true,
-    "mysqlConcurrencyTestExecuted": true,
-    "mysqlConcurrencyTestPass": true,
-    "mysqlConcurrencyValidation": "MYSQL_CONCURRENCY_VALIDATION_PASS_DEV",
-    "backendBuildPass": true,
-    "backendDeployedDev": true,
-    "deployedCommit": "dd0ff1ece41025fece6b2d70f1afe54bc25940e2",
-    "apiHealthPass": true,
-    "apiReadyPass": true,
-    "getOwnPremiumPass": true,
-    "getOwnNoPlanPass": true,
-    "meCompaniesMixedPass": true,
-    "contractConsistencyPass": true,
-    "authzSecurityPass": true,
-    "patchRuntimeSafetyPass": true,
-    "oldFrontendCompatibilityPass": true,
-    "workerUnaffectedLogic": true,
-    "workerRecreatedByApprovedMakefile": true,
-    "frontendUnaffected": true,
-    "databaseRestarted": false,
-    "rollbackPrepared": true,
-    "apiSmokePass": true,
-    "sourceHotfixRequired": false,
-    "verdict": "PHASE_5_BACKEND_DEV_READY"
-  },
-  "phase6": {
-    "status": "COMPLETE",
-    "verdict": "PHASE_6_FRONTEND_CONSUMER_READY",
-    "evidenceRepo": "cobo_web_design",
-    "evidencePath": "docs/ai-cache/company-premium-fe-phase6-2026-08-04/",
-    "frontendDeployed": false
-  },
-  "phase7": {
-    "status": "COMPLETE",
-    "verdict": "PHASE_7_COMPANY_PREMIUM_DEV_READY",
-    "evidenceRepo": "cobo_web_design",
-    "evidencePath": "docs/ai-cache/company-premium-fe-dev-2026-08-04/",
+  "frontend": {
+    "sourceCommit": "1eeed38",
+    "sourceCommitFull": "1eeed38040284d86b6eaecb829b4eca3c2116fa4",
     "deployedAsset": "index-BgDmCxEY.js",
-    "backendRestarted": false,
-    "switch503RevalidationPass": true,
-    "nginxRateFix": "api_per_ip_20rps_burst40"
+    "personalOpsPremiumRemoved": true,
+    "companyPremiumImplemented": true,
+    "switchNoStale": true,
+    "verifiedPositiveRuntimeCovered": false,
+    "verifiedPositiveUnitAuthority": true
   },
-  "phase8": {
-    "status": "NOT_STARTED"
+  "nginx": {
+    "rootCause": "api_per_ip_rate_limit",
+    "oldRate": "5r/s",
+    "oldBurst": 20,
+    "newRate": "20r/s",
+    "newBurst": 40,
+    "rateLimitStillEnabled": true,
+    "tenRoundSwitchRevalidationPass": true,
+    "monitoringDeferred": true,
+    "sourceCommit": "6d93e75",
+    "runtimeMatchesSource": true
   },
+  "deferred": [
+    "DEFERRED_PRODUCT_DECISION_ADMINCENTER_PERSONAL_TIER_BADGE",
+    "NGINX_RATE_LIMIT_TUNING_MONITORING",
+    "VERIFIED_EMAIL_POSITIVE_RUNTIME_NOT_COVERED_FIXTURE_FALSE_UNIT_AUTHORITY_PASS"
+  ],
   "safety": {
     "productionTouched": false,
-    "frontendSourceChanged": false,
-    "frontendDeployed": false,
-    "companyTierResolverUsed": false,
+    "credentialsStored": false,
+    "companyTierResolverBillingUsed": false,
     "userTierFallbackUsed": false,
     "billingSensitiveDataExposed": false,
     "unrelatedFilesDiscarded": false,
-    "credentialsStored": false
+    "frontendDeployed": true,
+    "phase8RuntimeChanged": false,
+    "phase8SourceCodeChanged": false
   },
-  "verdict": "PHASE_7_COMPANY_PREMIUM_DEV_READY",
-  "openRisks": [],
-  "awaiting": "user_confirmation_to_start_phase_8_final_handoff"
+  "evidence": {
+    "backendPack": "docs/ai-cache/company-premium-implementation-2026-08-04/",
+    "phase8Files": "36–46",
+    "frontendPack": "../cobo_web_design/docs/ai-cache/company-premium-fe-dev-2026-08-04/",
+    "frontendPhase8Files": "21–23"
+  },
+  "verdict": "COMPANY_PREMIUM_DEV_READY",
+  "awaiting": null
 }
