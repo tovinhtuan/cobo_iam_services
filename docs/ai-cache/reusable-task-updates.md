@@ -1,3 +1,10 @@
+## 2026-08-04 - Company Premium Phase 6 Frontend consumer (pointer)
+
+- task type: pointer — FE source/tests in cobo_web_design
+- evidence FE: `../cobo_web_design/docs/ai-cache/company-premium-fe-phase6-2026-08-04/`
+- results: `docs/ai-cache/company-premium-implementation-2026-08-04/results.json` → PHASE_6_FRONTEND_CONSUMER_READY
+- next: await confirmation → Phase 7 FE-only DEV deploy
+
 ## 2026-08-04 - Company Premium Phase 5 Backend DEV migrate/deploy/smoke
 
 - task type: DEV migration + live concurrency + API deploy + authenticated smoke

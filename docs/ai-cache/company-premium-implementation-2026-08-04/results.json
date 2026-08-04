@@ -11,11 +11,26 @@
     "planEnrichmentErrorPolicy": "STRICT",
     "patchOwnCompanyPlanOrder": "resolve_before_mutation"
   },
-  "phase0": { "status": "COMPLETE", "verdict": "PHASE_0_CONTRACT_LOCKED" },
-  "phase1": { "status": "COMPLETE", "verdict": "PHASE_1_DOMAIN_FOUNDATION_READY" },
-  "phase2": { "status": "COMPLETE", "verdict": "PHASE_2_SHARED_READER_READY" },
-  "phase3": { "status": "COMPLETE", "verdict": "PHASE_3_API_EXPOSURE_READY" },
-  "phase4": { "status": "COMPLETE", "verdict": "PHASE_4_BACKEND_QUALITY_READY" },
+  "phase0": {
+    "status": "COMPLETE",
+    "verdict": "PHASE_0_CONTRACT_LOCKED"
+  },
+  "phase1": {
+    "status": "COMPLETE",
+    "verdict": "PHASE_1_DOMAIN_FOUNDATION_READY"
+  },
+  "phase2": {
+    "status": "COMPLETE",
+    "verdict": "PHASE_2_SHARED_READER_READY"
+  },
+  "phase3": {
+    "status": "COMPLETE",
+    "verdict": "PHASE_3_API_EXPOSURE_READY"
+  },
+  "phase4": {
+    "status": "COMPLETE",
+    "verdict": "PHASE_4_BACKEND_QUALITY_READY"
+  },
   "phase5": {
     "status": "COMPLETE",
     "preDeploySnapshotCaptured": true,
@@ -49,9 +64,19 @@
     "sourceHotfixRequired": false,
     "verdict": "PHASE_5_BACKEND_DEV_READY"
   },
-  "phase6": { "status": "NOT_STARTED" },
-  "phase7": { "status": "NOT_STARTED" },
-  "phase8": { "status": "NOT_STARTED" },
+  "phase6": {
+    "status": "COMPLETE",
+    "verdict": "PHASE_6_FRONTEND_CONSUMER_READY",
+    "evidenceRepo": "cobo_web_design",
+    "evidencePath": "docs/ai-cache/company-premium-fe-phase6-2026-08-04/",
+    "frontendDeployed": false
+  },
+  "phase7": {
+    "status": "NOT_STARTED"
+  },
+  "phase8": {
+    "status": "NOT_STARTED"
+  },
   "safety": {
     "productionTouched": false,
     "frontendSourceChanged": false,
@@ -62,7 +87,7 @@
     "unrelatedFilesDiscarded": false,
     "credentialsStored": false
   },
-  "verdict": "PHASE_5_BACKEND_DEV_READY",
+  "verdict": "PHASE_6_FRONTEND_CONSUMER_READY",
   "openRisks": [],
-  "awaiting": "user_confirmation_to_start_phase_6_frontend"
+  "awaiting": "user_confirmation_to_start_phase_7_fe_dev_deploy"
 }
