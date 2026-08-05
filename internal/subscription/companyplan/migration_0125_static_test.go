@@ -45,13 +45,19 @@ func TestMigration0125_StaticValidation(t *testing.T) {
 		t.Fatal("0125 down must drop company_subscriptions")
 	}
 
-	// numbered 0126 must not exist
+	// 0126 company status CHECK (Phase 5B): only expected SQL + optional colocated *_test.go
 	matches, _ := filepath.Glob(filepath.Join(root, "0126*"))
-	if len(matches) != 0 {
-		t.Fatalf("numbered 0126 fixture must not remain: %v", matches)
+	for _, m := range matches {
+		base := filepath.Base(m)
+		ok := base == "0126_companies_status_check_constraints.up.sql" ||
+			base == "0126_companies_status_check_constraints.down.sql" ||
+			base == "0126_companies_status_check_constraints_test.go"
+		if !ok {
+			t.Fatalf("unexpected 0126 migration file: %s", base)
+		}
 	}
 
-	// runner ordering: 0125 then seed; seed not as numbered migration
+	// runner ordering: 0125 then optional 0126 then seed; seed not as numbered migration
 	if !strings.Contains(runner, "0125_company_subscriptions.up.sql") {
 		t.Fatal("run_dev_migrations.sh must list 0125")
 	}
@@ -62,6 +68,12 @@ func TestMigration0125_StaticValidation(t *testing.T) {
 	idxSeed := strings.Index(runner, "seed_dev_company_subscriptions.sql")
 	if idx125 < 0 || idxSeed < 0 || idxSeed < idx125 {
 		t.Fatal("seed must follow 0125 in runner list")
+	}
+	if strings.Contains(runner, "0126_companies_status_check_constraints.up.sql") {
+		idx126 := strings.Index(runner, "0126_companies_status_check_constraints.up.sql")
+		if idx126 < idx125 || idx126 > idxSeed {
+			t.Fatal("0126 must be listed after 0125 and before seed")
+		}
 	}
 
 	// seed idempotent + cleanup contract
