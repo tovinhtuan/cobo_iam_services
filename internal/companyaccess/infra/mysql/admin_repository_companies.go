@@ -10,6 +10,7 @@ import (
 	"time"
 
 	caapp "github.com/cobo/cobo_iam_services/internal/companyaccess/app"
+	"github.com/cobo/cobo_iam_services/internal/companyaccess/companystatus"
 	"github.com/cobo/cobo_iam_services/internal/disclosure/app/applicability"
 	iamregmysql "github.com/cobo/cobo_iam_services/internal/iam/registrationmysql"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
@@ -18,12 +19,12 @@ import (
 func (r *AdminRepository) CreateStandaloneCompany(ctx context.Context, displayName string, boot caapp.CreateCompanyBootstrap) (string, string, error) {
 	p := iamregmysql.CompanyBootstrapProfile{
 		VerificationStatus: boot.VerificationStatus,
-		TaxCode:              boot.TaxCode,
+		TaxCode:            boot.TaxCode,
 		RegistrationNumber: boot.RegistrationNumber,
-		Address:              boot.Address,
-		Phone:                boot.Phone,
-		ContactEmail:         boot.ContactEmail,
-		RepresentativeName:   boot.RepresentativeName,
+		Address:            boot.Address,
+		Phone:              boot.Phone,
+		ContactEmail:       boot.ContactEmail,
+		RepresentativeName: boot.RepresentativeName,
 	}
 	id, code, err := iamregmysql.CreateStandaloneCompany(ctx, r.db, displayName, p)
 	return id, code, mapMySQLSchemaErr(err)
@@ -217,8 +218,12 @@ func (r *AdminRepository) UpdateCompanyPlatform(ctx context.Context, req caapp.U
 		args = append(args, *req.RepresentativeName)
 	}
 	if req.VerificationStatus != nil {
+		norm, err := companystatus.NormalizeVerificationStatus(*req.VerificationStatus)
+		if err != nil {
+			return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, err.Error(), nil)
+		}
 		sets = append(sets, "verification_status = ?")
-		args = append(args, strings.TrimSpace(*req.VerificationStatus))
+		args = append(args, norm)
 	}
 	if req.IsListed != nil {
 		sets = append(sets, "is_listed = ?")
@@ -330,11 +335,14 @@ func decodeBusinessSectors(rawJSON []byte, legacy sql.NullString) []string {
 
 func (r *AdminRepository) SetCompanyStatusPlatform(ctx context.Context, companyID, status string) error {
 	companyID = strings.TrimSpace(companyID)
-	status = strings.ToLower(strings.TrimSpace(status))
-	if companyID == "" || status == "" {
+	norm, err := companystatus.NormalizeOperationalStatus(status)
+	if err != nil {
+		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, err.Error(), nil)
+	}
+	if companyID == "" {
 		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "company_id and status are required", nil)
 	}
-	res, err := r.db.ExecContext(ctx, `UPDATE companies SET status = ? WHERE company_id = ?`, status, companyID)
+	res, err := r.db.ExecContext(ctx, `UPDATE companies SET status = ? WHERE company_id = ?`, norm, companyID)
 	if err != nil {
 		return mapMySQLSchemaErr(err)
 	}

@@ -12,8 +12,9 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/go-sql-driver/mysql"
+	"github.com/cobo/cobo_iam_services/internal/companyaccess/companystatus"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
+	"github.com/go-sql-driver/mysql"
 	"github.com/google/uuid"
 )
 
@@ -76,6 +77,11 @@ func InsertCompanyWithDefaultRolesTx(ctx context.Context, tx *sql.Tx, companyID,
 	if vStatus == "" {
 		vStatus = "unverified"
 	}
+	normStatus, nerr := companystatus.NormalizeVerificationStatus(vStatus)
+	if nerr != nil {
+		return "", "", perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, nerr.Error(), nil)
+	}
+	vStatus = normStatus
 	companyCode, err = pickUniqueCompanyCode(ctx, tx, companyDisplayName)
 	if err != nil {
 		return "", "", err

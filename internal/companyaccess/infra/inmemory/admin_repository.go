@@ -10,21 +10,22 @@ import (
 	"time"
 
 	caapp "github.com/cobo/cobo_iam_services/internal/companyaccess/app"
+	"github.com/cobo/cobo_iam_services/internal/companyaccess/companystatus"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 )
 
 type AdminRepository struct {
 	mu sync.RWMutex
 
-	users                   map[string]caapp.UserView
-	usersByLoginID          map[string]string
-	passwordHashByUserID    map[string]string
-	memberships             map[string]caapp.MembershipView
-	rolesByMembership       map[string]map[string]struct{}
-	departmentsByMembership map[string]map[string]struct{}
+	users                        map[string]caapp.UserView
+	usersByLoginID               map[string]string
+	passwordHashByUserID         map[string]string
+	memberships                  map[string]caapp.MembershipView
+	rolesByMembership            map[string]map[string]struct{}
+	departmentsByMembership      map[string]map[string]struct{}
 	focalDepartmentsByMembership map[string]map[string]bool
-	departmentCompany       map[string]string
-	titlesByMembership      map[string]map[string]struct{}
+	departmentCompany            map[string]string
+	titlesByMembership           map[string]map[string]struct{}
 
 	permissions     map[string]struct{}
 	permissionMeta  map[string]caapp.PermissionListItem // code → full metadata (for tests)
@@ -39,8 +40,8 @@ type AdminRepository struct {
 	invitationsByUser map[string][]string                   // stacked token hashes for in-mem sanity (minimal)
 	directPermissions map[string]caapp.DirectPermissionView // key: membershipID:permCode
 
-	departments map[string]caapp.DepartmentView // department_id -> view
-	titles      map[string]caapp.TitleView       // title_id -> view
+	departments  map[string]caapp.DepartmentView // department_id -> view
+	titles       map[string]caapp.TitleView      // title_id -> view
 	titleCompany map[string]string
 
 	companies map[string]*caapp.PlatformCompanyDetail
@@ -58,34 +59,34 @@ type AdminRepository struct {
 
 func NewAdminRepository() *AdminRepository {
 	return &AdminRepository{
-		users:                   map[string]caapp.UserView{},
-		usersByLoginID:          map[string]string{},
-		passwordHashByUserID:    map[string]string{},
-		memberships:             map[string]caapp.MembershipView{},
-		rolesByMembership:       map[string]map[string]struct{}{},
-		departmentsByMembership: map[string]map[string]struct{}{},
+		users:                        map[string]caapp.UserView{},
+		usersByLoginID:               map[string]string{},
+		passwordHashByUserID:         map[string]string{},
+		memberships:                  map[string]caapp.MembershipView{},
+		rolesByMembership:            map[string]map[string]struct{}{},
+		departmentsByMembership:      map[string]map[string]struct{}{},
 		focalDepartmentsByMembership: map[string]map[string]bool{},
-		departmentCompany:       map[string]string{},
-		titlesByMembership:      map[string]map[string]struct{}{},
-		permissions:             map[string]struct{}{"dashboard.view": {}, "disclosure.view": {}, "disclosure.approve": {}, "rbac.manage": {}, "system.settings": {}},
-		permissionMeta:          map[string]caapp.PermissionListItem{},
-		roles:                   map[string]struct{}{"company_admin": {}, "disclosure_approver": {}, "department_staff": {}},
-		roleMeta:                map[string]caapp.RoleListItem{},
-		rolePermissions:         map[string]map[string]struct{}{},
-		resourceScopeRules:      []map[string]any{},
-		workflowAssigneeRules:   []map[string]any{},
-		notificationRules:       []map[string]any{},
-		invitationsByUser:       map[string][]string{},
-		directPermissions:       map[string]caapp.DirectPermissionView{},
-		departments:             map[string]caapp.DepartmentView{},
-		titles:                  map[string]caapp.TitleView{},
-		titleCompany:            map[string]string{},
-		companies:               map[string]*caapp.PlatformCompanyDetail{},
-		companyFounder:          map[string]string{},
-		companyProvSource:       map[string]string{},
-		companyTaxCodes:         map[string]string{},
-		delegatedGrants:         map[string]*delegationGrantRow{},
-		emergencyGrants:         map[string]*emergencyGrantRow{},
+		departmentCompany:            map[string]string{},
+		titlesByMembership:           map[string]map[string]struct{}{},
+		permissions:                  map[string]struct{}{"dashboard.view": {}, "disclosure.view": {}, "disclosure.approve": {}, "rbac.manage": {}, "system.settings": {}},
+		permissionMeta:               map[string]caapp.PermissionListItem{},
+		roles:                        map[string]struct{}{"company_admin": {}, "disclosure_approver": {}, "department_staff": {}},
+		roleMeta:                     map[string]caapp.RoleListItem{},
+		rolePermissions:              map[string]map[string]struct{}{},
+		resourceScopeRules:           []map[string]any{},
+		workflowAssigneeRules:        []map[string]any{},
+		notificationRules:            []map[string]any{},
+		invitationsByUser:            map[string][]string{},
+		directPermissions:            map[string]caapp.DirectPermissionView{},
+		departments:                  map[string]caapp.DepartmentView{},
+		titles:                       map[string]caapp.TitleView{},
+		titleCompany:                 map[string]string{},
+		companies:                    map[string]*caapp.PlatformCompanyDetail{},
+		companyFounder:               map[string]string{},
+		companyProvSource:            map[string]string{},
+		companyTaxCodes:              map[string]string{},
+		delegatedGrants:              map[string]*delegationGrantRow{},
+		emergencyGrants:              map[string]*emergencyGrantRow{},
 	}
 }
 
@@ -1312,6 +1313,13 @@ func (r *AdminRepository) UpdateCompanyPlatform(_ context.Context, req caapp.Upd
 	if req.RepresentativeName != nil {
 		c.RepresentativeName = *req.RepresentativeName
 	}
+	if req.VerificationStatus != nil {
+		norm, err := companystatus.NormalizeVerificationStatus(*req.VerificationStatus)
+		if err != nil {
+			return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, err.Error(), nil)
+		}
+		c.VerificationStatus = norm
+	}
 	if req.IsListed != nil {
 		c.IsListed = *req.IsListed
 	}
@@ -1345,7 +1353,22 @@ func (r *AdminRepository) UpdateCompanyPlatform(_ context.Context, req caapp.Upd
 	return nil
 }
 
-func (r *AdminRepository) SetCompanyStatusPlatform(_ context.Context, _, _ string) error {
+func (r *AdminRepository) SetCompanyStatusPlatform(_ context.Context, companyID, status string) error {
+	companyID = strings.TrimSpace(companyID)
+	norm, err := companystatus.NormalizeOperationalStatus(status)
+	if err != nil {
+		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, err.Error(), nil)
+	}
+	if companyID == "" {
+		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "company_id and status are required", nil)
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	c, ok := r.companies[companyID]
+	if !ok {
+		return perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "company not found", nil)
+	}
+	c.Status = norm
 	return nil
 }
 

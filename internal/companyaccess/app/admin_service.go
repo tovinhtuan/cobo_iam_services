@@ -11,6 +11,7 @@ import (
 
 	auditapp "github.com/cobo/cobo_iam_services/internal/audit/app"
 	authapp "github.com/cobo/cobo_iam_services/internal/authorization/app"
+	"github.com/cobo/cobo_iam_services/internal/companyaccess/companystatus"
 	"github.com/cobo/cobo_iam_services/internal/companyaccess/configversion"
 	"github.com/cobo/cobo_iam_services/internal/companyaccess/conflict"
 	"github.com/cobo/cobo_iam_services/internal/companyaccess/dependency"
@@ -232,8 +233,12 @@ func (s *adminService) CreateCompany(ctx context.Context, req CreateCompanyReque
 	if name == "" {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "company_name is required", nil)
 	}
+	vStatus, err := companystatus.NormalizeVerificationStatus(companystatus.VerificationVerified)
+	if err != nil {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, err.Error(), nil)
+	}
 	boot := CreateCompanyBootstrap{
-		VerificationStatus: "verified",
+		VerificationStatus: vStatus,
 		TaxCode:            strings.TrimSpace(req.TaxCode),
 		RegistrationNumber: strings.TrimSpace(req.RegistrationNumber),
 		Address:            strings.TrimSpace(req.Address),
@@ -288,6 +293,13 @@ func (s *adminService) UpdatePlatformCompany(ctx context.Context, req UpdatePlat
 	if err := s.authorizePlatformCompanyAdmin(ctx, req.Subject); err != nil {
 		return err
 	}
+	if req.VerificationStatus != nil {
+		norm, err := companystatus.NormalizeVerificationStatus(*req.VerificationStatus)
+		if err != nil {
+			return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, err.Error(), nil)
+		}
+		req.VerificationStatus = &norm
+	}
 	return s.repo.UpdateCompanyPlatform(ctx, req)
 }
 
@@ -295,7 +307,11 @@ func (s *adminService) SetPlatformCompanyStatus(ctx context.Context, req SetPlat
 	if err := s.authorizePlatformCompanyAdmin(ctx, req.Subject); err != nil {
 		return err
 	}
-	return s.repo.SetCompanyStatusPlatform(ctx, strings.TrimSpace(req.CompanyID), strings.TrimSpace(req.Status))
+	status, err := companystatus.NormalizeOperationalStatus(req.Status)
+	if err != nil {
+		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, err.Error(), nil)
+	}
+	return s.repo.SetCompanyStatusPlatform(ctx, strings.TrimSpace(req.CompanyID), status)
 }
 
 func (s *adminService) InviteUser(ctx context.Context, req InviteUserRequest) (*InviteUserResponse, error) {
