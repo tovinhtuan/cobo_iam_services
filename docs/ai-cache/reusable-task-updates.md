@@ -1,3 +1,12 @@
+## 2026-08-06 - Company department metric Phase 1 (BE pointer)
+
+- task type: additive `department_count` on company profile (`GetCompanyPlatform` / `GET /api/v1/admin/company`)
+- query: `COUNT(DISTINCT department_id) FROM departments WHERE company_id=? AND status='active'`
+- verify: dept tests PASS; `docker compose -f docker-compose.dev.yml build api` exit 0; no migration
+- evidence (canonical): `../cobo_web_design/docs/ai-cache/company-department-metric-2026-08-06/`
+- verdict: **PHASE_1_COMPANY_DEPARTMENT_METRIC_SOURCE_READY**
+- next: await confirm → Phase 2 DEV deploy + smoke
+
 ## 2026-08-04 - Company Premium Phase 8 final handoff
 
 - task type: evidence/finalization only — no runtime/source deploy

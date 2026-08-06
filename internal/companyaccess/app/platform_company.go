@@ -51,8 +51,11 @@ type PlatformCompanyDetail struct {
 	MemberCount                   int      `json:"member_count"`
 	DisclosureCount               int      `json:"disclosure_count"`
 	TemplateCount                 int      `json:"template_count"`
-	CreatedAtRFC3339              string   `json:"created_at"`
-	UpdatedAtRFC3339              string   `json:"updated_at"`
+	// DepartmentCount is additive: active departments for this company (status=active).
+	// Excludes inactive/soft-deleted and teams/org_units. Query failure fails the whole detail read.
+	DepartmentCount  int    `json:"department_count"`
+	CreatedAtRFC3339 string `json:"created_at"`
+	UpdatedAtRFC3339 string `json:"updated_at"`
 	// Plan is additive Case C commercial plan (GetOwnCompany / PatchOwnCompany).
 	// Always serialized: null when no covering record. Not badge-filtered on backend.
 	// CMS platform company detail leaves this unset (null) without reading company_subscriptions.

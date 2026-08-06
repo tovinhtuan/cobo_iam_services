@@ -36,6 +36,13 @@ Before marking the task done, run a pre-merge review and report risks, gaps, and
 
 
 
+## Company department metric — Phase 1 (2026-08-06)
+
+- Verdict **PHASE_1_COMPANY_DEPARTMENT_METRIC_SOURCE_READY** (pointer)
+- Additive `department_count` on company profile / `GetCompanyPlatform`
+- Canonical evidence: `../cobo_web_design/docs/ai-cache/company-department-metric-2026-08-06/`
+- Next: await Phase 2 DEV deploy confirm
+
 ## Company Premium End-to-End — Phase 8 final handoff (2026-08-04)
 
 - Verdict **COMPANY_PREMIUM_DEV_READY**: `docs/ai-cache/company-premium-implementation-2026-08-04/` (`36`–`46`, `results.json`)

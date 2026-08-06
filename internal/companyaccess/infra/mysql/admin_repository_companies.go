@@ -174,6 +174,14 @@ func (r *AdminRepository) GetCompanyPlatform(ctx context.Context, companyID stri
 	if err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM disclosure_types WHERE company_id = ? AND LOWER(TRIM(status)) = 'active'`, companyID).Scan(&d.TemplateCount); err != nil {
 		return nil, mapMySQLSchemaErr(err)
 	}
+	// Soft-delete uses status='inactive' (no deleted_at column). Teams live in org_units — excluded.
+	if err := r.db.QueryRowContext(ctx, `
+		SELECT COUNT(DISTINCT department_id)
+		FROM departments
+		WHERE company_id = ? AND status = 'active'
+	`, companyID).Scan(&d.DepartmentCount); err != nil {
+		return nil, mapMySQLSchemaErr(err)
+	}
 
 	return &d, nil
 }

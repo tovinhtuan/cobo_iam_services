@@ -1280,6 +1280,23 @@ func (r *AdminRepository) GetCompanyPlatform(_ context.Context, companyID string
 	defer r.mu.RUnlock()
 	if c, ok := r.companies[companyID]; ok {
 		cp := *c
+		// Match MySQL: COUNT WHERE status = 'active' (exact). Empty/inactive excluded.
+		n := 0
+		seen := map[string]struct{}{}
+		for id, d := range r.departments {
+			if r.departmentCompany[id] != companyID {
+				continue
+			}
+			if d.Status != "active" {
+				continue
+			}
+			if _, ok := seen[id]; ok {
+				continue
+			}
+			seen[id] = struct{}{}
+			n++
+		}
+		cp.DepartmentCount = n
 		return &cp, nil
 	}
 	return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "company not found", nil)
