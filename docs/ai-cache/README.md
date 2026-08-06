@@ -36,6 +36,13 @@ Before marking the task done, run a pre-merge review and report risks, gaps, and
 
 
 
+## Company department metric — Phase 2 DEV (2026-08-06)
+
+- Verdict **PHASE_2_COMPANY_DEPARTMENT_METRIC_DEV_READY** (pointer)
+- BE commit deployed: `a9d03fb`
+- Canonical evidence: `../cobo_web_design/docs/ai-cache/company-department-metric-2026-08-06/`
+- Status: stop at DEV — no Production
+
 ## Company department metric — Phase 1 (2026-08-06)
 
 - Verdict **PHASE_1_COMPANY_DEPARTMENT_METRIC_SOURCE_READY** (pointer)

@@ -1,3 +1,10 @@
+## 2026-08-06 - Company department metric Phase 2 DEV (BE pointer)
+
+- task type: pointer — DEV `make deploy-be` shipped `a9d03fb` (`department_count`)
+- evidence (canonical): `../cobo_web_design/docs/ai-cache/company-department-metric-2026-08-06/`
+- verdict: **PHASE_2_COMPANY_DEPARTMENT_METRIC_DEV_READY**
+- next: stop — no Production
+
 ## 2026-08-06 - Company department metric Phase 1 (BE pointer)
 
 - task type: additive `department_count` on company profile (`GetCompanyPlatform` / `GET /api/v1/admin/company`)
