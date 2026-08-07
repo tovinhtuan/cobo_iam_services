@@ -83,6 +83,36 @@ func (r *Repository) UpdateTask(_ context.Context, task workflowapp.TaskDTO) (*w
 	return &cp, nil
 }
 
+func (r *Repository) ApplyTaskTransition(_ context.Context, in workflowapp.TaskTransitionApply) (*workflowapp.TaskDTO, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	tk := ikey(in.CompanyID, in.TaskID)
+	cur, ok := r.tasks[tk]
+	if !ok {
+		return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "task not found", nil)
+	}
+	if cur.Status != in.FromStatus {
+		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "task is not pending", nil)
+	}
+	cur.Status = in.ToStatus
+	r.tasks[tk] = cur
+
+	if in.NextTask != nil {
+		nt := *in.NextTask
+		r.tasks[ikey(nt.CompanyID, nt.TaskID)] = nt
+	}
+	if in.Instance != nil {
+		ik := ikey(in.Instance.CompanyID, in.Instance.WorkflowInstanceID)
+		if _, ok := r.instances[ik]; !ok {
+			return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "workflow instance not found", nil)
+		}
+		r.instances[ik] = *in.Instance
+	}
+	cp := cur
+	return &cp, nil
+}
+
 func (r *Repository) ListTasksByInstance(_ context.Context, companyID, workflowInstanceID string) ([]workflowapp.TaskDTO, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

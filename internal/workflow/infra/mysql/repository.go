@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"net/http"
 
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 	workflowapp "github.com/cobo/cobo_iam_services/internal/workflow/app"
@@ -149,6 +150,66 @@ func (r *Repository) UpdateTask(ctx context.Context, task workflowapp.TaskDTO) (
 	}
 	cp := task
 	return &cp, nil
+}
+
+func (r *Repository) ApplyTaskTransition(ctx context.Context, in workflowapp.TaskTransitionApply) (*workflowapp.TaskDTO, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("begin task transition: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	res, err := tx.ExecContext(ctx, `
+		UPDATE workflow_tasks SET status = ?
+		WHERE task_id = ? AND company_id = ? AND status = ?
+	`, in.ToStatus, in.TaskID, in.CompanyID, in.FromStatus)
+	if err != nil {
+		return nil, fmt.Errorf("update task status: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "task is not pending", nil)
+	}
+
+	if in.NextTask != nil {
+		nt := in.NextTask
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO workflow_tasks (
+				task_id, company_id, workflow_instance_id, step_code, assignee_membership_id, status
+			) VALUES (?, ?, ?, ?, ?, ?)
+		`, nt.TaskID, nt.CompanyID, nt.WorkflowInstanceID, nt.StepCode, nt.AssigneeMembershipID, nt.Status); err != nil {
+			return nil, fmt.Errorf("insert next task: %w", err)
+		}
+	}
+
+	if in.Instance != nil {
+		inst := in.Instance
+		ures, err := tx.ExecContext(ctx, `
+			UPDATE workflow_instances SET status = ?, current_step_code = ?
+			WHERE workflow_instance_id = ? AND company_id = ?
+		`, inst.Status, inst.CurrentStepCode, inst.WorkflowInstanceID, inst.CompanyID)
+		if err != nil {
+			return nil, fmt.Errorf("update instance: %w", err)
+		}
+		un, _ := ures.RowsAffected()
+		if un == 0 {
+			return nil, perr.NewHTTPError(404, perr.CodeInvalidRequest, "workflow instance not found", nil)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit task transition: %w", err)
+	}
+
+	row := r.db.QueryRowContext(ctx, `
+		SELECT task_id, company_id, workflow_instance_id, step_code, assignee_membership_id, status
+		FROM workflow_tasks WHERE company_id = ? AND task_id = ?
+	`, in.CompanyID, in.TaskID)
+	var t workflowapp.TaskDTO
+	if err := row.Scan(&t.TaskID, &t.CompanyID, &t.WorkflowInstanceID, &t.StepCode, &t.AssigneeMembershipID, &t.Status); err != nil {
+		return nil, err
+	}
+	return &t, nil
 }
 
 func (r *Repository) ListTasksByInstance(ctx context.Context, companyID, workflowInstanceID string) ([]workflowapp.TaskDTO, error) {

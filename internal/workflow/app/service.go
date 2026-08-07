@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -281,39 +282,175 @@ func (s *service) transitionTask(ctx context.Context, req TaskActionRequest, act
 	if task.Status != "pending" {
 		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "task is not pending", nil)
 	}
-	task.Status = nextStatus
-	upd, err := s.repo.UpdateTask(ctx, *task)
+
+	plan, err := s.planTaskTransition(ctx, req.Subject, *task, nextStatus)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.maybeCompleteInstance(ctx, req.Subject, *task, nextStatus); err != nil {
+	upd, err := s.repo.ApplyTaskTransition(ctx, *plan)
+	if err != nil {
 		return nil, err
+	}
+	if plan.Instance != nil && (plan.Instance.Status == "approved" || plan.Instance.Status == "rejected") {
+		if err := s.runInstanceCompletionSideEffects(ctx, req.Subject, *plan.Instance, *task, nextStatus); err != nil {
+			return nil, err
+		}
 	}
 	return upd, nil
 }
 
-func (s *service) maybeCompleteInstance(ctx context.Context, sub Subject, task TaskDTO, terminalStatus string) error {
-	tasks, err := s.repo.ListTasksByInstance(ctx, sub.CompanyID, task.WorkflowInstanceID)
-	if err != nil {
-		return err
+func (s *service) planTaskTransition(ctx context.Context, sub Subject, task TaskDTO, terminalStatus string) (*TaskTransitionApply, error) {
+	apply := &TaskTransitionApply{
+		CompanyID:  sub.CompanyID,
+		TaskID:     task.TaskID,
+		FromStatus: "pending",
+		ToStatus:   terminalStatus,
 	}
-	for _, t := range tasks {
-		if t.Status == "pending" {
-			return nil
+	if terminalStatus == "rejected" {
+		inst, err := s.repo.FindInstance(ctx, sub.CompanyID, task.WorkflowInstanceID)
+		if err != nil {
+			return nil, err
 		}
+		inst.Status = "rejected"
+		apply.Instance = inst
+		return apply, nil
 	}
+
 	inst, err := s.repo.FindInstance(ctx, sub.CompanyID, task.WorkflowInstanceID)
 	if err != nil {
-		return err
+		return nil, err
+	}
+
+	if IsProposalSnapshotV2(inst.WorkflowSource) && len(inst.Snapshot) > 0 {
+		return s.planV2AdvanceOrComplete(ctx, sub, task, *inst, terminalStatus)
+	}
+	return s.planLegacyCompleteIfNoPending(ctx, sub, task, *inst, terminalStatus)
+}
+
+func (s *service) planV2AdvanceOrComplete(ctx context.Context, sub Subject, task TaskDTO, inst WorkflowInstanceDTO, terminalStatus string) (*TaskTransitionApply, error) {
+	apply := &TaskTransitionApply{
+		CompanyID:  sub.CompanyID,
+		TaskID:     task.TaskID,
+		FromStatus: "pending",
+		ToStatus:   terminalStatus,
+	}
+	next, hasNext := NextSnapshotStep(inst.Snapshot, task.StepCode)
+	if !hasNext {
+		inst.Status = "approved"
+		if terminalStatus == "rejected" {
+			inst.Status = "rejected"
+		}
+		apply.Instance = &inst
+		slog.Info("workflow: v2 step transition",
+			slog.String("company_id", sub.CompanyID),
+			slog.String("record_id", inst.RecordID),
+			slog.String("instance_id", inst.WorkflowInstanceID),
+			slog.Int("workflow_schema_version", 2),
+			slog.String("current_proposal_step_id", task.StepCode),
+			slog.String("current_task_id", task.TaskID),
+			slog.String("transition", "complete_instance"),
+			slog.String("materialization_mode", "v2_snapshot"),
+		)
+		return apply, nil
+	}
+
+	nextCode := SnapshotStepIdentity(next)
+	assignee := strings.TrimSpace(next.AssigneeMembershipID)
+	if assignee == "" {
+		return nil, perr.NewHTTPError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest,
+			"v2_direct_assignee_required: next frozen step is missing assignee_membership_id", nil)
+	}
+
+	existing, err := s.repo.ListTasksByInstance(ctx, sub.CompanyID, task.WorkflowInstanceID)
+	if err != nil {
+		return nil, err
+	}
+	for _, t := range existing {
+		if t.TaskID == task.TaskID {
+			continue
+		}
+		if t.StepCode == nextCode {
+			// Idempotent: next task already exists — only complete current + point current_step.
+			inst.CurrentStepCode = nextCode
+			inst.Status = "in_progress"
+			apply.Instance = &inst
+			return apply, nil
+		}
+		if t.Status == "pending" && t.StepCode != task.StepCode {
+			return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict,
+				"workflow already has another active task", nil)
+		}
+	}
+
+	nextTask := &TaskDTO{
+		TaskID:               s.idg.NewUUID(),
+		CompanyID:            sub.CompanyID,
+		WorkflowInstanceID:   inst.WorkflowInstanceID,
+		StepCode:             nextCode,
+		AssigneeMembershipID: assignee,
+		Status:               "pending",
+	}
+	inst.CurrentStepCode = nextCode
+	inst.Status = "in_progress"
+	apply.NextTask = nextTask
+	apply.Instance = &inst
+
+	slog.Info("workflow: v2 step transition",
+		slog.String("company_id", sub.CompanyID),
+		slog.String("record_id", inst.RecordID),
+		slog.String("instance_id", inst.WorkflowInstanceID),
+		slog.Int("workflow_schema_version", 2),
+		slog.String("current_proposal_step_id", task.StepCode),
+		slog.String("next_proposal_step_id", nextCode),
+		slog.Int("current_order", orderedDisplayOrder(inst.Snapshot, task.StepCode)),
+		slog.Int("next_order", next.DisplayOrder),
+		slog.String("current_task_id", task.TaskID),
+		slog.String("next_task_id", nextTask.TaskID),
+		slog.String("department_id", strings.TrimSpace(next.Department)),
+		slog.String("assignee_membership_id", assignee),
+		slog.String("transition", "next_step"),
+		slog.String("materialization_mode", "v2_snapshot"),
+	)
+	return apply, nil
+}
+
+func orderedDisplayOrder(snapshot []StepSnapshot, stepCode string) int {
+	idx := FindSnapshotStepIndex(snapshot, stepCode)
+	if idx < 0 {
+		return 0
+	}
+	return OrderedSnapshotSteps(snapshot)[idx].DisplayOrder
+}
+
+func (s *service) planLegacyCompleteIfNoPending(ctx context.Context, sub Subject, task TaskDTO, inst WorkflowInstanceDTO, terminalStatus string) (*TaskTransitionApply, error) {
+	apply := &TaskTransitionApply{
+		CompanyID:  sub.CompanyID,
+		TaskID:     task.TaskID,
+		FromStatus: "pending",
+		ToStatus:   terminalStatus,
+	}
+	tasks, err := s.repo.ListTasksByInstance(ctx, sub.CompanyID, task.WorkflowInstanceID)
+	if err != nil {
+		return nil, err
+	}
+	for _, t := range tasks {
+		if t.TaskID == task.TaskID {
+			continue
+		}
+		if t.Status == "pending" {
+			return apply, nil
+		}
 	}
 	instanceStatus := "approved"
 	if terminalStatus == "rejected" {
 		instanceStatus = "rejected"
 	}
 	inst.Status = instanceStatus
-	if _, err := s.repo.UpdateInstance(ctx, *inst); err != nil {
-		return err
-	}
+	apply.Instance = &inst
+	return apply, nil
+}
+
+func (s *service) runInstanceCompletionSideEffects(ctx context.Context, sub Subject, inst WorkflowInstanceDTO, task TaskDTO, terminalStatus string) error {
 	if terminalStatus == "approved" && s.recordUpdater != nil {
 		if err := s.recordUpdater.MarkRecordApproved(ctx, sub.CompanyID, inst.RecordID, sub.UserID); err != nil {
 			return err

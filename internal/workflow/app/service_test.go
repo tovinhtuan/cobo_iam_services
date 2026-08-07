@@ -2,52 +2,172 @@ package app
 
 import (
 	"context"
+	"fmt"
+	"net/http"
+	"sync"
 	"testing"
 	"time"
+
+	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 )
 
 type fakeWorkflowRepository struct {
+	mu        sync.Mutex
+	instances map[string]WorkflowInstanceDTO
+	tasks     map[string]TaskDTO
+
 	createdInstance WorkflowInstanceDTO
 	createdTask     TaskDTO
+
+	failNextCreateTask error
+	createTaskCalls    int
 }
 
-func (f *fakeWorkflowRepository) CreateInstance(ctx context.Context, in WorkflowInstanceDTO) (*WorkflowInstanceDTO, error) {
+func (f *fakeWorkflowRepository) ensure() {
+	if f.instances == nil {
+		f.instances = map[string]WorkflowInstanceDTO{}
+	}
+	if f.tasks == nil {
+		f.tasks = map[string]TaskDTO{}
+	}
+}
+
+func (f *fakeWorkflowRepository) CreateInstance(_ context.Context, in WorkflowInstanceDTO) (*WorkflowInstanceDTO, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.ensure()
 	f.createdInstance = in
+	f.instances[in.CompanyID+":"+in.WorkflowInstanceID] = in
 	cp := in
 	return &cp, nil
 }
 
-func (f *fakeWorkflowRepository) FindInstance(ctx context.Context, companyID, workflowInstanceID string) (*WorkflowInstanceDTO, error) {
-	return nil, nil
-}
-
-func (f *fakeWorkflowRepository) UpdateInstance(ctx context.Context, in WorkflowInstanceDTO) (*WorkflowInstanceDTO, error) {
+func (f *fakeWorkflowRepository) FindInstance(_ context.Context, companyID, workflowInstanceID string) (*WorkflowInstanceDTO, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.ensure()
+	in, ok := f.instances[companyID+":"+workflowInstanceID]
+	if !ok {
+		return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "workflow instance not found", nil)
+	}
 	cp := in
 	return &cp, nil
 }
 
-func (f *fakeWorkflowRepository) CreateTask(ctx context.Context, task TaskDTO) (*TaskDTO, error) {
+func (f *fakeWorkflowRepository) UpdateInstance(_ context.Context, in WorkflowInstanceDTO) (*WorkflowInstanceDTO, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.ensure()
+	k := in.CompanyID + ":" + in.WorkflowInstanceID
+	if _, ok := f.instances[k]; !ok {
+		return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "workflow instance not found", nil)
+	}
+	f.instances[k] = in
+	cp := in
+	return &cp, nil
+}
+
+func (f *fakeWorkflowRepository) CreateTask(_ context.Context, task TaskDTO) (*TaskDTO, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.ensure()
+	f.createTaskCalls++
+	if f.failNextCreateTask != nil {
+		err := f.failNextCreateTask
+		f.failNextCreateTask = nil
+		return nil, err
+	}
 	f.createdTask = task
+	f.tasks[task.CompanyID+":"+task.TaskID] = task
 	cp := task
 	return &cp, nil
 }
 
-func (f *fakeWorkflowRepository) FindTask(ctx context.Context, companyID, taskID string) (*TaskDTO, error) {
-	return nil, nil
+func (f *fakeWorkflowRepository) FindTask(_ context.Context, companyID, taskID string) (*TaskDTO, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.ensure()
+	t, ok := f.tasks[companyID+":"+taskID]
+	if !ok {
+		return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "task not found", nil)
+	}
+	cp := t
+	return &cp, nil
 }
 
-func (f *fakeWorkflowRepository) UpdateTask(ctx context.Context, task TaskDTO) (*TaskDTO, error) {
+func (f *fakeWorkflowRepository) UpdateTask(_ context.Context, task TaskDTO) (*TaskDTO, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.ensure()
+	k := task.CompanyID + ":" + task.TaskID
+	if _, ok := f.tasks[k]; !ok {
+		return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "task not found", nil)
+	}
+	f.tasks[k] = task
 	cp := task
 	return &cp, nil
 }
 
-func (f *fakeWorkflowRepository) ListTasksByInstance(ctx context.Context, companyID, workflowInstanceID string) ([]TaskDTO, error) {
-	return nil, nil
+func (f *fakeWorkflowRepository) ListTasksByInstance(_ context.Context, companyID, workflowInstanceID string) ([]TaskDTO, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.ensure()
+	out := make([]TaskDTO, 0)
+	for _, t := range f.tasks {
+		if t.CompanyID == companyID && t.WorkflowInstanceID == workflowInstanceID {
+			out = append(out, t)
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeWorkflowRepository) ApplyTaskTransition(_ context.Context, in TaskTransitionApply) (*TaskDTO, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.ensure()
+
+	tk := in.CompanyID + ":" + in.TaskID
+	cur, ok := f.tasks[tk]
+	if !ok {
+		return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "task not found", nil)
+	}
+	if cur.Status != in.FromStatus {
+		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "task is not pending", nil)
+	}
+	if in.NextTask != nil && f.failNextCreateTask != nil {
+		err := f.failNextCreateTask
+		f.failNextCreateTask = nil
+		return nil, err
+	}
+	cur.Status = in.ToStatus
+	f.tasks[tk] = cur
+	if in.NextTask != nil {
+		f.createTaskCalls++
+		nt := *in.NextTask
+		f.createdTask = nt
+		f.tasks[nt.CompanyID+":"+nt.TaskID] = nt
+	}
+	if in.Instance != nil {
+		ik := in.Instance.CompanyID + ":" + in.Instance.WorkflowInstanceID
+		if _, ok := f.instances[ik]; !ok {
+			return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "workflow instance not found", nil)
+		}
+		f.instances[ik] = *in.Instance
+	}
+	cp := cur
+	return &cp, nil
 }
 
 type fakeWorkflowIDGen struct{}
 
 func (fakeWorkflowIDGen) NewUUID() string { return "workflow-uuid" }
+
+type seqIDGen struct{ n int }
+
+func (g *seqIDGen) NewUUID() string {
+	g.n++
+	return fmt.Sprintf("id-%d", g.n)
+}
 
 func TestCreateWorkflowInstanceInternalPersistsT0WithoutSnapshotFlag(t *testing.T) {
 	repo := &fakeWorkflowRepository{}

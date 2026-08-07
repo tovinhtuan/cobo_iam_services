@@ -36,13 +36,14 @@ func MapProposalWorkflowToSnapshot(snap *adhocapp.ProposalWorkflowSnapshot) []St
 			dueRule = fmt.Sprintf("T+%d", step.ProcessingDays)
 		}
 		out = append(out, StepSnapshot{
-			StepID:         stepID,
-			StepCode:       stepID,
-			Stage:          name,
-			Department:     dept,
-			DueRule:        dueRule,
-			DisplayOrder:   step.Order,
-			ProcessingDays: step.ProcessingDays,
+			StepID:               stepID,
+			StepCode:             stepID,
+			Stage:                name,
+			Department:           dept,
+			AssigneeMembershipID: strings.TrimSpace(step.AssigneeMembershipID),
+			DueRule:              dueRule,
+			DisplayOrder:         step.Order,
+			ProcessingDays:       step.ProcessingDays,
 		})
 	}
 	sort.Slice(out, func(i, j int) bool {

@@ -37,6 +37,21 @@ type Repository interface {
 	FindTask(ctx context.Context, companyID, taskID string) (*TaskDTO, error)
 	UpdateTask(ctx context.Context, task TaskDTO) (*TaskDTO, error)
 	ListTasksByInstance(ctx context.Context, companyID, workflowInstanceID string) ([]TaskDTO, error)
+	// ApplyTaskTransition atomically updates a pending task and optionally creates the next
+	// task + updates the instance (v2 multi-step) or marks the instance terminal.
+	ApplyTaskTransition(ctx context.Context, in TaskTransitionApply) (*TaskDTO, error)
+}
+
+// TaskTransitionApply is one atomic pending→terminal task transition.
+type TaskTransitionApply struct {
+	CompanyID  string
+	TaskID     string
+	FromStatus string
+	ToStatus   string
+	// NextTask, when set, is inserted in the same transaction; instance stays non-terminal.
+	NextTask *TaskDTO
+	// Instance, when set, updates status + current_step_code in the same transaction.
+	Instance *WorkflowInstanceDTO
 }
 
 // MilestoneRepository persists workflow step milestone rows seeded at instance creation.
@@ -93,14 +108,17 @@ type Subject struct {
 
 // StepSnapshot is the workflow step data frozen into workflow_instances.snapshot_json.
 type StepSnapshot struct {
-	StepID         string `json:"step_id"`
-	StepCode       string `json:"step_code,omitempty"`
-	Stage          string `json:"stage,omitempty"`
-	Department     string `json:"department,omitempty"`
-	AssigneeRole   string `json:"assignee_role,omitempty"`
-	DueRule        string `json:"due_rule,omitempty"`
-	DisplayOrder   int    `json:"display_order"`
-	ProcessingDays int    `json:"processing_days,omitempty"`
+	StepID       string `json:"step_id"`
+	StepCode     string `json:"step_code,omitempty"`
+	Stage        string `json:"stage,omitempty"`
+	Department   string `json:"department,omitempty"`
+	AssigneeRole string `json:"assignee_role,omitempty"`
+	// AssigneeMembershipID is the direct handler for proposal_snapshot_v2 steps (model A).
+	// Empty for legacy template-derived snapshots.
+	AssigneeMembershipID string `json:"assignee_membership_id,omitempty"`
+	DueRule              string `json:"due_rule,omitempty"`
+	DisplayOrder         int    `json:"display_order"`
+	ProcessingDays       int    `json:"processing_days,omitempty"`
 }
 
 // StepMilestoneRow is a single milestone row ready for persistence.
