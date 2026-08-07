@@ -292,7 +292,12 @@ func (s *service) PatchDraftProposal(ctx context.Context, req PatchDraftProposal
 		ProposedDeadlineDate: deadlineDate,
 	}
 	if t0 != "" {
-		upd.ProposedT0Date = &t0
+		normalized := normalizeDateOnly(t0)
+		upd.ProposedT0Date = &normalized
+	}
+	if deadlineDate != nil {
+		normalized := normalizeDateOnly(*deadlineDate)
+		upd.ProposedDeadlineDate = &normalized
 	}
 
 	if needWorkflowReplace {
