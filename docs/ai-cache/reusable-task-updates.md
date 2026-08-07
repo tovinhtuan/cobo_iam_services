@@ -1,11 +1,20 @@
+## 2026-08-07 - Ad-hoc proposal custom workflow Phase 4.1 browser Product E2E
+
+- task type: browser Product E2E + BE date normalize hotfix (no Production)
+- fixed: `normalizeDateOnly` on PatchDraftProposal DATE writes (MySQL scan ISO → YYYY-MM-DD)
+- verified: `go test ./internal/adhoc/... ./internal/workflow/app/...` PASS; docker compose build api PASS; `deploy-dev.ps1 -Mode be`
+- verdict: **ADHOC_PROPOSAL_CUSTOM_WORKFLOW_DEV_READY**
+- evidence (canonical): `../cobo_web_design/docs/ai-cache/adhoc-proposal-custom-workflow-contract-2026-08-07/` (`100`–`120`)
+- next: **stop at DEV** — no Production / no Phase 5
+
 ## 2026-08-07 - Ad-hoc proposal custom workflow Phase 4 DEV deploy + E2E
 
 - task type: coordinated DEV deploy + authenticated E2E (no Production)
 - deployed: `deploy-dev.ps1 -Mode be` then `-Mode fe` (Makefile equiv. `deploy-be`/`deploy-fe`); Docker compose build api+worker PASS
 - verified: healthz/readyz 200; v2 freeze + multi-step chain on DEV; `NO_MIGRATION`
-- verdict: **ADHOC_PROPOSAL_CUSTOM_WORKFLOW_DEV_READY**
+- verdict: **ADHOC_PROPOSAL_CUSTOM_WORKFLOW_DEV_READY** (runtime) — Product browser E2E closed in Phase 4.1
 - evidence (canonical): `../cobo_web_design/docs/ai-cache/adhoc-proposal-custom-workflow-contract-2026-08-07/` (`77`–`99`)
-- next: **stop at DEV** — no Production / no Phase 5
+- next: Phase 4.1 complete — see entry above
 
 ## 2026-08-07 - Ad-hoc proposal custom workflow Phase 3.6 multi-step runtime
 
