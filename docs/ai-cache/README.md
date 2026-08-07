@@ -36,6 +36,12 @@ Before marking the task done, run a pre-merge review and report risks, gaps, and
 
 
 
+## Ad-hoc proposal custom workflow — Phase 3.5 assignment convergence (2026-08-07)
+
+- Verdict **PHASE_3_5_ADHOC_PROPOSAL_ASSIGNMENT_CONTRACT_READY**
+- Submit-time `ValidateWorkflowForSubmit` for schema v2; draft incomplete still allowed; evidence under FE `docs/ai-cache/adhoc-proposal-custom-workflow-contract-2026-08-07/` (`54`–`63`)
+- **NO_DEV_DEPLOY** until Phase 4
+
 ## Ad-hoc proposal custom workflow — Phase 3 runtime (2026-08-07)
 
 - Verdict **PHASE_3_ADHOC_PROPOSAL_CUSTOM_WORKFLOW_RUNTIME_READY**

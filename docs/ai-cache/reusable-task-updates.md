@@ -1,3 +1,12 @@
+## 2026-08-07 - Ad-hoc proposal custom workflow Phase 3.5 assignment convergence
+
+- task type: BE submit assignment lock (+ FE sibling); no deploy
+- implemented: `ValidateWorkflowForSubmit` before freeze; incomplete submit stays draft/unfrozen
+- verify: `go test ./internal/adhoc/... ./internal/workflow/app/...` PASS; `go vet` PASS; `docker compose … build api` PASS
+- verdict: **PHASE_3_5_ADHOC_PROPOSAL_ASSIGNMENT_CONTRACT_READY**
+- evidence (canonical): `../cobo_web_design/docs/ai-cache/adhoc-proposal-custom-workflow-contract-2026-08-07/` (`54`–`63`)
+- next: await confirm → Phase 4 DEV deploy + E2E
+
 ## 2026-08-07 - Ad-hoc proposal custom workflow Phase 3 runtime
 
 - task type: Backend runtime frozen snapshot materialization (no FE/deploy)
