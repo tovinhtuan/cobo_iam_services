@@ -1,3 +1,12 @@
+## 2026-08-07 - Ad-hoc proposal custom workflow Phase 1 BE foundation
+
+- task type: Backend foundation in `cobo_iam_services` (no FE/runtime switch/migration apply/deploy)
+- implemented: schema v2 `proposed_workflow_json`; create `workflow_steps`; PATCH draft; OrgDirectory; submit freeze
+- verify: `go test ./internal/adhoc/...` PASS; `go vet` PASS; `docker compose -f docker-compose.dev.yml build api` exit 0
+- verdict: **PHASE_1_ADHOC_PROPOSAL_CUSTOM_WORKFLOW_BACKEND_FOUNDATION_READY**
+- evidence (canonical): `../cobo_web_design/docs/ai-cache/adhoc-proposal-custom-workflow-contract-2026-08-07/`
+- next: await confirm → Phase 2 FE — **NO_DEV_DEPLOY** until Phase 3 runtime
+
 ## 2026-08-06 - Company department metric Phase 2 DEV (BE pointer)
 
 - task type: pointer — DEV `make deploy-be` shipped `a9d03fb` (`department_count`)
