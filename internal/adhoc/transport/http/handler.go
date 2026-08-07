@@ -2,8 +2,8 @@ package http
 
 import (
 	"crypto/sha256"
-	"encoding/json"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -35,6 +35,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/company/ad-hoc-proposals", h.createProposal)
 	mux.HandleFunc("GET /api/v1/company/ad-hoc-proposals", h.listProposals)
 	mux.HandleFunc("GET /api/v1/company/ad-hoc-proposals/{proposal_id}", h.getProposal)
+	mux.HandleFunc("PATCH /api/v1/company/ad-hoc-proposals/{proposal_id}", h.patchDraftProposal)
 	mux.HandleFunc("POST /api/v1/company/ad-hoc-proposals/{proposal_id}/submit", h.submitProposal)
 	mux.HandleFunc("POST /api/v1/company/ad-hoc-proposals/{proposal_id}/approve", h.approve)
 	// focal-approve is deprecated -> proxies straight to approve (v3 D1/D3).
@@ -130,6 +131,27 @@ func (h *Handler) getProposal(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, resp)
 }
 
+func (h *Handler) patchDraftProposal(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subjectFromToken(r)
+	if err != nil {
+		httpx.WriteError(w, h.log, err)
+		return
+	}
+	var req adhocapp.PatchDraftProposalRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, h.log, err)
+		return
+	}
+	req.Subject = sub
+	req.ProposalID = strings.TrimSpace(r.PathValue("proposal_id"))
+	resp, err := h.svc.PatchDraftProposal(r.Context(), req)
+	if err != nil {
+		httpx.WriteError(w, h.log, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
 func (h *Handler) submitProposal(w http.ResponseWriter, r *http.Request) {
 	sub, err := h.subjectFromToken(r)
 	if err != nil {
@@ -196,9 +218,9 @@ func (h *Handler) adminApprove(w http.ResponseWriter, r *http.Request) {
 	if h.idem != nil {
 		hash := adhocAdminApproveRequestHash(sub.CompanyID, body.ProposalID, sub.MembershipID, body.FinalT0Date, body.FinalDeadlineDate, body.AdjustmentNote)
 		res, err = h.idem.TryReserve(r.Context(), idempotency.Params{
-			CompanyID: sub.CompanyID,
-			Scope:     "adhoc.admin_approve",
-			Key:       body.IdempotencyKey,
+			CompanyID:   sub.CompanyID,
+			Scope:       "adhoc.admin_approve",
+			Key:         body.IdempotencyKey,
 			RequestHash: hash,
 		})
 		if err != nil {

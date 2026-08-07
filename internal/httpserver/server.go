@@ -632,6 +632,7 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 			adhocMetrics, log,
 		)
 		adhocSvc = adhocapp.NewService(adhocRepo, recordCreator, typeCatalog, id, cfg.WorkflowAdhocAutoApproveEnabled, authSvc, membershipValidator, proposalNotifier, adhocMetrics)
+		adhocSvc = adhocapp.AttachWorkflowDeps(adhocSvc, adhocmysql.NewOrgDirectory(pool), adhocrecord.NewWorkflowSeederAdapter(disclosureSvc))
 		adhocHandler = adhochttp.NewHandler(log, adhocSvc, tokenManager, idemStore)
 		log.Info("ad-hoc proposal module enabled")
 	}

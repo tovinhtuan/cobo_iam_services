@@ -3,6 +3,7 @@ package mysql
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -44,9 +45,9 @@ func (r *Repository) Insert(ctx context.Context, p adhocapp.ProposalDTO) (*adhoc
 
 	embedDays := p.ProposedDeadlineDays
 	if hasDaysCol {
-		overridesJSON, mErr := marshalProposedWorkflowJSON(p.StepOverrides, nil)
+		overridesJSON, mErr := marshalProposalWorkflowPayload(p, nil)
 		if mErr != nil {
-			return nil, fmt.Errorf("marshal step_overrides: %w", mErr)
+			return nil, fmt.Errorf("marshal proposed_workflow_json: %w", mErr)
 		}
 		_, err = tx.ExecContext(ctx, `
 			INSERT INTO ad_hoc_proposals
@@ -57,9 +58,9 @@ func (r *Repository) Insert(ctx context.Context, p adhocapp.ProposalDTO) (*adhoc
 			nullableStr(p.ProposedT0Date), nullableStr(p.ProposedDeadlineDate), nullableInt(p.ProposedDeadlineDays),
 			nullIfBlank(p.ChangeNote), p.CreatedBy, nullIfBlank(p.ProcessControllerID))
 	} else {
-		overridesJSON, mErr := marshalProposedWorkflowJSON(p.StepOverrides, embedDays)
+		overridesJSON, mErr := marshalProposalWorkflowPayload(p, embedDays)
 		if mErr != nil {
-			return nil, fmt.Errorf("marshal step_overrides: %w", mErr)
+			return nil, fmt.Errorf("marshal proposed_workflow_json: %w", mErr)
 		}
 		_, err = tx.ExecContext(ctx, `
 			INSERT INTO ad_hoc_proposals
@@ -102,6 +103,82 @@ func (r *Repository) FindByID(ctx context.Context, companyID, proposalID string)
 	return scanProposalRow(row, includeDays)
 }
 
+func (r *Repository) UpdateDraft(ctx context.Context, upd adhocapp.DraftUpdate) (*adhocapp.ProposalDTO, error) {
+	hasDaysCol, err := r.hasProposedDeadlineDaysColumn(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("check ad_hoc_proposals schema: %w", err)
+	}
+
+	var workflowJSON string
+	switch {
+	case upd.Workflow != nil:
+		raw, mErr := json.Marshal(upd.Workflow)
+		if mErr != nil {
+			return nil, fmt.Errorf("marshal workflow snapshot: %w", mErr)
+		}
+		workflowJSON = string(raw)
+	case upd.UseLegacyOverrides:
+		raw, mErr := marshalProposedWorkflowJSON(upd.LegacyStepOverrides, nil)
+		if mErr != nil {
+			return nil, fmt.Errorf("marshal legacy overrides: %w", mErr)
+		}
+		workflowJSON = raw
+	default:
+		return nil, fmt.Errorf("UpdateDraft requires Workflow or UseLegacyOverrides")
+	}
+
+	now := time.Now().UTC()
+	var res sql.Result
+	if hasDaysCol {
+		res, err = r.db.ExecContext(ctx, `
+			UPDATE ad_hoc_proposals
+			SET type_id = ?, change_note = ?, proposed_t0_date = ?, proposed_deadline_date = ?,
+			    proposed_deadline_days = ?, proposed_workflow_json = CAST(? AS JSON), updated_at = ?
+			WHERE proposal_id = ? AND company_id = ? AND status = ?
+		`, upd.TypeID, nullIfBlank(upd.ChangeNote), nullableStr(upd.ProposedT0Date), nullableStr(upd.ProposedDeadlineDate),
+			nullableInt(upd.ProposedDeadlineDays), workflowJSON, now,
+			upd.ProposalID, upd.CompanyID, upd.FromStatus)
+	} else {
+		// Embed days into JSON when column missing — keep snapshot authority for v2.
+		if upd.Workflow != nil {
+			res, err = r.db.ExecContext(ctx, `
+				UPDATE ad_hoc_proposals
+				SET type_id = ?, change_note = ?, proposed_t0_date = ?, proposed_deadline_date = ?,
+				    proposed_workflow_json = CAST(? AS JSON), updated_at = ?
+				WHERE proposal_id = ? AND company_id = ? AND status = ?
+			`, upd.TypeID, nullIfBlank(upd.ChangeNote), nullableStr(upd.ProposedT0Date), nullableStr(upd.ProposedDeadlineDate),
+				workflowJSON, now, upd.ProposalID, upd.CompanyID, upd.FromStatus)
+		} else {
+			raw, mErr := marshalProposedWorkflowJSON(upd.LegacyStepOverrides, upd.ProposedDeadlineDays)
+			if mErr != nil {
+				return nil, fmt.Errorf("marshal legacy overrides: %w", mErr)
+			}
+			res, err = r.db.ExecContext(ctx, `
+				UPDATE ad_hoc_proposals
+				SET type_id = ?, change_note = ?, proposed_t0_date = ?, proposed_deadline_date = ?,
+				    proposed_workflow_json = CAST(? AS JSON), updated_at = ?
+				WHERE proposal_id = ? AND company_id = ? AND status = ?
+			`, upd.TypeID, nullIfBlank(upd.ChangeNote), nullableStr(upd.ProposedT0Date), nullableStr(upd.ProposedDeadlineDate),
+				raw, now, upd.ProposalID, upd.CompanyID, upd.FromStatus)
+		}
+	}
+	if err != nil {
+		return nil, fmt.Errorf("update ad_hoc_proposal draft: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n != 1 {
+		cur, findErr := r.FindByID(ctx, upd.CompanyID, upd.ProposalID)
+		if findErr != nil {
+			return nil, findErr
+		}
+		if cur.Status != adhocapp.StatusDraft {
+			return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "proposal is not in draft state", nil)
+		}
+		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "proposal draft was not updated", nil)
+	}
+	return r.FindByID(ctx, upd.CompanyID, upd.ProposalID)
+}
+
 func (r *Repository) UpdateStatus(ctx context.Context, upd adhocapp.StatusUpdate) (*adhocapp.ProposalDTO, bool, error) {
 	now := time.Now().UTC()
 	var q string
@@ -109,8 +186,17 @@ func (r *Repository) UpdateStatus(ctx context.Context, upd adhocapp.StatusUpdate
 
 	switch upd.Status {
 	case adhocapp.StatusPendingFocalApproval, adhocapp.StatusPendingAdminApproval, adhocapp.StatusCancelled:
-		q = `UPDATE ad_hoc_proposals SET status = ?, updated_at = ? WHERE proposal_id = ? AND company_id = ? AND status = ?`
-		args = []any{upd.Status, now, upd.ProposalID, upd.CompanyID, upd.FromStatus}
+		if upd.Status == adhocapp.StatusPendingFocalApproval && upd.Workflow != nil {
+			raw, mErr := json.Marshal(upd.Workflow)
+			if mErr != nil {
+				return nil, false, fmt.Errorf("marshal workflow snapshot: %w", mErr)
+			}
+			q = `UPDATE ad_hoc_proposals SET status = ?, proposed_workflow_json = CAST(? AS JSON), updated_at = ? WHERE proposal_id = ? AND company_id = ? AND status = ?`
+			args = []any{upd.Status, string(raw), now, upd.ProposalID, upd.CompanyID, upd.FromStatus}
+		} else {
+			q = `UPDATE ad_hoc_proposals SET status = ?, updated_at = ? WHERE proposal_id = ? AND company_id = ? AND status = ?`
+			args = []any{upd.Status, now, upd.ProposalID, upd.CompanyID, upd.FromStatus}
+		}
 	case adhocapp.StatusRejected:
 		q = `UPDATE ad_hoc_proposals SET status = ?, rejected_by = ?, rejected_at = ?, reject_reason = ?, updated_at = ?
 		     WHERE proposal_id = ? AND company_id = ? AND status = ?`
@@ -755,11 +841,13 @@ func scanProposalWithApprovalState(row rowScanner, includeDeadlineDaysCol bool) 
 }
 
 func applyProposedWorkflowFields(p *adhocapp.ProposalDTO, overridesRaw string, dlDays sql.NullInt32) {
-	steps, embeddedDays, err := unmarshalProposedWorkflowJSON(overridesRaw)
+	steps, embeddedDays, snap, err := decodeProposalWorkflowPayload(overridesRaw)
 	if err != nil {
 		p.StepOverrides = []adhocapp.WorkflowStepOverride{}
+		p.Workflow = nil
 	} else {
 		p.StepOverrides = steps
+		p.Workflow = snap
 		if embeddedDays != nil {
 			p.ProposedDeadlineDays = embeddedDays
 		}

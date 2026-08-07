@@ -17,6 +17,8 @@ const (
 
 type Service interface {
 	CreateProposal(ctx context.Context, req CreateProposalRequest) (*ProposalDTO, error)
+	// PatchDraftProposal updates editable draft fields and optionally replaces workflow_steps atomically.
+	PatchDraftProposal(ctx context.Context, req PatchDraftProposalRequest) (*ProposalDTO, error)
 	SubmitProposal(ctx context.Context, req ProposalActionRequest) (*ProposalDTO, error)
 	// Approve replaces FocalApprove for the one-round multi-reviewer flow (v3 D1/D3/D4).
 	Approve(ctx context.Context, req ApproveRequest) (*ApproveResponse, error)
@@ -55,6 +57,9 @@ type PendingApprovalRow struct {
 type Repository interface {
 	Insert(ctx context.Context, p ProposalDTO) (*ProposalDTO, error)
 	FindByID(ctx context.Context, companyID, proposalID string) (*ProposalDTO, error)
+	// UpdateDraft atomically updates draft proposal fields + optional workflow snapshot.
+	// Returns conflict when the proposal is not in ad_hoc_draft.
+	UpdateDraft(ctx context.Context, upd DraftUpdate) (*ProposalDTO, error)
 	// The bool return ("applied") is true only when this call's own guarded UPDATE
 	// matched and applied the transition (ADR-2 EV-1); false on idempotent replay
 	// (EV-2) or any non-success outcome — callers must use it to avoid
@@ -84,6 +89,12 @@ type Repository interface {
 type TypeCatalog interface {
 	GetTemplateCategory(ctx context.Context, companyID, typeID string) (string, error)
 	GetTypeDisplayName(ctx context.Context, companyID, typeID string) (string, error)
+}
+
+// WorkflowSeeder clones disclosure-type effective workflow into proposal step inputs.
+// Template itself is never mutated. Assignee is always left empty on seed.
+type WorkflowSeeder interface {
+	SeedFromDisclosureType(ctx context.Context, companyID, typeID string) ([]ProposalWorkflowStepInput, error)
 }
 
 // CreateRecordOpts carries optional inputs for record + workflow creation (WF5-B, periodic T0 in Batch 2).
@@ -202,25 +213,60 @@ type Subject struct {
 	CompanyID    string
 }
 
-// WorkflowStepOverride carries the per-step overrides in a proposal.
-// Phase 1: only processing_days override is allowed; steps cannot be added/removed.
+// WorkflowStepOverride carries the legacy per-step overrides in a proposal (schema v1).
+// Legacy path: only processing_days override is allowed; steps cannot be added/removed.
 type WorkflowStepOverride struct {
 	StepID         string `json:"step_id"`
 	ProcessingDays int    `json:"processing_days,omitempty"`
 }
 
 type CreateProposalRequest struct {
-	Subject               Subject
-	TypeID                string                 `json:"type_id"`
-	StepOverrides         []WorkflowStepOverride `json:"step_overrides"`
-	ProposedT0Date        string                 `json:"proposed_t0_date,omitempty"` // YYYY-MM-DD
-	ProposedDeadlineDays  int                    `json:"proposed_deadline_days,omitempty"`
-	ProposedDeadline      string                 `json:"proposed_deadline_date,omitempty"` // YYYY-MM-DD or legacy day count string
-	ChangeNote            string                 `json:"change_note,omitempty"`
-	ReviewerMembershipIDs []string               `json:"reviewer_membership_ids,omitempty"`
+	Subject       Subject
+	TypeID        string                      `json:"type_id"`
+	StepOverrides []WorkflowStepOverride      `json:"step_overrides"`
+	WorkflowSteps []ProposalWorkflowStepInput `json:"workflow_steps,omitempty"`
+	// UseTemplateWorkflow seeds schema v2 from effective workflow when workflow_steps is omitted.
+	UseTemplateWorkflow   bool     `json:"use_template_workflow,omitempty"`
+	ProposedT0Date        string   `json:"proposed_t0_date,omitempty"` // YYYY-MM-DD
+	ProposedDeadlineDays  int      `json:"proposed_deadline_days,omitempty"`
+	ProposedDeadline      string   `json:"proposed_deadline_date,omitempty"` // YYYY-MM-DD or legacy day count string
+	ChangeNote            string   `json:"change_note,omitempty"`
+	ReviewerMembershipIDs []string `json:"reviewer_membership_ids,omitempty"`
 	// ProcessControllerMembershipID is the deprecated single-reviewer field (A6
 	// backward-compat alias). Used only when ReviewerMembershipIDs is empty.
 	ProcessControllerMembershipID string `json:"process_controller_membership_id,omitempty"`
+}
+
+// PatchDraftProposalRequest updates an editable draft. WorkflowSteps, when non-nil,
+// replaces the entire workflow snapshot atomically (even if empty slice — empty is rejected by normalize).
+type PatchDraftProposalRequest struct {
+	Subject              Subject
+	ProposalID           string
+	TypeID               *string                      `json:"type_id,omitempty"`
+	ChangeNote           *string                      `json:"change_note,omitempty"`
+	ProposedT0Date       *string                      `json:"proposed_t0_date,omitempty"`
+	ProposedDeadlineDays *int                         `json:"proposed_deadline_days,omitempty"`
+	ProposedDeadline     *string                      `json:"proposed_deadline_date,omitempty"`
+	WorkflowSteps        *[]ProposalWorkflowStepInput `json:"workflow_steps,omitempty"`
+	// UseTemplateWorkflow reseeds workflow from the (possibly new) type when workflow_steps is omitted.
+	UseTemplateWorkflow bool `json:"use_template_workflow,omitempty"`
+}
+
+// DraftUpdate is the repository write for draft PATCH / submit freeze of workflow JSON.
+type DraftUpdate struct {
+	ProposalID           string
+	CompanyID            string
+	FromStatus           string // must be StatusDraft
+	TypeID               string
+	ChangeNote           string
+	ProposedT0Date       *string
+	ProposedDeadlineDays *int
+	ProposedDeadlineDate *string
+	// Workflow, when non-nil, is persisted as schema v2 authority in proposed_workflow_json.
+	Workflow *ProposalWorkflowSnapshot
+	// ClearWorkflowToLegacyOverrides, when Workflow is nil, writes legacy step_overrides JSON.
+	LegacyStepOverrides []WorkflowStepOverride
+	UseLegacyOverrides  bool
 }
 
 // ApproveRequest is the wire body for POST .../approve (replaces focal-approve).
@@ -359,40 +405,42 @@ type ListProposalsResponse struct {
 }
 
 type ProposalDTO struct {
-	ProposalID           string                 `json:"proposal_id"`
-	CompanyID            string                 `json:"company_id"`
+	ProposalID string `json:"proposal_id"`
+	CompanyID  string `json:"company_id"`
 	// Display-only fields populated before notification dispatch.
 	// Never persisted to ad_hoc_proposals; omitted from JSON when empty.
-	CompanyName     string `json:"company_name,omitempty"`
-	CreatorName     string `json:"creator_name,omitempty"`
+	CompanyName string `json:"company_name,omitempty"`
+	CreatorName string `json:"creator_name,omitempty"`
 	// ProposalTitle is the first line of ChangeNote; ProposalContent is the
 	// remainder (truncated at 300 chars). Used by email templates to render
 	// title and content as separate labeled fields.
-	ProposalTitle   string `json:"proposal_title,omitempty"`
-	ProposalContent string `json:"proposal_content,omitempty"`
-	TypeID               string                 `json:"type_id"`
-	Status               string                 `json:"status"`
-	StepOverrides        []WorkflowStepOverride `json:"step_overrides"`
-	ProposedT0Date       *string                `json:"proposed_t0_date,omitempty"`
-	FinalT0Date          *string                `json:"final_t0_date,omitempty"`
-	FinalDeadlineDate    *string                `json:"final_deadline_date,omitempty"`
-	AdjustmentNote       string                 `json:"adjustment_note,omitempty"`
-	ProposedDeadlineDays *int                   `json:"proposed_deadline_days,omitempty"`
-	ProposedDeadlineDate *string                `json:"proposed_deadline_date,omitempty"` // calendar date when set explicitly
-	ChangeNote           string                 `json:"change_note,omitempty"`
-	FocalApprovedBy      string                 `json:"focal_approved_by,omitempty"`
-	FocalApprovedAt      *time.Time             `json:"focal_approved_at,omitempty"`
-	AdminApprovedBy      string                 `json:"admin_approved_by,omitempty"`
-	AdminApprovedAt      *time.Time             `json:"admin_approved_at,omitempty"`
-	RejectedBy           string                 `json:"rejected_by,omitempty"`
-	RejectedAt           *time.Time             `json:"rejected_at,omitempty"`
-	RejectReason         string                 `json:"reject_reason,omitempty"`
-	RecordID             string                 `json:"record_id,omitempty"`
-	WorkflowInstanceID   string                 `json:"workflow_instance_id,omitempty"`
-	CreatedBy            string                 `json:"created_by"`
-	ProcessControllerID  string                 `json:"process_controller_id,omitempty"`
-	CreatedAt            time.Time              `json:"created_at"`
-	UpdatedAt            time.Time              `json:"updated_at"`
+	ProposalTitle   string                 `json:"proposal_title,omitempty"`
+	ProposalContent string                 `json:"proposal_content,omitempty"`
+	TypeID          string                 `json:"type_id"`
+	Status          string                 `json:"status"`
+	StepOverrides   []WorkflowStepOverride `json:"step_overrides"`
+	// Workflow is schema v2 proposal-owned snapshot. Nil for legacy proposals.
+	Workflow             *ProposalWorkflowSnapshot `json:"workflow,omitempty"`
+	ProposedT0Date       *string                   `json:"proposed_t0_date,omitempty"`
+	FinalT0Date          *string                   `json:"final_t0_date,omitempty"`
+	FinalDeadlineDate    *string                   `json:"final_deadline_date,omitempty"`
+	AdjustmentNote       string                    `json:"adjustment_note,omitempty"`
+	ProposedDeadlineDays *int                      `json:"proposed_deadline_days,omitempty"`
+	ProposedDeadlineDate *string                   `json:"proposed_deadline_date,omitempty"` // calendar date when set explicitly
+	ChangeNote           string                    `json:"change_note,omitempty"`
+	FocalApprovedBy      string                    `json:"focal_approved_by,omitempty"`
+	FocalApprovedAt      *time.Time                `json:"focal_approved_at,omitempty"`
+	AdminApprovedBy      string                    `json:"admin_approved_by,omitempty"`
+	AdminApprovedAt      *time.Time                `json:"admin_approved_at,omitempty"`
+	RejectedBy           string                    `json:"rejected_by,omitempty"`
+	RejectedAt           *time.Time                `json:"rejected_at,omitempty"`
+	RejectReason         string                    `json:"reject_reason,omitempty"`
+	RecordID             string                    `json:"record_id,omitempty"`
+	WorkflowInstanceID   string                    `json:"workflow_instance_id,omitempty"`
+	CreatedBy            string                    `json:"created_by"`
+	ProcessControllerID  string                    `json:"process_controller_id,omitempty"`
+	CreatedAt            time.Time                 `json:"created_at"`
+	UpdatedAt            time.Time                 `json:"updated_at"`
 
 	// Reviewers, Approvals, ApprovalProgress are embedded by the service layer
 	// (GetProposal/ListProposals) — never populated directly by the repository's
@@ -426,4 +474,6 @@ type StatusUpdate struct {
 	FinalT0Date              *string
 	FinalDeadlineDate        *string
 	AdjustmentNote           string
+	// Workflow, when non-nil, rewrites proposed_workflow_json in the same status UPDATE (submit freeze).
+	Workflow *ProposalWorkflowSnapshot
 }

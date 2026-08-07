@@ -38,9 +38,40 @@ type fakeRepository struct {
 func (f *fakeRepository) Insert(ctx context.Context, p ProposalDTO) (*ProposalDTO, error) {
 	f.insertCalls++
 	cp := p
+	if p.Workflow != nil {
+		snap := *p.Workflow
+		steps := append([]ProposalWorkflowStep(nil), p.Workflow.Steps...)
+		snap.Steps = steps
+		cp.Workflow = &snap
+		cp.StepOverrides = DeriveLegacyStepOverrides(steps)
+	}
 	for _, id := range p.ReviewerMembershipIDs {
 		f.reviewers = append(f.reviewers, ReviewerDTO{MembershipID: id})
 	}
+	f.proposal = &cp
+	return &cp, nil
+}
+
+func (f *fakeRepository) UpdateDraft(ctx context.Context, upd DraftUpdate) (*ProposalDTO, error) {
+	if f.proposal == nil || f.proposal.Status != StatusDraft {
+		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "proposal is not in draft state", nil)
+	}
+	cp := *f.proposal
+	cp.TypeID = upd.TypeID
+	cp.ChangeNote = upd.ChangeNote
+	cp.ProposedT0Date = upd.ProposedT0Date
+	cp.ProposedDeadlineDays = upd.ProposedDeadlineDays
+	cp.ProposedDeadlineDate = upd.ProposedDeadlineDate
+	if upd.Workflow != nil {
+		snap := *upd.Workflow
+		snap.Steps = append([]ProposalWorkflowStep(nil), upd.Workflow.Steps...)
+		cp.Workflow = &snap
+		cp.StepOverrides = DeriveLegacyStepOverrides(snap.Steps)
+	} else if upd.UseLegacyOverrides {
+		cp.Workflow = nil
+		cp.StepOverrides = append([]WorkflowStepOverride(nil), upd.LegacyStepOverrides...)
+	}
+	f.proposal = &cp
 	return &cp, nil
 }
 
@@ -162,11 +193,18 @@ func (f *fakeRepository) UpdateStatus(ctx context.Context, upd StatusUpdate) (*P
 	cp.FinalT0Date = upd.FinalT0Date
 	cp.FinalDeadlineDate = upd.FinalDeadlineDate
 	cp.AdjustmentNote = upd.AdjustmentNote
+	if upd.Workflow != nil {
+		snap := *upd.Workflow
+		snap.Steps = append([]ProposalWorkflowStep(nil), upd.Workflow.Steps...)
+		cp.Workflow = &snap
+		cp.StepOverrides = DeriveLegacyStepOverrides(snap.Steps)
+	}
 	if upd.Status == StatusPendingAdminApproval && upd.SetFocalApprovalMetadata {
 		now := time.Now().UTC()
 		cp.FocalApprovedBy = upd.ActorMembershipID
 		cp.FocalApprovedAt = &now
 	}
+	f.proposal = &cp
 	return &cp, true, nil
 }
 
@@ -1283,6 +1321,10 @@ func (f *concurrencyFakeRepo) FindByID(ctx context.Context, companyID, proposalI
 	return &cp, nil
 }
 
+func (f *concurrencyFakeRepo) UpdateDraft(ctx context.Context, upd DraftUpdate) (*ProposalDTO, error) {
+	return nil, errors.New("UpdateDraft not used in concurrency tests")
+}
+
 func (f *concurrencyFakeRepo) UpdateStatus(ctx context.Context, upd StatusUpdate) (*ProposalDTO, bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -1642,6 +1684,10 @@ func (f *raceFakeRepo) FindByID(ctx context.Context, companyID, proposalID strin
 	f.mu.Unlock()
 	f.rendezvous()
 	return &cp, nil
+}
+
+func (f *raceFakeRepo) UpdateDraft(ctx context.Context, upd DraftUpdate) (*ProposalDTO, error) {
+	return nil, errors.New("UpdateDraft not used in race tests")
 }
 
 func (f *raceFakeRepo) UpdateStatus(ctx context.Context, upd StatusUpdate) (*ProposalDTO, bool, error) {

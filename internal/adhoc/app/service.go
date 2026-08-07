@@ -32,10 +32,22 @@ type service struct {
 	membershipValidator MembershipValidator
 	notifier            ProposalNotifier // nil = notifications disabled
 	metrics             Metrics          // metrics emission; supplied as a no-op when ADHOC_EMAIL_METRICS_ENABLED=false
+	org                 OrgDirectory     // nil until AttachWorkflowDeps; required for v2 org refs
+	seeder              WorkflowSeeder   // optional template seed
 }
 
 func NewService(repo Repository, recordCreator RecordCreator, typeCatalog TypeCatalog, idg idgen.Generator, autoApprove bool, auth authapp.Service, mv MembershipValidator, notifier ProposalNotifier, metrics Metrics) Service {
 	return &service{repo: repo, recordCreator: recordCreator, typeCatalog: typeCatalog, idg: idg, autoApprove: autoApprove, auth: auth, membershipValidator: mv, notifier: notifier, metrics: metrics}
+}
+
+// AttachWorkflowDeps injects optional schema-v2 org validation and template seeding without
+// changing the NewService signature used by existing tests.
+func AttachWorkflowDeps(svc Service, org OrgDirectory, seeder WorkflowSeeder) Service {
+	if s, ok := svc.(*service); ok {
+		s.org = org
+		s.seeder = seeder
+	}
+	return svc
 }
 
 // safeNotify calls fn with the live request-scoped ctx captured by the closure
@@ -76,14 +88,48 @@ func (s *service) CreateProposal(ctx context.Context, req CreateProposalRequest)
 	if strings.TrimSpace(strings.ToLower(templateCategory)) != "irregular" {
 		return nil, newAdHocFieldError(http.StatusBadRequest, perr.CodeInvalidRequest, "type_id", "Disclosure type is not available for ad-hoc proposal")
 	}
-	// Phase 1: validate processing_days per step (must be > 0 when provided).
-	for _, o := range req.StepOverrides {
-		if strings.TrimSpace(o.StepID) == "" {
-			return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "step_id is required in step_overrides", nil)
+
+	hasWorkflowSteps := req.WorkflowSteps != nil
+	hasLegacyOverrides := len(req.StepOverrides) > 0
+	if hasWorkflowSteps && hasLegacyOverrides {
+		return nil, newAdHocFieldError(http.StatusBadRequest, perr.CodeInvalidRequest, "workflow_steps", "workflow_contract_conflict: workflow_steps and step_overrides cannot both be set")
+	}
+	if req.UseTemplateWorkflow && hasLegacyOverrides {
+		return nil, newAdHocFieldError(http.StatusBadRequest, perr.CodeInvalidRequest, "use_template_workflow", "workflow_contract_conflict: use_template_workflow and step_overrides cannot both be set")
+	}
+
+	var workflowSnap *ProposalWorkflowSnapshot
+	var stepOverrides []WorkflowStepOverride
+	switch {
+	case hasWorkflowSteps:
+		snap, nErr := s.normalizeAndValidateWorkflow(ctx, req.Subject.CompanyID, req.TypeID, req.WorkflowSteps, nil, false)
+		if nErr != nil {
+			return nil, nErr
 		}
-		if o.ProcessingDays < 0 {
-			return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "processing_days must be >= 0", nil)
+		workflowSnap = snap
+		stepOverrides = DeriveLegacyStepOverrides(snap.Steps)
+	case req.UseTemplateWorkflow:
+		inputs, sErr := s.seedWorkflowInputs(ctx, req.Subject.CompanyID, req.TypeID)
+		if sErr != nil {
+			return nil, sErr
 		}
+		snap, nErr := s.normalizeAndValidateWorkflow(ctx, req.Subject.CompanyID, req.TypeID, inputs, nil, false)
+		if nErr != nil {
+			return nil, nErr
+		}
+		workflowSnap = snap
+		stepOverrides = DeriveLegacyStepOverrides(snap.Steps)
+	default:
+		// Legacy path: step_overrides only (or empty).
+		for _, o := range req.StepOverrides {
+			if strings.TrimSpace(o.StepID) == "" {
+				return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "step_id is required in step_overrides", nil)
+			}
+			if o.ProcessingDays < 0 {
+				return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "processing_days must be >= 0", nil)
+			}
+		}
+		stepOverrides = req.StepOverrides
 	}
 
 	// Validate reviewers (D3/D4: 1..N, each must hold ad_hoc_alert.focal_review).
@@ -139,7 +185,8 @@ func (s *service) CreateProposal(ctx context.Context, req CreateProposalRequest)
 		CompanyID:             req.Subject.CompanyID,
 		TypeID:                req.TypeID,
 		Status:                StatusDraft,
-		StepOverrides:         req.StepOverrides,
+		StepOverrides:         stepOverrides,
+		Workflow:              workflowSnap,
 		ChangeNote:            strings.TrimSpace(req.ChangeNote),
 		CreatedBy:             req.Subject.MembershipID,
 		ReviewerMembershipIDs: reviewerIDs,
@@ -150,6 +197,140 @@ func (s *service) CreateProposal(ctx context.Context, req CreateProposalRequest)
 	p.ProposedDeadlineDays = deadlineDays
 	p.ProposedDeadlineDate = deadlineDate
 	out, err := s.repo.Insert(ctx, p)
+	return out, mapRepositoryError(err)
+}
+
+func (s *service) PatchDraftProposal(ctx context.Context, req PatchDraftProposalRequest) (*ProposalDTO, error) {
+	if err := s.authorize(ctx, req.Subject, "ad_hoc_alert.propose", authapp.ResourceRef{Type: "ad_hoc_proposal", ID: req.ProposalID}); err != nil {
+		if he, ok := perr.AsHTTPError(err); ok && he.HTTPStatus == http.StatusForbidden {
+			return nil, newAdHocPermissionError("ad_hoc_alert.propose", "Missing permission ad_hoc_alert.propose")
+		}
+		return nil, err
+	}
+	cur, err := s.repo.FindByID(ctx, req.Subject.CompanyID, req.ProposalID)
+	if err != nil {
+		return nil, err
+	}
+	if cur.Status != StatusDraft {
+		return nil, newAdHocFieldError(http.StatusConflict, perr.CodeStateConflict, "workflow", "workflow_frozen: proposal is not editable")
+	}
+	if cur.CreatedBy != req.Subject.MembershipID {
+		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "only the creator can update the draft proposal", nil)
+	}
+	if cur.Workflow != nil && cur.Workflow.Frozen {
+		return nil, newAdHocFieldError(http.StatusConflict, perr.CodeStateConflict, "workflow", "workflow_frozen: proposal workflow is immutable")
+	}
+
+	typeID := cur.TypeID
+	if req.TypeID != nil {
+		typeID = strings.TrimSpace(*req.TypeID)
+		if typeID == "" {
+			return nil, newAdHocFieldError(http.StatusBadRequest, perr.CodeInvalidRequest, "type_id", "type_id is required")
+		}
+		if s.typeCatalog == nil {
+			return nil, perr.NewHTTPError(http.StatusInternalServerError, perr.CodeInternal, "template catalog is unavailable", nil)
+		}
+		templateCategory, catErr := s.typeCatalog.GetTemplateCategory(ctx, req.Subject.CompanyID, typeID)
+		if catErr != nil {
+			if he, ok := perr.AsHTTPError(catErr); ok && strings.Contains(strings.ToLower(he.Message), "disclosure type not found") {
+				return nil, newAdHocFieldError(http.StatusBadRequest, perr.CodeInvalidRequest, "type_id", "Disclosure type is not available for ad-hoc proposal")
+			}
+			return nil, mapRepositoryError(catErr)
+		}
+		if strings.TrimSpace(strings.ToLower(templateCategory)) != "irregular" {
+			return nil, newAdHocFieldError(http.StatusBadRequest, perr.CodeInvalidRequest, "type_id", "Disclosure type is not available for ad-hoc proposal")
+		}
+	}
+
+	changeNote := cur.ChangeNote
+	if req.ChangeNote != nil {
+		changeNote = strings.TrimSpace(*req.ChangeNote)
+	}
+
+	t0 := ""
+	if cur.ProposedT0Date != nil {
+		t0 = *cur.ProposedT0Date
+	}
+	if req.ProposedT0Date != nil {
+		t0 = strings.TrimSpace(*req.ProposedT0Date)
+	}
+	legacyDeadline := ""
+	daysIn := 0
+	if cur.ProposedDeadlineDays != nil {
+		daysIn = *cur.ProposedDeadlineDays
+	}
+	if req.ProposedDeadline != nil {
+		legacyDeadline = strings.TrimSpace(*req.ProposedDeadline)
+	}
+	if req.ProposedDeadlineDays != nil {
+		daysIn = *req.ProposedDeadlineDays
+	}
+	deadlineDays, deadlineDate, err := resolveProposedDeadline(t0, legacyDeadline, daysIn)
+	if err != nil {
+		return nil, err
+	}
+	if req.ProposedT0Date == nil && req.ProposedDeadline == nil && req.ProposedDeadlineDays == nil {
+		deadlineDays = cur.ProposedDeadlineDays
+		deadlineDate = cur.ProposedDeadlineDate
+		if cur.ProposedT0Date != nil {
+			t0 = *cur.ProposedT0Date
+		} else {
+			t0 = ""
+		}
+	}
+
+	typeChanged := typeID != cur.TypeID
+	needWorkflowReplace := req.WorkflowSteps != nil || req.UseTemplateWorkflow || typeChanged
+
+	upd := DraftUpdate{
+		ProposalID:           req.ProposalID,
+		CompanyID:            req.Subject.CompanyID,
+		FromStatus:           StatusDraft,
+		TypeID:               typeID,
+		ChangeNote:           changeNote,
+		ProposedDeadlineDays: deadlineDays,
+		ProposedDeadlineDate: deadlineDate,
+	}
+	if t0 != "" {
+		upd.ProposedT0Date = &t0
+	}
+
+	if needWorkflowReplace {
+		var inputs []ProposalWorkflowStepInput
+		switch {
+		case req.WorkflowSteps != nil:
+			if typeChanged {
+				// Reject old source refs that disagree with new type provenance when source_step_id set
+				// without reseeding — require explicit new workflow_steps matching new type seed lineage
+				// or UseTemplateWorkflow. Client-supplied steps are accepted as full replace (no merge).
+			}
+			inputs = *req.WorkflowSteps
+		case req.UseTemplateWorkflow || typeChanged:
+			var sErr error
+			inputs, sErr = s.seedWorkflowInputs(ctx, req.Subject.CompanyID, typeID)
+			if sErr != nil {
+				return nil, sErr
+			}
+		}
+		existingIDs := map[string]struct{}{}
+		if cur.Workflow != nil && !typeChanged {
+			for _, st := range cur.Workflow.Steps {
+				existingIDs[st.ID] = struct{}{}
+			}
+		}
+		snap, nErr := s.normalizeAndValidateWorkflow(ctx, req.Subject.CompanyID, typeID, inputs, existingIDs, false)
+		if nErr != nil {
+			return nil, nErr
+		}
+		upd.Workflow = snap
+	} else if cur.Workflow != nil {
+		upd.Workflow = cur.Workflow
+	} else {
+		upd.UseLegacyOverrides = true
+		upd.LegacyStepOverrides = cur.StepOverrides
+	}
+
+	out, err := s.repo.UpdateDraft(ctx, upd)
 	return out, mapRepositoryError(err)
 }
 
@@ -178,7 +359,8 @@ func (s *service) SubmitProposal(ctx context.Context, req ProposalActionRequest)
 	if len(reviewers) == 0 {
 		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "proposal has no assigned reviewers", nil)
 	}
-	updated, applied, err := s.repo.UpdateStatus(ctx, StatusUpdate{
+
+	statusUpd := StatusUpdate{
 		ProposalID:               req.ProposalID,
 		CompanyID:                req.Subject.CompanyID,
 		Status:                   StatusPendingFocalApproval,
@@ -186,7 +368,16 @@ func (s *service) SubmitProposal(ctx context.Context, req ProposalActionRequest)
 		ActorMembershipID:        req.Subject.MembershipID,
 		ActorUserID:              req.Subject.UserID,
 		SetFocalApprovalMetadata: false,
-	})
+	}
+	// Submit freeze foundation: mark schema v2 snapshot immutable. Runtime still late-resolves
+	// template until Phase 3 — do not switch materialization here.
+	if cur.Workflow != nil && cur.Workflow.SchemaVersion == ProposalWorkflowSchemaV2 {
+		frozen := *cur.Workflow
+		frozen.Frozen = true
+		statusUpd.Workflow = &frozen
+	}
+
+	updated, applied, err := s.repo.UpdateStatus(ctx, statusUpd)
 	if err != nil {
 		return nil, err
 	}
@@ -683,12 +874,12 @@ func (s *service) FinalizeLegacyApproval(ctx context.Context, sub Subject, compa
 	// designated process controller; ActorUserID still records the real actor
 	// (the platform admin running this migration) for audit purposes.
 	_, err = s.AdminApprove(ctx, AdminApproveRequest{
-		Subject:        Subject{UserID: sub.UserID, MembershipID: cur.ProcessControllerID, CompanyID: companyID},
-		ProposalID:     proposalID,
-		IdempotencyKey: "migration-0098:" + proposalID,
-		FinalT0Date:    finalT0,
+		Subject:           Subject{UserID: sub.UserID, MembershipID: cur.ProcessControllerID, CompanyID: companyID},
+		ProposalID:        proposalID,
+		IdempotencyKey:    "migration-0098:" + proposalID,
+		FinalT0Date:       finalT0,
 		FinalDeadlineDate: finalDeadline,
-		AdjustmentNote: "Auto-approved by migration 0098 (D9)",
+		AdjustmentNote:    "Auto-approved by migration 0098 (D9)",
 	})
 	return err
 }
@@ -740,6 +931,52 @@ func (s *service) enrichProposalForNotification(ctx context.Context, p ProposalD
 		p.CreatorName = info.FullName
 	}
 	return p
+}
+
+func (s *service) seedWorkflowInputs(ctx context.Context, companyID, typeID string) ([]ProposalWorkflowStepInput, error) {
+	if s.seeder == nil {
+		return nil, perr.NewHTTPError(http.StatusInternalServerError, perr.CodeInternal, "workflow template seeder is unavailable", nil)
+	}
+	inputs, err := s.seeder.SeedFromDisclosureType(ctx, companyID, typeID)
+	if err != nil {
+		return nil, mapRepositoryError(err)
+	}
+	if len(inputs) == 0 {
+		return nil, newAdHocFieldError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, "type_id", "disclosure type has no effective workflow steps to seed")
+	}
+	return inputs, nil
+}
+
+func (s *service) normalizeAndValidateWorkflow(
+	ctx context.Context,
+	companyID, typeID string,
+	inputs []ProposalWorkflowStepInput,
+	existingIDs map[string]struct{},
+	frozen bool,
+) (*ProposalWorkflowSnapshot, error) {
+	newID := func() string {
+		if s.idg != nil {
+			return s.idg.NewUUID()
+		}
+		return uuid.NewString()
+	}
+	snap, err := NormalizeProposalWorkflowSteps(typeID, inputs, existingIDs, frozen, newID)
+	if err != nil {
+		return nil, err
+	}
+	needsOrg := false
+	for _, st := range snap.Steps {
+		if st.DepartmentID != "" || st.AssigneeMembershipID != "" {
+			needsOrg = true
+			break
+		}
+	}
+	if needsOrg {
+		if err := ValidateWorkflowStepOrgRefs(ctx, s.org, companyID, snap.Steps); err != nil {
+			return nil, err
+		}
+	}
+	return snap, nil
 }
 
 func parseOptionalISODate(raw, field string) (*time.Time, *string, error) {

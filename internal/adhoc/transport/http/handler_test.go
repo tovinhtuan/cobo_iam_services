@@ -31,6 +31,10 @@ func (f *fakeService) CreateProposal(context.Context, adhocapp.CreateProposalReq
 	return nil, nil
 }
 
+func (f *fakeService) PatchDraftProposal(context.Context, adhocapp.PatchDraftProposalRequest) (*adhocapp.ProposalDTO, error) {
+	return nil, nil
+}
+
 func (f *fakeService) SubmitProposal(context.Context, adhocapp.ProposalActionRequest) (*adhocapp.ProposalDTO, error) {
 	return nil, nil
 }

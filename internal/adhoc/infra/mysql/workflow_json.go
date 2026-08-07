@@ -33,6 +33,17 @@ func marshalProposedWorkflowJSON(steps []adhocapp.WorkflowStepOverride, embedDay
 	return string(raw), nil
 }
 
+func marshalProposalWorkflowPayload(p adhocapp.ProposalDTO, embedDays *int) (string, error) {
+	if p.Workflow != nil && p.Workflow.SchemaVersion == adhocapp.ProposalWorkflowSchemaV2 {
+		raw, err := json.Marshal(p.Workflow)
+		if err != nil {
+			return "", err
+		}
+		return string(raw), nil
+	}
+	return marshalProposedWorkflowJSON(p.StepOverrides, embedDays)
+}
+
 func unmarshalProposedWorkflowJSON(raw string) ([]adhocapp.WorkflowStepOverride, *int, error) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" || trimmed == "null" {
@@ -48,6 +59,13 @@ func unmarshalProposedWorkflowJSON(raw string) ([]adhocapp.WorkflowStepOverride,
 		}
 		return steps, nil, nil
 	}
+	// Schema v2 snapshot — handled by decodeProposalWorkflowPayload; here treat as empty legacy.
+	var probe map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(trimmed), &probe); err == nil {
+		if _, ok := probe["schema_version"]; ok {
+			return []adhocapp.WorkflowStepOverride{}, nil, nil
+		}
+	}
 	var env proposedWorkflowEnvelope
 	if err := json.Unmarshal([]byte(trimmed), &env); err != nil {
 		return nil, nil, err
@@ -56,4 +74,33 @@ func unmarshalProposedWorkflowJSON(raw string) ([]adhocapp.WorkflowStepOverride,
 		env.StepOverrides = []adhocapp.WorkflowStepOverride{}
 	}
 	return env.StepOverrides, env.ProposedDeadlineDays, nil
+}
+
+func decodeProposalWorkflowPayload(raw string) (steps []adhocapp.WorkflowStepOverride, days *int, snap *adhocapp.ProposalWorkflowSnapshot, err error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" || trimmed == "null" {
+		return []adhocapp.WorkflowStepOverride{}, nil, nil, nil
+	}
+	if strings.HasPrefix(trimmed, "[") {
+		steps, days, err = unmarshalProposedWorkflowJSON(trimmed)
+		return steps, days, nil, err
+	}
+	var probe struct {
+		SchemaVersion int `json:"schema_version"`
+	}
+	if err := json.Unmarshal([]byte(trimmed), &probe); err != nil {
+		return nil, nil, nil, err
+	}
+	if probe.SchemaVersion == adhocapp.ProposalWorkflowSchemaV2 {
+		var snap adhocapp.ProposalWorkflowSnapshot
+		if err := json.Unmarshal([]byte(trimmed), &snap); err != nil {
+			return nil, nil, nil, err
+		}
+		if snap.Steps == nil {
+			snap.Steps = []adhocapp.ProposalWorkflowStep{}
+		}
+		return adhocapp.DeriveLegacyStepOverrides(snap.Steps), nil, &snap, nil
+	}
+	steps, days, err = unmarshalProposedWorkflowJSON(trimmed)
+	return steps, days, nil, err
 }
