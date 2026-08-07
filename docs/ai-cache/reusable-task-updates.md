@@ -1,3 +1,12 @@
+## 2026-08-07 - Ad-hoc proposal custom workflow Phase 3 runtime
+
+- task type: Backend runtime frozen snapshot materialization (no FE/deploy)
+- implemented: v2 finalize router; MapProposalWorkflowToSnapshot; first-task assignee from snapshot; `V2_DIRECT_ASSIGNEE_REQUIRED`; legacy late-resolve preserved
+- verify: `go test ./internal/adhoc/... ./internal/workflow/app/...` PASS; `go vet` PASS; `docker compose -f docker-compose.dev.yml build api` PASS
+- verdict: **PHASE_3_ADHOC_PROPOSAL_CUSTOM_WORKFLOW_RUNTIME_READY**
+- evidence (canonical): `../cobo_web_design/docs/ai-cache/adhoc-proposal-custom-workflow-contract-2026-08-07/` (`40`–`53`)
+- next: await confirm → Phase 4 coordinated DEV deploy + E2E — **NO_DEV_DEPLOY** until then
+
 ## 2026-08-07 - Ad-hoc proposal custom workflow Phase 1 BE foundation
 
 - task type: Backend foundation in `cobo_iam_services` (no FE/runtime switch/migration apply/deploy)
@@ -5,7 +14,7 @@
 - verify: `go test ./internal/adhoc/...` PASS; `go vet` PASS; `docker compose -f docker-compose.dev.yml build api` exit 0
 - verdict: **PHASE_1_ADHOC_PROPOSAL_CUSTOM_WORKFLOW_BACKEND_FOUNDATION_READY**
 - evidence (canonical): `../cobo_web_design/docs/ai-cache/adhoc-proposal-custom-workflow-contract-2026-08-07/`
-- next: await confirm → Phase 2 FE — **NO_DEV_DEPLOY** until Phase 3 runtime
+- next: Phase 3 runtime complete (see entry above) — still **NO_DEV_DEPLOY** until Phase 4
 
 ## 2026-08-06 - Company department metric Phase 2 DEV (BE pointer)
 

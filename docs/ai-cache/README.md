@@ -36,12 +36,19 @@ Before marking the task done, run a pre-merge review and report risks, gaps, and
 
 
 
+## Ad-hoc proposal custom workflow — Phase 3 runtime (2026-08-07)
+
+- Verdict **PHASE_3_ADHOC_PROPOSAL_CUSTOM_WORKFLOW_RUNTIME_READY**
+- Source in this repo; evidence canonical under sibling FE `docs/ai-cache/adhoc-proposal-custom-workflow-contract-2026-08-07/` (`40`–`53`)
+- `runtimeV2Implemented=true`; assignment `V2_DIRECT_ASSIGNEE_REQUIRED`; **NO_DEV_DEPLOY** until Phase 4
+- Next: await Phase 4 coordinated DEV deploy + E2E
+
 ## Ad-hoc proposal custom workflow — Phase 1 (2026-08-07)
 
 - Verdict **PHASE_1_ADHOC_PROPOSAL_CUSTOM_WORKFLOW_BACKEND_FOUNDATION_READY**
 - Source in this repo; evidence canonical under sibling FE `docs/ai-cache/adhoc-proposal-custom-workflow-contract-2026-08-07/`
-- `NO_MIGRATION_REQUIRED`; `runtimeV2Implemented=false`; **NO_DEV_DEPLOY** until Phase 3
-- Next: await Phase 2 FE confirmation
+- `NO_MIGRATION_REQUIRED`; Phase 3 runtime landed (see above)
+- Next: await Phase 4
 
 ## Company department metric — Phase 2 DEV (2026-08-06)
 
