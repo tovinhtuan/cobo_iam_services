@@ -1,3 +1,12 @@
+## 2026-08-07 - Ad-hoc proposal custom workflow Phase 4 DEV deploy + E2E
+
+- task type: coordinated DEV deploy + authenticated E2E (no Production)
+- deployed: `deploy-dev.ps1 -Mode be` then `-Mode fe` (Makefile equiv. `deploy-be`/`deploy-fe`); Docker compose build api+worker PASS
+- verified: healthz/readyz 200; v2 freeze + multi-step chain on DEV; `NO_MIGRATION`
+- verdict: **ADHOC_PROPOSAL_CUSTOM_WORKFLOW_DEV_READY**
+- evidence (canonical): `../cobo_web_design/docs/ai-cache/adhoc-proposal-custom-workflow-contract-2026-08-07/` (`77`–`99`)
+- next: **stop at DEV** — no Production / no Phase 5
+
 ## 2026-08-07 - Ad-hoc proposal custom workflow Phase 3.6 multi-step runtime
 
 - task type: BE workflow runtime chain (no FE/deploy)
@@ -5,7 +14,7 @@
 - verify: `go test ./internal/workflow/app/... ./internal/adhoc/...` PASS; `go vet` PASS; `go build` api+worker PASS; docker compose build api **BLOCKED** (daemon down); `NO_DEV_DEPLOY`
 - verdict: **PHASE_3_6_ADHOC_PROPOSAL_MULTI_STEP_RUNTIME_READY**
 - evidence (canonical): `../cobo_web_design/docs/ai-cache/adhoc-proposal-custom-workflow-contract-2026-08-07/` (`64`–`76`)
-- next: await confirm → Phase 4 DEV deploy + E2E
+- next: Phase 4 complete — see entry above
 
 ## 2026-08-07 - Ad-hoc proposal custom workflow Phase 3.5 assignment convergence
 
