@@ -1,3 +1,12 @@
+## 2026-08-07 - Ad-hoc proposal custom workflow Phase 3.6 multi-step runtime
+
+- task type: BE workflow runtime chain (no FE/deploy)
+- implemented: v2 non-final complete → next task from frozen snapshot; `ApplyTaskTransition` TX; StepSnapshot.assignee_membership_id; legacy unchanged
+- verify: `go test ./internal/workflow/app/... ./internal/adhoc/...` PASS; `go vet` PASS; `go build` api+worker PASS; docker compose build api **BLOCKED** (daemon down); `NO_DEV_DEPLOY`
+- verdict: **PHASE_3_6_ADHOC_PROPOSAL_MULTI_STEP_RUNTIME_READY**
+- evidence (canonical): `../cobo_web_design/docs/ai-cache/adhoc-proposal-custom-workflow-contract-2026-08-07/` (`64`–`76`)
+- next: await confirm → Phase 4 DEV deploy + E2E
+
 ## 2026-08-07 - Ad-hoc proposal custom workflow Phase 3.5 assignment convergence
 
 - task type: BE submit assignment lock (+ FE sibling); no deploy
@@ -5,7 +14,7 @@
 - verify: `go test ./internal/adhoc/... ./internal/workflow/app/...` PASS; `go vet` PASS; `docker compose … build api` PASS
 - verdict: **PHASE_3_5_ADHOC_PROPOSAL_ASSIGNMENT_CONTRACT_READY**
 - evidence (canonical): `../cobo_web_design/docs/ai-cache/adhoc-proposal-custom-workflow-contract-2026-08-07/` (`54`–`63`)
-- next: await confirm → Phase 4 DEV deploy + E2E
+- next: Phase 3.6 complete — await Phase 4
 
 ## 2026-08-07 - Ad-hoc proposal custom workflow Phase 3 runtime
 

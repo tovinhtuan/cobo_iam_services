@@ -36,6 +36,12 @@ Before marking the task done, run a pre-merge review and report risks, gaps, and
 
 
 
+## Ad-hoc proposal custom workflow — Phase 3.6 multi-step runtime (2026-08-07)
+
+- Verdict **PHASE_3_6_ADHOC_PROPOSAL_MULTI_STEP_RUNTIME_READY**
+- Evidence: `docs/ai-cache/adhoc-proposal-custom-workflow-contract-2026-08-07/` (`64`–`76`)
+- Lazy one-active-task chain; instance completes only after final frozen step; **NO_DEV_DEPLOY**
+
 ## Ad-hoc proposal custom workflow — Phase 3.5 assignment convergence (2026-08-07)
 
 - Verdict **PHASE_3_5_ADHOC_PROPOSAL_ASSIGNMENT_CONTRACT_READY**
@@ -47,7 +53,7 @@ Before marking the task done, run a pre-merge review and report risks, gaps, and
 - Verdict **PHASE_3_ADHOC_PROPOSAL_CUSTOM_WORKFLOW_RUNTIME_READY**
 - Source in this repo; evidence canonical under sibling FE `docs/ai-cache/adhoc-proposal-custom-workflow-contract-2026-08-07/` (`40`–`53`)
 - `runtimeV2Implemented=true`; assignment `V2_DIRECT_ASSIGNEE_REQUIRED`; **NO_DEV_DEPLOY** until Phase 4
-- Next: await Phase 4 coordinated DEV deploy + E2E
+- Next: Phase 3.6 multi-step chain complete — await Phase 4
 
 ## Ad-hoc proposal custom workflow — Phase 1 (2026-08-07)
 
