@@ -360,6 +360,13 @@ func (s *service) SubmitProposal(ctx context.Context, req ProposalActionRequest)
 		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "proposal has no assigned reviewers", nil)
 	}
 
+	// Phase 3.5: v2 assignment required at submit — block incomplete freeze (defense: runtime still re-checks).
+	if cur.Workflow != nil && cur.Workflow.SchemaVersion == ProposalWorkflowSchemaV2 {
+		if err := ValidateWorkflowForSubmit(ctx, s.org, cur.CompanyID, cur.Workflow); err != nil {
+			return nil, err
+		}
+	}
+
 	statusUpd := StatusUpdate{
 		ProposalID:               req.ProposalID,
 		CompanyID:                req.Subject.CompanyID,

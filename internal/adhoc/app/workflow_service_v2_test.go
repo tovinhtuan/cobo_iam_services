@@ -185,13 +185,24 @@ func TestSubmitProposal_FreezesV2Snapshot(t *testing.T) {
 			ProposalID: "p1", CompanyID: "co", TypeID: "type-1", Status: StatusDraft, CreatedBy: "creator",
 			Workflow: &ProposalWorkflowSnapshot{
 				SchemaVersion: 2, Frozen: false,
-				Steps: []ProposalWorkflowStep{{ID: "ps-1", Order: 1, Name: "A", ProcessingDays: 1, SourceStepID: "tpl"}},
+				Steps: []ProposalWorkflowStep{{
+					ID: "ps-1", Order: 1, Name: "A", ProcessingDays: 1, SourceStepID: "tpl",
+					DepartmentID: "dep-1", AssigneeMembershipID: "mem-1",
+				}},
 			},
 			StepOverrides: []WorkflowStepOverride{{StepID: "tpl", ProcessingDays: 1}},
 		},
 		reviewers: []ReviewerDTO{{MembershipID: "rev-1"}},
 	}
-	svc := NewService(repo, &fakeRecordCreator{}, &fakeTypeCatalog{category: "irregular"}, fakeIDGen{}, false, &fakeAuthService{decision: authapp.DecisionAllow}, newAllowValidator(), nil, noopMetrics{})
+	svc := AttachWorkflowDeps(
+		NewService(repo, &fakeRecordCreator{}, &fakeTypeCatalog{category: "irregular"}, fakeIDGen{}, false, &fakeAuthService{decision: authapp.DecisionAllow}, newAllowValidator(), nil, noopMetrics{}),
+		&fakeOrgDirectory{
+			depts:   map[string]bool{"dep-1": true},
+			members: map[string]bool{"mem-1": true},
+			belong:  map[string]bool{"mem-1\x00dep-1": true},
+		},
+		nil,
+	)
 	out, err := svc.SubmitProposal(context.Background(), ProposalActionRequest{
 		Subject: Subject{UserID: "u", MembershipID: "creator", CompanyID: "co"}, ProposalID: "p1",
 	})
@@ -207,6 +218,145 @@ func TestSubmitProposal_FreezesV2Snapshot(t *testing.T) {
 	// Dual-read still exposes derived step_overrides for API compatibility.
 	if len(out.StepOverrides) == 0 {
 		t.Fatal("legacy derived overrides should remain for dual-read")
+	}
+}
+
+func TestSubmitProposal_V2MissingAssignee_RemainsDraftUnfrozen(t *testing.T) {
+	repo := &fakeRepository{
+		proposal: &ProposalDTO{
+			ProposalID: "p1", CompanyID: "co", TypeID: "type-1", Status: StatusDraft, CreatedBy: "creator",
+			Workflow: &ProposalWorkflowSnapshot{
+				SchemaVersion: 2, Frozen: false,
+				Steps: []ProposalWorkflowStep{{
+					ID: "ps-1", Order: 1, Name: "A", ProcessingDays: 1,
+					DepartmentID: "dep-1",
+				}},
+			},
+		},
+		reviewers: []ReviewerDTO{{MembershipID: "rev-1"}},
+	}
+	svc := AttachWorkflowDeps(
+		NewService(repo, &fakeRecordCreator{}, &fakeTypeCatalog{category: "irregular"}, fakeIDGen{}, false, &fakeAuthService{decision: authapp.DecisionAllow}, newAllowValidator(), nil, noopMetrics{}),
+		&fakeOrgDirectory{depts: map[string]bool{"dep-1": true}},
+		nil,
+	)
+	_, err := svc.SubmitProposal(context.Background(), ProposalActionRequest{
+		Subject: Subject{UserID: "u", MembershipID: "creator", CompanyID: "co"}, ProposalID: "p1",
+	})
+	if err == nil {
+		t.Fatal("expected submit blocked")
+	}
+	if repo.proposal.Status != StatusDraft {
+		t.Fatalf("status=%s want draft", repo.proposal.Status)
+	}
+	if repo.proposal.Workflow == nil || repo.proposal.Workflow.Frozen {
+		t.Fatalf("must remain unfrozen %#v", repo.proposal.Workflow)
+	}
+	if repo.updateCalls != 0 {
+		t.Fatalf("UpdateStatus must not run, calls=%d", repo.updateCalls)
+	}
+	he, _ := perr.AsHTTPError(err)
+	if he == nil || he.HTTPStatus != http.StatusUnprocessableEntity {
+		t.Fatalf("want 422 got %v", err)
+	}
+}
+
+func TestSubmitProposal_V2MissingDepartment_Blocked(t *testing.T) {
+	repo := &fakeRepository{
+		proposal: &ProposalDTO{
+			ProposalID: "p1", CompanyID: "co", TypeID: "type-1", Status: StatusDraft, CreatedBy: "creator",
+			Workflow: &ProposalWorkflowSnapshot{
+				SchemaVersion: 2, Frozen: false,
+				Steps: []ProposalWorkflowStep{{ID: "ps-1", Order: 1, Name: "A", ProcessingDays: 1}},
+			},
+		},
+		reviewers: []ReviewerDTO{{MembershipID: "rev-1"}},
+	}
+	svc := AttachWorkflowDeps(
+		NewService(repo, &fakeRecordCreator{}, &fakeTypeCatalog{category: "irregular"}, fakeIDGen{}, false, &fakeAuthService{decision: authapp.DecisionAllow}, newAllowValidator(), nil, noopMetrics{}),
+		&fakeOrgDirectory{},
+		nil,
+	)
+	_, err := svc.SubmitProposal(context.Background(), ProposalActionRequest{
+		Subject: Subject{UserID: "u", MembershipID: "creator", CompanyID: "co"}, ProposalID: "p1",
+	})
+	if err == nil || repo.updateCalls != 0 {
+		t.Fatalf("expected block err=%v updates=%d", err, repo.updateCalls)
+	}
+}
+
+func TestSubmitProposal_V2MultiStepOneInvalid_Atomic(t *testing.T) {
+	repo := &fakeRepository{
+		proposal: &ProposalDTO{
+			ProposalID: "p1", CompanyID: "co", TypeID: "type-1", Status: StatusDraft, CreatedBy: "creator",
+			Workflow: &ProposalWorkflowSnapshot{
+				SchemaVersion: 2, Frozen: false,
+				Steps: []ProposalWorkflowStep{
+					{ID: "ps-1", Order: 1, Name: "A", ProcessingDays: 1, DepartmentID: "dep-1", AssigneeMembershipID: "mem-1"},
+					{ID: "ps-2", Order: 2, Name: "B", ProcessingDays: 1, DepartmentID: "dep-1"}, // missing assignee
+				},
+			},
+		},
+		reviewers: []ReviewerDTO{{MembershipID: "rev-1"}},
+	}
+	svc := AttachWorkflowDeps(
+		NewService(repo, &fakeRecordCreator{}, &fakeTypeCatalog{category: "irregular"}, fakeIDGen{}, false, &fakeAuthService{decision: authapp.DecisionAllow}, newAllowValidator(), nil, noopMetrics{}),
+		&fakeOrgDirectory{
+			depts: map[string]bool{"dep-1": true}, members: map[string]bool{"mem-1": true},
+			belong: map[string]bool{"mem-1\x00dep-1": true},
+		},
+		nil,
+	)
+	_, err := svc.SubmitProposal(context.Background(), ProposalActionRequest{
+		Subject: Subject{UserID: "u", MembershipID: "creator", CompanyID: "co"}, ProposalID: "p1",
+	})
+	if err == nil || repo.proposal.Status != StatusDraft || repo.proposal.Workflow.Frozen {
+		t.Fatalf("atomic fail expected err=%v status=%s frozen=%v", err, repo.proposal.Status, repo.proposal.Workflow.Frozen)
+	}
+}
+
+func TestSubmitProposal_LegacyWithoutV2Assignment_StillWorks(t *testing.T) {
+	repo := &fakeRepository{
+		proposal: &ProposalDTO{
+			ProposalID: "p-legacy", CompanyID: "co", TypeID: "type-1", Status: StatusDraft, CreatedBy: "creator",
+			StepOverrides: []WorkflowStepOverride{{StepID: "s1", ProcessingDays: 3}},
+		},
+		reviewers: []ReviewerDTO{{MembershipID: "rev-1"}},
+	}
+	svc := NewService(repo, &fakeRecordCreator{}, &fakeTypeCatalog{category: "irregular"}, fakeIDGen{}, false, &fakeAuthService{decision: authapp.DecisionAllow}, newAllowValidator(), nil, noopMetrics{})
+	out, err := svc.SubmitProposal(context.Background(), ProposalActionRequest{
+		Subject: Subject{UserID: "u", MembershipID: "creator", CompanyID: "co"}, ProposalID: "p-legacy",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Status != StatusPendingFocalApproval {
+		t.Fatalf("%s", out.Status)
+	}
+}
+
+func TestPatchDraft_V2IncompleteAssignment_Allowed(t *testing.T) {
+	repo := &fakeRepository{proposal: &ProposalDTO{
+		ProposalID: "p1", CompanyID: "co", TypeID: "type-1", Status: StatusDraft, CreatedBy: "creator",
+		Workflow: &ProposalWorkflowSnapshot{
+			SchemaVersion: 2, Frozen: false,
+			Steps: []ProposalWorkflowStep{{ID: "old", Order: 1, Name: "Old", ProcessingDays: 1}},
+		},
+	}}
+	svc := AttachWorkflowDeps(
+		NewService(repo, &fakeRecordCreator{}, &fakeTypeCatalog{category: "irregular"}, fakeIDGen{}, false, &fakeAuthService{decision: authapp.DecisionAllow}, newAllowValidator(), nil, noopMetrics{}),
+		&fakeOrgDirectory{depts: map[string]bool{"dep-1": true}},
+		nil,
+	)
+	steps := []ProposalWorkflowStepInput{{Name: "Draft incomplete", ProcessingDays: 2, DepartmentID: "dep-1"}}
+	out, err := svc.PatchDraftProposal(context.Background(), PatchDraftProposalRequest{
+		Subject: Subject{UserID: "u", MembershipID: "creator", CompanyID: "co"}, ProposalID: "p1", WorkflowSteps: &steps,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Workflow.Steps[0].AssigneeMembershipID != "" || out.Workflow.Frozen {
+		t.Fatalf("%#v", out.Workflow)
 	}
 }
 

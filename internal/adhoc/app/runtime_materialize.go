@@ -58,7 +58,7 @@ func ValidateFrozenProposalWorkflowForRuntime(snap *ProposalWorkflowSnapshot) er
 	return nil
 }
 
-// ValidateDirectAssigneeRequired locks runtime model A for schema v2:
+// ValidateDirectAssigneeRequired locks runtime/submit model A for schema v2:
 // every step must have department_id + assignee_membership_id (no creator/approver fallback,
 // no department queue — workflow_tasks.assignee_membership_id is NOT NULL).
 func ValidateDirectAssigneeRequired(snap *ProposalWorkflowSnapshot) error {
@@ -69,13 +69,28 @@ func ValidateDirectAssigneeRequired(snap *ProposalWorkflowSnapshot) error {
 		dept := strings.TrimSpace(step.DepartmentID)
 		assignee := strings.TrimSpace(step.AssigneeMembershipID)
 		if dept == "" {
-			return newAdHocFieldError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, fmt.Sprintf("workflow.steps[%d].department_id", i), "department_id is required for v2 materialization (V2_DIRECT_ASSIGNEE_REQUIRED)")
+			return newAdHocFieldError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, fmt.Sprintf("workflow_steps[%d].department_id", i), "department_required: department_id is required")
 		}
 		if assignee == "" {
-			return newAdHocFieldError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, fmt.Sprintf("workflow.steps[%d].assignee_membership_id", i), "assignee_membership_id is required for v2 materialization (V2_DIRECT_ASSIGNEE_REQUIRED)")
+			return newAdHocFieldError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, fmt.Sprintf("workflow_steps[%d].assignee_membership_id", i), "assignee_required: assignee_membership_id is required")
 		}
 	}
 	return nil
+}
+
+// ValidateWorkflowForSubmit enforces V2_ASSIGNMENT_REQUIRED_AT_SUBMIT before freeze/status transition.
+// Draft/PATCH may remain incomplete; submit must not.
+func ValidateWorkflowForSubmit(ctx context.Context, org OrgDirectory, companyID string, snap *ProposalWorkflowSnapshot) error {
+	if snap == nil || snap.SchemaVersion != ProposalWorkflowSchemaV2 {
+		return nil
+	}
+	if err := ValidateDirectAssigneeRequired(snap); err != nil {
+		return err
+	}
+	if org == nil {
+		return perr.NewHTTPError(http.StatusInternalServerError, perr.CodeInternal, "org directory is required for v2 submit validation", nil)
+	}
+	return ValidateWorkflowStepOrgRefs(ctx, org, companyID, snap.Steps)
 }
 
 // PrepareV2Materialization validates frozen snapshot + model A assignment and re-checks org refs.
