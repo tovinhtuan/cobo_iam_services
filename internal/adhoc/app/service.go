@@ -369,8 +369,7 @@ func (s *service) SubmitProposal(ctx context.Context, req ProposalActionRequest)
 		ActorUserID:              req.Subject.UserID,
 		SetFocalApprovalMetadata: false,
 	}
-	// Submit freeze foundation: mark schema v2 snapshot immutable. Runtime still late-resolves
-	// template until Phase 3 — do not switch materialization here.
+	// Submit freeze foundation: mark schema v2 snapshot immutable for Phase 3 runtime materialization.
 	if cur.Workflow != nil && cur.Workflow.SchemaVersion == ProposalWorkflowSchemaV2 {
 		frozen := *cur.Workflow
 		frozen.Frozen = true
@@ -509,10 +508,23 @@ func (s *service) finalizeApprovedProposal(ctx context.Context, r *VoteReservati
 		adhocRecordIDNamespace,
 		[]byte(fmt.Sprintf("%s:%s", cur.CompanyID, cur.ProposalID)),
 	).String()
-	recordID, workflowInstanceID, err := s.recordCreator.CreateAndSubmitRecordWithOpts(ctx, cur.CompanyID, cur.TypeID, cur.CreatedBy, title, t0Time, CreateRecordOpts{
-		RecordID:      deterministicRecordID,
-		StepOverrides: cur.StepOverrides,
-	})
+	createOpts, mode, err := BuildCreateRecordOptsForFinalize(deterministicRecordID, cur)
+	if err != nil {
+		return nil, err
+	}
+	if mode == MaterializationModeV2Snapshot {
+		if prepErr := PrepareV2Materialization(ctx, s.org, cur.CompanyID, cur.Workflow); prepErr != nil {
+			return nil, prepErr
+		}
+		slog.Info("adhoc: finalize materialization plan",
+			slog.String("proposal_id", cur.ProposalID),
+			slog.String("company_id", cur.CompanyID),
+			slog.String("materialization_mode", mode),
+			slog.Int("workflow_schema_version", ProposalWorkflowSchemaV2),
+			slog.String("first_step_assignee_membership_id", FirstStepAssigneeMembershipID(cur.Workflow)),
+		)
+	}
+	recordID, workflowInstanceID, err := s.recordCreator.CreateAndSubmitRecordWithOpts(ctx, cur.CompanyID, cur.TypeID, cur.CreatedBy, title, t0Time, createOpts)
 	if err != nil {
 		if httpErr, ok := perr.AsHTTPError(err); ok {
 			return nil, httpErr
@@ -616,10 +628,22 @@ func (s *service) AdminApprove(ctx context.Context, req AdminApproveRequest) (*A
 		// CF-15: the disclosure record's creator must be the proposal's original
 		// creator (cur.CreatedBy), not the approving admin (req.Subject.MembershipID).
 		// req.Subject remains the acting/authorizing actor for this request.
-		recordID, workflowInstanceID, err = s.recordCreator.CreateAndSubmitRecordWithOpts(ctx, cur.CompanyID, cur.TypeID, cur.CreatedBy, title, finalT0Time, CreateRecordOpts{
-			RecordID:      deterministicRecordID,
-			StepOverrides: cur.StepOverrides,
-		})
+		createOpts, mode, optsErr := BuildCreateRecordOptsForFinalize(deterministicRecordID, cur)
+		if optsErr != nil {
+			return nil, optsErr
+		}
+		if mode == MaterializationModeV2Snapshot {
+			if prepErr := PrepareV2Materialization(ctx, s.org, cur.CompanyID, cur.Workflow); prepErr != nil {
+				return nil, prepErr
+			}
+			slog.Info("adhoc: admin-approve materialization plan",
+				slog.String("proposal_id", cur.ProposalID),
+				slog.String("company_id", cur.CompanyID),
+				slog.String("materialization_mode", mode),
+				slog.Int("workflow_schema_version", ProposalWorkflowSchemaV2),
+			)
+		}
+		recordID, workflowInstanceID, err = s.recordCreator.CreateAndSubmitRecordWithOpts(ctx, cur.CompanyID, cur.TypeID, cur.CreatedBy, title, finalT0Time, createOpts)
 		if err != nil {
 			if httpErr, ok := perr.AsHTTPError(err); ok {
 				return nil, httpErr

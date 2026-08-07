@@ -111,3 +111,54 @@ func TestCreateWorkflowInstanceInternalUsesFirstSnapshotStep(t *testing.T) {
 		t.Fatalf("snapshot len = %d, want 2", len(repo.createdInstance.Snapshot))
 	}
 }
+
+func TestCreateWorkflowInstanceInternal_UsesExplicitFirstTaskAssignee(t *testing.T) {
+	repo := &fakeWorkflowRepository{}
+	svc := NewService(repo, nil, fakeWorkflowIDGen{}, WithFlags(Flags{SnapshotEnabled: true}))
+
+	_, err := svc.CreateWorkflowInstanceInternal(context.Background(), CreateWorkflowInstanceRequest{
+		Subject: Subject{
+			UserID:       "creator-user",
+			MembershipID: "member-creator",
+			CompanyID:    "company-001",
+		},
+		RecordID: "record-001",
+		Snapshot: []StepSnapshot{
+			{StepID: "ps-1", StepCode: "ps-1", DisplayOrder: 1, ProcessingDays: 3},
+		},
+		WorkflowSource:                WorkflowSourceProposalSnapshotV2,
+		FirstTaskAssigneeMembershipID: "member-assignee-b",
+	})
+	if err != nil {
+		t.Fatalf("error = %v", err)
+	}
+	if repo.createdTask.AssigneeMembershipID != "member-assignee-b" {
+		t.Fatalf("assignee = %q, want member-assignee-b (no creator fallback)", repo.createdTask.AssigneeMembershipID)
+	}
+	if repo.createdInstance.WorkflowSource != WorkflowSourceProposalSnapshotV2 {
+		t.Fatalf("source = %q", repo.createdInstance.WorkflowSource)
+	}
+}
+
+func TestCreateWorkflowInstanceInternal_LegacyUsesSubjectMembership(t *testing.T) {
+	repo := &fakeWorkflowRepository{}
+	svc := NewService(repo, nil, fakeWorkflowIDGen{}, WithFlags(Flags{SnapshotEnabled: true}))
+
+	_, err := svc.CreateWorkflowInstanceInternal(context.Background(), CreateWorkflowInstanceRequest{
+		Subject: Subject{
+			UserID:       "creator-user",
+			MembershipID: "member-creator",
+			CompanyID:    "company-001",
+		},
+		RecordID: "record-001",
+		Snapshot: []StepSnapshot{
+			{StepID: "step_a", StepCode: "prepare", DisplayOrder: 1},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if repo.createdTask.AssigneeMembershipID != "member-creator" {
+		t.Fatalf("legacy assignee = %q", repo.createdTask.AssigneeMembershipID)
+	}
+}

@@ -13,6 +13,47 @@ import (
 // ErrEmptyWorkflowSnapshot is re-exported for callers that already depend on workflow/app.
 var ErrEmptyWorkflowSnapshot = workflowerrs.ErrEmptyWorkflowSnapshot
 
+// WorkflowSourceProposalSnapshotV2 labels instance snapshots built from frozen ad-hoc proposal workflow v2.
+const WorkflowSourceProposalSnapshotV2 = "proposal_snapshot_v2"
+
+// MapProposalWorkflowToSnapshot maps a frozen proposal schema-v2 workflow into instance StepSnapshot rows.
+// Proposal step id is runtime step_id/step_code authority; source_step_id is provenance only (ignored for identity).
+// processing_days and department_id come from the frozen proposal — never from a live template.
+func MapProposalWorkflowToSnapshot(snap *adhocapp.ProposalWorkflowSnapshot) []StepSnapshot {
+	if snap == nil || len(snap.Steps) == 0 {
+		return nil
+	}
+	out := make([]StepSnapshot, 0, len(snap.Steps))
+	for _, step := range snap.Steps {
+		stepID := strings.TrimSpace(step.ID)
+		if stepID == "" {
+			continue
+		}
+		name := strings.TrimSpace(step.Name)
+		dept := strings.TrimSpace(step.DepartmentID)
+		dueRule := ""
+		if step.ProcessingDays > 0 {
+			dueRule = fmt.Sprintf("T+%d", step.ProcessingDays)
+		}
+		out = append(out, StepSnapshot{
+			StepID:         stepID,
+			StepCode:       stepID,
+			Stage:          name,
+			Department:     dept,
+			DueRule:        dueRule,
+			DisplayOrder:   step.Order,
+			ProcessingDays: step.ProcessingDays,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].DisplayOrder == out[j].DisplayOrder {
+			return out[i].StepID < out[j].StepID
+		}
+		return out[i].DisplayOrder < out[j].DisplayOrder
+	})
+	return out
+}
+
 // MapEffectiveWorkflowToSnapshot converts effective workflow steps into frozen snapshot rows.
 func MapEffectiveWorkflowToSnapshot(steps []disclosureapp.WorkflowStepDTO, workflowSource string) []StepSnapshot {
 	_ = strings.TrimSpace(workflowSource)

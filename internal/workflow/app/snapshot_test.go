@@ -8,6 +8,38 @@ import (
 	disclosureapp "github.com/cobo/cobo_iam_services/internal/disclosure/app"
 )
 
+func TestMapProposalWorkflowToSnapshot_UsesProposalStepIDsAndDays(t *testing.T) {
+	snap := &adhocapp.ProposalWorkflowSnapshot{
+		SchemaVersion: 2,
+		Frozen:        true,
+		Steps: []adhocapp.ProposalWorkflowStep{
+			{ID: "ps-c", SourceStepID: "tpl-c", Order: 2, Name: "C", ProcessingDays: 4, DepartmentID: "dep-c"},
+			{ID: "ps-a", SourceStepID: "tpl-a", Order: 1, Name: "A", ProcessingDays: 2, DepartmentID: "dep-a"},
+			{ID: "ps-x", SourceStepID: "", Order: 3, Name: "Custom", ProcessingDays: 0, DepartmentID: "dep-x"},
+		},
+	}
+	got := MapProposalWorkflowToSnapshot(snap)
+	if len(got) != 3 {
+		t.Fatalf("len=%d", len(got))
+	}
+	if got[0].StepID != "ps-a" || got[0].StepCode != "ps-a" || got[0].DisplayOrder != 1 {
+		t.Fatalf("first %#v", got[0])
+	}
+	if got[0].ProcessingDays != 2 || got[0].Department != "dep-a" || got[0].Stage != "A" {
+		t.Fatalf("mapped fields %#v", got[0])
+	}
+	if got[1].StepID != "ps-c" || got[2].StepID != "ps-x" {
+		t.Fatalf("order %#v", got)
+	}
+	// Custom step keeps proposal id; source_step_id is not used as StepID.
+	if got[2].StepID != "ps-x" {
+		t.Fatalf("custom step id %#v", got[2])
+	}
+	if FirstStepCode(got) != "ps-a" {
+		t.Fatalf("FirstStepCode=%q", FirstStepCode(got))
+	}
+}
+
 func TestMapEffectiveWorkflowToSnapshotOrdersByDisplayOrder(t *testing.T) {
 	steps := []disclosureapp.WorkflowStepDTO{
 		{StepID: "s2", Stage: "Review", DepartmentID: "d2", DueRule: "T+3", DisplayOrder: 2, ProcessingDays: 3},

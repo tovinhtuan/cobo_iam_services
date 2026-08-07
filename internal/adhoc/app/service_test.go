@@ -253,6 +253,7 @@ type fakeRecordCreator struct {
 	lastTitle     string
 	lastOverrides []WorkflowStepOverride
 	lastCreatedBy string // CF-15: captures the createdByMembershipID the service passed through
+	lastOpts      CreateRecordOpts
 	err           error
 }
 
@@ -266,6 +267,7 @@ func (f *fakeRecordCreator) CreateAndSubmitRecordWithOpts(ctx context.Context, c
 	f.lastTitle = title
 	f.lastCreatedBy = createdByMembershipID
 	f.lastOverrides = append([]WorkflowStepOverride(nil), opts.StepOverrides...)
+	f.lastOpts = opts
 	if f.err != nil {
 		return "", "", f.err
 	}

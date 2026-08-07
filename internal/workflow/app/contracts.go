@@ -119,11 +119,15 @@ type CreateWorkflowInstanceRequest struct {
 	RecordID string `json:"record_id"`
 	// Optional: filled by caller when WORKFLOW_SNAPSHOT_ENABLED=true.
 	Snapshot       []StepSnapshot `json:"snapshot,omitempty"`
-	WorkflowSource string         `json:"workflow_source,omitempty"` // system_template | company_override
+	WorkflowSource string         `json:"workflow_source,omitempty"` // system_template | company_override | proposal_snapshot_v2
 	T0Date         *time.Time     `json:"t0_date,omitempty"`
 	T0Policy       string         `json:"t0_policy,omitempty"`
 	// Optional: pre-computed milestones from timeline computation (when WORKFLOW_TIMELINE_ENABLED=true).
 	Milestones []StepMilestoneRow `json:"milestones,omitempty"`
+	// FirstTaskAssigneeMembershipID, when non-empty, assigns the first pending task to this
+	// membership (schema v2 direct assignee). When empty, legacy behavior uses Subject.MembershipID
+	// (proposal creator for ad-hoc finalize).
+	FirstTaskAssigneeMembershipID string `json:"first_task_assignee_membership_id,omitempty"`
 }
 
 type TaskActionRequest struct {

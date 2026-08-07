@@ -101,14 +101,23 @@ func (s *service) createWorkflowInstance(ctx context.Context, req CreateWorkflow
 	if err != nil {
 		return nil, err
 	}
-	_, _ = s.repo.CreateTask(ctx, TaskDTO{
+	assignee := strings.TrimSpace(req.FirstTaskAssigneeMembershipID)
+	if assignee == "" {
+		assignee = strings.TrimSpace(req.Subject.MembershipID)
+	}
+	if assignee == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "first task assignee_membership_id is required", nil)
+	}
+	if _, err := s.repo.CreateTask(ctx, TaskDTO{
 		TaskID:               s.idg.NewUUID(),
 		CompanyID:            req.Subject.CompanyID,
 		WorkflowInstanceID:   created.WorkflowInstanceID,
 		StepCode:             firstStepCode,
-		AssigneeMembershipID: req.Subject.MembershipID,
+		AssigneeMembershipID: assignee,
 		Status:               "pending",
-	})
+	}); err != nil {
+		return nil, err
+	}
 
 	if s.flags.TimelineEnabled && s.milestone != nil {
 		rows := append([]StepMilestoneRow(nil), req.Milestones...)

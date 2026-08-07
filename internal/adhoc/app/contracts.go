@@ -99,13 +99,16 @@ type WorkflowSeeder interface {
 
 // CreateRecordOpts carries optional inputs for record + workflow creation (WF5-B, periodic T0 in Batch 2).
 type CreateRecordOpts struct {
-	StepOverrides []WorkflowStepOverride // ad-hoc only
+	StepOverrides []WorkflowStepOverride // ad-hoc only (legacy schema); must not dual-send with ProposalWorkflow
 	CycleStart    *time.Time             // periodic materialize (Batch 2)
 	PlannedDate   string                 // periodic: cycle due_date → disclosure_records.planned_date (YYYY-MM-DD); empty = not set
 	// RecordID, when non-empty, is the deterministic record ID (ADR-1B) the
 	// caller pre-allocated; passed through to disclosureapp.CreateRecordRequest
 	// so retries are idempotent instead of creating orphaned/duplicate records.
 	RecordID string
+	// ProposalWorkflow, when schema_version=2, is the frozen proposal-owned snapshot authority.
+	// RecordCreator must materialize from this blob and MUST NOT call GetEffectiveWorkflow.
+	ProposalWorkflow *ProposalWorkflowSnapshot
 }
 
 // RecordCreator is the cross-module interface the ad-hoc service uses to submit a disclosure record.

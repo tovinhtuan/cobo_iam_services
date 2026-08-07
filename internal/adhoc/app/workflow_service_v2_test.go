@@ -179,7 +179,7 @@ func TestPatchDraftProposal_RejectsNonCreator(t *testing.T) {
 	}
 }
 
-func TestSubmitProposal_FreezesV2Snapshot_RuntimeNotSwitched(t *testing.T) {
+func TestSubmitProposal_FreezesV2Snapshot(t *testing.T) {
 	repo := &fakeRepository{
 		proposal: &ProposalDTO{
 			ProposalID: "p1", CompanyID: "co", TypeID: "type-1", Status: StatusDraft, CreatedBy: "creator",
@@ -204,7 +204,7 @@ func TestSubmitProposal_FreezesV2Snapshot_RuntimeNotSwitched(t *testing.T) {
 	if out.Workflow == nil || !out.Workflow.Frozen {
 		t.Fatalf("expected frozen snapshot %#v", out.Workflow)
 	}
-	// Runtime consumption remains legacy path in finalize — StepOverrides still present for dual-read.
+	// Dual-read still exposes derived step_overrides for API compatibility.
 	if len(out.StepOverrides) == 0 {
 		t.Fatal("legacy derived overrides should remain for dual-read")
 	}

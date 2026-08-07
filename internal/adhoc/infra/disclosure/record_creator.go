@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -50,20 +51,18 @@ func (a *RecordCreatorAdapter) CreateAndSubmitRecordWithOpts(ctx context.Context
 
 	var snapshot []workflowapp.StepSnapshot
 	var workflowSource string
+	var firstTaskAssignee string
+	materializationMode := adhocapp.MaterializationModeLegacy
+
 	if a.workflowOn {
-		effResp, err := a.svc.GetEffectiveWorkflow(ctx, disclosureapp.GetEffectiveWorkflowRequest{
-			Subject: sub,
-			TypeID:  typeID,
-		})
+		resolved, err := resolveWorkflowSnapshotForMaterialize(ctx, a.svc, sub, typeID, opts)
 		if err != nil {
-			return "", "", fmt.Errorf("get effective workflow: %w", err)
+			return "", "", err
 		}
-		workflowSource = mapWorkflowSource(effResp.Data.Source)
-		snapshot = workflowapp.MapEffectiveWorkflowToSnapshot(effResp.Data.Workflow, workflowSource)
-		snapshot = workflowapp.ApplyAdHocStepOverrides(snapshot, opts.StepOverrides)
-		if err := workflowapp.ValidateSnapshot(snapshot); err != nil {
-			return "", "", perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "template has no effective workflow steps", err)
-		}
+		snapshot = resolved.snapshot
+		workflowSource = resolved.workflowSource
+		firstTaskAssignee = resolved.firstTaskAssignee
+		materializationMode = resolved.mode
 	}
 
 	rec, err := a.svc.CreateRecord(ctx, disclosureapp.CreateRecordRequest{
@@ -108,14 +107,23 @@ func (a *RecordCreatorAdapter) CreateAndSubmitRecordWithOpts(ctx context.Context
 				MembershipID: sub.MembershipID,
 				CompanyID:    sub.CompanyID,
 			},
-			RecordID:       rec.RecordID,
-			Snapshot:       snapshot,
-			WorkflowSource: workflowSource,
+			RecordID:                      rec.RecordID,
+			Snapshot:                      snapshot,
+			WorkflowSource:                workflowSource,
+			FirstTaskAssigneeMembershipID: firstTaskAssignee,
 		}
 		if t0Date != nil {
 			wfReq.T0Date = t0Date
 			wfReq.T0Policy = "user_defined"
 		}
+		slog.Info("adhoc: workflow materialization",
+			slog.String("company_id", companyID),
+			slog.String("record_id", rec.RecordID),
+			slog.String("materialization_mode", materializationMode),
+			slog.String("workflow_source", workflowSource),
+			slog.Int("snapshot_steps", len(snapshot)),
+			slog.String("first_task_assignee_membership_id", firstTaskAssignee),
+		)
 		inst, wfErr := a.workflow.CreateWorkflowInstanceInternal(ctx, wfReq)
 		if wfErr != nil {
 			return rec.RecordID, "", fmt.Errorf("create workflow instance: %w", wfErr)
@@ -125,6 +133,65 @@ func (a *RecordCreatorAdapter) CreateAndSubmitRecordWithOpts(ctx context.Context
 		}
 	}
 	return rec.RecordID, instanceID, nil
+}
+
+type resolvedWorkflowMaterialization struct {
+	snapshot           []workflowapp.StepSnapshot
+	workflowSource     string
+	firstTaskAssignee  string
+	mode               string
+	effectiveWorkflowN int // for tests: GetEffectiveWorkflow call count implied (0 or 1)
+}
+
+func resolveWorkflowSnapshotForMaterialize(
+	ctx context.Context,
+	svc disclosureapp.Service,
+	sub disclosureapp.Subject,
+	typeID string,
+	opts adhocapp.CreateRecordOpts,
+) (*resolvedWorkflowMaterialization, error) {
+	if opts.ProposalWorkflow != nil && opts.ProposalWorkflow.SchemaVersion == adhocapp.ProposalWorkflowSchemaV2 {
+		if err := adhocapp.ValidateFrozenProposalWorkflowForRuntime(opts.ProposalWorkflow); err != nil {
+			return nil, err
+		}
+		if err := adhocapp.ValidateDirectAssigneeRequired(opts.ProposalWorkflow); err != nil {
+			return nil, err
+		}
+		if len(opts.StepOverrides) > 0 {
+			return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "workflow_contract_conflict: proposal v2 snapshot and step_overrides cannot both drive materialization", nil)
+		}
+		snapshot := workflowapp.MapProposalWorkflowToSnapshot(opts.ProposalWorkflow)
+		if err := workflowapp.ValidateSnapshot(snapshot); err != nil {
+			return nil, perr.NewHTTPError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, "frozen proposal workflow has no materializable steps", err)
+		}
+		return &resolvedWorkflowMaterialization{
+			snapshot:          snapshot,
+			workflowSource:    workflowapp.WorkflowSourceProposalSnapshotV2,
+			firstTaskAssignee: adhocapp.FirstStepAssigneeMembershipID(opts.ProposalWorkflow),
+			mode:              adhocapp.MaterializationModeV2Snapshot,
+		}, nil
+	}
+
+	effResp, err := svc.GetEffectiveWorkflow(ctx, disclosureapp.GetEffectiveWorkflowRequest{
+		Subject: sub,
+		TypeID:  typeID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("get effective workflow: %w", err)
+	}
+	workflowSource := mapWorkflowSource(effResp.Data.Source)
+	snapshot := workflowapp.MapEffectiveWorkflowToSnapshot(effResp.Data.Workflow, workflowSource)
+	snapshot = workflowapp.ApplyAdHocStepOverrides(snapshot, opts.StepOverrides)
+	if err := workflowapp.ValidateSnapshot(snapshot); err != nil {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "template has no effective workflow steps", err)
+	}
+	return &resolvedWorkflowMaterialization{
+		snapshot:           snapshot,
+		workflowSource:     workflowSource,
+		firstTaskAssignee:  "", // legacy: CreateWorkflowInstance uses Subject.MembershipID (creator)
+		mode:               adhocapp.MaterializationModeLegacy,
+		effectiveWorkflowN: 1,
+	}, nil
 }
 
 // mapWorkflowSource passes the resolver's classification through unchanged (company_override |
