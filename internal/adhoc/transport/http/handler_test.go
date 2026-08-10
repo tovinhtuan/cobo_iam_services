@@ -119,14 +119,36 @@ func TestListProposals_ParsesPagingQueryParams(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", rr.Code)
 	}
-	if got, want := svc.listReq.StatusFilter, []string{"approved"}; len(got) != len(want) || got[0] != want[0] {
-		t.Fatalf("expected status filter %v, got %v", want, got)
+	if svc.listReq.Page != 2 || svc.listReq.PageSize != 10 {
+		t.Fatalf("paging not parsed: %#v", svc.listReq)
 	}
-	if svc.listReq.Page != 2 {
-		t.Fatalf("expected page 2, got %d", svc.listReq.Page)
+	if len(svc.listReq.StatusFilter) != 1 || svc.listReq.StatusFilter[0] != "approved" {
+		t.Fatalf("status filter: %#v", svc.listReq.StatusFilter)
 	}
-	if svc.listReq.PageSize != 10 {
-		t.Fatalf("expected page size 10, got %d", svc.listReq.PageSize)
+	if svc.listReq.Scope != "" {
+		t.Fatalf("scope should be empty, got %q", svc.listReq.Scope)
+	}
+}
+
+func TestListProposals_ParsesScopeMy(t *testing.T) {
+	svc := &fakeService{}
+	handler := NewHandler(nil, svc, fakeInspector{}, nil)
+	mux := http.NewServeMux()
+	handler.Register(mux)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/company/ad-hoc-proposals?scope=my&page=1&page_size=5", nil)
+	req.Header.Set("Authorization", "Bearer atk_test")
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if svc.listReq.Scope != "my" {
+		t.Fatalf("expected scope=my, got %#v", svc.listReq)
+	}
+	if svc.listReq.Subject.MembershipID != "member-001" || svc.listReq.Subject.CompanyID != "company-001" {
+		t.Fatalf("subject not from token: %#v", svc.listReq.Subject)
 	}
 }
 

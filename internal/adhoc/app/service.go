@@ -819,22 +819,40 @@ func (s *service) Cancel(ctx context.Context, req ProposalActionRequest) (*Propo
 }
 
 func (s *service) GetProposal(ctx context.Context, req GetProposalRequest) (*ProposalDTO, error) {
-	if err := s.authorize(ctx, req.Subject, "ad_hoc_alert.read", authapp.ResourceRef{Type: "ad_hoc_proposal", ID: req.ProposalID}); err != nil {
-		return nil, err
-	}
 	if strings.TrimSpace(req.ProposalID) == "" {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "proposal_id is required", nil)
 	}
+	if strings.TrimSpace(req.Subject.CompanyID) == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "company context is required", nil)
+	}
+	if strings.TrimSpace(req.Subject.MembershipID) == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "membership context is required", nil)
+	}
+
+	// Tenant-scoped load first — never fetch globally then compare company.
 	p, err := s.repo.FindByID(ctx, req.Subject.CompanyID, req.ProposalID)
 	if err != nil {
 		return nil, err
 	}
-	return s.embedReviewState(ctx, p), nil
+
+	canRead, err := s.hasPermission(ctx, req.Subject, "ad_hoc_alert.read", authapp.ResourceRef{Type: "ad_hoc_proposal", ID: req.ProposalID})
+	if err != nil {
+		return nil, err
+	}
+	if canRead {
+		return s.embedReviewState(ctx, p), nil
+	}
+
+	// Object-scoped creator self-read. propose is NOT treated as global read.
+	if p.CreatedBy == req.Subject.MembershipID {
+		return s.embedReviewState(ctx, p), nil
+	}
+	return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "access denied", nil)
 }
 
 func (s *service) ListProposals(ctx context.Context, req ListProposalsRequest) (*ListProposalsResponse, error) {
-	if err := s.authorize(ctx, req.Subject, "ad_hoc_alert.read", authapp.ResourceRef{Type: "ad_hoc_proposal"}); err != nil {
-		return nil, err
+	if strings.TrimSpace(req.Subject.CompanyID) == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "company context is required", nil)
 	}
 	if req.Page <= 0 {
 		req.Page = 1
@@ -842,7 +860,36 @@ func (s *service) ListProposals(ctx context.Context, req ListProposalsRequest) (
 	if req.PageSize <= 0 || req.PageSize > 100 {
 		req.PageSize = 20
 	}
-	items, total, err := s.repo.List(ctx, req.Subject.CompanyID, req.StatusFilter, req.Page, req.PageSize)
+
+	scope := strings.ToLower(strings.TrimSpace(req.Scope))
+	createdByFilter := ""
+	switch scope {
+	case "":
+		if err := s.authorize(ctx, req.Subject, "ad_hoc_alert.read", authapp.ResourceRef{Type: "ad_hoc_proposal"}); err != nil {
+			return nil, err
+		}
+	case ListScopeMy:
+		if strings.TrimSpace(req.Subject.MembershipID) == "" {
+			return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "membership context is required", nil)
+		}
+		canPropose, err := s.hasPermission(ctx, req.Subject, "ad_hoc_alert.propose", authapp.ResourceRef{Type: "ad_hoc_proposal"})
+		if err != nil {
+			return nil, err
+		}
+		canRead, err := s.hasPermission(ctx, req.Subject, "ad_hoc_alert.read", authapp.ResourceRef{Type: "ad_hoc_proposal"})
+		if err != nil {
+			return nil, err
+		}
+		if !canPropose && !canRead {
+			return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "access denied", nil)
+		}
+		// Self-scope always from auth context — never from client creator_id.
+		createdByFilter = req.Subject.MembershipID
+	default:
+		return nil, newAdHocFieldError(http.StatusBadRequest, perr.CodeInvalidRequest, "scope", "invalid scope")
+	}
+
+	items, total, err := s.repo.List(ctx, req.Subject.CompanyID, req.StatusFilter, createdByFilter, req.Page, req.PageSize)
 	if err != nil {
 		return nil, err
 	}
@@ -957,22 +1004,29 @@ func (s *service) ListPendingLegacyApprovals(ctx context.Context, sub Subject) (
 }
 
 func (s *service) authorize(ctx context.Context, sub Subject, action string, resource authapp.ResourceRef) error {
+	ok, err := s.hasPermission(ctx, sub, action, resource)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "access denied", nil)
+	}
+	return nil
+}
+
+func (s *service) hasPermission(ctx context.Context, sub Subject, action string, resource authapp.ResourceRef) (bool, error) {
 	decision, err := s.auth.Authorize(ctx, authapp.AuthorizeRequest{
 		Subject:  authapp.SubjectRef{UserID: sub.UserID, MembershipID: sub.MembershipID, CompanyID: sub.CompanyID},
 		Action:   action,
 		Resource: resource,
 	})
 	if err != nil {
-		return mapRepositoryError(fmt.Errorf("authorize adhoc action: %w", err))
+		return false, mapRepositoryError(fmt.Errorf("authorize adhoc action: %w", err))
 	}
 	if decision.Decision != authapp.DecisionAllow {
-		code := perr.CodePermissionDenied
-		if decision.DenyReasonCode != nil {
-			code = *decision.DenyReasonCode
-		}
-		return perr.NewHTTPError(http.StatusForbidden, code, "access denied", nil)
+		return false, nil
 	}
-	return nil
+	return true, nil
 }
 
 // enrichProposalForNotification populates CompanyName and CreatorName on a

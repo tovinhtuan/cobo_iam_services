@@ -657,13 +657,17 @@ func (r *Repository) ListPendingAdminApproval(ctx context.Context) ([]adhocapp.P
 	return out, rows.Err()
 }
 
-func (r *Repository) List(ctx context.Context, companyID string, statusFilter []string, page, pageSize int) ([]adhocapp.ProposalDTO, int, error) {
+func (r *Repository) List(ctx context.Context, companyID string, statusFilter []string, createdByMembershipID string, page, pageSize int) ([]adhocapp.ProposalDTO, int, error) {
 	var whereExtra string
 	var extraArgs []any
+	if createdBy := strings.TrimSpace(createdByMembershipID); createdBy != "" {
+		whereExtra += " AND created_by = ?"
+		extraArgs = append(extraArgs, createdBy)
+	}
 	if len(statusFilter) > 0 {
 		placeholders := strings.Repeat("?,", len(statusFilter))
 		placeholders = placeholders[:len(placeholders)-1]
-		whereExtra = " AND status IN (" + placeholders + ")"
+		whereExtra += " AND status IN (" + placeholders + ")"
 		for _, s := range statusFilter {
 			extraArgs = append(extraArgs, s)
 		}

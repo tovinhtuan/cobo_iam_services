@@ -104,6 +104,7 @@ func (h *Handler) listProposals(w http.ResponseWriter, r *http.Request) {
 	resp, err := h.svc.ListProposals(r.Context(), adhocapp.ListProposalsRequest{
 		Subject:      sub,
 		StatusFilter: statusFilter,
+		Scope:        strings.TrimSpace(r.URL.Query().Get("scope")),
 		Page:         page,
 		PageSize:     pageSize,
 	})

@@ -245,7 +245,7 @@ func (f *fakeRepository) CompleteAdminApproval(ctx context.Context, upd StatusUp
 	return &cp, true, nil
 }
 
-func (f *fakeRepository) List(ctx context.Context, companyID string, statusFilter []string, page, pageSize int) ([]ProposalDTO, int, error) {
+func (f *fakeRepository) List(ctx context.Context, companyID string, statusFilter []string, createdByMembershipID string, page, pageSize int) ([]ProposalDTO, int, error) {
 	return nil, 0, nil
 }
 
@@ -285,6 +285,7 @@ func (fakeIDGen) NewUUID() string { return "uuid-test" }
 type fakeAuthService struct {
 	mu             sync.Mutex // guards authorizeCalls/lastAction for concurrency tests (Cancel/Approve races)
 	decision       authapp.Decision
+	allowByAction  map[string]authapp.Decision
 	authorizeCalls int
 	lastAction     string
 }
@@ -294,6 +295,12 @@ func (f *fakeAuthService) Authorize(_ context.Context, req authapp.AuthorizeRequ
 	f.authorizeCalls++
 	f.lastAction = req.Action
 	f.mu.Unlock()
+	if f.allowByAction != nil {
+		if d, ok := f.allowByAction[req.Action]; ok {
+			return &authapp.AuthorizeDecision{Decision: d}, nil
+		}
+		return &authapp.AuthorizeDecision{Decision: authapp.DecisionDeny}, nil
+	}
 	return &authapp.AuthorizeDecision{Decision: f.decision}, nil
 }
 
@@ -1384,7 +1391,7 @@ func (f *concurrencyFakeRepo) CompleteAdminApproval(ctx context.Context, upd Sta
 	return &cp, true, nil
 }
 
-func (f *concurrencyFakeRepo) List(ctx context.Context, companyID string, statusFilter []string, page, pageSize int) ([]ProposalDTO, int, error) {
+func (f *concurrencyFakeRepo) List(ctx context.Context, companyID string, statusFilter []string, createdByMembershipID string, page, pageSize int) ([]ProposalDTO, int, error) {
 	return nil, 0, nil
 }
 
@@ -1734,7 +1741,7 @@ func (f *raceFakeRepo) CompleteAdminApproval(ctx context.Context, upd StatusUpda
 	return nil, false, errors.New("not used in TC-12")
 }
 
-func (f *raceFakeRepo) List(ctx context.Context, companyID string, statusFilter []string, page, pageSize int) ([]ProposalDTO, int, error) {
+func (f *raceFakeRepo) List(ctx context.Context, companyID string, statusFilter []string, createdByMembershipID string, page, pageSize int) ([]ProposalDTO, int, error) {
 	return nil, 0, nil
 }
 

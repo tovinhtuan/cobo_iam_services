@@ -69,7 +69,9 @@ type Repository interface {
 	SaveAdminApprovalProgress(ctx context.Context, companyID, proposalID, idemKey, recordID, workflowID, lastError string) error
 	// The bool return ("applied") follows the same EV-1/EV-2 contract as UpdateStatus.
 	CompleteAdminApproval(ctx context.Context, upd StatusUpdate, idemKey string) (*ProposalDTO, bool, error)
-	List(ctx context.Context, companyID string, statusFilter []string, page, pageSize int) ([]ProposalDTO, int, error)
+	// List returns company-scoped proposals. When createdByMembershipID is non-empty,
+	// only rows with created_by = that membership are returned (server-side scope=my).
+	List(ctx context.Context, companyID string, statusFilter []string, createdByMembershipID string, page, pageSize int) ([]ProposalDTO, int, error)
 
 	// ReserveVote casts one reviewer's vote inside a single FOR UPDATE transaction
 	// (Phase A of §6.5). Returns 403 (not assigned) / 409 (wrong status) as errors.
@@ -400,11 +402,18 @@ type GetProposalRequest struct {
 	ProposalID string
 }
 
+// ListScopeMy filters list results to the authenticated actor's own proposals.
+const ListScopeMy = "my"
+
 type ListProposalsRequest struct {
 	Subject      Subject
 	StatusFilter []string
-	Page         int
-	PageSize     int
+	// Scope: empty = company-wide (requires ad_hoc_alert.read);
+	// "my" = creator self-list (requires propose OR read; filter from auth membership).
+	// Unknown values are rejected by the service.
+	Scope    string
+	Page     int
+	PageSize int
 }
 
 type ListProposalsResponse struct {
