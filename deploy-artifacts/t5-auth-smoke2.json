@@ -1,0 +1,17 @@
+{
+  "otherCreator": {
+    "status": 403,
+    "code": "PERMISSION_DENIED",
+    "hasData": false,
+    "leakedTracking": false,
+    "leakedKeys": []
+  },
+  "adminDetail": {
+    "status": 200,
+    "hasTracking": false,
+    "tracking": null
+  },
+  "typesStatus": 404,
+  "typesSample": [],
+  "note": "cross-tenant via SQL next"
+}

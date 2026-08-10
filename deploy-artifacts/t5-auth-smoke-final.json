@@ -1,0 +1,49 @@
+{
+  "createAttempts": [
+    {
+      "status": 422,
+      "error": {
+        "code": "COMPANY_CONTEXT_REQUIRED",
+        "message": "membership_id and company_id are required"
+      },
+      "id": null,
+      "keys": [
+        "error"
+      ]
+    },
+    {
+      "status": 422,
+      "error": {
+        "code": "COMPANY_CONTEXT_REQUIRED",
+        "message": "membership_id and company_id are required"
+      },
+      "id": null,
+      "keys": [
+        "error"
+      ]
+    }
+  ],
+  "otherCreator": {
+    "status": 403,
+    "code": "PERMISSION_DENIED",
+    "leaked": false
+  },
+  "crossTenant": {
+    "status": 404,
+    "code": "INVALID_REQUEST",
+    "leakedTracking": false,
+    "leakedStatus": null,
+    "hasBodyKeys": [
+      "error"
+    ]
+  },
+  "pendingTracking": {
+    "status": 200,
+    "has_runtime": false,
+    "futureOnly": true,
+    "approval": {
+      "required": 1,
+      "completed": 0
+    }
+  }
+}

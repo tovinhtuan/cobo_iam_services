@@ -1,0 +1,109 @@
+{
+  "markers": [
+    "PROPOSE_ONLY_COMPANY_LIST_DENIED",
+    "SCOPE_MY_OK",
+    "READ_CAPABLE_LIST_OK",
+    "PROPOSE_ONLY_FIXTURE_OK"
+  ],
+  "cases": {
+    "proposeOnlyCompanyList": {
+      "status": 403,
+      "error": "PERMISSION_DENIED",
+      "summary": {
+        "count": 0,
+        "ids": [],
+        "created_bys": [],
+        "error": {
+          "code": "PERMISSION_DENIED",
+          "message": "access denied"
+        }
+      }
+    },
+    "proposeOnlyScopeMy": {
+      "status": 200,
+      "summary": {
+        "count": 0,
+        "ids": [],
+        "created_bys": [],
+        "error": null
+      },
+      "error": null
+    },
+    "readCapableCompanyList": {
+      "status": 200,
+      "summary": {
+        "count": 5,
+        "ids": [
+          "019feb53-7ae2-7386-b1af-b675810b5dd0",
+          "019feb51-0fc1-7b18-992a-2d4c9a1d1688",
+          "019feb2f-0de4-7153-8df2-62ed40d4d0ae",
+          "019feb2f-0a4c-7c4e-bd84-2d66781151d8",
+          "019feb2e-7961-7170-9d57-fec0b211b794"
+        ],
+        "created_bys": [
+          "m_102"
+        ],
+        "error": null
+      }
+    },
+    "createProbe": [
+      {
+        "status": 400,
+        "error": {
+          "code": "INVALID_REQUEST",
+          "message": "type_id is required",
+          "details": {
+            "field": "type_id"
+          }
+        },
+        "keys": [
+          "error"
+        ]
+      },
+      {
+        "status": 400,
+        "error": {
+          "code": "INVALID_REQUEST",
+          "message": "type_id is required",
+          "details": {
+            "field": "type_id"
+          }
+        },
+        "keys": [
+          "error"
+        ]
+      }
+    ],
+    "otherCreatorDenied": {
+      "status": null,
+      "note": "no other proposal id available yet"
+    },
+    "crossTenant": {
+      "status": "PENDING_FIXTURE"
+    }
+  },
+  "fixtures": {
+    "admin": {
+      "email": "admin.dn@example.com",
+      "membership_id": "m_102",
+      "company_id": "c_001",
+      "login": 200,
+      "adHocPerms": [
+        "ad_hoc_alert.admin_review",
+        "ad_hoc_alert.focal_review",
+        "ad_hoc_alert.process_control",
+        "ad_hoc_alert.propose",
+        "ad_hoc_alert.read"
+      ]
+    },
+    "proposeOnly": {
+      "email": "nhanvien@example.com",
+      "membership_id": "m_105",
+      "company_id": "c_001",
+      "login": 200,
+      "adHocPerms": [
+        "ad_hoc_alert.propose"
+      ]
+    }
+  }
+}
