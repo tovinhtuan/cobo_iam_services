@@ -42,6 +42,12 @@ Before marking the task done, run a pre-merge review and report risks, gaps, and
 - Evidence: `docs/ai-cache/adhoc-proposal-custom-workflow-contract-2026-08-07/` (`64`–`76`)
 - Lazy one-active-task chain; instance completes only after final frozen step; **NO_DEV_DEPLOY**
 
+## Ad-hoc proposal deadline day type — plan (2026-08-10)
+
+- Verdict **ADHOC_PROPOSAL_DEADLINE_DAY_TYPE_IMPLEMENTATION_PLAN_READY** (pointer)
+- Canonical evidence: `../cobo_web_design/docs/ai-cache/adhoc-proposal-deadline-day-type-2026-08-10/`
+- Docs-only FE commit; no BE source this phase
+
 ## Ad-hoc proposal custom workflow — Phase 3.5 assignment convergence (2026-08-07)
 
 - Verdict **PHASE_3_5_ADHOC_PROPOSAL_ASSIGNMENT_CONTRACT_READY**

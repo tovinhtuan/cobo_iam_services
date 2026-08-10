@@ -1,3 +1,9 @@
+## 2026-08-10 - Ad-hoc proposal deadline day type plan (pointer)
+
+- verdict: **ADHOC_PROPOSAL_DEADLINE_DAY_TYPE_IMPLEMENTATION_PLAN_READY**
+- evidence: `../cobo_web_design/docs/ai-cache/adhoc-proposal-deadline-day-type-2026-08-10/`
+- next: await confirm → Phase A BE (no implement yet)
+
 ## 2026-08-07 - Ad-hoc proposal custom workflow Phase 4.1 browser Product E2E
 
 - task type: browser Product E2E + BE date normalize hotfix (no Production)
