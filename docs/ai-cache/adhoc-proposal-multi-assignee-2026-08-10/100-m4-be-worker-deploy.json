@@ -1,0 +1,18 @@
+{
+  "command": "make deploy-be",
+  "exitCode": 0,
+  "previousApi": "fa3f9645... started 2026-08-10T04:37:38Z",
+  "previousWorker": "66a1326c... started 2026-08-10T04:37:38Z",
+  "newApi": "4e9817a78723ff1a4bdbb649e66c9fdcd04cd6ec34a0d8d4ab0ec59e89c88206 2026-08-10T10:13:00.205880987Z",
+  "newWorker": "ccad073218ae9334c35599a5d6e74f175311925b3f1ec7f22a134ea612a59547 2026-08-10T10:13:00.205456668Z",
+  "sourceHead": "a07e264366cd2ab9424ca2147e996786e55dce39",
+  "lineageIncludes": [
+    "ea4af7d",
+    "a9df223",
+    "a07e264"
+  ],
+  "markers": [
+    "BE_MULTI_ASSIGNEE_RUNTIME_DEV_DEPLOYED",
+    "WORKER_MULTI_ASSIGNEE_RUNTIME_DEV_DEPLOYED"
+  ]
+}

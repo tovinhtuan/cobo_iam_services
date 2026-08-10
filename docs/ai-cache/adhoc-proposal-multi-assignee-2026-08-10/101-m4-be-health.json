@@ -1,0 +1,8 @@
+{
+  "healthz": 200,
+  "readyz": 200,
+  "apiLogs": "listening; no panic; no workflow_task_assignees missing",
+  "workerLogs": "outbox MySQL; reminder bridge enabled; no schema errors",
+  "backendHealthy": true,
+  "workerHealthy": true
+}

@@ -1,3 +1,11 @@
+## Ad-hoc proposal multi-assignee — M4 DEV (2026-08-10)
+
+- Verdict **ADHOC_PROPOSAL_MULTI_ASSIGNEE_DEV_READY**
+- Migration `0128` applied DEV only; BE api+worker + FE deployed; authenticated E2E PASS
+- Evidence: `docs/ai-cache/adhoc-proposal-multi-assignee-2026-08-10/` (`93`–`130`) + results.m4
+- Rollback: requires v3 task drain/compat plan (not blind app rollback)
+- NO_PRODUCTION — STOP at DEV
+
 ## Ad-hoc proposal multi-assignee — M3 FE (2026-08-10)
 
 - Verdict **M3_ADHOC_PROPOSAL_MULTI_ASSIGNEE_FRONTEND_READY** (FE pointer)

@@ -1,3 +1,14 @@
+
+## 2026-08-10 — M4 adhoc multi-assignee DEV migration+deploy+E2E
+
+- task type: coordinated DEV migration apply + deploy + authenticated E2E (no Production)
+- objective: ADHOC_PROPOSAL_MULTI_ASSIGNEE_DEV_READY
+- implemented: push-migration 0128; make deploy-be (api+worker); make deploy-fe; E2E multi/ANY/recipients/legacy
+- affected: cobo_iam_services + cobo_web_design docs/ai-cache/adhoc-proposal-multi-assignee-2026-08-10/
+- verification: healthz/readyz 200; post-deploy tests PASS; npm build PASS
+- remaining: Production out of scope; rollback needs v3 drain plan
+- markers: MIGRATION_0128_DEV_APPLIED; NO_PRODUCTION; ROLLBACK_REQUIRES_V3_TASK_DRAIN_OR_COMPATIBILITY_PLAN
+
 ## 2026-08-10 - Ad-hoc proposal multi-assignee M3 (FE pointer)
 
 - task type: docs pointer (BE)

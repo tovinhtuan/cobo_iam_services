@@ -1,0 +1,10 @@
+{
+  "cwd": "/home/icom/go/src/myself/backend_api_cobo/cobo_iam_services",
+  "command": "make push-migration FILE=0128_workflow_task_assignees.up.sql",
+  "start": "2026-08-10T10:11:54Z",
+  "end": "2026-08-10T10:11:57Z",
+  "exitCode": 0,
+  "ledgerBefore": "0127...",
+  "ledgerAfter": "0128_workflow_task_assignees.up.sql @ 2026-08-10 10:11:56",
+  "production": false
+}

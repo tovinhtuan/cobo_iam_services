@@ -1,0 +1,20 @@
+{
+  "api": {
+    "started": "2026-08-10T10:13:00Z",
+    "head": "a07e264366cd2ab9424ca2147e996786e55dce39"
+  },
+  "worker": {
+    "started": "2026-08-10T10:13:00Z",
+    "head": "a07e264366cd2ab9424ca2147e996786e55dce39",
+    "sameLineageAsApi": true
+  },
+  "fe": {
+    "asset": "index-CQyadM5e.js",
+    "head": "2b96875d7ad30c7c4a9397a120a726a47f5e0f86"
+  },
+  "db": {
+    "0128": true
+  },
+  "nginx": "unchanged 20r/s burst40",
+  "mixedOldWorkerNewApi": false
+}

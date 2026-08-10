@@ -1,0 +1,14 @@
+{
+  "branch": "recovery/lost-changes-audit-20260717-153324",
+  "beHead": "a07e264366cd2ab9424ca2147e996786e55dce39",
+  "feHead": "2b96875d7ad30c7c4a9397a120a726a47f5e0f86",
+  "ancestors": {
+    "ea4af7d": true,
+    "a9df223": true,
+    "a07e264": true,
+    "8d0ba43": true,
+    "2b96875": true
+  },
+  "dirtyTree": false,
+  "sourceOfTruthDrift": false
+}
