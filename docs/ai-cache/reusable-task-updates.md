@@ -1,3 +1,12 @@
+## 2026-08-10 - Ad-hoc proposal multi-assignee M2 runtime + recipients
+
+- task type: implement (BE)
+- objective: workflow_task_assignees + v3 materialize + ANY auth/completion + Personal Ops/alert/reminder readers
+- implemented: migration 0128 source; nullable singular; relation authority; concurrent single-winner; recipient readers
+- verify: go test adhoc/workflow/deadlinealerts/personalops/reminder PASS; vet PASS; api+worker build PASS; docker api+worker PASS
+- evidence: `docs/ai-cache/adhoc-proposal-multi-assignee-2026-08-10/` (`56`–`75`)
+- remaining: await confirm → M3 FE; NO_MIGRATION_APPLY; NO_DEV_DEPLOY
+
 ## 2026-08-10 - Ad-hoc proposal multi-assignee M1 backend contract
 
 - task type: implement (BE)

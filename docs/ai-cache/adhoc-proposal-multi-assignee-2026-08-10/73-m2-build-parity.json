@@ -1,0 +1,10 @@
+{
+  "goVetPass": true,
+  "apiBuildPass": true,
+  "workerBuildPass": true,
+  "dockerApiBuildPass": true,
+  "dockerWorkerBuildPass": true,
+  "gitDiffCheckPass": true,
+  "migrationApplied": false,
+  "deployed": false
+}

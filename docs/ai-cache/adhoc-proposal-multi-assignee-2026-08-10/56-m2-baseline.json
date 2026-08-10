@@ -1,0 +1,8 @@
+{
+  "branch": "recovery/lost-changes-audit-20260717-153324",
+  "startHead": "69030906def9845fe1a2863d324d4b2ece9de36f",
+  "m1FeatAncestor": "ea4af7d",
+  "m1DocsAncestor": "6903090",
+  "ancestorsOk": true,
+  "dirtyTaskSourceAtStart": false
+}

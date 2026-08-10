@@ -1,0 +1,3 @@
+# M2 — security
+- Frozen M1 IDs only; company-scoped FindTask; no cross-company assignee/alert
+- Markers: NO_CROSS_COMPANY_ASSIGNEE, NO_CROSS_COMPANY_ALERT_RECIPIENT, NO_CREATOR_FALLBACK, NO_APPROVER_FALLBACK, NO_RUNTIME_DEPARTMENT_HEAD_LATE_RESOLVE

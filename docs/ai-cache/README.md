@@ -1,3 +1,11 @@
+## Ad-hoc proposal multi-assignee — M2 runtime + recipients (2026-08-10)
+
+- Verdict **M2_ADHOC_PROPOSAL_MULTI_ASSIGNEE_RUNTIME_READY**
+- Migration `0128` source only (nullable singular + workflow_task_assignees); NOT applied
+- Runtime: v3 one logical task + relation; ANY completion; Personal Ops / deadlinealerts / reminder readers model-aware
+- Evidence: `docs/ai-cache/adhoc-proposal-multi-assignee-2026-08-10/` (`56`–`75`) + FE mirror pack
+- No FE / no DEV deploy / no Production — await M3 confirm
+
 ## Ad-hoc proposal multi-assignee — M1 backend contract (2026-08-10)
 
 - Verdict **M1_ADHOC_PROPOSAL_MULTI_ASSIGNEE_BACKEND_CONTRACT_READY**

@@ -1,0 +1,19 @@
+{
+  "packages": [
+    "./internal/workflow/app/...",
+    "./internal/adhoc/...",
+    "./internal/deadlinealerts/...",
+    "./internal/personalops/...",
+    "./internal/reminder/..."
+  ],
+  "pass": true,
+  "highlights": [
+    "TestMigration0128_SourceShape",
+    "TestCreateWorkflowInstance_V3RelationAssignees",
+    "TestV3AnyCompletion_SingleWinnerAndNextStep",
+    "TestV3ConcurrentCompletion_SingleWinner",
+    "TestV2RuntimeUnchanged_Singular",
+    "TestResolveWorkflowSnapshotForMaterialize_V3SkipsEffectiveWorkflow",
+    "TestBuildCreateRecordOptsForFinalize_V3Accepted"
+  ]
+}
