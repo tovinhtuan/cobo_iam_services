@@ -1,3 +1,10 @@
+## Ad-hoc proposal multi-assignee + department-head default — audit/plan (2026-08-10)
+
+- Verdict **ADHOC_PROPOSAL_MULTI_ASSIGNEE_PLAN_BLOCKED_PRODUCT_DECISION** (pointer)
+- Canonical evidence: `../cobo_web_design/docs/ai-cache/adhoc-proposal-multi-assignee-2026-08-10/`
+- Docs-only; no BE source / migration / deploy; blocker = multi-assignee completion semantics
+- Alert: **NO_CURRENTLY_SINGLE_RECIPIENT** (task/inbox singular)
+
 ## Ad-hoc proposal deadline day type — Phase D DEV (2026-08-10)
 
 - Verdict **ADHOC_PROPOSAL_DEADLINE_DAY_TYPE_DEV_READY**

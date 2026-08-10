@@ -1,3 +1,11 @@
+## 2026-08-10 - Ad-hoc proposal multi-assignee audit + plan
+
+- task type: audit/plan (docs pointer)
+- objective: multi assignees + head default + alert recipients
+- verdict: **ADHOC_PROPOSAL_MULTI_ASSIGNEE_PLAN_BLOCKED_PRODUCT_DECISION**
+- evidence: `../cobo_web_design/docs/ai-cache/adhoc-proposal-multi-assignee-2026-08-10/`
+- remaining: Product lock ANY/ALL/CLAIM before implement
+
 ## 2026-08-10 - Ad-hoc proposal deadline day type Phase D DEV
 
 - task type: release (DEV)
