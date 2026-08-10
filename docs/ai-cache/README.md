@@ -1,3 +1,9 @@
+## Ad-hoc proposal multi-assignee — M3 FE (2026-08-10)
+
+- Verdict **M3_ADHOC_PROPOSAL_MULTI_ASSIGNEE_FRONTEND_READY** (FE pointer)
+- BE source unchanged this phase; evidence pack `76`–`92` on FE (+ results.m3)
+- Next: M4 migration apply + coordinated deploy
+
 ## Ad-hoc proposal multi-assignee — M2 runtime + recipients (2026-08-10)
 
 - Verdict **M2_ADHOC_PROPOSAL_MULTI_ASSIGNEE_RUNTIME_READY**

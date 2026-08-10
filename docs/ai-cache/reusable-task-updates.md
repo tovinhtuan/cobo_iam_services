@@ -1,3 +1,9 @@
+## 2026-08-10 - Ad-hoc proposal multi-assignee M3 (FE pointer)
+
+- task type: docs pointer (BE)
+- verdict: **M3_ADHOC_PROPOSAL_MULTI_ASSIGNEE_FRONTEND_READY**
+- remaining: await confirm → M4
+
 ## 2026-08-10 - Ad-hoc proposal multi-assignee M2 runtime + recipients
 
 - task type: implement (BE)
