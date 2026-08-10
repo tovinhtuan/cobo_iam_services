@@ -1,3 +1,10 @@
+## 2026-08-10 - Ad-hoc proposal deadline day type Phase A
+
+- verdict: **PHASE_A_ADHOC_PROPOSAL_DEADLINE_DAY_TYPE_BACKEND_READY**
+- migration: `0127_adhoc_proposed_deadline_day_type` source only (not applied)
+- evidence: `../cobo_web_design/docs/ai-cache/adhoc-proposal-deadline-day-type-2026-08-10/`
+- next: Phase B after confirm; do not deploy Phase A alone
+
 ## 2026-08-10 - Ad-hoc proposal deadline day type plan (pointer)
 
 - verdict: **ADHOC_PROPOSAL_DEADLINE_DAY_TYPE_IMPLEMENTATION_PLAN_READY**

@@ -1,3 +1,10 @@
+## Ad-hoc proposal deadline day type — Phase A (2026-08-10)
+
+- Verdict **PHASE_A_ADHOC_PROPOSAL_DEADLINE_DAY_TYPE_BACKEND_READY**
+- Source: `proposed_deadline_day_type` + migration `0127_*` (not applied)
+- Canonical evidence: `../cobo_web_design/docs/ai-cache/adhoc-proposal-deadline-day-type-2026-08-10/`
+- No DEV deploy / no Production
+
 # Cursor Skill Pack for Cobo Repos
 
 ## Tín hiệu tuân thủ — phải thấy được trong Chat (bắt buộc)
