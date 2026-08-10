@@ -1,3 +1,10 @@
+## Ad-hoc proposal tracking — T0 contract (2026-08-10)
+
+- Verdict **T0_ADHOC_PROPOSAL_TRACKING_PRODUCT_CONTRACT_READY**
+- **`T0_BACKEND_SELF_READ_REQUIRED=true`**: creator self-detail + `scope=my`; company-wide list still `ad_hoc_alert.read`
+- Evidence (FE pack): `cobo_web_design/docs/ai-cache/adhoc-proposal-tracking-discoverability-2026-08-10/` (`30`–`43`)
+- No BE source/migration/deploy — await confirm → T1
+
 ## Ad-hoc proposal tracking discoverability — plan (2026-08-10)
 
 - Verdict **ADHOC_PROPOSAL_TRACKING_IMPLEMENTATION_PLAN_READY** (FE evidence pack)

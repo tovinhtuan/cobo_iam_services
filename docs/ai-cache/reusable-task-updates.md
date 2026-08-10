@@ -1,4 +1,14 @@
 
+## 2026-08-10 — T0 adhoc proposal tracking product contract (pointer)
+
+- task type: docs pointer (FE pack is SoT)
+- objective: lock BE self-read necessity for tracking MVP
+- decision: **`T0_BACKEND_SELF_READ_REQUIRED=true`** (propose grantable without read; Get/List require read today)
+- T1 scope: creator self-detail OR; `GET list?scope=my`; no migration; no scope=assigned
+- evidence: `../cobo_web_design/docs/ai-cache/adhoc-proposal-tracking-discoverability-2026-08-10/` (`30`–`43`)
+- verdict: **T0_ADHOC_PROPOSAL_TRACKING_PRODUCT_CONTRACT_READY**
+- markers: NO_TRACKING_PERMISSION_BROADENING; NO_MIGRATION; NO_DEPLOY; NO_PRODUCTION
+
 ## 2026-08-10 — Ad-hoc proposal tracking discoverability audit + plan (pointer)
 
 - task type: smoke QA + plan (docs pointer; primary pack on FE)
