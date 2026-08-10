@@ -150,26 +150,33 @@ func resolveWorkflowSnapshotForMaterialize(
 	typeID string,
 	opts adhocapp.CreateRecordOpts,
 ) (*resolvedWorkflowMaterialization, error) {
-	if opts.ProposalWorkflow != nil && opts.ProposalWorkflow.SchemaVersion == adhocapp.ProposalWorkflowSchemaV2 {
-		if err := adhocapp.ValidateFrozenProposalWorkflowForRuntime(opts.ProposalWorkflow); err != nil {
-			return nil, err
+	if opts.ProposalWorkflow != nil {
+		if opts.ProposalWorkflow.SchemaVersion == adhocapp.ProposalWorkflowSchemaV3 {
+			// M1 boundary: never fall through to GetEffectiveWorkflow / first-assignee singular map.
+			return nil, perr.NewHTTPError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest,
+				"v3_runtime_not_implemented: multi-assignee workflow cannot be materialized until M2", nil)
 		}
-		if err := adhocapp.ValidateDirectAssigneeRequired(opts.ProposalWorkflow); err != nil {
-			return nil, err
+		if opts.ProposalWorkflow.SchemaVersion == adhocapp.ProposalWorkflowSchemaV2 {
+			if err := adhocapp.ValidateFrozenProposalWorkflowForRuntime(opts.ProposalWorkflow); err != nil {
+				return nil, err
+			}
+			if err := adhocapp.ValidateDirectAssigneeRequired(opts.ProposalWorkflow); err != nil {
+				return nil, err
+			}
+			if len(opts.StepOverrides) > 0 {
+				return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "workflow_contract_conflict: proposal v2 snapshot and step_overrides cannot both drive materialization", nil)
+			}
+			snapshot := workflowapp.MapProposalWorkflowToSnapshot(opts.ProposalWorkflow)
+			if err := workflowapp.ValidateSnapshot(snapshot); err != nil {
+				return nil, perr.NewHTTPError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, "frozen proposal workflow has no materializable steps", err)
+			}
+			return &resolvedWorkflowMaterialization{
+				snapshot:          snapshot,
+				workflowSource:    workflowapp.WorkflowSourceProposalSnapshotV2,
+				firstTaskAssignee: adhocapp.FirstStepAssigneeMembershipID(opts.ProposalWorkflow),
+				mode:              adhocapp.MaterializationModeV2Snapshot,
+			}, nil
 		}
-		if len(opts.StepOverrides) > 0 {
-			return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "workflow_contract_conflict: proposal v2 snapshot and step_overrides cannot both drive materialization", nil)
-		}
-		snapshot := workflowapp.MapProposalWorkflowToSnapshot(opts.ProposalWorkflow)
-		if err := workflowapp.ValidateSnapshot(snapshot); err != nil {
-			return nil, perr.NewHTTPError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, "frozen proposal workflow has no materializable steps", err)
-		}
-		return &resolvedWorkflowMaterialization{
-			snapshot:          snapshot,
-			workflowSource:    workflowapp.WorkflowSourceProposalSnapshotV2,
-			firstTaskAssignee: adhocapp.FirstStepAssigneeMembershipID(opts.ProposalWorkflow),
-			mode:              adhocapp.MaterializationModeV2Snapshot,
-		}, nil
 	}
 
 	effResp, err := svc.GetEffectiveWorkflow(ctx, disclosureapp.GetEffectiveWorkflowRequest{

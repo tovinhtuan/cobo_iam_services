@@ -18,9 +18,14 @@ const (
 
 // ValidateFrozenProposalWorkflowForRuntime enforces defensive gates before v2 materialization.
 // Invalid snapshots must FAIL with no template fallback.
+// Schema v3 is intentionally rejected here (M1: V3_RUNTIME_NOT_IMPLEMENTED_M1).
 func ValidateFrozenProposalWorkflowForRuntime(snap *ProposalWorkflowSnapshot) error {
 	if snap == nil {
 		return newAdHocFieldError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, "workflow", "proposal workflow snapshot is required for schema v2 materialization")
+	}
+	if snap.SchemaVersion == ProposalWorkflowSchemaV3 {
+		return newAdHocFieldError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, "workflow.schema_version",
+			"v3_runtime_not_implemented: schema_version=3 task materialization is not available yet")
 	}
 	if snap.SchemaVersion != ProposalWorkflowSchemaV2 {
 		return newAdHocFieldError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, "workflow.schema_version", "schema_version must be 2 for frozen snapshot materialization")
@@ -78,19 +83,27 @@ func ValidateDirectAssigneeRequired(snap *ProposalWorkflowSnapshot) error {
 	return nil
 }
 
-// ValidateWorkflowForSubmit enforces V2_ASSIGNMENT_REQUIRED_AT_SUBMIT before freeze/status transition.
+// ValidateWorkflowForSubmit enforces assignment rules before freeze/status transition.
 // Draft/PATCH may remain incomplete; submit must not.
 func ValidateWorkflowForSubmit(ctx context.Context, org OrgDirectory, companyID string, snap *ProposalWorkflowSnapshot) error {
-	if snap == nil || snap.SchemaVersion != ProposalWorkflowSchemaV2 {
+	if snap == nil {
 		return nil
 	}
-	if err := ValidateDirectAssigneeRequired(snap); err != nil {
-		return err
+	switch snap.SchemaVersion {
+	case ProposalWorkflowSchemaV2:
+		if err := ValidateDirectAssigneeRequired(snap); err != nil {
+			return err
+		}
+		if org == nil {
+			return perr.NewHTTPError(http.StatusInternalServerError, perr.CodeInternal, "org directory is required for v2 submit validation", nil)
+		}
+		return ValidateWorkflowStepOrgRefs(ctx, org, companyID, snap.Steps)
+	case ProposalWorkflowSchemaV3:
+		// Head resolution + non-empty freeze is owned by NormalizeAndValidateWorkflowForSubmitV3.
+		return nil
+	default:
+		return nil
 	}
-	if org == nil {
-		return perr.NewHTTPError(http.StatusInternalServerError, perr.CodeInternal, "org directory is required for v2 submit validation", nil)
-	}
-	return ValidateWorkflowStepOrgRefs(ctx, org, companyID, snap.Steps)
 }
 
 // PrepareV2Materialization validates frozen snapshot + model A assignment and re-checks org refs.
@@ -111,7 +124,8 @@ func PrepareV2Materialization(ctx context.Context, org OrgDirectory, companyID s
 	return nil
 }
 
-// FirstStepAssigneeMembershipID returns the direct assignee for the first ordered step.
+// FirstStepAssigneeMembershipID returns the direct assignee for the first ordered step (v2 singular).
+// Must not be used as a v3 first-assignee fallback for task materialization.
 func FirstStepAssigneeMembershipID(snap *ProposalWorkflowSnapshot) string {
 	if snap == nil || len(snap.Steps) == 0 {
 		return ""
@@ -120,17 +134,23 @@ func FirstStepAssigneeMembershipID(snap *ProposalWorkflowSnapshot) string {
 }
 
 // BuildCreateRecordOptsForFinalize selects v2 frozen snapshot vs legacy step_overrides.
+// Schema v3 is rejected (no first-assignee fallback, no legacy GetEffectiveWorkflow path).
 func BuildCreateRecordOptsForFinalize(recordID string, proposal *ProposalDTO) (CreateRecordOpts, string, error) {
 	opts := CreateRecordOpts{RecordID: recordID}
 	if proposal == nil {
 		return opts, MaterializationModeLegacy, nil
 	}
-	if ResolveProposalWorkflowContractVersion(proposal.Workflow, proposal.StepOverrides) == ProposalWorkflowSchemaV2 {
+	ver := ResolveProposalWorkflowContractVersion(proposal.Workflow, proposal.StepOverrides)
+	switch ver {
+	case ProposalWorkflowSchemaV3:
+		return opts, "", newAdHocFieldError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, "workflow.schema_version",
+			"v3_runtime_not_implemented: multi-assignee workflow cannot be materialized until M2")
+	case ProposalWorkflowSchemaV2:
 		opts.ProposalWorkflow = proposal.Workflow
-		// Never dual-send legacy overrides on the v2 authority path.
 		opts.StepOverrides = nil
 		return opts, MaterializationModeV2Snapshot, nil
+	default:
+		opts.StepOverrides = append([]WorkflowStepOverride(nil), proposal.StepOverrides...)
+		return opts, MaterializationModeLegacy, nil
 	}
-	opts.StepOverrides = append([]WorkflowStepOverride(nil), proposal.StepOverrides...)
-	return opts, MaterializationModeLegacy, nil
 }

@@ -34,7 +34,8 @@ func marshalProposedWorkflowJSON(steps []adhocapp.WorkflowStepOverride, embedDay
 }
 
 func marshalProposalWorkflowPayload(p adhocapp.ProposalDTO, embedDays *int) (string, error) {
-	if p.Workflow != nil && p.Workflow.SchemaVersion == adhocapp.ProposalWorkflowSchemaV2 {
+	if p.Workflow != nil && (p.Workflow.SchemaVersion == adhocapp.ProposalWorkflowSchemaV2 ||
+		p.Workflow.SchemaVersion == adhocapp.ProposalWorkflowSchemaV3) {
 		raw, err := json.Marshal(p.Workflow)
 		if err != nil {
 			return "", err
@@ -91,7 +92,7 @@ func decodeProposalWorkflowPayload(raw string) (steps []adhocapp.WorkflowStepOve
 	if err := json.Unmarshal([]byte(trimmed), &probe); err != nil {
 		return nil, nil, nil, err
 	}
-	if probe.SchemaVersion == adhocapp.ProposalWorkflowSchemaV2 {
+	if probe.SchemaVersion == adhocapp.ProposalWorkflowSchemaV2 || probe.SchemaVersion == adhocapp.ProposalWorkflowSchemaV3 {
 		var snap adhocapp.ProposalWorkflowSnapshot
 		if err := json.Unmarshal([]byte(trimmed), &snap); err != nil {
 			return nil, nil, nil, err

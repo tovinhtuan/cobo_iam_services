@@ -380,13 +380,6 @@ func (s *service) SubmitProposal(ctx context.Context, req ProposalActionRequest)
 		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "proposal has no assigned reviewers", nil)
 	}
 
-	// Phase 3.5: v2 assignment required at submit — block incomplete freeze (defense: runtime still re-checks).
-	if cur.Workflow != nil && cur.Workflow.SchemaVersion == ProposalWorkflowSchemaV2 {
-		if err := ValidateWorkflowForSubmit(ctx, s.org, cur.CompanyID, cur.Workflow); err != nil {
-			return nil, err
-		}
-	}
-
 	statusUpd := StatusUpdate{
 		ProposalID:               req.ProposalID,
 		CompanyID:                req.Subject.CompanyID,
@@ -396,11 +389,25 @@ func (s *service) SubmitProposal(ctx context.Context, req ProposalActionRequest)
 		ActorUserID:              req.Subject.UserID,
 		SetFocalApprovalMetadata: false,
 	}
-	// Submit freeze foundation: mark schema v2 snapshot immutable for Phase 3 runtime materialization.
-	if cur.Workflow != nil && cur.Workflow.SchemaVersion == ProposalWorkflowSchemaV2 {
-		frozen := *cur.Workflow
-		frozen.Frozen = true
-		statusUpd.Workflow = &frozen
+	// Freeze proposal-owned workflow snapshots (v2 singular / v3 multi-assignee) atomically with status.
+	if cur.Workflow != nil {
+		switch cur.Workflow.SchemaVersion {
+		case ProposalWorkflowSchemaV2:
+			// Phase 3.5: v2 assignment required at submit — block incomplete freeze.
+			if err := ValidateWorkflowForSubmit(ctx, s.org, cur.CompanyID, cur.Workflow); err != nil {
+				return nil, err
+			}
+			frozen := *cur.Workflow
+			frozen.Frozen = true
+			statusUpd.Workflow = &frozen
+		case ProposalWorkflowSchemaV3:
+			normalized, err := NormalizeAndValidateWorkflowForSubmitV3(ctx, s.org, cur.CompanyID, cur.Workflow)
+			if err != nil {
+				return nil, err
+			}
+			normalized.Frozen = true
+			statusUpd.Workflow = normalized
+		}
 	}
 	// SUBMIT_NULL_NORMALIZED_TO_CALENDAR_DAYS: persist explicit day type in the same status UPDATE.
 	// Already WORKING_DAYS/CALENDAR_DAYS are preserved. Runtime due still calendar until Phase C.
@@ -1022,7 +1029,7 @@ func (s *service) normalizeAndValidateWorkflow(
 	}
 	needsOrg := false
 	for _, st := range snap.Steps {
-		if st.DepartmentID != "" || st.AssigneeMembershipID != "" {
+		if st.DepartmentID != "" || st.AssigneeMembershipID != "" || len(st.AssigneeMembershipIDs) > 0 {
 			needsOrg = true
 			break
 		}

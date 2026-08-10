@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
@@ -111,7 +112,9 @@ func TestProposalWorkflowSnapshot_JSONRoundTrip(t *testing.T) {
 type fakeOrgDirectory struct {
 	depts   map[string]bool
 	members map[string]bool
-	belong  map[string]bool // membership\x00dept
+	belong  map[string]bool   // membership\x00dept
+	heads   map[string]string // departmentID → head membershipID
+	headErr map[string]error  // departmentID → error
 }
 
 func (f *fakeOrgDirectory) IsActiveDepartmentInCompany(_ context.Context, _, departmentID string) (bool, error) {
@@ -122,6 +125,27 @@ func (f *fakeOrgDirectory) IsActiveMembershipInCompany(_ context.Context, _, mem
 }
 func (f *fakeOrgDirectory) MemberBelongsToDepartment(_ context.Context, membershipID, departmentID string) (bool, error) {
 	return f.belong[membershipID+"\x00"+departmentID], nil
+}
+func (f *fakeOrgDirectory) ResolveDepartmentHeadMembership(_ context.Context, _, departmentID string) (string, error) {
+	if f.headErr != nil {
+		if err, ok := f.headErr[departmentID]; ok {
+			return "", err
+		}
+	}
+	if f.heads == nil {
+		he := perr.NewHTTPError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest,
+			"department_head_not_configured: department has no head_membership_id", nil)
+		he.Details = map[string]any{"code": "department_head_not_configured"}
+		return "", he
+	}
+	head, ok := f.heads[departmentID]
+	if !ok || strings.TrimSpace(head) == "" {
+		he := perr.NewHTTPError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest,
+			"department_head_not_configured: department has no head_membership_id", nil)
+		he.Details = map[string]any{"code": "department_head_not_configured"}
+		return "", he
+	}
+	return head, nil
 }
 
 func TestValidateWorkflowStepOrgRefs_tenantIsolation(t *testing.T) {
