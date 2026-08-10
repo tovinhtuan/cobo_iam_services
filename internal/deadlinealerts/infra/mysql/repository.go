@@ -5,10 +5,13 @@ import (
 	"database/sql"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
+	adhocapp "github.com/cobo/cobo_iam_services/internal/adhoc/app"
 	deadlinealertsapp "github.com/cobo/cobo_iam_services/internal/deadlinealerts/app"
 	disclosureapp "github.com/cobo/cobo_iam_services/internal/disclosure/app"
+	"github.com/cobo/cobo_iam_services/internal/disclosure/app/deadlineengine"
 	disclosuremysql "github.com/cobo/cobo_iam_services/internal/disclosure/infra/mysql"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 )
@@ -16,10 +19,26 @@ import (
 type Repository struct {
 	db         *sql.DB
 	disclosure *disclosuremysql.Repository
+	holidays   deadlineengine.NonTradingDayChecker
+
+	dayTypeColMu     sync.RWMutex
+	dayTypeColCached bool
+	dayTypeColOK     bool
 }
 
-func NewRepository(db *sql.DB) *Repository {
-	return &Repository{db: db, disclosure: disclosuremysql.NewRepository(db)}
+type Option func(*Repository)
+
+// WithHolidays wires the shared working-day holiday checker (weekends always skipped).
+func WithHolidays(h deadlineengine.NonTradingDayChecker) Option {
+	return func(r *Repository) { r.holidays = h }
+}
+
+func NewRepository(db *sql.DB, opts ...Option) *Repository {
+	r := &Repository{db: db, disclosure: disclosuremysql.NewRepository(db)}
+	for _, opt := range opts {
+		opt(r)
+	}
+	return r
 }
 
 func (r *Repository) ListRows(ctx context.Context, companyID string, scope deadlinealertsapp.DeadlineAlertAccessScope) ([]deadlinealertsapp.AlertRow, error) {
@@ -155,15 +174,25 @@ type adHocMeta struct {
 }
 
 func (r *Repository) listLatestAdHocMeta(ctx context.Context, companyID string) (map[string]adHocMeta, error) {
-	rows, err := r.db.QueryContext(ctx, `
-		SELECT
+	includeDayType, err := r.hasProposedDeadlineDayTypeColumn(ctx)
+	if err != nil {
+		return nil, err
+	}
+	cols := `
 			record_id,
 			COALESCE(change_note, ''),
 			final_deadline_date,
 			proposed_t0_date,
 			proposed_deadline_days,
-			proposed_deadline_date,
-			updated_at
+			proposed_deadline_date`
+	if includeDayType {
+		cols += `,
+			proposed_deadline_day_type`
+	}
+	cols += `,
+			updated_at`
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT `+cols+`
 		FROM ad_hoc_proposals
 		WHERE company_id = ? AND status = 'approved'
 		ORDER BY updated_at DESC
@@ -181,34 +210,68 @@ func (r *Repository) listLatestAdHocMeta(ctx context.Context, companyID string) 
 		var proposedT0 sql.NullTime
 		var proposedDays sql.NullInt64
 		var proposedDue sql.NullTime
+		var dayTypeRaw sql.NullString
 		var updatedAt time.Time
-		if err := rows.Scan(&recordID, &changeNote, &finalDue, &proposedT0, &proposedDays, &proposedDue, &updatedAt); err != nil {
-			return nil, err
+		var scanErr error
+		if includeDayType {
+			scanErr = rows.Scan(&recordID, &changeNote, &finalDue, &proposedT0, &proposedDays, &proposedDue, &dayTypeRaw, &updatedAt)
+		} else {
+			scanErr = rows.Scan(&recordID, &changeNote, &finalDue, &proposedT0, &proposedDays, &proposedDue, &updatedAt)
+		}
+		if scanErr != nil {
+			return nil, scanErr
 		}
 		if _, exists := out[recordID]; exists {
 			continue
 		}
 		titleLine := strings.TrimSpace(strings.Split(changeNote, "\n")[0])
+		dueDate, dueErr := adhocapp.FormatProposalDueDate(ctx, adhocapp.ProposalDueInput{
+			FinalDeadlineDate:    finalDue,
+			ProposedT0Date:       proposedT0,
+			ProposedDeadlineDays: proposedDays,
+			ProposedDeadlineDate: proposedDue,
+			DayType:              adhocapp.ParsePersistedDeadlineDayType(dayTypeRaw),
+		}, r.holidays)
+		if dueErr != nil {
+			// Corrupted day type or calendar error: omit due rather than invent calendar.
+			dueDate = ""
+		}
 		out[recordID] = adHocMeta{
 			titleLine: titleLine,
-			dueDate:   formatAdHocDueDate(finalDue, proposedT0, proposedDays, proposedDue),
+			dueDate:   dueDate,
 		}
 	}
 	return out, rows.Err()
 }
 
-func formatAdHocDueDate(finalDue sql.NullTime, proposedT0 sql.NullTime, proposedDays sql.NullInt64, proposedDue sql.NullTime) string {
-	if finalDue.Valid {
-		return finalDue.Time.UTC().Format("2006-01-02")
+func (r *Repository) hasProposedDeadlineDayTypeColumn(ctx context.Context) (bool, error) {
+	r.dayTypeColMu.RLock()
+	if r.dayTypeColCached {
+		ok := r.dayTypeColOK
+		r.dayTypeColMu.RUnlock()
+		return ok, nil
 	}
-	if proposedT0.Valid && proposedDays.Valid && proposedDays.Int64 > 0 {
-		d := proposedT0.Time.UTC().AddDate(0, 0, int(proposedDays.Int64))
-		return d.Format("2006-01-02")
+	r.dayTypeColMu.RUnlock()
+
+	r.dayTypeColMu.Lock()
+	defer r.dayTypeColMu.Unlock()
+	if r.dayTypeColCached {
+		return r.dayTypeColOK, nil
 	}
-	if proposedDue.Valid && !proposedDue.Time.Before(time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)) {
-		return proposedDue.Time.UTC().Format("2006-01-02")
+	var count int
+	err := r.db.QueryRowContext(ctx, `
+		SELECT COUNT(1)
+		FROM information_schema.columns
+		WHERE table_schema = DATABASE()
+		  AND table_name = 'ad_hoc_proposals'
+		  AND column_name = 'proposed_deadline_day_type'
+	`).Scan(&count)
+	if err != nil {
+		return false, err
 	}
-	return ""
+	r.dayTypeColOK = count > 0
+	r.dayTypeColCached = true
+	return r.dayTypeColOK, nil
 }
 
 type currentStepMeta struct {

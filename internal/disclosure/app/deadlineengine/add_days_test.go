@@ -207,6 +207,40 @@ func TestAddDays_UnsupportedDayType(t *testing.T) {
 	}
 }
 
+func TestAddDaysAfter_Calendar_MatchesAddDate(t *testing.T) {
+	// Monday + 5 exclusive calendar = Saturday (same as T0.AddDate(0,0,5)).
+	start := date(2026, 4, 6)
+	got, err := AddDaysAfter(context.Background(), start, 5, DayTypeCalendar, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := start.AddDate(0, 0, 5)
+	if !got.Equal(want) {
+		t.Fatalf("got %v want %v", got, want)
+	}
+}
+
+func TestAddDaysAfter_Working_FridayN1_SkipsWeekend(t *testing.T) {
+	// Friday + 1 working day after = Monday.
+	got, err := AddDaysAfter(context.Background(), date(2026, 4, 3), 1, DayTypeWorking, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Equal(date(2026, 4, 6)) {
+		t.Fatalf("got %v want Monday 2026-04-06", got)
+	}
+}
+
+func TestAddDaysAfter_Working_FridayN2(t *testing.T) {
+	got, err := AddDaysAfter(context.Background(), date(2026, 4, 3), 2, DayTypeWorking, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Equal(date(2026, 4, 7)) {
+		t.Fatalf("got %v want Tuesday 2026-04-07", got)
+	}
+}
+
 func TestAddDays_WorkingDaySearchLimit(t *testing.T) {
 	// Checker reports every day as a holiday -> nextWorkingDay search exhausts
 	// maxWorkingDayIterations.

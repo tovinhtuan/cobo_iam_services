@@ -5,17 +5,35 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
-	"time"
+	"sync"
 
+	adhocapp "github.com/cobo/cobo_iam_services/internal/adhoc/app"
+	"github.com/cobo/cobo_iam_services/internal/disclosure/app/deadlineengine"
 	personalopsapp "github.com/cobo/cobo_iam_services/internal/personalops/app"
 )
 
 type Repository struct {
-	db *sql.DB
+	db       *sql.DB
+	holidays deadlineengine.NonTradingDayChecker
+
+	dayTypeColMu     sync.RWMutex
+	dayTypeColCached bool
+	dayTypeColOK     bool
 }
 
-func NewRepository(db *sql.DB) *Repository {
-	return &Repository{db: db}
+type Option func(*Repository)
+
+// WithHolidays wires the shared working-day holiday checker.
+func WithHolidays(h deadlineengine.NonTradingDayChecker) Option {
+	return func(r *Repository) { r.holidays = h }
+}
+
+func NewRepository(db *sql.DB, opts ...Option) *Repository {
+	r := &Repository{db: db}
+	for _, opt := range opts {
+		opt(r)
+	}
+	return r
 }
 
 func placeholders(n int) string {
@@ -239,7 +257,15 @@ func (r *Repository) ListApprovedAdHocDues(ctx context.Context, companyIDs []str
 	if len(companyIDs) == 0 {
 		return out, nil
 	}
+	includeDayType, err := r.hasProposedDeadlineDayTypeColumn(ctx)
+	if err != nil {
+		return nil, err
+	}
 	ph := placeholders(len(companyIDs))
+	dayTypeCol := ""
+	if includeDayType {
+		dayTypeCol = ",\n  proposed_deadline_day_type"
+	}
 	q := fmt.Sprintf(`
 SELECT
   company_id,
@@ -247,7 +273,7 @@ SELECT
   final_deadline_date,
   proposed_t0_date,
   proposed_deadline_days,
-  proposed_deadline_date,
+  proposed_deadline_date%s,
   updated_at
 FROM ad_hoc_proposals
 WHERE company_id IN (%s)
@@ -255,7 +281,7 @@ WHERE company_id IN (%s)
   AND record_id IS NOT NULL
   AND TRIM(record_id) <> ''
 ORDER BY updated_at DESC
-`, ph)
+`, dayTypeCol, ph)
 	rows, err := r.db.QueryContext(ctx, q, toAny(companyIDs)...)
 	if err != nil {
 		return nil, err
@@ -266,15 +292,31 @@ ORDER BY updated_at DESC
 		var companyID, recordID string
 		var finalDue, proposedT0, proposedDue sql.NullTime
 		var proposedDays sql.NullInt64
+		var dayTypeRaw sql.NullString
 		var updatedAt sql.NullTime
-		if err := rows.Scan(&companyID, &recordID, &finalDue, &proposedT0, &proposedDays, &proposedDue, &updatedAt); err != nil {
-			return nil, err
+		var scanErr error
+		if includeDayType {
+			scanErr = rows.Scan(&companyID, &recordID, &finalDue, &proposedT0, &proposedDays, &proposedDue, &dayTypeRaw, &updatedAt)
+		} else {
+			scanErr = rows.Scan(&companyID, &recordID, &finalDue, &proposedT0, &proposedDays, &proposedDue, &updatedAt)
+		}
+		if scanErr != nil {
+			return nil, scanErr
 		}
 		key := companyID + "|" + recordID
 		if _, exists := out[key]; exists {
 			continue // already have latest (ORDER BY updated_at DESC)
 		}
-		due := formatAdHocDueDate(finalDue, proposedT0, proposedDays, proposedDue)
+		due, dueErr := adhocapp.FormatProposalDueDate(ctx, adhocapp.ProposalDueInput{
+			FinalDeadlineDate:    finalDue,
+			ProposedT0Date:       proposedT0,
+			ProposedDeadlineDays: proposedDays,
+			ProposedDeadlineDate: proposedDue,
+			DayType:              adhocapp.ParsePersistedDeadlineDayType(dayTypeRaw),
+		}, r.holidays)
+		if dueErr != nil {
+			continue
+		}
 		if due != "" {
 			out[key] = due
 		}
@@ -282,16 +324,32 @@ ORDER BY updated_at DESC
 	return out, rows.Err()
 }
 
-func formatAdHocDueDate(finalDue, proposedT0 sql.NullTime, proposedDays sql.NullInt64, proposedDue sql.NullTime) string {
-	if finalDue.Valid {
-		return finalDue.Time.UTC().Format("2006-01-02")
+func (r *Repository) hasProposedDeadlineDayTypeColumn(ctx context.Context) (bool, error) {
+	r.dayTypeColMu.RLock()
+	if r.dayTypeColCached {
+		ok := r.dayTypeColOK
+		r.dayTypeColMu.RUnlock()
+		return ok, nil
 	}
-	if proposedT0.Valid && proposedDays.Valid && proposedDays.Int64 > 0 {
-		d := proposedT0.Time.UTC().AddDate(0, 0, int(proposedDays.Int64))
-		return d.Format("2006-01-02")
+	r.dayTypeColMu.RUnlock()
+
+	r.dayTypeColMu.Lock()
+	defer r.dayTypeColMu.Unlock()
+	if r.dayTypeColCached {
+		return r.dayTypeColOK, nil
 	}
-	if proposedDue.Valid && !proposedDue.Time.Before(time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)) {
-		return proposedDue.Time.UTC().Format("2006-01-02")
+	var count int
+	err := r.db.QueryRowContext(ctx, `
+		SELECT COUNT(1)
+		FROM information_schema.columns
+		WHERE table_schema = DATABASE()
+		  AND table_name = 'ad_hoc_proposals'
+		  AND column_name = 'proposed_deadline_day_type'
+	`).Scan(&count)
+	if err != nil {
+		return false, err
 	}
-	return ""
+	r.dayTypeColOK = count > 0
+	r.dayTypeColCached = true
+	return r.dayTypeColOK, nil
 }

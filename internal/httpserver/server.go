@@ -37,6 +37,7 @@ import (
 	deadlinealertsmysql "github.com/cobo/cobo_iam_services/internal/deadlinealerts/infra/mysql"
 	deadlinealertshttp "github.com/cobo/cobo_iam_services/internal/deadlinealerts/transport/http"
 	disclosureapp "github.com/cobo/cobo_iam_services/internal/disclosure/app"
+	"github.com/cobo/cobo_iam_services/internal/disclosure/app/deadlineengine"
 	disclosureinmem "github.com/cobo/cobo_iam_services/internal/disclosure/infra/inmemory"
 	disclosuremysql "github.com/cobo/cobo_iam_services/internal/disclosure/infra/mysql"
 	disclosureworkflow "github.com/cobo/cobo_iam_services/internal/disclosure/infra/workflow"
@@ -402,9 +403,13 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 	}
 	disclosureSvc := disclosureapp.NewService(disclosureRepo, authSvc, id, disclosureOpts...)
 	deadlineCalc := disclosureapp.NewDeadlineCalculator(holidayProvider)
+	adhocHolidays := deadlineengine.IsHolidayFunc(func(ctx context.Context, date time.Time) (bool, error) {
+		ok, _, err := holidayProvider.IsNonTradingDay(ctx, date)
+		return ok, err
+	})
 	var deadlineAlertsRepo deadlinealertsapp.Repository
 	if pool != nil {
-		deadlineAlertsRepo = deadlinealertsmysql.NewRepository(pool)
+		deadlineAlertsRepo = deadlinealertsmysql.NewRepository(pool, deadlinealertsmysql.WithHolidays(adhocHolidays))
 	} else if dr, ok := disclosureRepo.(*disclosureinmem.Repository); ok {
 		deadlineAlertsRepo = deadlinealertsinmem.NewRepository(dr)
 	} else {
@@ -660,7 +665,7 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 
 	var personalOpsMine personalopsapp.MineRepository = personalopsapp.EmptyMineRepository{}
 	if pool != nil {
-		personalOpsMine = personalopsmysql.NewRepository(pool)
+		personalOpsMine = personalopsmysql.NewRepository(pool, personalopsmysql.WithHolidays(adhocHolidays))
 	}
 	personalOpsOpts := []personalopsapp.Option{
 		personalopsapp.WithContactReader(personalopsContactAdapter{profiles: adminRepo}),

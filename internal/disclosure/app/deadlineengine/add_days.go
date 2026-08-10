@@ -56,6 +56,43 @@ func AddDays(ctx context.Context, start time.Time, n int, dayType DayType, holid
 	}
 }
 
+// AddDaysAfter advances n calendar/working days AFTER start (start itself is not counted).
+// This matches Ad-hoc proposal shipped calendar semantics: due = T0.AddDate(0, 0, n).
+//
+//   - calendar: start.AddDate(0, 0, n)
+//   - working:  walk forward from the day after start, counting only working days
+//
+// n must be > 0. holidays may be nil (only weekends are skipped).
+func AddDaysAfter(ctx context.Context, start time.Time, n int, dayType DayType, holidays NonTradingDayChecker) (time.Time, error) {
+	if n <= 0 {
+		return time.Time{}, ErrInvalidDeadlineDays
+	}
+	switch dayType {
+	case DayTypeCalendar:
+		return start.AddDate(0, 0, n), nil
+	case DayTypeWorking:
+		current := start
+		counted := 0
+		for i := 0; i < maxWorkingDayIterations && counted < n; i++ {
+			current = current.AddDate(0, 0, 1)
+			nonTrading, err := isNonTradingDay(ctx, current, holidays)
+			if err != nil {
+				return time.Time{}, err
+			}
+			if nonTrading {
+				continue
+			}
+			counted++
+		}
+		if counted < n {
+			return time.Time{}, ErrWorkingDaySearchLimit
+		}
+		return current, nil
+	default:
+		return time.Time{}, ErrUnsupportedDayType
+	}
+}
+
 // nextWorkingDay returns date if it is already a working day, otherwise the
 // first working day strictly after (and including) date.
 func nextWorkingDay(ctx context.Context, date time.Time, holidays NonTradingDayChecker) (time.Time, error) {
