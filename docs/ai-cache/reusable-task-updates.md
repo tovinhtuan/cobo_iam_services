@@ -1,3 +1,11 @@
+## 2026-08-10 - Ad-hoc proposal deadline day type Phase C runtime
+
+- task type: implement (BE)
+- objective: runtime proposal due by day type
+- implemented: authoritative calculator + consumers; tests; docker builds
+- evidence: `../cobo_web_design/docs/ai-cache/adhoc-proposal-deadline-day-type-2026-08-10/` (`44`–`59`)
+- next: Phase D after confirm — do not deploy Phase C alone
+
 ## 2026-08-10 - Ad-hoc proposal deadline day type Phase B (pointer)
 
 - verdict: **PHASE_B_ADHOC_PROPOSAL_DEADLINE_DAY_TYPE_FRONTEND_READY**

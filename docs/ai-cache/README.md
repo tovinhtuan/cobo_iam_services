@@ -1,3 +1,10 @@
+## Ad-hoc proposal deadline day type — Phase C runtime (2026-08-10)
+
+- Verdict **PHASE_C_ADHOC_PROPOSAL_DEADLINE_DAY_TYPE_RUNTIME_READY**
+- Source: `FormatProposalDueDate` + `deadlineengine.AddDaysAfter`; alerts/personalops wired
+- Canonical evidence: `../cobo_web_design/docs/ai-cache/adhoc-proposal-deadline-day-type-2026-08-10/` (`44`–`59`)
+- Migration 0127 not applied; no DEV/Production deploy — await Phase D
+
 ## Ad-hoc proposal deadline day type — Phase B FE (2026-08-10)
 
 - Verdict **PHASE_B_ADHOC_PROPOSAL_DEADLINE_DAY_TYPE_FRONTEND_READY** (pointer)
