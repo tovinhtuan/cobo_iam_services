@@ -1,3 +1,11 @@
+## Ad-hoc proposal tracking — T1 backend (2026-08-10)
+
+- Verdict **T1_ADHOC_PROPOSAL_TRACKING_BACKEND_READY**
+- Self-detail + `scope=my`; company-wide list still `ad_hoc_alert.read`
+- Evidence (FE pack): `cobo_web_design/docs/ai-cache/adhoc-proposal-tracking-discoverability-2026-08-10/` (`44`–`56`)
+- Quality: adhoc tests + vet + api build + docker api build PASS
+- No migration / no FE / no deploy — await T2 confirm
+
 ## Ad-hoc proposal tracking — T0 contract (2026-08-10)
 
 - Verdict **T0_ADHOC_PROPOSAL_TRACKING_PRODUCT_CONTRACT_READY**

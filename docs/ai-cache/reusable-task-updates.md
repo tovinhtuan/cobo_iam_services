@@ -1,4 +1,14 @@
 
+## 2026-08-10 — T1 adhoc proposal tracking backend self-read + scope=my
+
+- task type: implement (BE)
+- objective: creator self-detail + scope=my list
+- files: internal/adhoc app/service/contracts + mysql List + http handler + tests
+- verify: go test ./internal/adhoc/...; vet; go build ./cmd/api; docker compose build api — PASS
+- evidence: FE pack `44`–`56` + results.t1
+- verdict: **T1_ADHOC_PROPOSAL_TRACKING_BACKEND_READY**
+- markers: NO_MIGRATION; NO_FRONTEND; NO_DEV_DEPLOY; NO_PRODUCTION
+
 ## 2026-08-10 — T0 adhoc proposal tracking product contract (pointer)
 
 - task type: docs pointer (FE pack is SoT)
