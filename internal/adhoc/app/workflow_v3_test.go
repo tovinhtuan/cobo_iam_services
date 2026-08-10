@@ -147,25 +147,54 @@ func TestNormalizeAndValidateWorkflowForSubmitV3_AtomicMultiStepHeadFail(t *test
 	}
 }
 
-func TestBuildCreateRecordOptsForFinalize_V3Rejected(t *testing.T) {
-	_, mode, err := BuildCreateRecordOptsForFinalize("r1", &ProposalDTO{
+func TestBuildCreateRecordOptsForFinalize_V3Accepted(t *testing.T) {
+	opts, mode, err := BuildCreateRecordOptsForFinalize("r1", &ProposalDTO{
 		Workflow: &ProposalWorkflowSnapshot{SchemaVersion: ProposalWorkflowSchemaV3, Frozen: true, Steps: []ProposalWorkflowStep{
 			{ID: "ps1", Order: 1, Name: "A", ProcessingDays: 1, DepartmentID: "d1", AssigneeMembershipIDs: []string{"m1"}},
 		}},
 	})
-	if err == nil || !strings.Contains(err.Error(), "v3_runtime_not_implemented") {
-		t.Fatalf("mode=%q err=%v", mode, err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mode != MaterializationModeV3Snapshot {
+		t.Fatalf("mode=%q", mode)
+	}
+	if opts.ProposalWorkflow == nil || opts.ProposalWorkflow.SchemaVersion != ProposalWorkflowSchemaV3 {
+		t.Fatalf("%#v", opts.ProposalWorkflow)
 	}
 }
 
-func TestValidateFrozenProposalWorkflowForRuntime_RejectsV3(t *testing.T) {
+func TestValidateFrozenProposalWorkflowForRuntime_AcceptsV3(t *testing.T) {
 	err := ValidateFrozenProposalWorkflowForRuntime(&ProposalWorkflowSnapshot{
 		SchemaVersion: ProposalWorkflowSchemaV3,
 		Frozen:        true,
 		Steps:         []ProposalWorkflowStep{{ID: "ps1", Order: 1, Name: "A", ProcessingDays: 1}},
 	})
-	if err == nil || !strings.Contains(err.Error(), "v3_runtime_not_implemented") {
+	if err != nil {
 		t.Fatalf("%v", err)
+	}
+}
+
+func TestValidateV3AssigneesRequired(t *testing.T) {
+	err := ValidateV3AssigneesRequired(&ProposalWorkflowSnapshot{
+		SchemaVersion: ProposalWorkflowSchemaV3,
+		Frozen:        true,
+		Steps: []ProposalWorkflowStep{
+			{ID: "ps1", Order: 1, Name: "A", ProcessingDays: 1, DepartmentID: "d1", AssigneeMembershipIDs: []string{"m1", "m2"}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = ValidateV3AssigneesRequired(&ProposalWorkflowSnapshot{
+		SchemaVersion: ProposalWorkflowSchemaV3,
+		Frozen:        true,
+		Steps: []ProposalWorkflowStep{
+			{ID: "ps1", Order: 1, Name: "A", ProcessingDays: 1, DepartmentID: "d1"},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected empty assignees rejected")
 	}
 }
 

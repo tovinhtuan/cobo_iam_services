@@ -37,10 +37,22 @@ func BuildListRowsScopeSQL(scope DeadlineAlertAccessScope) (clause string, args 
 				AND wi_task.company_id = dr.company_id
 			WHERE wi_task.record_id = dr.record_id
 			  AND wt.company_id = dr.company_id
-			  AND wt.assignee_membership_id = ?
+			  AND (
+			    EXISTS (
+			      SELECT 1 FROM workflow_task_assignees wta
+			      WHERE wta.task_id = wt.task_id AND wta.membership_id = ?
+			    )
+			    OR (
+			      NOT EXISTS (
+			        SELECT 1 FROM workflow_task_assignees wta2
+			        WHERE wta2.task_id = wt.task_id
+			      )
+			      AND wt.assignee_membership_id = ?
+			    )
+			  )
 			  AND LOWER(TRIM(wt.status)) NOT IN ('completed', 'done', 'cancelled', 'skipped')
 		)`)
-		args = append(args, scope.MembershipID)
+		args = append(args, scope.MembershipID, scope.MembershipID)
 	}
 	if len(parts) == 0 {
 		return " AND 1=0", nil

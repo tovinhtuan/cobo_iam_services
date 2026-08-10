@@ -56,3 +56,13 @@ func NextSnapshotStep(snapshot []StepSnapshot, currentStepCode string) (StepSnap
 func IsProposalSnapshotV2(workflowSource string) bool {
 	return strings.TrimSpace(workflowSource) == WorkflowSourceProposalSnapshotV2
 }
+
+// IsProposalSnapshotV3 reports whether the instance was materialized from frozen proposal workflow v3.
+func IsProposalSnapshotV3(workflowSource string) bool {
+	return strings.TrimSpace(workflowSource) == WorkflowSourceProposalSnapshotV3
+}
+
+// IsProposalSnapshotFrozen reports v2 or v3 frozen proposal materialization (multi-step advance path).
+func IsProposalSnapshotFrozen(workflowSource string) bool {
+	return IsProposalSnapshotV2(workflowSource) || IsProposalSnapshotV3(workflowSource)
+}

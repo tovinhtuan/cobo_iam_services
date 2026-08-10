@@ -7,7 +7,7 @@ import (
 
 // Mine semantics (locked):
 // A disclosure record is "mine" iff current membership has:
-//  1) an open workflow_tasks.assignee_membership_id match, OR
+//  1) an open workflow_tasks assignment match (v2 singular or v3 relation), OR
 //  2) an active assignments row (membership) on that disclosure_record.
 // NEVER expand via rbac.manage / company-wide / department-only visibility.
 

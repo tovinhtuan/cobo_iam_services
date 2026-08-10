@@ -55,6 +55,22 @@ func toAny(ids []string) []any {
 	return out
 }
 
+func taskAssignedToMembershipsPredicate(ph string) string {
+	return fmt.Sprintf(`(
+      EXISTS (
+        SELECT 1 FROM workflow_task_assignees wta
+        WHERE wta.task_id = wt.task_id AND wta.membership_id IN (%s)
+      )
+      OR (
+        NOT EXISTS (
+          SELECT 1 FROM workflow_task_assignees wta2
+          WHERE wta2.task_id = wt.task_id
+        )
+        AND wt.assignee_membership_id IN (%s)
+      )
+    )`, ph, ph)
+}
+
 // ListMineRecords returns distinct disclosure records matching mine semantics
 // for the given membership IDs. Does NOT expand via rbac.manage / department visibility.
 func (r *Repository) ListMineRecords(ctx context.Context, membershipIDs []string) ([]personalopsapp.MineRecord, error) {
@@ -62,9 +78,7 @@ func (r *Repository) ListMineRecords(ctx context.Context, membershipIDs []string
 		return nil, nil
 	}
 	ph := placeholders(len(membershipIDs))
-	args := toAny(membershipIDs)
-	// Duplicate args for both EXISTS clauses.
-	args = append(args, toAny(membershipIDs)...)
+	taskPred := taskAssignedToMembershipsPredicate(ph)
 
 	q := fmt.Sprintf(`
 SELECT
@@ -81,7 +95,7 @@ SELECT
       ON wi.workflow_instance_id = wt.workflow_instance_id AND wi.company_id = wt.company_id
     WHERE wi.record_id = dr.record_id
       AND wt.company_id = dr.company_id
-      AND wt.assignee_membership_id IN (%s)
+      AND %s
       AND LOWER(TRIM(wt.status)) NOT IN ('completed','done','cancelled','skipped')
   ) THEN 1 ELSE 0 END AS via_task,
   CASE WHEN EXISTS (
@@ -106,7 +120,7 @@ WHERE LOWER(TRIM(dr.status)) <> 'draft'
         ON wi.workflow_instance_id = wt.workflow_instance_id AND wi.company_id = wt.company_id
       WHERE wi.record_id = dr.record_id
         AND wt.company_id = dr.company_id
-        AND wt.assignee_membership_id IN (%s)
+        AND %s
         AND LOWER(TRIM(wt.status)) NOT IN ('completed','done','cancelled','skipped')
     )
     OR EXISTS (
@@ -128,7 +142,7 @@ WHERE LOWER(TRIM(dr.status)) <> 'draft'
             ON wi.workflow_instance_id = wt.workflow_instance_id AND wi.company_id = wt.company_id
           WHERE wi.record_id = dr.record_id
             AND wt.company_id = dr.company_id
-            AND wt.assignee_membership_id IN (%s)
+            AND %s
         )
         OR EXISTS (
           SELECT 1 FROM assignments a
@@ -141,15 +155,13 @@ WHERE LOWER(TRIM(dr.status)) <> 'draft'
       )
     )
   )
-`, ph, ph, ph, ph, ph, ph)
+`, taskPred, ph, taskPred, ph, taskPred, ph)
 
-	// 6x membership ID args for the six IN clauses.
-	args = toAny(membershipIDs)
-	args = append(args, toAny(membershipIDs)...)
-	args = append(args, toAny(membershipIDs)...)
-	args = append(args, toAny(membershipIDs)...)
-	args = append(args, toAny(membershipIDs)...)
-	args = append(args, toAny(membershipIDs)...)
+	// 3 task predicates × 2 IN lists + 3 assignment IN lists = 9 membership arg sets.
+	args := toAny(membershipIDs)
+	for i := 0; i < 8; i++ {
+		args = append(args, toAny(membershipIDs)...)
+	}
 
 	rows, err := r.db.QueryContext(ctx, q, args...)
 	if err != nil {
@@ -196,7 +208,10 @@ func (r *Repository) ListMineOpenTasks(ctx context.Context, membershipIDs []stri
 		limit = 20
 	}
 	ph := placeholders(len(membershipIDs))
+	taskPred := taskAssignedToMembershipsPredicate(ph)
 	args := toAny(membershipIDs)
+	args = append(args, toAny(membershipIDs)...)
+	args = append(args, toAny(membershipIDs)...) // matching membership COALESCE subquery
 	args = append(args, limit)
 
 	q := fmt.Sprintf(`
@@ -204,7 +219,16 @@ SELECT
   wt.task_id,
   wt.company_id,
   c.company_name,
-  wt.assignee_membership_id,
+  COALESCE(
+    (
+      SELECT wta.membership_id
+      FROM workflow_task_assignees wta
+      WHERE wta.task_id = wt.task_id AND wta.membership_id IN (%s)
+      ORDER BY wta.membership_id ASC
+      LIMIT 1
+    ),
+    wt.assignee_membership_id
+  ) AS matched_membership_id,
   wi.record_id,
   COALESCE(dr.title, ''),
   COALESCE(wt.step_code, ''),
@@ -217,12 +241,12 @@ INNER JOIN workflow_instances wi
 INNER JOIN disclosure_records dr
   ON dr.company_id = wi.company_id AND dr.record_id = wi.record_id
 INNER JOIN companies c ON c.company_id = wt.company_id
-WHERE wt.assignee_membership_id IN (%s)
+WHERE %s
   AND LOWER(TRIM(wt.status)) = 'pending'
   AND LOWER(TRIM(dr.status)) <> 'draft'
 ORDER BY wt.task_id ASC
 LIMIT ?
-`, ph)
+`, ph, taskPred)
 
 	rows, err := r.db.QueryContext(ctx, q, args...)
 	if err != nil {
@@ -231,13 +255,15 @@ LIMIT ?
 	defer rows.Close()
 
 	out := make([]personalopsapp.MineTask, 0)
+	seen := map[string]struct{}{}
 	for rows.Next() {
 		var t personalopsapp.MineTask
+		var membership sql.NullString
 		if err := rows.Scan(
 			&t.TaskID,
 			&t.CompanyID,
 			&t.CompanyName,
-			&t.MembershipID,
+			&membership,
 			&t.RecordID,
 			&t.Title,
 			&t.StepCode,
@@ -247,6 +273,13 @@ LIMIT ?
 		); err != nil {
 			return nil, err
 		}
+		if membership.Valid {
+			t.MembershipID = membership.String
+		}
+		if _, ok := seen[t.TaskID]; ok {
+			continue
+		}
+		seen[t.TaskID] = struct{}{}
 		out = append(out, t)
 	}
 	return out, rows.Err()

@@ -134,7 +134,18 @@ func (q *MembershipEmailQuerier) AssigneeEmailsByStep(ctx context.Context, compa
 	rows, err := q.db.QueryContext(ctx, `
 		SELECT DISTINCT COALESCE(NULLIF(TRIM(u.email), ''), u.login_id)
 		FROM workflow_tasks wt
-		JOIN memberships m ON m.membership_id = wt.assignee_membership_id
+		INNER JOIN (
+			SELECT wta.task_id, wta.membership_id AS assignee_membership_id
+			FROM workflow_task_assignees wta
+			UNION ALL
+			SELECT wt2.task_id, wt2.assignee_membership_id
+			FROM workflow_tasks wt2
+			WHERE wt2.assignee_membership_id IS NOT NULL
+			  AND NOT EXISTS (
+			    SELECT 1 FROM workflow_task_assignees wta2 WHERE wta2.task_id = wt2.task_id
+			  )
+		) assignees ON assignees.task_id = wt.task_id
+		JOIN memberships m ON m.membership_id = assignees.assignee_membership_id
 		JOIN users u ON u.user_id = m.user_id
 		WHERE wt.company_id = ?
 		  AND wt.workflow_instance_id = ?

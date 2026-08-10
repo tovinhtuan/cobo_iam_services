@@ -16,9 +16,13 @@ var ErrEmptyWorkflowSnapshot = workflowerrs.ErrEmptyWorkflowSnapshot
 // WorkflowSourceProposalSnapshotV2 labels instance snapshots built from frozen ad-hoc proposal workflow v2.
 const WorkflowSourceProposalSnapshotV2 = "proposal_snapshot_v2"
 
-// MapProposalWorkflowToSnapshot maps a frozen proposal schema-v2 workflow into instance StepSnapshot rows.
+// WorkflowSourceProposalSnapshotV3 labels instance snapshots built from frozen ad-hoc proposal workflow v3 (multi-assignee).
+const WorkflowSourceProposalSnapshotV3 = "proposal_snapshot_v3"
+
+// MapProposalWorkflowToSnapshot maps a frozen proposal schema-v2|v3 workflow into instance StepSnapshot rows.
 // Proposal step id is runtime step_id/step_code authority; source_step_id is provenance only (ignored for identity).
 // processing_days and department_id come from the frozen proposal — never from a live template.
+// v3: AssigneeMembershipIDs only (singular empty). v2: singular only.
 func MapProposalWorkflowToSnapshot(snap *adhocapp.ProposalWorkflowSnapshot) []StepSnapshot {
 	if snap == nil || len(snap.Steps) == 0 {
 		return nil
@@ -35,16 +39,22 @@ func MapProposalWorkflowToSnapshot(snap *adhocapp.ProposalWorkflowSnapshot) []St
 		if step.ProcessingDays > 0 {
 			dueRule = fmt.Sprintf("T+%d", step.ProcessingDays)
 		}
-		out = append(out, StepSnapshot{
-			StepID:               stepID,
-			StepCode:             stepID,
-			Stage:                name,
-			Department:           dept,
-			AssigneeMembershipID: strings.TrimSpace(step.AssigneeMembershipID),
-			DueRule:              dueRule,
-			DisplayOrder:         step.Order,
-			ProcessingDays:       step.ProcessingDays,
-		})
+		row := StepSnapshot{
+			StepID:         stepID,
+			StepCode:       stepID,
+			Stage:          name,
+			Department:     dept,
+			DueRule:        dueRule,
+			DisplayOrder:   step.Order,
+			ProcessingDays: step.ProcessingDays,
+		}
+		if snap.SchemaVersion == adhocapp.ProposalWorkflowSchemaV3 {
+			row.AssigneeMembershipIDs = adhocapp.EffectiveAssigneeMembershipIDs(step, adhocapp.ProposalWorkflowSchemaV3)
+			// NO_V3_FIRST_ASSIGNEE_SHADOW_AUTHORITY — leave singular empty.
+		} else {
+			row.AssigneeMembershipID = strings.TrimSpace(step.AssigneeMembershipID)
+		}
+		out = append(out, row)
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].DisplayOrder == out[j].DisplayOrder {

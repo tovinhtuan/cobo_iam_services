@@ -102,21 +102,29 @@ func (s *service) createWorkflowInstance(ctx context.Context, req CreateWorkflow
 	if err != nil {
 		return nil, err
 	}
-	assignee := strings.TrimSpace(req.FirstTaskAssigneeMembershipID)
-	if assignee == "" {
-		assignee = strings.TrimSpace(req.Subject.MembershipID)
+
+	firstTask := TaskDTO{
+		TaskID:             s.idg.NewUUID(),
+		CompanyID:          req.Subject.CompanyID,
+		WorkflowInstanceID: created.WorkflowInstanceID,
+		StepCode:           firstStepCode,
+		Status:             "pending",
 	}
-	if assignee == "" {
-		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "first task assignee_membership_id is required", nil)
+	relationIDs := normalizeMembershipIDs(req.FirstTaskAssigneeMembershipIDs)
+	if len(relationIDs) > 0 {
+		// v3: one logical task + relation rows; singular stays empty.
+		firstTask.AssigneeMembershipIDs = relationIDs
+	} else {
+		assignee := strings.TrimSpace(req.FirstTaskAssigneeMembershipID)
+		if assignee == "" {
+			assignee = strings.TrimSpace(req.Subject.MembershipID)
+		}
+		if assignee == "" {
+			return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "first task assignee_membership_id is required", nil)
+		}
+		firstTask.AssigneeMembershipID = assignee
 	}
-	if _, err := s.repo.CreateTask(ctx, TaskDTO{
-		TaskID:               s.idg.NewUUID(),
-		CompanyID:            req.Subject.CompanyID,
-		WorkflowInstanceID:   created.WorkflowInstanceID,
-		StepCode:             firstStepCode,
-		AssigneeMembershipID: assignee,
-		Status:               "pending",
-	}); err != nil {
+	if _, err := s.repo.CreateTask(ctx, firstTask); err != nil {
 		return nil, err
 	}
 
@@ -270,13 +278,14 @@ func (s *service) transitionTask(ctx context.Context, req TaskActionRequest, act
 		Type: "workflow_task",
 		ID:   req.TaskID,
 		Attributes: map[string]any{
-			"assignee_membership_id": task.AssigneeMembershipID,
-			"workflow_state":         task.Status,
+			"assignee_membership_id":  task.AssigneeMembershipID,
+			"assignee_membership_ids": task.AssigneeMembershipIDs,
+			"workflow_state":          task.Status,
 		},
 	}); err != nil {
 		return nil, err
 	}
-	if task.AssigneeMembershipID != req.Subject.MembershipID {
+	if !IsMembershipTaskAssignee(req.Subject.MembershipID, task.AssigneeMembershipID, task.AssigneeMembershipIDs) {
 		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodeResponsibilityRequired, "task assignee mismatch", nil)
 	}
 	if task.Status != "pending" {
@@ -321,7 +330,7 @@ func (s *service) planTaskTransition(ctx context.Context, sub Subject, task Task
 		return nil, err
 	}
 
-	if IsProposalSnapshotV2(inst.WorkflowSource) && len(inst.Snapshot) > 0 {
+	if IsProposalSnapshotFrozen(inst.WorkflowSource) && len(inst.Snapshot) > 0 {
 		return s.planV2AdvanceOrComplete(ctx, sub, task, *inst, terminalStatus)
 	}
 	return s.planLegacyCompleteIfNoPending(ctx, sub, task, *inst, terminalStatus)
@@ -355,10 +364,10 @@ func (s *service) planV2AdvanceOrComplete(ctx context.Context, sub Subject, task
 	}
 
 	nextCode := SnapshotStepIdentity(next)
-	assignee := strings.TrimSpace(next.AssigneeMembershipID)
-	if assignee == "" {
+	assignees := SnapshotStepAssigneeIDs(next)
+	if len(assignees) == 0 {
 		return nil, perr.NewHTTPError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest,
-			"v2_direct_assignee_required: next frozen step is missing assignee_membership_id", nil)
+			"direct_assignee_required: next frozen step is missing assignee membership", nil)
 	}
 
 	existing, err := s.repo.ListTasksByInstance(ctx, sub.CompanyID, task.WorkflowInstanceID)
@@ -383,23 +392,33 @@ func (s *service) planV2AdvanceOrComplete(ctx context.Context, sub Subject, task
 	}
 
 	nextTask := &TaskDTO{
-		TaskID:               s.idg.NewUUID(),
-		CompanyID:            sub.CompanyID,
-		WorkflowInstanceID:   inst.WorkflowInstanceID,
-		StepCode:             nextCode,
-		AssigneeMembershipID: assignee,
-		Status:               "pending",
+		TaskID:             s.idg.NewUUID(),
+		CompanyID:          sub.CompanyID,
+		WorkflowInstanceID: inst.WorkflowInstanceID,
+		StepCode:           nextCode,
+		Status:             "pending",
+	}
+	if len(next.AssigneeMembershipIDs) > 0 {
+		nextTask.AssigneeMembershipIDs = assignees
+	} else {
+		nextTask.AssigneeMembershipID = assignees[0]
 	}
 	inst.CurrentStepCode = nextCode
 	inst.Status = "in_progress"
 	apply.NextTask = nextTask
 	apply.Instance = &inst
 
-	slog.Info("workflow: v2 step transition",
+	schemaVer := 2
+	if IsProposalSnapshotV3(inst.WorkflowSource) {
+		schemaVer = 3
+	}
+	slog.Info("workflow: frozen proposal step transition",
 		slog.String("company_id", sub.CompanyID),
 		slog.String("record_id", inst.RecordID),
 		slog.String("instance_id", inst.WorkflowInstanceID),
-		slog.Int("workflow_schema_version", 2),
+		slog.Int("workflow_schema_version", schemaVer),
+		slog.String("assignment_model", assignmentModelLabel(nextTask)),
+		slog.Int("assignee_count", len(assignees)),
 		slog.String("current_proposal_step_id", task.StepCode),
 		slog.String("next_proposal_step_id", nextCode),
 		slog.Int("current_order", orderedDisplayOrder(inst.Snapshot, task.StepCode)),
@@ -407,9 +426,8 @@ func (s *service) planV2AdvanceOrComplete(ctx context.Context, sub Subject, task
 		slog.String("current_task_id", task.TaskID),
 		slog.String("next_task_id", nextTask.TaskID),
 		slog.String("department_id", strings.TrimSpace(next.Department)),
-		slog.String("assignee_membership_id", assignee),
 		slog.String("transition", "next_step"),
-		slog.String("materialization_mode", "v2_snapshot"),
+		slog.String("materialization_mode", inst.WorkflowSource),
 	)
 	return apply, nil
 }
@@ -457,7 +475,11 @@ func (s *service) runInstanceCompletionSideEffects(ctx context.Context, sub Subj
 		}
 	}
 	if terminalStatus == "approved" && s.notifier != nil {
-		_ = s.notifier.NotifyWorkflowApproved(ctx, sub.CompanyID, inst.RecordID, inst.WorkflowInstanceID, task.AssigneeMembershipID)
+		actor := strings.TrimSpace(sub.MembershipID)
+		if actor == "" {
+			actor = task.AssigneeMembershipID
+		}
+		_ = s.notifier.NotifyWorkflowApproved(ctx, sub.CompanyID, inst.RecordID, inst.WorkflowInstanceID, actor)
 	}
 	return nil
 }
@@ -475,4 +497,34 @@ func (s *service) authorize(ctx context.Context, sub Subject, action string, res
 		return perr.NewHTTPError(http.StatusForbidden, code, "access denied", nil)
 	}
 	return nil
+}
+
+func normalizeMembershipIDs(ids []string) []string {
+	if len(ids) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(ids))
+	seen := map[string]struct{}{}
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
+}
+
+func assignmentModelLabel(task *TaskDTO) string {
+	if task == nil {
+		return "unknown"
+	}
+	if len(task.AssigneeMembershipIDs) > 0 {
+		return "v3_relation"
+	}
+	return "v2_singular"
 }

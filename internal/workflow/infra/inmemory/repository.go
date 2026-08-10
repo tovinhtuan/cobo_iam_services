@@ -55,8 +55,11 @@ func (r *Repository) UpdateInstance(_ context.Context, in workflowapp.WorkflowIn
 func (r *Repository) CreateTask(_ context.Context, task workflowapp.TaskDTO) (*workflowapp.TaskDTO, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.tasks[ikey(task.CompanyID, task.TaskID)] = task
 	cp := task
+	if len(cp.AssigneeMembershipIDs) > 0 {
+		cp.AssigneeMembershipID = ""
+	}
+	r.tasks[ikey(task.CompanyID, task.TaskID)] = cp
 	return &cp, nil
 }
 
@@ -100,6 +103,9 @@ func (r *Repository) ApplyTaskTransition(_ context.Context, in workflowapp.TaskT
 
 	if in.NextTask != nil {
 		nt := *in.NextTask
+		if len(nt.AssigneeMembershipIDs) > 0 {
+			nt.AssigneeMembershipID = ""
+		}
 		r.tasks[ikey(nt.CompanyID, nt.TaskID)] = nt
 	}
 	if in.Instance != nil {

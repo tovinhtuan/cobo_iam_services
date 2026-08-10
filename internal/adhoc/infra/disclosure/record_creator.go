@@ -1,4 +1,3 @@
-// Package disclosure adapts disclosureapp.Service to adhocapp.RecordCreator.
 package disclosure
 
 import (
@@ -52,6 +51,7 @@ func (a *RecordCreatorAdapter) CreateAndSubmitRecordWithOpts(ctx context.Context
 	var snapshot []workflowapp.StepSnapshot
 	var workflowSource string
 	var firstTaskAssignee string
+	var firstTaskAssignees []string
 	materializationMode := adhocapp.MaterializationModeLegacy
 
 	if a.workflowOn {
@@ -62,6 +62,7 @@ func (a *RecordCreatorAdapter) CreateAndSubmitRecordWithOpts(ctx context.Context
 		snapshot = resolved.snapshot
 		workflowSource = resolved.workflowSource
 		firstTaskAssignee = resolved.firstTaskAssignee
+		firstTaskAssignees = resolved.firstTaskAssignees
 		materializationMode = resolved.mode
 	}
 
@@ -107,10 +108,11 @@ func (a *RecordCreatorAdapter) CreateAndSubmitRecordWithOpts(ctx context.Context
 				MembershipID: sub.MembershipID,
 				CompanyID:    sub.CompanyID,
 			},
-			RecordID:                      rec.RecordID,
-			Snapshot:                      snapshot,
-			WorkflowSource:                workflowSource,
-			FirstTaskAssigneeMembershipID: firstTaskAssignee,
+			RecordID:                       rec.RecordID,
+			Snapshot:                       snapshot,
+			WorkflowSource:                 workflowSource,
+			FirstTaskAssigneeMembershipID:  firstTaskAssignee,
+			FirstTaskAssigneeMembershipIDs: firstTaskAssignees,
 		}
 		if t0Date != nil {
 			wfReq.T0Date = t0Date
@@ -123,6 +125,7 @@ func (a *RecordCreatorAdapter) CreateAndSubmitRecordWithOpts(ctx context.Context
 			slog.String("workflow_source", workflowSource),
 			slog.Int("snapshot_steps", len(snapshot)),
 			slog.String("first_task_assignee_membership_id", firstTaskAssignee),
+			slog.Int("first_task_assignee_count", len(firstTaskAssignees)),
 		)
 		inst, wfErr := a.workflow.CreateWorkflowInstanceInternal(ctx, wfReq)
 		if wfErr != nil {
@@ -139,6 +142,7 @@ type resolvedWorkflowMaterialization struct {
 	snapshot           []workflowapp.StepSnapshot
 	workflowSource     string
 	firstTaskAssignee  string
+	firstTaskAssignees []string
 	mode               string
 	effectiveWorkflowN int // for tests: GetEffectiveWorkflow call count implied (0 or 1)
 }
@@ -152,9 +156,25 @@ func resolveWorkflowSnapshotForMaterialize(
 ) (*resolvedWorkflowMaterialization, error) {
 	if opts.ProposalWorkflow != nil {
 		if opts.ProposalWorkflow.SchemaVersion == adhocapp.ProposalWorkflowSchemaV3 {
-			// M1 boundary: never fall through to GetEffectiveWorkflow / first-assignee singular map.
-			return nil, perr.NewHTTPError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest,
-				"v3_runtime_not_implemented: multi-assignee workflow cannot be materialized until M2", nil)
+			if err := adhocapp.ValidateFrozenProposalWorkflowForRuntime(opts.ProposalWorkflow); err != nil {
+				return nil, err
+			}
+			if err := adhocapp.ValidateV3AssigneesRequired(opts.ProposalWorkflow); err != nil {
+				return nil, err
+			}
+			if len(opts.StepOverrides) > 0 {
+				return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "workflow_contract_conflict: proposal v3 snapshot and step_overrides cannot both drive materialization", nil)
+			}
+			snapshot := workflowapp.MapProposalWorkflowToSnapshot(opts.ProposalWorkflow)
+			if err := workflowapp.ValidateSnapshot(snapshot); err != nil {
+				return nil, perr.NewHTTPError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, "frozen proposal workflow has no materializable steps", err)
+			}
+			return &resolvedWorkflowMaterialization{
+				snapshot:           snapshot,
+				workflowSource:     workflowapp.WorkflowSourceProposalSnapshotV3,
+				firstTaskAssignees: adhocapp.FirstStepAssigneeMembershipIDs(opts.ProposalWorkflow),
+				mode:               adhocapp.MaterializationModeV3Snapshot,
+			}, nil
 		}
 		if opts.ProposalWorkflow.SchemaVersion == adhocapp.ProposalWorkflowSchemaV2 {
 			if err := adhocapp.ValidateFrozenProposalWorkflowForRuntime(opts.ProposalWorkflow); err != nil {

@@ -114,11 +114,14 @@ type StepSnapshot struct {
 	Department   string `json:"department,omitempty"`
 	AssigneeRole string `json:"assignee_role,omitempty"`
 	// AssigneeMembershipID is the direct handler for proposal_snapshot_v2 steps (model A).
-	// Empty for legacy template-derived snapshots.
+	// Empty for legacy template-derived snapshots and for v3 (relation authority).
 	AssigneeMembershipID string `json:"assignee_membership_id,omitempty"`
-	DueRule              string `json:"due_rule,omitempty"`
-	DisplayOrder         int    `json:"display_order"`
-	ProcessingDays       int    `json:"processing_days,omitempty"`
+	// AssigneeMembershipIDs is the frozen multi-assignee list for proposal_snapshot_v3 steps.
+	// When non-empty, this is assignment authority for the step (singular must stay empty).
+	AssigneeMembershipIDs []string `json:"assignee_membership_ids,omitempty"`
+	DueRule               string   `json:"due_rule,omitempty"`
+	DisplayOrder          int      `json:"display_order"`
+	ProcessingDays        int      `json:"processing_days,omitempty"`
 }
 
 // StepMilestoneRow is a single milestone row ready for persistence.
@@ -137,15 +140,18 @@ type CreateWorkflowInstanceRequest struct {
 	RecordID string `json:"record_id"`
 	// Optional: filled by caller when WORKFLOW_SNAPSHOT_ENABLED=true.
 	Snapshot       []StepSnapshot `json:"snapshot,omitempty"`
-	WorkflowSource string         `json:"workflow_source,omitempty"` // system_template | company_override | proposal_snapshot_v2
+	WorkflowSource string         `json:"workflow_source,omitempty"` // system_template | company_override | proposal_snapshot_v2 | proposal_snapshot_v3
 	T0Date         *time.Time     `json:"t0_date,omitempty"`
 	T0Policy       string         `json:"t0_policy,omitempty"`
 	// Optional: pre-computed milestones from timeline computation (when WORKFLOW_TIMELINE_ENABLED=true).
 	Milestones []StepMilestoneRow `json:"milestones,omitempty"`
 	// FirstTaskAssigneeMembershipID, when non-empty, assigns the first pending task to this
 	// membership (schema v2 direct assignee). When empty, legacy behavior uses Subject.MembershipID
-	// (proposal creator for ad-hoc finalize).
+	// (proposal creator for ad-hoc finalize). Ignored when FirstTaskAssigneeMembershipIDs is set.
 	FirstTaskAssigneeMembershipID string `json:"first_task_assignee_membership_id,omitempty"`
+	// FirstTaskAssigneeMembershipIDs materializes one logical first task with relation rows (schema v3).
+	// Singular column is left NULL — never pick first as shadow authority.
+	FirstTaskAssigneeMembershipIDs []string `json:"first_task_assignee_membership_ids,omitempty"`
 }
 
 type TaskActionRequest struct {
@@ -190,11 +196,14 @@ type TaskAssigneeDTO struct {
 }
 
 type TaskDTO struct {
-	TaskID               string           `json:"task_id"`
-	CompanyID            string           `json:"company_id"`
-	WorkflowInstanceID   string           `json:"workflow_instance_id"`
-	StepCode             string           `json:"step_code"`
-	AssigneeMembershipID string           `json:"assignee_membership_id"`
-	Status               string           `json:"status"`
-	Assignee             *TaskAssigneeDTO `json:"assignee,omitempty"`
+	TaskID               string `json:"task_id"`
+	CompanyID            string `json:"company_id"`
+	WorkflowInstanceID   string `json:"workflow_instance_id"`
+	StepCode             string `json:"step_code"`
+	AssigneeMembershipID string `json:"assignee_membership_id,omitempty"`
+	// AssigneeMembershipIDs is populated from workflow_task_assignees for v3 tasks.
+	// When non-empty, relation is assignment authority (singular is empty/NULL).
+	AssigneeMembershipIDs []string         `json:"assignee_membership_ids,omitempty"`
+	Status                string           `json:"status"`
+	Assignee              *TaskAssigneeDTO `json:"assignee,omitempty"`
 }

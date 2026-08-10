@@ -12,23 +12,20 @@ import (
 const (
 	// MaterializationModeV2Snapshot is the observability label for frozen proposal workflow v2.
 	MaterializationModeV2Snapshot = "v2_snapshot"
+	// MaterializationModeV3Snapshot is the observability label for frozen proposal workflow v3.
+	MaterializationModeV3Snapshot = "v3_snapshot"
 	// MaterializationModeLegacy is the late-resolve template path.
 	MaterializationModeLegacy = "legacy"
 )
 
-// ValidateFrozenProposalWorkflowForRuntime enforces defensive gates before v2 materialization.
+// ValidateFrozenProposalWorkflowForRuntime enforces defensive gates before frozen materialization (v2|v3).
 // Invalid snapshots must FAIL with no template fallback.
-// Schema v3 is intentionally rejected here (M1: V3_RUNTIME_NOT_IMPLEMENTED_M1).
 func ValidateFrozenProposalWorkflowForRuntime(snap *ProposalWorkflowSnapshot) error {
 	if snap == nil {
-		return newAdHocFieldError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, "workflow", "proposal workflow snapshot is required for schema v2 materialization")
+		return newAdHocFieldError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, "workflow", "proposal workflow snapshot is required for frozen materialization")
 	}
-	if snap.SchemaVersion == ProposalWorkflowSchemaV3 {
-		return newAdHocFieldError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, "workflow.schema_version",
-			"v3_runtime_not_implemented: schema_version=3 task materialization is not available yet")
-	}
-	if snap.SchemaVersion != ProposalWorkflowSchemaV2 {
-		return newAdHocFieldError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, "workflow.schema_version", "schema_version must be 2 for frozen snapshot materialization")
+	if snap.SchemaVersion != ProposalWorkflowSchemaV2 && snap.SchemaVersion != ProposalWorkflowSchemaV3 {
+		return newAdHocFieldError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, "workflow.schema_version", "schema_version must be 2 or 3 for frozen snapshot materialization")
 	}
 	if !snap.Frozen {
 		return newAdHocFieldError(http.StatusConflict, perr.CodeStateConflict, "workflow.frozen", "proposal workflow must be frozen before materialization")
@@ -65,7 +62,7 @@ func ValidateFrozenProposalWorkflowForRuntime(snap *ProposalWorkflowSnapshot) er
 
 // ValidateDirectAssigneeRequired locks runtime/submit model A for schema v2:
 // every step must have department_id + assignee_membership_id (no creator/approver fallback,
-// no department queue — workflow_tasks.assignee_membership_id is NOT NULL).
+// no department queue).
 func ValidateDirectAssigneeRequired(snap *ProposalWorkflowSnapshot) error {
 	if snap == nil {
 		return newAdHocFieldError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, "workflow", "proposal workflow snapshot is required")
@@ -78,6 +75,25 @@ func ValidateDirectAssigneeRequired(snap *ProposalWorkflowSnapshot) error {
 		}
 		if assignee == "" {
 			return newAdHocFieldError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, fmt.Sprintf("workflow_steps[%d].assignee_membership_id", i), "assignee_required: assignee_membership_id is required")
+		}
+	}
+	return nil
+}
+
+// ValidateV3AssigneesRequired locks runtime materialization for schema v3:
+// every step must have department_id + non-empty frozen assignee_membership_ids.
+func ValidateV3AssigneesRequired(snap *ProposalWorkflowSnapshot) error {
+	if snap == nil {
+		return newAdHocFieldError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, "workflow", "proposal workflow snapshot is required")
+	}
+	for i, step := range snap.Steps {
+		dept := strings.TrimSpace(step.DepartmentID)
+		if dept == "" {
+			return newAdHocFieldError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, fmt.Sprintf("workflow_steps[%d].department_id", i), "department_required: department_id is required")
+		}
+		ids := EffectiveAssigneeMembershipIDs(step, ProposalWorkflowSchemaV3)
+		if len(ids) == 0 {
+			return newAdHocFieldError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, fmt.Sprintf("workflow_steps[%d].assignee_membership_ids", i), "assignee_required: assignee_membership_ids must be non-empty for v3 materialization")
 		}
 	}
 	return nil
@@ -112,11 +128,34 @@ func PrepareV2Materialization(ctx context.Context, org OrgDirectory, companyID s
 	if err := ValidateFrozenProposalWorkflowForRuntime(snap); err != nil {
 		return err
 	}
+	if snap.SchemaVersion != ProposalWorkflowSchemaV2 {
+		return newAdHocFieldError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, "workflow.schema_version", "PrepareV2Materialization requires schema_version=2")
+	}
 	if err := ValidateDirectAssigneeRequired(snap); err != nil {
 		return err
 	}
 	if org == nil {
 		return perr.NewHTTPError(http.StatusInternalServerError, perr.CodeInternal, "org directory is required for v2 materialization", nil)
+	}
+	if err := ValidateWorkflowStepOrgRefs(ctx, org, companyID, snap.Steps); err != nil {
+		return err
+	}
+	return nil
+}
+
+// PrepareV3Materialization validates frozen v3 snapshot + non-empty assignees and re-checks org refs.
+func PrepareV3Materialization(ctx context.Context, org OrgDirectory, companyID string, snap *ProposalWorkflowSnapshot) error {
+	if err := ValidateFrozenProposalWorkflowForRuntime(snap); err != nil {
+		return err
+	}
+	if snap.SchemaVersion != ProposalWorkflowSchemaV3 {
+		return newAdHocFieldError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, "workflow.schema_version", "PrepareV3Materialization requires schema_version=3")
+	}
+	if err := ValidateV3AssigneesRequired(snap); err != nil {
+		return err
+	}
+	if org == nil {
+		return perr.NewHTTPError(http.StatusInternalServerError, perr.CodeInternal, "org directory is required for v3 materialization", nil)
 	}
 	if err := ValidateWorkflowStepOrgRefs(ctx, org, companyID, snap.Steps); err != nil {
 		return err
@@ -133,8 +172,15 @@ func FirstStepAssigneeMembershipID(snap *ProposalWorkflowSnapshot) string {
 	return strings.TrimSpace(snap.Steps[0].AssigneeMembershipID)
 }
 
-// BuildCreateRecordOptsForFinalize selects v2 frozen snapshot vs legacy step_overrides.
-// Schema v3 is rejected (no first-assignee fallback, no legacy GetEffectiveWorkflow path).
+// FirstStepAssigneeMembershipIDs returns frozen v3 assignees for the first ordered step.
+func FirstStepAssigneeMembershipIDs(snap *ProposalWorkflowSnapshot) []string {
+	if snap == nil || len(snap.Steps) == 0 {
+		return nil
+	}
+	return EffectiveAssigneeMembershipIDs(snap.Steps[0], ProposalWorkflowSchemaV3)
+}
+
+// BuildCreateRecordOptsForFinalize selects frozen snapshot (v2|v3) vs legacy step_overrides.
 func BuildCreateRecordOptsForFinalize(recordID string, proposal *ProposalDTO) (CreateRecordOpts, string, error) {
 	opts := CreateRecordOpts{RecordID: recordID}
 	if proposal == nil {
@@ -143,8 +189,9 @@ func BuildCreateRecordOptsForFinalize(recordID string, proposal *ProposalDTO) (C
 	ver := ResolveProposalWorkflowContractVersion(proposal.Workflow, proposal.StepOverrides)
 	switch ver {
 	case ProposalWorkflowSchemaV3:
-		return opts, "", newAdHocFieldError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, "workflow.schema_version",
-			"v3_runtime_not_implemented: multi-assignee workflow cannot be materialized until M2")
+		opts.ProposalWorkflow = proposal.Workflow
+		opts.StepOverrides = nil
+		return opts, MaterializationModeV3Snapshot, nil
 	case ProposalWorkflowSchemaV2:
 		opts.ProposalWorkflow = proposal.Workflow
 		opts.StepOverrides = nil

@@ -150,10 +150,22 @@ func (r *Repository) listTaskAssigneeRecords(ctx context.Context, companyID, mem
 			AND wi.company_id = wt.company_id
 		INNER JOIN disclosure_records dr ON dr.company_id = wi.company_id AND dr.record_id = wi.record_id
 		WHERE wt.company_id = ?
-		  AND wt.assignee_membership_id = ?
+		  AND (
+		    EXISTS (
+		      SELECT 1 FROM workflow_task_assignees wta
+		      WHERE wta.task_id = wt.task_id AND wta.membership_id = ?
+		    )
+		    OR (
+		      NOT EXISTS (
+		        SELECT 1 FROM workflow_task_assignees wta2
+		        WHERE wta2.task_id = wt.task_id
+		      )
+		      AND wt.assignee_membership_id = ?
+		    )
+		  )
 		  AND LOWER(TRIM(dr.status)) <> 'draft'
 		  AND LOWER(TRIM(wt.status)) NOT IN ('completed', 'done', 'cancelled', 'skipped')
-	`, companyID, membershipID)
+	`, companyID, membershipID, membershipID)
 	if err != nil {
 		return nil, err
 	}

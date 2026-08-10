@@ -77,9 +77,12 @@ func (f *fakeWorkflowRepository) CreateTask(_ context.Context, task TaskDTO) (*T
 		f.failNextCreateTask = nil
 		return nil, err
 	}
-	f.createdTask = task
-	f.tasks[task.CompanyID+":"+task.TaskID] = task
 	cp := task
+	if len(cp.AssigneeMembershipIDs) > 0 {
+		cp.AssigneeMembershipID = ""
+	}
+	f.createdTask = cp
+	f.tasks[task.CompanyID+":"+task.TaskID] = cp
 	return &cp, nil
 }
 
@@ -144,6 +147,9 @@ func (f *fakeWorkflowRepository) ApplyTaskTransition(_ context.Context, in TaskT
 	if in.NextTask != nil {
 		f.createTaskCalls++
 		nt := *in.NextTask
+		if len(nt.AssigneeMembershipIDs) > 0 {
+			nt.AssigneeMembershipID = ""
+		}
 		f.createdTask = nt
 		f.tasks[nt.CompanyID+":"+nt.TaskID] = nt
 	}

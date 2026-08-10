@@ -17,10 +17,10 @@ func TestBuildListRowsScopeSQL_scopedIncludesDepartmentAndMembership(t *testing.
 	if clause == "" {
 		t.Fatal("expected scope clause")
 	}
-	if len(args) != 3 {
-		t.Fatalf("expected 3 args, got %v", args)
+	if len(args) != 4 {
+		t.Fatalf("expected 4 args (dept + assignment + task relation + task singular), got %v", args)
 	}
-	if args[0] != "d_legal" || args[1] != "m_105" || args[2] != "m_105" {
+	if args[0] != "d_legal" || args[1] != "m_105" || args[2] != "m_105" || args[3] != "m_105" {
 		t.Fatalf("args %v", args)
 	}
 }

@@ -73,19 +73,34 @@ func TestResolveWorkflowSnapshotForMaterialize_V2UnfrozenFails(t *testing.T) {
 	}
 }
 
-func TestResolveWorkflowSnapshotForMaterialize_V2RejectsDualOverrides(t *testing.T) {
+func TestResolveWorkflowSnapshotForMaterialize_V3SkipsEffectiveWorkflow(t *testing.T) {
 	snap := &adhocapp.ProposalWorkflowSnapshot{
-		SchemaVersion: 2,
+		SchemaVersion: 3,
 		Frozen:        true,
 		Steps: []adhocapp.ProposalWorkflowStep{
-			{ID: "ps-1", Order: 1, Name: "A", ProcessingDays: 1, DepartmentID: "d1", AssigneeMembershipID: "m1"},
+			{ID: "ps-1", Order: 1, Name: "A", ProcessingDays: 3, DepartmentID: "d1", AssigneeMembershipIDs: []string{"m1", "m2"}},
+			{ID: "ps-2", Order: 2, Name: "B", ProcessingDays: 1, DepartmentID: "d2", AssigneeMembershipIDs: []string{"m3"}},
 		},
 	}
-	_, err := resolveWorkflowSnapshotForMaterialize(context.Background(), nil, disclosureapp.Subject{}, "t", adhocapp.CreateRecordOpts{
+	got, err := resolveWorkflowSnapshotForMaterialize(context.Background(), nil, disclosureapp.Subject{CompanyID: "co"}, "type-ignored", adhocapp.CreateRecordOpts{
 		ProposalWorkflow: snap,
-		StepOverrides:    []adhocapp.WorkflowStepOverride{{StepID: "x", ProcessingDays: 1}},
 	})
-	if err == nil {
-		t.Fatal("expected conflict")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.mode != adhocapp.MaterializationModeV3Snapshot || got.effectiveWorkflowN != 0 {
+		t.Fatalf("%#v", got)
+	}
+	if got.workflowSource != workflowapp.WorkflowSourceProposalSnapshotV3 {
+		t.Fatalf("source=%q", got.workflowSource)
+	}
+	if got.firstTaskAssignee != "" {
+		t.Fatalf("v3 must not set singular first assignee, got %q", got.firstTaskAssignee)
+	}
+	if len(got.firstTaskAssignees) != 2 || got.firstTaskAssignees[0] != "m1" {
+		t.Fatalf("%#v", got.firstTaskAssignees)
+	}
+	if got.snapshot[0].AssigneeMembershipID != "" || len(got.snapshot[0].AssigneeMembershipIDs) != 2 {
+		t.Fatalf("%#v", got.snapshot[0])
 	}
 }
