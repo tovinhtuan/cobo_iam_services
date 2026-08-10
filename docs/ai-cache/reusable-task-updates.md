@@ -1,10 +1,19 @@
+## 2026-08-10 - Ad-hoc proposal multi-assignee M1 backend contract
+
+- task type: implement (BE)
+- objective: v3 multi-assignee proposal contract foundation
+- implemented: assignee_membership_ids; schema_version=3; head resolver; submit normalize; runtime guard
+- verify: go test adhoc+workflow PASS; vet PASS; api+worker build PASS; docker compose build api PASS
+- evidence: `../cobo_web_design/docs/ai-cache/adhoc-proposal-multi-assignee-2026-08-10/` (`40`–`55`)
+- remaining: await confirm → M2; NO_DEV_DEPLOY
+
 ## 2026-08-10 - Ad-hoc proposal multi-assignee M0 Product contract lock
 
 - task type: Product contract lock (docs pointer)
 - objective: lock ANY + schema v3 + workflow_task_assignees + alert recipients
 - verdict: **M0_ADHOC_PROPOSAL_MULTI_ASSIGNEE_PRODUCT_CONTRACT_READY**
 - evidence: `../cobo_web_design/docs/ai-cache/adhoc-proposal-multi-assignee-2026-08-10/` (`28`–`39`)
-- remaining: await confirm → M1; no source/migration/deploy in M0
+- remaining: superseded by M1
 
 ## 2026-08-10 - Ad-hoc proposal multi-assignee audit + plan
 

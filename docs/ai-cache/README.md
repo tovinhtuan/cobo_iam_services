@@ -1,9 +1,16 @@
+## Ad-hoc proposal multi-assignee — M1 backend contract (2026-08-10)
+
+- Verdict **M1_ADHOC_PROPOSAL_MULTI_ASSIGNEE_BACKEND_CONTRACT_READY**
+- Source in this repo: workflow v3 snapshot + head resolver + submit normalize; v3 materialize guarded
+- Canonical evidence: `../cobo_web_design/docs/ai-cache/adhoc-proposal-multi-assignee-2026-08-10/` (`40`–`55`)
+- No migration / no DEV deploy / no Production — await M2 confirm
+
 ## Ad-hoc proposal multi-assignee — M0 Product contract lock (2026-08-10)
 
 - Verdict **M0_ADHOC_PROPOSAL_MULTI_ASSIGNEE_PRODUCT_CONTRACT_READY** (pointer)
 - Canonical evidence: `../cobo_web_design/docs/ai-cache/adhoc-proposal-multi-assignee-2026-08-10/` (`28`–`39`)
 - Locked: ANY; schema_version=3; workflow_task_assignees; submit-time head; active-step multi recipients
-- Docs-only; no BE source / migration / deploy; await M1 confirm
+- Superseded implement start → M1 (see above)
 
 ## Ad-hoc proposal multi-assignee + department-head default — audit/plan (2026-08-10)
 
