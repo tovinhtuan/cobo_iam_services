@@ -1,4 +1,13 @@
 
+## 2026-08-10 — Ad-hoc proposal tracking discoverability audit + plan (pointer)
+
+- task type: smoke QA + plan (docs pointer; primary pack on FE)
+- objective: post-submit tracking discoverability
+- discovered: BE list/get exist (`GET /api/v1/company/ad-hoc-proposals`); FE nav gap; propose-only vs `ad_hoc_alert.read` visibility risk
+- evidence: `../cobo_web_design/docs/ai-cache/adhoc-proposal-tracking-discoverability-2026-08-10/`
+- verdict: **ADHOC_PROPOSAL_TRACKING_IMPLEMENTATION_PLAN_READY**
+- markers: no BE source change; no migration; no deploy; no Production
+
 ## 2026-08-10 — M4 adhoc multi-assignee DEV migration+deploy+E2E
 
 - task type: coordinated DEV migration apply + deploy + authenticated E2E (no Production)

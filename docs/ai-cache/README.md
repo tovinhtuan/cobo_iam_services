@@ -1,3 +1,10 @@
+## Ad-hoc proposal tracking discoverability — plan (2026-08-10)
+
+- Verdict **ADHOC_PROPOSAL_TRACKING_IMPLEMENTATION_PLAN_READY** (FE evidence pack)
+- List/Get APIs already exist; primary gap is FE IA/nav + optional authz for propose-only creators
+- Evidence (FE): `cobo_web_design/docs/ai-cache/adhoc-proposal-tracking-discoverability-2026-08-10/`
+- No BE source/migration/deploy — await confirm
+
 ## Ad-hoc proposal multi-assignee — M4 DEV (2026-08-10)
 
 - Verdict **ADHOC_PROPOSAL_MULTI_ASSIGNEE_DEV_READY**
