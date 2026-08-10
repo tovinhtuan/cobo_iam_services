@@ -1,3 +1,11 @@
+## 2026-08-10 - Ad-hoc proposal deadline day type Phase D DEV
+
+- task type: release (DEV)
+- objective: migration 0127 + BE/FE deploy + E2E
+- implemented: push-migration 0127; deploy-be; deploy-fe; run_dev_migrations list hotfix
+- evidence: `../cobo_web_design/docs/ai-cache/adhoc-proposal-deadline-day-type-2026-08-10/` (`60`–`90`)
+- next: stop at DEV — no Production
+
 ## 2026-08-10 - Ad-hoc proposal deadline day type Phase C runtime
 
 - task type: implement (BE)

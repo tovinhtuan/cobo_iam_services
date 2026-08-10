@@ -1,3 +1,9 @@
+## Ad-hoc proposal deadline day type — Phase D DEV (2026-08-10)
+
+- Verdict **ADHOC_PROPOSAL_DEADLINE_DAY_TYPE_DEV_READY**
+- Migration `0127` applied on DEV; api+worker+fe deployed; canonical evidence in cobo_web_design pack `60`–`90`
+- NO_PRODUCTION
+
 ## Ad-hoc proposal deadline day type — Phase C runtime (2026-08-10)
 
 - Verdict **PHASE_C_ADHOC_PROPOSAL_DEADLINE_DAY_TYPE_RUNTIME_READY**
