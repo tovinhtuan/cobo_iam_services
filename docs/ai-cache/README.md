@@ -1,3 +1,11 @@
+## Ad-hoc proposal tracking — T3 detail runtime (2026-08-10)
+
+- Verdict **T3_ADHOC_PROPOSAL_TRACKING_DETAIL_READY**
+- Mode **T3_BE_DETAIL_PROJECTION_ADDED**: `tracking` on GetProposal via workflow instance/tasks
+- Evidence (FE pack): `cobo_web_design/docs/ai-cache/adhoc-proposal-tracking-discoverability-2026-08-10/` (`72`–`90`)
+- Quality: adhoc tests + vet + api build PASS; docker api build **BLOCKED** (daemon)
+- No migration / no deploy — await T4/T5 confirm
+
 ## Ad-hoc proposal tracking — T1 backend (2026-08-10)
 
 - Verdict **T1_ADHOC_PROPOSAL_TRACKING_BACKEND_READY**

@@ -30,10 +30,11 @@ type service struct {
 	autoApprove         bool // WORKFLOW_ADHOC_AUTOAPPROVE_ENABLED: skip focal step
 	auth                authapp.Service
 	membershipValidator MembershipValidator
-	notifier            ProposalNotifier // nil = notifications disabled
-	metrics             Metrics          // metrics emission; supplied as a no-op when ADHOC_EMAIL_METRICS_ENABLED=false
-	org                 OrgDirectory     // nil until AttachWorkflowDeps; required for v2 org refs
-	seeder              WorkflowSeeder   // optional template seed
+	notifier            ProposalNotifier      // nil = notifications disabled
+	metrics             Metrics               // metrics emission; supplied as a no-op when ADHOC_EMAIL_METRICS_ENABLED=false
+	org                 OrgDirectory          // nil until AttachWorkflowDeps; required for v2 org refs
+	seeder              WorkflowSeeder        // optional template seed
+	runtime             WorkflowRuntimeReader // nil until AttachRuntimeTracking; detail tracking only
 }
 
 func NewService(repo Repository, recordCreator RecordCreator, typeCatalog TypeCatalog, idg idgen.Generator, autoApprove bool, auth authapp.Service, mv MembershipValidator, notifier ProposalNotifier, metrics Metrics) Service {
@@ -840,12 +841,12 @@ func (s *service) GetProposal(ctx context.Context, req GetProposalRequest) (*Pro
 		return nil, err
 	}
 	if canRead {
-		return s.embedReviewState(ctx, p), nil
+		return s.enrichProposalDetail(ctx, p), nil
 	}
 
 	// Object-scoped creator self-read. propose is NOT treated as global read.
 	if p.CreatedBy == req.Subject.MembershipID {
-		return s.embedReviewState(ctx, p), nil
+		return s.enrichProposalDetail(ctx, p), nil
 	}
 	return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "access denied", nil)
 }
@@ -956,6 +957,50 @@ func (s *service) embedReviewState(ctx context.Context, p *ProposalDTO) *Proposa
 		out.Approvals = approvals
 	}
 	out.ApprovalProgress = &ApprovalProgressDTO{Required: len(out.Reviewers), Completed: len(out.Approvals)}
+	return &out
+}
+
+// enrichProposalDetail is GetProposal-only: review state + runtime tracking projection.
+func (s *service) enrichProposalDetail(ctx context.Context, p *ProposalDTO) *ProposalDTO {
+	out := s.embedReviewState(ctx, p)
+	return s.embedRuntimeTracking(ctx, out)
+}
+
+// embedRuntimeTracking attaches additive tracking for detail. Fail-soft — never blocks read.
+// Uses existing self-read / company-read auth from GetProposal (no permission broadening).
+func (s *service) embedRuntimeTracking(ctx context.Context, p *ProposalDTO) *ProposalDTO {
+	if p == nil {
+		return p
+	}
+	hasRuntime := false
+	currentStepCode := ""
+	instanceStatus := ""
+	var tasks []RuntimeTaskView
+
+	instanceID := strings.TrimSpace(p.WorkflowInstanceID)
+	if instanceID != "" && s.runtime != nil {
+		code, status, err := s.runtime.FindInstanceRuntime(ctx, p.CompanyID, instanceID)
+		if err == nil {
+			hasRuntime = true
+			currentStepCode = code
+			instanceStatus = status
+			if listed, listErr := s.runtime.ListInstanceTasks(ctx, p.CompanyID, instanceID); listErr == nil {
+				tasks = listed
+			}
+		} else {
+			slog.Warn("adhoc: runtime tracking instance load failed",
+				slog.String("proposal_id", p.ProposalID),
+				slog.String("workflow_instance_id", instanceID),
+				slog.String("error", err.Error()))
+		}
+	}
+
+	tracking := BuildProposalTracking(p.Status, p.Workflow, hasRuntime, currentStepCode, instanceStatus, tasks)
+	if tracking == nil {
+		return p
+	}
+	out := *p
+	out.Tracking = tracking
 	return &out
 }
 

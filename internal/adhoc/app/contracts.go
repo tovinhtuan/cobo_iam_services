@@ -472,6 +472,10 @@ type ProposalDTO struct {
 	Approvals        []ApprovalDTO        `json:"approvals,omitempty"`
 	ApprovalProgress *ApprovalProgressDTO `json:"approval_progress,omitempty"`
 
+	// Tracking is additive GetProposal enrichment (T3). Built from frozen workflow +
+	// runtime instance/tasks. Omitted on list. Never changes proposal.status.
+	Tracking *ProposalTrackingDTO `json:"tracking,omitempty"`
+
 	// ReviewerMembershipIDs is a transient, create-time-only field: the reviewer
 	// IDs to persist into ad_hoc_proposal_reviewers when this DTO is passed to
 	// Repository.Insert. Never read back from the DB; not part of the wire DTO.

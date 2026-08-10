@@ -17,6 +17,7 @@ import (
 	adhocrecord "github.com/cobo/cobo_iam_services/internal/adhoc/infra/disclosure"
 	adhocmysql "github.com/cobo/cobo_iam_services/internal/adhoc/infra/mysql"
 	adhocnotif "github.com/cobo/cobo_iam_services/internal/adhoc/infra/notification"
+	adhocworkflow "github.com/cobo/cobo_iam_services/internal/adhoc/infra/workflowadapter"
 	adhocobserve "github.com/cobo/cobo_iam_services/internal/adhoc/observability"
 	adhochttp "github.com/cobo/cobo_iam_services/internal/adhoc/transport/http"
 	auditapp "github.com/cobo/cobo_iam_services/internal/audit/app"
@@ -638,6 +639,7 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 		)
 		adhocSvc = adhocapp.NewService(adhocRepo, recordCreator, typeCatalog, id, cfg.WorkflowAdhocAutoApproveEnabled, authSvc, membershipValidator, proposalNotifier, adhocMetrics)
 		adhocSvc = adhocapp.AttachWorkflowDeps(adhocSvc, adhocmysql.NewOrgDirectory(pool), adhocrecord.NewWorkflowSeederAdapter(disclosureSvc))
+		adhocSvc = adhocapp.AttachRuntimeTracking(adhocSvc, adhocworkflow.NewRuntimeReader(workflowRepo))
 		adhocHandler = adhochttp.NewHandler(log, adhocSvc, tokenManager, idemStore)
 		log.Info("ad-hoc proposal module enabled")
 	}
