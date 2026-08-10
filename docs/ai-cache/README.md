@@ -1,9 +1,16 @@
+## Ad-hoc proposal multi-assignee — M0 Product contract lock (2026-08-10)
+
+- Verdict **M0_ADHOC_PROPOSAL_MULTI_ASSIGNEE_PRODUCT_CONTRACT_READY** (pointer)
+- Canonical evidence: `../cobo_web_design/docs/ai-cache/adhoc-proposal-multi-assignee-2026-08-10/` (`28`–`39`)
+- Locked: ANY; schema_version=3; workflow_task_assignees; submit-time head; active-step multi recipients
+- Docs-only; no BE source / migration / deploy; await M1 confirm
+
 ## Ad-hoc proposal multi-assignee + department-head default — audit/plan (2026-08-10)
 
-- Verdict **ADHOC_PROPOSAL_MULTI_ASSIGNEE_PLAN_BLOCKED_PRODUCT_DECISION** (pointer)
+- Verdict **ADHOC_PROPOSAL_MULTI_ASSIGNEE_PLAN_BLOCKED_PRODUCT_DECISION** (historical pointer)
 - Canonical evidence: `../cobo_web_design/docs/ai-cache/adhoc-proposal-multi-assignee-2026-08-10/`
-- Docs-only; no BE source / migration / deploy; blocker = multi-assignee completion semantics
-- Alert: **NO_CURRENTLY_SINGLE_RECIPIENT** (task/inbox singular)
+- Docs-only; blocker cleared by M0
+- Alert historical: **NO_CURRENTLY_SINGLE_RECIPIENT** (task/inbox singular)
 
 ## Ad-hoc proposal deadline day type — Phase D DEV (2026-08-10)
 
