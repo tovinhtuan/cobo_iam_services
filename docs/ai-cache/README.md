@@ -1,3 +1,10 @@
+## Ad-hoc proposal tracking — T4 integration (2026-08-10)
+
+- Verdict **T4_ADHOC_PROPOSAL_TRACKING_INTEGRATION_READY**
+- Docker API build parity **PASS**; worker redeploy not required for tracking
+- Evidence (FE pack): `cobo_web_design/docs/ai-cache/adhoc-proposal-tracking-discoverability-2026-08-10/` (`91`–`112`)
+- No migration / no deploy — await T5 confirm
+
 ## Ad-hoc proposal tracking — T3 detail runtime (2026-08-10)
 
 - Verdict **T3_ADHOC_PROPOSAL_TRACKING_DETAIL_READY**
