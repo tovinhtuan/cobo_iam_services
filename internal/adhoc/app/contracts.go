@@ -229,12 +229,15 @@ type CreateProposalRequest struct {
 	StepOverrides []WorkflowStepOverride      `json:"step_overrides"`
 	WorkflowSteps []ProposalWorkflowStepInput `json:"workflow_steps,omitempty"`
 	// UseTemplateWorkflow seeds schema v2 from effective workflow when workflow_steps is omitted.
-	UseTemplateWorkflow   bool     `json:"use_template_workflow,omitempty"`
-	ProposedT0Date        string   `json:"proposed_t0_date,omitempty"` // YYYY-MM-DD
-	ProposedDeadlineDays  int      `json:"proposed_deadline_days,omitempty"`
-	ProposedDeadline      string   `json:"proposed_deadline_date,omitempty"` // YYYY-MM-DD or legacy day count string
-	ChangeNote            string   `json:"change_note,omitempty"`
-	ReviewerMembershipIDs []string `json:"reviewer_membership_ids,omitempty"`
+	UseTemplateWorkflow  bool   `json:"use_template_workflow,omitempty"`
+	ProposedT0Date       string `json:"proposed_t0_date,omitempty"` // YYYY-MM-DD
+	ProposedDeadlineDays int    `json:"proposed_deadline_days,omitempty"`
+	ProposedDeadline     string `json:"proposed_deadline_date,omitempty"` // YYYY-MM-DD or legacy day count string
+	// ProposedDeadlineDayType is proposal-owned: WORKING_DAYS | CALENDAR_DAYS.
+	// Empty/omitted on create is allowed (draft null); submit normalizes null → CALENDAR_DAYS.
+	ProposedDeadlineDayType string   `json:"proposed_deadline_day_type,omitempty"`
+	ChangeNote              string   `json:"change_note,omitempty"`
+	ReviewerMembershipIDs   []string `json:"reviewer_membership_ids,omitempty"`
 	// ProcessControllerMembershipID is the deprecated single-reviewer field (A6
 	// backward-compat alias). Used only when ReviewerMembershipIDs is empty.
 	ProcessControllerMembershipID string `json:"process_controller_membership_id,omitempty"`
@@ -245,26 +248,30 @@ type CreateProposalRequest struct {
 type PatchDraftProposalRequest struct {
 	Subject              Subject
 	ProposalID           string
-	TypeID               *string                      `json:"type_id,omitempty"`
-	ChangeNote           *string                      `json:"change_note,omitempty"`
-	ProposedT0Date       *string                      `json:"proposed_t0_date,omitempty"`
-	ProposedDeadlineDays *int                         `json:"proposed_deadline_days,omitempty"`
-	ProposedDeadline     *string                      `json:"proposed_deadline_date,omitempty"`
-	WorkflowSteps        *[]ProposalWorkflowStepInput `json:"workflow_steps,omitempty"`
+	TypeID               *string `json:"type_id,omitempty"`
+	ChangeNote           *string `json:"change_note,omitempty"`
+	ProposedT0Date       *string `json:"proposed_t0_date,omitempty"`
+	ProposedDeadlineDays *int    `json:"proposed_deadline_days,omitempty"`
+	ProposedDeadline     *string `json:"proposed_deadline_date,omitempty"`
+	// ProposedDeadlineDayType: omit=keep; ""=clear to NULL; WORKING_DAYS|CALENDAR_DAYS=set.
+	// JSON null cannot be distinguished from omit with *string — clear via empty string.
+	ProposedDeadlineDayType *string                      `json:"proposed_deadline_day_type,omitempty"`
+	WorkflowSteps           *[]ProposalWorkflowStepInput `json:"workflow_steps,omitempty"`
 	// UseTemplateWorkflow reseeds workflow from the (possibly new) type when workflow_steps is omitted.
 	UseTemplateWorkflow bool `json:"use_template_workflow,omitempty"`
 }
 
 // DraftUpdate is the repository write for draft PATCH / submit freeze of workflow JSON.
 type DraftUpdate struct {
-	ProposalID           string
-	CompanyID            string
-	FromStatus           string // must be StatusDraft
-	TypeID               string
-	ChangeNote           string
-	ProposedT0Date       *string
-	ProposedDeadlineDays *int
-	ProposedDeadlineDate *string
+	ProposalID              string
+	CompanyID               string
+	FromStatus              string // must be StatusDraft
+	TypeID                  string
+	ChangeNote              string
+	ProposedT0Date          *string
+	ProposedDeadlineDays    *int
+	ProposedDeadlineDate    *string
+	ProposedDeadlineDayType *ProposalDeadlineDayType
 	// Workflow, when non-nil, is persisted as schema v2 authority in proposed_workflow_json.
 	Workflow *ProposalWorkflowSnapshot
 	// ClearWorkflowToLegacyOverrides, when Workflow is nil, writes legacy step_overrides JSON.
@@ -430,20 +437,23 @@ type ProposalDTO struct {
 	AdjustmentNote       string                    `json:"adjustment_note,omitempty"`
 	ProposedDeadlineDays *int                      `json:"proposed_deadline_days,omitempty"`
 	ProposedDeadlineDate *string                   `json:"proposed_deadline_date,omitempty"` // calendar date when set explicitly
-	ChangeNote           string                    `json:"change_note,omitempty"`
-	FocalApprovedBy      string                    `json:"focal_approved_by,omitempty"`
-	FocalApprovedAt      *time.Time                `json:"focal_approved_at,omitempty"`
-	AdminApprovedBy      string                    `json:"admin_approved_by,omitempty"`
-	AdminApprovedAt      *time.Time                `json:"admin_approved_at,omitempty"`
-	RejectedBy           string                    `json:"rejected_by,omitempty"`
-	RejectedAt           *time.Time                `json:"rejected_at,omitempty"`
-	RejectReason         string                    `json:"reject_reason,omitempty"`
-	RecordID             string                    `json:"record_id,omitempty"`
-	WorkflowInstanceID   string                    `json:"workflow_instance_id,omitempty"`
-	CreatedBy            string                    `json:"created_by"`
-	ProcessControllerID  string                    `json:"process_controller_id,omitempty"`
-	CreatedAt            time.Time                 `json:"created_at"`
-	UpdatedAt            time.Time                 `json:"updated_at"`
+	// ProposedDeadlineDayType: WORKING_DAYS | CALENDAR_DAYS. Null in response means
+	// legacy/draft unset — EffectiveProposalDeadlineDayType treats null as CALENDAR_DAYS.
+	ProposedDeadlineDayType *ProposalDeadlineDayType `json:"proposed_deadline_day_type,omitempty"`
+	ChangeNote              string                   `json:"change_note,omitempty"`
+	FocalApprovedBy         string                   `json:"focal_approved_by,omitempty"`
+	FocalApprovedAt         *time.Time               `json:"focal_approved_at,omitempty"`
+	AdminApprovedBy         string                   `json:"admin_approved_by,omitempty"`
+	AdminApprovedAt         *time.Time               `json:"admin_approved_at,omitempty"`
+	RejectedBy              string                   `json:"rejected_by,omitempty"`
+	RejectedAt              *time.Time               `json:"rejected_at,omitempty"`
+	RejectReason            string                   `json:"reject_reason,omitempty"`
+	RecordID                string                   `json:"record_id,omitempty"`
+	WorkflowInstanceID      string                   `json:"workflow_instance_id,omitempty"`
+	CreatedBy               string                   `json:"created_by"`
+	ProcessControllerID     string                   `json:"process_controller_id,omitempty"`
+	CreatedAt               time.Time                `json:"created_at"`
+	UpdatedAt               time.Time                `json:"updated_at"`
 
 	// Reviewers, Approvals, ApprovalProgress are embedded by the service layer
 	// (GetProposal/ListProposals) — never populated directly by the repository's
@@ -479,4 +489,9 @@ type StatusUpdate struct {
 	AdjustmentNote           string
 	// Workflow, when non-nil, rewrites proposed_workflow_json in the same status UPDATE (submit freeze).
 	Workflow *ProposalWorkflowSnapshot
+	// PersistProposedDeadlineDayType, when true, writes ProposedDeadlineDayType in the same
+	// status UPDATE (submit null→CALENDAR_DAYS normalization). Submitted value is then immutable
+	// via draft PATCH (status != draft).
+	PersistProposedDeadlineDayType bool
+	ProposedDeadlineDayType        *ProposalDeadlineDayType
 }

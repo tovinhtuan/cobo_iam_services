@@ -62,6 +62,7 @@ func (f *fakeRepository) UpdateDraft(ctx context.Context, upd DraftUpdate) (*Pro
 	cp.ProposedT0Date = upd.ProposedT0Date
 	cp.ProposedDeadlineDays = upd.ProposedDeadlineDays
 	cp.ProposedDeadlineDate = upd.ProposedDeadlineDate
+	cp.ProposedDeadlineDayType = upd.ProposedDeadlineDayType
 	if upd.Workflow != nil {
 		snap := *upd.Workflow
 		snap.Steps = append([]ProposalWorkflowStep(nil), upd.Workflow.Steps...)
@@ -198,6 +199,9 @@ func (f *fakeRepository) UpdateStatus(ctx context.Context, upd StatusUpdate) (*P
 		snap.Steps = append([]ProposalWorkflowStep(nil), upd.Workflow.Steps...)
 		cp.Workflow = &snap
 		cp.StepOverrides = DeriveLegacyStepOverrides(snap.Steps)
+	}
+	if upd.PersistProposedDeadlineDayType {
+		cp.ProposedDeadlineDayType = upd.ProposedDeadlineDayType
 	}
 	if upd.Status == StatusPendingAdminApproval && upd.SetFocalApprovalMetadata {
 		now := time.Now().UTC()
@@ -1706,6 +1710,9 @@ func (f *raceFakeRepo) UpdateStatus(ctx context.Context, upd StatusUpdate) (*Pro
 		return nil, false, conflictErr
 	}
 	f.proposal.Status = upd.Status
+	if upd.PersistProposedDeadlineDayType {
+		f.proposal.ProposedDeadlineDayType = upd.ProposedDeadlineDayType
+	}
 	if upd.SetFocalApprovalMetadata {
 		now := time.Now().UTC()
 		f.proposal.FocalApprovedBy = upd.ActorMembershipID

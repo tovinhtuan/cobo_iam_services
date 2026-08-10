@@ -180,16 +180,21 @@ func (s *service) CreateProposal(ctx context.Context, req CreateProposalRequest)
 	if err != nil {
 		return nil, err
 	}
+	dayType, err := parseOptionalProposalDeadlineDayType(req.ProposedDeadlineDayType)
+	if err != nil {
+		return nil, err
+	}
 	p := ProposalDTO{
-		ProposalID:            s.idg.NewUUID(),
-		CompanyID:             req.Subject.CompanyID,
-		TypeID:                req.TypeID,
-		Status:                StatusDraft,
-		StepOverrides:         stepOverrides,
-		Workflow:              workflowSnap,
-		ChangeNote:            strings.TrimSpace(req.ChangeNote),
-		CreatedBy:             req.Subject.MembershipID,
-		ReviewerMembershipIDs: reviewerIDs,
+		ProposalID:              s.idg.NewUUID(),
+		CompanyID:               req.Subject.CompanyID,
+		TypeID:                  req.TypeID,
+		Status:                  StatusDraft,
+		StepOverrides:           stepOverrides,
+		Workflow:                workflowSnap,
+		ChangeNote:              strings.TrimSpace(req.ChangeNote),
+		CreatedBy:               req.Subject.MembershipID,
+		ReviewerMembershipIDs:   reviewerIDs,
+		ProposedDeadlineDayType: dayType,
 	}
 	if t0 != "" {
 		p.ProposedT0Date = &t0
@@ -279,17 +284,27 @@ func (s *service) PatchDraftProposal(ctx context.Context, req PatchDraftProposal
 		}
 	}
 
+	dayType := cur.ProposedDeadlineDayType
+	if req.ProposedDeadlineDayType != nil {
+		parsed, pErr := parseOptionalProposalDeadlineDayType(*req.ProposedDeadlineDayType)
+		if pErr != nil {
+			return nil, pErr
+		}
+		dayType = parsed // "" clears to nil
+	}
+
 	typeChanged := typeID != cur.TypeID
 	needWorkflowReplace := req.WorkflowSteps != nil || req.UseTemplateWorkflow || typeChanged
 
 	upd := DraftUpdate{
-		ProposalID:           req.ProposalID,
-		CompanyID:            req.Subject.CompanyID,
-		FromStatus:           StatusDraft,
-		TypeID:               typeID,
-		ChangeNote:           changeNote,
-		ProposedDeadlineDays: deadlineDays,
-		ProposedDeadlineDate: deadlineDate,
+		ProposalID:              req.ProposalID,
+		CompanyID:               req.Subject.CompanyID,
+		FromStatus:              StatusDraft,
+		TypeID:                  typeID,
+		ChangeNote:              changeNote,
+		ProposedDeadlineDays:    deadlineDays,
+		ProposedDeadlineDate:    deadlineDate,
+		ProposedDeadlineDayType: dayType,
 	}
 	if t0 != "" {
 		normalized := normalizeDateOnly(t0)
@@ -387,6 +402,11 @@ func (s *service) SubmitProposal(ctx context.Context, req ProposalActionRequest)
 		frozen.Frozen = true
 		statusUpd.Workflow = &frozen
 	}
+	// SUBMIT_NULL_NORMALIZED_TO_CALENDAR_DAYS: persist explicit day type in the same status UPDATE.
+	// Already WORKING_DAYS/CALENDAR_DAYS are preserved. Runtime due still calendar until Phase C.
+	normalizedDayType := EffectiveProposalDeadlineDayType(cur.ProposedDeadlineDayType)
+	statusUpd.PersistProposedDeadlineDayType = true
+	statusUpd.ProposedDeadlineDayType = &normalizedDayType
 
 	updated, applied, err := s.repo.UpdateStatus(ctx, statusUpd)
 	if err != nil {

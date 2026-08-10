@@ -82,6 +82,51 @@ func TestHasProposedDeadlineDaysColumn_TransientErrorPath_DoesNotCache(t *testin
 	}
 }
 
+func TestHasProposedDeadlineDayTypeColumn_CachedFastPath_ConcurrentReadsAreRaceFree(t *testing.T) {
+	repo := &Repository{}
+	repo.deadlineDayTypeColCached = true
+	repo.deadlineDayTypeColOK = true
+
+	const goroutines = 32
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	for i := 0; i < goroutines; i++ {
+		go func() {
+			defer wg.Done()
+			ok, err := repo.hasProposedDeadlineDayTypeColumn(context.Background())
+			if err != nil {
+				t.Errorf("cached lookup must not return an error, got %v", err)
+				return
+			}
+			if !ok {
+				t.Errorf("cached lookup must return the cached value (true), got false")
+			}
+		}()
+	}
+	wg.Wait()
+}
+
+func TestHasProposedDeadlineDayTypeColumn_TransientErrorPath_DoesNotCache(t *testing.T) {
+	src := readSchemaCapsSrc(t)
+	fnIdx := strings.Index(src, "func (r *Repository) hasProposedDeadlineDayTypeColumn(")
+	if fnIdx < 0 {
+		t.Fatal("expected hasProposedDeadlineDayTypeColumn in schema_caps.go")
+	}
+	body := src[fnIdx:]
+	if strings.Contains(body[:strings.Index(body, "func (r *Repository) loadProposalSchemaCaps")], "sync.Once") {
+		t.Fatal("hasProposedDeadlineDayTypeColumn must not use sync.Once")
+	}
+	scanIdx := strings.Index(body, "Scan(&count)")
+	cacheWriteIdx := strings.Index(body, "deadlineDayTypeColCached = true")
+	if scanIdx < 0 || cacheWriteIdx < 0 || cacheWriteIdx < scanIdx {
+		t.Fatal("day type column cache must write only after successful Scan")
+	}
+	between := body[scanIdx:cacheWriteIdx]
+	if !strings.Contains(between, "if err != nil") || !strings.Contains(between, "return false, err") {
+		t.Fatal("day type column: transient lookup error must not cache")
+	}
+}
+
 func readSchemaCapsSrc(t *testing.T) string {
 	t.Helper()
 	data, err := os.ReadFile("schema_caps.go")
