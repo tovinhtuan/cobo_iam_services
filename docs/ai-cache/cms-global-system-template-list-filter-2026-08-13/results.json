@@ -1,7 +1,7 @@
 {
   "cmsGlobalTemplateList": {
-    "status": "READY",
-    "verdict": "CMS_GLOBAL_SYSTEM_TEMPLATE_LIST_READY",
+    "status": "DEV_READY",
+    "verdict": "CMS_GLOBAL_SYSTEM_TEMPLATE_LIST_DEV_READY",
     "listSourceMapped": true,
     "creationFlowsAudited": true,
     "scopeAuthorityLocked": true,
@@ -27,8 +27,14 @@
     "migrationRequired": false,
     "responsivePass": true,
     "accessibilityPass": true,
-    "deployed": false,
+    "deployed": true,
     "productionTouched": false,
     "directAccessClassification": "LIST_VISIBILITY_ONLY"
+  },
+  "devSmoke": {
+    "status": "DEV_READY",
+    "verdict": "CMS_GLOBAL_SYSTEM_TEMPLATE_LIST_DEV_READY",
+    "backendDeployed": true,
+    "migrationApplied": false
   }
 }
