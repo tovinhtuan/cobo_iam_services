@@ -224,8 +224,21 @@ func (r *Repository) ListTypes(ctx context.Context, params disclosureapp.ListTyp
 	}
 
 	joins := ""
-	args := []any{companyID}
-	conditions := []string{"(t.company_id IS NULL OR t.company_id = ?)"}
+	scopeFilter := strings.ToLower(strings.TrimSpace(params.Scope))
+	var args []any
+	var conditions []string
+	switch scopeFilter {
+	case "global":
+		// Authoritative system/global templates: disclosure_types.company_id IS NULL.
+		conditions = []string{"t.company_id IS NULL"}
+		args = []any{}
+	case "company":
+		conditions = []string{"t.company_id = ?"}
+		args = []any{companyID}
+	default:
+		conditions = []string{"(t.company_id IS NULL OR t.company_id = ?)"}
+		args = []any{companyID}
+	}
 
 	if groupID != "" {
 		conditions = append(conditions, "t.group_id = ?")
@@ -234,15 +247,9 @@ func (r *Repository) ListTypes(ctx context.Context, params disclosureapp.ListTyp
 	// Display group filter: use junction table when provided (new many-to-many model).
 	if displayGroupCode != "" {
 		joins = " INNER JOIN template_display_groups tdg ON tdg.template_id = t.type_id AND tdg.display_group_code = ?"
-		args = append([]any{displayGroupCode}, args...)
-		// Re-order args: displayGroupCode goes to the JOIN placeholder, rest follow WHERE.
-		// Simpler: rebuild args in WHERE order after JOIN.
-		args = []any{displayGroupCode, companyID}
-		if groupID != "" {
-			conditions = append(conditions[1:], "t.group_id = ?")
-			args = append(args, groupID)
-			conditions = append([]string{"(t.company_id IS NULL OR t.company_id = ?)"}, conditions[1:]...)
-		}
+		// Rebuild args: JOIN placeholder first, then ownership + remaining WHERE args.
+		ownershipArgs := append([]any(nil), args...)
+		args = append([]any{displayGroupCode}, ownershipArgs...)
 	}
 	if query != "" {
 		conditions = append(conditions, "(LOWER(v.name) LIKE ? OR LOWER(v.description) LIKE ?)")

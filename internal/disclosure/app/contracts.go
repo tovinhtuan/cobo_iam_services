@@ -242,6 +242,9 @@ type ListTypesParams struct {
 	GroupID          string // legacy: filter by disclosure_types.group_id
 	DisplayGroupCode string // new model: filter via template_display_groups junction table
 	Query            string
+	// Scope: optional authoritative ownership filter.
+	// "" = catalog default (global OR subject company); "global" = company_id IS NULL; "company" = subject company only.
+	Scope string
 	// Tags: OR within selected tags (JSON tags_json contains any). Empty = no tag filter.
 	Tags []string
 	// Periodicity: normalized frequency key (ad_hoc|daily|weekly|monthly|quarterly|yearly).
@@ -261,6 +264,8 @@ type ListTypesRequest struct {
 	GroupID          string
 	DisplayGroupCode string
 	Query            string
+	// Scope: optional; "global" | "company" | "". See ListTypesParams.Scope.
+	Scope            string
 	Tags             []string
 	Periodicity      string
 	DepartmentID     string

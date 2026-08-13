@@ -198,8 +198,21 @@ func (r *Repository) ListTypes(_ context.Context, params disclosureapp.ListTypes
 				continue
 			}
 		}
-		if scope := r.catalogScope[item.TypeID]; scope != "global" && scope != companyID {
-			continue
+		itemScope := r.catalogScope[item.TypeID]
+		scopeFilter := strings.ToLower(strings.TrimSpace(params.Scope))
+		switch scopeFilter {
+		case "global":
+			if itemScope != "global" {
+				continue
+			}
+		case "company":
+			if itemScope != companyID {
+				continue
+			}
+		default:
+			if itemScope != "global" && itemScope != companyID {
+				continue
+			}
 		}
 		if groupID != "" && item.GroupID != groupID {
 			continue

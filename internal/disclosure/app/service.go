@@ -436,6 +436,10 @@ func (s *service) ListTypes(ctx context.Context, req ListTypesRequest) (*ListTyp
 	} else if !allowedSortDir[sortDir] {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "sort_dir must be one of: asc, desc", nil)
 	}
+	scope := strings.ToLower(strings.TrimSpace(req.Scope))
+	if scope != "" && scope != templateScopeGlobal && scope != templateScopeCompany {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "scope must be one of: global, company", nil)
+	}
 	page := req.Page
 	pageSize := req.PageSize
 	if req.PageProvided && page <= 0 {
@@ -457,6 +461,7 @@ func (s *service) ListTypes(ctx context.Context, req ListTypesRequest) (*ListTyp
 		GroupID:          req.GroupID,
 		DisplayGroupCode: req.DisplayGroupCode,
 		Query:            req.Query,
+		Scope:            scope,
 		Tags:             req.Tags,
 		Periodicity:      NormalizePeriodicityFilter(req.Periodicity),
 		DepartmentID:     strings.TrimSpace(req.DepartmentID),
@@ -490,6 +495,7 @@ func (s *service) ListTypes(ctx context.Context, req ListTypesRequest) (*ListTyp
 	// Phase 2: load full summary fields only for the current page.
 	out, _, err := s.repo.ListTypes(ctx, ListTypesParams{
 		CompanyID: req.Subject.CompanyID,
+		Scope:     scope,
 		TypeIDs:   pageIDs,
 		SortBy:    sortBy,
 		SortDir:   sortDir,

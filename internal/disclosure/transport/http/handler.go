@@ -310,6 +310,7 @@ func (h *Handler) listTypes(w http.ResponseWriter, r *http.Request) {
 		GroupID:          strings.TrimSpace(r.URL.Query().Get("group_id")),
 		DisplayGroupCode: strings.TrimSpace(r.URL.Query().Get("display_group_code")),
 		Query:            strings.TrimSpace(r.URL.Query().Get("q")),
+		Scope:            strings.TrimSpace(r.URL.Query().Get("scope")),
 		Tags:             disclosureapp.ParseTagQuery(r.URL.Query().Get("tag_ids")),
 		Periodicity:      strings.TrimSpace(r.URL.Query().Get("frequency")),
 		DepartmentID:     strings.TrimSpace(r.URL.Query().Get("department_id")),

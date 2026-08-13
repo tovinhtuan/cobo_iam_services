@@ -1,0 +1,8 @@
+# Handoff
+
+Verdict: **CMS_GLOBAL_SYSTEM_TEMPLATE_LIST_READY**
+
+Markers: CMS_ADMIN_TEMPLATE_LIST_GLOBAL_ONLY, BACKEND_GLOBAL_TEMPLATE_FILTER_IMPLEMENTED,
+DOCKER_FE_BUILD_PARITY_PASS, DOCKER_API_BUILD_PARITY_PASS, NO_MIGRATION, NO_DEV_DEPLOY, NO_PRODUCTION.
+
+Next: optional DEV deploy smoke. Direct-open company template URL not blocked in this task (list visibility only).
