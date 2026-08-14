@@ -1,4 +1,16 @@
 
+## 2026-08-14 — Manual QR company package activation (implement)
+
+- paired FE pack: `../cobo_web_design/docs/ai-cache/manual-qr-company-package-activation-2026-08-14/`
+- `docker compose -f docker-compose.dev.yml build api` PASS
+- NO_MIGRATION / NO_WORKER / NO_DEV_DEPLOY / NO_PRODUCTION / NO_PUSH
+
+## 2026-08-14 — Manual QR package payment flow analysis
+
+- paired FE pack: `../cobo_web_design/docs/ai-cache/package-manual-qr-payment-flow-analysis-2026-08-14/`
+- verdict: **COBO_MANUAL_QR_PACKAGE_PAYMENT_FLOW_ANALYSIS_READY**
+- NO_SOURCE_IMPLEMENTATION / NO_DEV_DEPLOY / NO_PRODUCTION / NO_PUSH
+
 ## 2026-08-14 — CMS template daily/weekly runtime DEV
 
 - paired FE pack: `../cobo_web_design/docs/ai-cache/cms-template-daily-weekly-cycle-2026-08-14/`

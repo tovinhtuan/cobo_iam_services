@@ -1,4 +1,18 @@
-﻿## CMS — template daily/weekly cycle DEV (2026-08-14)
+﻿## Manual QR company package activation (2026-08-14)
+
+- Verdict **COBO_MANUAL_QR_COMPANY_PACKAGE_ACTIVATION_READY**
+- `ActivateImmediate` + CMS POST subscription/activate; origin `platform_admin_manual`
+- Evidence (FE pack): `cobo_web_design/docs/ai-cache/manual-qr-company-package-activation-2026-08-14/`
+- NO_MIGRATION / NO_WORKER / NO_DEV_DEPLOY / NO_PRODUCTION / NO_PUSH
+
+## Manual QR package payment flow analysis (2026-08-14)
+
+- Verdict **COBO_MANUAL_QR_PACKAGE_PAYMENT_FLOW_ANALYSIS_READY**
+- Evidence (FE pack): `cobo_web_design/docs/ai-cache/package-manual-qr-payment-flow-analysis-2026-08-14/`
+- Activation SoT: `companyplan.Writer.Create` / `company_subscriptions`; no HTTP yet
+- NO_SOURCE_IMPLEMENTATION / NO_DEV_DEPLOY / NO_PRODUCTION / NO_PUSH
+
+## CMS — template daily/weekly cycle DEV (2026-08-14)
 
 - Verdict **CMS_TEMPLATE_DAILY_WEEKLY_CYCLE_DEV_READY**
 - `make deploy-be` api+worker; worker SQL includes daily/weekly; PERIODIC_SEEDING_ENABLED=false
