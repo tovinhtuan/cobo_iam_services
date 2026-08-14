@@ -144,6 +144,107 @@ func (r *mysqlRepository) Create(ctx context.Context, plan CompanyPlan) error {
 	return tx.Commit()
 }
 
+func (r *mysqlRepository) ActivateImmediate(ctx context.Context, companyID string, code PlanCode, origin RecordOrigin, newID string) (*ActivateOutcome, error) {
+	companyID = strings.TrimSpace(companyID)
+	newID = strings.TrimSpace(newID)
+	if strings.TrimSpace(string(origin)) == "" {
+		origin = RecordOriginPlatformAdminManual
+	}
+	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead})
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var lockedCompany string
+	err = tx.QueryRowContext(ctx,
+		`SELECT company_id FROM companies WHERE company_id = ? FOR UPDATE`,
+		companyID,
+	).Scan(&lockedCompany)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrCompanyNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	lockQ := `
+		SELECT id FROM company_subscriptions
+		WHERE company_id = ?
+		  AND status IN ('ACTIVE', 'TRIAL', 'SUSPENDED')
+		ORDER BY id
+		FOR UPDATE`
+	lockRows, err := tx.QueryContext(ctx, lockQ, companyID)
+	if err != nil {
+		return nil, err
+	}
+	_ = lockRows.Close()
+
+	existing, err := listAllByCompanyTx(ctx, tx, companyID)
+	if err != nil {
+		return nil, err
+	}
+	now := NowUTC()
+	closes, create, already, previous, err := prepareImmediateActivation(existing, companyID, code, origin, newID, now)
+	if err != nil {
+		return nil, err
+	}
+	if already != nil {
+		if err := tx.Commit(); err != nil {
+			return nil, err
+		}
+		return &ActivateOutcome{Plan: *already, AlreadyActive: true, PreviousCode: previous}, nil
+	}
+
+	var closedIDs []string
+	for _, cl := range closes {
+		var expires any
+		if cl.ExpiresAt != nil {
+			expires = *cl.ExpiresAt
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE company_subscriptions
+			SET expires_at = ?, status = ?, updated_at = ?
+			WHERE id = ? AND company_id = ?`,
+			expires, string(cl.Status), now, cl.ID, companyID,
+		); err != nil {
+			return nil, err
+		}
+		closedIDs = append(closedIDs, cl.ID)
+	}
+
+	var expires any
+	if create.ExpiresAt != nil {
+		expires = *create.ExpiresAt
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO company_subscriptions (
+			id, company_id, plan_code, status, effective_from, expires_at, origin, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		create.ID, create.CompanyID, string(create.Code), string(create.Status),
+		create.EffectiveFrom, expires, string(create.Origin), create.CreatedAt, create.UpdatedAt,
+	); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return &ActivateOutcome{Plan: create, PreviousCode: previous, ClosedIDs: closedIDs}, nil
+}
+
+func listAllByCompanyTx(ctx context.Context, tx *sql.Tx, companyID string) ([]CompanyPlan, error) {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT id, company_id, plan_code, status, effective_from, expires_at, origin, created_at, updated_at
+		FROM company_subscriptions
+		WHERE company_id = ?
+		ORDER BY effective_from ASC, id ASC`, companyID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanPlans(rows)
+}
+
 func (r *mysqlRepository) DeleteByIDs(ctx context.Context, ids []string) error {
 	ids = uniqueNonEmpty(ids)
 	if len(ids) == 0 {

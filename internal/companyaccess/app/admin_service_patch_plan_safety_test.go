@@ -194,13 +194,13 @@ func TestPatchOwnCompany_AuthDenied_Unchanged(t *testing.T) {
 	}
 }
 
-func TestGetPlatformCompany_DoesNotCallPlanReader(t *testing.T) {
+func TestGetPlatformCompany_EnrichesCompanyPlan(t *testing.T) {
 	base := cainmem.NewAdminRepository()
 	seedCompany(base, "c-own", "CoBo VN")
 	plans := companyplan.NewMemoryRepository()
 	seedPlan(t, plans, "p1", "c-own", companyplan.PlanCodePremium, companyplan.PlanStatusActive)
 	reader := &orderedPlanReader{inner: companyplan.NewService(plans)}
-	svc := caapp.NewAdminService(base, fakeAuthService{decision: authapp.DecisionAllow}, fixedIDGen("x"),
+	svc := caapp.NewAdminService(base, fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{"rbac.manage"}}, fixedIDGen("x"),
 		caapp.WithCompanyPlanReader(reader),
 		caapp.WithCompanyPlanNow(fixedPlanAt),
 	)
@@ -209,13 +209,12 @@ func TestGetPlatformCompany_DoesNotCallPlanReader(t *testing.T) {
 		CompanyID: "c-own",
 	})
 	if err != nil {
-		// May fail auth if GetPlatformCompany requires platform perms — check implementation
-		t.Logf("GetPlatformCompany err=%v (auth may apply)", err)
+		t.Fatalf("GetPlatformCompany err=%v", err)
 	}
-	if reader.calls.Load() != 0 {
-		t.Fatalf("CMS GetPlatformCompany must not call plan reader, calls=%d", reader.calls.Load())
+	if reader.calls.Load() != 1 {
+		t.Fatalf("CMS GetPlatformCompany must read company plan, calls=%d", reader.calls.Load())
 	}
-	if out != nil && out.Plan != nil {
-		t.Fatalf("CMS must not enrich plan, got %+v", out.Plan)
+	if out == nil || out.Plan == nil || out.Plan.Code != "PREMIUM" || out.Plan.Source != "COMPANY_SUBSCRIPTION" {
+		t.Fatalf("want PREMIUM company plan, got %+v", out)
 	}
 }

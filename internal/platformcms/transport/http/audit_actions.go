@@ -23,6 +23,7 @@ const (
 	cmsActionSubscriptionUpgradeUpdate     = "cms.subscription_upgrade.update"
 	cmsActionSubscriptionUpgradeQRUpload   = "cms.subscription_upgrade.qr.upload"
 	cmsActionSubscriptionUpgradeQRDelete   = "cms.subscription_upgrade.qr.delete"
+	cmsActionCompanyPlanActivate           = "cms.company_plan.activate"
 )
 
 var cmsKnownActions = map[string]struct{}{
@@ -48,4 +49,5 @@ var cmsKnownActions = map[string]struct{}{
 	cmsActionSubscriptionUpgradeUpdate:     {},
 	cmsActionSubscriptionUpgradeQRUpload:   {},
 	cmsActionSubscriptionUpgradeQRDelete:   {},
+	cmsActionCompanyPlanActivate:           {},
 }

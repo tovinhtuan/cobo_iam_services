@@ -600,6 +600,7 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 		StorageDir:          cfg.CMSMediaStorageDir,
 		PublicAPIBaseURL:    cfg.PublicAPIBaseURL,
 	})
+	platformCMSHandler.WithCompanyPlanRepository(companyPlanRepo)
 
 	// Ad-hoc proposal module (WORKFLOW_ADHOC_ENABLED flag).
 	var adhocHandler *adhochttp.Handler

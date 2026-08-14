@@ -2,6 +2,7 @@ package companyplan
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"time"
 )
@@ -80,6 +81,47 @@ func (m *MemoryRepository) Create(_ context.Context, plan CompanyPlan) error {
 	}
 	m.rows[plan.ID] = plan
 	return nil
+}
+
+func (m *MemoryRepository) ActivateImmediate(_ context.Context, companyID string, code PlanCode, origin RecordOrigin, newID string) (*ActivateOutcome, error) {
+	companyID = strings.TrimSpace(companyID)
+	newID = strings.TrimSpace(newID)
+	if strings.TrimSpace(string(origin)) == "" {
+		origin = RecordOriginPlatformAdminManual
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var existing []CompanyPlan
+	for _, p := range m.rows {
+		if p.CompanyID == companyID {
+			existing = append(existing, p)
+		}
+	}
+	now := NowUTC()
+	closes, create, already, previous, err := prepareImmediateActivation(existing, companyID, code, origin, newID, now)
+	if err != nil {
+		return nil, err
+	}
+	if already != nil {
+		return &ActivateOutcome{Plan: *already, AlreadyActive: true, PreviousCode: previous}, nil
+	}
+	var closedIDs []string
+	for _, cl := range closes {
+		row, ok := m.rows[cl.ID]
+		if !ok {
+			continue
+		}
+		row.Status = cl.Status
+		row.ExpiresAt = cl.ExpiresAt
+		row.UpdatedAt = now
+		m.rows[cl.ID] = row
+		closedIDs = append(closedIDs, cl.ID)
+	}
+	if _, ok := m.rows[create.ID]; ok {
+		return nil, ErrInvalidPlan
+	}
+	m.rows[create.ID] = create
+	return &ActivateOutcome{Plan: create, PreviousCode: previous, ClosedIDs: closedIDs}, nil
 }
 
 func (m *MemoryRepository) DeleteByIDs(_ context.Context, ids []string) error {

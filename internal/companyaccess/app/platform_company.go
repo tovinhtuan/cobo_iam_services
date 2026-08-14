@@ -56,9 +56,9 @@ type PlatformCompanyDetail struct {
 	DepartmentCount  int    `json:"department_count"`
 	CreatedAtRFC3339 string `json:"created_at"`
 	UpdatedAtRFC3339 string `json:"updated_at"`
-	// Plan is additive Case C commercial plan (GetOwnCompany / PatchOwnCompany).
+	// Plan is additive Case C commercial plan.
 	// Always serialized: null when no covering record. Not badge-filtered on backend.
-	// CMS platform company detail leaves this unset (null) without reading company_subscriptions.
+	// CMS GetPlatformCompany and Portal GetOwnCompany both enrich from company_subscriptions.
 	Plan *companyplan.PlanDTO `json:"plan"`
 }
 

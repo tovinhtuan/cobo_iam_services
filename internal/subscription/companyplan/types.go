@@ -34,8 +34,9 @@ const (
 type RecordOrigin string
 
 const (
-	RecordOriginDevFixture RecordOrigin = "dev_fixture"
-	RecordOriginManual     RecordOrigin = "manual"
+	RecordOriginDevFixture          RecordOrigin = "dev_fixture"
+	RecordOriginManual              RecordOrigin = "manual"
+	RecordOriginPlatformAdminManual RecordOrigin = "platform_admin_manual"
 )
 
 // CompanyPlan is the domain model for a commercial company subscription row.
@@ -84,6 +85,17 @@ func IsOccupyingStatus(s PlanStatus) bool {
 func ValidPlanCode(c PlanCode) bool {
 	switch c {
 	case PlanCodePremium, PlanCodeEnterprise, PlanCodeFree:
+		return true
+	default:
+		return false
+	}
+}
+
+// ValidPaidManualPlanCode is the Platform Admin payment-activation target set.
+// FREE is the no-row fallback, not a paid activation SKU.
+func ValidPaidManualPlanCode(c PlanCode) bool {
+	switch c {
+	case PlanCodePremium, PlanCodeEnterprise:
 		return true
 	default:
 		return false

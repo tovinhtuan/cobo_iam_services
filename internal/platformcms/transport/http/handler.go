@@ -18,9 +18,10 @@ import (
 	holidayapp "github.com/cobo/cobo_iam_services/internal/holiday/app"
 	iamapp "github.com/cobo/cobo_iam_services/internal/iam/app"
 	marketapp "github.com/cobo/cobo_iam_services/internal/marketreference/app"
-	platformcmsapp "github.com/cobo/cobo_iam_services/internal/platformcms/app"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 	"github.com/cobo/cobo_iam_services/internal/platform/httpx"
+	platformcmsapp "github.com/cobo/cobo_iam_services/internal/platformcms/app"
+	"github.com/cobo/cobo_iam_services/internal/subscription/companyplan"
 )
 
 type Handler struct {
@@ -37,6 +38,7 @@ type Handler struct {
 	alertConfigSvc         platformcmsapp.AlertConfigService
 	subscriptionUpgradeSvc platformcmsapp.SubscriptionUpgradePaymentService
 	upgradePaymentDB       *sql.DB
+	companyPlanRepo        companyplan.Repository
 	mediaRepo              cmsMediaRepository
 	mediaSigner            *cmsMediaSigner
 	mediaStorage           *cmsMediaDiskStorage
@@ -85,6 +87,14 @@ func NewHandler(inspector iamapp.TokenInspector, authorizer authapp.Service, adm
 	return h
 }
 
+// WithCompanyPlanRepository wires Case C writer/reader for CMS company-plan activation.
+func (h *Handler) WithCompanyPlanRepository(r companyplan.Repository) *Handler {
+	if h != nil {
+		h.companyPlanRepo = r
+	}
+	return h
+}
+
 func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/platform/cms/dashboard/summary", h.observe("cms.dashboard.summary", h.dashboardSummary))
 	mux.HandleFunc("GET /api/v1/platform/cms/collections", h.observe("cms.collections.list", h.collections))
@@ -117,6 +127,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("PATCH /api/v1/platform/cms/admin/companies/{company_id}", h.observe("cms.admin.companies.patch", h.patchCMSCompany))
 	mux.HandleFunc("POST /api/v1/platform/cms/admin/companies/{company_id}/deactivate", h.observe("cms.admin.companies.deactivate", h.postCMSCompanyDeactivate))
 	mux.HandleFunc("POST /api/v1/platform/cms/admin/companies/{company_id}/activate", h.observe("cms.admin.companies.activate", h.postCMSCompanyActivate))
+	mux.HandleFunc("POST /api/v1/platform/cms/admin/companies/{company_id}/subscription/activate", h.observe("cms.admin.companies.subscription.activate", h.postCMSCompanySubscriptionActivate))
 	mux.HandleFunc("POST /api/v1/platform/cms/admin/companies", h.observe("cms.admin.companies.create", h.createCMSCompany))
 	mux.HandleFunc("POST /api/v1/platform/cms/admin/users", h.observe("cms.admin.users.create", h.createAdminUser))
 	mux.HandleFunc("POST /api/v1/platform/cms/admin/users/invite", h.observe("cms.admin.users.invite", h.inviteAdminUser))

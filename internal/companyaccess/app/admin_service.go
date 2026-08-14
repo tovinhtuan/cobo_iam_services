@@ -286,7 +286,15 @@ func (s *adminService) GetPlatformCompany(ctx context.Context, req GetPlatformCo
 	if err := s.authorizePlatformCompanyAdmin(ctx, req.Subject); err != nil {
 		return nil, err
 	}
-	return s.repo.GetCompanyPlatform(ctx, strings.TrimSpace(req.CompanyID))
+	cid := strings.TrimSpace(req.CompanyID)
+	detail, err := s.repo.GetCompanyPlatform(ctx, cid)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.attachOwnCompanyPlan(ctx, cid, detail); err != nil {
+		return nil, err
+	}
+	return detail, nil
 }
 
 func (s *adminService) UpdatePlatformCompany(ctx context.Context, req UpdatePlatformCompanyRequest) error {
