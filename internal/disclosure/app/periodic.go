@@ -142,16 +142,24 @@ func materializePeriodicDisclosures(ctx context.Context, now time.Time, repo Per
 // computeCycleLabelAndStart returns the unique cycle_label and the cycle start date
 // for a given template type and reference time.
 func computeCycleLabelAndStart(t PeriodicTypeRow, now time.Time) (label string, start time.Time) {
-	switch t.FrequencyUnit {
-	case "monthly":
+	switch NormalizeFrequencyUnit(t.FrequencyUnit) {
+	case PeriodicityDaily:
+		ict := now.In(asiaHoChiMinh())
+		start = time.Date(ict.Year(), ict.Month(), ict.Day(), 0, 0, 0, 0, ict.Location())
+		label = start.Format("2006-01-02")
+	case PeriodicityWeekly:
+		ict := now.In(asiaHoChiMinh())
+		start = weekStartSunday(ict)
+		label = start.Format("2006-01-02")
+	case PeriodicityMonthly:
 		label = now.Format("2006-01")
 		start = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
-	case "quarterly":
+	case PeriodicityQuarterly:
 		q := (int(now.Month())-1)/3 + 1
 		startMonth := time.Month((q-1)*3 + 1)
 		label = fmt.Sprintf("%d-Q%d", now.Year(), q)
 		start = time.Date(now.Year(), startMonth, 1, 0, 0, 0, 0, now.Location())
-	case "yearly":
+	case PeriodicityYearly:
 		anchorMonth := t.CycleAnchorMonth
 		if anchorMonth <= 0 || anchorMonth > 12 {
 			anchorMonth = 1

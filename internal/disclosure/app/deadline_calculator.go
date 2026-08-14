@@ -384,12 +384,18 @@ func (c *DeadlineCalculator) computeCycleStart(config *TemplateDeadlineConfig, c
 		anchorDay = 1
 	}
 
-	switch config.FrequencyUnit {
-	case "monthly":
+	switch NormalizeFrequencyUnit(config.FrequencyUnit) {
+	case PeriodicityDaily:
+		return stripTime(now.In(c.location))
+
+	case PeriodicityWeekly:
+		return weekStartSunday(now.In(c.location))
+
+	case PeriodicityMonthly:
 		// cycleStart = anchor_day of current month (per confirmed business contract)
 		return time.Date(now.Year(), now.Month(), anchorDay, 0, 0, 0, 0, c.location)
 
-	case "quarterly":
+	case PeriodicityQuarterly:
 		// Compute which fiscal quarter we are in, based on anchorMonth.
 		// monthOffset: how many months since the last fiscal year start
 		monthOffset := (int(now.Month()) - anchorMonth + 12) % 12
@@ -408,7 +414,7 @@ func (c *DeadlineCalculator) computeCycleStart(config *TemplateDeadlineConfig, c
 		}
 		return time.Date(year, time.Month(cycleStartMonth), 1, 0, 0, 0, 0, c.location)
 
-	case "yearly":
+	case PeriodicityYearly:
 		// Most recent past occurrence of anchor_month/anchor_day.
 		anchorThisYear := time.Date(now.Year(), time.Month(anchorMonth), anchorDay, 0, 0, 0, 0, c.location)
 		if anchorThisYear.After(now) {

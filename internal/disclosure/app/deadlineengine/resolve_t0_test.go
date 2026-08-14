@@ -32,7 +32,11 @@ func TestDeriveDeadlineBehavior(t *testing.T) {
 		{"custom + user_defined -> irregular", "custom", "", "user_defined", DeadlineBehaviorIrregular, nil},
 		{"custom + no frequency, no t0_policy -> error", "custom", "", "", "", ErrInvalidT0Configuration},
 
-		{"unsupported frequency_unit", "periodic", "weekly", "", "", ErrUnsupportedFrequency},
+		{"global periodic daily", "periodic", "daily", "", DeadlineBehaviorPeriodic, nil},
+		{"global periodic weekly", "periodic", "weekly", "", DeadlineBehaviorPeriodic, nil},
+		{"alias day -> periodic", "periodic", "day", "", DeadlineBehaviorPeriodic, nil},
+		{"alias week -> periodic", "periodic", "week", "", DeadlineBehaviorPeriodic, nil},
+		{"unsupported frequency_unit", "periodic", "biweekly", "", "", ErrUnsupportedFrequency},
 	}
 
 	for _, tc := range cases {
@@ -79,6 +83,30 @@ func TestResolveT0_Periodic_Monthly(t *testing.T) {
 	want := time.Date(2026, 4, 10, 0, 0, 0, 0, time.UTC)
 	if !got.Equal(want) {
 		t.Fatalf("expected %v, got %v", want, got)
+	}
+}
+
+func TestResolveT0_Periodic_DailyWeekly(t *testing.T) {
+	daily, err := ResolveT0(context.Background(), TemplateInput{
+		TemplateCategory: "periodic",
+		T0Config:         T0ConfigInput{FrequencyUnit: "daily"},
+	}, CompanyInput{}, nil, RuntimeInput{}, refTime2026)
+	if err != nil {
+		t.Fatalf("daily: %v", err)
+	}
+	if !daily.Equal(time.Date(2026, 4, 15, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("daily T0=%v", daily)
+	}
+
+	weekly, err := ResolveT0(context.Background(), TemplateInput{
+		TemplateCategory: "periodic",
+		T0Config:         T0ConfigInput{FrequencyUnit: "week"},
+	}, CompanyInput{}, nil, RuntimeInput{}, refTime2026)
+	if err != nil {
+		t.Fatalf("weekly: %v", err)
+	}
+	if !weekly.Equal(time.Date(2026, 4, 12, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("weekly T0=%v want Sunday 2026-04-12", weekly)
 	}
 }
 

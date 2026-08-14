@@ -3,6 +3,7 @@ package deadlineengine
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -14,7 +15,8 @@ import (
 // company-created vs platform/global), orthogonal to deadline behavior.
 // Behavior is derived purely from FrequencyUnit / T0Policy:
 //
-//	frequency_unit ∈ {monthly, quarterly, yearly} -> periodic, regardless of
+//	frequency_unit ∈ {daily, weekly, monthly, quarterly, yearly} (and
+//	  aliases day/week/month/quarter/year) -> periodic, regardless of
 //	  TemplateCategory (covers "custom" + frequency_unit, e.g. Case 3).
 //	frequency_unit == "" && t0_policy != ""        -> irregular (covers
 //	  "custom" + t0_policy, e.g. Case 4).
@@ -22,8 +24,8 @@ import (
 //	  (Case 5 — never silently default to periodic or irregular).
 //	frequency_unit == anything else                -> ErrUnsupportedFrequency.
 func DeriveDeadlineBehavior(template TemplateInput) (DeadlineBehavior, error) {
-	switch template.T0Config.FrequencyUnit {
-	case "monthly", "quarterly", "yearly":
+	switch normalizeFrequencyUnit(template.T0Config.FrequencyUnit) {
+	case "monthly", "quarterly", "yearly", "daily", "weekly":
 		return DeadlineBehaviorPeriodic, nil
 	case "":
 		if template.T0Config.T0Policy == "" {
@@ -33,6 +35,28 @@ func DeriveDeadlineBehavior(template TemplateInput) (DeadlineBehavior, error) {
 	default:
 		return "", fmt.Errorf("%w: %q", ErrUnsupportedFrequency, template.T0Config.FrequencyUnit)
 	}
+}
+
+func normalizeFrequencyUnit(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "day", "daily":
+		return "daily"
+	case "week", "weekly":
+		return "weekly"
+	case "month", "monthly":
+		return "monthly"
+	case "quarter", "quarterly":
+		return "quarterly"
+	case "year", "yearly", "annual":
+		return "yearly"
+	default:
+		return raw
+	}
+}
+
+func weekStartSunday(t time.Time) time.Time {
+	day := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
+	return day.AddDate(0, 0, -int(day.Weekday()))
 }
 
 // ResolveT0 resolves T0 (the day #1 anchor for AddDays).
@@ -207,7 +231,13 @@ func normalizeAnchor(month, day int, frequencyUnit string, refTime time.Time) (i
 func computeCycleStart(anchorMonth, anchorDay int, frequencyUnit string, refTime time.Time) time.Time {
 	loc := refTime.Location()
 
-	switch frequencyUnit {
+	switch normalizeFrequencyUnit(frequencyUnit) {
+	case "daily":
+		return stripTime(refTime)
+
+	case "weekly":
+		return weekStartSunday(refTime)
+
 	case "monthly":
 		return time.Date(refTime.Year(), refTime.Month(), anchorDay, 0, 0, 0, 0, loc)
 

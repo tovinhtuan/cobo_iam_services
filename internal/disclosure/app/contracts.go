@@ -1048,7 +1048,7 @@ type PeriodicRecordCreator interface {
 // PeriodicTypeRow is returned by ListActivePeriodicTypes.
 type PeriodicTypeRow struct {
 	TypeID             string
-	FrequencyUnit      string // "monthly" | "quarterly" | "yearly"
+	FrequencyUnit      string // "daily" | "weekly" | "monthly" | "quarterly" | "yearly" (+ day/week/month/quarter/year)
 	FrequencyInterval  int
 	DeadlineDays       int
 	CycleAnchorDay     int // 0 = unset → defaults to 1

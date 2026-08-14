@@ -57,7 +57,7 @@ type T0ConfigInput struct {
 	// T0Policy: "system_date" | "user_defined" | "event_date" — used when
 	// FrequencyUnit is empty (irregular behavior).
 	T0Policy string
-	// FrequencyUnit: "monthly" | "quarterly" | "yearly" — when set to one of
+	// FrequencyUnit: "daily" | "weekly" | "monthly" | "quarterly" | "yearly" — when set to one of
 	// these values, the template resolves to periodic behavior regardless of
 	// TemplateCategory (PD-DE-CUSTOM-01, Case 3).
 	FrequencyUnit    string

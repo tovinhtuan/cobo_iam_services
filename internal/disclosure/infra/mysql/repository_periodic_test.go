@@ -20,3 +20,14 @@ func TestListActivePeriodicTypesSQLUsesActiveVersionNo(t *testing.T) {
 		t.Fatal("expected join on disclosure_types.active_version_no")
 	}
 }
+
+func TestListActivePeriodicTypesSQLIncludesDailyWeekly(t *testing.T) {
+	data, err := os.ReadFile("repository.go")
+	if err != nil {
+		t.Fatalf("read repository.go: %v", err)
+	}
+	src := string(data)
+	if !strings.Contains(src, "'daily'") || !strings.Contains(src, "'weekly'") {
+		t.Fatal("periodic type listing must include daily and weekly frequency_unit values")
+	}
+}

@@ -39,7 +39,7 @@ var (
 	ErrInvalidT0Date = errors.New("deadlineengine: invalid t0_date format")
 
 	// ErrUnsupportedFrequency: frequency_unit set but not one of
-	// {monthly, quarterly, yearly}.
+	// {daily, weekly, monthly, quarterly, yearly} (plus day/week/month/quarter/year aliases).
 	ErrUnsupportedFrequency = errors.New("deadlineengine: unsupported frequency_unit")
 
 	// ErrWorkingDaySearchLimit: AddDays exceeded maxWorkingDayIterations

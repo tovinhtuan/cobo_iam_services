@@ -2057,7 +2057,7 @@ func (r *Repository) ListActivePeriodicTypes(ctx context.Context) ([]disclosurea
 		FROM disclosure_types dt
 		JOIN disclosure_type_versions dtv ON dtv.type_id = dt.type_id AND dtv.version_no = dt.active_version_no
 		WHERE JSON_UNQUOTE(JSON_EXTRACT(dtv.deadline_config_json, '$.template_category')) IN ('periodic', 'custom')
-		  AND JSON_UNQUOTE(JSON_EXTRACT(dtv.deadline_config_json, '$.frequency_unit'))    IN ('monthly', 'quarterly', 'yearly')
+		  AND LOWER(JSON_UNQUOTE(JSON_EXTRACT(dtv.deadline_config_json, '$.frequency_unit'))) IN ('monthly', 'quarterly', 'yearly', 'daily', 'weekly', 'month', 'quarter', 'year', 'day', 'week')
 		  AND dt.status = 'active'`
 	rows, err := r.db.QueryContext(ctx, q)
 	if err != nil {

@@ -17,6 +17,7 @@ const (
 	PeriodicityQuarterly = "quarterly"
 	PeriodicityYearly    = "yearly"
 	PeriodicityDaily     = "daily"
+	PeriodicityWeekly    = "weekly"
 
 	DeadlineStrategyFixedCycleDays = "fixed_cycle_days"
 	DeadlineStrategyEventHours     = "event_relative_hours"
@@ -72,6 +73,9 @@ var (
 		PeriodicityDaily:     PeriodicityDaily,
 		"hàng ngày":          PeriodicityDaily,
 		"hang ngay":          PeriodicityDaily,
+		PeriodicityWeekly:    PeriodicityWeekly,
+		"hàng tuần":          PeriodicityWeekly,
+		"hang tuan":          PeriodicityWeekly,
 	}
 	// legacyPeriodicityAliases: compatibility adapter only (BE-008).
 	legacyPeriodicityAliases = map[string]string{
@@ -84,6 +88,12 @@ var (
 		PeriodicityYearly:        PeriodicityYearly,
 		"hàng năm":               PeriodicityYearly,
 		"hang nam":               PeriodicityYearly,
+		PeriodicityDaily:         PeriodicityDaily,
+		"hàng ngày":              PeriodicityDaily,
+		"hang ngay":              PeriodicityDaily,
+		PeriodicityWeekly:        PeriodicityWeekly,
+		"hàng tuần":              PeriodicityWeekly,
+		"hang tuan":              PeriodicityWeekly,
 		legacyPeriodicityEventBased: legacyPeriodicityEventBased,
 		"bat thuong":             legacyPeriodicityEventBased,
 		legacyPeriodicityAdHoc:  legacyPeriodicityAdHoc,
@@ -148,8 +158,9 @@ func validatePortalTemplateMatrix(req *UpsertTypeVersionRequest) error {
 		if req.Periodicity != PeriodicityMonthly &&
 			req.Periodicity != PeriodicityQuarterly &&
 			req.Periodicity != PeriodicityYearly &&
-			req.Periodicity != PeriodicityDaily {
-			fieldErrors["periodicity"] = "periodic templates require periodicity in [monthly, quarterly, yearly, daily]"
+			req.Periodicity != PeriodicityDaily &&
+			req.Periodicity != PeriodicityWeekly {
+			fieldErrors["periodicity"] = "periodic templates require periodicity in [monthly, quarterly, yearly, daily, weekly]"
 		}
 	case TemplateCategoryIrregular:
 		// irregular: periodicity is not required; deadline_rule validates deadline
@@ -192,8 +203,12 @@ func validateTemplateMatrix(req *UpsertTypeVersionRequest) error {
 
 	switch req.TemplateCategory {
 	case TemplateCategoryPeriodic:
-		if req.Periodicity != PeriodicityMonthly && req.Periodicity != PeriodicityQuarterly && req.Periodicity != PeriodicityYearly {
-			fieldErrors["periodicity"] = "periodic templates require periodicity in [monthly, quarterly, yearly]"
+		if req.Periodicity != PeriodicityMonthly &&
+			req.Periodicity != PeriodicityQuarterly &&
+			req.Periodicity != PeriodicityYearly &&
+			req.Periodicity != PeriodicityDaily &&
+			req.Periodicity != PeriodicityWeekly {
+			fieldErrors["periodicity"] = "periodic templates require periodicity in [monthly, quarterly, yearly, daily, weekly]"
 		}
 		if req.DeadlineStrategy != DeadlineStrategyFixedCycleDays {
 			fieldErrors["deadline_strategy"] = "periodic templates require deadline_strategy=fixed_cycle_days"

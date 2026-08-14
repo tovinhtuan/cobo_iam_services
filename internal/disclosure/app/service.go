@@ -701,6 +701,8 @@ func (s *service) GetTemplateReferenceData(ctx context.Context, req GetTemplateR
 				PeriodicityMonthly,
 				PeriodicityQuarterly,
 				PeriodicityYearly,
+				PeriodicityDaily,
+				PeriodicityWeekly,
 				PeriodicityEventBased,
 				PeriodicityAdHoc,
 			},
@@ -712,7 +714,7 @@ func (s *service) GetTemplateReferenceData(ctx context.Context, req GetTemplateR
 			DeadlineRuleCatalog: s.loadDeadlineRuleCatalog(ctx),
 			MatrixRules: map[string][]string{
 				TemplateCategoryPeriodic: {
-					"periodicity in [monthly, quarterly, yearly]",
+					"periodicity in [monthly, quarterly, yearly, daily, weekly]",
 					"deadline_strategy must be fixed_cycle_days",
 				},
 				TemplateCategoryIrregular: {
