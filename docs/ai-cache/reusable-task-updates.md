@@ -1,4 +1,11 @@
 
+## 2026-08-14 — CMS template daily/weekly runtime DEV
+
+- paired FE pack: `../cobo_web_design/docs/ai-cache/cms-template-daily-weekly-cycle-2026-08-14/`
+- deploy: make deploy-be (api+worker); YEAR_BOUNDARY unit parity 2026-01-01→2025-12-28
+- verdict: **CMS_TEMPLATE_DAILY_WEEKLY_CYCLE_DEV_READY**
+- NO_MIGRATION / NO_PRODUCTION / NO_PUSH
+
 ## 2026-08-14 — CMS template daily/weekly cycle
 
 - paired FE pack: `../cobo_web_design/docs/ai-cache/cms-template-daily-weekly-cycle-2026-08-14/`

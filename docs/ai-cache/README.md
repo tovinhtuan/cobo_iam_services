@@ -1,4 +1,12 @@
-﻿## Ad-hoc proposal tracking — T5 DEV deploy + E2E (2026-08-10)
+﻿## CMS — template daily/weekly cycle DEV (2026-08-14)
+
+- Verdict **CMS_TEMPLATE_DAILY_WEEKLY_CYCLE_DEV_READY**
+- `make deploy-be` api+worker; worker SQL includes daily/weekly; PERIODIC_SEEDING_ENABLED=false
+- Evidence (FE pack): `cobo_web_design/docs/ai-cache/cms-template-daily-weekly-cycle-2026-08-14/`
+- NO_MIGRATION / NO_PRODUCTION / NO_PUSH
+
+## Ad-hoc proposal tracking — T5 DEV deploy + E2E (2026-08-10)
+
 
 - Verdict **ADHOC_PROPOSAL_TRACKING_DEV_READY**
 - BE T1+T3 + FE T2+T3 deployed DEV; hotfix: propose-only detail no longer hard-redirects on admin org-directory 403
