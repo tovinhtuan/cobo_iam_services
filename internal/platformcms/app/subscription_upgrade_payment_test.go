@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"io"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -158,6 +159,21 @@ func TestSubscriptionUpgradePayment_PortalInstructionAndActiveGuard(t *testing.T
 	if out.CurrentTierLabel != "Premium" {
 		t.Fatalf("tier: %+v", out)
 	}
+	if out.TransferNote != "COBO CTP_TEST NANGCAPGOI" {
+		t.Fatalf("note=%q", out.TransferNote)
+	}
+
+	emptyCode, err := svc.PortalInstruction(context.Background(), "vi", "Premium", "", "/qr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(emptyCode.TransferNote, "COMPANY") {
+		t.Fatalf("empty company_code uses COMPANY placeholder, got %q", emptyCode.TransferNote)
+	}
+
+	if _, err := svc.UploadQR(context.Background(), "u1", "image/png", "evil.png", bytes.NewReader([]byte("<svg xmlns='x'></svg>")), 24); err == nil {
+		t.Fatal("non-image bytes must be rejected")
+	}
 
 	if _, err := svc.UpdateCMS(context.Background(), platformcmsapp.UpdateSubscriptionUpgradePaymentRequest{
 		Hotline:  "19001234",
@@ -172,5 +188,8 @@ func TestSubscriptionUpgradePayment_PortalInstructionAndActiveGuard(t *testing.T
 	}
 	if inactive.IsConfigured {
 		t.Fatalf("expected unconfigured when inactive: %+v", inactive)
+	}
+	if !strings.Contains(inactive.Message, "chưa khả dụng") && !strings.Contains(inactive.Message, "liên hệ quản trị") {
+		t.Fatalf("safe unconfigured message, got %q", inactive.Message)
 	}
 }

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
@@ -16,8 +17,8 @@ import (
 )
 
 const (
-	SubscriptionUpgradeQRMaxBytes int64 = 2 * 1024 * 1024
-	subscriptionUpgradeQRObjectKey      = "platform/subscription-upgrade/qr"
+	SubscriptionUpgradeQRMaxBytes  int64 = 2 * 1024 * 1024
+	subscriptionUpgradeQRObjectKey       = "platform/subscription-upgrade/qr"
 )
 
 var subscriptionUpgradeQRAllowedTypes = map[string]string{
@@ -29,19 +30,19 @@ var subscriptionUpgradeQRAllowedTypes = map[string]string{
 
 // SubscriptionUpgradePaymentDTO is the CMS/config payload.
 type SubscriptionUpgradePaymentDTO struct {
-	DescriptionVI         string     `json:"description_vi"`
-	DescriptionEN         string     `json:"description_en"`
-	Hotline               string     `json:"hotline"`
-	BankName              string     `json:"bank_name"`
-	AccountName           string     `json:"account_name"`
-	AccountNumber         string     `json:"account_number"`
-	TransferNoteTemplate  string     `json:"transfer_note_template"`
-	IsActive              bool       `json:"is_active"`
-	QRConfigured          bool       `json:"qr_configured"`
-	QRContentType         string     `json:"qr_content_type,omitempty"`
-	QRFileName            string     `json:"qr_file_name,omitempty"`
-	UpdatedAt             *time.Time `json:"updated_at,omitempty"`
-	UpdatedBy             string     `json:"updated_by,omitempty"`
+	DescriptionVI        string     `json:"description_vi"`
+	DescriptionEN        string     `json:"description_en"`
+	Hotline              string     `json:"hotline"`
+	BankName             string     `json:"bank_name"`
+	AccountName          string     `json:"account_name"`
+	AccountNumber        string     `json:"account_number"`
+	TransferNoteTemplate string     `json:"transfer_note_template"`
+	IsActive             bool       `json:"is_active"`
+	QRConfigured         bool       `json:"qr_configured"`
+	QRContentType        string     `json:"qr_content_type,omitempty"`
+	QRFileName           string     `json:"qr_file_name,omitempty"`
+	UpdatedAt            *time.Time `json:"updated_at,omitempty"`
+	UpdatedBy            string     `json:"updated_by,omitempty"`
 }
 
 // UpdateSubscriptionUpgradePaymentRequest updates text fields (not the QR binary).
@@ -59,19 +60,19 @@ type UpdateSubscriptionUpgradePaymentRequest struct {
 
 // PortalSubscriptionUpgradeInstruction is returned to Portal Admin.
 type PortalSubscriptionUpgradeInstruction struct {
-	CurrentTier         string `json:"current_tier"`
-	CurrentTierLabel    string `json:"current_tier_label"`
-	IsConfigured        bool   `json:"is_configured"`
-	Message             string `json:"message,omitempty"`
-	QRURL               string `json:"qr_url,omitempty"`
-	Description         string `json:"description,omitempty"`
-	Hotline             string `json:"hotline,omitempty"`
-	BankName            string `json:"bank_name,omitempty"`
-	AccountName         string `json:"account_name,omitempty"`
-	AccountNumber       string `json:"account_number,omitempty"`
-	TransferNote        string `json:"transfer_note,omitempty"`
-	LandingPricingURL   string `json:"landing_pricing_url,omitempty"`
-	ManualNote          string `json:"manual_note,omitempty"`
+	CurrentTier       string `json:"current_tier"`
+	CurrentTierLabel  string `json:"current_tier_label"`
+	IsConfigured      bool   `json:"is_configured"`
+	Message           string `json:"message,omitempty"`
+	QRURL             string `json:"qr_url,omitempty"`
+	Description       string `json:"description,omitempty"`
+	Hotline           string `json:"hotline,omitempty"`
+	BankName          string `json:"bank_name,omitempty"`
+	AccountName       string `json:"account_name,omitempty"`
+	AccountNumber     string `json:"account_number,omitempty"`
+	TransferNote      string `json:"transfer_note,omitempty"`
+	LandingPricingURL string `json:"landing_pricing_url,omitempty"`
+	ManualNote        string `json:"manual_note,omitempty"`
 }
 
 type SubscriptionUpgradePaymentRecord struct {
@@ -163,20 +164,23 @@ func (s *subscriptionUpgradePaymentService) UpdateCMS(ctx context.Context, req U
 }
 
 func (s *subscriptionUpgradePaymentService) UploadQR(ctx context.Context, actorID, contentType, fileName string, body io.Reader, size int64) (*SubscriptionUpgradePaymentDTO, error) {
-	contentType = strings.ToLower(strings.TrimSpace(contentType))
-	ext, ok := subscriptionUpgradeQRAllowedTypes[contentType]
-	if !ok {
-		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "unsupported content_type (png/jpeg/webp)", nil)
-	}
 	if size <= 0 || size > SubscriptionUpgradeQRMaxBytes {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "qr file size must be > 0 and <= 2MB", nil)
+	}
+	sniffed, rest, err := sniffQRImageType(body)
+	if err != nil {
+		return nil, err
+	}
+	ext, ok := subscriptionUpgradeQRAllowedTypes[sniffed]
+	if !ok {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "unsupported content_type (png/jpeg/webp)", nil)
 	}
 	fileName = sanitizeSubscriptionUpgradeFileName(fileName, ext)
 	objectKey := subscriptionUpgradeQRObjectKey + ext
 	if s.storage == nil {
 		return nil, perr.NewHTTPError(http.StatusServiceUnavailable, perr.CodeServiceUnavailable, "qr storage unavailable", nil)
 	}
-	written, err := s.storage.Write(objectKey, io.LimitReader(body, size+1))
+	written, err := s.storage.Write(objectKey, io.LimitReader(rest, size+1))
 	if err != nil {
 		return nil, perr.NewHTTPError(http.StatusInternalServerError, perr.CodeInternal, "failed to store qr", err)
 	}
@@ -184,11 +188,31 @@ func (s *subscriptionUpgradePaymentService) UploadQR(ctx context.Context, actorI
 		_ = s.storage.Delete(objectKey)
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "qr file size must be <= 2MB", nil)
 	}
-	if err := s.repo.SetQR(ctx, objectKey, contentType, fileName, actorID); err != nil {
+	if err := s.repo.SetQR(ctx, objectKey, sniffed, fileName, actorID); err != nil {
 		_ = s.storage.Delete(objectKey)
 		return nil, err
 	}
 	return s.GetCMS(ctx)
+}
+
+func sniffQRImageType(body io.Reader) (string, io.Reader, error) {
+	buf := make([]byte, 512)
+	n, err := io.ReadFull(body, buf)
+	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) && !errors.Is(err, io.EOF) {
+		return "", nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "unable to read qr file", err)
+	}
+	buf = buf[:n]
+	if n == 0 {
+		return "", nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "unsupported content_type (png/jpeg/webp)", nil)
+	}
+	detected := strings.ToLower(strings.TrimSpace(strings.Split(http.DetectContentType(buf), ";")[0]))
+	if detected == "image/jpg" {
+		detected = "image/jpeg"
+	}
+	if _, ok := subscriptionUpgradeQRAllowedTypes[detected]; !ok {
+		return "", nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "unsupported content_type (png/jpeg/webp)", nil)
+	}
+	return detected, io.MultiReader(bytes.NewReader(buf), body), nil
 }
 
 func (s *subscriptionUpgradePaymentService) DeleteQR(ctx context.Context, actorID string) (*SubscriptionUpgradePaymentDTO, error) {
@@ -244,18 +268,18 @@ func (s *subscriptionUpgradePaymentService) PortalInstruction(ctx context.Contex
 		CurrentTier:       strings.ToLower(tier),
 		CurrentTierLabel:  tier,
 		LandingPricingURL: "/pricing",
-		ManualNote:        "Hệ thống chưa tự động xác nhận thanh toán. Gói sẽ được cập nhật sau khi vận hành xác minh.",
+		ManualNote:        "Sau khi chuyển khoản, gói sẽ được kích hoạt sau khi quản trị nền tảng xác nhận thanh toán.",
 	}
 	if lang == "en" {
-		out.ManualNote = "Payment is not confirmed automatically. Your plan will be updated after operations verifies the transfer."
+		out.ManualNote = "After the transfer, the package is activated only after platform admin confirms payment."
 	}
 	configured := rec.IsActive && rec.QRObjectKey.Valid && strings.TrimSpace(rec.QRObjectKey.String) != ""
 	if !configured {
 		out.IsConfigured = false
 		if lang == "en" {
-			out.Message = "Upgrade instructions are not configured yet. Please contact system administration."
+			out.Message = "Bank transfer payment is currently unavailable. Please contact platform administration."
 		} else {
-			out.Message = "Chưa có hướng dẫn nâng cấp. Vui lòng liên hệ quản trị hệ thống."
+			out.Message = "Thanh toán chuyển khoản hiện chưa khả dụng. Vui lòng liên hệ quản trị nền tảng."
 		}
 		return out, nil
 	}

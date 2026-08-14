@@ -7,9 +7,10 @@ import (
 	"net/http"
 	"strings"
 
-	platformcmsapp "github.com/cobo/cobo_iam_services/internal/platformcms/app"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 	"github.com/cobo/cobo_iam_services/internal/platform/httpx"
+	platformcmsapp "github.com/cobo/cobo_iam_services/internal/platformcms/app"
+	"github.com/cobo/cobo_iam_services/internal/subscription/companyplan"
 )
 
 func (h *Handler) getSubscriptionUpgradePayment(w http.ResponseWriter, r *http.Request) {
@@ -117,16 +118,6 @@ func (h *Handler) uploadSubscriptionUpgradeQR(w http.ResponseWriter, r *http.Req
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	}
-	// Detect from filename extension if browser sent generic type.
-	lowerName := strings.ToLower(header.Filename)
-	switch {
-	case strings.HasSuffix(lowerName, ".png"):
-		contentType = "image/png"
-	case strings.HasSuffix(lowerName, ".jpg"), strings.HasSuffix(lowerName, ".jpeg"):
-		contentType = "image/jpeg"
-	case strings.HasSuffix(lowerName, ".webp"):
-		contentType = "image/webp"
-	}
 	dto, err := h.subscriptionUpgradeSvc.UploadQR(r.Context(), sub.Sub, contentType, header.Filename, file, header.Size)
 	if err != nil {
 		httpx.WriteError(w, nil, err)
@@ -207,7 +198,7 @@ func (h *Handler) getAdminSubscriptionUpgradeInstruction(w http.ResponseWriter, 
 	if lang != "en" {
 		lang = "vi"
 	}
-	tier := h.lookupUserSubscriptionTier(r.Context(), sub.Sub)
+	tier := h.lookupCompanyPlanLabel(r.Context(), sub.CompanyID)
 	companyCode := h.lookupCompanyCode(r.Context(), sub.CompanyID)
 	dto, err := h.subscriptionUpgradeSvc.PortalInstruction(
 		r.Context(),
@@ -258,20 +249,15 @@ func (h *Handler) getAdminSubscriptionUpgradeQR(w http.ResponseWriter, r *http.R
 	_, _ = w.Write(data)
 }
 
-func (h *Handler) lookupUserSubscriptionTier(ctx context.Context, userID string) string {
-	if h.upgradePaymentDB == nil || strings.TrimSpace(userID) == "" {
+func (h *Handler) lookupCompanyPlanLabel(ctx context.Context, companyID string) string {
+	if h.companyPlanRepo == nil || strings.TrimSpace(companyID) == "" {
 		return "Free"
 	}
-	var tier string
-	err := h.upgradePaymentDB.QueryRowContext(ctx, `
-		SELECT subscription_tier FROM user_subscription_tiers
-		WHERE user_id = ? AND (effective_to IS NULL OR effective_to > UTC_TIMESTAMP())
-		LIMIT 1
-	`, userID).Scan(&tier)
-	if err != nil {
+	plan, err := h.companyPlanRepo.GetEffectivePlan(ctx, companyID, companyplan.NowUTC())
+	if err != nil || plan == nil {
 		return "Free"
 	}
-	return tier
+	return plan.Code.DisplayName()
 }
 
 func (h *Handler) lookupCompanyCode(ctx context.Context, companyID string) string {
@@ -280,10 +266,10 @@ func (h *Handler) lookupCompanyCode(ctx context.Context, companyID string) strin
 	}
 	var code sql.NullString
 	err := h.upgradePaymentDB.QueryRowContext(ctx, `
-		SELECT code FROM companies WHERE company_id = ? LIMIT 1
+		SELECT company_code FROM companies WHERE company_id = ? LIMIT 1
 	`, companyID).Scan(&code)
-	if err != nil || !code.Valid || strings.TrimSpace(code.String) == "" {
-		return strings.ReplaceAll(companyID, "-", "")
+	if err != nil || !code.Valid {
+		return ""
 	}
-	return code.String
+	return strings.TrimSpace(code.String)
 }
