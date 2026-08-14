@@ -1,4 +1,11 @@
 
+## 2026-08-14 — CMS template daily/weekly cycle
+
+- paired FE pack: `../cobo_web_design/docs/ai-cache/cms-template-daily-weekly-cycle-2026-08-14/`
+- BE: validation + frequency aliases + engine R-P + periodic seed SQL
+- verdict pointer: **CMS_TEMPLATE_DAILY_WEEKLY_CYCLE_READY**
+- NO_MIGRATION / NO_DEV_DEPLOY / NO_PRODUCTION / NO_PUSH
+
 ## 2026-08-10 — T1 adhoc proposal tracking backend self-read + scope=my
 
 - task type: implement (BE)
