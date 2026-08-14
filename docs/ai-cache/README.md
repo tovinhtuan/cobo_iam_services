@@ -1,4 +1,11 @@
-﻿## Manual QR company package activation (2026-08-14)
+﻿## Manual QR company package activation DEV (2026-08-14)
+
+- Verdict **COBO_MANUAL_QR_COMPANY_PACKAGE_ACTIVATION_DEV_READY**
+- `make deploy-be` recreates api+worker; no migrate; live lookup `SELECT company_code`
+- Evidence (FE pack): `cobo_web_design/docs/ai-cache/manual-qr-company-package-activation-2026-08-14/` (`24`–`65`)
+- NO_MIGRATION / NO_PRODUCTION / NO_PUSH
+
+## Manual QR company package activation (2026-08-14)
 
 - Verdict **COBO_MANUAL_QR_COMPANY_PACKAGE_ACTIVATION_READY**
 - `ActivateImmediate` + CMS POST subscription/activate; origin `platform_admin_manual`

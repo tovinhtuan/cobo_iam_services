@@ -1,4 +1,10 @@
 
+## 2026-08-14 — Manual QR company package activation DEV
+
+- paired FE pack `24`–`65`; `make deploy-be` PASS (worker recreated, no migrate)
+- QA company PREMIUM retained; user_subscription_tiers unchanged
+- NO_MIGRATION / NO_PRODUCTION / NO_PUSH
+
 ## 2026-08-14 — Manual QR company package activation (implement)
 
 - paired FE pack: `../cobo_web_design/docs/ai-cache/manual-qr-company-package-activation-2026-08-14/`
