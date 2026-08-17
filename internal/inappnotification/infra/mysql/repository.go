@@ -116,7 +116,7 @@ func (q *UserIDQuerier) UserIDsByEmails(ctx context.Context, companyID string, e
 		FROM memberships m
 		JOIN users u ON u.user_id = m.user_id
 		WHERE m.company_id = ?
-		  AND m.status = 'active'
+		  AND m.membership_status = 'active'
 		  AND LOWER(u.email) IN (%s)`, placeholders),
 		args...,
 	)

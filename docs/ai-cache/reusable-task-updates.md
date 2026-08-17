@@ -1,10 +1,16 @@
 
+## 2026-08-17 — Workflow step reminder (migration recovery)
+
+- 0129 applied on DEV; source-ready restored; `due_minus_7d` persists
+- Remaining: Mailpit/email evidence, verified A/B/C, template multi-step
+- Evidence: sibling FE pack `76`–`85` + `dev-smoke-custom-default/55+`
+- NO_PRODUCTION / NO_PUSH
+
 ## 2026-08-17 — Workflow step reminder (Phase 3–5 DEV smoke)
 
-- Phase 3–4 PASS on DEV; Phase 5 **BLOCKED_WORKFLOW_REMINDER_MIGRATION_REQUIRED**
-- Live MySQL ENUM `workflow_step_milestones.milestone_type` cannot store `due_minus_Nd`; worker scanner seeds 0 QA occurrences
+- Phase 3–4 PASS on DEV; Phase 5 ENUM blocker later repaired (see recovery)
 - Evidence: sibling FE `dev-smoke-custom-default/`
-- NO_PRODUCTION / NO_PUSH; migration not applied (prompt STOP)
+- NO_PRODUCTION / NO_PUSH
 
 ## 2026-08-17 — Workflow step reminder (Phase 2D source-ready)
 

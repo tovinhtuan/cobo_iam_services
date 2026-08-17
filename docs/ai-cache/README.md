@@ -1,8 +1,15 @@
-﻿## Workflow step reminder — Phase 3–5 DEV (2026-08-17)
+﻿## Workflow step reminder — migration recovery (2026-08-17)
+
+- Pointer: FE pack `workflow-step-reminder-rule-engine-2026-08-17/` (`76`–`85` + `dev-smoke-custom-default/55+`)
+- 0129 applied; `MIGRATION_REQUIRED=true` / `MIGRATION_IMPLEMENTED=true`; source-ready restored
+- Remaining: `BLOCKED_EMAIL_EVIDENCE_UNAVAILABLE` (SMTP Gmail, not Mailpit)
+- NOT `WORKFLOW_STEP_REMINDER_RULE_DEEP_SMOKE_DEV_READY`
+- NO_PRODUCTION / NO_PUSH
+
+## Workflow step reminder — Phase 3–5 DEV (2026-08-17)
 
 - Pointer: FE pack `cobo_web_design/docs/ai-cache/workflow-step-reminder-rule-engine-2026-08-17/dev-smoke-custom-default/`
-- Phase 3–4 PASS; Phase 5 **BLOCKED_WORKFLOW_REMINDER_MIGRATION_REQUIRED**
-- Live schema: `workflow_step_milestones.milestone_type` ENUM cannot store `due_minus_Nd`
+- Phase 3–4 PASS; Phase 5 ENUM blocker repaired by 0129 (see recovery entry)
 - NOT `WORKFLOW_STEP_REMINDER_RULE_DEEP_SMOKE_DEV_READY`
 - NO_PRODUCTION / NO_PUSH
 
