@@ -12,10 +12,10 @@ var dueRuleProcessingDaysPattern = regexp.MustCompile(`(?i)t\s*\+\s*(\d+)`)
 
 // StepTimeline holds the computed date window for one workflow step.
 type StepTimeline struct {
-	StepID        string
-	StepOrder     int
-	StartDate     time.Time // inclusive, midnight in company TZ
-	EndDate       time.Time // inclusive, midnight in company TZ
+	StepID         string
+	StepOrder      int
+	StartDate      time.Time // inclusive, midnight in company TZ
+	EndDate        time.Time // inclusive, midnight in company TZ
 	ProcessingDays int
 }
 
@@ -87,8 +87,73 @@ func ComputeStepTimelines(t0 time.Time, tz string, steps []WorkflowStepDTO, type
 	return timelines, nil
 }
 
-// GenerateMilestoneCandidates produces the 5 milestone rows for a step timeline.
-// Milestones whose scheduled date falls before t0 are skipped.
+// GenerateTimelineMilestoneCandidates produces step_start / step_end rows for timeline/UI/reporting.
+// These are not reminder-dispatch occurrences.
+func GenerateTimelineMilestoneCandidates(tl StepTimeline, t0 time.Time, companyID, instanceID string, idFn func() string) []StepMilestoneRow {
+	t0Day := time.Date(t0.Year(), t0.Month(), t0.Day(), 0, 0, 0, 0, tl.StartDate.Location())
+	candidates := []struct {
+		mtype MilestoneType
+		date  time.Time
+	}{
+		{MilestoneStepStart, tl.StartDate},
+		{MilestoneStepEnd, tl.EndDate},
+	}
+	rows := make([]StepMilestoneRow, 0, len(candidates))
+	for _, c := range candidates {
+		if c.date.Before(t0Day) {
+			continue
+		}
+		rows = append(rows, StepMilestoneRow{
+			MilestoneID:   buildMilestoneID(instanceID, tl.StepID, string(c.mtype), idFn),
+			CompanyID:     companyID,
+			InstanceID:    instanceID,
+			StepID:        tl.StepID,
+			StepOrder:     tl.StepOrder,
+			MilestoneType: c.mtype,
+			ScheduledDate: c.date,
+		})
+	}
+	return rows
+}
+
+// GenerateDueMinusReminderCandidates produces EndDate-minus-N reminder rows from frozen effective days.
+// remind_at = StepTimeline.EndDate - offset. Does not use StartDate.
+func GenerateDueMinusReminderCandidates(tl StepTimeline, t0 time.Time, companyID, instanceID string, effectiveDays []int, idFn func() string) []StepMilestoneRow {
+	t0Day := time.Date(t0.Year(), t0.Month(), t0.Day(), 0, 0, 0, 0, tl.EndDate.Location())
+	rows := make([]StepMilestoneRow, 0, len(effectiveDays))
+	for _, offset := range effectiveDays {
+		if offset <= 0 {
+			continue
+		}
+		mtype := DueMinusMilestoneType(offset)
+		date := tl.EndDate.AddDate(0, 0, -offset)
+		if date.Before(t0Day) {
+			continue
+		}
+		rows = append(rows, StepMilestoneRow{
+			MilestoneID:   buildMilestoneID(instanceID, tl.StepID, string(mtype), idFn),
+			CompanyID:     companyID,
+			InstanceID:    instanceID,
+			StepID:        tl.StepID,
+			StepOrder:     tl.StepOrder,
+			MilestoneType: mtype,
+			ScheduledDate: date,
+		})
+	}
+	return rows
+}
+
+// GenerateConfiguredReminderPreviewCandidates matches runtime instance seeding:
+// step_start/step_end timeline rows plus due-minus reminders from the step's reminder_config.
+func GenerateConfiguredReminderPreviewCandidates(tl StepTimeline, t0 time.Time, companyID, instanceID string, reminderCfg *WorkflowStepReminderConfig, idFn func() string) []StepMilestoneRow {
+	rows := GenerateTimelineMilestoneCandidates(tl, t0, companyID, instanceID, idFn)
+	days := ResolveWorkflowStepReminderRule(reminderCfg).EffectiveDays
+	return append(rows, GenerateDueMinusReminderCandidates(tl, t0, companyID, instanceID, days, idFn)...)
+}
+
+// GenerateMilestoneCandidates produces the legacy 5 milestone rows for a step timeline
+// (before_start_* from StartDate plus step_start/step_end). Not used by runtime seeding
+// or the Portal reminder-preview API after Phase 2D.
 func GenerateMilestoneCandidates(tl StepTimeline, t0 time.Time, companyID, instanceID string, idFn func() string) []StepMilestoneRow {
 	t0Day := time.Date(t0.Year(), t0.Month(), t0.Day(), 0, 0, 0, 0, tl.StartDate.Location())
 	candidates := []struct {

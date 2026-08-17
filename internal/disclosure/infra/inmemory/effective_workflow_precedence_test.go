@@ -99,6 +99,86 @@ func TestGetEffectiveWorkflow_ActiveGlobalWorkflow_WinsOverLegacy(t *testing.T) 
 	}
 }
 
+func TestGetEffectiveWorkflow_ReminderConfigFollowsPrecedence(t *testing.T) {
+	r := NewRepository()
+	ctx := context.Background()
+	const typeID = "dt-reminder-prec"
+	const companyID = "company-test"
+
+	custom := func(days []int) *disclosureapp.WorkflowStepReminderConfig {
+		return &disclosureapp.WorkflowStepReminderConfig{
+			Enabled: true, Mode: disclosureapp.WorkflowStepReminderModeDaysBefore, DaysBefore: days,
+		}
+	}
+
+	r.catalog[typeID] = disclosureapp.DisclosureTypeDTO{
+		TypeID: typeID, VersionNo: 1,
+		Blocks: []disclosureapp.TemplateBlockDTO{
+			{BlockKey: "enterprise_workflow", Config: map[string]any{
+				"steps": []any{map[string]any{
+					"step_id": "ent-1", "stage": "Enterprise", "department_id": "d1",
+					"assignee_role_ids": []any{"role-reviewer"}, "processing_days": 3, "display_order": 1,
+					"reminder_config": map[string]any{"enabled": true, "mode": "days_before", "days_before": []any{float64(5)}},
+				}},
+			}},
+		},
+	}
+
+	dto, err := r.GetEffectiveWorkflow(ctx, companyID, typeID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dto.Source != "global_template" || dto.Workflow[0].ReminderConfig == nil {
+		t.Fatalf("enterprise fallback reminder missing: source=%s cfg=%+v", dto.Source, dto.Workflow[0].ReminderConfig)
+	}
+	if got := dto.Workflow[0].ReminderConfig.DaysBefore; len(got) != 1 || got[0] != 5 {
+		t.Fatalf("enterprise days=%v", got)
+	}
+
+	active := 1
+	r.globalWorkflows = map[string]*disclosureapp.GlobalWorkflowDTO{
+		typeID: {
+			WorkflowID: "wf-1", TypeID: typeID, Status: "active", ActiveVersionNo: &active,
+			Steps: []disclosureapp.GlobalWorkflowStepInput{
+				{StepID: "gw-1", Stage: "Global", DepartmentID: "d2", AssigneeRoleIds: []string{"reviewer"},
+					ProcessingDays: 5, DisplayOrder: 1, ReminderConfig: custom([]int{7, 2})},
+			},
+		},
+	}
+	dto, err = r.GetEffectiveWorkflow(ctx, companyID, typeID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dto.Source != "global_workflow" || dto.Workflow[0].ReminderConfig == nil {
+		t.Fatalf("global reminder missing: source=%s cfg=%+v", dto.Source, dto.Workflow[0].ReminderConfig)
+	}
+	if got := dto.Workflow[0].ReminderConfig.DaysBefore; len(got) != 2 || got[0] != 7 {
+		t.Fatalf("global must win over enterprise, days=%v", got)
+	}
+
+	r.overrideByCompanyType[overrideKey(companyID, typeID)] = &overrideState{
+		header: disclosureapp.CompanyWorkflowOverrideHeaderDTO{ActiveVersionNo: 1},
+		versions: map[int]disclosureapp.CompanyWorkflowOverrideVersionDTO{
+			1: {
+				VersionNo: 1, State: "approved",
+				Workflow: []disclosureapp.WorkflowStepDTO{
+					{StepID: "ov-1", Stage: "Override", DepartmentID: "d3", DisplayOrder: 1, ReminderConfig: custom([]int{9})},
+				},
+			},
+		},
+	}
+	dto, err = r.GetEffectiveWorkflow(ctx, companyID, typeID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dto.Source != "company_override" || dto.Workflow[0].ReminderConfig == nil {
+		t.Fatalf("override reminder missing: source=%s cfg=%+v", dto.Source, dto.Workflow[0].ReminderConfig)
+	}
+	if got := dto.Workflow[0].ReminderConfig.DaysBefore; len(got) != 1 || got[0] != 9 {
+		t.Fatalf("override must win, days=%v", got)
+	}
+}
+
 // TestGetEffectiveWorkflow_GlobalWorkflowWithoutActiveVersionNo_FallsBackToLegacy guards the
 // "draft-only, never activated" case: a global_workflows row exists but ActiveVersionNo is nil
 // (no version has ever been activated for it) — must still fall back to legacy, not surface an

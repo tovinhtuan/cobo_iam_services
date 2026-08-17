@@ -14,23 +14,24 @@ import (
 )
 
 type service struct {
-	configRepo        ConfigRepository
-	occurrenceRepo    OccurrenceRepository
-	attemptRepo       AttemptRepository
-	milestoneScanner  MilestoneScanner
-	emailSender       EmailSender
-	metrics           Metrics
-	auditor           Auditor
-	alertHook         AlertHook
-	alertConfigRepo   AlertConfigRepository
-	recipientResolver RecipientResolver
-	stepReader        WorkflowStepReader
-	publicWebBaseURL  string
-	inAppCreator      InAppNotificationCreator // optional, nil = disabled
+	configRepo                 ConfigRepository
+	occurrenceRepo             OccurrenceRepository
+	attemptRepo                AttemptRepository
+	milestoneScanner           MilestoneScanner
+	emailSender                EmailSender
+	metrics                    Metrics
+	auditor                    Auditor
+	alertHook                  AlertHook
+	alertConfigRepo            AlertConfigRepository
+	recipientResolver          RecipientResolver
+	stepReader                 WorkflowStepReader
+	publicWebBaseURL           string
+	inAppCreator               InAppNotificationCreator // optional, nil = disabled
 	notificationRulesReader    NotificationRulesReader
 	notificationRulesEvaluator *NotificationRulesEvaluator
 	membershipQuerier          MembershipEmailQuerier
 	taskAssigneeReader         WorkflowTaskAssigneeReader
+	stepTaskStateReader        WorkflowStepTaskStateReader
 	dispatchLogger             *slog.Logger
 	tierEnforcement            *entitlement.Checker
 }
@@ -128,6 +129,12 @@ func WithDispatchLogger(log *slog.Logger) ServiceOption {
 func WithTierEnforcement(checker *entitlement.Checker) ServiceOption {
 	return func(s *service) {
 		s.tierEnforcement = checker
+	}
+}
+
+func WithWorkflowStepTaskStateReader(r WorkflowStepTaskStateReader) ServiceOption {
+	return func(s *service) {
+		s.stepTaskStateReader = r
 	}
 }
 
@@ -405,6 +412,23 @@ func (s *service) prepareDispatch(ctx context.Context, c DispatchCandidate, asOf
 	}
 	if c.ScopeType == ScopeTypeWorkflowStep && c.ScopeID != "" {
 		stepID := extractStepID(c.ScopeID)
+		if _, ok := out.payload["step_id"]; !ok {
+			out.payload["step_id"] = stepID
+		}
+		if milestoneType, ok := workflowStepReminderMilestoneType(c.IdempotencyKey); ok {
+			if _, exists := out.payload["reminder_milestone_type"]; !exists {
+				out.payload["reminder_milestone_type"] = milestoneType
+			}
+			if offset, ok := ParseDueMinusReminderOffset(milestoneType); ok {
+				if _, exists := out.payload["reminder_offset_days"]; !exists {
+					out.payload["reminder_offset_days"] = offset
+				}
+				if _, exists := out.payload["step_due_date"]; !exists {
+					due := c.ScheduledAt.UTC().AddDate(0, 0, offset)
+					out.payload["step_due_date"] = due.In(loc).Format("02/01/2006")
+				}
+			}
+		}
 		var step *WorkflowStepConfig
 		if s.stepReader != nil {
 			if st, err := s.stepReader.GetStepByID(ctx, stepID); err == nil {
@@ -580,19 +604,19 @@ func (s *service) dispatchClaimedOccurrence(ctx context.Context, occurrence *Rem
 		providerMessageID = msgID
 	}
 	if err := s.attemptRepo.InsertAttempt(ctx, ReminderDeliveryAttemptDTO{
-		OccurrenceID: req.OccurrenceID,
-		AttemptNo:    attemptNo,
-		Status:       ReminderStatusSent,
+		OccurrenceID:      req.OccurrenceID,
+		AttemptNo:         attemptNo,
+		Status:            ReminderStatusSent,
 		ProviderMessageID: providerMessageID,
-		CreatedAt:    now,
+		CreatedAt:         now,
 	}); err != nil {
 		return nil, fmt.Errorf("insert sent attempt: %w", err)
 	}
 	if err := s.occurrenceRepo.UpdateDispatchResult(ctx, DispatchResultInput{
-		OccurrenceID:     req.OccurrenceID,
-		Status:           ReminderStatusSent,
+		OccurrenceID:      req.OccurrenceID,
+		Status:            ReminderStatusSent,
 		ProviderMessageID: providerMessageID,
-		IncrementAttempt: true,
+		IncrementAttempt:  true,
 	}); err != nil {
 		return nil, fmt.Errorf("update sent occurrence: %w", err)
 	}
@@ -684,7 +708,7 @@ func (s *service) failRetryable(ctx context.Context, occurrenceID string, attemp
 	if attemptNo >= 3 {
 		s.metrics.IncCounter("reminder_retry_alert_threshold_total", map[string]string{"threshold": "3"})
 		s.alertHook.Notify(ctx, "REMINDER_RETRY_THRESHOLD", map[string]string{
-			"threshold":    "3",
+			"threshold":     "3",
 			"occurrence_id": occurrenceID,
 		}, map[string]any{
 			"attempt_no": attemptNo,
@@ -927,7 +951,14 @@ func (s *service) SeedOccurrencesFromDueMilestones(ctx context.Context, now time
 	}
 	seeded := 0
 	for _, m := range milestones {
-		idempotencyKey := fmt.Sprintf("wsm:%s:%s:%s", m.WorkflowInstanceID, m.StepID, m.MilestoneType)
+		if !IsDueMinusReminderMilestone(m.MilestoneType) {
+			continue
+		}
+		if !s.workflowStepReminderEligible(ctx, m) {
+			s.metrics.IncCounter("reminder_milestone_ineligible_total", map[string]string{"milestone_type": m.MilestoneType})
+			continue
+		}
+		idempotencyKey := WorkflowStepReminderIdempotencyKey(m.WorkflowInstanceID, m.StepID, m.MilestoneType)
 		occ, err := s.occurrenceRepo.SeedOccurrence(ctx, ReminderOccurrenceDTO{
 			OccurrenceID:   m.MilestoneID,
 			DisclosureID:   m.WorkflowInstanceID, // use instance as disclosure scope

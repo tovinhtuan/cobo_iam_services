@@ -1,4 +1,41 @@
-﻿## CMS irregular → ad_hoc template persistence fix (2026-08-17)
+﻿## Workflow step reminder — Phase 3–5 DEV (2026-08-17)
+
+- Pointer: FE pack `cobo_web_design/docs/ai-cache/workflow-step-reminder-rule-engine-2026-08-17/dev-smoke-custom-default/`
+- Phase 3–4 PASS; Phase 5 **BLOCKED_WORKFLOW_REMINDER_MIGRATION_REQUIRED**
+- Live schema: `workflow_step_milestones.milestone_type` ENUM cannot store `due_minus_Nd`
+- NOT `WORKFLOW_STEP_REMINDER_RULE_DEEP_SMOKE_DEV_READY`
+- NO_PRODUCTION / NO_PUSH
+
+## Workflow step reminder — Phase 2D source-ready (2026-08-17)
+
+- Pointer: FE pack `cobo_web_design/docs/ai-cache/workflow-step-reminder-rule-engine-2026-08-17/` (`62`–`75`)
+- Verdict **WORKFLOW_STEP_REMINDER_RULE_ENGINE_READY**
+- Docker: `build api` + `build worker` + FE `run --rm --no-deps web npm ci && npm run build`
+- NO_MIGRATION / NO_DEPLOY / NO_PRODUCTION / NO_PUSH; Phase 3 awaits confirm
+
+## Workflow step reminder — Phase 2C BE runtime (2026-08-17)
+
+- Pointer: FE pack `cobo_web_design/docs/ai-cache/workflow-step-reminder-rule-engine-2026-08-17/` (`46`–`61`)
+- Verdict **WORKFLOW_STEP_REMINDER_PHASE2C_RUNTIME_ENGINE_READY**
+- BE product: resolver + Path B `documents_json` persist + snapshot + due-minus engine
+- NO_MIGRATION / NO_DEPLOY / NO_PRODUCTION / NO_PUSH; Phase 2D awaits confirm
+
+## Workflow step reminder — Phase 2B CMS FE (2026-08-17)
+
+- Pointer: FE pack `cobo_web_design/docs/ai-cache/workflow-step-reminder-rule-engine-2026-08-17/` (`28`–`29`, `37`–`45`)
+- Verdict **WORKFLOW_STEP_REMINDER_PHASE2B_CMS_FE_READY**
+- BE product source **unchanged**; runtime authority still planned `internal/disclosure/app/workflow_step_reminder_rule.go` (Phase 2C)
+- NO_BACKEND_SOURCE_CHANGE / NO_MIGRATION / NO_DEPLOY / NO_PRODUCTION / NO_PUSH
+
+## Workflow step reminder — Phase 2A contract lock (2026-08-17)
+
+
+- Pointer: FE pack `cobo_web_design/docs/ai-cache/workflow-step-reminder-rule-engine-2026-08-17/` (`24`–`27`)
+- Verdict **WORKFLOW_STEP_REMINDER_PHASE2A_CONTRACT_LOCKED**
+- BE: no product source this phase; planned runtime authority `internal/disclosure/app/workflow_step_reminder_rule.go` (Phase 2C)
+- NO_BACKEND_SOURCE_CHANGE / NO_MIGRATION / NO_DEPLOY / NO_PRODUCTION / NO_PUSH
+
+## CMS irregular → ad_hoc template persistence fix (2026-08-17)
 
 - Pointer: FE pack `cobo_web_design/docs/ai-cache/cms-irregular-adhoc-template-persistence-fix-2026-08-17/`
 - Verdict **CMS_IRREGULAR_ADHOC_TEMPLATE_PERSISTENCE_FIX_READY** (FE-only)

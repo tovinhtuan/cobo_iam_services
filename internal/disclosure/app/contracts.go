@@ -1136,6 +1136,9 @@ type GlobalWorkflowStepInput struct {
 	DueRule         string   `json:"due_rule"`
 	ProcessingDays  int      `json:"processing_days"`
 	DisplayOrder    int      `json:"display_order"`
+	// ReminderConfig is omitted for DEFAULT (effective [3,1] at runtime). CUSTOM persists
+	// enabled/mode/days_before. Stored in global_workflow_steps.documents_json (no migration).
+	ReminderConfig *WorkflowStepReminderConfig `json:"reminder_config,omitempty"`
 }
 
 type GlobalWorkflowDTO struct {

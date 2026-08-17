@@ -80,3 +80,17 @@ func TestDecodeGlobalWorkflowManifestSteps_PreservesExplicitDueRule(t *testing.T
 		t.Fatalf("decoder must not mutate due_rule; got %q", steps[0].DueRule)
 	}
 }
+
+func TestDecodeGlobalWorkflowManifestSteps_PreservesReminderConfig(t *testing.T) {
+	raw := []byte(`{"steps":[{"step_id":"s1","stage":"X","processing_days":3,"display_order":1,"reminder_config":{"enabled":true,"mode":"days_before","days_before":[7,2]}}]}`)
+	steps, err := decodeGlobalWorkflowManifestSteps(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(steps) != 1 || steps[0].ReminderConfig == nil {
+		t.Fatalf("reminder missing: %+v", steps)
+	}
+	if !steps[0].ReminderConfig.Enabled || len(steps[0].ReminderConfig.DaysBefore) != 2 {
+		t.Fatalf("cfg=%+v", steps[0].ReminderConfig)
+	}
+}

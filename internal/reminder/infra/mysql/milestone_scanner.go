@@ -26,6 +26,7 @@ func (s *MilestoneScanner) ListDueMilestones(ctx context.Context, asOf time.Time
 		SELECT milestone_id, company_id, workflow_instance_id, step_id, milestone_type, scheduled_date
 		FROM workflow_step_milestones
 		WHERE reminder_sent = 0 AND scheduled_date <= ?
+		  AND milestone_type LIKE 'due_minus_%'
 		ORDER BY scheduled_date ASC
 		LIMIT ?
 		FOR UPDATE SKIP LOCKED

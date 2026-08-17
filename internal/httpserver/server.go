@@ -84,6 +84,7 @@ import (
 	portaldashboardhttp "github.com/cobo/cobo_iam_services/internal/portaldashboard/transport/http"
 	reminderapp "github.com/cobo/cobo_iam_services/internal/reminder/app"
 	reminderemail "github.com/cobo/cobo_iam_services/internal/reminder/infra/email"
+	reminderinapp "github.com/cobo/cobo_iam_services/internal/reminder/infra/inapp"
 	reminderinmem "github.com/cobo/cobo_iam_services/internal/reminder/infra/inmemory"
 	reminderalertmysql "github.com/cobo/cobo_iam_services/internal/reminder/infra/mysql"
 	remindermysql "github.com/cobo/cobo_iam_services/internal/reminder/infra/mysql"
@@ -501,7 +502,10 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 		reminderAttemptRepo = reminderMySQLRepo
 		log.Info("reminder module using MySQL repository")
 		if cfg.WorkflowRemindersEnabled {
-			reminderSvcOpts = append(reminderSvcOpts, reminderapp.WithMilestoneScanner(remindermysql.NewMilestoneScanner(pool)))
+			reminderSvcOpts = append(reminderSvcOpts,
+				reminderapp.WithMilestoneScanner(remindermysql.NewMilestoneScanner(pool)),
+				reminderapp.WithWorkflowStepTaskStateReader(remindermysql.NewWorkflowStepTaskStateReader(pool)),
+			)
 			log.Info("workflow milestone reminder bridge enabled")
 		}
 	}
@@ -551,7 +555,7 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 		}
 		adminOpts = append(adminOpts, companyaccessapp.WithDispatchSimulator(newReminderDispatchSimulatorAdapter(reminderapp.NewDispatchSimulator(simDeps))))
 	}
-	reminderSvcOpts = append(reminderSvcOpts, reminderapp.WithInAppCreator(&reminderInAppBridge{svc: inAppSvc}))
+	reminderSvcOpts = append(reminderSvcOpts, reminderapp.WithInAppCreator(&reminderinapp.Bridge{Svc: inAppSvc}))
 	reminderSvc := reminderapp.NewService(reminderConfigRepo, reminderOccurrenceRepo, reminderAttemptRepo, reminderSvcOpts...)
 	reminderHandler := reminderhttp.NewHandler(reminderSvc, tokenManager, cfg.InternalReminderToken, cfg.Env)
 	if pool != nil {
@@ -879,52 +883,6 @@ func (a personalopsAvatarAdapter) AvatarURL(ctx context.Context, userID string) 
 	default:
 		return nil, nil
 	}
-}
-
-// reminderInAppBridge adapts inappapp.Service to reminderapp.InAppNotificationCreator.
-type reminderInAppBridge struct {
-	svc inappapp.Service
-}
-
-func (b *reminderInAppBridge) CreateForReminderDispatch(ctx context.Context, c reminderapp.DispatchCandidate) error {
-	kind := inappapp.KindReminderDeadline
-	if c.ScopeType == reminderapp.ScopeTypeWorkflowStep {
-		kind = inappapp.KindReminderWorkflow
-	}
-	title := "Nhắc nhở CBTT"
-	if v, ok := c.TemplatePayload["disclosure_title"].(string); ok && v != "" {
-		if c.ScopeType == reminderapp.ScopeTypeWorkflowStep {
-			step := ""
-			if s, ok2 := c.TemplatePayload["step_name"].(string); ok2 && s != "" {
-				step = s
-			}
-			if step != "" {
-				title = "Bước phê duyệt đến hạn: " + step
-			} else {
-				title = "Bước phê duyệt đến hạn: " + v
-			}
-		} else {
-			title = "Sắp đến hạn CBTT: " + v
-		}
-	}
-	body := ""
-	if v, ok := c.TemplatePayload["due_date"].(string); ok && v != "" {
-		body = "Deadline: " + v
-	}
-	// resource_id is disclosure_id for DISCLOSURE scope; empty for WORKFLOW_STEP (no direct link)
-	resourceID := ""
-	if c.ScopeType == reminderapp.ScopeTypeDisclosure {
-		resourceID = c.ScopeID
-	}
-	return b.svc.CreateForReminder(ctx, inappapp.ReminderInAppRequest{
-		CompanyID:       c.CompanyID,
-		Kind:            kind,
-		Title:           title,
-		Body:            body,
-		ResourceType:    inappapp.ResourceTypeDisclosure,
-		ResourceID:      resourceID,
-		RecipientEmails: c.RecipientEmails,
-	})
 }
 
 func requestIDMiddleware(_ *slog.Logger, next http.Handler) http.Handler {

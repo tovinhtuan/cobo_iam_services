@@ -24,19 +24,28 @@ const (
 	VersionStateArchived  = "archived"
 )
 
+// ManifestReminderConfig is the frozen reminder_config snapshot inside a published version.
+// JSON shape matches disclosureapp.WorkflowStepReminderConfig (workflowconfig must not import disclosure).
+type ManifestReminderConfig struct {
+	Enabled    bool   `json:"enabled"`
+	Mode       string `json:"mode,omitempty"`
+	DaysBefore []int  `json:"days_before,omitempty"`
+}
+
 // ManifestStep is one immutable step in a published version snapshot. Includes step_key.
 type ManifestStep struct {
-	StepID         string `json:"step_id"`
-	StepKey        string `json:"step_key"`
-	Stage          string `json:"stage"`
-	Name           string `json:"name"`
-	Description    string `json:"description,omitempty"`
-	Instructions   string `json:"instructions,omitempty"`
-	Role           string `json:"role"`
-	DepartmentID   string `json:"department_id"`
-	DueRule        string `json:"due_rule"`
-	ProcessingDays int    `json:"processing_days"`
-	DisplayOrder   int    `json:"display_order"`
+	StepID         string                  `json:"step_id"`
+	StepKey        string                  `json:"step_key"`
+	Stage          string                  `json:"stage"`
+	Name           string                  `json:"name"`
+	Description    string                  `json:"description,omitempty"`
+	Instructions   string                  `json:"instructions,omitempty"`
+	Role           string                  `json:"role"`
+	DepartmentID   string                  `json:"department_id"`
+	DueRule        string                  `json:"due_rule"`
+	ProcessingDays int                     `json:"processing_days"`
+	DisplayOrder   int                     `json:"display_order"`
+	ReminderConfig *ManifestReminderConfig `json:"reminder_config,omitempty"`
 }
 
 // Manifest is the immutable, deterministic snapshot of a workflow version.

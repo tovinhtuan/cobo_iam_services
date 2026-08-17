@@ -24,14 +24,28 @@ type Service interface {
 	SeedOccurrencesFromDueMilestones(ctx context.Context, now time.Time) (int, error)
 }
 
+// WorkflowStepTaskState is the source-true task status used for reminder eligibility.
+type WorkflowStepTaskState string
+
+const (
+	WorkflowStepTaskAbsent    WorkflowStepTaskState = "absent"
+	WorkflowStepTaskPending   WorkflowStepTaskState = "pending"
+	WorkflowStepTaskCompleted WorkflowStepTaskState = "completed"
+)
+
+// WorkflowStepTaskStateReader reports whether a workflow step is currently ACTIVE (pending task).
+type WorkflowStepTaskStateReader interface {
+	StepTaskState(ctx context.Context, companyID, workflowInstanceID, stepID string) (WorkflowStepTaskState, error)
+}
+
 // DueMilestone is a row returned by MilestoneScanner.
 type DueMilestone struct {
-	MilestoneID         string
-	CompanyID           string
-	WorkflowInstanceID  string
-	StepID              string
-	MilestoneType       string
-	ScheduledDate       time.Time
+	MilestoneID        string
+	CompanyID          string
+	WorkflowInstanceID string
+	StepID             string
+	MilestoneType      string
+	ScheduledDate      time.Time
 }
 
 // MilestoneScanner reads due milestone rows from workflow_step_milestones.
@@ -101,10 +115,10 @@ const (
 )
 
 type UpsertReminderConfigRequest struct {
-	Subject       Subject
-	DisclosureID  string
+	Subject        Subject
+	DisclosureID   string
 	WorkflowStepID string
-	Config        ReminderConfigInput `json:"config"`
+	Config         ReminderConfigInput `json:"config"`
 }
 
 type GetReminderConfigRequest struct {
@@ -125,11 +139,11 @@ type GetReminderHistoryRequest struct {
 }
 
 type DispatchOccurrenceRequest struct {
-	OccurrenceID  string         `json:"occurrence_id"`
-	IdempotencyKey string        `json:"idempotency_key"`
-	TemplateCode  string         `json:"template_code"`
+	OccurrenceID    string         `json:"occurrence_id"`
+	IdempotencyKey  string         `json:"idempotency_key"`
+	TemplateCode    string         `json:"template_code"`
 	TemplatePayload map[string]any `json:"template_payload"`
-	RecipientEmails []string     `json:"recipient_emails"`
+	RecipientEmails []string       `json:"recipient_emails"`
 }
 
 type DispatchCandidate struct {
@@ -145,12 +159,12 @@ type DispatchCandidate struct {
 	// sent N days before the deadline.
 	DeadlineAt time.Time
 	// Fields added for alert dispatch (Phase 4):
-	ScopeType            ScopeType // "DISCLOSURE" | "WORKFLOW_STEP"
-	ScopeID              string    // disclosure_id for DISCLOSURE; step_id for WORKFLOW_STEP
-	WorkflowInstanceID   string    // workflow_instances.workflow_instance_id for WORKFLOW_STEP milestones
-	CompanyID        string    // company_id from disclosure_records or workflow_instances
-	CompanyName      string    // company_name from companies
-	DisclosureTypeID string    // type_id from disclosure_types (via disclosure_records)
+	ScopeType          ScopeType // "DISCLOSURE" | "WORKFLOW_STEP"
+	ScopeID            string    // disclosure_id for DISCLOSURE; step_id for WORKFLOW_STEP
+	WorkflowInstanceID string    // workflow_instances.workflow_instance_id for WORKFLOW_STEP milestones
+	CompanyID          string    // company_id from disclosure_records or workflow_instances
+	CompanyName        string    // company_name from companies
+	DisclosureTypeID   string    // type_id from disclosure_types (via disclosure_records)
 }
 
 // RecipientResolver resolves the email recipient list for a dispatch candidate.

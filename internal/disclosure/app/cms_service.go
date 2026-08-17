@@ -90,6 +90,13 @@ func (s *service) CmsUpsertGlobalWorkflow(ctx context.Context, req CmsUpsertGlob
 				Details: map[string]any{"step_index": i},
 			}
 		}
+		if err := ValidateWorkflowStepReminderConfigForPersist(step.ReminderConfig); err != nil {
+			return nil, &perr.HTTPError{
+				HTTPStatus: http.StatusBadRequest, Code: perr.CodeInvalidRequest,
+				Message: err.Error(),
+				Details: map[string]any{"step_index": i, "field": "reminder_config"},
+			}
+		}
 	}
 	workflowID := s.idg.NewUUID()
 	return s.repo.UpsertGlobalWorkflow(ctx, req, workflowID)

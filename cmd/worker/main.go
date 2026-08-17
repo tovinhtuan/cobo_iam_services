@@ -17,6 +17,8 @@ import (
 	adhocrecord "github.com/cobo/cobo_iam_services/internal/adhoc/infra/disclosure"
 	disclosureapp "github.com/cobo/cobo_iam_services/internal/disclosure/app"
 	disclosuremysql "github.com/cobo/cobo_iam_services/internal/disclosure/infra/mysql"
+	inappapp "github.com/cobo/cobo_iam_services/internal/inappnotification/app"
+	inappmysql "github.com/cobo/cobo_iam_services/internal/inappnotification/infra/mysql"
 	notificationapp "github.com/cobo/cobo_iam_services/internal/notification/app"
 	notificationmysql "github.com/cobo/cobo_iam_services/internal/notification/infra/mysql"
 	notificationobserve "github.com/cobo/cobo_iam_services/internal/notification/infra/observe"
@@ -31,6 +33,7 @@ import (
 	outboxmysql "github.com/cobo/cobo_iam_services/internal/platform/outbox/mysql"
 	reminderapp "github.com/cobo/cobo_iam_services/internal/reminder/app"
 	reminderemail "github.com/cobo/cobo_iam_services/internal/reminder/infra/email"
+	reminderinapp "github.com/cobo/cobo_iam_services/internal/reminder/infra/inapp"
 	remindermysql "github.com/cobo/cobo_iam_services/internal/reminder/infra/mysql"
 	reminderobserve "github.com/cobo/cobo_iam_services/internal/reminder/infra/observe"
 	"github.com/cobo/cobo_iam_services/internal/subscription/entitlement"
@@ -189,7 +192,13 @@ func main() {
 			reminderapp.WithTierEnforcement(tierChecker),
 		}
 		if cfg.WorkflowRemindersEnabled {
-			reminderOpts = append(reminderOpts, reminderapp.WithMilestoneScanner(remindermysql.NewMilestoneScanner(sqlDB)))
+			inAppRepo := inappmysql.NewRepository(sqlDB)
+			inAppSvc := inappapp.NewService(inAppRepo, inappmysql.NewUserIDQuerier(sqlDB), log)
+			reminderOpts = append(reminderOpts,
+				reminderapp.WithMilestoneScanner(remindermysql.NewMilestoneScanner(sqlDB)),
+				reminderapp.WithWorkflowStepTaskStateReader(remindermysql.NewWorkflowStepTaskStateReader(sqlDB)),
+				reminderapp.WithInAppCreator(&reminderinapp.Bridge{Svc: inAppSvc}),
+			)
 			log.Info("workflow milestone reminder bridge enabled")
 		}
 		reminderScheduler = reminderapp.NewService(reminderRepo, reminderRepo, reminderRepo, reminderOpts...)

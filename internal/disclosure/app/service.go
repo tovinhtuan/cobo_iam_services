@@ -1160,10 +1160,14 @@ func (s *service) GetCompanyWorkflowOverrideDraftReminderPreview(
 	if err != nil {
 		return nil, err
 	}
+	cfgByStep := make(map[string]*WorkflowStepReminderConfig, len(steps))
+	for i := range steps {
+		cfgByStep[steps[i].StepID] = steps[i].ReminderConfig
+	}
 	previewInstanceID := "preview-" + req.TypeID
-	milestones := make([]WorkflowOverrideReminderPreviewMilestoneDTO, 0, len(timelines)*5)
+	milestones := make([]WorkflowOverrideReminderPreviewMilestoneDTO, 0, len(timelines)*4)
 	for _, tl := range timelines {
-		for _, row := range GenerateMilestoneCandidates(tl, t0Local, req.Subject.CompanyID, previewInstanceID, s.idg.NewUUID) {
+		for _, row := range GenerateConfiguredReminderPreviewCandidates(tl, t0Local, req.Subject.CompanyID, previewInstanceID, cfgByStep[tl.StepID], s.idg.NewUUID) {
 			milestones = append(milestones, WorkflowOverrideReminderPreviewMilestoneDTO{
 				StepID:        row.StepID,
 				StepOrder:     row.StepOrder,

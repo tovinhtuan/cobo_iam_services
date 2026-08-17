@@ -1,4 +1,49 @@
 
+## 2026-08-17 — Workflow step reminder (Phase 3–5 DEV smoke)
+
+- Phase 3–4 PASS on DEV; Phase 5 **BLOCKED_WORKFLOW_REMINDER_MIGRATION_REQUIRED**
+- Live MySQL ENUM `workflow_step_milestones.milestone_type` cannot store `due_minus_Nd`; worker scanner seeds 0 QA occurrences
+- Evidence: sibling FE `dev-smoke-custom-default/`
+- NO_PRODUCTION / NO_PUSH; migration not applied (prompt STOP)
+
+## 2026-08-17 — Workflow step reminder (Phase 2D source-ready)
+
+
+- task type: quality + Docker + source-ready gate
+- objective: `WORKFLOW_STEP_REMINDER_RULE_ENGINE_READY`
+- result: FE+BE quality + Docker api/worker/web build parity; no migration; no deploy
+- evidence: sibling FE pack `62`–`75`
+- next: Phase 3 after explicit confirmation
+- NO_MIGRATION / NO_DEPLOY / NO_PRODUCTION / NO_PUSH
+
+## 2026-08-17 — Workflow step reminder (Phase 2C BE runtime)
+
+- task type: BE implement
+- objective: `WORKFLOW_STEP_REMINDER_PHASE2C_RUNTIME_ENGINE_READY`
+- result: persistence + snapshot + due-minus engine; no migration
+- evidence: sibling FE pack `46`–`61`
+- next: Phase 2D after explicit confirm
+- NO_MIGRATION / NO_DEPLOY / NO_PRODUCTION / NO_PUSH
+
+## 2026-08-17 — Workflow step reminder (Phase 2B CMS FE)
+
+- task type: FE implement (paired pointer)
+- objective: `WORKFLOW_STEP_REMINDER_PHASE2B_CMS_FE_READY`
+- result: CMS FE contract ready; BE Go/migrations **unchanged** this phase
+- evidence: sibling `cobo_web_design/docs/ai-cache/workflow-step-reminder-rule-engine-2026-08-17/`
+- next: Phase 2C runtime/snapshot after explicit confirm
+- NO_BACKEND_SOURCE_CHANGE / NO_MIGRATION / NO_DEPLOY / NO_PRODUCTION / NO_PUSH
+
+## 2026-08-17 — Workflow step reminder (Phase 2A contract lock)
+
+
+- task type: contract lock (paired FE pack)
+- objective: `WORKFLOW_STEP_REMINDER_PHASE2A_CONTRACT_LOCKED`
+- result: CUSTOM-over-DEFAULT locked; DEFAULT=`[3,1]`; CMS disable=false; BE product source unchanged
+- evidence: sibling `cobo_web_design/docs/ai-cache/workflow-step-reminder-rule-engine-2026-08-17/`
+- next: Phase 2B FE after explicit confirm — no BE implement this phase
+- NO_BACKEND_SOURCE_CHANGE / NO_MIGRATION / NO_DEPLOY / NO_PRODUCTION / NO_PUSH
+
 ## 2026-08-17 — CMS irregular → ad_hoc template persistence (FE pointer)
 
 - task type: FE source fix (paired pointer)

@@ -36,7 +36,7 @@ func (r *VersionRepository) BuildManifest(ctx context.Context, typeID string) (w
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT step_id, COALESCE(step_key,''), stage, COALESCE(description,''), COALESCE(instructions,''),
 		       COALESCE(assignee_role_ids, JSON_ARRAY()),
-		       department_id, due_rule, processing_days, display_order
+		       department_id, due_rule, processing_days, display_order, documents_json
 		FROM global_workflow_steps WHERE workflow_id = ?
 		ORDER BY display_order ASC, step_key ASC
 	`, workflowID)
@@ -48,11 +48,13 @@ func (r *VersionRepository) BuildManifest(ctx context.Context, typeID string) (w
 	for rows.Next() {
 		var st wfcapp.ManifestStep
 		var roleJSON []byte
-		if err := rows.Scan(&st.StepID, &st.StepKey, &st.Stage, &st.Description, &st.Instructions, &roleJSON, &st.DepartmentID, &st.DueRule, &st.ProcessingDays, &st.DisplayOrder); err != nil {
+		var documentsJSON []byte
+		if err := rows.Scan(&st.StepID, &st.StepKey, &st.Stage, &st.Description, &st.Instructions, &roleJSON, &st.DepartmentID, &st.DueRule, &st.ProcessingDays, &st.DisplayOrder, &documentsJSON); err != nil {
 			return wfcapp.Manifest{}, fmt.Errorf("scan step: %w", err)
 		}
 		st.Name = st.Stage
 		st.Role = firstRole(roleJSON)
+		st.ReminderConfig = decodeManifestReminderConfig(documentsJSON)
 		m.Steps = append(m.Steps, st)
 	}
 	if err := rows.Err(); err != nil {
@@ -195,6 +197,29 @@ func firstRole(roleJSON []byte) string {
 		return ""
 	}
 	return roles[0]
+}
+
+func decodeManifestReminderConfig(raw []byte) *wfcapp.ManifestReminderConfig {
+	if len(raw) == 0 {
+		return nil
+	}
+	if raw[0] == '[' {
+		return nil
+	}
+	var envelope struct {
+		ReminderConfig *wfcapp.ManifestReminderConfig `json:"reminder_config"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err == nil && envelope.ReminderConfig != nil {
+		return envelope.ReminderConfig
+	}
+	var cfg wfcapp.ManifestReminderConfig
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		return nil
+	}
+	if !cfg.Enabled && cfg.Mode == "" && len(cfg.DaysBefore) == 0 {
+		return nil
+	}
+	return &cfg
 }
 
 func nullTime(t sql.NullTime) *time.Time {

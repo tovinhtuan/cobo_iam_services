@@ -38,6 +38,9 @@ func ValidateTemplateWorkflowForActivation(blocks []TemplateBlockDTO) error {
 		if step.ProcessingDays <= 0 {
 			return fmt.Errorf("workflow step %d has invalid processing_days", i+1)
 		}
+		if err := ValidateWorkflowStepReminderConfigForPersist(step.ReminderConfig); err != nil {
+			return fmt.Errorf("workflow step %d reminder_config: %w", i+1, err)
+		}
 	}
 	return nil
 }

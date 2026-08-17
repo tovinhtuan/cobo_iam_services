@@ -1305,6 +1305,7 @@ func convertGlobalWorkflowSteps(steps []disclosureapp.GlobalWorkflowStepInput) [
 			DueRule:         dueRule,
 			ProcessingDays:  s.ProcessingDays,
 			DisplayOrder:    s.DisplayOrder,
+			ReminderConfig:  disclosureapp.CloneWorkflowStepReminderConfig(s.ReminderConfig),
 		})
 	}
 	return out

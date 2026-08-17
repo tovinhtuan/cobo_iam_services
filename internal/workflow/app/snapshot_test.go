@@ -38,6 +38,16 @@ func TestMapProposalWorkflowToSnapshot_UsesProposalStepIDsAndDays(t *testing.T) 
 	if FirstStepCode(got) != "ps-a" {
 		t.Fatalf("FirstStepCode=%q", FirstStepCode(got))
 	}
+	if got[0].ReminderConfig != nil {
+		t.Fatalf("proposal must not invent reminder_config, got %+v", got[0].ReminderConfig)
+	}
+	if len(got[0].EffectiveReminderDays) != 2 || got[0].EffectiveReminderDays[0] != 3 || got[0].EffectiveReminderDays[1] != 1 {
+		t.Fatalf("ad-hoc must freeze DEFAULT [3,1], got %v", got[0].EffectiveReminderDays)
+	}
+	got[0].EffectiveReminderDays[0] = 99
+	if disclosureapp.DefaultWorkflowStepReminderDays[0] != 3 {
+		t.Fatal("must not mutate canonical default slice")
+	}
 }
 
 func TestMapEffectiveWorkflowToSnapshotOrdersByDisplayOrder(t *testing.T) {
@@ -54,6 +64,48 @@ func TestMapEffectiveWorkflowToSnapshotOrdersByDisplayOrder(t *testing.T) {
 	}
 	if got[0].StepCode != "s1" || got[0].Department != "d1" {
 		t.Fatalf("first step = %#v", got[0])
+	}
+}
+
+func TestMapEffectiveWorkflowToSnapshot_FreezesConfiguredAndEffectiveReminder(t *testing.T) {
+	steps := []disclosureapp.WorkflowStepDTO{
+		{StepID: "s1", Stage: "A", DepartmentID: "d1", DueRule: "T+5", DisplayOrder: 1, ProcessingDays: 5,
+			ReminderConfig: &disclosureapp.WorkflowStepReminderConfig{Enabled: true, Mode: disclosureapp.WorkflowStepReminderModeDaysBefore, DaysBefore: []int{7, 2}}},
+		{StepID: "s2", Stage: "B", DepartmentID: "d1", DueRule: "T+3", DisplayOrder: 2, ProcessingDays: 3},
+		{StepID: "s3", Stage: "C", DepartmentID: "d1", DueRule: "T+1", DisplayOrder: 3, ProcessingDays: 1,
+			ReminderConfig: &disclosureapp.WorkflowStepReminderConfig{Enabled: false, Mode: disclosureapp.WorkflowStepReminderModeDaysBefore}},
+	}
+	got := MapEffectiveWorkflowToSnapshot(steps, "global_workflow")
+	if len(got) != 3 {
+		t.Fatalf("len=%d", len(got))
+	}
+	if got[0].ReminderConfig == nil || got[0].EffectiveReminderDays[0] != 7 || got[0].EffectiveReminderDays[1] != 2 {
+		t.Fatalf("step1 %#v", got[0])
+	}
+	if got[1].ReminderConfig != nil {
+		t.Fatalf("step2 configured should be absent")
+	}
+	if len(got[1].EffectiveReminderDays) != 2 || got[1].EffectiveReminderDays[0] != 3 || got[1].EffectiveReminderDays[1] != 1 {
+		t.Fatalf("legacy/default effective=%v", got[1].EffectiveReminderDays)
+	}
+	if got[2].ReminderConfig == nil || got[2].ReminderConfig.Enabled {
+		t.Fatalf("disabled config %#v", got[2].ReminderConfig)
+	}
+	if got[2].EffectiveReminderDays == nil || len(got[2].EffectiveReminderDays) != 0 {
+		t.Fatalf("disabled effective=%v", got[2].EffectiveReminderDays)
+	}
+
+	got[1].EffectiveReminderDays[0] = 99
+	steps[1].ReminderConfig = &disclosureapp.WorkflowStepReminderConfig{Enabled: true, Mode: disclosureapp.WorkflowStepReminderModeDaysBefore, DaysBefore: []int{5, 2}}
+	if got[1].EffectiveReminderDays[0] != 99 {
+		t.Fatal("snapshot days must be a copy")
+	}
+	again := MapEffectiveWorkflowToSnapshot(steps, "global_workflow")
+	if again[1].EffectiveReminderDays[0] != 5 {
+		t.Fatalf("new snapshot after config change=%v", again[1].EffectiveReminderDays)
+	}
+	if got[1].EffectiveReminderDays[0] != 99 {
+		t.Fatal("version isolation: prior snapshot must not late-resolve")
 	}
 }
 

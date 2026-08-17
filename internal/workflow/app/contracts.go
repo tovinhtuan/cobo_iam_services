@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"time"
+
+	disclosureapp "github.com/cobo/cobo_iam_services/internal/disclosure/app"
 )
 
 type Service interface {
@@ -122,6 +124,10 @@ type StepSnapshot struct {
 	DueRule               string   `json:"due_rule,omitempty"`
 	DisplayOrder          int      `json:"display_order"`
 	ProcessingDays        int      `json:"processing_days,omitempty"`
+	// ReminderConfig is the configured CMS/Portal reminder_config frozen at materialize time.
+	// nil means DEFAULT (absent). Do not omitempty EffectiveReminderDays: empty slice is DISABLED.
+	ReminderConfig        *disclosureapp.WorkflowStepReminderConfig `json:"reminder_config,omitempty"`
+	EffectiveReminderDays []int                                     `json:"effective_reminder_days"`
 }
 
 // StepMilestoneRow is a single milestone row ready for persistence.

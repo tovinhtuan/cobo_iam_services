@@ -39,14 +39,19 @@ func MapProposalWorkflowToSnapshot(snap *adhocapp.ProposalWorkflowSnapshot) []St
 		if step.ProcessingDays > 0 {
 			dueRule = fmt.Sprintf("T+%d", step.ProcessingDays)
 		}
+		// Frozen proposals have no CMS reminder_config. Flow B already seeded
+		// scheduled milestones for timeline-enabled ad-hoc instances; freeze DEFAULT
+		// [3,1] at map time so milestone build does not late-resolve later defaults.
+		defaultDays := append([]int(nil), disclosureapp.DefaultWorkflowStepReminderDays...)
 		row := StepSnapshot{
-			StepID:         stepID,
-			StepCode:       stepID,
-			Stage:          name,
-			Department:     dept,
-			DueRule:        dueRule,
-			DisplayOrder:   step.Order,
-			ProcessingDays: step.ProcessingDays,
+			StepID:                stepID,
+			StepCode:              stepID,
+			Stage:                 name,
+			Department:            dept,
+			DueRule:               dueRule,
+			DisplayOrder:          step.Order,
+			ProcessingDays:        step.ProcessingDays,
+			EffectiveReminderDays: defaultDays,
 		}
 		if snap.SchemaVersion == adhocapp.ProposalWorkflowSchemaV3 {
 			row.AssigneeMembershipIDs = adhocapp.EffectiveAssigneeMembershipIDs(step, adhocapp.ProposalWorkflowSchemaV3)
@@ -87,15 +92,19 @@ func MapEffectiveWorkflowToSnapshot(steps []disclosureapp.WorkflowStepDTO, workf
 		if dueRule == "" {
 			dueRule = "T+N"
 		}
+		res := disclosureapp.ResolveWorkflowStepReminderRule(step.ReminderConfig)
+		effective := append([]int{}, res.EffectiveDays...)
 		out = append(out, StepSnapshot{
-			StepID:         stepID,
-			StepCode:       stepCode,
-			Stage:          strings.TrimSpace(step.Stage),
-			Department:     department,
-			AssigneeRole:   assigneeRole,
-			DueRule:        dueRule,
-			DisplayOrder:   step.DisplayOrder,
-			ProcessingDays: step.ProcessingDays,
+			StepID:                stepID,
+			StepCode:              stepCode,
+			Stage:                 strings.TrimSpace(step.Stage),
+			Department:            department,
+			AssigneeRole:          assigneeRole,
+			DueRule:               dueRule,
+			DisplayOrder:          step.DisplayOrder,
+			ProcessingDays:        step.ProcessingDays,
+			ReminderConfig:        disclosureapp.CloneWorkflowStepReminderConfig(step.ReminderConfig),
+			EffectiveReminderDays: effective,
 		})
 	}
 	sort.Slice(out, func(i, j int) bool {

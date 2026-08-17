@@ -25,9 +25,21 @@ func buildMilestonesFromSnapshot(instanceID, companyID string, snapshot []StepSn
 	if err != nil {
 		return nil, err
 	}
-	out := make([]StepMilestoneRow, 0, len(timelines)*5)
-	for _, tl := range timelines {
-		for _, row := range disclosureapp.GenerateMilestoneCandidates(tl, t0Local, companyID, instanceID, idFn) {
+	out := make([]StepMilestoneRow, 0, len(timelines)*4)
+	for i, tl := range timelines {
+		for _, row := range disclosureapp.GenerateTimelineMilestoneCandidates(tl, t0Local, companyID, instanceID, idFn) {
+			out = append(out, StepMilestoneRow{
+				MilestoneID:   row.MilestoneID,
+				CompanyID:     companyID,
+				InstanceID:    instanceID,
+				StepID:        row.StepID,
+				StepOrder:     row.StepOrder,
+				MilestoneType: string(row.MilestoneType),
+				ScheduledDate: row.ScheduledDate,
+			})
+		}
+		effective := snapshotEffectiveReminderDays(snapshot, i, tl.StepID)
+		for _, row := range disclosureapp.GenerateDueMinusReminderCandidates(tl, t0Local, companyID, instanceID, effective, idFn) {
 			out = append(out, StepMilestoneRow{
 				MilestoneID:   row.MilestoneID,
 				CompanyID:     companyID,
@@ -40,6 +52,24 @@ func buildMilestonesFromSnapshot(instanceID, companyID string, snapshot []StepSn
 		}
 	}
 	return out, nil
+}
+
+func snapshotEffectiveReminderDays(snapshot []StepSnapshot, index int, stepID string) []int {
+	if index >= 0 && index < len(snapshot) && snapshot[index].StepID == stepID {
+		if snapshot[index].EffectiveReminderDays != nil {
+			return snapshot[index].EffectiveReminderDays
+		}
+		return disclosureapp.ResolveWorkflowStepReminderRule(snapshot[index].ReminderConfig).EffectiveDays
+	}
+	for _, s := range snapshot {
+		if s.StepID == stepID {
+			if s.EffectiveReminderDays != nil {
+				return s.EffectiveReminderDays
+			}
+			return disclosureapp.ResolveWorkflowStepReminderRule(s.ReminderConfig).EffectiveDays
+		}
+	}
+	return append([]int(nil), disclosureapp.DefaultWorkflowStepReminderDays...)
 }
 
 func snapshotToWorkflowSteps(snapshot []StepSnapshot) []disclosureapp.WorkflowStepDTO {

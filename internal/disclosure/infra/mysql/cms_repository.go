@@ -172,7 +172,7 @@ func (r *Repository) GetGlobalWorkflow(ctx context.Context, typeID string) (*dis
 
 func (r *Repository) listGlobalWorkflowSteps(ctx context.Context, workflowID string) ([]disclosureapp.GlobalWorkflowStepInput, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT step_id, COALESCE(step_key, ''), stage, description, instructions, department_id, assignee_role_ids, due_rule, processing_days, display_order
+		SELECT step_id, COALESCE(step_key, ''), stage, description, instructions, department_id, assignee_role_ids, due_rule, processing_days, display_order, documents_json
 		FROM global_workflow_steps WHERE workflow_id = ?
 		ORDER BY display_order ASC, step_id ASC
 	`, workflowID)
@@ -186,7 +186,8 @@ func (r *Repository) listGlobalWorkflowSteps(ctx context.Context, workflowID str
 		var roleIDsJSON []byte
 		var description sql.NullString
 		var instructions sql.NullString
-		if err := rows.Scan(&step.StepID, &step.StepKey, &step.Stage, &description, &instructions, &step.DepartmentID, &roleIDsJSON, &step.DueRule, &step.ProcessingDays, &step.DisplayOrder); err != nil {
+		var documentsJSON []byte
+		if err := rows.Scan(&step.StepID, &step.StepKey, &step.Stage, &description, &instructions, &step.DepartmentID, &roleIDsJSON, &step.DueRule, &step.ProcessingDays, &step.DisplayOrder, &documentsJSON); err != nil {
 			return nil, fmt.Errorf("scan global workflow step: %w", err)
 		}
 		step.Description = description.String
@@ -194,6 +195,7 @@ func (r *Repository) listGlobalWorkflowSteps(ctx context.Context, workflowID str
 		if err := json.Unmarshal(roleIDsJSON, &step.AssigneeRoleIds); err != nil {
 			step.AssigneeRoleIds = []string{}
 		}
+		step.ReminderConfig = disclosureapp.DecodeGlobalWorkflowStepReminderDocumentsJSON(documentsJSON)
 		out = append(out, step)
 	}
 	return out, rows.Err()
@@ -211,8 +213,10 @@ func (r *Repository) UpsertGlobalWorkflow(ctx context.Context, req disclosureapp
 	// across the DELETE+INSERT upsert. Match incoming steps by step_key, then by step_id.
 	existingKeyByStepID := map[string]string{} // old step_id -> step_key
 	existingKeys := map[string]bool{}          // valid existing step_keys (server-owned)
+	existingDocsByStepID := map[string][]byte{}
+	existingDocsByKey := map[string][]byte{}
 	stepRows, err := tx.QueryContext(ctx, `
-		SELECT s.step_id, COALESCE(s.step_key, '')
+		SELECT s.step_id, COALESCE(s.step_key, ''), s.documents_json
 		FROM global_workflow_steps s
 		JOIN global_workflows w ON w.workflow_id = s.workflow_id
 		WHERE w.type_id = ?
@@ -222,13 +226,17 @@ func (r *Repository) UpsertGlobalWorkflow(ctx context.Context, req disclosureapp
 	}
 	for stepRows.Next() {
 		var oldStepID, oldStepKey string
-		if err := stepRows.Scan(&oldStepID, &oldStepKey); err != nil {
+		var oldDocs []byte
+		if err := stepRows.Scan(&oldStepID, &oldStepKey, &oldDocs); err != nil {
 			_ = stepRows.Close()
 			return nil, fmt.Errorf("scan existing step key: %w", err)
 		}
+		docsCopy := append([]byte(nil), oldDocs...)
+		existingDocsByStepID[oldStepID] = docsCopy
 		if oldStepKey != "" {
 			existingKeyByStepID[oldStepID] = oldStepKey
 			existingKeys[oldStepKey] = true
+			existingDocsByKey[oldStepKey] = docsCopy
 		}
 	}
 	if err := stepRows.Err(); err != nil {
@@ -277,10 +285,18 @@ func (r *Repository) UpsertGlobalWorkflow(ctx context.Context, req disclosureapp
 		stepID := fmt.Sprintf("%s-step-%d", workflowID, i+1)
 		stepKey := disclosureapp.ResolveStepKey(step, existingKeys, existingKeyByStepID, usedKeys)
 		usedKeys[stepKey] = true
+		existingDocs := existingDocsByKey[stepKey]
+		if len(existingDocs) == 0 {
+			existingDocs = existingDocsByStepID[strings.TrimSpace(step.StepID)]
+		}
+		documentsJSON, encErr := disclosureapp.MergeGlobalWorkflowStepReminderDocumentsJSON(existingDocs, step.ReminderConfig)
+		if encErr != nil {
+			return nil, fmt.Errorf("encode reminder_config for step %d: %w", i, encErr)
+		}
 		_, err = tx.ExecContext(ctx, `
-			INSERT INTO global_workflow_steps (step_id, step_key, workflow_id, stage, description, instructions, department_id, assignee_role_ids, due_rule, processing_days, display_order, created_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		`, stepID, stepKey, workflowID, step.Stage, step.Description, step.Instructions, step.DepartmentID, string(roleIDsJSON), step.DueRule, step.ProcessingDays, displayOrder, now)
+			INSERT INTO global_workflow_steps (step_id, step_key, workflow_id, stage, description, instructions, department_id, assignee_role_ids, due_rule, processing_days, display_order, documents_json, created_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`, stepID, stepKey, workflowID, step.Stage, step.Description, step.Instructions, step.DepartmentID, string(roleIDsJSON), step.DueRule, step.ProcessingDays, displayOrder, documentsJSON, now)
 		if err != nil {
 			return nil, fmt.Errorf("insert global workflow step %d: %w", i, err)
 		}

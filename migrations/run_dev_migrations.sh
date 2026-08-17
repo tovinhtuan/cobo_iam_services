@@ -128,6 +128,7 @@ seed_dev_identity_authorization.sql
 0126_companies_status_check_constraints.up.sql
 0127_adhoc_proposed_deadline_day_type.up.sql
 0128_workflow_task_assignees.up.sql
+0129_workflow_step_milestones_milestone_type_varchar.up.sql
 seed_dev_company_subscriptions.sql
 "
 
