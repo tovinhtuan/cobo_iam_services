@@ -1,4 +1,19 @@
 
+## 2026-08-17 — DEV template cleanup (global archive PASS; company STOP)
+
+- KEEP `bao-cao-tai-chinh-quy-1`; 186 global archives via official API
+- Blocker: `BLOCKED_COMPANY_TEMPLATE_SAFE_CLEANUP_UNAVAILABLE`
+- Evidence: sibling FE `docs/ai-cache/dev-template-cleanup-2026-08-17/final-clean-all-except-latest/`
+- NO_PRODUCTION / NO_PUSH
+
+## 2026-08-17 — DEV template cleanup (STOP — keep name ambiguous)
+
+- Sibling FE evidence: `cobo_web_design/docs/ai-cache/dev-template-cleanup-2026-08-17/`
+- Blocker: `BLOCKED_KEEP_TEMPLATE_AMBIGUOUS` (`bao-cao-tai-chinh-quy-1` vs `dt-sys-q1-financial`)
+- No BE source / no DEV mutation
+- Reminder blockers remain paused
+- NO_PRODUCTION / NO_PUSH
+
 ## 2026-08-17 — Workflow step reminder (migration recovery)
 
 - 0129 applied on DEV; source-ready restored; `due_minus_7d` persists
