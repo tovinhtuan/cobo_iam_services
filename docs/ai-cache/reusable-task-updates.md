@@ -1,4 +1,18 @@
 
+## 2026-08-17 — CMS irregular → ad_hoc template persistence (FE pointer)
+
+- task type: FE source fix (paired pointer)
+- objective: `CMS_IRREGULAR_ADHOC_TEMPLATE_PERSISTENCE_FIX_READY`
+- result: FE sync Portal irregular → engine ad_hoc; BE unchanged; evidence in sibling `cobo_web_design/docs/ai-cache/cms-irregular-adhoc-template-persistence-fix-2026-08-17/`
+- NO_BACKEND_SOURCE_CHANGE / NO_ALERT_ENGINE_CHANGE / NO_MIGRATION / NO_PRODUCTION / NO_PUSH
+
+
+
+- task type: deep smoke QA (paired FE pack)
+- objective: `CMS_TEMPLATE_TO_ENTERPRISE_ABNORMAL_ALERT_DEEP_SMOKE_DEV_READY`
+- result: **BLOCKED** FE_STATE (`irregular` vs engine `ad_hoc`); evidence in sibling `cobo_web_design/docs/ai-cache/cms-template-abnormal-alert-deep-smoke-2026-08-17/`
+- NO_PRODUCTION / NO_PUSH / no BE source change
+
 ## 2026-08-14 — Manual QR company package activation DEV
 
 - paired FE pack `24`–`65`; `make deploy-be` PASS (worker recreated, no migrate)

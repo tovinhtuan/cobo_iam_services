@@ -1,4 +1,17 @@
-﻿## Manual QR company package activation DEV (2026-08-14)
+﻿## CMS irregular → ad_hoc template persistence fix (2026-08-17)
+
+- Pointer: FE pack `cobo_web_design/docs/ai-cache/cms-irregular-adhoc-template-persistence-fix-2026-08-17/`
+- Verdict **CMS_IRREGULAR_ADHOC_TEMPLATE_PERSISTENCE_FIX_READY** (FE-only)
+- BE: no source/DTO/validation/alert-engine change required
+- NO_BACKEND_SOURCE_CHANGE / NO_MIGRATION / NO_DEV_DEPLOY / NO_PRODUCTION / NO_PUSH
+
+
+
+- Pointer: FE pack `cobo_web_design/docs/ai-cache/cms-template-abnormal-alert-deep-smoke-2026-08-17/`
+- Verdict **CMS_TEMPLATE_TO_ENTERPRISE_ABNORMAL_ALERT_DEEP_SMOKE_BLOCKED** (FE_STATE alignment irregular vs engine ad_hoc)
+- NO_PRODUCTION / NO_PUSH / no BE hotfix
+
+## Manual QR company package activation DEV (2026-08-14)
 
 - Verdict **COBO_MANUAL_QR_COMPANY_PACKAGE_ACTIVATION_DEV_READY**
 - `make deploy-be` recreates api+worker; no migrate; live lookup `SELECT company_code`
