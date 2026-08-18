@@ -1,4 +1,11 @@
 
+## 2026-08-18 — Email business context (CTA record + EndDate)
+
+- reminder payload uses disclosure record_id and step_end; company from instance/record not recipient
+- DEV postfix D/EA/head SENT; deploy `2026-08-18T05:12:07Z`
+- Evidence: sibling FE `email-business-context-audit-2026-08-18/`
+- NO_PRODUCTION / NO_PUSH
+
 ## 2026-08-18 — E1 no-head fallback (employees then EA)
 
 - matched dept + no valid head → `EmailsByDepartments`; empty → EA; A/B/C/D preserved

@@ -466,7 +466,13 @@ func (s *service) prepareDispatch(ctx context.Context, c DispatchCandidate, asOf
 		}
 	}
 	if _, ok := out.payload["portal_url"]; !ok {
-		if actionURL, ok2 := out.payload["action_url"]; ok2 {
+		recordID := payloadString(out.payload, "record_id")
+		if recordID == "" {
+			recordID = strings.TrimSpace(c.RecordID)
+		}
+		if recordID != "" && recordID != strings.TrimSpace(c.WorkflowInstanceID) && s.publicWebBaseURL != "" {
+			out.payload["portal_url"] = s.publicWebBaseURL + ReminderDisclosureCTA(recordID)
+		} else if actionURL, ok2 := out.payload["action_url"]; ok2 {
 			relative := fmt.Sprint(actionURL)
 			if s.publicWebBaseURL != "" {
 				out.payload["portal_url"] = s.publicWebBaseURL + relative
@@ -479,17 +485,15 @@ func (s *service) prepareDispatch(ctx context.Context, c DispatchCandidate, asOf
 		switch c.ScopeType {
 		case ScopeTypeDisclosure:
 			if c.ScopeID != "" {
-				out.payload["portal_url"] = s.publicWebBaseURL + "/app/disclosures/" + c.ScopeID
+				out.payload["portal_url"] = s.publicWebBaseURL + ReminderDisclosureCTA(c.ScopeID)
 			}
 		case ScopeTypeWorkflowStep:
-			disclosureID, _ := out.payload["disclosure_id"].(string)
-			if disclosureID == "" {
-				if idx := strings.LastIndex(c.ScopeID, ":"); idx >= 0 {
-					disclosureID = c.ScopeID[:idx]
-				}
+			recordID := payloadString(out.payload, "record_id")
+			if recordID == "" {
+				recordID, _ = out.payload["disclosure_id"].(string)
 			}
-			if disclosureID != "" {
-				out.payload["portal_url"] = s.publicWebBaseURL + "/app/disclosures/" + disclosureID
+			if recordID != "" && recordID != strings.TrimSpace(c.WorkflowInstanceID) {
+				out.payload["portal_url"] = s.publicWebBaseURL + ReminderDisclosureCTA(recordID)
 			}
 		}
 	}
@@ -815,8 +819,17 @@ const (
 	defaultImplementationGuide = "Vui lòng truy cập hệ thống để xem chi tiết và hoàn thành công việc đúng hạn."
 )
 
-// reminderCalculatorLocation returns Asia/Ho_Chi_Minh, falling back to a fixed +07:00 zone
-// when tzdata is unavailable — matching the deadline engine's timezone handling.
+func payloadString(payload map[string]any, key string) string {
+	if payload == nil {
+		return ""
+	}
+	v, ok := payload[key]
+	if !ok || v == nil {
+		return ""
+	}
+	return strings.TrimSpace(fmt.Sprint(v))
+}
+
 // dispatchDeadlineAt returns the disclosure/workflow due instant for email rendering.
 // Falls back to ScheduledAt when the repository did not resolve a planned_date.
 func dispatchDeadlineAt(c DispatchCandidate) time.Time {

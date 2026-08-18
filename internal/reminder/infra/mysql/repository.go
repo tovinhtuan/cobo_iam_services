@@ -410,12 +410,16 @@ func (r *Repository) ListDispatchCandidates(ctx context.Context, now time.Time, 
 		       o.scope_type,
 		       o.scope_id,
 		       COALESCE(dr.title, dr2.title, dr3.title, ''),
-		       COALESCE(dr.planned_date, dr2.planned_date, dr3.planned_date, DATE(o.scheduled_at)) AS deadline_at,
+		       CASE
+		         WHEN o.scope_type = 'WORKFLOW_STEP' THEN COALESCE(wsm_end.scheduled_date, DATE(o.scheduled_at))
+		         ELSE COALESCE(dr.planned_date, dr2.planned_date, dr3.planned_date, DATE(o.scheduled_at))
+		       END AS deadline_at,
 		       COALESCE(dr.status, dr2.status, dr3.status, ''),
-		       COALESCE(dr.company_id, wi.company_id, wi2.company_id, ''),
+		       COALESCE(dr.company_id, wi.company_id, wi2.company_id, dr2.company_id, dr3.company_id, ''),
 		       COALESCE(dr.type_id, dr2.type_id, dr3.type_id, ''),
 		       COALESCE(comp.company_name, ''),
-		       COALESCE(wi.workflow_instance_id, wi2.workflow_instance_id, '')
+		       COALESCE(wi.workflow_instance_id, wi2.workflow_instance_id, ''),
+		       COALESCE(dr.record_id, wi.record_id, wi2.record_id, dr2.record_id, dr3.record_id, '')
 		FROM reminder_occurrences o
 		LEFT JOIN reminder_configs c
 		  ON c.scope_type = o.scope_type AND c.scope_id = o.scope_id
@@ -429,8 +433,12 @@ func (r *Repository) ListDispatchCandidates(ctx context.Context, now time.Time, 
 		  ON dr2.record_id = wi.record_id
 		LEFT JOIN disclosure_records dr3
 		  ON dr3.record_id = wi2.record_id
+		LEFT JOIN workflow_step_milestones wsm_end
+		  ON wsm_end.workflow_instance_id = COALESCE(wi.workflow_instance_id, wi2.workflow_instance_id)
+		 AND wsm_end.step_id = o.scope_id
+		 AND wsm_end.milestone_type = 'step_end'
 		LEFT JOIN companies comp
-		  ON comp.company_id = COALESCE(dr.company_id, wi.company_id)
+		  ON comp.company_id = COALESCE(dr.company_id, wi.company_id, wi2.company_id, dr2.company_id, dr3.company_id)
 		WHERE (
 		    o.status = 'PENDING' AND o.scheduled_at <= ?
 		) OR (
@@ -450,7 +458,7 @@ func (r *Repository) ListDispatchCandidates(ctx context.Context, now time.Time, 
 		var recipientsJSON []byte
 		var disclosureID, scopeType, scopeID, title, status, companyID string
 		var deadlineDate time.Time
-		var disclosureTypeID, companyName, workflowInstanceID string
+		var disclosureTypeID, companyName, workflowInstanceID, recordID string
 		if err := rows.Scan(
 			&c.OccurrenceID,
 			&c.IdempotencyKey,
@@ -467,44 +475,39 @@ func (r *Repository) ListDispatchCandidates(ctx context.Context, now time.Time, 
 			&disclosureTypeID,
 			&companyName,
 			&workflowInstanceID,
+			&recordID,
 		); err != nil {
 			return nil, fmt.Errorf("scan dispatch candidate: %w", err)
 		}
 		_ = json.Unmarshal(recipientsJSON, &c.RecipientEmails)
 		c.DeadlineAt = deadlineDate
 		c.TemplateCode = "REMINDER_DISCLOSURE_DUE"
-		c.TemplatePayload = buildReminderTemplatePayload(disclosureID, scopeType, scopeID, title, deadlineDate, c.ScheduledAt, status, companyID)
-		// Populate new Phase 4 fields.
 		c.ScopeType = reminderapp.ScopeType(scopeType)
 		c.ScopeID = scopeID
 		c.WorkflowInstanceID = workflowInstanceID
 		c.CompanyID = companyID
 		c.CompanyName = companyName
 		c.DisclosureTypeID = disclosureTypeID
+		c.RecordID = recordID
+		c.TemplatePayload = reminderapp.BuildReminderTemplatePayload(reminderapp.ReminderEmailBusinessContext{
+			OccurrenceDisclosureID: disclosureID,
+			ScopeType:              c.ScopeType,
+			ScopeID:                scopeID,
+			RecordID:               recordID,
+			Title:                  title,
+			DeadlineAt:             deadlineDate,
+			ScheduledAt:            c.ScheduledAt,
+			Status:                 status,
+			CompanyID:              companyID,
+			CompanyName:            companyName,
+			WorkflowInstanceID:     workflowInstanceID,
+		})
 		out = append(out, c)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate dispatch candidates: %w", err)
 	}
 	return out, nil
-}
-
-func buildReminderTemplatePayload(disclosureID, scopeType, scopeID, title string, deadlineDate, scheduledAt time.Time, status, companyID string) map[string]any {
-	displayTitle := strings.TrimSpace(title)
-	if displayTitle == "" {
-		displayTitle = disclosureID
-	}
-	return map[string]any{
-		"disclosure_id": disclosureID,
-		"scope_type":    scopeType,
-		"scope_id":      scopeID,
-		"title":         displayTitle,
-		"deadline_date": deadlineDate.UTC().Format("2006-01-02"),
-		"scheduled_at":  scheduledAt.UTC().Format(time.RFC3339),
-		"status":        strings.TrimSpace(status),
-		"company_id":    strings.TrimSpace(companyID),
-		"action_url":    "/app/disclosures/" + disclosureID,
-	}
 }
 
 type occurrenceScanner interface {

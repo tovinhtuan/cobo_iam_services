@@ -1,4 +1,11 @@
-﻿## Workflow step reminder — E1 no-head fallback (2026-08-18)
+﻿## Workflow step reminder — email business context (2026-08-18)
+
+- Pointer: FE `docs/ai-cache/workflow-step-reminder-rule-engine-2026-08-17/email-business-context-audit-2026-08-18/`
+- Reminder CTA/deadline fix; company source = proposal/instance; api+worker `2026-08-18T05:12:07Z`
+- `BLOCKED_EMAIL_EVIDENCE_UNAVAILABLE=CLOSED`; 2 paused blockers unchanged
+- NO_PRODUCTION / NO_PUSH
+
+## Workflow step reminder — E1 no-head fallback (2026-08-18)
 
 - Pointer: FE `docs/ai-cache/workflow-step-reminder-rule-engine-2026-08-17/e1-no-head-fallback-2026-08-18/`
 - Verdict `WORKFLOW_ALERT_E1_NO_HEAD_FALLBACK_DEV_VERIFIED`; api+worker `2026-08-18T03:46:59Z`

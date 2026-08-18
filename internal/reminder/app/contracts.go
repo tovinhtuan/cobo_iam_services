@@ -163,8 +163,9 @@ type DispatchCandidate struct {
 	ScopeID            string    // disclosure_id for DISCLOSURE; step_id for WORKFLOW_STEP
 	WorkflowInstanceID string    // workflow_instances.workflow_instance_id for WORKFLOW_STEP milestones
 	CompanyID          string    // company_id from disclosure_records or workflow_instances
-	CompanyName        string    // company_name from companies
+	CompanyName        string    // company_name from companies via the business record — never recipient membership
 	DisclosureTypeID   string    // type_id from disclosure_types (via disclosure_records)
+	RecordID           string    // disclosure_records.record_id used for CTA; never the workflow instance id
 }
 
 // RecipientResolver resolves the email recipient list for a dispatch candidate.
