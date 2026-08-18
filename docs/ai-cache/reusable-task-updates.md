@@ -1,4 +1,27 @@
 
+## 2026-08-18 — E1 no-head fallback (employees then EA)
+
+- matched dept + no valid head → `EmailsByDepartments`; empty → EA; A/B/C/D preserved
+- DEV E1-A/E1-B + A/B/C/D PASS; deploy `2026-08-18T03:46:59Z`
+- Evidence: sibling FE `e1-no-head-fallback-2026-08-18/`
+- NO_PRODUCTION / NO_PUSH
+
+## 2026-08-18 — Recipient authority routing (CMS head / EA fallback / override)
+
+- DIRECT_ASSIGNEE > DEPARTMENT_HEAD > EA missing-dept; snapshot membership fields
+- DEV A/B/C/D PASS; deploy `2026-08-18T02:40:45Z`
+- Evidence: sibling FE `recipient-authority-verify-2026-08-18/`
+- NO_PRODUCTION / NO_PUSH
+
+## 2026-08-18 — Workflow step department alert (recipient snapshot-first)
+
+- task type: minimal DEV fix + smoke; 3-blocker PLAN on sibling FE pack
+- implemented: `InstanceStepReader` / snapshot-first `ResolveForWorkflowStep`; wire api+worker; test `TestResolveForWorkflowStep_InstanceSnapshotPreferredOverGlobal`
+- DEV: `make deploy-be`; StartedAt `2026-08-18T01:33:28Z`
+- do not commit `deploy-artifacts/backend/bin/{api,worker}`
+- evidence: sibling FE `department-alert-validation-2026-08-18/`
+- NO_PRODUCTION / NO_PUSH
+
 ## 2026-08-17 — DEV template cleanup (global archive PASS; company STOP)
 
 - KEEP `bao-cao-tai-chinh-quy-1`; 186 global archives via official API

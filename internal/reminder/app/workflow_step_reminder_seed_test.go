@@ -187,13 +187,17 @@ func TestPrepareDispatch_WorkflowStepReminderContext(t *testing.T) {
 
 func TestResolveForWorkflowStep_NoPreviousStepLeak(t *testing.T) {
 	stepReader := &fakeStepReader{steps: map[string]*WorkflowStepConfig{
-		"step-a": {StepID: "step-a", AssigneeRoleIDs: []string{"role-a"}},
-		"step-b": {StepID: "step-b", AssigneeRoleIDs: []string{"role-b"}},
+		"step-a": {StepID: "step-a", DepartmentID: "dept-a"},
+		"step-b": {StepID: "step-b", DepartmentID: "dept-b"},
 	}}
 	querier := &fakeMembershipQuerier{
-		roleEmails: map[string][]string{
-			"c1:role-a": {"a@co.com"},
-			"c1:role-b": {"b@co.com"},
+		companyDepartments: map[string]string{
+			"c1:dept-a": "dept-a",
+			"c1:dept-b": "dept-b",
+		},
+		departmentHeadEmails: map[string][]string{
+			"c1:dept-a": {"a@co.com"},
+			"c1:dept-b": {"b@co.com"},
 		},
 	}
 	r := NewRecipientResolver(nil, stepReader, querier, nil, nil)

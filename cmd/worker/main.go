@@ -165,7 +165,9 @@ func main() {
 		alertCfgRepo := remindermysql.NewAlertConfigRepository(sqlDB)
 		membershipQuerier := remindermysql.NewMembershipEmailQuerier(sqlDB)
 		stepReader := remindermysql.NewGlobalWorkflowStepReader(sqlDB)
+		instanceStepReader := remindermysql.NewInstanceSnapshotStepReader(sqlDB)
 		recipientResolver := reminderapp.NewRecipientResolver(reminderRepo, stepReader, membershipQuerier, membershipQuerier, log)
+		reminderapp.SetInstanceStepReader(recipientResolver, instanceStepReader)
 		rulesReader := remindermysql.NewNotificationRulesReader(sqlDB)
 		rulesEvaluator := reminderapp.NewNotificationRulesEvaluator(rulesReader, cfg.NotificationRulesConsumerEnabled)
 		tierChecker := &entitlement.Checker{
@@ -184,6 +186,7 @@ func main() {
 			reminderapp.WithRecipientResolver(recipientResolver),
 			reminderapp.WithRecipientPolicyDeps(membershipQuerier, membershipQuerier),
 			reminderapp.WithStepReader(stepReader),
+			reminderapp.WithInstanceStepReader(instanceStepReader),
 			reminderapp.WithPublicWebBaseURL(cfg.PublicWebBaseURL),
 			reminderapp.WithMetrics(reminderobserve.NewPromMetrics()),
 			reminderapp.WithAlertHook(reminderobserve.AlertLogger{Log: log}),

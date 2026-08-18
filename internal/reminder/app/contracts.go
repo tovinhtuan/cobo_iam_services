@@ -182,16 +182,35 @@ type WorkflowTaskAssigneeReader interface {
 // MembershipEmailQuerier performs low-level membership → email lookups.
 // All methods must filter by companyID to enforce tenant isolation.
 type MembershipEmailQuerier interface {
+	// EmailsByDepartments returns active user emails for memberships in the given departments,
+	// scoped to companyID. Falls back to login_id when email is empty.
+	// Used as E1-A broadcast when a matched department has no valid head.
 	EmailsByDepartments(ctx context.Context, companyID string, departmentIDs []string) ([]string, error)
 	EmailsByRoles(ctx context.Context, companyID string, roleIDs []string, departmentID string) ([]string, error)
 	// AdminEmailsByCompany returns emails of active members with the admin_doanh_nghiep role.
-	// Used as a last-resort fallback when no role/department/task assignee is resolved.
+	// Used when the CMS/default department has no matching company department, or when a
+	// matched department has no valid head and no active employees (E1-B).
 	AdminEmailsByCompany(ctx context.Context, companyID string) ([]string, error)
+	// EmailsByMemberships returns emails for active memberships in the given company.
+	EmailsByMemberships(ctx context.Context, companyID string, membershipIDs []string) ([]string, error)
+	// ResolveCompanyDepartment maps a snapshot department key onto an active company department.
+	// Match key is department_id OR department_code, scoped to companyID. ok=false means no match.
+	ResolveCompanyDepartment(ctx context.Context, companyID, snapshotDepartmentKey string) (departmentID string, ok bool, err error)
+	// EmailsByDepartmentHead returns the active department head email for a company department_id.
+	// Empty when the department has no valid head_membership_id.
+	EmailsByDepartmentHead(ctx context.Context, companyID, departmentID string) ([]string, error)
 }
 
 // WorkflowStepReader looks up global workflow step config by step_id.
 type WorkflowStepReader interface {
 	GetStepByID(ctx context.Context, stepID string) (*WorkflowStepConfig, error)
+}
+
+// InstanceStepReader looks up the frozen workflow instance snapshot step.
+// Path A (enterprise_workflow) runtime step_id values such as "step-001" are not
+// global_workflow_steps.step_id; department/role routing must use the snapshot.
+type InstanceStepReader interface {
+	GetStepByInstance(ctx context.Context, companyID, workflowInstanceID, stepID string) (*WorkflowStepConfig, error)
 }
 
 type DispatchOccurrenceResponse struct {

@@ -50,6 +50,23 @@ func TestMapProposalWorkflowToSnapshot_UsesProposalStepIDsAndDays(t *testing.T) 
 	}
 }
 
+func TestMapEffectiveWorkflowToSnapshot_FreezesDirectAssignee(t *testing.T) {
+	steps := []disclosureapp.WorkflowStepDTO{
+		{StepID: "s1", Stage: "A", DepartmentID: "d1", DisplayOrder: 1, AssigneeMembershipID: "mem-c"},
+		{StepID: "s2", Stage: "B", DepartmentID: "d2", DisplayOrder: 2, AssigneeMembershipIDs: []string{"m1", "m2"}},
+	}
+	got := MapEffectiveWorkflowToSnapshot(steps, "company_override")
+	if got[0].AssigneeMembershipID != "mem-c" || len(got[0].AssigneeMembershipIDs) != 0 {
+		t.Fatalf("singular %#v", got[0])
+	}
+	if got[1].AssigneeMembershipID != "" || len(got[1].AssigneeMembershipIDs) != 2 {
+		t.Fatalf("array %#v", got[1])
+	}
+	if SnapshotStepAssigneeIDs(got[1])[0] != "m1" {
+		t.Fatalf("authority %#v", SnapshotStepAssigneeIDs(got[1]))
+	}
+}
+
 func TestMapEffectiveWorkflowToSnapshotOrdersByDisplayOrder(t *testing.T) {
 	steps := []disclosureapp.WorkflowStepDTO{
 		{StepID: "s2", Stage: "Review", DepartmentID: "d2", DueRule: "T+3", DisplayOrder: 2, ProcessingDays: 3},

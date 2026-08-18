@@ -1,4 +1,26 @@
-﻿## Workflow step reminder — migration recovery (2026-08-17)
+﻿## Workflow step reminder — E1 no-head fallback (2026-08-18)
+
+- Pointer: FE `docs/ai-cache/workflow-step-reminder-rule-engine-2026-08-17/e1-no-head-fallback-2026-08-18/`
+- Verdict `WORKFLOW_ALERT_E1_NO_HEAD_FALLBACK_DEV_VERIFIED`; api+worker `2026-08-18T03:46:59Z`
+- NOT `WORKFLOW_STEP_REMINDER_RULE_DEEP_SMOKE_DEV_READY`; 3 paused blockers unchanged
+- NO_PRODUCTION / NO_PUSH
+
+## Workflow step reminder — recipient authority A/B/C/D (2026-08-18)
+
+- Pointer: FE `docs/ai-cache/workflow-step-reminder-rule-engine-2026-08-17/recipient-authority-verify-2026-08-18/`
+- Verdict `WORKFLOW_ALERT_RECIPIENT_AUTHORITY_DEV_VERIFIED`; api+worker `2026-08-18T02:40:45Z`
+- NOT `WORKFLOW_STEP_REMINDER_RULE_DEEP_SMOKE_DEV_READY`; 3 paused blockers unchanged
+- NO_PRODUCTION / NO_PUSH
+
+## Workflow step reminder — department alert Step 1 (2026-08-18)
+
+- Pointer: FE `docs/ai-cache/workflow-step-reminder-rule-engine-2026-08-17/department-alert-validation-2026-08-18/`
+- Step 1 PARTIAL (mailbox Level 3 missing); snapshot-first recipient fix uncommitted; DEV api+worker `2026-08-18T01:33:28Z`
+- Plan only: `19-three-blocker-resolution-plan.md`
+- NOT `WORKFLOW_STEP_REMINDER_RULE_DEEP_SMOKE_DEV_READY`
+- NO_PRODUCTION / NO_PUSH
+
+## Workflow step reminder — migration recovery (2026-08-17)
 
 - Pointer: FE pack `workflow-step-reminder-rule-engine-2026-08-17/` (`76`–`85` + `dev-smoke-custom-default/55+`)
 - 0129 applied; `MIGRATION_REQUIRED=true` / `MIGRATION_IMPLEMENTED=true`; source-ready restored

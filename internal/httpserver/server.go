@@ -527,7 +527,9 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 		alertCfgRepo := reminderalertmysql.NewAlertConfigRepository(pool)
 		membershipQuerier := reminderalertmysql.NewMembershipEmailQuerier(pool)
 		stepReader := reminderalertmysql.NewGlobalWorkflowStepReader(pool)
+		instanceStepReader := remindermysql.NewInstanceSnapshotStepReader(pool)
 		resolver := reminderapp.NewRecipientResolver(reminderConfigRepo, stepReader, membershipQuerier, membershipQuerier, log)
+		reminderapp.SetInstanceStepReader(resolver, instanceStepReader)
 		rulesReader := remindermysql.NewNotificationRulesReader(pool)
 		rulesEvaluator := reminderapp.NewNotificationRulesEvaluator(rulesReader, cfg.NotificationRulesConsumerEnabled)
 		tierChecker := &entitlement.Checker{
@@ -538,6 +540,8 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 		reminderSvcOpts = append(reminderSvcOpts,
 			reminderapp.WithAlertConfigRepo(alertCfgRepo),
 			reminderapp.WithRecipientResolver(resolver),
+			reminderapp.WithStepReader(stepReader),
+			reminderapp.WithInstanceStepReader(instanceStepReader),
 			reminderapp.WithRecipientPolicyDeps(membershipQuerier, membershipQuerier),
 			reminderapp.WithDispatchLogger(log),
 			reminderapp.WithNotificationRulesFoundation(rulesReader, rulesEvaluator),

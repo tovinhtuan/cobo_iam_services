@@ -483,18 +483,24 @@ type WorkflowStepReminderConfig struct {
 }
 
 type WorkflowStepDTO struct {
-	StepID          string                      `json:"step_id"`
-	Stage           string                      `json:"stage"`
-	Description     string                      `json:"description,omitempty"`
-	Instructions    string                      `json:"instructions,omitempty"`
-	DepartmentID    string                      `json:"department_id"`
-	AssigneeRoleIds []string                    `json:"assignee_role_ids"`
-	DueRule         string                      `json:"due_rule"`
-	ProcessingDays  int                         `json:"processing_days,omitempty"`
-	Documents       []WorkflowDocumentDTO       `json:"documents"`
-	DisplayOrder    int                         `json:"display_order"`
-	Groups          []WorkflowStepGroupDTO      `json:"groups,omitempty"`
-	ReminderConfig  *WorkflowStepReminderConfig `json:"reminder_config,omitempty"`
+	StepID          string   `json:"step_id"`
+	Stage           string   `json:"stage"`
+	Description     string   `json:"description,omitempty"`
+	Instructions    string   `json:"instructions,omitempty"`
+	DepartmentID    string   `json:"department_id"`
+	AssigneeRoleIds []string `json:"assignee_role_ids"`
+	// AssigneeMembershipID is an optional company-override direct assignee (singular).
+	// Additive; omitted on CMS default steps. Reminder routing prefers this over department head.
+	AssigneeMembershipID string `json:"assignee_membership_id,omitempty"`
+	// AssigneeMembershipIDs is an optional company-override multi direct-assignee list.
+	// When non-empty it is assignment authority (singular should stay empty).
+	AssigneeMembershipIDs []string                    `json:"assignee_membership_ids,omitempty"`
+	DueRule               string                      `json:"due_rule"`
+	ProcessingDays        int                         `json:"processing_days,omitempty"`
+	Documents             []WorkflowDocumentDTO       `json:"documents"`
+	DisplayOrder          int                         `json:"display_order"`
+	Groups                []WorkflowStepGroupDTO      `json:"groups,omitempty"`
+	ReminderConfig        *WorkflowStepReminderConfig `json:"reminder_config,omitempty"`
 }
 
 type CompanyWorkflowOverrideHeaderDTO struct {

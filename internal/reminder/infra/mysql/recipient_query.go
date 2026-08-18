@@ -162,6 +162,94 @@ func (q *MembershipEmailQuerier) AssigneeEmailsByStep(ctx context.Context, compa
 	return scanEmailRows(rows)
 }
 
+// EmailsByMemberships returns emails for active memberships in companyID.
+func (q *MembershipEmailQuerier) EmailsByMemberships(ctx context.Context, companyID string, membershipIDs []string) ([]string, error) {
+	if companyID == "" || len(membershipIDs) == 0 {
+		return nil, nil
+	}
+	placeholders := strings.Repeat("?,", len(membershipIDs))
+	placeholders = placeholders[:len(placeholders)-1]
+	args := make([]any, 0, len(membershipIDs)+1)
+	for _, id := range membershipIDs {
+		args = append(args, strings.TrimSpace(id))
+	}
+	args = append(args, companyID)
+	rows, err := q.db.QueryContext(ctx, `
+		SELECT DISTINCT COALESCE(NULLIF(TRIM(u.email), ''), u.login_id)
+		FROM memberships m
+		JOIN users u ON u.user_id = m.user_id
+		WHERE m.membership_id IN (`+placeholders+`)
+		  AND m.company_id = ?
+		  AND m.membership_status = 'active'
+		  AND u.account_status = 'active'
+	`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("emails by memberships: %w", err)
+	}
+	defer rows.Close()
+	return scanEmailRows(rows)
+}
+
+// ResolveCompanyDepartment maps a snapshot department key to an active company department.
+// Match key: departments.department_id OR departments.department_code, same company, active.
+func (q *MembershipEmailQuerier) ResolveCompanyDepartment(ctx context.Context, companyID, snapshotDepartmentKey string) (string, bool, error) {
+	companyID = strings.TrimSpace(companyID)
+	key := strings.TrimSpace(snapshotDepartmentKey)
+	if companyID == "" || key == "" {
+		return "", false, nil
+	}
+	var departmentID string
+	err := q.db.QueryRowContext(ctx, `
+		SELECT department_id
+		FROM departments
+		WHERE company_id = ?
+		  AND status = 'active'
+		  AND (department_id = ? OR department_code = ?)
+		LIMIT 1
+	`, companyID, key, key).Scan(&departmentID)
+	if err == sql.ErrNoRows {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, fmt.Errorf("resolve company department: %w", err)
+	}
+	departmentID = strings.TrimSpace(departmentID)
+	if departmentID == "" {
+		return "", false, nil
+	}
+	return departmentID, true, nil
+}
+
+// EmailsByDepartmentHead returns the active head email for a company department.
+func (q *MembershipEmailQuerier) EmailsByDepartmentHead(ctx context.Context, companyID, departmentID string) ([]string, error) {
+	companyID = strings.TrimSpace(companyID)
+	departmentID = strings.TrimSpace(departmentID)
+	if companyID == "" || departmentID == "" {
+		return nil, nil
+	}
+	rows, err := q.db.QueryContext(ctx, `
+		SELECT DISTINCT COALESCE(NULLIF(TRIM(u.email), ''), u.login_id)
+		FROM departments d
+		JOIN memberships m ON m.membership_id = d.head_membership_id
+		JOIN users u ON u.user_id = m.user_id
+		JOIN department_memberships dm
+		  ON dm.membership_id = m.membership_id
+		 AND dm.department_id = d.department_id
+		 AND dm.status = 'active'
+		WHERE d.company_id = ?
+		  AND d.department_id = ?
+		  AND d.status = 'active'
+		  AND m.company_id = ?
+		  AND m.membership_status = 'active'
+		  AND u.account_status = 'active'
+	`, companyID, departmentID, companyID)
+	if err != nil {
+		return nil, fmt.Errorf("emails by department head: %w", err)
+	}
+	defer rows.Close()
+	return scanEmailRows(rows)
+}
+
 func scanEmailRows(rows *sql.Rows) ([]string, error) {
 	var out []string
 	for rows.Next() {

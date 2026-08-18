@@ -25,6 +25,7 @@ type service struct {
 	alertConfigRepo            AlertConfigRepository
 	recipientResolver          RecipientResolver
 	stepReader                 WorkflowStepReader
+	instanceStepReader         InstanceStepReader
 	publicWebBaseURL           string
 	inAppCreator               InAppNotificationCreator // optional, nil = disabled
 	notificationRulesReader    NotificationRulesReader
@@ -93,6 +94,12 @@ func WithRecipientResolver(r RecipientResolver) ServiceOption {
 func WithStepReader(r WorkflowStepReader) ServiceOption {
 	return func(s *service) {
 		s.stepReader = r
+	}
+}
+
+func WithInstanceStepReader(r InstanceStepReader) ServiceOption {
+	return func(s *service) {
+		s.instanceStepReader = r
 	}
 }
 
@@ -430,7 +437,12 @@ func (s *service) prepareDispatch(ctx context.Context, c DispatchCandidate, asOf
 			}
 		}
 		var step *WorkflowStepConfig
-		if s.stepReader != nil {
+		if s.instanceStepReader != nil && strings.TrimSpace(c.WorkflowInstanceID) != "" {
+			if st, err := s.instanceStepReader.GetStepByInstance(ctx, c.CompanyID, c.WorkflowInstanceID, stepID); err == nil {
+				step = st
+			}
+		}
+		if step == nil && s.stepReader != nil {
 			if st, err := s.stepReader.GetStepByID(ctx, stepID); err == nil {
 				step = st
 			}

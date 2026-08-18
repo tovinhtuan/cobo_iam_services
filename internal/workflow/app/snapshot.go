@@ -94,7 +94,7 @@ func MapEffectiveWorkflowToSnapshot(steps []disclosureapp.WorkflowStepDTO, workf
 		}
 		res := disclosureapp.ResolveWorkflowStepReminderRule(step.ReminderConfig)
 		effective := append([]int{}, res.EffectiveDays...)
-		out = append(out, StepSnapshot{
+		row := StepSnapshot{
 			StepID:                stepID,
 			StepCode:              stepCode,
 			Stage:                 strings.TrimSpace(step.Stage),
@@ -105,7 +105,13 @@ func MapEffectiveWorkflowToSnapshot(steps []disclosureapp.WorkflowStepDTO, workf
 			ProcessingDays:        step.ProcessingDays,
 			ReminderConfig:        disclosureapp.CloneWorkflowStepReminderConfig(step.ReminderConfig),
 			EffectiveReminderDays: effective,
-		})
+		}
+		if ids := ResolveTaskAssigneeMembershipIDs("", step.AssigneeMembershipIDs); len(ids) > 0 {
+			row.AssigneeMembershipIDs = ids
+		} else if singular := strings.TrimSpace(step.AssigneeMembershipID); singular != "" {
+			row.AssigneeMembershipID = singular
+		}
+		out = append(out, row)
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].DisplayOrder == out[j].DisplayOrder {
