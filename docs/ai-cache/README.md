@@ -1,4 +1,18 @@
-﻿## Workflow step reminder — email business context (2026-08-18)
+﻿## Deadline alert visibility — active template only (2026-08-18)
+
+- Pointer: FE `docs/ai-cache/deadline-alert-active-template-filter-2026-08-18/`
+- ListRows INNER JOIN current `active_version_no > 0`; no business delete
+- Verdict `DEV_DEADLINE_ALERT_ACTIVE_TEMPLATE_FILTER_VERIFIED`; api `2026-08-18T08:47:17Z`
+- NO_PRODUCTION / NO_PUSH
+
+## Deadline alert cleanup before 2026-08-17 (DEV, blocked)
+
+- Pointer: FE `docs/ai-cache/deadline-alert-cleanup-before-2026-08-17/`
+- Entity = `disclosure_records`; no delete executed
+- `BLOCKED_DEADLINE_ALERT_ENTITY_IS_BUSINESS_RECORD`
+- NO_PRODUCTION / NO_PUSH
+
+## Workflow step reminder — email business context (2026-08-18)
 
 - Pointer: FE `docs/ai-cache/workflow-step-reminder-rule-engine-2026-08-17/email-business-context-audit-2026-08-18/`
 - Reminder CTA/deadline fix; company source = proposal/instance; api+worker `2026-08-18T05:12:07Z`

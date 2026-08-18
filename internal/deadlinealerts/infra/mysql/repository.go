@@ -80,8 +80,7 @@ func (r *Repository) ListRows(ctx context.Context, companyID string, scope deadl
 				ORDER BY wi2.workflow_instance_id ASC
 				LIMIT 1
 			)
-		LEFT JOIN disclosure_types dt ON dt.type_id = dr.type_id
-		LEFT JOIN disclosure_type_versions dtv ON dtv.type_id = dt.type_id AND dtv.version_no = dt.active_version_no
+` + deadlinealertsapp.ListRowsActiveTemplateSQLJoin + `
 		LEFT JOIN deadline_alert_confirmations dac ON dac.company_id = dr.company_id
 			AND dac.record_id = dr.record_id
 		WHERE dr.company_id = ?

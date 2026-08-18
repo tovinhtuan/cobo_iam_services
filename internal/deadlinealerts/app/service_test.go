@@ -319,6 +319,27 @@ func TestListDeadlineAlerts_filtersByDisplayGroupCode(t *testing.T) {
 	}
 }
 
+func TestListDeadlineAlerts_T8_searchStillFiltersTitle(t *testing.T) {
+	repo := &stubRepo{rows: []AlertRow{
+		{CompanyID: "c1", RecordID: "r-keep", Title: "Visible active title", RecordStatus: "submitted", PlannedDate: "2026-06-10"},
+		{CompanyID: "c1", RecordID: "r-other", Title: "Other card", RecordStatus: "submitted", PlannedDate: "2026-06-11"},
+	}}
+	svc := NewService(repo, allowAuthSvc(), disclosureapp.NewDeadlineCalculator(disclosureapp.NewHolidayCalendarFileProvider("configs/non_trading_days")))
+	svc.(*service).now = func() time.Time { return time.Date(2026, 5, 25, 0, 0, 0, 0, time.UTC) }
+
+	resp, err := svc.ListDeadlineAlerts(context.Background(), ListDeadlineAlertsRequest{
+		Subject: Subject{UserID: "u1", MembershipID: "m_admin_001", CompanyID: "c_001"},
+		Query:   "visible active",
+		Page:    1, PageSize: 10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Total != 1 || resp.Items[0].RecordID != "r-keep" {
+		t.Fatalf("search composition got %+v", resp)
+	}
+}
+
 func TestListDeadlineAlertFilterOptions(t *testing.T) {
 	repo := &stubRepo{
 		departments:  []DeadlineAlertFilterOptionDTO{{ID: "d1", Name: "Pháp chế"}},

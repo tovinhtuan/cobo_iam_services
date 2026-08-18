@@ -1,4 +1,17 @@
 
+## 2026-08-18 — Deadline alert active-template filter
+
+- ListRows INNER JOIN `disclosure_types.active_version_no > 0`
+- DEV deploy `2026-08-18T08:47:17Z`
+- Evidence: sibling FE `deadline-alert-active-template-filter-2026-08-18/`
+- NO_PRODUCTION / NO_PUSH
+
+## 2026-08-18 — Deadline alert cleanup before 17/08 (blocked)
+
+- tab Cảnh báo projects `disclosure_records`; mutation skipped
+- Evidence: sibling FE `deadline-alert-cleanup-before-2026-08-17/`
+- NO_PRODUCTION / NO_PUSH
+
 ## 2026-08-18 — Email business context (CTA record + EndDate)
 
 - reminder payload uses disclosure record_id and step_end; company from instance/record not recipient
