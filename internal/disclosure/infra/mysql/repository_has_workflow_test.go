@@ -53,6 +53,42 @@ func TestHasWorkflow_CMSTemplateEmptyBlock_ReturnsFalse(t *testing.T) {
 	}
 }
 
+// TestHasWorkflow_Nhánh3_GlobalWorkflowActive_ReturnsTrue verifies that batchLoadActiveWorkflowFlags
+// checks global_workflows with an active version, matching GetEffectiveWorkflow's fallback order.
+func TestHasWorkflow_Nhanh3_GlobalWorkflowActive_ReturnsTrue(t *testing.T) {
+	src := readRepositorySrc(t)
+	if !strings.Contains(src, "global_workflows") {
+		t.Fatal("batchLoadActiveWorkflowFlags must query global_workflows (nhánh 3) to detect active governed workflows")
+	}
+	if !strings.Contains(src, "global_workflow_versions") {
+		t.Fatal("batchLoadActiveWorkflowFlags nhánh 3 must join global_workflow_versions to verify active version exists")
+	}
+}
+
+// TestHasWorkflow_Nhánh3_StatusActiveGuard ensures nhánh 3 filters on w.status = 'active' so that
+// archived or soft-deleted global_workflows rows are not treated as having active workflows.
+func TestHasWorkflow_Nhanh3_StatusActiveGuard(t *testing.T) {
+	src := readRepositorySrc(t)
+	fn := extractBatchLoadFunc(t, src)
+	if !strings.Contains(fn, "w.status = 'active'") {
+		t.Fatal("batchLoadActiveWorkflowFlags nhánh 3 must filter on global_workflows.status = 'active'")
+	}
+}
+
+func extractBatchLoadFunc(t *testing.T, src string) string {
+	t.Helper()
+	start := strings.Index(src, "func (r *Repository) batchLoadActiveWorkflowFlags")
+	if start == -1 {
+		t.Fatal("batchLoadActiveWorkflowFlags not found")
+	}
+	rest := src[start:]
+	end := strings.Index(rest, "\n}\n")
+	if end == -1 {
+		t.Fatal("could not find end of batchLoadActiveWorkflowFlags")
+	}
+	return rest[:end]
+}
+
 func readRepositorySrc(t *testing.T) string {
 	t.Helper()
 	data, err := os.ReadFile("repository.go")

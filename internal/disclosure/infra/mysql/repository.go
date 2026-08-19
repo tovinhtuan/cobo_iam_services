@@ -542,9 +542,13 @@ func (r *Repository) batchLoadDisplayGroupCodes(ctx context.Context, typeIDs []s
 	return result, rows.Err()
 }
 
-// batchLoadActiveWorkflowFlags checks both CMS enterprise_workflow blocks (nhánh 1) and
-// company-specific workflow overrides (nhánh 2). companyID scopes nhánh 2 so that
-// Company B cannot inherit has_workflow=true from Company A's approved override.
+// batchLoadActiveWorkflowFlags checks three sources (matching GetEffectiveWorkflow precedence):
+//   - Nhánh 1: CMS enterprise_workflow block with ≥1 actual step
+//   - Nhánh 2: Company-specific workflow override (active_version_no > 0)
+//   - Nhánh 3: Active global_workflow_versions (governed workflow builder)
+//
+// Any source yielding a positive result sets has_workflow=true for that type.
+// companyID scopes nhánh 2 so Company B cannot inherit Company A's approved override.
 func (r *Repository) batchLoadActiveWorkflowFlags(ctx context.Context, companyID string, typeIDs []string) (map[string]bool, error) {
 	if len(typeIDs) == 0 {
 		return map[string]bool{}, nil
@@ -609,7 +613,33 @@ func (r *Repository) batchLoadActiveWorkflowFlags(ctx context.Context, companyID
 		}
 		result[typeID] = true
 	}
-	return result, oRows.Err()
+	if err := oRows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Nhánh 3: Active global_workflow_versions — governed workflow that has been activated
+	// (not just published). Mirrors loadActiveGlobalWorkflow join logic. Only marks true for
+	// types not already resolved by nhánh 1/2 to avoid unnecessary queries in the common case,
+	// but since map semantics are idempotent (true remains true) we simply union all positives.
+	gwRows, err := r.db.QueryContext(ctx, `
+		SELECT w.type_id
+		FROM global_workflows w
+		JOIN global_workflow_versions v ON v.type_id = w.type_id AND v.version_no = w.active_version_no
+		WHERE w.status = 'active'
+		  AND w.type_id IN (`+ph+`)
+	`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer gwRows.Close()
+	for gwRows.Next() {
+		var typeID string
+		if err := gwRows.Scan(&typeID); err != nil {
+			return nil, err
+		}
+		result[typeID] = true
+	}
+	return result, gwRows.Err()
 }
 
 func (r *Repository) HasActiveEnterpriseWorkflow(ctx context.Context, companyID, typeID string) (bool, error) {
