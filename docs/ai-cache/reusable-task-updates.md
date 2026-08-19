@@ -1,4 +1,18 @@
 
+## 2026-08-19 — CMS workflow canvas vs banner (FE sibling)
+
+- BE unchanged; template Save already persisted `enterprise_workflow`
+- FE canvas was reading empty global workflow configuration
+- Evidence: `cobo_web_design/docs/ai-cache/cms-workflow-canvas-consistency-qa-2026-08-19/`
+- NO_PRODUCTION / NO_PUSH
+
+## 2026-08-19 — CMS template save/activate data-loss (FE sibling)
+
+- BE product source unchanged; activate remains pointer-only
+- FE hydration bug (PERIODIC→NONE, generalInfo wiped) reproduced + fixed on sibling
+- Evidence: `cobo_web_design/docs/ai-cache/cms-template-save-activate-data-loss-qa-2026-08-19/`
+- NO_PRODUCTION / NO_PUSH
+
 ## 2026-08-18 — Deadline alert active-template filter
 
 - ListRows INNER JOIN `disclosure_types.active_version_no > 0`
