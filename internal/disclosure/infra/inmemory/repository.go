@@ -461,13 +461,16 @@ func (r *Repository) UpsertTypeVersion(ctx context.Context, req disclosureapp.Up
 			break
 		}
 	}
-	nextIsActive := !existed || activeVersionNo <= 0
+	// Save Draft never moves the portal active pointer; only explicit Activate may do so.
+	nextIsActive := false
 
 	openDraftNo := 0
-	if existed && activeVersionNo > 0 {
+	if existed {
 		for _, ver := range r.versions[req.TypeID] {
-			if ver.VersionNo != activeVersionNo && !ver.IsReleased && ver.VersionNo > openDraftNo {
-				openDraftNo = ver.VersionNo
+			if !ver.IsReleased && ver.VersionNo > openDraftNo {
+				if activeVersionNo <= 0 || ver.VersionNo != activeVersionNo {
+					openDraftNo = ver.VersionNo
+				}
 			}
 		}
 	}

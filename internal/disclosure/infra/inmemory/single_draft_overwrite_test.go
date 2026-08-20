@@ -48,41 +48,80 @@ func baseUpsert(typeID string) disclosureapp.UpsertTypeVersionRequest {
 	}
 }
 
-func TestUpsertTypeVersion_OverwritesOpenDraftWithoutBump(t *testing.T) {
+func TestUpsertTypeVersion_FirstSaveDoesNotActivate(t *testing.T) {
 	repo := inmemory.NewRepository()
-	// Seed display group catalog used by service validation — use service with permissive fake? 
-	// Direct repo test is enough for overwrite semantics.
-	req := baseUpsert("type-draft-1")
-	req.DisplayGroupCodes = nil // repo does not validate display groups
+	req := baseUpsert("type-draft-first")
+	req.DisplayGroupCodes = nil
 
 	first, err := repo.UpsertTypeVersion(context.Background(), req)
 	if err != nil {
 		t.Fatalf("first upsert: %v", err)
 	}
-	if !first.IsActive || first.VersionNo != 1 {
-		t.Fatalf("first create should activate v1, got v%d active=%v", first.VersionNo, first.IsActive)
+	if first.IsActive || first.VersionNo != 1 {
+		t.Fatalf("first save must stay draft v1 (not portal-active), got v%d active=%v", first.VersionNo, first.IsActive)
+	}
+
+	versions, err := repo.ListTypeVersions(context.Background(), "c1", "type-draft-first")
+	if err != nil {
+		t.Fatalf("list versions: %v", err)
+	}
+	for _, v := range versions {
+		if v.IsActive {
+			t.Fatalf("no version should be portal-active after first save, got v%d", v.VersionNo)
+		}
+	}
+}
+
+func TestUpsertTypeVersion_OverwritesOpenDraftWithoutBump(t *testing.T) {
+	repo := inmemory.NewRepository()
+	req := baseUpsert("type-draft-1")
+	req.DisplayGroupCodes = nil
+
+	first, err := repo.UpsertTypeVersion(context.Background(), req)
+	if err != nil {
+		t.Fatalf("first upsert: %v", err)
+	}
+	if first.IsActive || first.VersionNo != 1 {
+		t.Fatalf("first save must stay draft v1, got v%d active=%v", first.VersionNo, first.IsActive)
 	}
 
 	req.ChangeNote = "draft-1"
 	req.Name = "Draft A"
 	draft1, err := repo.UpsertTypeVersion(context.Background(), req)
 	if err != nil {
-		t.Fatalf("create draft: %v", err)
+		t.Fatalf("overwrite draft: %v", err)
 	}
-	if draft1.IsActive || draft1.VersionNo != 2 {
-		t.Fatalf("expected inactive draft v2, got v%d active=%v", draft1.VersionNo, draft1.IsActive)
+	if draft1.IsActive || draft1.VersionNo != 1 {
+		t.Fatalf("expected overwrite draft v1, got v%d active=%v", draft1.VersionNo, draft1.IsActive)
 	}
 
-	req.ChangeNote = "draft-2-overwrite"
+	_, err = repo.ActivateTypeVersion(context.Background(), disclosureapp.ActivateTypeVersionRequest{
+		Subject: testSubject(), TypeID: "type-draft-1", VersionNo: 1,
+	})
+	if err != nil {
+		t.Fatalf("activate v1: %v", err)
+	}
+
+	req.ChangeNote = "draft-2"
 	req.Name = "Draft B"
 	draft2, err := repo.UpsertTypeVersion(context.Background(), req)
 	if err != nil {
-		t.Fatalf("overwrite draft: %v", err)
+		t.Fatalf("create draft after active: %v", err)
 	}
-	if draft2.VersionNo != 2 {
-		t.Fatalf("overwrite must keep version_no=2, got %d", draft2.VersionNo)
+	if draft2.IsActive || draft2.VersionNo != 2 {
+		t.Fatalf("expected inactive draft v2, got v%d active=%v", draft2.VersionNo, draft2.IsActive)
 	}
-	if draft2.IsActive {
+
+	req.ChangeNote = "draft-2-overwrite"
+	req.Name = "Draft B2"
+	draft3, err := repo.UpsertTypeVersion(context.Background(), req)
+	if err != nil {
+		t.Fatalf("overwrite draft v2: %v", err)
+	}
+	if draft3.VersionNo != 2 {
+		t.Fatalf("overwrite must keep version_no=2, got %d", draft3.VersionNo)
+	}
+	if draft3.IsActive {
 		t.Fatal("overwrite must not activate draft")
 	}
 
@@ -103,16 +142,15 @@ func TestUpsertTypeVersion_OverwritesOpenDraftWithoutBump(t *testing.T) {
 	if err != nil {
 		t.Fatalf("detail: %v", err)
 	}
-	if detail.Name != "Draft B" {
+	if detail.Name != "Draft B2" {
 		t.Fatalf("draft content not overwritten, name=%q", detail.Name)
 	}
 
-	// Active portal unchanged
 	active, err := repo.GetTypeVersionDetail(context.Background(), "c1", "type-draft-1", 1)
 	if err != nil {
 		t.Fatalf("active detail: %v", err)
 	}
-	if active.Name != "QA Template" {
+	if active.Name != "Draft A" {
 		t.Fatalf("active content changed unexpectedly: %q", active.Name)
 	}
 }
@@ -124,15 +162,8 @@ func TestUpsertTypeVersion_ActivateMarksReleasedAndNewDraftAfter(t *testing.T) {
 	if _, err := repo.UpsertTypeVersion(context.Background(), req); err != nil {
 		t.Fatal(err)
 	}
-	req.Name = "Draft"
-	d, err := repo.UpsertTypeVersion(context.Background(), req)
-	if err != nil {
-		t.Fatal(err)
-	}
 	act, err := repo.ActivateTypeVersion(context.Background(), disclosureapp.ActivateTypeVersionRequest{
-		Subject:   testSubject(),
-		TypeID:    "type-draft-2",
-		VersionNo: d.VersionNo,
+		Subject: testSubject(), TypeID: "type-draft-2", VersionNo: 1,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -140,13 +171,21 @@ func TestUpsertTypeVersion_ActivateMarksReleasedAndNewDraftAfter(t *testing.T) {
 	if !act.IsActive {
 		t.Fatal("activate should set active")
 	}
+	req.Name = "Draft"
+	d, err := repo.UpsertTypeVersion(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.IsActive || d.VersionNo != 2 {
+		t.Fatalf("after activate v1, save should create draft v2, got v%d active=%v", d.VersionNo, d.IsActive)
+	}
 	versions, err := repo.ListTypeVersions(context.Background(), "c1", "type-draft-2")
 	if err != nil {
 		t.Fatal(err)
 	}
 	foundReleased := false
 	for _, v := range versions {
-		if v.VersionNo == d.VersionNo && v.IsReleased && v.IsActive {
+		if v.VersionNo == 1 && v.IsReleased && v.IsActive {
 			foundReleased = true
 		}
 	}
@@ -159,7 +198,7 @@ func TestUpsertTypeVersion_ActivateMarksReleasedAndNewDraftAfter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if d2.VersionNo != d.VersionNo+1 {
-		t.Fatalf("after activate, next save should create new draft, got %d want %d", d2.VersionNo, d.VersionNo+1)
+	if d2.VersionNo != 2 {
+		t.Fatalf("after activate, next save should overwrite open draft v2, got %d", d2.VersionNo)
 	}
 }

@@ -902,17 +902,26 @@ func (r *Repository) UpsertTypeVersion(ctx context.Context, req disclosureapp.Up
 	if currentVersion.Valid {
 		activeVersionNo = int(currentVersion.Int64)
 	}
-	// First create / no portal active yet → new row becomes active+released.
-	nextIsActive := !typeExists || activeVersionNo <= 0
+	// Save Draft never moves the portal active pointer; only explicit Activate may do so.
+	nextIsActive := false
 
 	// Single open draft: highest mutable (not released) version that is not portal-active.
 	var openDraft sql.NullInt64
-	if typeExists && activeVersionNo > 0 {
-		if err := tx.QueryRowContext(ctx, `
-			SELECT MAX(version_no) FROM disclosure_type_versions
-			WHERE type_id = ? AND version_no <> ? AND COALESCE(is_released, 0) = 0
-		`, req.TypeID, activeVersionNo).Scan(&openDraft); err != nil {
-			return nil, err
+	if typeExists {
+		if activeVersionNo > 0 {
+			if err := tx.QueryRowContext(ctx, `
+				SELECT MAX(version_no) FROM disclosure_type_versions
+				WHERE type_id = ? AND version_no <> ? AND COALESCE(is_released, 0) = 0
+			`, req.TypeID, activeVersionNo).Scan(&openDraft); err != nil {
+				return nil, err
+			}
+		} else {
+			if err := tx.QueryRowContext(ctx, `
+				SELECT MAX(version_no) FROM disclosure_type_versions
+				WHERE type_id = ? AND COALESCE(is_released, 0) = 0
+			`, req.TypeID).Scan(&openDraft); err != nil {
+				return nil, err
+			}
 		}
 	}
 

@@ -32,8 +32,13 @@ func TestLegalBases_SameDraftPreserveIDsAndNewVersionRegenerates(t *testing.T) {
 		t.Fatalf("v1 bases=%#v", d1.LegalBases)
 	}
 
-	// Create open draft (v2) with same structured payload — IDs should preserve when provided on draft create...
-	// First draft after active: this is NEW version → IDs must regenerate.
+	if _, err := repo.ActivateTypeVersion(ctx, disclosureapp.ActivateTypeVersionRequest{
+		Subject: testSubject(), TypeID: "type-lb-lifecycle", VersionNo: v1.VersionNo,
+	}); err != nil {
+		t.Fatalf("activate v1: %v", err)
+	}
+
+	// Create open draft (v2) with same structured payload — IDs must regenerate on new version.
 	req.Name = "Draft 1"
 	req.PreserveLegalBases = false
 	req.LegalBasesProvided = true
