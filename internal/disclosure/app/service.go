@@ -424,6 +424,15 @@ func (s *service) ListTypes(ctx context.Context, req ListTypesRequest) (*ListTyp
 	if err := s.requireDisclosureCatalogRead(ctx, req.Subject); err != nil {
 		return nil, err
 	}
+	listMode := strings.ToLower(strings.TrimSpace(req.ListMode))
+	if listMode != "" && listMode != "management" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "list_mode must be empty or management", nil)
+	}
+	if listMode == "management" {
+		if err := s.requireCMSRouteAccess(ctx, req.Subject); err != nil {
+			return nil, err
+		}
+	}
 	sortBy := strings.ToLower(strings.TrimSpace(req.SortBy))
 	sortDir := strings.ToLower(strings.TrimSpace(req.SortDir))
 	if sortBy == "" {
@@ -468,13 +477,20 @@ func (s *service) ListTypes(ctx context.Context, req ListTypesRequest) (*ListTyp
 		SortBy:           sortBy,
 		SortDir:          sortDir,
 		LightweightOnly:  true,
+		ListMode:         listMode,
 	})
 	if err != nil {
 		return nil, err
 	}
-	filtered, err := s.filterTypesByApplicability(ctx, req.Subject.CompanyID, light)
-	if err != nil {
-		return nil, err
+	var filtered []DisclosureTypeSummaryDTO
+	if listMode == "management" {
+		// CMS management surface: show all templates in scope; do not apply tenant applicability gate.
+		filtered = light
+	} else {
+		filtered, err = s.filterTypesByApplicability(ctx, req.Subject.CompanyID, light)
+		if err != nil {
+			return nil, err
+		}
 	}
 	sortTypeSummaries(filtered, sortBy, sortDir)
 	total := len(filtered)
@@ -499,6 +515,7 @@ func (s *service) ListTypes(ctx context.Context, req ListTypesRequest) (*ListTyp
 		TypeIDs:   pageIDs,
 		SortBy:    sortBy,
 		SortDir:   sortDir,
+		ListMode:  listMode,
 	})
 	if err != nil {
 		return nil, err
@@ -600,6 +617,7 @@ func (s *service) GetTypeDetail(ctx context.Context, req GetTypeDetailRequest) (
 	}
 	ApplyLegalBasisReadCompat(ctx, item, s.legalBasisLegacyFallbackEnabled, s.legalBasisDivergenceWarningEnabled)
 	enrichDeadlineRuleDisplay(item, s.loadDeadlineRuleCatalog(ctx))
+	coercePeriodicDeadlineEngineMode(item)
 
 	var companyProfile applicability.CompanyApplicabilityProfile
 	haveCompanyProfile := false
@@ -802,6 +820,11 @@ func (s *service) UpsertTypeVersion(ctx context.Context, req UpsertTypeVersionRe
 			return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, err.Error(), nil)
 		}
 	}
+	publicationCandidate, err := BuildTemplatePublicationCandidate(req)
+	if err != nil {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, err.Error(), nil)
+	}
+	req.PublicationCandidate = &publicationCandidate
 	resp, err := s.repo.UpsertTypeVersion(ctx, req)
 	if err != nil {
 		return nil, mapRepositoryUpsertError(err)
@@ -881,15 +904,30 @@ func (s *service) ActivateTypeVersion(ctx context.Context, req ActivateTypeVersi
 	if err != nil {
 		return nil, err
 	}
-	if err := ValidateTemplateWorkflowForActivation(versionDetail.Blocks); err != nil {
+	if versionDetail.WorkflowAuthorityMode != WorkflowAuthorityTemplatePinned || versionDetail.WorkflowManifest == nil {
+		return nil, &perr.HTTPError{
+			Code: "TEMPLATE_WORKFLOW_NOT_PINNED", Message: "template version workflow publication is not pinned",
+			HTTPStatus: http.StatusUnprocessableEntity,
+			Details:    map[string]any{"type_id": req.TypeID, "version_no": req.VersionNo},
+		}
+	}
+	published := ResolveTemplatePublicationWorkflow(req.TypeID, req.VersionNo, *versionDetail.WorkflowManifest)
+	if err := ValidateWorkflowStepsForActivation(published.Workflow); err != nil {
+		msg := "workflow is required"
+		if err != nil {
+			msg = err.Error()
+		}
 		return nil, &perr.HTTPError{
 			Code:       "TEMPLATE_NO_WORKFLOW",
-			Message:    err.Error(),
+			Message:    msg,
 			HTTPStatus: http.StatusUnprocessableEntity,
 			Details: map[string]any{
-				"type_id":      req.TypeID,
-				"version_no":   req.VersionNo,
-				"field_errors": map[string]string{"enterprise_workflow": err.Error()},
+				"type_id":        req.TypeID,
+				"version_no":     req.VersionNo,
+				"source":         published.Source,
+				"has_workflow":   published.HasWorkflow,
+				"workflow_valid": false,
+				"field_errors":   map[string]string{"enterprise_workflow": msg},
 			},
 		}
 	}
@@ -902,6 +940,7 @@ func (s *service) ActivateTypeVersion(ctx context.Context, req ActivateTypeVersi
 			return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, err.Error(), nil)
 		}
 	}
+	req.ExpectedCandidateHash = versionDetail.PublicationCandidateHash
 	return s.repo.ActivateTypeVersion(ctx, req)
 }
 
@@ -1077,8 +1116,10 @@ func (s *service) ResetCompanyWorkflowOverrideActive(ctx context.Context, req Re
 	if err != nil {
 		return nil, err
 	}
-	if view.EffectiveSource == "global_template" {
-		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "no active override to reset — effective source is already global template", nil)
+	// Reset only when an active company override is authoritative. CMS default
+	// sources (global_workflow | global_template) are not "overrides to reset".
+	if view.ActiveVersion == nil {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "no active override to reset", nil)
 	}
 	return s.repo.ResetCompanyWorkflowOverrideActive(ctx, req)
 }
@@ -1210,6 +1251,51 @@ func sortWorkflowSteps(steps []WorkflowStepDTO) {
 	}
 }
 
+// resolveCMSDefaultWorkflow loads active global + enterprise blocks for the given version
+// and returns the canonical CMS-default EffectiveTemplateWorkflow.
+func (s *service) resolveCMSDefaultWorkflow(ctx context.Context, typeID string, versionDetail *DisclosureTypeDTO) (EffectiveTemplateWorkflow, error) {
+	steps, versionNo, ok, err := s.repo.GetActiveGlobalWorkflow(ctx, typeID)
+	if err != nil {
+		return EffectiveTemplateWorkflow{}, err
+	}
+	enterpriseVersion := 0
+	var blocks []TemplateBlockDTO
+	if versionDetail != nil {
+		enterpriseVersion = versionDetail.VersionNo
+		blocks = versionDetail.Blocks
+	}
+	return ResolveCMSDefaultWorkflow(CMSDefaultWorkflowInput{
+		ActiveGlobalSteps:     steps,
+		ActiveGlobalVersionNo: versionNo,
+		ActiveGlobalOK:        ok,
+		EnterpriseBlocks:      blocks,
+		EnterpriseVersionNo:   enterpriseVersion,
+	}), nil
+}
+
+func enrichEffectiveWorkflowDTO(dto *EffectiveWorkflowDTO) {
+	if dto == nil {
+		return
+	}
+	dto.HasWorkflow = len(dto.Workflow) > 0
+	if !dto.HasWorkflow {
+		dto.WorkflowValid = false
+		if dto.Source == "company_override" && dto.OverrideInvalidEmpty {
+			dto.ValidationErrors = []string{"company override active version has zero steps"}
+			return
+		}
+		dto.ValidationErrors = []string{"workflow is required"}
+		return
+	}
+	if err := ValidateWorkflowStepsForActivation(dto.Workflow); err != nil {
+		dto.WorkflowValid = false
+		dto.ValidationErrors = []string{err.Error()}
+		return
+	}
+	dto.WorkflowValid = true
+	dto.ValidationErrors = nil
+}
+
 func (s *service) GetEffectiveWorkflow(ctx context.Context, req GetEffectiveWorkflowRequest) (*GetEffectiveWorkflowResponse, error) {
 	req.TypeID = strings.TrimSpace(req.TypeID)
 	if req.TypeID == "" {
@@ -1222,6 +1308,7 @@ func (s *service) GetEffectiveWorkflow(ctx context.Context, req GetEffectiveWork
 	if err != nil {
 		return nil, err
 	}
+	enrichEffectiveWorkflowDTO(out)
 	return &GetEffectiveWorkflowResponse{Data: *out}, nil
 }
 
@@ -1667,9 +1754,8 @@ func (s *service) TransitionCompanyTemplateLifecycle(ctx context.Context, req Tr
 	return s.repo.GetCompanyTemplateForLifecycle(ctx, req.Subject.CompanyID, req.TypeID)
 }
 
-// enforceHasWorkflowGate aligns with Portal FE has_workflow (PO D5-A):
-// active version must have ≥1 step in enterprise_workflow block.
-// global_workflows does not satisfy the gate (PO D6-B).
+// enforceHasWorkflowGate aligns with Portal FE has_workflow / GetEffectiveWorkflow:
+// COMPANY_OVERRIDE ∪ ACTIVE_GLOBAL ∪ TEMPLATE_ENTERPRISE (via batchLoadActiveWorkflowFlags).
 func (s *service) enforceHasWorkflowGate(ctx context.Context, companyID, typeID string) error {
 	hasWorkflow, err := s.repo.HasActiveEnterpriseWorkflow(ctx, companyID, typeID)
 	if err != nil {
@@ -1678,7 +1764,7 @@ func (s *service) enforceHasWorkflowGate(ctx context.Context, companyID, typeID 
 	}
 	if !hasWorkflow {
 		return perr.NewHTTPError(http.StatusUnprocessableEntity, "TEMPLATE_NO_WORKFLOW",
-			"template has no active enterprise workflow; disclosure cannot be created", nil)
+			"template has no effective workflow; disclosure cannot be created", nil)
 	}
 	return nil
 }

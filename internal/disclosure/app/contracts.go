@@ -128,6 +128,9 @@ type Repository interface {
 	// ExpectedActiveVersionNo no longer matches at commit time (race guard).
 	ApplyWorkflowOverrideRebase(ctx context.Context, params ApplyWorkflowOverrideRebaseParams) (*ApplyWorkflowOverrideRebaseResult, error)
 	GetEffectiveWorkflow(ctx context.Context, companyID, typeID string) (*EffectiveWorkflowDTO, error)
+	// GetActiveGlobalWorkflow returns steps from the ACTIVE global_workflow_versions row only.
+	// ok=false when no active version exists (including draft-only global workflows).
+	GetActiveGlobalWorkflow(ctx context.Context, typeID string) (steps []WorkflowStepDTO, versionNo int, ok bool, err error)
 	GetCompanyDeadlineContext(ctx context.Context, companyID string) (CompanyDeadlineContext, error)
 	GetCompanyApplicabilityProfile(ctx context.Context, companyID string) (applicability.CompanyApplicabilityProfile, error)
 	// GetCompanyTypeDeadlineContext returns CompanyDeadlineContext enriched with
@@ -257,6 +260,8 @@ type ListTypesParams struct {
 	SortDir         string   // "asc" | "desc"
 	TypeIDs         []string // optional: restrict to these type IDs
 	LightweightOnly bool     // minimal columns; skips workflow/display-group batch loads
+	// ListMode: "" = portal consumption (active version only); "management" = CMS admin list (draft + active).
+	ListMode string
 }
 
 type ListTypesRequest struct {
@@ -275,6 +280,8 @@ type ListTypesRequest struct {
 	PageSizeProvided bool
 	SortBy           string // "name" | "created_at"; empty → default "created_at"
 	SortDir          string // "asc" | "desc"; empty → default "desc"
+	// ListMode: "" = portal consumption (active version only); "management" = CMS admin list (draft + active).
+	ListMode string
 }
 
 type ListTypesResponse struct {
@@ -370,6 +377,9 @@ type UpsertTypeVersionRequest struct {
 	DisplayGroupCodes  []string                                  `json:"display_group_codes"`
 	ChangeNote         string                                    `json:"change_note"`
 	ApplicabilityRules *applicability.TemplateApplicabilityRules `json:"applicability_rules,omitempty"`
+	// PublicationCandidate is derived from the request after all app-layer
+	// normalization. It is never accepted from the wire.
+	PublicationCandidate *TemplatePublicationCandidate `json:"-"`
 }
 
 type UpsertTypeVersionResponse struct {
@@ -390,10 +400,11 @@ type ListTypeVersionsResponse struct {
 }
 
 type ActivateTypeVersionRequest struct {
-	Subject   Subject
-	TypeID    string `json:"type_id"`
-	VersionNo int    `json:"version_no"`
-	Reason    string `json:"reason"`
+	Subject               Subject
+	TypeID                string `json:"type_id"`
+	VersionNo             int    `json:"version_no"`
+	Reason                string `json:"reason"`
+	ExpectedCandidateHash string `json:"-"`
 }
 
 type ActivateTypeVersionResponse struct {
@@ -663,6 +674,8 @@ type GetEffectiveWorkflowRequest struct {
 // "global_workflow" (Sprint 0-2 governed workflow's active global_workflow_versions row), or
 // "global_template" (legacy enterprise_workflow content block — fallback when neither of the
 // above exists for the type). Precedence: company_override > global_workflow > global_template.
+// CMS default portion (global_workflow | global_template) must use ResolveCMSDefaultWorkflow —
+// docs/ai-cache/template-workflow-domain-contract-final-2026-08-20.md (Phase 1 centralize).
 type EffectiveWorkflowDTO struct {
 	TypeID    string            `json:"type_id"`
 	CompanyID string            `json:"company_id"`
@@ -674,6 +687,10 @@ type EffectiveWorkflowDTO struct {
 	OverrideInvalidEmpty bool `json:"override_invalid_empty,omitempty"`
 	// GlobalWorkflowAvailable is true when a governed global workflow exists but is hidden by an active override.
 	GlobalWorkflowAvailable bool `json:"global_workflow_available,omitempty"`
+	// HasWorkflow / WorkflowValid distinguish "has steps" vs "passes activate validators".
+	HasWorkflow      bool     `json:"has_workflow"`
+	WorkflowValid    bool     `json:"workflow_valid"`
+	ValidationErrors []string `json:"validation_errors,omitempty"`
 }
 
 type GetEffectiveWorkflowResponse struct {
@@ -814,6 +831,8 @@ type DisclosureTypeSummaryDTO struct {
 	Tags                          []string                                  `json:"tags"`
 	ApplicabilityRules            *applicability.TemplateApplicabilityRules `json:"-"`
 	ResolvedStructureDeadlineDays *int                                      `json:"resolved_structure_deadline_days,omitempty"`
+	ActiveVersionNo               int                                       `json:"active_version_no,omitempty"`
+	ListedVersionNo               int                                       `json:"listed_version_no,omitempty"`
 	CreatedAt                     time.Time                                 `json:"-"`
 }
 
@@ -862,6 +881,12 @@ type DisclosureTypeDTO struct {
 	// ResolvedDeadlineRule is the live semantic outcome of production ResolveStructure /
 	// ResolveDeadlineDays for the authenticated company (additive; omit when unavailable).
 	ResolvedDeadlineRule *ResolvedDeadlineRuleDTO `json:"resolved_deadline_rule,omitempty"`
+	// Internal publication metadata used for activation race checks and
+	// compatibility facades. Deliberately excluded from existing API shapes.
+	WorkflowAuthorityMode    string                       `json:"-"`
+	WorkflowManifest         *WorkflowPublicationManifest `json:"-"`
+	WorkflowSemanticHash     string                       `json:"-"`
+	PublicationCandidateHash string                       `json:"-"`
 }
 
 // ResolvedDeadlineRuleDTO is the Portal-facing semantic deadline rule (Option A).

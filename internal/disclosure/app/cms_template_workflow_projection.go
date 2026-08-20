@@ -20,29 +20,10 @@ func TemplateHasWorkflow(blocks []TemplateBlockDTO) bool {
 	return len(ExtractTemplateWorkflow(blocks)) > 0
 }
 
+// ValidateTemplateWorkflowForActivation validates the enterprise_workflow block only.
+// Prefer ResolveCMSDefaultWorkflow for activate/publish readiness (ACTIVE_GLOBAL > enterprise).
 func ValidateTemplateWorkflowForActivation(blocks []TemplateBlockDTO) error {
-	steps := ExtractTemplateWorkflow(blocks)
-	if len(steps) == 0 {
-		return fmt.Errorf("workflow is required")
-	}
-	for i, step := range steps {
-		if strings.TrimSpace(step.StepID) == "" || strings.TrimSpace(step.Stage) == "" {
-			return fmt.Errorf("workflow step %d is missing step_id or stage", i+1)
-		}
-		if strings.TrimSpace(step.DepartmentID) == "" {
-			return fmt.Errorf("workflow step %d is missing department_id", i+1)
-		}
-		if len(step.AssigneeRoleIds) == 0 {
-			return fmt.Errorf("workflow step %d is missing assignee_role_ids", i+1)
-		}
-		if step.ProcessingDays <= 0 {
-			return fmt.Errorf("workflow step %d has invalid processing_days", i+1)
-		}
-		if err := ValidateWorkflowStepReminderConfigForPersist(step.ReminderConfig); err != nil {
-			return fmt.Errorf("workflow step %d reminder_config: %w", i+1, err)
-		}
-	}
-	return nil
+	return ValidateWorkflowStepsForActivation(ExtractTemplateWorkflow(blocks))
 }
 
 func normalizeTemplateWorkflowConfig(config map[string]any) []WorkflowStepDTO {
@@ -70,6 +51,8 @@ func normalizeTemplateWorkflowConfig(config map[string]any) []WorkflowStepDTO {
 			Instructions:    optionalTrimmedString(row["instructions"]),
 			DepartmentID:    strings.TrimSpace(fmt.Sprint(row["department_id"])),
 			AssigneeRoleIds: normalizeStringSlice(row["assignee_role_ids"]),
+			AssigneeMembershipID: optionalTrimmedString(row["assignee_membership_id"]),
+			AssigneeMembershipIDs: normalizeStringSlice(row["assignee_membership_ids"]),
 			DueRule:         strings.TrimSpace(fmt.Sprint(row["due_rule"])),
 			ProcessingDays:  normalizeInt(row["processing_days"]),
 			DisplayOrder:    normalizeInt(row["display_order"]),

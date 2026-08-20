@@ -320,6 +320,7 @@ func (h *Handler) listTypes(w http.ResponseWriter, r *http.Request) {
 		PageSizeProvided: pageSizeRaw != "",
 		SortBy:           strings.TrimSpace(r.URL.Query().Get("sort_by")),
 		SortDir:          strings.TrimSpace(r.URL.Query().Get("sort_dir")),
+		ListMode:         strings.TrimSpace(r.URL.Query().Get("list_mode")),
 	})
 	if err != nil {
 		httpx.WriteError(w, nil, err)

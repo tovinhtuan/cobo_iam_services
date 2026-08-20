@@ -2,8 +2,11 @@ package app
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 )
@@ -25,7 +28,8 @@ func (s *service) CmsArchiveTemplate(ctx context.Context, req CmsArchiveTemplate
 	return &CmsArchiveTemplateResponse{TypeID: req.TypeID, Status: "archived"}, nil
 }
 
-// CmsGetGlobalWorkflow returns the active global workflow for a template type.
+// CmsGetGlobalWorkflow is a wire-compatible projection of the template-owned
+// draft (when present) or active publication. Global tables are history only.
 func (s *service) CmsGetGlobalWorkflow(ctx context.Context, req CmsGetGlobalWorkflowRequest) (*CmsGetGlobalWorkflowResponse, error) {
 	if err := s.requireCMSTemplateRead(ctx, req.Subject); err != nil {
 		return nil, err
@@ -34,14 +38,23 @@ func (s *service) CmsGetGlobalWorkflow(ctx context.Context, req CmsGetGlobalWork
 	if req.TypeID == "" {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "type_id is required", nil)
 	}
-	wf, err := s.repo.GetGlobalWorkflow(ctx, req.TypeID)
+	detail, isDraft, err := s.templateWorkflowCandidateDetail(ctx, req.Subject, req.TypeID)
 	if err != nil {
 		return nil, err
+	}
+	wf := projectTemplateWorkflow(detail, isDraft)
+	if legacy, legacyErr := s.repo.GetGlobalWorkflow(ctx, req.TypeID); legacyErr == nil && legacy != nil {
+		wf.WorkflowID = legacy.WorkflowID
+		wf.PublishedVersionNo = legacy.PublishedVersionNo
+		wf.ActiveVersionNo = legacy.ActiveVersionNo
+		wf.CreatedAt = legacy.CreatedAt
+		wf.CreatedBy = legacy.CreatedBy
 	}
 	return &CmsGetGlobalWorkflowResponse{Data: wf}, nil
 }
 
-// CmsUpsertGlobalWorkflow creates or replaces the global workflow for a template type.
+// CmsUpsertGlobalWorkflow preserves the old request/response shape but writes
+// only the template draft's enterprise_workflow projection.
 func (s *service) CmsUpsertGlobalWorkflow(ctx context.Context, req CmsUpsertGlobalWorkflowRequest) (*GlobalWorkflowDTO, error) {
 	if err := s.requireCMSTemplateWrite(ctx, req.Subject); err != nil {
 		return nil, err
@@ -98,8 +111,24 @@ func (s *service) CmsUpsertGlobalWorkflow(ctx context.Context, req CmsUpsertGlob
 			}
 		}
 	}
-	workflowID := s.idg.NewUUID()
-	return s.repo.UpsertGlobalWorkflow(ctx, req, workflowID)
+	detail, _, err := s.templateWorkflowCandidateDetail(ctx, req.Subject, req.TypeID)
+	if err != nil {
+		return nil, err
+	}
+	blocks, err := replaceTemplateWorkflowBlock(detail.Blocks, req.Steps)
+	if err != nil {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, err.Error(), nil)
+	}
+	upsert := upsertRequestFromDetail(req.Subject, detail, blocks, req.ChangeNote)
+	saved, err := s.UpsertTypeVersion(ctx, upsert)
+	if err != nil {
+		return nil, err
+	}
+	savedDetail, err := s.repo.GetTypeVersionDetail(ctx, req.Subject.CompanyID, req.TypeID, saved.VersionNo)
+	if err != nil {
+		return nil, err
+	}
+	return projectTemplateWorkflow(savedDetail, true), nil
 }
 
 // CmsDeleteGlobalWorkflow removes the global workflow for a template type.
@@ -111,7 +140,113 @@ func (s *service) CmsDeleteGlobalWorkflow(ctx context.Context, req CmsDeleteGlob
 	if req.TypeID == "" {
 		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "type_id is required", nil)
 	}
-	return s.repo.DeleteGlobalWorkflow(ctx, req.TypeID)
+	detail, _, err := s.templateWorkflowCandidateDetail(ctx, req.Subject, req.TypeID)
+	if err != nil {
+		return err
+	}
+	blocks, err := replaceTemplateWorkflowBlock(detail.Blocks, nil)
+	if err != nil {
+		return err
+	}
+	_, err = s.UpsertTypeVersion(ctx, upsertRequestFromDetail(req.Subject, detail, blocks, "clear workflow draft"))
+	return err
+}
+
+func (s *service) templateWorkflowCandidateDetail(ctx context.Context, sub Subject, typeID string) (*DisclosureTypeDTO, bool, error) {
+	versions, err := s.repo.ListTypeVersions(ctx, sub.CompanyID, typeID)
+	if err != nil {
+		return nil, false, err
+	}
+	target := 0
+	isDraft := false
+	for _, version := range versions {
+		if !version.IsActive && !version.IsReleased && version.VersionNo > target {
+			target = version.VersionNo
+			isDraft = true
+		}
+	}
+	if target == 0 {
+		for _, version := range versions {
+			if version.IsActive {
+				target = version.VersionNo
+				break
+			}
+		}
+	}
+	if target == 0 {
+		return nil, false, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "template has no workflow candidate version", nil)
+	}
+	detail, err := s.repo.GetTypeVersionDetail(ctx, sub.CompanyID, typeID, target)
+	return detail, isDraft, err
+}
+
+func replaceTemplateWorkflowBlock(blocks []TemplateBlockDTO, steps []GlobalWorkflowStepInput) ([]TemplateBlockDTO, error) {
+	raw, err := json.Marshal(steps)
+	if err != nil {
+		return nil, fmt.Errorf("marshal workflow projection: %w", err)
+	}
+	var projected []any
+	if err := json.Unmarshal(raw, &projected); err != nil {
+		return nil, fmt.Errorf("normalize workflow projection: %w", err)
+	}
+	out := make([]TemplateBlockDTO, 0, len(blocks)+1)
+	replaced := false
+	for _, block := range blocks {
+		next := block
+		if strings.EqualFold(strings.TrimSpace(block.BlockKey), "enterprise_workflow") {
+			next.Config = map[string]any{"steps": projected}
+			next.Enabled = true
+			replaced = true
+		}
+		out = append(out, next)
+	}
+	if !replaced {
+		out = append(out, TemplateBlockDTO{
+			BlockID: "enterprise-workflow", BlockKey: "enterprise_workflow", BlockType: "workflow",
+			Title: "Workflow", Config: map[string]any{"steps": projected},
+			Validation: map[string]any{}, DisplayOrder: len(out) + 1, Enabled: true,
+		})
+	}
+	return out, nil
+}
+
+func upsertRequestFromDetail(sub Subject, detail *DisclosureTypeDTO, blocks []TemplateBlockDTO, changeNote string) UpsertTypeVersionRequest {
+	return UpsertTypeVersionRequest{
+		Subject: sub, TypeID: detail.TypeID, Scope: detail.Scope, GroupID: detail.GroupID,
+		Name: detail.Name, Category: detail.Category, TemplateCategory: detail.TemplateCategory,
+		DeadlineStrategy: detail.DeadlineStrategy, Description: detail.Description,
+		LegalBasis: detail.LegalBasis, Applicability: detail.Applicability,
+		ImplementationContent: detail.ImplementationContent, ImplementationNotes: detail.ImplementationNotes,
+		SpecialCases: detail.SpecialCases, ReportContent: detail.ReportContent, RequiredDocs: detail.RequiredDocs,
+		DeadlineRule: detail.DeadlineRule, Periodicity: detail.Periodicity, ChannelsText: detail.ChannelsText,
+		Beneficiaries: detail.Beneficiaries, ReceivingAuthorities: detail.ReceivingAuthorities,
+		Format: detail.Format, LegalRisksText: detail.LegalRisksText, GeneralInfo: detail.GeneralInfo,
+		LegalBases: detail.LegalBases, LegalBasesProvided: true, Checklist: detail.Checklist, Tags: detail.Tags,
+		DeadlineConfig: detail.DeadlineConfig, Blocks: blocks, DisplayGroupCodes: detail.DisplayGroupCodes,
+		ChangeNote: changeNote, ApplicabilityRules: detail.ApplicabilityRules,
+	}
+}
+
+func projectTemplateWorkflow(detail *DisclosureTypeDTO, isDraft bool) *GlobalWorkflowDTO {
+	steps := ExtractTemplateWorkflow(detail.Blocks)
+	out := &GlobalWorkflowDTO{
+		WorkflowID: fmt.Sprintf("template:%s:%d", detail.TypeID, detail.VersionNo),
+		TypeID: detail.TypeID, Status: "active", Steps: make([]GlobalWorkflowStepInput, 0, len(steps)),
+		UpdatedAt: time.Now().UTC(),
+	}
+	if isDraft {
+		out.Status = "draft"
+	}
+	for _, step := range steps {
+		out.Steps = append(out.Steps, GlobalWorkflowStepInput{
+			StepID: step.StepID, StepKey: step.StepID, Stage: step.Stage,
+			Description: step.Description, Instructions: step.Instructions,
+			DepartmentID: step.DepartmentID, AssigneeRoleIds: append([]string(nil), step.AssigneeRoleIds...),
+			DueRule: step.DueRule, ProcessingDays: step.ProcessingDays, DisplayOrder: step.DisplayOrder,
+			ReminderConfig: CloneWorkflowStepReminderConfig(step.ReminderConfig),
+		})
+	}
+	return out
 }
 
 // CmsListDisplayGroupsCatalog returns all display groups for CMS management.

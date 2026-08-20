@@ -50,10 +50,11 @@ type ManifestStep struct {
 
 // Manifest is the immutable, deterministic snapshot of a workflow version.
 type Manifest struct {
-	TypeID     string         `json:"type_id"`
-	WorkflowID string         `json:"workflow_id"`
-	VersionNo  int            `json:"version_no"`
-	Steps      []ManifestStep `json:"steps"`
+	TypeID            string         `json:"type_id"`
+	WorkflowID        string         `json:"workflow_id"`
+	VersionNo         int            `json:"version_no"`
+	TemplateVersionNo int            `json:"template_version_no,omitempty"`
+	Steps             []ManifestStep `json:"steps"`
 }
 
 // VersionInfo is version metadata without the (large) manifest.

@@ -21,44 +21,64 @@ func NewVersionRepository(db *sql.DB) *VersionRepository { return &VersionReposi
 
 var _ wfcapp.VersionRepository = (*VersionRepository)(nil)
 
-// BuildManifest reads the current editable workflow + steps for a type and returns a manifest.
+// BuildManifest reads the template-owned draft candidate (or active publication
+// when no draft exists). global_workflows is no longer editable authority.
 func (r *VersionRepository) BuildManifest(ctx context.Context, typeID string) (wfcapp.Manifest, error) {
-	var workflowID string
-	err := r.db.QueryRowContext(ctx,
-		`SELECT workflow_id FROM global_workflows WHERE type_id = ? AND status = 'active' LIMIT 1`, typeID).
-		Scan(&workflowID)
+	var templateVersionNo int
+	var raw []byte
+	err := r.db.QueryRowContext(ctx, `
+		SELECT v.version_no, v.workflow_manifest_json
+		FROM disclosure_types t
+		INNER JOIN disclosure_type_versions v ON v.type_id = t.type_id
+		WHERE t.type_id = ?
+		  AND v.workflow_authority_mode = 'TEMPLATE_PINNED'
+		  AND v.workflow_manifest_json IS NOT NULL
+		  AND (v.version_no = t.active_version_no OR COALESCE(v.is_released, 0) = 0)
+		ORDER BY
+		  CASE WHEN v.version_no <> t.active_version_no AND COALESCE(v.is_released, 0) = 0 THEN 0 ELSE 1 END,
+		  v.version_no DESC
+		LIMIT 1
+	`, typeID).Scan(&templateVersionNo, &raw)
 	if err == sql.ErrNoRows {
-		return wfcapp.Manifest{}, fmt.Errorf("no active global workflow for type %q", typeID)
+		return wfcapp.Manifest{}, fmt.Errorf("no pinned template workflow candidate for type %q", typeID)
 	}
 	if err != nil {
-		return wfcapp.Manifest{}, fmt.Errorf("build manifest (workflow): %w", err)
+		return wfcapp.Manifest{}, fmt.Errorf("build template manifest: %w", err)
 	}
-	rows, err := r.db.QueryContext(ctx, `
-		SELECT step_id, COALESCE(step_key,''), stage, COALESCE(description,''), COALESCE(instructions,''),
-		       COALESCE(assignee_role_ids, JSON_ARRAY()),
-		       department_id, due_rule, processing_days, display_order, documents_json
-		FROM global_workflow_steps WHERE workflow_id = ?
-		ORDER BY display_order ASC, step_key ASC
-	`, workflowID)
-	if err != nil {
-		return wfcapp.Manifest{}, fmt.Errorf("build manifest (steps): %w", err)
+	var publication struct {
+		Steps []struct {
+			StepID          string                       `json:"step_id"`
+			StepKey         string                       `json:"step_key"`
+			Stage           string                       `json:"stage"`
+			Description     string                       `json:"description"`
+			Instructions    string                       `json:"instructions"`
+			DepartmentID    string                       `json:"department_id"`
+			AssigneeRoleIDs []string                     `json:"assignee_role_ids"`
+			DueRule         string                       `json:"due_rule"`
+			ProcessingDays  int                          `json:"processing_days"`
+			DisplayOrder    int                          `json:"display_order"`
+			ReminderConfig  *wfcapp.ManifestReminderConfig `json:"reminder_config"`
+		} `json:"steps"`
 	}
-	defer rows.Close()
-	m := wfcapp.Manifest{TypeID: typeID, WorkflowID: workflowID}
-	for rows.Next() {
-		var st wfcapp.ManifestStep
-		var roleJSON []byte
-		var documentsJSON []byte
-		if err := rows.Scan(&st.StepID, &st.StepKey, &st.Stage, &st.Description, &st.Instructions, &roleJSON, &st.DepartmentID, &st.DueRule, &st.ProcessingDays, &st.DisplayOrder, &documentsJSON); err != nil {
-			return wfcapp.Manifest{}, fmt.Errorf("scan step: %w", err)
+	if err := json.Unmarshal(raw, &publication); err != nil {
+		return wfcapp.Manifest{}, fmt.Errorf("decode template workflow manifest: %w", err)
+	}
+	m := wfcapp.Manifest{
+		TypeID: typeID, WorkflowID: fmt.Sprintf("template:%s:%d", typeID, templateVersionNo),
+		TemplateVersionNo: templateVersionNo, Steps: make([]wfcapp.ManifestStep, 0, len(publication.Steps)),
+	}
+	for _, step := range publication.Steps {
+		role := ""
+		if len(step.AssigneeRoleIDs) > 0 {
+			role = step.AssigneeRoleIDs[0]
 		}
-		st.Name = st.Stage
-		st.Role = firstRole(roleJSON)
-		st.ReminderConfig = decodeManifestReminderConfig(documentsJSON)
-		m.Steps = append(m.Steps, st)
-	}
-	if err := rows.Err(); err != nil {
-		return wfcapp.Manifest{}, err
+		m.Steps = append(m.Steps, wfcapp.ManifestStep{
+			StepID: step.StepID, StepKey: step.StepKey, Stage: step.Stage, Name: step.Stage,
+			Description: step.Description, Instructions: step.Instructions, Role: role,
+			DepartmentID: step.DepartmentID, DueRule: step.DueRule,
+			ProcessingDays: step.ProcessingDays, DisplayOrder: step.DisplayOrder,
+			ReminderConfig: step.ReminderConfig,
+		})
 	}
 	return wfcapp.NormalizeManifest(m), nil
 }
@@ -139,9 +159,9 @@ func (r *VersionRepository) Publish(ctx context.Context, m wfcapp.Manifest, chan
 	}
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO global_workflow_versions
-			(type_id, version_no, state, steps_manifest_json, change_note, published_at, published_by)
-		VALUES (?, ?, 'published', ?, NULLIF(?, ''), ?, ?)
-	`, m.TypeID, next, string(manifestJSON), changeNote, at.UTC(), actor); err != nil {
+			(type_id, version_no, template_version_no, state, steps_manifest_json, change_note, published_at, published_by)
+		VALUES (?, ?, NULLIF(?, 0), 'published', ?, NULLIF(?, ''), ?, ?)
+	`, m.TypeID, next, m.TemplateVersionNo, string(manifestJSON), changeNote, at.UTC(), actor); err != nil {
 		return wfcapp.VersionInfo{}, fmt.Errorf("insert version: %w", err)
 	}
 	// Pointer on global_workflows (best-effort; source of truth is the version state).
@@ -163,7 +183,36 @@ func (r *VersionRepository) Activate(ctx context.Context, typeID string, version
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	// Demote the currently-active version (if different) → 'published'. Ensures a single active.
+	var templateVersionNo int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COALESCE(template_version_no, 0)
+		FROM global_workflow_versions
+		WHERE type_id = ? AND version_no = ? AND state IN ('published','active')
+		FOR UPDATE
+	`, typeID, versionNo).Scan(&templateVersionNo); err != nil {
+		if err == sql.ErrNoRows {
+			return wfcapp.VersionInfo{}, fmt.Errorf("version %d not activatable for type %q", versionNo, typeID)
+		}
+		return wfcapp.VersionInfo{}, err
+	}
+	if templateVersionNo <= 0 {
+		return wfcapp.VersionInfo{}, fmt.Errorf("version %d is not mapped to a template publication", versionNo)
+	}
+	var authorityMode, candidateHash string
+	var publicationRaw []byte
+	if err := tx.QueryRowContext(ctx, `
+		SELECT workflow_authority_mode, workflow_manifest_json, COALESCE(publication_candidate_hash, '')
+		FROM disclosure_type_versions
+		WHERE type_id = ? AND version_no = ?
+		FOR UPDATE
+	`, typeID, templateVersionNo).Scan(&authorityMode, &publicationRaw, &candidateHash); err != nil {
+		return wfcapp.VersionInfo{}, fmt.Errorf("lock template publication: %w", err)
+	}
+	if authorityMode != "TEMPLATE_PINNED" || len(publicationRaw) == 0 || candidateHash == "" {
+		return wfcapp.VersionInfo{}, fmt.Errorf("mapped template publication is not activation-ready")
+	}
+
+	// Compatibility history retains one active marker; runtime ignores it.
 	if _, err := tx.ExecContext(ctx,
 		`UPDATE global_workflow_versions SET state = 'published'
 		 WHERE type_id = ? AND state = 'active' AND version_no <> ?`, typeID, versionNo); err != nil {
@@ -179,10 +228,20 @@ func (r *VersionRepository) Activate(ctx context.Context, typeID string, version
 	if n, _ := res.RowsAffected(); n == 0 {
 		return wfcapp.VersionInfo{}, fmt.Errorf("version %d not activatable for type %q", versionNo, typeID)
 	}
-	// Pointer on global_workflows — status must be 'active' for Effective Workflow resolution (loadActiveGlobalWorkflow).
+	// Canonical activation: release and point the template in this transaction.
 	if _, err := tx.ExecContext(ctx,
-		`UPDATE global_workflows SET active_version_no = ?, status = 'active' WHERE type_id = ?`, versionNo, typeID); err != nil {
-		return wfcapp.VersionInfo{}, fmt.Errorf("set active pointer: %w", err)
+		`UPDATE disclosure_type_versions
+		 SET is_released = 1, activated_at = ?, updated_by = ?
+		 WHERE type_id = ? AND version_no = ?`,
+		at.UTC(), actor, typeID, templateVersionNo); err != nil {
+		return wfcapp.VersionInfo{}, fmt.Errorf("release template publication: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE disclosure_types
+		 SET active_version_no = ?, status = 'active', updated_at = CURRENT_TIMESTAMP
+		 WHERE type_id = ?`,
+		templateVersionNo, typeID); err != nil {
+		return wfcapp.VersionInfo{}, fmt.Errorf("set template active pointer: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
 		return wfcapp.VersionInfo{}, err

@@ -149,6 +149,10 @@ type activateDeadlineRepo struct {
 	deadlineRule string
 }
 
+func (r *activateDeadlineRepo) GetActiveGlobalWorkflow(_ context.Context, _ string) ([]WorkflowStepDTO, int, bool, error) {
+	return nil, 0, false, nil
+}
+
 func (r *activateDeadlineRepo) ListActiveDeadlineRuleCatalog(_ context.Context) ([]DeadlineRuleCatalogDTO, error) {
 	return defaultDeadlineRuleCatalog(), nil
 }

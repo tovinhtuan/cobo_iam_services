@@ -87,6 +87,12 @@ func NewRepository() *Repository {
 				},
 			}
 		}
+		if manifest, _, hash, err := disclosureapp.CanonicalWorkflowPublication(disclosureapp.ExtractTemplateWorkflow(item.Blocks)); err == nil {
+			item.WorkflowAuthorityMode = disclosureapp.WorkflowAuthorityTemplatePinned
+			item.WorkflowManifest = &manifest
+			item.WorkflowSemanticHash = hash
+			item.PublicationCandidateHash = hash
+		}
 		repo.catalog[item.TypeID] = item
 		repo.catalogByVer[item.TypeID] = map[int]disclosureapp.DisclosureTypeDTO{1: item}
 		repo.catalogScope[item.TypeID] = "global"
@@ -192,13 +198,47 @@ func (r *Repository) ListTypes(_ context.Context, params disclosureapp.ListTypes
 	}
 
 	out := make([]disclosureapp.DisclosureTypeSummaryDTO, 0)
+	listMode := strings.ToLower(strings.TrimSpace(params.ListMode))
 	for _, item := range r.catalog {
+		activeVersionNo := 0
+		for _, ver := range r.versions[item.TypeID] {
+			if ver.IsActive {
+				activeVersionNo = ver.VersionNo
+				break
+			}
+		}
+		if activeVersionNo <= 0 && len(r.versions[item.TypeID]) == 0 && item.VersionNo > 0 {
+			// Test/legacy fixtures may seed catalog without version rows — treat as active for portal list.
+			activeVersionNo = item.VersionNo
+		}
+		if listMode != "management" && activeVersionNo <= 0 {
+			continue
+		}
+		listItem := item
+		if activeVersionNo > 0 {
+			if byVer, ok := r.catalogByVer[item.TypeID]; ok {
+				if snap, found := byVer[activeVersionNo]; found {
+					listItem = snap
+				}
+			}
+		} else if listMode == "management" {
+			if byVer, ok := r.catalogByVer[item.TypeID]; ok && len(byVer) > 0 {
+				best := 0
+				for n, snap := range byVer {
+					if n > best {
+						best = n
+						listItem = snap
+					}
+				}
+			}
+		}
+		listedVersionNo := listItem.VersionNo
 		if len(typeIDFilter) > 0 {
-			if _, ok := typeIDFilter[item.TypeID]; !ok {
+			if _, ok := typeIDFilter[listItem.TypeID]; !ok {
 				continue
 			}
 		}
-		itemScope := r.catalogScope[item.TypeID]
+		itemScope := r.catalogScope[listItem.TypeID]
 		scopeFilter := strings.ToLower(strings.TrimSpace(params.Scope))
 		switch scopeFilter {
 		case "global":
@@ -214,20 +254,20 @@ func (r *Repository) ListTypes(_ context.Context, params disclosureapp.ListTypes
 				continue
 			}
 		}
-		if groupID != "" && item.GroupID != groupID {
+		if groupID != "" && listItem.GroupID != groupID {
 			continue
 		}
-		if displayGroupCode != "" && r.displayGroupCodes[item.TypeID] != displayGroupCode {
+		if displayGroupCode != "" && r.displayGroupCodes[listItem.TypeID] != displayGroupCode {
 			continue
 		}
-		if query != "" && !strings.Contains(strings.ToLower(item.Name+" "+item.Description), query) {
+		if query != "" && !strings.Contains(strings.ToLower(listItem.Name+" "+listItem.Description), query) {
 			continue
 		}
 		if len(params.Tags) > 0 {
 			matched := false
 			for _, want := range params.Tags {
 				want = strings.TrimSpace(want)
-				for _, have := range item.Tags {
+				for _, have := range listItem.Tags {
 					if strings.EqualFold(strings.TrimSpace(have), want) {
 						matched = true
 						break
@@ -242,8 +282,8 @@ func (r *Repository) ListTypes(_ context.Context, params disclosureapp.ListTypes
 			}
 		}
 		if freq := disclosureapp.NormalizePeriodicityFilter(params.Periodicity); freq != "" {
-			p := strings.ToLower(strings.TrimSpace(item.Periodicity))
-			tc := strings.ToLower(strings.TrimSpace(item.TemplateCategory))
+			p := strings.ToLower(strings.TrimSpace(listItem.Periodicity))
+			tc := strings.ToLower(strings.TrimSpace(listItem.TemplateCategory))
 			ok := false
 			switch freq {
 			case "ad_hoc":
@@ -259,7 +299,7 @@ func (r *Repository) ListTypes(_ context.Context, params disclosureapp.ListTypes
 		}
 		if dept := strings.TrimSpace(params.DepartmentID); dept != "" {
 			hasDept := false
-			if wf := r.globalWorkflows[item.TypeID]; wf != nil {
+			if wf := r.globalWorkflows[listItem.TypeID]; wf != nil {
 				for _, step := range wf.Steps {
 					if strings.TrimSpace(step.DepartmentID) == dept {
 						hasDept = true
@@ -279,37 +319,41 @@ func (r *Repository) ListTypes(_ context.Context, params disclosureapp.ListTypes
 		}
 		if params.LightweightOnly {
 			out = append(out, disclosureapp.DisclosureTypeSummaryDTO{
-				TypeID:             item.TypeID,
+				TypeID:             listItem.TypeID,
 				Scope:              scope,
 				OwnerCompanyID:     ownerCompanyID,
-				Name:               item.Name,
-				ApplicabilityRules: item.ApplicabilityRules,
+				Name:               listItem.Name,
+				ApplicabilityRules: listItem.ApplicabilityRules,
+				ActiveVersionNo:    activeVersionNo,
+				ListedVersionNo:    listedVersionNo,
 			})
 			continue
 		}
 		out = append(out, disclosureapp.DisclosureTypeSummaryDTO{
-			TypeID:           item.TypeID,
-			GroupID:          item.GroupID,
-			DisplayGroupCode: r.displayGroupCodes[item.TypeID],
+			TypeID:           listItem.TypeID,
+			GroupID:          listItem.GroupID,
+			DisplayGroupCode: r.displayGroupCodes[listItem.TypeID],
 			DisplayGroupCodes: func() []string {
-				if codes := r.templateDisplayGroupCodes[item.TypeID]; len(codes) > 0 {
+				if codes := r.templateDisplayGroupCodes[listItem.TypeID]; len(codes) > 0 {
 					return slices.Clone(codes)
 				}
-				if c := r.displayGroupCodes[item.TypeID]; c != "" {
+				if c := r.displayGroupCodes[listItem.TypeID]; c != "" {
 					return []string{c}
 				}
 				return []string{}
 			}(),
 			Scope:              scope,
 			OwnerCompanyID:     ownerCompanyID,
-			Name:               item.Name,
-			Category:           item.Category,
-			TemplateCategory:   item.TemplateCategory,
-			Description:        item.Description,
-			DeadlineRule:       item.DeadlineRule,
-			HasWorkflow:        disclosureapp.TemplateHasWorkflow(item.Blocks),
-			Tags:               slices.Clone(item.Tags),
-			ApplicabilityRules: item.ApplicabilityRules,
+			Name:               listItem.Name,
+			Category:           listItem.Category,
+			TemplateCategory:   listItem.TemplateCategory,
+			Description:        listItem.Description,
+			DeadlineRule:       listItem.DeadlineRule,
+			HasWorkflow:        disclosureapp.TemplateHasWorkflow(listItem.Blocks),
+			Tags:               slices.Clone(listItem.Tags),
+			ApplicabilityRules: listItem.ApplicabilityRules,
+			ActiveVersionNo:    activeVersionNo,
+			ListedVersionNo:    listedVersionNo,
 		})
 	}
 	total := len(out)
@@ -403,14 +447,31 @@ func (r *Repository) GetTypeDetail(_ context.Context, companyID, typeID string) 
 	return &cp, nil
 }
 
-func (r *Repository) HasActiveEnterpriseWorkflow(_ context.Context, _ string, typeID string) (bool, error) {
+func (r *Repository) HasActiveEnterpriseWorkflow(_ context.Context, companyID, typeID string) (bool, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+	// Final authority: company override > active template publication.
+	if st, ok := r.overrideByCompanyType[overrideKey(companyID, typeID)]; ok && st.header.ActiveVersionNo > 0 {
+		if v, vok := st.versions[st.header.ActiveVersionNo]; vok && v.State == "approved" {
+			return true, nil
+		}
+	}
 	item, ok := r.catalog[typeID]
 	if !ok {
 		return false, nil
 	}
-	return disclosureapp.TemplateHasWorkflow(item.Blocks), nil
+	return item.WorkflowAuthorityMode == disclosureapp.WorkflowAuthorityTemplatePinned &&
+		item.WorkflowManifest != nil && len(item.WorkflowManifest.Steps) > 0, nil
+}
+
+func (r *Repository) GetActiveGlobalWorkflow(_ context.Context, typeID string) ([]disclosureapp.WorkflowStepDTO, int, bool, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	wf, exists := r.globalWorkflows[typeID]
+	if !exists || wf.Status != "active" || wf.ActiveVersionNo == nil {
+		return nil, 0, false, nil
+	}
+	return convertGlobalWorkflowSteps(wf.Steps), *wf.ActiveVersionNo, true, nil
 }
 
 func (r *Repository) GetTypeVersionDetail(_ context.Context, companyID, typeID string, versionNo int) (*disclosureapp.DisclosureTypeDTO, error) {
@@ -561,6 +622,19 @@ func (r *Repository) UpsertTypeVersion(ctx context.Context, req disclosureapp.Up
 		Tags:                  slices.Clone(req.Tags),
 		Blocks:                cloneTemplateBlocks(req.Blocks),
 	}
+	candidate := req.PublicationCandidate
+	if candidate == nil {
+		built, err := disclosureapp.BuildTemplatePublicationCandidate(req)
+		if err != nil {
+			return nil, err
+		}
+		candidate = &built
+	}
+	next.WorkflowAuthorityMode = candidate.AuthorityMode
+	manifest := candidate.Manifest
+	next.WorkflowManifest = &manifest
+	next.WorkflowSemanticHash = candidate.ManifestHash
+	next.PublicationCandidateHash = candidate.CandidateHash
 	r.templateDisplayGroupCodes[req.TypeID] = slices.Clone(req.DisplayGroupCodes)
 	if len(req.DisplayGroupCodes) > 0 {
 		next.DisplayGroupCodes = slices.Clone(req.DisplayGroupCodes)
@@ -762,7 +836,7 @@ func (r *Repository) GetCompanyWorkflowOverride(_ context.Context, companyID, ty
 	view := &disclosureapp.CompanyWorkflowOverrideViewDTO{
 		TypeID:          typeID,
 		CompanyID:       companyID,
-		EffectiveSource: "global_template",
+		EffectiveSource: r.resolveCMSDefaultEffectiveSourceLocked(companyID, typeID),
 	}
 	st, ok := r.overrideByCompanyType[overrideKey(companyID, typeID)]
 	if !ok {
@@ -777,16 +851,77 @@ func (r *Repository) GetCompanyWorkflowOverride(_ context.Context, companyID, ty
 			view.ActiveVersion = &cp
 			view.EffectiveSource = "company_override"
 		}
+	} else {
+		view.EffectiveSource = r.resolveCMSDefaultEffectiveSourceLocked(companyID, typeID)
 	}
+	var latestDraft *disclosureapp.CompanyWorkflowOverrideVersionDTO
 	for _, v := range st.versions {
-		if v.State == "draft" {
-			cp := v
-			cp.Workflow = cloneWorkflowSteps(v.Workflow)
-			view.DraftVersion = &cp
-			break
+		if v.State != "draft" {
+			continue
+		}
+		cp := v
+		cp.Workflow = cloneWorkflowSteps(v.Workflow)
+		if latestDraft == nil || cp.VersionNo > latestDraft.VersionNo {
+			latestDraft = &cp
 		}
 	}
+	view.DraftVersion = latestDraft
 	return view, nil
+}
+
+func (r *Repository) resolveCMSDefaultEffectiveSourceLocked(_, typeID string) string {
+	wf, exists := r.globalWorkflows[typeID]
+	activeOK := exists && wf.Status == "active" && wf.ActiveVersionNo != nil
+	var steps []disclosureapp.WorkflowStepDTO
+	var versionNo int
+	if activeOK {
+		steps = convertGlobalWorkflowSteps(wf.Steps)
+		versionNo = *wf.ActiveVersionNo
+	}
+	var blocks []disclosureapp.TemplateBlockDTO
+	enterpriseVersion := 0
+	if current, ok := r.catalog[typeID]; ok {
+		blocks = current.Blocks
+		enterpriseVersion = current.VersionNo
+	}
+	resolved := disclosureapp.ResolveCMSDefaultWorkflow(disclosureapp.CMSDefaultWorkflowInput{
+		ActiveGlobalSteps:     steps,
+		ActiveGlobalVersionNo: versionNo,
+		ActiveGlobalOK:        activeOK,
+		EnterpriseBlocks:      blocks,
+		EnterpriseVersionNo:   enterpriseVersion,
+	})
+	if resolved.Source == disclosureapp.CMSDefaultSourceNone {
+		return "global_template"
+	}
+	return resolved.Source
+}
+
+func (r *Repository) ResetCompanyWorkflowOverrideActive(_ context.Context, req disclosureapp.ResetCompanyWorkflowOverrideActiveRequest) (*disclosureapp.ResetCompanyWorkflowOverrideActiveResponse, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	cmsSource := r.resolveCMSDefaultEffectiveSourceLocked(req.Subject.CompanyID, req.TypeID)
+	st, ok := r.overrideByCompanyType[overrideKey(req.Subject.CompanyID, req.TypeID)]
+	if !ok {
+		return &disclosureapp.ResetCompanyWorkflowOverrideActiveResponse{
+			TypeID:          req.TypeID,
+			CompanyID:       req.Subject.CompanyID,
+			ActiveVersionNo: 0,
+			State:           "archived",
+			EffectiveSource: cmsSource,
+		}, nil
+	}
+	st.header.ActiveVersionNo = 0
+	st.header.Status = "archived"
+	st.header.UpdatedAt = time.Now().UTC()
+	return &disclosureapp.ResetCompanyWorkflowOverrideActiveResponse{
+		OverrideID:      st.header.OverrideID,
+		TypeID:          req.TypeID,
+		CompanyID:       req.Subject.CompanyID,
+		ActiveVersionNo: 0,
+		State:           "archived",
+		EffectiveSource: cmsSource,
+	}, nil
 }
 
 func (r *Repository) UpsertCompanyWorkflowOverrideDraft(_ context.Context, req disclosureapp.UpsertCompanyWorkflowOverrideDraftRequest) (*disclosureapp.UpsertCompanyWorkflowOverrideDraftResponse, error) {
@@ -936,32 +1071,6 @@ func (r *Repository) DeleteCompanyWorkflowOverrideDraft(_ context.Context, req d
 	}
 	delete(st.versions, req.VersionNo)
 	return &disclosureapp.DeleteCompanyWorkflowOverrideDraftResponse{Deleted: true, VersionNo: req.VersionNo}, nil
-}
-
-func (r *Repository) ResetCompanyWorkflowOverrideActive(_ context.Context, req disclosureapp.ResetCompanyWorkflowOverrideActiveRequest) (*disclosureapp.ResetCompanyWorkflowOverrideActiveResponse, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	st, ok := r.overrideByCompanyType[overrideKey(req.Subject.CompanyID, req.TypeID)]
-	if !ok {
-		return &disclosureapp.ResetCompanyWorkflowOverrideActiveResponse{
-			TypeID:          req.TypeID,
-			CompanyID:       req.Subject.CompanyID,
-			ActiveVersionNo: 0,
-			State:           "archived",
-			EffectiveSource: "global_template",
-		}, nil
-	}
-	st.header.ActiveVersionNo = 0
-	st.header.Status = "archived"
-	st.header.UpdatedAt = time.Now().UTC()
-	return &disclosureapp.ResetCompanyWorkflowOverrideActiveResponse{
-		OverrideID:      st.header.OverrideID,
-		TypeID:          req.TypeID,
-		CompanyID:       req.Subject.CompanyID,
-		ActiveVersionNo: 0,
-		State:           "archived",
-		EffectiveSource: "global_template",
-	}, nil
 }
 
 func (r *Repository) ListCompanyWorkflowOverrideVersions(_ context.Context, companyID, typeID string, page, pageSize int) ([]disclosureapp.CompanyWorkflowOverrideVersionDTO, int, error) {
@@ -1255,26 +1364,24 @@ func (r *Repository) GetEffectiveWorkflow(_ context.Context, companyID, typeID s
 		VersionNo: 0,
 		Workflow:  []disclosureapp.WorkflowStepDTO{},
 	}
-	legacyOrGlobalWorkflowFallback := func() {
-		if wf, exists := r.globalWorkflows[typeID]; exists && wf.Status == "active" && wf.ActiveVersionNo != nil {
-			dto.Source = "global_workflow"
-			dto.VersionNo = *wf.ActiveVersionNo
-			dto.Workflow = convertGlobalWorkflowSteps(wf.Steps)
+	templatePublication := func() {
+		current, ok := r.catalog[typeID]
+		if !ok || current.WorkflowAuthorityMode != disclosureapp.WorkflowAuthorityTemplatePinned || current.WorkflowManifest == nil {
 			return
 		}
-		if current, exists := r.catalog[typeID]; exists {
-			dto.VersionNo = current.VersionNo
-			dto.Workflow = disclosureapp.ExtractTemplateWorkflow(current.Blocks)
-		}
+		resolved := disclosureapp.ResolveTemplatePublicationWorkflow(typeID, current.VersionNo, *current.WorkflowManifest)
+		dto.Source = resolved.Source
+		dto.VersionNo = resolved.VersionNo
+		dto.Workflow = resolved.Workflow
 	}
 	st, ok := r.overrideByCompanyType[overrideKey(companyID, typeID)]
 	if !ok || st.header.ActiveVersionNo <= 0 {
-		legacyOrGlobalWorkflowFallback()
+		templatePublication()
 		return dto, nil
 	}
 	v, ok := st.versions[st.header.ActiveVersionNo]
 	if !ok || v.State != "approved" {
-		legacyOrGlobalWorkflowFallback()
+		templatePublication()
 		return dto, nil
 	}
 	dto.Source = "company_override"
@@ -1282,7 +1389,7 @@ func (r *Repository) GetEffectiveWorkflow(_ context.Context, companyID, typeID s
 	dto.Workflow = cloneWorkflowSteps(v.Workflow)
 	if len(dto.Workflow) == 0 {
 		dto.OverrideInvalidEmpty = true
-		if wf, exists := r.globalWorkflows[typeID]; exists && wf.Status == "active" && wf.ActiveVersionNo != nil && len(wf.Steps) > 0 {
+		if current, exists := r.catalog[typeID]; exists && current.WorkflowManifest != nil && len(current.WorkflowManifest.Steps) > 0 {
 			dto.GlobalWorkflowAvailable = true
 		}
 	}

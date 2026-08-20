@@ -16,6 +16,10 @@ type cmsTemplateAuthzRepo struct {
 	versionDetail      *DisclosureTypeDTO
 }
 
+func (r *cmsTemplateAuthzRepo) GetActiveGlobalWorkflow(_ context.Context, _ string) ([]WorkflowStepDTO, int, bool, error) {
+	return nil, 0, false, nil
+}
+
 func (r *cmsTemplateAuthzRepo) ActivateTypeVersion(_ context.Context, req ActivateTypeVersionRequest) (*ActivateTypeVersionResponse, error) {
 	return &ActivateTypeVersionResponse{
 		TypeID:    req.TypeID,

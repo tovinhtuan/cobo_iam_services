@@ -1,4 +1,18 @@
-﻿## Deadline alert visibility — active template only (2026-08-18)
+## Company workflow override contract (2026-08-20)
+
+- COMPANY_OVERRIDE_ACTIVE > ResolveCMSDefaultWorkflow; draft/activate isolation; reset fallback
+- Evidence (FE pack): ../cobo_web_design/docs/ai-cache/company-workflow-override-contract-2026-08-20/
+- Verdict `COMPANY_WORKFLOW_OVERRIDE_CONTRACT_DEV_VERIFIED`
+- NO_PRODUCTION / NO_PUSH
+
+﻿## Phase 1 — Centralize Workflow Authority (2026-08-20)
+
+- Pointer: FE `docs/ai-cache/phase1-centralize-workflow-authority-2026-08-20/`
+- BE: `ResolveCMSDefaultWorkflow` + Activate/GetEffective adapters; `GetActiveGlobalWorkflow`
+- Verdict `PHASE1_CENTRALIZED_WORKFLOW_AUTHORITY_DEV_VERIFIED`; api/worker `2026-08-20T07:29:19Z`
+- NO_PRODUCTION / NO_PUSH
+
+## Deadline alert visibility — active template only (2026-08-18)
 
 - Pointer: FE `docs/ai-cache/deadline-alert-active-template-filter-2026-08-18/`
 - ListRows INNER JOIN current `active_version_no > 0`; no business delete

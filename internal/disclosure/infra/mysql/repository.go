@@ -203,6 +203,20 @@ func (r *Repository) ListTypeGroups(ctx context.Context, _ string) ([]disclosure
 	return out, rows.Err()
 }
 
+func listTypesVersionJoin(listMode string) string {
+	if strings.ToLower(strings.TrimSpace(listMode)) == "management" {
+		return `INNER JOIN disclosure_type_versions v
+			ON v.type_id = t.type_id AND v.version_no = CASE
+				WHEN t.active_version_no > 0 THEN t.active_version_no
+				ELSE COALESCE((
+					SELECT MAX(v2.version_no) FROM disclosure_type_versions v2 WHERE v2.type_id = t.type_id
+				), 0)
+			END`
+	}
+	return `INNER JOIN disclosure_type_versions v
+		ON v.type_id = t.type_id AND v.version_no = t.active_version_no AND t.active_version_no > 0`
+}
+
 func (r *Repository) ListTypes(ctx context.Context, params disclosureapp.ListTypesParams) ([]disclosureapp.DisclosureTypeSummaryDTO, int, error) {
 	companyID := params.CompanyID
 	groupID := strings.TrimSpace(params.GroupID)
@@ -285,11 +299,13 @@ func (r *Repository) ListTypes(ctx context.Context, params disclosureapp.ListTyp
 	}
 	if deptID := strings.TrimSpace(params.DepartmentID); deptID != "" {
 		conditions = append(conditions, `EXISTS (
-			SELECT 1 FROM global_workflows gw
-			INNER JOIN global_workflow_steps gws ON gws.workflow_id = gw.workflow_id
-			WHERE gw.type_id = t.type_id
-			  AND COALESCE(gw.is_active, 0) = 1
-			  AND gws.department_id = ?
+			SELECT 1
+			FROM JSON_TABLE(
+				COALESCE(v.workflow_manifest_json, JSON_OBJECT('steps', JSON_ARRAY())),
+				'$.steps[*]' COLUMNS (department_id VARCHAR(64) PATH '$.department_id')
+			) workflow_step
+			WHERE v.workflow_authority_mode = 'TEMPLATE_PINNED'
+			  AND workflow_step.department_id = ?
 		)`)
 		args = append(args, deptID)
 	}
@@ -303,9 +319,9 @@ func (r *Repository) ListTypes(ctx context.Context, params disclosureapp.ListTyp
 	}
 
 	whereClause := strings.Join(conditions, " AND ")
+	versionJoin := listTypesVersionJoin(params.ListMode)
 	baseSQL := `FROM disclosure_types t` + joins + `
-		INNER JOIN disclosure_type_versions v
-			ON v.type_id = t.type_id AND v.version_no = t.active_version_no
+		` + versionJoin + `
 		WHERE ` + whereClause
 
 	total := 0
@@ -323,7 +339,7 @@ func (r *Repository) ListTypes(ctx context.Context, params disclosureapp.ListTyp
 		ORDER BY ` + sortCol + ` ` + sortDir
 	} else {
 		dataSQL = `SELECT t.type_id, t.group_id, COALESCE(t.display_group_code, ''), t.company_id,
-		       COALESCE(t.is_mandatory, 0), COALESCE(t.review_status, ''),
+		       COALESCE(t.is_mandatory, 0), COALESCE(t.review_status, ''), t.active_version_no, v.version_no,
 		       v.name, v.category, v.template_category, COALESCE(LEFT(v.description, 1024), ''), v.deadline_rule, v.tags_json,
 		       COALESCE(v.periodicity, ''), v.applicability_rules_json, t.created_at
 		` + baseSQL + `
@@ -369,14 +385,16 @@ func (r *Repository) ListTypes(ctx context.Context, params disclosureapp.ListTyp
 		var tagsRaw []byte
 		var rulesRaw []byte
 		var ownerCompanyID sql.NullString
+		var listedVersionNo int
 		if err := rows.Scan(
 			&item.TypeID, &item.GroupID, &item.DisplayGroupCode, &ownerCompanyID,
-			&item.IsMandatory, &item.ReviewStatus,
+			&item.IsMandatory, &item.ReviewStatus, &item.ActiveVersionNo, &listedVersionNo,
 			&item.Name, &item.Category, &item.TemplateCategory, &item.Description, &item.DeadlineRule, &tagsRaw,
 			&item.Periodicity, &rulesRaw, &item.CreatedAt,
 		); err != nil {
 			return nil, 0, err
 		}
+		item.ListedVersionNo = listedVersionNo
 		if rules, err := applicability.ParseRulesJSON(rulesRaw); err != nil {
 			return nil, 0, err
 		} else {
@@ -468,19 +486,23 @@ func (r *Repository) ListTypeFilterOptions(ctx context.Context, companyID string
 	}
 
 	deptRows, err := r.db.QueryContext(ctx, `
-		SELECT DISTINCT gws.department_id,
-		       COALESCE(NULLIF(d.department_name, ''), gws.department_id) AS department_name
-		FROM global_workflows gw
-		INNER JOIN global_workflow_steps gws ON gws.workflow_id = gw.workflow_id
-		INNER JOIN disclosure_types t ON t.type_id = gw.type_id
+		SELECT DISTINCT workflow_step.department_id,
+		       COALESCE(NULLIF(d.department_name, ''), workflow_step.department_id) AS department_name
+		FROM disclosure_types t
+		INNER JOIN disclosure_type_versions v
+			ON v.type_id = t.type_id AND v.version_no = t.active_version_no
+		INNER JOIN JSON_TABLE(
+			COALESCE(v.workflow_manifest_json, JSON_OBJECT('steps', JSON_ARRAY())),
+			'$.steps[*]' COLUMNS (department_id VARCHAR(64) PATH '$.department_id')
+		) workflow_step
 		LEFT JOIN departments d
-			ON d.department_id = gws.department_id
+			ON d.department_id = workflow_step.department_id
 			AND d.company_id = ?
 			AND d.status != 'inactive'
 		WHERE (t.company_id IS NULL OR t.company_id = ?)
-		  AND COALESCE(gw.is_active, 0) = 1
-		  AND gws.department_id IS NOT NULL
-		  AND TRIM(gws.department_id) <> ''
+		  AND v.workflow_authority_mode = 'TEMPLATE_PINNED'
+		  AND workflow_step.department_id IS NOT NULL
+		  AND TRIM(workflow_step.department_id) <> ''
 		ORDER BY department_name ASC
 	`, companyID, companyID)
 	if err != nil {
@@ -542,13 +564,8 @@ func (r *Repository) batchLoadDisplayGroupCodes(ctx context.Context, typeIDs []s
 	return result, rows.Err()
 }
 
-// batchLoadActiveWorkflowFlags checks three sources (matching GetEffectiveWorkflow precedence):
-//   - Nhánh 1: CMS enterprise_workflow block with ≥1 actual step
-//   - Nhánh 2: Company-specific workflow override (active_version_no > 0)
-//   - Nhánh 3: Active global_workflow_versions (governed workflow builder)
-//
-// Any source yielding a positive result sets has_workflow=true for that type.
-// companyID scopes nhánh 2 so Company B cannot inherit Company A's approved override.
+// batchLoadActiveWorkflowFlags checks final authority only:
+// active company override > active template publication.
 func (r *Repository) batchLoadActiveWorkflowFlags(ctx context.Context, companyID string, typeIDs []string) (map[string]bool, error) {
 	if len(typeIDs) == 0 {
 		return map[string]bool{}, nil
@@ -561,12 +578,15 @@ func (r *Repository) batchLoadActiveWorkflowFlags(ctx context.Context, companyID
 	}
 	ph := strings.Join(placeholders, ",")
 
-	// Nhánh 1: CMS template — block must contain at least one actual step.
+	// CMS default: only the active template version's pinned publication.
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT b.type_id, b.config_json
-		FROM disclosure_template_blocks b
-		INNER JOIN disclosure_types t ON t.type_id = b.type_id AND t.active_version_no = b.version_no
-		WHERE b.block_key = 'enterprise_workflow' AND b.type_id IN (`+ph+`)
+		SELECT t.type_id
+		FROM disclosure_types t
+		INNER JOIN disclosure_type_versions v
+			ON v.type_id = t.type_id AND v.version_no = t.active_version_no
+		WHERE t.type_id IN (`+ph+`)
+		  AND v.workflow_authority_mode = 'TEMPLATE_PINNED'
+		  AND JSON_LENGTH(COALESCE(v.workflow_manifest_json, JSON_OBJECT('steps', JSON_ARRAY())), '$.steps') > 0
 	`, args...)
 	if err != nil {
 		return nil, err
@@ -575,24 +595,16 @@ func (r *Repository) batchLoadActiveWorkflowFlags(ctx context.Context, companyID
 	result := make(map[string]bool, len(typeIDs))
 	for rows.Next() {
 		var typeID string
-		var configRaw []byte
-		if err := rows.Scan(&typeID, &configRaw); err != nil {
+		if err := rows.Scan(&typeID); err != nil {
 			return nil, err
 		}
-		var cfg map[string]any
-		if err := decodeJSONMap(configRaw, &cfg); err != nil {
-			return nil, fmt.Errorf("decode workflow config: %w", err)
-		}
-		result[typeID] = len(disclosureapp.ExtractTemplateWorkflow([]disclosureapp.TemplateBlockDTO{{
-			BlockKey: "enterprise_workflow",
-			Config:   cfg,
-		}})) > 0
+		result[typeID] = true
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 
-	// Nhánh 2: Company-defined template — approved workflow-override for THIS company only.
+	// Company override: approved workflow for THIS company only.
 	// active_version_no INT NOT NULL DEFAULT 0: draft/archived=0, approved=version_no>0.
 	// company_id filter prevents Company B from inheriting Company A's approved override.
 	oRows, err := r.db.QueryContext(ctx, `
@@ -617,29 +629,7 @@ func (r *Repository) batchLoadActiveWorkflowFlags(ctx context.Context, companyID
 		return nil, err
 	}
 
-	// Nhánh 3: Active global_workflow_versions — governed workflow that has been activated
-	// (not just published). Mirrors loadActiveGlobalWorkflow join logic. Only marks true for
-	// types not already resolved by nhánh 1/2 to avoid unnecessary queries in the common case,
-	// but since map semantics are idempotent (true remains true) we simply union all positives.
-	gwRows, err := r.db.QueryContext(ctx, `
-		SELECT w.type_id
-		FROM global_workflows w
-		JOIN global_workflow_versions v ON v.type_id = w.type_id AND v.version_no = w.active_version_no
-		WHERE w.status = 'active'
-		  AND w.type_id IN (`+ph+`)
-	`, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer gwRows.Close()
-	for gwRows.Next() {
-		var typeID string
-		if err := gwRows.Scan(&typeID); err != nil {
-			return nil, err
-		}
-		result[typeID] = true
-	}
-	return result, gwRows.Err()
+	return result, nil
 }
 
 func (r *Repository) HasActiveEnterpriseWorkflow(ctx context.Context, companyID, typeID string) (bool, error) {
@@ -683,7 +673,11 @@ func (r *Repository) GetTypeDetail(ctx context.Context, companyID, typeID string
 			COALESCE(v.legal_bases_json, JSON_ARRAY()),
 			COALESCE(v.checklist_json, JSON_ARRAY()),
 			v.tags_json,
-			v.applicability_rules_json
+			v.applicability_rules_json,
+			COALESCE(v.workflow_authority_mode, 'LEGACY_COMPAT'),
+			v.workflow_manifest_json,
+			COALESCE(v.workflow_semantic_hash, ''),
+			COALESCE(v.publication_candidate_hash, '')
 		FROM disclosure_types t
 		INNER JOIN disclosure_type_versions v ON v.type_id = t.type_id AND v.version_no = t.active_version_no
 		WHERE t.type_id = ? AND (t.company_id IS NULL OR t.company_id = ?)
@@ -695,6 +689,7 @@ func (r *Repository) GetTypeDetail(ctx context.Context, companyID, typeID string
 	var checklistRaw []byte
 	var tagsRaw []byte
 	var rulesRaw []byte
+	var workflowManifestRaw []byte
 	if err := row.Scan(
 		&item.TypeID, &item.GroupID, &item.DisplayGroupCode, &ownerCompanyID, &item.VersionNo,
 		&item.IsMandatory, &item.ReviewStatus,
@@ -708,6 +703,10 @@ func (r *Repository) GetTypeDetail(ctx context.Context, companyID, typeID string
 		&checklistRaw,
 		&tagsRaw,
 		&rulesRaw,
+		&item.WorkflowAuthorityMode,
+		&workflowManifestRaw,
+		&item.WorkflowSemanticHash,
+		&item.PublicationCandidateHash,
 	); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "disclosure type not found", nil)
@@ -736,6 +735,13 @@ func (r *Repository) GetTypeDetail(ctx context.Context, companyID, typeID string
 	}
 	if err := decodeJSONList(checklistRaw, &item.Checklist); err != nil {
 		return nil, err
+	}
+	if len(workflowManifestRaw) > 0 {
+		manifest, parseErr := disclosureapp.ParseWorkflowPublicationManifest(workflowManifestRaw)
+		if parseErr != nil {
+			return nil, parseErr
+		}
+		item.WorkflowManifest = &manifest
 	}
 	blocks, err := r.listTemplateBlocks(ctx, typeID, item.VersionNo)
 	if err != nil {
@@ -776,7 +782,11 @@ func (r *Repository) GetTypeVersionDetail(ctx context.Context, companyID, typeID
 			COALESCE(v.legal_bases_json, JSON_ARRAY()),
 			COALESCE(v.checklist_json, JSON_ARRAY()),
 			v.tags_json,
-			v.applicability_rules_json
+			v.applicability_rules_json,
+			COALESCE(v.workflow_authority_mode, 'LEGACY_COMPAT'),
+			v.workflow_manifest_json,
+			COALESCE(v.workflow_semantic_hash, ''),
+			COALESCE(v.publication_candidate_hash, '')
 		FROM disclosure_type_versions v
 		INNER JOIN disclosure_types t ON t.type_id = v.type_id
 		WHERE v.type_id = ? AND v.version_no = ? AND (t.company_id IS NULL OR t.company_id = ?)
@@ -788,6 +798,7 @@ func (r *Repository) GetTypeVersionDetail(ctx context.Context, companyID, typeID
 	var checklistRaw []byte
 	var tagsRaw []byte
 	var rulesRaw []byte
+	var workflowManifestRaw []byte
 	if err := row.Scan(
 		&item.TypeID, &item.GroupID, &ownerCompanyID, &item.VersionNo,
 		&item.Name, &item.Category, &item.TemplateCategory, &item.DeadlineStrategy, &item.Description,
@@ -800,6 +811,10 @@ func (r *Repository) GetTypeVersionDetail(ctx context.Context, companyID, typeID
 		&checklistRaw,
 		&tagsRaw,
 		&rulesRaw,
+		&item.WorkflowAuthorityMode,
+		&workflowManifestRaw,
+		&item.WorkflowSemanticHash,
+		&item.PublicationCandidateHash,
 	); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "disclosure type version not found", nil)
@@ -828,6 +843,13 @@ func (r *Repository) GetTypeVersionDetail(ctx context.Context, companyID, typeID
 	}
 	if err := decodeJSONList(checklistRaw, &item.Checklist); err != nil {
 		return nil, err
+	}
+	if len(workflowManifestRaw) > 0 {
+		manifest, parseErr := disclosureapp.ParseWorkflowPublicationManifest(workflowManifestRaw)
+		if parseErr != nil {
+			return nil, parseErr
+		}
+		item.WorkflowManifest = &manifest
 	}
 	blocks, err := r.listTemplateBlocks(ctx, typeID, versionNo)
 	if err != nil {
@@ -945,6 +967,14 @@ func (r *Repository) UpsertTypeVersion(ctx context.Context, req disclosureapp.Up
 	if err != nil {
 		return nil, err
 	}
+	candidate := req.PublicationCandidate
+	if candidate == nil {
+		built, buildErr := disclosureapp.BuildTemplatePublicationCandidate(req)
+		if buildErr != nil {
+			return nil, buildErr
+		}
+		candidate = &built
+	}
 	now := time.Now().UTC()
 	versionDescription := strings.TrimSpace(req.Description)
 
@@ -1022,12 +1052,17 @@ func (r *Repository) UpsertTypeVersion(ctx context.Context, req disclosureapp.Up
 				deadline_config_json = CAST(? AS JSON), legal_bases_json = CAST(? AS JSON),
 				checklist_json = CAST(? AS JSON), tags_json = CAST(? AS JSON),
 				applicability_rules_json = CAST(? AS JSON), change_note = NULLIF(?, ''),
-				updated_by = ?, is_released = 0
+				workflow_authority_mode = ?, workflow_manifest_json = CAST(? AS JSON),
+				workflow_manifest_schema_version = ?, workflow_source = ?,
+				workflow_source_version_no = NULLIF(?, 0), workflow_semantic_hash = ?,
+				publication_candidate_hash = ?, updated_by = ?, is_released = 0
 			WHERE type_id = ? AND version_no = ?
 		`, req.Name, req.Category, req.TemplateCategory, req.DeadlineStrategy,
 			req.LegalBasis, req.Applicability, req.ImplementationContent, req.ImplementationNotes, req.SpecialCases, req.ReportContent,
 			req.RequiredDocs, req.DeadlineRule, req.Periodicity, req.ChannelsText, req.Beneficiaries, req.ReceivingAuthorities,
-			req.Format, req.LegalRisksText, req.GeneralInfo, string(deadlineConfigJSON), string(legalBasesJSON), string(checklistJSON), string(tagsJSON), string(applicabilityRulesJSON), changeNote, req.Subject.UserID,
+			req.Format, req.LegalRisksText, req.GeneralInfo, string(deadlineConfigJSON), string(legalBasesJSON), string(checklistJSON), string(tagsJSON), string(applicabilityRulesJSON), changeNote,
+			candidate.AuthorityMode, string(candidate.ManifestJSON), disclosureapp.WorkflowManifestSchemaVersion, candidate.Source,
+			candidate.SourceVersionNo, candidate.ManifestHash, candidate.CandidateHash, req.Subject.UserID,
 			req.TypeID, targetVersion); err != nil {
 			return nil, err
 		}
@@ -1064,14 +1099,19 @@ func (r *Repository) UpsertTypeVersion(ctx context.Context, req disclosureapp.Up
 			INSERT INTO disclosure_type_versions (
 				type_id, version_no, name, category, template_category, deadline_strategy, description, legal_basis, applicability, implementation_content,
 				implementation_notes, special_cases, report_content, required_docs, deadline_rule, periodicity, channels_text,
-				beneficiaries, receiving_authorities, format, legal_risks_text, general_info, deadline_config_json, legal_bases_json, checklist_json, tags_json, applicability_rules_json, change_note, is_released, updated_by, activated_at
+				beneficiaries, receiving_authorities, format, legal_risks_text, general_info, deadline_config_json, legal_bases_json, checklist_json, tags_json, applicability_rules_json, change_note,
+				is_released, workflow_authority_mode, workflow_manifest_json, workflow_manifest_schema_version, workflow_source,
+				workflow_source_version_no, workflow_semantic_hash, publication_candidate_hash, updated_by, activated_at
 			) VALUES (?, ?, ?, ?, ?, ?, '', NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
 			          NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
-			          NULLIF(?, ''), NULLIF(?, ''), CAST(? AS JSON), CAST(? AS JSON), CAST(? AS JSON), CAST(? AS JSON), CAST(? AS JSON), NULLIF(?, ''), ?, ?, ?)
+			          NULLIF(?, ''), NULLIF(?, ''), CAST(? AS JSON), CAST(? AS JSON), CAST(? AS JSON), CAST(? AS JSON), CAST(? AS JSON), NULLIF(?, ''),
+			          ?, ?, CAST(? AS JSON), ?, ?, NULLIF(?, 0), ?, ?, ?, ?)
 		`, req.TypeID, targetVersion, req.Name, req.Category, req.TemplateCategory, req.DeadlineStrategy,
 			req.LegalBasis, req.Applicability, req.ImplementationContent, req.ImplementationNotes, req.SpecialCases, req.ReportContent,
 			req.RequiredDocs, req.DeadlineRule, req.Periodicity, req.ChannelsText, req.Beneficiaries, req.ReceivingAuthorities,
-			req.Format, req.LegalRisksText, req.GeneralInfo, string(deadlineConfigJSON), string(legalBasesJSON), string(checklistJSON), string(tagsJSON), string(applicabilityRulesJSON), changeNote, isReleased, req.Subject.UserID, now)
+			req.Format, req.LegalRisksText, req.GeneralInfo, string(deadlineConfigJSON), string(legalBasesJSON), string(checklistJSON), string(tagsJSON), string(applicabilityRulesJSON), changeNote,
+			isReleased, candidate.AuthorityMode, string(candidate.ManifestJSON), disclosureapp.WorkflowManifestSchemaVersion, candidate.Source,
+			candidate.SourceVersionNo, candidate.ManifestHash, candidate.CandidateHash, req.Subject.UserID, now)
 		if err != nil {
 			return nil, err
 		}
@@ -1196,12 +1236,26 @@ func (r *Repository) ActivateTypeVersion(ctx context.Context, req disclosureapp.
 		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "cannot modify type from another company", nil)
 	}
 
-	var exists int
-	if err := tx.QueryRowContext(ctx, `SELECT COUNT(1) FROM disclosure_type_versions WHERE type_id = ? AND version_no = ?`, req.TypeID, req.VersionNo).Scan(&exists); err != nil {
+	var authorityMode string
+	var manifestRaw []byte
+	var candidateHash string
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COALESCE(workflow_authority_mode, 'LEGACY_COMPAT'),
+		       workflow_manifest_json, COALESCE(publication_candidate_hash, '')
+		FROM disclosure_type_versions
+		WHERE type_id = ? AND version_no = ?
+		FOR UPDATE
+	`, req.TypeID, req.VersionNo).Scan(&authorityMode, &manifestRaw, &candidateHash); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "disclosure type version not found", nil)
+		}
 		return nil, err
 	}
-	if exists == 0 {
-		return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "disclosure type version not found", nil)
+	if authorityMode != disclosureapp.WorkflowAuthorityTemplatePinned || len(manifestRaw) == 0 || candidateHash == "" {
+		return nil, perr.NewHTTPError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, "template version workflow publication is not pinned", nil)
+	}
+	if req.ExpectedCandidateHash == "" || candidateHash != req.ExpectedCandidateHash {
+		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "template publication candidate changed; reload and retry", nil)
 	}
 
 	now := time.Now().UTC()
@@ -1249,6 +1303,7 @@ func (r *Repository) GetCompanyWorkflowOverride(ctx context.Context, companyID, 
 	var header disclosureapp.CompanyWorkflowOverrideHeaderDTO
 	if err := row.Scan(&header.OverrideID, &header.Status, &header.ActiveVersionNo, &header.UpdatedAt); err != nil {
 		if err == sql.ErrNoRows {
+			view.EffectiveSource = r.resolveCMSDefaultEffectiveSource(ctx, companyID, typeID)
 			return view, nil
 		}
 		return nil, err
@@ -1264,6 +1319,9 @@ func (r *Repository) GetCompanyWorkflowOverride(ctx context.Context, companyID, 
 		}
 		view.ActiveVersion = active
 		view.EffectiveSource = "company_override"
+	} else {
+		// Not customized (or reset): label CMS default via canonical resolver — do not hardcode global_template.
+		view.EffectiveSource = r.resolveCMSDefaultEffectiveSource(ctx, companyID, typeID)
 	}
 	draftRow := r.db.QueryRowContext(ctx, `
 		SELECT version_no, state, COALESCE(change_note, ''), workflow_json, created_by, COALESCE(approved_by, ''), approved_at, created_at
@@ -1280,6 +1338,13 @@ func (r *Repository) GetCompanyWorkflowOverride(ctx context.Context, companyID, 
 		view.DraftVersion = draft
 	}
 	return view, nil
+}
+
+// resolveCMSDefaultEffectiveSource preserves the existing wire value while the
+// authority is the active template publication.
+func (r *Repository) resolveCMSDefaultEffectiveSource(ctx context.Context, companyID, typeID string) string {
+	_, _ = r.GetTypeDetail(ctx, companyID, typeID)
+	return disclosureapp.CMSDefaultSourceTemplateEnterprise
 }
 
 func (r *Repository) UpsertCompanyWorkflowOverrideDraft(ctx context.Context, req disclosureapp.UpsertCompanyWorkflowOverrideDraftRequest) (*disclosureapp.UpsertCompanyWorkflowOverrideDraftResponse, error) {
@@ -1474,6 +1539,7 @@ func (r *Repository) ResetCompanyWorkflowOverrideActive(ctx context.Context, req
 	if err != nil {
 		return nil, err
 	}
+	cmsSource := r.resolveCMSDefaultEffectiveSource(ctx, req.Subject.CompanyID, req.TypeID)
 	affected, _ := res.RowsAffected()
 	if affected == 0 {
 		return &disclosureapp.ResetCompanyWorkflowOverrideActiveResponse{
@@ -1481,7 +1547,7 @@ func (r *Repository) ResetCompanyWorkflowOverrideActive(ctx context.Context, req
 			CompanyID:       req.Subject.CompanyID,
 			ActiveVersionNo: 0,
 			State:           "archived",
-			EffectiveSource: "global_template",
+			EffectiveSource: cmsSource,
 		}, nil
 	}
 	var overrideID string
@@ -1494,7 +1560,7 @@ func (r *Repository) ResetCompanyWorkflowOverrideActive(ctx context.Context, req
 		CompanyID:       req.Subject.CompanyID,
 		ActiveVersionNo: 0,
 		State:           "archived",
-		EffectiveSource: "global_template",
+		EffectiveSource: cmsSource,
 	}, nil
 }
 
@@ -1551,29 +1617,34 @@ func (r *Repository) GetEffectiveWorkflow(ctx context.Context, companyID, typeID
 		dto.Workflow = view.ActiveVersion.Workflow
 		if len(dto.Workflow) == 0 {
 			dto.OverrideInvalidEmpty = true
-			if steps, _, ok, err := r.loadActiveGlobalWorkflow(ctx, typeID); err != nil {
+			detail, err := r.GetTypeDetail(ctx, companyID, typeID)
+			if err != nil {
 				return nil, err
-			} else if ok && len(steps) > 0 {
+			} else if detail.WorkflowAuthorityMode == disclosureapp.WorkflowAuthorityTemplatePinned &&
+				detail.WorkflowManifest != nil && len(detail.WorkflowManifest.Steps) > 0 {
 				dto.GlobalWorkflowAvailable = true
 			}
 		}
 		return dto, nil
 	}
-	if steps, versionNo, ok, err := r.loadActiveGlobalWorkflow(ctx, typeID); err != nil {
-		return nil, err
-	} else if ok {
-		dto.Source = "global_workflow"
-		dto.VersionNo = versionNo
-		dto.Workflow = steps
-		return dto, nil
+	detail, detailErr := r.GetTypeDetail(ctx, companyID, typeID)
+	if detailErr != nil {
+		return nil, detailErr
 	}
-	detail, err := r.GetTypeDetail(ctx, companyID, typeID)
-	if err != nil {
-		return nil, err
+	if detail.WorkflowAuthorityMode != disclosureapp.WorkflowAuthorityTemplatePinned || detail.WorkflowManifest == nil {
+		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "active template workflow publication is not pinned", nil)
 	}
-	dto.VersionNo = detail.VersionNo
-	dto.Workflow = disclosureapp.ExtractTemplateWorkflow(detail.Blocks)
+	resolved := disclosureapp.ResolveTemplatePublicationWorkflow(typeID, detail.VersionNo, *detail.WorkflowManifest)
+	dto.Source = resolved.Source
+	dto.VersionNo = resolved.VersionNo
+	dto.Workflow = resolved.Workflow
 	return dto, nil
+}
+
+// GetActiveGlobalWorkflow exposes the ACTIVE global_workflow_versions snapshot for CMS-default
+// resolution (Phase 1). Draft-only globals return ok=false.
+func (r *Repository) GetActiveGlobalWorkflow(ctx context.Context, typeID string) ([]disclosureapp.WorkflowStepDTO, int, bool, error) {
+	return r.loadActiveGlobalWorkflow(ctx, typeID)
 }
 
 func (r *Repository) getCompanyWorkflowOverrideVersion(ctx context.Context, overrideID string, versionNo int) (*disclosureapp.CompanyWorkflowOverrideVersionDTO, error) {
