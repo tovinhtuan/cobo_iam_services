@@ -369,8 +369,15 @@ type UpsertTypeVersionRequest struct {
 	LegalBasesProvided bool `json:"-"`
 	// PreserveLegalBases asks repository to keep existing legal_bases_json on draft overwrite
 	// when the client omitted legal_bases (Phase 12.2 omitted vs empty semantics).
-	PreserveLegalBases bool                                      `json:"-"`
-	Checklist          []ChecklistItemDTO                        `json:"checklist"`
+	PreserveLegalBases bool `json:"-"`
+	// SkipPublicationMatrix skips full portal/template publishability validation.
+	// Used by workflow-draft mutations ("Lưu bước") so an incomplete publication can
+	// still persist local workflow edits. Validate/Activate remain the publish gates.
+	SkipPublicationMatrix bool `json:"-"`
+	// ClearWorkflow is set by CmsDeleteGlobalWorkflow so an empty enterprise_workflow
+	// block is persisted instead of being treated as "omitted, preserve pinned".
+	ClearWorkflow bool `json:"-"`
+	Checklist     []ChecklistItemDTO `json:"checklist"`
 	Tags               []string                                  `json:"tags"`
 	DeadlineConfig     *TemplateDeadlineConfig                   `json:"deadline_config,omitempty"`
 	Blocks             []TemplateBlockDTO                        `json:"blocks"`
@@ -670,12 +677,10 @@ type GetEffectiveWorkflowRequest struct {
 	TypeID  string
 }
 
-// EffectiveWorkflowDTO.Source is one of: "company_override" (tenant override active version),
-// "global_workflow" (Sprint 0-2 governed workflow's active global_workflow_versions row), or
-// "global_template" (legacy enterprise_workflow content block — fallback when neither of the
-// above exists for the type). Precedence: company_override > global_workflow > global_template.
-// CMS default portion (global_workflow | global_template) must use ResolveCMSDefaultWorkflow —
-// docs/ai-cache/template-workflow-domain-contract-final-2026-08-20.md (Phase 1 centralize).
+// EffectiveWorkflowDTO.Source is one of: "company_override" (tenant override active version)
+// or "global_template" (FE wire for ACTIVE_TEMPLATE_PUBLICATION.WORKFLOW).
+// Precedence: COMPANY_OVERRIDE_ACTIVE > ACTIVE_TEMPLATE_PUBLICATION.WORKFLOW.
+// "global_workflow" is historical only and must not be assigned by runtime resolvers.
 type EffectiveWorkflowDTO struct {
 	TypeID    string            `json:"type_id"`
 	CompanyID string            `json:"company_id"`

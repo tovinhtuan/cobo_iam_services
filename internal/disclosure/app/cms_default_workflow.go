@@ -5,10 +5,10 @@ import (
 	"strings"
 )
 
-// CMS default workflow authority (Phase 1 — centralize, transitional Model A bridge).
-// Precedence: ACTIVE_GLOBAL_WORKFLOW > TEMPLATE_ENTERPRISE_WORKFLOW > NONE.
-// Global draft is never effective — callers must pass only active global version steps.
-// Contract: docs/ai-cache/template-workflow-domain-contract-final-2026-08-20.md
+// CMS default workflow authority (HISTORY_ONLY / TEST_ONLY after Model A cutover).
+// Runtime CMS default is ACTIVE_TEMPLATE_PUBLICATION.WORKFLOW via
+// ResolveTemplatePublicationWorkflow. Do not call ResolveCMSDefaultWorkflow from
+// GetEffectiveWorkflow, bootstrap, or reminder resolution.
 //
 // Wire Source values match EffectiveWorkflowDTO (no STORE_A / STORE_B in API/UI):
 //   global_workflow | global_template | none

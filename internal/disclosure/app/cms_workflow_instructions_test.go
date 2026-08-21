@@ -10,7 +10,7 @@ import (
 
 func TestUpsertGlobalWorkflow_InstructionsRoundTrip(t *testing.T) {
 	ctx := context.Background()
-	svc := newWFService()
+	svc, _ := newSeededWFService(t, "dt-instructions-roundtrip")
 	const typeID = "dt-instructions-roundtrip"
 
 	_, err := svc.CmsUpsertGlobalWorkflow(ctx, disclosureapp.CmsUpsertGlobalWorkflowRequest{

@@ -29,11 +29,30 @@ func (r *cmsTemplateAuthzRepo) ActivateTypeVersion(_ context.Context, req Activa
 	}, nil
 }
 
+func pinDisclosureWorkflow(detail *DisclosureTypeDTO) *DisclosureTypeDTO {
+	if detail == nil {
+		return nil
+	}
+	steps := ExtractTemplateWorkflow(detail.Blocks)
+	if len(steps) == 0 {
+		return detail
+	}
+	manifest, _, hash, err := CanonicalWorkflowPublication(steps)
+	if err != nil {
+		return detail
+	}
+	out := *detail
+	out.WorkflowAuthorityMode = WorkflowAuthorityTemplatePinned
+	out.WorkflowManifest = &manifest
+	out.PublicationCandidateHash = hash
+	return &out
+}
+
 func (r *cmsTemplateAuthzRepo) GetTypeVersionDetail(_ context.Context, _, typeID string, versionNo int) (*DisclosureTypeDTO, error) {
 	if r.versionDetail != nil {
-		return r.versionDetail, nil
+		return pinDisclosureWorkflow(r.versionDetail), nil
 	}
-	return &DisclosureTypeDTO{
+	return pinDisclosureWorkflow(&DisclosureTypeDTO{
 		TypeID:             typeID,
 		VersionNo:          versionNo,
 		Scope:              "global",
@@ -59,7 +78,7 @@ func (r *cmsTemplateAuthzRepo) GetTypeVersionDetail(_ context.Context, _, typeID
 				},
 			},
 		},
-	}, nil
+	}), nil
 }
 
 func (r *cmsTemplateAuthzRepo) GetActiveVersionDeadlineConfig(_ context.Context, _ string) (int, *TemplateDeadlineConfig, error) {
@@ -186,7 +205,7 @@ func TestActivateTypeVersion_RejectsVersionWithoutWorkflow(t *testing.T) {
 	if herr.HTTPStatus != http.StatusUnprocessableEntity {
 		t.Fatalf("status=%d want %d", herr.HTTPStatus, http.StatusUnprocessableEntity)
 	}
-	if herr.Code != "TEMPLATE_NO_WORKFLOW" {
-		t.Fatalf("code=%s want TEMPLATE_NO_WORKFLOW", herr.Code)
+	if herr.Code != "TEMPLATE_NO_WORKFLOW" && herr.Code != "TEMPLATE_WORKFLOW_NOT_PINNED" {
+		t.Fatalf("code=%s want TEMPLATE_NO_WORKFLOW or TEMPLATE_WORKFLOW_NOT_PINNED", herr.Code)
 	}
 }

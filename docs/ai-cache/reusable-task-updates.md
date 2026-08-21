@@ -1,4 +1,15 @@
 
+## 2026-08-20 — CMS Lưu bước Model A (TEMPLATE_PINNED)
+
+- task type: implement + DEV verify (no commit/push)
+- objective: existing UI "Lưu bước" on template-pinned draft; no FE src change; no legacy runtime authority
+- implemented: CmsUpsertGlobalWorkflow merge-save; GetTypeVersionDetail redact; unpublished CMS GetEffectiveWorkflow preview; cms_workflow_step_save_test.go
+- verification: `go test ./internal/disclosure/app -run WorkflowStepSave` PASS; vet/build api+worker PASS; `deploy-dev.ps1 -Mode be`; healthz/readyz 200; browser PUT 200 + Kích hoạt v1
+- evidence: sibling `cobo_web_design/docs/ai-cache/workflow-step-save-regression-2026-08-20/`
+- verdict: `CMS_WORKFLOW_STEP_SAVE_MODEL_A_DEV_VERIFIED`
+- BLOCKED local: `docker compose -f docker-compose.dev.yml build api` (no Docker daemon)
+- NO_PRODUCTION / NO_COMMIT / NO_PUSH
+
 ## 2026-08-19 — CMS workflow canvas vs banner (FE sibling)
 
 - BE unchanged; template Save already persisted `enterprise_workflow`

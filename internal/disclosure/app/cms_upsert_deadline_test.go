@@ -158,7 +158,7 @@ func (r *activateDeadlineRepo) ListActiveDeadlineRuleCatalog(_ context.Context) 
 }
 
 func (r *activateDeadlineRepo) GetTypeVersionDetail(_ context.Context, _, typeID string, versionNo int) (*DisclosureTypeDTO, error) {
-	return &DisclosureTypeDTO{
+	return pinDisclosureWorkflow(&DisclosureTypeDTO{
 		TypeID:             typeID,
 		VersionNo:          versionNo,
 		Scope:              "global",
@@ -174,7 +174,7 @@ func (r *activateDeadlineRepo) GetTypeVersionDetail(_ context.Context, _, typeID
 				}},
 			}},
 		},
-	}, nil
+	}), nil
 }
 
 func (r *activateDeadlineRepo) ActivateTypeVersion(_ context.Context, req ActivateTypeVersionRequest) (*ActivateTypeVersionResponse, error) {

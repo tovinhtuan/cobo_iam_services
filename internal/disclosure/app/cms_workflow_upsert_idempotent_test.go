@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	disclosureapp "github.com/cobo/cobo_iam_services/internal/disclosure/app"
+	"github.com/cobo/cobo_iam_services/internal/disclosure/app/applicability"
 	"github.com/cobo/cobo_iam_services/internal/disclosure/infra/inmemory"
 	"github.com/cobo/cobo_iam_services/internal/platform/idgen"
 )
@@ -20,13 +21,49 @@ func newWFService() disclosureapp.Service {
 	return disclosureapp.NewService(repo, nil, idgen.UUIDv7Generator{})
 }
 
+func seedTemplateDraft(t *testing.T, repo *inmemory.Repository, typeID string) {
+	t.Helper()
+	blocks := []disclosureapp.TemplateBlockDTO{
+		{BlockID: "tid-m1", BlockKey: "legal_basis", BlockType: "rich_text", Title: "LB", Config: map[string]any{"max_length": 8000, "allow_html": false}, Validation: map[string]any{}, DisplayOrder: 1, Enabled: true},
+		{BlockID: "tid-m2", BlockKey: "disclosure_content", BlockType: "rich_text", Title: "DC", Config: map[string]any{"max_length": 10000, "allow_html": true}, Validation: map[string]any{}, DisplayOrder: 2, Enabled: true},
+		{BlockID: "tid-m3", BlockKey: "deadline", BlockType: "text", Title: "DL", Config: map[string]any{"max_length": 4000}, Validation: map[string]any{}, DisplayOrder: 3, Enabled: true},
+		{BlockID: "tid-m4", BlockKey: "channels_and_format", BlockType: "rich_text", Title: "CF", Config: map[string]any{"max_length": 12000, "allow_html": false, "channels": []any{map[string]any{"id": "ch-001", "name": "Website", "file_types": []any{"PDF"}}}, "file_types": []any{"PDF", "XML"}}, Validation: map[string]any{}, DisplayOrder: 4, Enabled: true},
+		{BlockID: "tid-m5", BlockKey: "legal_risks", BlockType: "rich_text", Title: "LR", Config: map[string]any{"max_length": 8000, "allow_html": false}, Validation: map[string]any{}, DisplayOrder: 5, Enabled: true},
+		{BlockID: "tid-m6", BlockKey: "enterprise_workflow", BlockType: "rich_text", Title: "EW", Config: map[string]any{"max_length": 12000, "allow_html": true}, Validation: map[string]any{}, DisplayOrder: 6, Enabled: true},
+	}
+	if _, err := repo.UpsertTypeVersion(context.Background(), disclosureapp.UpsertTypeVersionRequest{
+		Subject:           testSubjectWF,
+		TypeID:            typeID,
+		Scope:             "global",
+		GroupID:           "group-001",
+		Name:              "WF Test",
+		Category:          "periodic",
+		TemplateCategory:  "periodic",
+		DeadlineStrategy:  "fixed",
+		DeadlineRule:      "T+5",
+		Periodicity:       "quarterly",
+		DisplayGroupCodes:  []string{"display_groups_003"},
+		ApplicabilityRules: applicability.DefaultGlobalRules(true),
+		Blocks:            blocks,
+	}); err != nil {
+		t.Fatalf("seed template: %v", err)
+	}
+}
+
+func newSeededWFService(t *testing.T, typeID string) (disclosureapp.Service, *inmemory.Repository) {
+	t.Helper()
+	repo := inmemory.NewRepository()
+	seedTemplateDraft(t, repo, typeID)
+	return disclosureapp.NewService(repo, nil, idgen.UUIDv7Generator{}), repo
+}
+
 // TestUpsertGlobalWorkflow_SecondUpsertWithSameStepIdSucceeds verifies that
 // calling upsert twice with the same explicit step_id values does not error.
 // This is the exact scenario that caused "Duplicate entry" in MySQL before the fix.
 func TestUpsertGlobalWorkflow_SecondUpsertWithSameStepIdSucceeds(t *testing.T) {
 	ctx := context.Background()
-	svc := newWFService()
 	const typeID = "dt-collision-test"
+	svc, _ := newSeededWFService(t, typeID)
 
 	steps := []disclosureapp.GlobalWorkflowStepInput{
 		{StepID: "step-review", Stage: "Review", DepartmentID: "d1", AssigneeRoleIds: []string{"r1"}, ProcessingDays: 3, DueRule: "T+3", DisplayOrder: 1},
@@ -61,8 +98,9 @@ func TestUpsertGlobalWorkflow_SecondUpsertWithSameStepIdSucceeds(t *testing.T) {
 func TestUpsertGlobalWorkflow_OnlyOneActiveWorkflowExists(t *testing.T) {
 	ctx := context.Background()
 	repo := inmemory.NewRepository()
-	svc := disclosureapp.NewService(repo, nil, idgen.UUIDv7Generator{})
 	const typeID = "dt-count-test"
+	seedTemplateDraft(t, repo, typeID)
+	svc := disclosureapp.NewService(repo, nil, idgen.UUIDv7Generator{})
 
 	step := []disclosureapp.GlobalWorkflowStepInput{
 		{StepID: "s1", Stage: "Step 1", DepartmentID: "d1", AssigneeRoleIds: []string{"r1"}, ProcessingDays: 1, DueRule: "T+1", DisplayOrder: 1},
@@ -80,8 +118,15 @@ func TestUpsertGlobalWorkflow_OnlyOneActiveWorkflowExists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CountGlobalWorkflowsByTypeId: %v", err)
 	}
-	if count != 1 {
-		t.Errorf("count=%d want 1 — multiple upserts should not accumulate active workflows", count)
+	if count != 0 {
+		t.Errorf("count=%d want 0 — compatibility PUT must not create global workflow runtime rows", count)
+	}
+	resp, err := svc.CmsGetGlobalWorkflow(ctx, disclosureapp.CmsGetGlobalWorkflowRequest{Subject: testSubjectWF, TypeID: typeID})
+	if err != nil {
+		t.Fatalf("CmsGetGlobalWorkflow: %v", err)
+	}
+	if resp.Data == nil || len(resp.Data.Steps) != 1 {
+		t.Errorf("template draft steps missing after repeated PUT")
 	}
 }
 
@@ -89,8 +134,8 @@ func TestUpsertGlobalWorkflow_OnlyOneActiveWorkflowExists(t *testing.T) {
 // returns the steps from the most recent upsert, not from a previous one.
 func TestUpsertGlobalWorkflow_GetReturnsLatestSteps(t *testing.T) {
 	ctx := context.Background()
-	svc := newWFService()
 	const typeID = "dt-latest-steps-test"
+	svc, _ := newSeededWFService(t, typeID)
 
 	// First upsert: 1 step.
 	_, err := svc.CmsUpsertGlobalWorkflow(ctx, disclosureapp.CmsUpsertGlobalWorkflowRequest{
@@ -138,8 +183,9 @@ func TestUpsertGlobalWorkflow_GetReturnsLatestSteps(t *testing.T) {
 func TestUpsertGlobalWorkflow_NoOrphanedStepsAfterUpsert(t *testing.T) {
 	ctx := context.Background()
 	repo := inmemory.NewRepository()
-	svc := disclosureapp.NewService(repo, nil, idgen.UUIDv7Generator{})
 	const typeID = "dt-orphan-test"
+	seedTemplateDraft(t, repo, typeID)
+	svc := disclosureapp.NewService(repo, nil, idgen.UUIDv7Generator{})
 
 	for i := 0; i < 5; i++ {
 		if _, err := svc.CmsUpsertGlobalWorkflow(ctx, disclosureapp.CmsUpsertGlobalWorkflowRequest{
@@ -172,8 +218,8 @@ func TestUpsertGlobalWorkflow_NoOrphanedStepsAfterUpsert(t *testing.T) {
 // works correctly after a delete (regression: delete then re-create).
 func TestUpsertGlobalWorkflow_UpsertAfterDeleteSucceeds(t *testing.T) {
 	ctx := context.Background()
-	svc := newWFService()
 	const typeID = "dt-delete-then-upsert"
+	svc, _ := newSeededWFService(t, typeID)
 
 	step := []disclosureapp.GlobalWorkflowStepInput{
 		{StepID: "s1", Stage: "Step", DepartmentID: "d1", AssigneeRoleIds: []string{"r1"}, ProcessingDays: 2, DueRule: "T+2", DisplayOrder: 1},

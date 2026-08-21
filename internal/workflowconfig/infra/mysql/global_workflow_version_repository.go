@@ -195,22 +195,10 @@ func (r *VersionRepository) Activate(ctx context.Context, typeID string, version
 		}
 		return wfcapp.VersionInfo{}, err
 	}
-	if templateVersionNo <= 0 {
-		return wfcapp.VersionInfo{}, fmt.Errorf("version %d is not mapped to a template publication", versionNo)
-	}
-	var authorityMode, candidateHash string
-	var publicationRaw []byte
-	if err := tx.QueryRowContext(ctx, `
-		SELECT workflow_authority_mode, workflow_manifest_json, COALESCE(publication_candidate_hash, '')
-		FROM disclosure_type_versions
-		WHERE type_id = ? AND version_no = ?
-		FOR UPDATE
-	`, typeID, templateVersionNo).Scan(&authorityMode, &publicationRaw, &candidateHash); err != nil {
-		return wfcapp.VersionInfo{}, fmt.Errorf("lock template publication: %w", err)
-	}
-	if authorityMode != "TEMPLATE_PINNED" || len(publicationRaw) == 0 || candidateHash == "" {
-		return wfcapp.VersionInfo{}, fmt.Errorf("mapped template publication is not activation-ready")
-	}
+	// template_version_no is historical provenance only. Compatibility activation
+	// must never release or point a template; only the template Activate endpoint
+	// is allowed to change Portal publication.
+	_ = templateVersionNo
 
 	// Compatibility history retains one active marker; runtime ignores it.
 	if _, err := tx.ExecContext(ctx,
@@ -228,20 +216,14 @@ func (r *VersionRepository) Activate(ctx context.Context, typeID string, version
 	if n, _ := res.RowsAffected(); n == 0 {
 		return wfcapp.VersionInfo{}, fmt.Errorf("version %d not activatable for type %q", versionNo, typeID)
 	}
-	// Canonical activation: release and point the template in this transaction.
+	// Keep the old global pointer coherent for compatibility/history consumers.
+	// It is not a runtime authority in Model A.
 	if _, err := tx.ExecContext(ctx,
-		`UPDATE disclosure_type_versions
-		 SET is_released = 1, activated_at = ?, updated_by = ?
-		 WHERE type_id = ? AND version_no = ?`,
-		at.UTC(), actor, typeID, templateVersionNo); err != nil {
-		return wfcapp.VersionInfo{}, fmt.Errorf("release template publication: %w", err)
-	}
-	if _, err := tx.ExecContext(ctx,
-		`UPDATE disclosure_types
-		 SET active_version_no = ?, status = 'active', updated_at = CURRENT_TIMESTAMP
+		`UPDATE global_workflows
+		 SET active_version_no = ?, updated_at = CURRENT_TIMESTAMP
 		 WHERE type_id = ?`,
-		templateVersionNo, typeID); err != nil {
-		return wfcapp.VersionInfo{}, fmt.Errorf("set template active pointer: %w", err)
+		versionNo, typeID); err != nil {
+		return wfcapp.VersionInfo{}, fmt.Errorf("set compatibility active pointer: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
 		return wfcapp.VersionInfo{}, err

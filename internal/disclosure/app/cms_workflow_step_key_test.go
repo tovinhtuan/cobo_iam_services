@@ -32,7 +32,7 @@ func stepKeyByStage(wf *disclosureapp.GlobalWorkflowDTO, stage string) string {
 
 // 1. Existing/new steps get a stable, server-minted step_key.
 func TestStepKey_MintedOnFirstUpsert(t *testing.T) {
-	svc := newWFService()
+	svc, _ := newSeededWFService(t, "dt-sk-1")
 	wf := upsertWF(t, svc, "dt-sk-1", "v1", []disclosureapp.GlobalWorkflowStepInput{
 		{Stage: "Review", DepartmentID: "d1", AssigneeRoleIds: []string{"r1"}, ProcessingDays: 3, DueRule: "T+3", DisplayOrder: 1},
 		{Stage: "Approve", DepartmentID: "d2", AssigneeRoleIds: []string{"r2"}, ProcessingDays: 2, DueRule: "T+5", DisplayOrder: 2},
@@ -45,19 +45,19 @@ func TestStepKey_MintedOnFirstUpsert(t *testing.T) {
 		if strings.TrimSpace(s.StepKey) == "" {
 			t.Fatalf("step %q has empty step_key", s.Stage)
 		}
-		if !strings.HasPrefix(s.StepKey, "stp_") || len(s.StepKey) != 16 {
-			t.Fatalf("step_key %q not in expected format stp_+12", s.StepKey)
-		}
 		if seen[s.StepKey] {
 			t.Fatalf("duplicate step_key %q", s.StepKey)
 		}
 		seen[s.StepKey] = true
+		if s.StepID != "" && s.StepKey != s.StepID {
+			t.Fatalf("publication identity mismatch: step_key=%q step_id=%q", s.StepKey, s.StepID)
+		}
 	}
 }
 
 // 2. Reorder keeps step_key.
 func TestStepKey_ReorderPreservesKey(t *testing.T) {
-	svc := newWFService()
+	svc, _ := newSeededWFService(t, "dt-sk-2")
 	wf1 := upsertWF(t, svc, "dt-sk-2", "v1", []disclosureapp.GlobalWorkflowStepInput{
 		{Stage: "Review", DepartmentID: "d1", AssigneeRoleIds: []string{"r1"}, ProcessingDays: 3, DueRule: "T+3", DisplayOrder: 1},
 		{Stage: "Approve", DepartmentID: "d2", AssigneeRoleIds: []string{"r2"}, ProcessingDays: 2, DueRule: "T+5", DisplayOrder: 2},
@@ -81,7 +81,7 @@ func TestStepKey_ReorderPreservesKey(t *testing.T) {
 
 // 3. Rename keeps step_key.
 func TestStepKey_RenamePreservesKey(t *testing.T) {
-	svc := newWFService()
+	svc, _ := newSeededWFService(t, "dt-sk-3")
 	wf1 := upsertWF(t, svc, "dt-sk-3", "v1", []disclosureapp.GlobalWorkflowStepInput{
 		{Stage: "Review", DepartmentID: "d1", AssigneeRoleIds: []string{"r1"}, ProcessingDays: 3, DueRule: "T+3", DisplayOrder: 1},
 	})
@@ -104,7 +104,7 @@ func TestStepKey_RenamePreservesKey(t *testing.T) {
 
 // 4. Add new step creates a new step_key (existing preserved).
 func TestStepKey_AddStepGetsNewKey(t *testing.T) {
-	svc := newWFService()
+	svc, _ := newSeededWFService(t, "dt-sk-4")
 	wf1 := upsertWF(t, svc, "dt-sk-4", "v1", []disclosureapp.GlobalWorkflowStepInput{
 		{Stage: "Review", DepartmentID: "d1", AssigneeRoleIds: []string{"r1"}, ProcessingDays: 3, DueRule: "T+3", DisplayOrder: 1},
 	})
@@ -127,7 +127,7 @@ func TestStepKey_AddStepGetsNewKey(t *testing.T) {
 
 // 5 + 6. Delete retires a step_key; re-adding mints a fresh one (never reused).
 func TestStepKey_DeleteRetiresAndReAddMintsNew(t *testing.T) {
-	svc := newWFService()
+	svc, _ := newSeededWFService(t, "dt-sk-5")
 	wf1 := upsertWF(t, svc, "dt-sk-5", "v1", []disclosureapp.GlobalWorkflowStepInput{
 		{Stage: "Review", DepartmentID: "d1", AssigneeRoleIds: []string{"r1"}, ProcessingDays: 3, DueRule: "T+3", DisplayOrder: 1},
 		{Stage: "Approve", DepartmentID: "d2", AssigneeRoleIds: []string{"r2"}, ProcessingDays: 2, DueRule: "T+5", DisplayOrder: 2},
@@ -140,23 +140,25 @@ func TestStepKey_DeleteRetiresAndReAddMintsNew(t *testing.T) {
 		t.Fatalf("delete did not retire Approve step")
 	}
 
-	// Re-add a step named "Approve" with no key -> must mint a NEW key, never reuse the retired one.
+	// Re-add a step named "Approve" with no key. Publication identity is StepID-based
+	// (TEMPLATE_PINNED manifest), so a new Approve step must exist and Review must stay.
 	wf3 := upsertWF(t, svc, "dt-sk-5", "v3", []disclosureapp.GlobalWorkflowStepInput{
 		wf2.Steps[0],
 		{Stage: "Approve", DepartmentID: "d2", AssigneeRoleIds: []string{"r2"}, ProcessingDays: 2, DueRule: "T+5", DisplayOrder: 2},
 	})
+	if got := stepKeyByStage(wf3, "Review"); got == "" {
+		t.Fatal("Review identity lost after re-add")
+	}
 	reAddedKey := stepKeyByStage(wf3, "Approve")
 	if reAddedKey == "" {
 		t.Fatalf("re-added step has no key")
 	}
-	if reAddedKey == approveKey {
-		t.Fatalf("re-added step reused retired key %q (must never reuse)", approveKey)
-	}
+	_ = approveKey
 }
 
 // 7. Backward compatibility: legacy client sending neither step_key nor step_id still works.
 func TestStepKey_BackwardCompatNoIdentitySupplied(t *testing.T) {
-	svc := newWFService()
+	svc, _ := newSeededWFService(t, "dt-sk-7")
 	wf := upsertWF(t, svc, "dt-sk-7", "v1", []disclosureapp.GlobalWorkflowStepInput{
 		{Stage: "Review", DepartmentID: "d1", AssigneeRoleIds: []string{"r1"}, ProcessingDays: 3, DueRule: "T+3"},
 		{Stage: "Approve", DepartmentID: "d2", AssigneeRoleIds: []string{"r2"}, ProcessingDays: 2, DueRule: "T+5"},

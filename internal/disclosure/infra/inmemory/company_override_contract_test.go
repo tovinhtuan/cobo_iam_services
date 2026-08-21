@@ -2,6 +2,7 @@ package inmemory
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	disclosureapp "github.com/cobo/cobo_iam_services/internal/disclosure/app"
@@ -18,6 +19,27 @@ func validOverrideStep(id string) disclosureapp.WorkflowStepDTO {
 	}
 }
 
+func cmsStep(id string, days int) disclosureapp.WorkflowStepDTO {
+	return disclosureapp.WorkflowStepDTO{
+		StepID: id, Stage: strings.ToUpper(id), DepartmentID: "d1",
+		AssigneeRoleIds: []string{"r1"}, ProcessingDays: days, DisplayOrder: days,
+	}
+}
+
+func seedPinnedCMS(r *Repository, typeID string, steps []disclosureapp.WorkflowStepDTO) {
+	manifest, _, hash, err := disclosureapp.CanonicalWorkflowPublication(steps)
+	if err != nil {
+		panic(err)
+	}
+	r.catalog[typeID] = disclosureapp.DisclosureTypeDTO{
+		TypeID:                    typeID,
+		VersionNo:                 1,
+		WorkflowAuthorityMode:     disclosureapp.WorkflowAuthorityTemplatePinned,
+		WorkflowManifest:          &manifest,
+		PublicationCandidateHash:  hash,
+	}
+}
+
 // Contract matrix T1–T8 / T12 for company override vs CMS default.
 func TestCompanyOverrideContract_DraftDoesNotAffectEffective(t *testing.T) {
 	r := NewRepository()
@@ -25,25 +47,26 @@ func TestCompanyOverrideContract_DraftDoesNotAffectEffective(t *testing.T) {
 	const typeID = "dt-co-draft"
 	const companyID = "company-a"
 
+	seedPinnedCMS(r, typeID, []disclosureapp.WorkflowStepDTO{
+		cmsStep("g1", 1), cmsStep("g2", 2), cmsStep("g3", 3),
+	})
 	active := 1
 	r.globalWorkflows = map[string]*disclosureapp.GlobalWorkflowDTO{
 		typeID: {
 			WorkflowID: "wf-1", TypeID: typeID, Status: "active", ActiveVersionNo: &active,
 			Steps: []disclosureapp.GlobalWorkflowStepInput{
-				{StepID: "g1", Stage: "G1", DepartmentID: "d1", AssigneeRoleIds: []string{"r1"}, ProcessingDays: 1, DisplayOrder: 1},
-				{StepID: "g2", Stage: "G2", DepartmentID: "d1", AssigneeRoleIds: []string{"r1"}, ProcessingDays: 2, DisplayOrder: 2},
-				{StepID: "g3", Stage: "G3", DepartmentID: "d1", AssigneeRoleIds: []string{"r1"}, ProcessingDays: 3, DisplayOrder: 3},
+				{StepID: "legacy-1", Stage: "LEGACY", DepartmentID: "d1", AssigneeRoleIds: []string{"r1"}, ProcessingDays: 9, DisplayOrder: 1},
 			},
 		},
 	}
 
-	// T1: no override → CMS default
+	// T1: no override → pinned CMS default (FE wire source remains global_template)
 	eff, err := r.GetEffectiveWorkflow(ctx, companyID, typeID)
 	if err != nil {
 		t.Fatalf("T1 GetEffectiveWorkflow: %v", err)
 	}
-	if eff.Source != "global_workflow" || len(eff.Workflow) != 3 {
-		t.Fatalf("T1 source=%s steps=%d want global_workflow/3", eff.Source, len(eff.Workflow))
+	if eff.Source != "global_template" || len(eff.Workflow) != 3 {
+		t.Fatalf("T1 source=%s steps=%d want global_template/3", eff.Source, len(eff.Workflow))
 	}
 
 	// T2/T3: draft only — effective remains CMS
@@ -74,7 +97,7 @@ func TestCompanyOverrideContract_DraftDoesNotAffectEffective(t *testing.T) {
 	if err != nil {
 		t.Fatalf("T3 GetEffectiveWorkflow: %v", err)
 	}
-	if eff.Source != "global_workflow" || len(eff.Workflow) != 3 {
+	if eff.Source != "global_template" || len(eff.Workflow) != 3 {
 		t.Fatalf("T3 FAIL_COMPANY_OVERRIDE_DRAFT_BECOMES_ACTIVE source=%s steps=%d", eff.Source, len(eff.Workflow))
 	}
 
@@ -137,7 +160,7 @@ func TestCompanyOverrideContract_DraftDoesNotAffectEffective(t *testing.T) {
 		t.Fatalf("T6 steps=%d want 5", len(eff.Workflow))
 	}
 
-	// T7: CMS global changes to 6 — company override unaffected
+	// T7: mutating legacy Global Workflow must not change pinned CMS or override
 	r.globalWorkflows[typeID].Steps = []disclosureapp.GlobalWorkflowStepInput{
 		{StepID: "g1", Stage: "G1", DepartmentID: "d1", AssigneeRoleIds: []string{"r1"}, ProcessingDays: 1, DisplayOrder: 1},
 		{StepID: "g2", Stage: "G2", DepartmentID: "d1", AssigneeRoleIds: []string{"r1"}, ProcessingDays: 2, DisplayOrder: 2},
@@ -151,11 +174,11 @@ func TestCompanyOverrideContract_DraftDoesNotAffectEffective(t *testing.T) {
 		t.Fatalf("T7 company A must stay override 5, got source=%s steps=%d", effA.Source, len(effA.Workflow))
 	}
 	effB, _ := r.GetEffectiveWorkflow(ctx, "company-b", typeID)
-	if len(effB.Workflow) != 6 || effB.Source != "global_workflow" {
-		t.Fatalf("T7 company B must see CMS 6, got source=%s steps=%d", effB.Source, len(effB.Workflow))
+	if len(effB.Workflow) != 3 || effB.Source != "global_template" {
+		t.Fatalf("T7 company B must see pinned CMS 3, got source=%s steps=%d", effB.Source, len(effB.Workflow))
 	}
 
-	// T8: reset → fallback current CMS (6)
+	// T8: reset → fallback current pinned CMS (still 3, not mutated global)
 	reset, err := r.ResetCompanyWorkflowOverrideActive(ctx, disclosureapp.ResetCompanyWorkflowOverrideActiveRequest{
 		Subject: disclosureapp.Subject{CompanyID: companyID, UserID: "u1"},
 		TypeID:  typeID,
@@ -166,14 +189,14 @@ func TestCompanyOverrideContract_DraftDoesNotAffectEffective(t *testing.T) {
 	if reset.ActiveVersionNo != 0 {
 		t.Fatalf("T8 active_version_no=%d want 0", reset.ActiveVersionNo)
 	}
-	if reset.EffectiveSource != "global_workflow" {
-		t.Fatalf("T8 EffectiveSource=%s want global_workflow", reset.EffectiveSource)
+	if reset.EffectiveSource != "global_template" {
+		t.Fatalf("T8 EffectiveSource=%s want global_template", reset.EffectiveSource)
 	}
 	eff, err = r.GetEffectiveWorkflow(ctx, companyID, typeID)
 	if err != nil {
 		t.Fatalf("T8 GetEffectiveWorkflow: %v", err)
 	}
-	if eff.Source != "global_workflow" || len(eff.Workflow) != 6 {
+	if eff.Source != "global_template" || len(eff.Workflow) != 3 {
 		t.Fatalf("T8 FAIL_COMPANY_OVERRIDE_RESET_TO_DEFAULT source=%s steps=%d", eff.Source, len(eff.Workflow))
 	}
 }
@@ -188,18 +211,19 @@ func TestCompanyOverrideContract_InvalidPublishBlocked(t *testing.T) {
 	}
 }
 
-func TestCompanyOverrideContract_CompanyLayerUsesResolveCMSDefault(t *testing.T) {
-	// T12: inmemory GetEffectiveWorkflow must call ResolveCMSDefaultWorkflow (not ad-hoc global>enterprise).
+func TestCompanyOverrideContract_CompanyLayerUsesPinnedTemplatePublication(t *testing.T) {
 	r := NewRepository()
 	ctx := context.Background()
 	const typeID = "dt-co-t12"
+	seedPinnedCMS(r, typeID, []disclosureapp.WorkflowStepDTO{cmsStep("g1", 1), cmsStep("g2", 2)})
 	active := 1
 	r.globalWorkflows = map[string]*disclosureapp.GlobalWorkflowDTO{
 		typeID: {
 			WorkflowID: "wf-1", TypeID: typeID, Status: "active", ActiveVersionNo: &active,
 			Steps: []disclosureapp.GlobalWorkflowStepInput{
-				{StepID: "g1", Stage: "G1", DepartmentID: "d1", AssigneeRoleIds: []string{"r1"}, ProcessingDays: 1, DisplayOrder: 1},
-				{StepID: "g2", Stage: "G2", DepartmentID: "d1", AssigneeRoleIds: []string{"r1"}, ProcessingDays: 2, DisplayOrder: 2},
+				{StepID: "legacy-a", Stage: "LA", DepartmentID: "d1", AssigneeRoleIds: []string{"r1"}, ProcessingDays: 1, DisplayOrder: 1},
+				{StepID: "legacy-b", Stage: "LB", DepartmentID: "d1", AssigneeRoleIds: []string{"r1"}, ProcessingDays: 2, DisplayOrder: 2},
+				{StepID: "legacy-c", Stage: "LC", DepartmentID: "d1", AssigneeRoleIds: []string{"r1"}, ProcessingDays: 3, DisplayOrder: 3},
 			},
 		},
 	}
@@ -207,7 +231,7 @@ func TestCompanyOverrideContract_CompanyLayerUsesResolveCMSDefault(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if eff.Source != "global_workflow" || len(eff.Workflow) != 2 {
-		t.Fatalf("T12 want global_workflow/2 got %s/%d", eff.Source, len(eff.Workflow))
+	if eff.Source != "global_template" || len(eff.Workflow) != 2 {
+		t.Fatalf("T12 want global_template/2 got %s/%d", eff.Source, len(eff.Workflow))
 	}
 }

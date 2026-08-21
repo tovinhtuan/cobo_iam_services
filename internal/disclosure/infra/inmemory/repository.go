@@ -371,6 +371,33 @@ func (r *Repository) ListTypes(_ context.Context, params disclosureapp.ListTypes
 	return out, total, nil
 }
 
+func (r *Repository) activePublicationLocked(typeID string) (disclosureapp.DisclosureTypeDTO, bool) {
+	activeNo := 0
+	for _, ver := range r.versions[typeID] {
+		if ver.IsActive {
+			activeNo = ver.VersionNo
+			break
+		}
+	}
+	if activeNo <= 0 {
+		item, ok := r.catalog[typeID]
+		if ok && len(r.versions[typeID]) == 0 && item.VersionNo > 0 {
+			return item, true
+		}
+		return disclosureapp.DisclosureTypeDTO{}, false
+	}
+	if byVer, ok := r.catalogByVer[typeID]; ok {
+		if snap, found := byVer[activeNo]; found {
+			return snap, true
+		}
+	}
+	item, ok := r.catalog[typeID]
+	if !ok {
+		return disclosureapp.DisclosureTypeDTO{}, false
+	}
+	return item, true
+}
+
 func (r *Repository) ListTypeFilterOptions(_ context.Context, companyID string) (*disclosureapp.ListTypeFilterOptionsResponse, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -418,11 +445,11 @@ func (r *Repository) ListTypeFilterOptions(_ context.Context, companyID string) 
 func (r *Repository) GetTypeDetail(_ context.Context, companyID, typeID string) (*disclosureapp.DisclosureTypeDTO, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	item, ok := r.catalog[typeID]
+	item, ok := r.activePublicationLocked(typeID)
 	if !ok {
 		return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "disclosure type not found", nil)
 	}
-	if scope := r.catalogScope[typeID]; scope != "global" && scope != companyID {
+	if scope := r.catalogScope[typeID]; scope != "global" && scope != companyID && scope != "" {
 		return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "disclosure type not found", nil)
 	}
 	cp := item
@@ -456,7 +483,7 @@ func (r *Repository) HasActiveEnterpriseWorkflow(_ context.Context, companyID, t
 			return true, nil
 		}
 	}
-	item, ok := r.catalog[typeID]
+	item, ok := r.activePublicationLocked(typeID)
 	if !ok {
 		return false, nil
 	}
@@ -621,6 +648,7 @@ func (r *Repository) UpsertTypeVersion(ctx context.Context, req disclosureapp.Up
 		Checklist:             slices.Clone(req.Checklist),
 		Tags:                  slices.Clone(req.Tags),
 		Blocks:                cloneTemplateBlocks(req.Blocks),
+		ApplicabilityRules:    req.ApplicabilityRules,
 	}
 	candidate := req.PublicationCandidate
 	if candidate == nil {
@@ -767,6 +795,18 @@ func (r *Repository) ActivateTypeVersion(_ context.Context, req disclosureapp.Ac
 	if target < 0 {
 		return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "disclosure type version not found", nil)
 	}
+	snapshot := current
+	if byVersion, ok := r.catalogByVer[req.TypeID]; ok {
+		if stored, found := byVersion[req.VersionNo]; found {
+			snapshot = stored
+		}
+	}
+	if snapshot.WorkflowAuthorityMode != disclosureapp.WorkflowAuthorityTemplatePinned || snapshot.WorkflowManifest == nil {
+		return nil, perr.NewHTTPError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, "template version workflow publication is not pinned", nil)
+	}
+	if req.ExpectedCandidateHash != "" && snapshot.PublicationCandidateHash != req.ExpectedCandidateHash {
+		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "template publication candidate changed; reload and retry", nil)
+	}
 	now := time.Now().UTC()
 	vs[target].IsActive = true
 	vs[target].IsReleased = true
@@ -869,32 +909,8 @@ func (r *Repository) GetCompanyWorkflowOverride(_ context.Context, companyID, ty
 	return view, nil
 }
 
-func (r *Repository) resolveCMSDefaultEffectiveSourceLocked(_, typeID string) string {
-	wf, exists := r.globalWorkflows[typeID]
-	activeOK := exists && wf.Status == "active" && wf.ActiveVersionNo != nil
-	var steps []disclosureapp.WorkflowStepDTO
-	var versionNo int
-	if activeOK {
-		steps = convertGlobalWorkflowSteps(wf.Steps)
-		versionNo = *wf.ActiveVersionNo
-	}
-	var blocks []disclosureapp.TemplateBlockDTO
-	enterpriseVersion := 0
-	if current, ok := r.catalog[typeID]; ok {
-		blocks = current.Blocks
-		enterpriseVersion = current.VersionNo
-	}
-	resolved := disclosureapp.ResolveCMSDefaultWorkflow(disclosureapp.CMSDefaultWorkflowInput{
-		ActiveGlobalSteps:     steps,
-		ActiveGlobalVersionNo: versionNo,
-		ActiveGlobalOK:        activeOK,
-		EnterpriseBlocks:      blocks,
-		EnterpriseVersionNo:   enterpriseVersion,
-	})
-	if resolved.Source == disclosureapp.CMSDefaultSourceNone {
-		return "global_template"
-	}
-	return resolved.Source
+func (r *Repository) resolveCMSDefaultEffectiveSourceLocked(_, _ string) string {
+	return disclosureapp.CMSDefaultSourceTemplateEnterprise
 }
 
 func (r *Repository) ResetCompanyWorkflowOverrideActive(_ context.Context, req disclosureapp.ResetCompanyWorkflowOverrideActiveRequest) (*disclosureapp.ResetCompanyWorkflowOverrideActiveResponse, error) {
@@ -1365,7 +1381,7 @@ func (r *Repository) GetEffectiveWorkflow(_ context.Context, companyID, typeID s
 		Workflow:  []disclosureapp.WorkflowStepDTO{},
 	}
 	templatePublication := func() {
-		current, ok := r.catalog[typeID]
+		current, ok := r.activePublicationLocked(typeID)
 		if !ok || current.WorkflowAuthorityMode != disclosureapp.WorkflowAuthorityTemplatePinned || current.WorkflowManifest == nil {
 			return
 		}
@@ -1389,7 +1405,7 @@ func (r *Repository) GetEffectiveWorkflow(_ context.Context, companyID, typeID s
 	dto.Workflow = cloneWorkflowSteps(v.Workflow)
 	if len(dto.Workflow) == 0 {
 		dto.OverrideInvalidEmpty = true
-		if current, exists := r.catalog[typeID]; exists && current.WorkflowManifest != nil && len(current.WorkflowManifest.Steps) > 0 {
+		if current, exists := r.activePublicationLocked(typeID); exists && current.WorkflowManifest != nil && len(current.WorkflowManifest.Steps) > 0 {
 			dto.GlobalWorkflowAvailable = true
 		}
 	}

@@ -6,39 +6,33 @@ import (
 
 	disclosureapp "github.com/cobo/cobo_iam_services/internal/disclosure/app"
 	"github.com/cobo/cobo_iam_services/internal/disclosure/infra/inmemory"
+	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 	"github.com/cobo/cobo_iam_services/internal/platform/idgen"
 )
 
-// TestGlobalWorkflowChain verifies the end-to-end chain required for Gate 4:
-// CMS configures global workflow → TemplateHasWorkflow detects it → portal create is allowed.
-//
-// Steps:
-//  1. CMS user upserts a global workflow for a known type.
-//  2. CountGlobalWorkflowsByTypeId returns > 0 for that type.
-//  3. CreateRecord succeeds for that type (enforceHasWorkflowGate passes).
+// TestGlobalWorkflowChain verifies Model A: PUT workflow updates the template draft
+// without publishing Portal; only template Activate opens the has_workflow gate.
 func TestGlobalWorkflowChain(t *testing.T) {
 	ctx := context.Background()
 	repo := inmemory.NewRepository()
+	const typeID = "dt-model-a-chain"
+	seedTemplateDraft(t, repo, typeID)
 	svc := disclosureapp.NewService(repo, nil, idgen.UUIDv7Generator{})
 
-	const typeID = "dt-periodic-financial"
-	const cmsUser = "user-cms-admin"
-	const memberID = "member-cms"
-	const companyID = "company-test"
-
-	cmsSubject := disclosureapp.Subject{
-		UserID:       cmsUser,
-		MembershipID: memberID,
-		CompanyID:    companyID,
+	cmsSubject := testSubjectWF
+	portalSubject := disclosureapp.Subject{
+		UserID:       "user-portal",
+		MembershipID: "member-portal",
+		CompanyID:    cmsSubject.CompanyID,
 	}
 
-	// Step 1: CMS upserts a global workflow.
 	wf, err := svc.CmsUpsertGlobalWorkflow(ctx, disclosureapp.CmsUpsertGlobalWorkflowRequest{
 		Subject:    cmsSubject,
 		TypeID:     typeID,
 		ChangeNote: "initial workflow",
 		Steps: []disclosureapp.GlobalWorkflowStepInput{
 			{
+				StepID:          "review",
 				Stage:           "Review",
 				DepartmentID:    "dept-compliance",
 				AssigneeRoleIds: []string{"role-reviewer"},
@@ -51,26 +45,18 @@ func TestGlobalWorkflowChain(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CmsUpsertGlobalWorkflow: %v", err)
 	}
-	if wf.WorkflowID == "" {
-		t.Fatal("expected non-empty workflow_id")
-	}
-	if wf.TypeID != typeID {
-		t.Fatalf("type_id=%q want %q", wf.TypeID, typeID)
-	}
-	if len(wf.Steps) != 1 {
-		t.Fatalf("steps=%d want 1", len(wf.Steps))
+	if wf.WorkflowID == "" || wf.TypeID != typeID || len(wf.Steps) != 1 {
+		t.Fatalf("unexpected workflow projection: %+v", wf)
 	}
 
-	// Step 2: CountGlobalWorkflowsByTypeId detects the workflow.
 	count, err := repo.CountGlobalWorkflowsByTypeId(ctx, typeID)
 	if err != nil {
 		t.Fatalf("CountGlobalWorkflowsByTypeId: %v", err)
 	}
-	if count == 0 {
-		t.Fatal("expected count > 0 after upserting global workflow")
+	if count != 0 {
+		t.Fatalf("PUT must not create global workflow runtime rows, count=%d", count)
 	}
 
-	// Step 3: CmsGetGlobalWorkflow retrieves the saved workflow.
 	resp, err := svc.CmsGetGlobalWorkflow(ctx, disclosureapp.CmsGetGlobalWorkflowRequest{
 		Subject: cmsSubject,
 		TypeID:  typeID,
@@ -78,49 +64,32 @@ func TestGlobalWorkflowChain(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CmsGetGlobalWorkflow: %v", err)
 	}
-	if resp.Data == nil {
-		t.Fatal("expected workflow data, got nil")
-	}
-	if resp.Data.TypeID != typeID {
-		t.Fatalf("type_id=%q want %q", resp.Data.TypeID, typeID)
+	if resp.Data == nil || resp.Data.TypeID != typeID {
+		t.Fatal("expected draft workflow projection")
 	}
 
-	// Step 4: CreateRecord with that type passes the has_workflow gate.
-	// Auth is nil (worker mode), so authorization is bypassed.
-	portalSubject := disclosureapp.Subject{
-		UserID:       "user-portal",
-		MembershipID: "member-portal",
-		CompanyID:    companyID,
-	}
-	rec, err := svc.CreateRecord(ctx, disclosureapp.CreateRecordRequest{
+	_, err = svc.CreateRecord(ctx, disclosureapp.CreateRecordRequest{
 		Subject: portalSubject,
-		Payload: disclosureapp.RecordPayload{
-			TypeID:  typeID,
-			Title:   "Test Disclosure",
-			Content: "Test content",
-		},
+		Payload: disclosureapp.RecordPayload{TypeID: typeID, Title: "Draft leak?", Content: "x"},
 	})
-	if err != nil {
-		t.Fatalf("CreateRecord after global workflow configured: %v", err)
+	if err == nil {
+		t.Fatal("SAVE_DRAFT_DOES_NOT_PUBLISH: portal create must fail before template activate")
 	}
-	if rec.RecordID == "" {
-		t.Fatal("expected non-empty record_id")
+	if herr, ok := err.(*perr.HTTPError); !ok || herr.Code != "TEMPLATE_NO_WORKFLOW" {
+		t.Fatalf("before activate want TEMPLATE_NO_WORKFLOW, got %v", err)
 	}
 
-	// Step 5: Delete the global workflow.
-	if err := svc.CmsDeleteGlobalWorkflow(ctx, disclosureapp.CmsDeleteGlobalWorkflowRequest{
-		Subject: cmsSubject,
-		TypeID:  typeID,
+	if _, err := svc.ActivateTypeVersion(ctx, disclosureapp.ActivateTypeVersionRequest{
+		Subject: cmsSubject, TypeID: typeID, VersionNo: 1,
 	}); err != nil {
-		t.Fatalf("CmsDeleteGlobalWorkflow: %v", err)
+		t.Fatalf("ActivateTypeVersion: %v", err)
 	}
 
-	// After deletion, CountGlobalWorkflowsByTypeId should return 0.
-	count, err = repo.CountGlobalWorkflowsByTypeId(ctx, typeID)
-	if err != nil {
-		t.Fatalf("CountGlobalWorkflowsByTypeId after delete: %v", err)
+	has, err := repo.HasActiveEnterpriseWorkflow(ctx, portalSubject.CompanyID, typeID)
+	if err != nil || !has {
+		t.Fatalf("after activate has_workflow=%v err=%v", has, err)
 	}
-	if count != 0 {
-		t.Fatalf("expected count=0 after delete, got %d", count)
+	if _, err := repo.GetTypeDetail(ctx, portalSubject.CompanyID, typeID); err != nil {
+		t.Fatalf("portal GetTypeDetail after activate: %v", err)
 	}
 }

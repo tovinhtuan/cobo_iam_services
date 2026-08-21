@@ -11,41 +11,40 @@ import (
 // global_workflow_versions, 3. legacy enterprise_workflow block, 4. empty") — company override
 // must be checked (and able to return) before loadActiveGlobalWorkflow is called, which in turn
 // must be called before the legacy CMS-default fallback via ResolveCMSDefaultWorkflow.
-func TestGetEffectiveWorkflow_BranchOrder_OverrideThenGlobalWorkflowThenLegacy(t *testing.T) {
+func TestGetEffectiveWorkflow_BranchOrder_OverrideThenPinnedTemplate(t *testing.T) {
 	src := readGlobalWorkflowReadTestSrc(t, "repository.go")
 	fn := extractFunc(t, src, "func (r *Repository) GetEffectiveWorkflow")
 
 	overrideIdx := strings.Index(fn, "view.ActiveVersion != nil")
+	pinnedIdx := strings.Index(fn, "ResolveTemplatePublicationWorkflow")
 	globalIdx := strings.Index(fn, "r.loadActiveGlobalWorkflow(ctx, typeID)")
 	legacyIdx := strings.Index(fn, "ResolveCMSDefaultWorkflow")
-	if legacyIdx == -1 {
-		legacyIdx = strings.Index(fn, "ExtractTemplateWorkflow(detail.Blocks)")
-	}
 
 	if overrideIdx == -1 {
-		t.Fatal("GetEffectiveWorkflow must still check view.ActiveVersion (company override) — this branch must remain untouched per ADR")
+		t.Fatal("GetEffectiveWorkflow must still check view.ActiveVersion (company override)")
 	}
-	if globalIdx == -1 {
-		t.Fatal("GetEffectiveWorkflow must call loadActiveGlobalWorkflow (Batch R1 fix) before falling back to legacy")
+	if pinnedIdx == -1 {
+		t.Fatal("GetEffectiveWorkflow CMS default must resolve TEMPLATE_PINNED via ResolveTemplatePublicationWorkflow")
 	}
-	if legacyIdx == -1 {
-		t.Fatal("GetEffectiveWorkflow must resolve CMS default via ResolveCMSDefaultWorkflow (or ExtractTemplateWorkflow) when no override / no active global")
+	if globalIdx != -1 {
+		t.Fatal("GetEffectiveWorkflow must not call loadActiveGlobalWorkflow as runtime authority")
 	}
-	if !(overrideIdx < globalIdx && globalIdx < legacyIdx) {
-		t.Fatalf("branch order must be override(%d) < global_workflow(%d) < legacy(%d)", overrideIdx, globalIdx, legacyIdx)
+	if legacyIdx != -1 {
+		t.Fatal("GetEffectiveWorkflow must not call ResolveCMSDefaultWorkflow as runtime authority")
+	}
+	if !(overrideIdx < pinnedIdx) {
+		t.Fatalf("branch order must be override(%d) < pinned(%d)", overrideIdx, pinnedIdx)
 	}
 }
 
-// TestGetEffectiveWorkflow_GlobalWorkflowSource_SetExactlyOnHit ensures the "global_workflow"
-// source string is assigned via canonical ResolveCMSDefaultWorkflow (CMSDefaultSourceGlobalWorkflow)
-// when loadActiveGlobalWorkflow finds an active version.
-func TestGetEffectiveWorkflow_GlobalWorkflowSourceLiteral_Present(t *testing.T) {
+func TestGetEffectiveWorkflow_DoesNotAssignGlobalWorkflowRuntimeSource(t *testing.T) {
 	src := readGlobalWorkflowReadTestSrc(t, "repository.go")
 	fn := extractFunc(t, src, "func (r *Repository) GetEffectiveWorkflow")
-	hasLiteral := strings.Contains(fn, `dto.Source = "global_workflow"`)
-	hasCanonical := strings.Contains(fn, "ResolveCMSDefaultWorkflow") && strings.Contains(fn, "ActiveGlobalOK")
-	if !hasLiteral && !hasCanonical {
-		t.Fatal(`GetEffectiveWorkflow must set source=global_workflow via literal or ResolveCMSDefaultWorkflow when loadActiveGlobalWorkflow finds an active version`)
+	if strings.Contains(fn, `dto.Source = "global_workflow"`) || strings.Contains(fn, "ResolveCMSDefaultWorkflow") {
+		t.Fatal("GetEffectiveWorkflow must not assign runtime source=global_workflow")
+	}
+	if !strings.Contains(fn, "ResolveTemplatePublicationWorkflow") {
+		t.Fatal("GetEffectiveWorkflow must use ResolveTemplatePublicationWorkflow for CMS default")
 	}
 }
 

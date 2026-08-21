@@ -5,14 +5,12 @@ import (
 	"testing"
 
 	disclosureapp "github.com/cobo/cobo_iam_services/internal/disclosure/app"
-	"github.com/cobo/cobo_iam_services/internal/disclosure/infra/inmemory"
-	"github.com/cobo/cobo_iam_services/internal/platform/idgen"
 )
 
 func TestCmsUpsertGlobalWorkflow_ReminderConfigPersistsAndClears(t *testing.T) {
 	ctx := context.Background()
-	svc := disclosureapp.NewService(inmemory.NewRepository(), nil, idgen.UUIDv7Generator{})
 	const typeID = "dt-reminder-persist"
+	svc, _ := newSeededWFService(t, typeID)
 	base := disclosureapp.GlobalWorkflowStepInput{
 		Stage: "Review", DepartmentID: "d1", AssigneeRoleIds: []string{"r1"},
 		ProcessingDays: 3, DueRule: "T+3", DisplayOrder: 1,
@@ -77,7 +75,7 @@ func TestCmsUpsertGlobalWorkflow_ReminderConfigPersistsAndClears(t *testing.T) {
 
 func TestCmsUpsertGlobalWorkflow_RejectsEmptyCustomReminder(t *testing.T) {
 	ctx := context.Background()
-	svc := disclosureapp.NewService(inmemory.NewRepository(), nil, idgen.UUIDv7Generator{})
+	svc := newWFService()
 	_, err := svc.CmsUpsertGlobalWorkflow(ctx, disclosureapp.CmsUpsertGlobalWorkflowRequest{
 		Subject: testSubjectWF,
 		TypeID:  "dt-reminder-invalid",

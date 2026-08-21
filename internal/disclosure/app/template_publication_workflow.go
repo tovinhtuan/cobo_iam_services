@@ -25,12 +25,28 @@ type WorkflowPublicationStep struct {
 	WorkflowStepDTO
 }
 
-// WorkflowPublicationManifest is the canonical workflow snapshot owned by one
+// WorkflowPublicationManifestV1 is the canonical workflow snapshot owned by one
 // disclosure_type_versions row. Runtime code must read it only from the active
 // template version.
-type WorkflowPublicationManifest struct {
+type WorkflowPublicationManifestV1 struct {
 	SchemaVersion int                       `json:"schema_version"`
 	Steps         []WorkflowPublicationStep `json:"steps"`
+}
+
+// WorkflowPublicationManifest keeps the existing internal API source-compatible.
+type WorkflowPublicationManifest = WorkflowPublicationManifestV1
+
+type templatePublicationBlock struct {
+	BlockKey     string         `json:"block_key"`
+	BlockType    string         `json:"block_type"`
+	Title        string         `json:"title"`
+	NameEN       string         `json:"name_en"`
+	NameVI       string         `json:"name_vi"`
+	Description  string         `json:"description"`
+	Config       map[string]any `json:"config"`
+	Validation   map[string]any `json:"validation"`
+	DisplayOrder int            `json:"display_order"`
+	Enabled      bool           `json:"enabled"`
 }
 
 // TemplatePublicationCandidate is computed by the app layer before draft
@@ -85,6 +101,7 @@ func BuildTemplatePublicationCandidate(req UpsertTypeVersionRequest) (TemplatePu
 		Tags                  []string                    `json:"tags"`
 		DisplayGroupCodes     []string                    `json:"display_group_codes"`
 		ApplicabilityRules    any                         `json:"applicability_rules"`
+		Blocks                []templatePublicationBlock  `json:"blocks"`
 		Workflow              WorkflowPublicationManifest `json:"workflow"`
 	}{
 		SchemaVersion: WorkflowManifestSchemaVersion, TypeID: strings.TrimSpace(req.TypeID),
@@ -99,9 +116,10 @@ func BuildTemplatePublicationCandidate(req UpsertTypeVersionRequest) (TemplatePu
 		DeadlineConfig: req.DeadlineConfig, LegalBases: nonNilLegalBases(req.LegalBases),
 		Checklist: nonNilChecklist(req.Checklist), Tags: nonNilStrings(req.Tags),
 		DisplayGroupCodes: nonNilStrings(req.DisplayGroupCodes), ApplicabilityRules: req.ApplicabilityRules,
+		Blocks: normalizedTemplatePublicationBlocks(req.Blocks),
 		Workflow: manifest,
 	}
-	candidateJSON, err := json.Marshal(hashInput)
+	candidateJSON, err := marshalCanonicalJSON(hashInput)
 	if err != nil {
 		return TemplatePublicationCandidate{}, fmt.Errorf("marshal publication candidate: %w", err)
 	}
@@ -178,11 +196,71 @@ func CanonicalWorkflowPublication(steps []WorkflowStepDTO) (WorkflowPublicationM
 		return out[i].StepKey < out[j].StepKey
 	})
 	manifest := WorkflowPublicationManifest{SchemaVersion: WorkflowManifestSchemaVersion, Steps: out}
-	raw, err := json.Marshal(manifest)
+	raw, err := marshalCanonicalJSON(manifest)
 	if err != nil {
 		return WorkflowPublicationManifest{}, nil, "", fmt.Errorf("marshal workflow publication manifest: %w", err)
 	}
 	return manifest, raw, sha256Hex(raw), nil
+}
+
+func marshalCanonicalJSON(v any) ([]byte, error) {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	var generic any
+	if err := json.Unmarshal(raw, &generic); err != nil {
+		return nil, err
+	}
+	return encodeCanonicalJSON(generic)
+}
+
+func encodeCanonicalJSON(v any) ([]byte, error) {
+	switch t := v.(type) {
+	case map[string]any:
+		keys := make([]string, 0, len(t))
+		for k := range t {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		var b strings.Builder
+		b.WriteByte('{')
+		for i, k := range keys {
+			if i > 0 {
+				b.WriteByte(',')
+			}
+			kb, err := json.Marshal(k)
+			if err != nil {
+				return nil, err
+			}
+			b.Write(kb)
+			b.WriteByte(':')
+			vb, err := encodeCanonicalJSON(t[k])
+			if err != nil {
+				return nil, err
+			}
+			b.Write(vb)
+		}
+		b.WriteByte('}')
+		return []byte(b.String()), nil
+	case []any:
+		var b strings.Builder
+		b.WriteByte('[')
+		for i, item := range t {
+			if i > 0 {
+				b.WriteByte(',')
+			}
+			vb, err := encodeCanonicalJSON(item)
+			if err != nil {
+				return nil, err
+			}
+			b.Write(vb)
+		}
+		b.WriteByte(']')
+		return []byte(b.String()), nil
+	default:
+		return json.Marshal(t)
+	}
 }
 
 // ResolveTemplatePublicationWorkflow is the only normal-runtime resolver for
@@ -236,4 +314,33 @@ func nonNilChecklist(in []ChecklistItemDTO) []ChecklistItemDTO {
 		return []ChecklistItemDTO{}
 	}
 	return append([]ChecklistItemDTO(nil), in...)
+}
+
+func normalizedTemplatePublicationBlocks(in []TemplateBlockDTO) []templatePublicationBlock {
+	out := make([]templatePublicationBlock, 0, len(in))
+	for _, block := range in {
+		config := block.Config
+		if config == nil {
+			config = map[string]any{}
+		}
+		validation := block.Validation
+		if validation == nil {
+			validation = map[string]any{}
+		}
+		out = append(out, templatePublicationBlock{
+			BlockKey: strings.TrimSpace(block.BlockKey), BlockType: strings.TrimSpace(block.BlockType),
+			Title: block.Title, NameEN: block.NameEN, NameVI: block.NameVI, Description: block.Description,
+			Config: config, Validation: validation, DisplayOrder: block.DisplayOrder, Enabled: block.Enabled,
+		})
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].DisplayOrder != out[j].DisplayOrder {
+			return out[i].DisplayOrder < out[j].DisplayOrder
+		}
+		if out[i].BlockKey != out[j].BlockKey {
+			return out[i].BlockKey < out[j].BlockKey
+		}
+		return out[i].BlockType < out[j].BlockType
+	})
+	return out
 }

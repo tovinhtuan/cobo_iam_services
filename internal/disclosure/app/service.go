@@ -701,7 +701,7 @@ func (s *service) GetTypeVersionDetail(ctx context.Context, req GetTypeVersionDe
 		return nil, err
 	}
 	ApplyLegalBasisReadCompat(ctx, item, s.legalBasisLegacyFallbackEnabled, s.legalBasisDivergenceWarningEnabled)
-	return item, nil
+	return redactEnterpriseWorkflowStepsForCMSEditor(item), nil
 }
 
 func (s *service) GetTemplateReferenceData(ctx context.Context, req GetTemplateReferenceDataRequest) (*GetTemplateReferenceDataResponse, error) {
@@ -797,27 +797,32 @@ func (s *service) UpsertTypeVersion(ctx context.Context, req UpsertTypeVersionRe
 	}
 	syncLegalBasisBlockDescriptionFromFlat(&req)
 	HydrateTemplateBlocksBilingualForPersistence(req.Blocks)
-	validateFn := validateTemplateMatrix
-	if req.Scope == templateScopeGlobal {
-		validateFn = validatePortalTemplateMatrix
-	}
-	if err := validateFn(&req); err != nil {
-		return nil, err
-	}
-	if err := validatePortalDeadlineRule(req.DeadlineRule, s.loadDeadlineRuleCatalog(ctx)); err != nil {
+	if err := s.preservePinnedWorkflowIfOmitted(ctx, &req); err != nil {
 		return nil, err
 	}
 	req.DisplayGroupCodes = normalizeDisplayGroupCodes(req.DisplayGroupCodes)
-	if len(req.DisplayGroupCodes) == 0 {
-		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "display_group_codes is required (at least one Portal catalog group)", nil)
-	}
-	if err := validateDisplayGroupCodesExist(ctx, s.repo, req.DisplayGroupCodes); err != nil {
-		return nil, err
-	}
-	if req.Scope == templateScopeGlobal {
-		isPeriodic := strings.EqualFold(req.TemplateCategory, TemplateCategoryPeriodic)
-		if err := applicability.ValidateRules(req.ApplicabilityRules, isPeriodic); err != nil {
-			return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, err.Error(), nil)
+	if !req.SkipPublicationMatrix {
+		validateFn := validateTemplateMatrix
+		if req.Scope == templateScopeGlobal {
+			validateFn = validatePortalTemplateMatrix
+		}
+		if err := validateFn(&req); err != nil {
+			return nil, err
+		}
+		if err := validatePortalDeadlineRule(req.DeadlineRule, s.loadDeadlineRuleCatalog(ctx)); err != nil {
+			return nil, err
+		}
+		if len(req.DisplayGroupCodes) == 0 {
+			return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "display_group_codes is required (at least one Portal catalog group)", nil)
+		}
+		if err := validateDisplayGroupCodesExist(ctx, s.repo, req.DisplayGroupCodes); err != nil {
+			return nil, err
+		}
+		if req.Scope == templateScopeGlobal {
+			isPeriodic := strings.EqualFold(req.TemplateCategory, TemplateCategoryPeriodic)
+			if err := applicability.ValidateRules(req.ApplicabilityRules, isPeriodic); err != nil {
+				return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, err.Error(), nil)
+			}
 		}
 	}
 	publicationCandidate, err := BuildTemplatePublicationCandidate(req)
@@ -940,7 +945,11 @@ func (s *service) ActivateTypeVersion(ctx context.Context, req ActivateTypeVersi
 			return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, err.Error(), nil)
 		}
 	}
-	req.ExpectedCandidateHash = versionDetail.PublicationCandidateHash
+	// FE activate omits ExpectedCandidateHash and uses the locked current candidate.
+	// Callers that supply a hash (validate-then-activate) must match or receive 409.
+	if req.ExpectedCandidateHash == "" {
+		req.ExpectedCandidateHash = versionDetail.PublicationCandidateHash
+	}
 	return s.repo.ActivateTypeVersion(ctx, req)
 }
 
@@ -1251,28 +1260,6 @@ func sortWorkflowSteps(steps []WorkflowStepDTO) {
 	}
 }
 
-// resolveCMSDefaultWorkflow loads active global + enterprise blocks for the given version
-// and returns the canonical CMS-default EffectiveTemplateWorkflow.
-func (s *service) resolveCMSDefaultWorkflow(ctx context.Context, typeID string, versionDetail *DisclosureTypeDTO) (EffectiveTemplateWorkflow, error) {
-	steps, versionNo, ok, err := s.repo.GetActiveGlobalWorkflow(ctx, typeID)
-	if err != nil {
-		return EffectiveTemplateWorkflow{}, err
-	}
-	enterpriseVersion := 0
-	var blocks []TemplateBlockDTO
-	if versionDetail != nil {
-		enterpriseVersion = versionDetail.VersionNo
-		blocks = versionDetail.Blocks
-	}
-	return ResolveCMSDefaultWorkflow(CMSDefaultWorkflowInput{
-		ActiveGlobalSteps:     steps,
-		ActiveGlobalVersionNo: versionNo,
-		ActiveGlobalOK:        ok,
-		EnterpriseBlocks:      blocks,
-		EnterpriseVersionNo:   enterpriseVersion,
-	}), nil
-}
-
 func enrichEffectiveWorkflowDTO(dto *EffectiveWorkflowDTO) {
 	if dto == nil {
 		return
@@ -1306,10 +1293,48 @@ func (s *service) GetEffectiveWorkflow(ctx context.Context, req GetEffectiveWork
 	}
 	out, err := s.repo.GetEffectiveWorkflow(ctx, req.Subject.CompanyID, req.TypeID)
 	if err != nil {
+		if preview, ok := s.cmsEditorUnpublishedDraftWorkflowPreview(ctx, req, err); ok {
+			return preview, nil
+		}
 		return nil, err
 	}
 	enrichEffectiveWorkflowDTO(out)
 	return &GetEffectiveWorkflowResponse{Data: *out}, nil
+}
+
+// cmsEditorUnpublishedDraftWorkflowPreview unblocks the existing CMS "Công bố/Kích hoạt"
+// gate (FE computeDraftCanActivate uses effectiveSummary.stepCount) when a TEMPLATE_PINNED
+// draft has steps but no active publication yet. MySQL GetEffectiveWorkflow 404s in that
+// state because GetTypeDetail joins active_version_no.
+//
+// This is CMS-editor-only: platform.cms.view is required, and it only runs after the
+// runtime resolver already failed. CreateRecord still uses HasActiveEnterpriseWorkflow
+// (active pointer only) and must not inherit this preview.
+func (s *service) cmsEditorUnpublishedDraftWorkflowPreview(ctx context.Context, req GetEffectiveWorkflowRequest, cause error) (*GetEffectiveWorkflowResponse, bool) {
+	he, ok := perr.AsHTTPError(cause)
+	if !ok || (he.HTTPStatus != http.StatusNotFound && he.HTTPStatus != http.StatusConflict) {
+		return nil, false
+	}
+	if !s.hasPermission(ctx, req.Subject, permissionPlatformCMSView) {
+		return nil, false
+	}
+	detail, isDraft, err := s.templateWorkflowCandidateDetail(ctx, req.Subject, req.TypeID)
+	if err != nil || detail == nil || !isDraft {
+		return nil, false
+	}
+	steps := workflowStepsFromDetail(detail)
+	if len(steps) == 0 {
+		return nil, false
+	}
+	dto := EffectiveWorkflowDTO{
+		TypeID:    req.TypeID,
+		CompanyID: req.Subject.CompanyID,
+		Source:    "global_template",
+		VersionNo: detail.VersionNo,
+		Workflow:  steps,
+	}
+	enrichEffectiveWorkflowDTO(&dto)
+	return &GetEffectiveWorkflowResponse{Data: dto}, true
 }
 
 func (s *service) GetTemplateDeadlineConfig(ctx context.Context, req GetTemplateDeadlineConfigRequest) (*GetTemplateDeadlineConfigResponse, error) {

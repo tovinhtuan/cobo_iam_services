@@ -19,8 +19,9 @@ type fakeWorkflowRepository struct {
 	createdInstance WorkflowInstanceDTO
 	createdTask     TaskDTO
 
-	failNextCreateTask error
-	createTaskCalls    int
+	failNextCreateTask     error
+	failNextCreateInstance error
+	createTaskCalls        int
 }
 
 func (f *fakeWorkflowRepository) ensure() {
@@ -36,6 +37,11 @@ func (f *fakeWorkflowRepository) CreateInstance(_ context.Context, in WorkflowIn
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.ensure()
+	if f.failNextCreateInstance != nil {
+		err := f.failNextCreateInstance
+		f.failNextCreateInstance = nil
+		return nil, err
+	}
 	f.createdInstance = in
 	f.instances[in.CompanyID+":"+in.WorkflowInstanceID] = in
 	cp := in
@@ -175,12 +181,12 @@ func (g *seqIDGen) NewUUID() string {
 	return fmt.Sprintf("id-%d", g.n)
 }
 
-func TestCreateWorkflowInstanceInternalPersistsT0WithoutSnapshotFlag(t *testing.T) {
+func TestCreateWorkflowInstanceInternalRejectsMissingSnapshotBeforeInsert(t *testing.T) {
 	repo := &fakeWorkflowRepository{}
 	svc := NewService(repo, nil, fakeWorkflowIDGen{})
 	t0 := time.Date(2026, time.June, 1, 0, 0, 0, 0, time.UTC)
 
-	created, err := svc.CreateWorkflowInstanceInternal(context.Background(), CreateWorkflowInstanceRequest{
+	_, err := svc.CreateWorkflowInstanceInternal(context.Background(), CreateWorkflowInstanceRequest{
 		Subject: Subject{
 			UserID:       "user-001",
 			MembershipID: "member-001",
@@ -190,20 +196,11 @@ func TestCreateWorkflowInstanceInternalPersistsT0WithoutSnapshotFlag(t *testing.
 		T0Date:   &t0,
 		T0Policy: "user_defined",
 	})
-	if err != nil {
-		t.Fatalf("CreateWorkflowInstanceInternal() error = %v", err)
+	if err == nil {
+		t.Fatal("expected missing frozen snapshot to be rejected")
 	}
-	if created.T0Date == nil || !created.T0Date.Equal(t0) {
-		t.Fatalf("expected returned workflow instance to keep T0Date, got %#v", created.T0Date)
-	}
-	if created.T0Policy != "user_defined" {
-		t.Fatalf("expected returned workflow instance to keep T0Policy, got %q", created.T0Policy)
-	}
-	if repo.createdInstance.T0Date == nil || !repo.createdInstance.T0Date.Equal(t0) {
-		t.Fatalf("expected repository insert to receive T0Date, got %#v", repo.createdInstance.T0Date)
-	}
-	if repo.createdInstance.T0Policy != "user_defined" {
-		t.Fatalf("expected repository insert to receive T0Policy, got %q", repo.createdInstance.T0Policy)
+	if len(repo.instances) != 0 || repo.createdInstance.WorkflowInstanceID != "" {
+		t.Fatalf("instance must not be inserted when snapshot is missing: %#v", repo.createdInstance)
 	}
 }
 
@@ -321,5 +318,41 @@ func TestCreateWorkflowInstanceInternal_LegacyUsesSubjectMembership(t *testing.T
 	}
 	if repo.createdTask.AssigneeMembershipID != "member-creator" {
 		t.Fatalf("legacy assignee = %q", repo.createdTask.AssigneeMembershipID)
+	}
+}
+
+func TestCreateWorkflowInstanceInternal_SnapshotInsertFailureCreatesNoRow(t *testing.T) {
+	repo := &fakeWorkflowRepository{failNextCreateInstance: fmt.Errorf("snapshot persist failed")}
+	svc := NewService(repo, nil, fakeWorkflowIDGen{}, WithFlags(Flags{SnapshotEnabled: true}))
+
+	_, err := svc.CreateWorkflowInstanceInternal(context.Background(), CreateWorkflowInstanceRequest{
+		Subject:        Subject{UserID: "u", MembershipID: "m", CompanyID: "c"},
+		RecordID:       "rec-n4",
+		Snapshot:       []StepSnapshot{{StepID: "s1", StepCode: "s1", DisplayOrder: 1}},
+		WorkflowSource: "global_template",
+	})
+	if err == nil {
+		t.Fatal("snapshot insert failure must roll back instance creation")
+	}
+	if len(repo.instances) != 0 {
+		t.Fatalf("FAIL_FINAL_WORKFLOW_NULL_SNAPSHOT_CREATED: leftover instances=%d", len(repo.instances))
+	}
+	if repo.createTaskCalls != 0 {
+		t.Fatalf("task must not be created after snapshot insert failure, calls=%d", repo.createTaskCalls)
+	}
+}
+
+func TestCreateWorkflowInstanceInternal_RejectsEmptySnapshot(t *testing.T) {
+	repo := &fakeWorkflowRepository{}
+	svc := NewService(repo, nil, fakeWorkflowIDGen{}, WithFlags(Flags{SnapshotEnabled: true}))
+	_, err := svc.CreateWorkflowInstanceInternal(context.Background(), CreateWorkflowInstanceRequest{
+		Subject:  Subject{UserID: "u", MembershipID: "m", CompanyID: "c"},
+		RecordID: "rec-empty",
+	})
+	if err == nil {
+		t.Fatal("NEW_INSTANCE_WITHOUT_SNAPSHOT_FORBIDDEN")
+	}
+	if len(repo.instances) != 0 {
+		t.Fatal("empty snapshot must not insert a row")
 	}
 }

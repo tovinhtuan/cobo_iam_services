@@ -10,7 +10,24 @@ import (
 // TestGetEffectiveWorkflow_NoActiveGlobalWorkflow_FallsBackToLegacy is Batch R4 case #3:
 // a type with no global_workflows row at all must still return the legacy enterprise_workflow
 // content-block steps, source="global_template" — unchanged pre-R1 behavior.
-func TestGetEffectiveWorkflow_NoActiveGlobalWorkflow_FallsBackToLegacy(t *testing.T) {
+func pinCatalogFromBlocks(r *Repository, typeID string) {
+	current := r.catalog[typeID]
+	steps := disclosureapp.ExtractTemplateWorkflow(current.Blocks)
+	manifest, _, hash, err := disclosureapp.CanonicalWorkflowPublication(steps)
+	if err != nil {
+		panic(err)
+	}
+	current.TypeID = typeID
+	if current.VersionNo == 0 {
+		current.VersionNo = 1
+	}
+	current.WorkflowAuthorityMode = disclosureapp.WorkflowAuthorityTemplatePinned
+	current.WorkflowManifest = &manifest
+	current.PublicationCandidateHash = hash
+	r.catalog[typeID] = current
+}
+
+func TestGetEffectiveWorkflow_NoActiveGlobalWorkflow_UsesPinnedPublication(t *testing.T) {
 	r := NewRepository()
 	ctx := context.Background()
 	const typeID = "dt-legacy-only"
@@ -31,6 +48,7 @@ func TestGetEffectiveWorkflow_NoActiveGlobalWorkflow_FallsBackToLegacy(t *testin
 			},
 		},
 	}
+	pinCatalogFromBlocks(r, typeID)
 
 	dto, err := r.GetEffectiveWorkflow(ctx, companyID, typeID)
 	if err != nil {
@@ -50,7 +68,7 @@ func TestGetEffectiveWorkflow_NoActiveGlobalWorkflow_FallsBackToLegacy(t *testin
 // live-DEV proof of the real publish≠activate distinction). Here: once a global_workflows row is
 // "active" with ActiveVersionNo set (the in-memory analogue of an activated version), it must win
 // over a legacy block that also exists for the same type.
-func TestGetEffectiveWorkflow_ActiveGlobalWorkflow_WinsOverLegacy(t *testing.T) {
+func TestGetEffectiveWorkflow_ActiveGlobalWorkflow_DoesNotMutatePinned(t *testing.T) {
 	r := NewRepository()
 	ctx := context.Background()
 	const typeID = "dt-both"
@@ -66,6 +84,7 @@ func TestGetEffectiveWorkflow_ActiveGlobalWorkflow_WinsOverLegacy(t *testing.T) 
 			}},
 		},
 	}
+	pinCatalogFromBlocks(r, typeID)
 
 	active := 1
 	r.globalWorkflows = map[string]*disclosureapp.GlobalWorkflowDTO{
@@ -85,17 +104,11 @@ func TestGetEffectiveWorkflow_ActiveGlobalWorkflow_WinsOverLegacy(t *testing.T) 
 	if err != nil {
 		t.Fatalf("GetEffectiveWorkflow: %v", err)
 	}
-	if dto.Source != "global_workflow" {
-		t.Fatalf("source=%q want global_workflow", dto.Source)
+	if dto.Source != "global_template" {
+		t.Fatalf("source=%q want global_template", dto.Source)
 	}
-	if dto.VersionNo != active {
-		t.Fatalf("version_no=%d want %d", dto.VersionNo, active)
-	}
-	if len(dto.Workflow) != 1 || dto.Workflow[0].Stage != "Governed Stage" {
-		t.Fatalf("unexpected workflow (must come from global workflow, not legacy): %+v", dto.Workflow)
-	}
-	if dto.Workflow[0].DueRule != "T+5" {
-		t.Fatalf("due_rule=%q want synthesized T+5 (processing_days=5, no explicit due_rule)", dto.Workflow[0].DueRule)
+	if len(dto.Workflow) != 1 || dto.Workflow[0].Stage != "Legacy Stage" {
+		t.Fatalf("unexpected workflow (must stay pinned, not global): %+v", dto.Workflow)
 	}
 }
 
@@ -124,15 +137,17 @@ func TestGetEffectiveWorkflow_ReminderConfigFollowsPrecedence(t *testing.T) {
 		},
 	}
 
+	pinCatalogFromBlocks(r, typeID)
+
 	dto, err := r.GetEffectiveWorkflow(ctx, companyID, typeID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if dto.Source != "global_template" || dto.Workflow[0].ReminderConfig == nil {
-		t.Fatalf("enterprise fallback reminder missing: source=%s cfg=%+v", dto.Source, dto.Workflow[0].ReminderConfig)
+		t.Fatalf("pinned reminder missing: source=%s cfg=%+v", dto.Source, dto.Workflow[0].ReminderConfig)
 	}
 	if got := dto.Workflow[0].ReminderConfig.DaysBefore; len(got) != 1 || got[0] != 5 {
-		t.Fatalf("enterprise days=%v", got)
+		t.Fatalf("pinned days=%v", got)
 	}
 
 	active := 1
@@ -149,11 +164,11 @@ func TestGetEffectiveWorkflow_ReminderConfigFollowsPrecedence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if dto.Source != "global_workflow" || dto.Workflow[0].ReminderConfig == nil {
-		t.Fatalf("global reminder missing: source=%s cfg=%+v", dto.Source, dto.Workflow[0].ReminderConfig)
+	if dto.Source != "global_template" || dto.Workflow[0].ReminderConfig == nil {
+		t.Fatalf("pinned reminder missing after global mutation: source=%s cfg=%+v", dto.Source, dto.Workflow[0].ReminderConfig)
 	}
-	if got := dto.Workflow[0].ReminderConfig.DaysBefore; len(got) != 2 || got[0] != 7 {
-		t.Fatalf("global must win over enterprise, days=%v", got)
+	if got := dto.Workflow[0].ReminderConfig.DaysBefore; len(got) != 1 || got[0] != 5 {
+		t.Fatalf("global must not win over pinned, days=%v", got)
 	}
 
 	r.overrideByCompanyType[overrideKey(companyID, typeID)] = &overrideState{
@@ -198,6 +213,7 @@ func TestGetEffectiveWorkflow_GlobalWorkflowWithoutActiveVersionNo_FallsBackToLe
 			}},
 		},
 	}
+	pinCatalogFromBlocks(r, typeID)
 	r.globalWorkflows = map[string]*disclosureapp.GlobalWorkflowDTO{
 		typeID: {WorkflowID: "wf-1", TypeID: typeID, Status: "active", ActiveVersionNo: nil},
 	}

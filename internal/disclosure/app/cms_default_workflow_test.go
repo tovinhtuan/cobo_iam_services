@@ -145,22 +145,20 @@ func TestResolveCMSDefaultWorkflow_CaseMatrix(t *testing.T) {
 	}
 }
 
-func TestActivateTypeVersion_UsesActiveGlobalWhenEnterpriseEmpty(t *testing.T) {
+func TestActivateTypeVersion_RequiresPinnedTemplatePublication(t *testing.T) {
 	repo := &cmsActivateCanonicalRepo{
 		cmsTemplateAuthzRepo: cmsTemplateAuthzRepo{
 			versionDetail: &DisclosureTypeDTO{
-				TypeID:               "dt-global-only",
-				VersionNo:            2,
-				Scope:                "global",
-				TemplateCategory:     TemplateCategoryIrregular,
-				ApplicabilityRules:   applicability.DefaultGlobalRules(false),
-				Blocks:               []TemplateBlockDTO{},
+				TypeID:             "dt-global-only",
+				VersionNo:          2,
+				Scope:              "global",
+				TemplateCategory:   TemplateCategoryIrregular,
+				ApplicabilityRules: applicability.DefaultGlobalRules(false),
+				Blocks:             enterpriseBlocks(validStep("g1", "G1"), validStep("g2", "G2"), validStep("g3", "G3")),
 			},
 		},
 		globalSteps: []WorkflowStepDTO{
-			validStep("g1", "G1"),
-			validStep("g2", "G2"),
-			validStep("g3", "G3"),
+			validStep("legacy-g1", "LegacyG1"),
 		},
 		globalVersion: 1,
 	}
@@ -174,7 +172,7 @@ func TestActivateTypeVersion_UsesActiveGlobalWhenEnterpriseEmpty(t *testing.T) {
 		VersionNo: 2,
 	})
 	if err != nil {
-		t.Fatalf("CASE_A activate should pass with active global: %v", err)
+		t.Fatalf("CASE_A activate should pass with pinned template publication: %v", err)
 	}
 	if resp.VersionNo != 2 {
 		t.Fatalf("version_no=%d want 2", resp.VersionNo)
@@ -201,7 +199,7 @@ func TestActivateTypeVersion_BlocksWhenOnlyGlobalDraft(t *testing.T) {
 		VersionNo: 1,
 	})
 	if err == nil {
-		t.Fatal("CASE_B expected TEMPLATE_NO_WORKFLOW")
+		t.Fatal("CASE_B expected TEMPLATE_WORKFLOW_NOT_PINNED or TEMPLATE_NO_WORKFLOW")
 	}
 }
 

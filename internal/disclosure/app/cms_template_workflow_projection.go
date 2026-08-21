@@ -21,7 +21,7 @@ func TemplateHasWorkflow(blocks []TemplateBlockDTO) bool {
 }
 
 // ValidateTemplateWorkflowForActivation validates the enterprise_workflow block only.
-// Prefer ResolveCMSDefaultWorkflow for activate/publish readiness (ACTIVE_GLOBAL > enterprise).
+// Runtime activate/publish readiness uses TEMPLATE_PINNED + ValidateWorkflowStepsForActivation.
 func ValidateTemplateWorkflowForActivation(blocks []TemplateBlockDTO) error {
 	return ValidateWorkflowStepsForActivation(ExtractTemplateWorkflow(blocks))
 }

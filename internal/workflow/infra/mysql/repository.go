@@ -21,19 +21,18 @@ func NewRepository(db *sql.DB) *Repository {
 }
 
 func (r *Repository) CreateInstance(ctx context.Context, in workflowapp.WorkflowInstanceDTO) (*workflowapp.WorkflowInstanceDTO, error) {
-	var snapshotJSON []byte
-	if len(in.Snapshot) > 0 {
-		b, err := json.Marshal(in.Snapshot)
-		if err != nil {
-			return nil, fmt.Errorf("marshal snapshot: %w", err)
-		}
-		snapshotJSON = b
+	if len(in.Snapshot) == 0 {
+		return nil, perr.NewHTTPError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, "frozen workflow snapshot is required", nil)
+	}
+	snapshotJSON, err := json.Marshal(in.Snapshot)
+	if err != nil {
+		return nil, fmt.Errorf("marshal snapshot: %w", err)
 	}
 	var t0Date any
 	if in.T0Date != nil {
 		t0Date = in.T0Date.Format("2006-01-02")
 	}
-	_, err := r.db.ExecContext(ctx, `
+	_, err = r.db.ExecContext(ctx, `
 		INSERT INTO workflow_instances (
 			workflow_instance_id, company_id, record_id, status, current_step_code, created_by,
 			snapshot_json, t0_date, t0_policy, workflow_source

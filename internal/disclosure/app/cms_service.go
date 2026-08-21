@@ -115,11 +115,20 @@ func (s *service) CmsUpsertGlobalWorkflow(ctx context.Context, req CmsUpsertGlob
 	if err != nil {
 		return nil, err
 	}
-	blocks, err := replaceTemplateWorkflowBlock(detail.Blocks, req.Steps)
+	if err := rejectDuplicateIncomingIdentities(req.Steps); err != nil {
+		return nil, err
+	}
+	assignFacadeStepKeys(&req, detail)
+	if err := rejectDuplicateFacadeStepKeys(req.Steps); err != nil {
+		return nil, err
+	}
+	merged := mergeIncomingWorkflowSteps(workflowStepsFromDetail(detail), req.Steps)
+	blocks, err := replaceTemplateWorkflowSteps(detail.Blocks, merged)
 	if err != nil {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, err.Error(), nil)
 	}
 	upsert := upsertRequestFromDetail(req.Subject, detail, blocks, req.ChangeNote)
+	upsert.SkipPublicationMatrix = true
 	saved, err := s.UpsertTypeVersion(ctx, upsert)
 	if err != nil {
 		return nil, err
@@ -144,11 +153,14 @@ func (s *service) CmsDeleteGlobalWorkflow(ctx context.Context, req CmsDeleteGlob
 	if err != nil {
 		return err
 	}
-	blocks, err := replaceTemplateWorkflowBlock(detail.Blocks, nil)
+	blocks, err := replaceTemplateWorkflowSteps(detail.Blocks, nil)
 	if err != nil {
 		return err
 	}
-	_, err = s.UpsertTypeVersion(ctx, upsertRequestFromDetail(req.Subject, detail, blocks, "clear workflow draft"))
+	upsert := upsertRequestFromDetail(req.Subject, detail, blocks, "clear workflow draft")
+	upsert.SkipPublicationMatrix = true
+	upsert.ClearWorkflow = true
+	_, err = s.UpsertTypeVersion(ctx, upsert)
 	return err
 }
 
@@ -181,6 +193,14 @@ func (s *service) templateWorkflowCandidateDetail(ctx context.Context, sub Subje
 }
 
 func replaceTemplateWorkflowBlock(blocks []TemplateBlockDTO, steps []GlobalWorkflowStepInput) ([]TemplateBlockDTO, error) {
+	dtos := make([]WorkflowStepDTO, 0, len(steps))
+	for _, step := range steps {
+		dtos = append(dtos, workflowStepFromGlobalInput(step, WorkflowStepDTO{}))
+	}
+	return replaceTemplateWorkflowSteps(blocks, dtos)
+}
+
+func replaceTemplateWorkflowSteps(blocks []TemplateBlockDTO, steps []WorkflowStepDTO) ([]TemplateBlockDTO, error) {
 	raw, err := json.Marshal(steps)
 	if err != nil {
 		return nil, fmt.Errorf("marshal workflow projection: %w", err)
@@ -194,7 +214,16 @@ func replaceTemplateWorkflowBlock(blocks []TemplateBlockDTO, steps []GlobalWorkf
 	for _, block := range blocks {
 		next := block
 		if strings.EqualFold(strings.TrimSpace(block.BlockKey), "enterprise_workflow") {
-			next.Config = map[string]any{"steps": projected}
+			cfg := map[string]any{"steps": projected}
+			if block.Config != nil {
+				if maxLen, ok := block.Config["max_length"]; ok {
+					cfg["max_length"] = maxLen
+				}
+				if allowHTML, ok := block.Config["allow_html"]; ok {
+					cfg["allow_html"] = allowHTML
+				}
+			}
+			next.Config = cfg
 			next.Enabled = true
 			replaced = true
 		}
@@ -208,6 +237,110 @@ func replaceTemplateWorkflowBlock(blocks []TemplateBlockDTO, steps []GlobalWorkf
 		})
 	}
 	return out, nil
+}
+
+func assignFacadeStepKeys(req *CmsUpsertGlobalWorkflowRequest, detail *DisclosureTypeDTO) {
+	existingKeyByStepID := map[string]string{}
+	existingKeys := map[string]bool{}
+	indexFacadeIdentity := func(stepID, stepKey string) {
+		key := strings.TrimSpace(stepKey)
+		id := strings.TrimSpace(stepID)
+		if key == "" {
+			key = id
+		}
+		if key == "" {
+			return
+		}
+		existingKeys[key] = true
+		if id != "" {
+			existingKeyByStepID[id] = key
+		}
+	}
+	for _, step := range projectGlobalStepsFromDetail(detail) {
+		indexFacadeIdentity(step.StepID, step.StepKey)
+	}
+	for _, step := range projectStepsFromBlocks(detail.Blocks) {
+		indexFacadeIdentity(step.StepID, step.StepKey)
+	}
+	usedKeys := map[string]bool{}
+	for i := range req.Steps {
+		if strings.TrimSpace(req.Steps[i].StepID) == "" {
+			req.Steps[i].StepID = fmt.Sprintf("%s-step-%d", req.TypeID, i+1)
+		}
+		if req.Steps[i].DisplayOrder <= 0 {
+			req.Steps[i].DisplayOrder = i + 1
+		}
+		req.Steps[i].StepKey = ResolveStepKey(req.Steps[i], existingKeys, existingKeyByStepID, usedKeys)
+		usedKeys[req.Steps[i].StepKey] = true
+	}
+}
+
+func rejectDuplicateIncomingIdentities(steps []GlobalWorkflowStepInput) error {
+	seenID := map[string]int{}
+	seenKey := map[string]int{}
+	for i, step := range steps {
+		if id := strings.TrimSpace(step.StepID); id != "" {
+			if prev, ok := seenID[id]; ok {
+				return &perr.HTTPError{
+					HTTPStatus: http.StatusBadRequest, Code: perr.CodeInvalidRequest,
+					Message: "workflow step_id must be unique",
+					Details: map[string]any{"step_index": i, "duplicate_of": prev, "step_id": id},
+				}
+			}
+			seenID[id] = i
+		}
+		if key := strings.TrimSpace(step.StepKey); key != "" {
+			if prev, ok := seenKey[key]; ok {
+				return &perr.HTTPError{
+					HTTPStatus: http.StatusBadRequest, Code: perr.CodeInvalidRequest,
+					Message: "workflow step_key must be unique",
+					Details: map[string]any{"step_index": i, "duplicate_of": prev, "step_key": key},
+				}
+			}
+			seenKey[key] = i
+		}
+	}
+	return nil
+}
+
+func rejectDuplicateFacadeStepKeys(steps []GlobalWorkflowStepInput) error {
+	seen := map[string]int{}
+	for i, step := range steps {
+		key := strings.TrimSpace(step.StepKey)
+		if key == "" {
+			key = strings.TrimSpace(step.StepID)
+		}
+		if key == "" {
+			continue
+		}
+		if prev, ok := seen[key]; ok {
+			return &perr.HTTPError{
+				HTTPStatus: http.StatusBadRequest, Code: perr.CodeInvalidRequest,
+				Message: "workflow step_key must be unique",
+				Details: map[string]any{"step_index": i, "duplicate_of": prev, "step_key": key},
+			}
+		}
+		seen[key] = i
+	}
+	return nil
+}
+
+func projectStepsFromBlocks(blocks []TemplateBlockDTO) []GlobalWorkflowStepInput {
+	for _, block := range blocks {
+		if !strings.EqualFold(strings.TrimSpace(block.BlockKey), "enterprise_workflow") {
+			continue
+		}
+		raw, err := json.Marshal(block.Config["steps"])
+		if err != nil || len(raw) == 0 || string(raw) == "null" {
+			return nil
+		}
+		var steps []GlobalWorkflowStepInput
+		if err := json.Unmarshal(raw, &steps); err != nil {
+			return nil
+		}
+		return steps
+	}
+	return nil
 }
 
 func upsertRequestFromDetail(sub Subject, detail *DisclosureTypeDTO, blocks []TemplateBlockDTO, changeNote string) UpsertTypeVersionRequest {
@@ -228,18 +361,59 @@ func upsertRequestFromDetail(sub Subject, detail *DisclosureTypeDTO, blocks []Te
 }
 
 func projectTemplateWorkflow(detail *DisclosureTypeDTO, isDraft bool) *GlobalWorkflowDTO {
-	steps := ExtractTemplateWorkflow(detail.Blocks)
+	steps := projectGlobalStepsFromDetail(detail)
 	out := &GlobalWorkflowDTO{
 		WorkflowID: fmt.Sprintf("template:%s:%d", detail.TypeID, detail.VersionNo),
-		TypeID: detail.TypeID, Status: "active", Steps: make([]GlobalWorkflowStepInput, 0, len(steps)),
+		TypeID:     detail.TypeID, Status: "active", Steps: steps,
 		UpdatedAt: time.Now().UTC(),
 	}
 	if isDraft {
 		out.Status = "draft"
 	}
-	for _, step := range steps {
-		out.Steps = append(out.Steps, GlobalWorkflowStepInput{
-			StepID: step.StepID, StepKey: step.StepID, Stage: step.Stage,
+	return out
+}
+
+func workflowStepsFromDetail(detail *DisclosureTypeDTO) []WorkflowStepDTO {
+	if detail == nil {
+		return nil
+	}
+	if detail.WorkflowManifest != nil && len(detail.WorkflowManifest.Steps) > 0 {
+		out := make([]WorkflowStepDTO, 0, len(detail.WorkflowManifest.Steps))
+		for _, step := range detail.WorkflowManifest.Steps {
+			dto := step.WorkflowStepDTO
+			if strings.TrimSpace(dto.StepID) == "" {
+				dto.StepID = strings.TrimSpace(step.StepKey)
+			}
+			out = append(out, dto)
+		}
+		return out
+	}
+	return ExtractTemplateWorkflow(detail.Blocks)
+}
+
+func projectGlobalStepsFromDetail(detail *DisclosureTypeDTO) []GlobalWorkflowStepInput {
+	if detail == nil {
+		return nil
+	}
+	dtos := workflowStepsFromDetail(detail)
+	out := make([]GlobalWorkflowStepInput, 0, len(dtos))
+	keyByID := map[string]string{}
+	if detail.WorkflowManifest != nil {
+		for _, step := range detail.WorkflowManifest.Steps {
+			id := strings.TrimSpace(step.StepID)
+			key := strings.TrimSpace(step.StepKey)
+			if id != "" && key != "" {
+				keyByID[id] = key
+			}
+		}
+	}
+	for _, step := range dtos {
+		key := strings.TrimSpace(keyByID[strings.TrimSpace(step.StepID)])
+		if key == "" {
+			key = strings.TrimSpace(step.StepID)
+		}
+		out = append(out, GlobalWorkflowStepInput{
+			StepID: step.StepID, StepKey: key, Stage: step.Stage,
 			Description: step.Description, Instructions: step.Instructions,
 			DepartmentID: step.DepartmentID, AssigneeRoleIds: append([]string(nil), step.AssigneeRoleIds...),
 			DueRule: step.DueRule, ProcessingDays: step.ProcessingDays, DisplayOrder: step.DisplayOrder,
@@ -247,6 +421,99 @@ func projectTemplateWorkflow(detail *DisclosureTypeDTO, isDraft bool) *GlobalWor
 		})
 	}
 	return out
+}
+
+func mergeIncomingWorkflowSteps(existing []WorkflowStepDTO, incoming []GlobalWorkflowStepInput) []WorkflowStepDTO {
+	byID := map[string]WorkflowStepDTO{}
+	if existing == nil {
+		existing = []WorkflowStepDTO{}
+	}
+	for _, step := range existing {
+		if id := strings.TrimSpace(step.StepID); id != "" {
+			byID[id] = step
+		}
+	}
+	out := make([]WorkflowStepDTO, 0, len(incoming))
+	for _, in := range incoming {
+		prev, ok := byID[strings.TrimSpace(in.StepID)]
+		if !ok {
+			prev, ok = byID[strings.TrimSpace(in.StepKey)]
+		}
+		if !ok {
+			prev = WorkflowStepDTO{}
+		}
+		out = append(out, workflowStepFromGlobalInput(in, prev))
+	}
+	return out
+}
+
+func workflowStepFromGlobalInput(in GlobalWorkflowStepInput, prev WorkflowStepDTO) WorkflowStepDTO {
+	next := prev
+	if id := strings.TrimSpace(in.StepID); id != "" {
+		next.StepID = id
+	} else if strings.TrimSpace(next.StepID) == "" {
+		next.StepID = strings.TrimSpace(in.StepKey)
+	}
+	next.Stage = in.Stage
+	next.Description = in.Description
+	next.Instructions = in.Instructions
+	next.DepartmentID = in.DepartmentID
+	next.AssigneeRoleIds = append([]string(nil), in.AssigneeRoleIds...)
+	next.DueRule = in.DueRule
+	next.ProcessingDays = in.ProcessingDays
+	next.DisplayOrder = in.DisplayOrder
+	next.ReminderConfig = CloneWorkflowStepReminderConfig(in.ReminderConfig)
+	return next
+}
+
+func redactEnterpriseWorkflowStepsForCMSEditor(item *DisclosureTypeDTO) *DisclosureTypeDTO {
+	if item == nil {
+		return nil
+	}
+	if item.WorkflowManifest != nil && len(item.WorkflowManifest.Steps) > 0 {
+		item.HasWorkflow = true
+	}
+	blocks := make([]TemplateBlockDTO, len(item.Blocks))
+	for i, block := range item.Blocks {
+		next := block
+		if strings.EqualFold(strings.TrimSpace(block.BlockKey), "enterprise_workflow") {
+			cfg := map[string]any{}
+			for k, v := range block.Config {
+				if k == "steps" || k == "workflow" {
+					continue
+				}
+				cfg[k] = v
+			}
+			cfg["steps"] = []any{}
+			next.Config = cfg
+		}
+		blocks[i] = next
+	}
+	item.Blocks = blocks
+	return item
+}
+
+func (s *service) preservePinnedWorkflowIfOmitted(ctx context.Context, req *UpsertTypeVersionRequest) error {
+	if req == nil || req.ClearWorkflow {
+		return nil
+	}
+	if len(ExtractTemplateWorkflow(req.Blocks)) > 0 {
+		return nil
+	}
+	detail, _, err := s.templateWorkflowCandidateDetail(ctx, req.Subject, req.TypeID)
+	if err != nil {
+		return nil
+	}
+	existing := workflowStepsFromDetail(detail)
+	if len(existing) == 0 {
+		return nil
+	}
+	blocks, err := replaceTemplateWorkflowSteps(req.Blocks, existing)
+	if err != nil {
+		return err
+	}
+	req.Blocks = blocks
+	return nil
 }
 
 // CmsListDisplayGroupsCatalog returns all display groups for CMS management.

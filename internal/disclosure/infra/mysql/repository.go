@@ -1254,7 +1254,7 @@ func (r *Repository) ActivateTypeVersion(ctx context.Context, req disclosureapp.
 	if authorityMode != disclosureapp.WorkflowAuthorityTemplatePinned || len(manifestRaw) == 0 || candidateHash == "" {
 		return nil, perr.NewHTTPError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, "template version workflow publication is not pinned", nil)
 	}
-	if req.ExpectedCandidateHash == "" || candidateHash != req.ExpectedCandidateHash {
+	if req.ExpectedCandidateHash != "" && candidateHash != req.ExpectedCandidateHash {
 		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "template publication candidate changed; reload and retry", nil)
 	}
 

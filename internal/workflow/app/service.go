@@ -79,6 +79,14 @@ func (s *service) CreateWorkflowInstanceInternal(ctx context.Context, req Create
 }
 
 func (s *service) createWorkflowInstance(ctx context.Context, req CreateWorkflowInstanceRequest) (*WorkflowInstanceDTO, error) {
+	if err := ValidateSnapshot(req.Snapshot); err != nil {
+		return nil, perr.NewHTTPError(
+			http.StatusUnprocessableEntity,
+			perr.CodeInvalidRequest,
+			"frozen workflow snapshot is required",
+			err,
+		)
+	}
 	firstStepCode := "review"
 	if code := FirstStepCode(req.Snapshot); code != "" {
 		firstStepCode = code
@@ -93,10 +101,11 @@ func (s *service) createWorkflowInstance(ctx context.Context, req CreateWorkflow
 	}
 	inst.T0Date = req.T0Date
 	inst.T0Policy = req.T0Policy
-	if s.flags.SnapshotEnabled {
-		inst.Snapshot = req.Snapshot
-		inst.WorkflowSource = req.WorkflowSource
-	}
+	// Model A invariant: every new instance is born with its effective workflow
+	// frozen in the same INSERT. SnapshotEnabled remains a read/runtime rollout
+	// flag only; it must never permit new NULL snapshot_json rows.
+	inst.Snapshot = append([]StepSnapshot(nil), req.Snapshot...)
+	inst.WorkflowSource = strings.TrimSpace(req.WorkflowSource)
 
 	created, err := s.repo.CreateInstance(ctx, inst)
 	if err != nil {
