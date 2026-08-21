@@ -318,6 +318,29 @@ func (r *Repository) ListTypes(ctx context.Context, params disclosureapp.ListTyp
 		conditions = append(conditions, "t.type_id IN ("+strings.Join(placeholders, ",")+")")
 	}
 
+	switch strings.ToLower(strings.TrimSpace(params.PortalState)) {
+	case disclosureapp.PortalStateActive:
+		conditions = append(conditions, "LOWER(COALESCE(t.status, '')) <> 'archived' AND t.active_version_no > 0")
+	case disclosureapp.PortalStateNotActive:
+		conditions = append(conditions, "LOWER(COALESCE(t.status, '')) <> 'archived' AND t.active_version_no = 0")
+	case disclosureapp.PortalStateArchived:
+		conditions = append(conditions, "LOWER(COALESCE(t.status, '')) = 'archived'")
+	case disclosureapp.PortalStateAll, "":
+		// no portal-state filter (backward compatible when omitted)
+	}
+
+	if params.HasOpenDraft != nil {
+		existsSQL := `EXISTS (
+			SELECT 1 FROM disclosure_type_versions od
+			WHERE od.type_id = t.type_id AND COALESCE(od.is_released, 0) = 0
+		)`
+		if *params.HasOpenDraft {
+			conditions = append(conditions, existsSQL)
+		} else {
+			conditions = append(conditions, "NOT "+existsSQL)
+		}
+	}
+
 	whereClause := strings.Join(conditions, " AND ")
 	versionJoin := listTypesVersionJoin(params.ListMode)
 	baseSQL := `FROM disclosure_types t` + joins + `
@@ -897,6 +920,9 @@ func (r *Repository) UpsertTypeVersion(ctx context.Context, req disclosureapp.Up
 		}
 	} else {
 		typeExists = true
+	}
+	if req.CreateOnly && typeExists {
+		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "target_type_id already exists", nil)
 	}
 	if typeExists && currentCompany.Valid && currentCompany.String != "" && currentCompany.String != companyID {
 		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "cannot modify type from another company", nil)

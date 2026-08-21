@@ -486,10 +486,16 @@ func redactEnterpriseWorkflowStepsForCMSEditor(item *DisclosureTypeDTO) *Disclos
 			}
 			cfg["steps"] = []any{}
 			next.Config = cfg
+			// Frozen FE hydrates enterpriseWorkflowSteps from block Description /
+			// implementation_content via legacyWorkflowTextToSteps when steps are empty.
+			// Those reconstructed rows have stage text but no department_id, so Lưu nháp
+			// fails client validation ("N bước chưa chọn phòng/ban") after reload.
+			next.Description = ""
 		}
 		blocks[i] = next
 	}
 	item.Blocks = blocks
+	item.ImplementationContent = ""
 	return item
 }
 

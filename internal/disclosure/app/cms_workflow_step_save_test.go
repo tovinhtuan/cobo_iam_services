@@ -373,6 +373,74 @@ func TestWorkflowStepSave_CMSEditorRedactsEnterpriseSteps(t *testing.T) {
 	if !editor.HasWorkflow {
 		t.Fatal("redacted editor GET must still report has_workflow from pinned manifest")
 	}
+	if strings.TrimSpace(editor.ImplementationContent) != "" {
+		t.Fatalf("editor GET must omit implementation_content narrative so FE does not hydrate fake steps, got %q", editor.ImplementationContent)
+	}
+	if text := narrativeWorkflowText(editor); text != "" {
+		t.Fatalf("editor GET must omit enterprise_workflow description, got %q", text)
+	}
+}
+
+func narrativeWorkflowText(item *disclosureapp.DisclosureTypeDTO) string {
+	if item == nil {
+		return ""
+	}
+	for _, block := range item.Blocks {
+		if strings.EqualFold(strings.TrimSpace(block.BlockKey), "enterprise_workflow") {
+			return strings.TrimSpace(block.Description)
+		}
+	}
+	return strings.TrimSpace(item.ImplementationContent)
+}
+
+func TestWorkflowStepSave_CMSEditorRedactsWorkflowNarrativeSoSaveDraftValidates(t *testing.T) {
+	const typeID = "dt-step-save-redact-narrative"
+	svc, repo := newSeededWFService(t, typeID)
+	ctx := context.Background()
+	mustUpsertWF(t, svc, typeID, fourSteps(typeID))
+	stored, err := repo.GetTypeVersionDetail(ctx, testSubjectWF.CompanyID, typeID, 1)
+	if err != nil {
+		t.Fatalf("stored: %v", err)
+	}
+	blocks := append([]disclosureapp.TemplateBlockDTO(nil), stored.Blocks...)
+	for i, block := range blocks {
+		if !strings.EqualFold(strings.TrimSpace(block.BlockKey), "enterprise_workflow") {
+			continue
+		}
+		block.Description = "Thu thập dữ liệu - Phòng Pháp chế - T+1\nRà soát - Phòng Kế toán - T+2\nPhê duyệt - Ban TGĐ - T+3\nNộp & lưu - Phòng Pháp chế - T+4"
+		blocks[i] = block
+	}
+	_, err = repo.UpsertTypeVersion(ctx, disclosureapp.UpsertTypeVersionRequest{
+		Subject:               testSubjectWF,
+		TypeID:                typeID,
+		GroupID:               stored.GroupID,
+		Name:                  stored.Name,
+		Category:              stored.Category,
+		TemplateCategory:      stored.TemplateCategory,
+		DeadlineStrategy:      stored.DeadlineStrategy,
+		Description:           stored.Description,
+		ImplementationContent: "Thu thập dữ liệu - Phòng Pháp chế - T+1\nRà soát - Phòng Kế toán - T+2\nPhê duyệt - Ban TGĐ - T+3\nNộp & lưu - Phòng Pháp chế - T+4",
+		Blocks:                blocks,
+		SkipPublicationMatrix: true,
+	})
+	if err != nil {
+		t.Fatalf("seed narrative: %v", err)
+	}
+	editor, err := svc.GetTypeVersionDetail(ctx, disclosureapp.GetTypeVersionDetailRequest{
+		Subject: testSubjectWF, TypeID: typeID, VersionNo: 1,
+	})
+	if err != nil {
+		t.Fatalf("editor: %v", err)
+	}
+	if strings.TrimSpace(editor.ImplementationContent) != "" {
+		t.Fatalf("implementation_content must be redacted, got %q", editor.ImplementationContent)
+	}
+	if text := narrativeWorkflowText(editor); text != "" {
+		t.Fatalf("enterprise_workflow description must be redacted, got %q", text)
+	}
+	if n := len(disclosureapp.ExtractTemplateWorkflow(editor.Blocks)); n != 0 {
+		t.Fatalf("steps must stay redacted, got %d", n)
+	}
 }
 
 type failingUpsertRepo struct {

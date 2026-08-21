@@ -155,9 +155,14 @@ func (r *Repository) ArchiveGlobalTemplate(_ context.Context, typeID, _ string) 
 		return perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "global template not found", nil)
 	}
 	item := r.catalog[typeID]
-	// Mark as archived by setting a status field via ReviewStatus reuse.
+	// Align with mysql ArchiveGlobalTemplate: status archived + clear portal pointer.
 	item.ReviewStatus = "archived"
 	r.catalog[typeID] = item
+	vs := r.versions[typeID]
+	for i := range vs {
+		vs[i].IsActive = false
+	}
+	r.versions[typeID] = vs
 	return nil
 }
 

@@ -433,6 +433,15 @@ func (s *service) ListTypes(ctx context.Context, req ListTypesRequest) (*ListTyp
 			return nil, err
 		}
 	}
+	portalState := strings.ToLower(strings.TrimSpace(req.PortalState))
+	if portalState != "" {
+		switch portalState {
+		case PortalStateActive, PortalStateNotActive, PortalStateArchived, PortalStateAll:
+		default:
+			return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest,
+				"portal_state must be one of: active, not_active, archived, all", nil)
+		}
+	}
 	sortBy := strings.ToLower(strings.TrimSpace(req.SortBy))
 	sortDir := strings.ToLower(strings.TrimSpace(req.SortDir))
 	if sortBy == "" {
@@ -478,6 +487,8 @@ func (s *service) ListTypes(ctx context.Context, req ListTypesRequest) (*ListTyp
 		SortDir:          sortDir,
 		LightweightOnly:  true,
 		ListMode:         listMode,
+		PortalState:      portalState,
+		HasOpenDraft:     req.HasOpenDraft,
 	})
 	if err != nil {
 		return nil, err

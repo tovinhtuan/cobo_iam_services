@@ -311,6 +311,38 @@ func (r *Repository) ListTypes(_ context.Context, params disclosureapp.ListTypes
 				continue
 			}
 		}
+
+		archived := strings.EqualFold(strings.TrimSpace(listItem.ReviewStatus), "archived") ||
+			strings.EqualFold(strings.TrimSpace(r.catalog[item.TypeID].ReviewStatus), "archived")
+		switch strings.ToLower(strings.TrimSpace(params.PortalState)) {
+		case disclosureapp.PortalStateActive:
+			if archived || activeVersionNo <= 0 {
+				continue
+			}
+		case disclosureapp.PortalStateNotActive:
+			if archived || activeVersionNo > 0 {
+				continue
+			}
+		case disclosureapp.PortalStateArchived:
+			if !archived {
+				continue
+			}
+		case disclosureapp.PortalStateAll, "":
+		}
+
+		if params.HasOpenDraft != nil {
+			hasDraft := false
+			for _, ver := range r.versions[item.TypeID] {
+				if !ver.IsReleased {
+					hasDraft = true
+					break
+				}
+			}
+			if *params.HasOpenDraft != hasDraft {
+				continue
+			}
+		}
+
 		scope := "company"
 		ownerCompanyID := r.catalogScope[item.TypeID]
 		if ownerCompanyID == "global" {
@@ -542,6 +574,9 @@ func (r *Repository) UpsertTypeVersion(ctx context.Context, req disclosureapp.Up
 	defer r.mu.Unlock()
 
 	current, existed := r.catalog[req.TypeID]
+	if req.CreateOnly && existed {
+		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "target_type_id already exists", nil)
+	}
 	activeVersionNo := 0
 	for _, ver := range r.versions[req.TypeID] {
 		if ver.IsActive {

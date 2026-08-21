@@ -29,6 +29,7 @@ type Service interface {
 	GetTypeVersionDetail(ctx context.Context, req GetTypeVersionDetailRequest) (*DisclosureTypeDTO, error)
 	GetTemplateReferenceData(ctx context.Context, req GetTemplateReferenceDataRequest) (*GetTemplateReferenceDataResponse, error)
 	UpsertTypeVersion(ctx context.Context, req UpsertTypeVersionRequest) (*UpsertTypeVersionResponse, error)
+	CloneTypeFromActive(ctx context.Context, req CloneTypeFromActiveRequest) (*CloneTypeFromActiveResponse, error)
 	ListTypeVersions(ctx context.Context, req ListTypeVersionsRequest) (*ListTypeVersionsResponse, error)
 	ActivateTypeVersion(ctx context.Context, req ActivateTypeVersionRequest) (*ActivateTypeVersionResponse, error)
 	GetCompanyWorkflowOverride(ctx context.Context, req GetCompanyWorkflowOverrideRequest) (*GetCompanyWorkflowOverrideResponse, error)
@@ -262,7 +263,20 @@ type ListTypesParams struct {
 	LightweightOnly bool     // minimal columns; skips workflow/display-group batch loads
 	// ListMode: "" = portal consumption (active version only); "management" = CMS admin list (draft + active).
 	ListMode string
+	// PortalState: optional CMS management filter. Empty = no portal-state filter (backward compatible).
+	// Values: active | not_active | archived | all (see PortalState* constants).
+	PortalState string
+	// HasOpenDraft: optional; when non-nil, filter roots that have (or lack) an unreleased version.
+	HasOpenDraft *bool
 }
+
+// Portal state filter values for GET /api/v1/disclosure-types?portal_state=...
+const (
+	PortalStateActive    = "active"
+	PortalStateNotActive = "not_active"
+	PortalStateArchived  = "archived"
+	PortalStateAll       = "all"
+)
 
 type ListTypesRequest struct {
 	Subject          Subject
@@ -282,6 +296,10 @@ type ListTypesRequest struct {
 	SortDir          string // "asc" | "desc"; empty → default "desc"
 	// ListMode: "" = portal consumption (active version only); "management" = CMS admin list (draft + active).
 	ListMode string
+	// PortalState: optional; empty = omit filter. See PortalState* constants.
+	PortalState string
+	// HasOpenDraft: optional secondary filter (nil = omit).
+	HasOpenDraft *bool
 }
 
 type ListTypesResponse struct {
@@ -377,7 +395,9 @@ type UpsertTypeVersionRequest struct {
 	// ClearWorkflow is set by CmsDeleteGlobalWorkflow so an empty enterprise_workflow
 	// block is persisted instead of being treated as "omitted, preserve pinned".
 	ClearWorkflow bool `json:"-"`
-	Checklist     []ChecklistItemDTO `json:"checklist"`
+	// CreateOnly rejects the upsert when type_id already exists (clone target race guard).
+	CreateOnly bool `json:"-"`
+	Checklist  []ChecklistItemDTO `json:"checklist"`
 	Tags               []string                                  `json:"tags"`
 	DeadlineConfig     *TemplateDeadlineConfig                   `json:"deadline_config,omitempty"`
 	Blocks             []TemplateBlockDTO                        `json:"blocks"`

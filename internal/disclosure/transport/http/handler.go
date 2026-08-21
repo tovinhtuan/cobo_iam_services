@@ -43,6 +43,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/disclosure-types/{type_id}", h.getTypeDetail)
 	mux.HandleFunc("GET /api/v1/admin/disclosure-types/reference-data", h.getTemplateReferenceData)
 	mux.HandleFunc("PUT /api/v1/admin/disclosure-types/{type_id}", h.upsertTypeVersion)
+	mux.HandleFunc("POST /api/v1/admin/disclosure-types/{type_id}/clone", h.cloneTypeFromActive)
 	mux.HandleFunc("GET /api/v1/admin/disclosure-types/{type_id}/versions", h.listTypeVersions)
 	mux.HandleFunc("GET /api/v1/admin/disclosure-types/{type_id}/versions/{version_no}", h.getTypeVersionDetail)
 	mux.HandleFunc("POST /api/v1/admin/disclosure-types/{type_id}/activate", h.activateTypeVersion)
@@ -305,6 +306,20 @@ func (h *Handler) listTypes(w http.ResponseWriter, r *http.Request) {
 	pageSizeRaw := strings.TrimSpace(r.URL.Query().Get("page_size"))
 	page, _ := strconv.Atoi(pageRaw)
 	pageSize, _ := strconv.Atoi(pageSizeRaw)
+	var hasOpenDraft *bool
+	if raw := strings.TrimSpace(r.URL.Query().Get("has_open_draft")); raw != "" {
+		switch strings.ToLower(raw) {
+		case "true", "1":
+			v := true
+			hasOpenDraft = &v
+		case "false", "0":
+			v := false
+			hasOpenDraft = &v
+		default:
+			httpx.WriteError(w, nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "has_open_draft must be true or false", nil))
+			return
+		}
+	}
 	resp, err := h.svc.ListTypes(r.Context(), disclosureapp.ListTypesRequest{
 		Subject:          sub,
 		GroupID:          strings.TrimSpace(r.URL.Query().Get("group_id")),
@@ -321,6 +336,8 @@ func (h *Handler) listTypes(w http.ResponseWriter, r *http.Request) {
 		SortBy:           strings.TrimSpace(r.URL.Query().Get("sort_by")),
 		SortDir:          strings.TrimSpace(r.URL.Query().Get("sort_dir")),
 		ListMode:         strings.TrimSpace(r.URL.Query().Get("list_mode")),
+		PortalState:      strings.TrimSpace(r.URL.Query().Get("portal_state")),
+		HasOpenDraft:     hasOpenDraft,
 	})
 	if err != nil {
 		httpx.WriteError(w, nil, err)
@@ -400,6 +417,28 @@ func (h *Handler) upsertTypeVersion(w http.ResponseWriter, r *http.Request) {
 		"change_note":    strings.TrimSpace(payload.ChangeNote),
 	})
 	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) cloneTypeFromActive(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subjectFromToken(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	var payload disclosureapp.CloneTypeFromActiveRequest
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	payload.Subject = sub
+	payload.SourceTypeID = strings.TrimSpace(r.PathValue("type_id"))
+	resp, err := h.svc.CloneTypeFromActive(r.Context(), payload)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	h.auditLog(r, sub, "disclosure.type.clone", "disclosure_type", resp.TypeID, disclosureapp.CloneAuditMetadata(resp))
+	httpx.WriteJSON(w, http.StatusCreated, resp)
 }
 
 func (h *Handler) listTypeVersions(w http.ResponseWriter, r *http.Request) {

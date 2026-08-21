@@ -1,4 +1,19 @@
 
+## 2026-08-21 — Template portal state filter IMPLEMENT
+
+- task type: cross-repo list filter (BE params + MySQL/inmemory + FE URL UI)
+- pointer: FE `docs/ai-cache/template-portal-state-filter-2026-08-21.md`
+- verdict: `TEMPLATE_PORTAL_STATE_FILTER_DEV_VERIFIED`
+- NO_PRODUCTION / NO_COMMIT / NO_PUSH
+
+## 2026-08-21 — Template status filter source audit
+
+- task type: source audit only (no implement)
+- objective: lock CMS `/cms/templates` status filter dimensions
+- pointer: FE `docs/ai-cache/template-status-filter-source-audit-2026-08-21.md`
+- verdict: `TEMPLATE_STATUS_SOURCE_AUDIT_COMPLETE` / WAIT_FOR_PO_CONFIRMATION
+- NO_CODE / NO_DB / NO_DEPLOY / NO_COMMIT / NO_PUSH
+
 ## 2026-08-20 — CMS Lưu bước Model A (TEMPLATE_PINNED)
 
 - task type: implement + DEV verify (no commit/push)

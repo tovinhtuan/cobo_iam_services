@@ -1,3 +1,21 @@
+## Template portal state filter (2026-08-21)
+
+- Pointer: FE `../cobo_web_design/docs/ai-cache/template-portal-state-filter-2026-08-21/`
+- Verdict `TEMPLATE_PORTAL_STATE_FILTER_DEV_VERIFIED`
+- NO_PRODUCTION / NO_COMMIT / NO_PUSH
+
+## Template status filter source audit (2026-08-21)
+
+- Pointer: FE `../cobo_web_design/docs/ai-cache/template-status-filter-source-audit-2026-08-21.md`
+- Verdict `TEMPLATE_STATUS_SOURCE_AUDIT_COMPLETE` / wait PO
+- NO_CODE / NO_DB / NO_DEPLOY / NO_COMMIT / NO_PUSH
+
+## Template clone / create-from-existing — analysis plan (2026-08-21)
+
+- Pointer: FE `docs/ai-cache/template-clone-create-from-existing-analysis-2026-08-21/`
+- Verdict `TEMPLATE_CLONE_CREATE_FROM_EXISTING_PLAN_READY` (analysis only; no BE product code this run)
+- NO_CODE / NO_DB / NO_DEPLOY / NO_COMMIT / NO_PUSH
+
 ## Company workflow override contract (2026-08-20)
 
 - COMPANY_OVERRIDE_ACTIVE > ResolveCMSDefaultWorkflow; draft/activate isolation; reset fallback
