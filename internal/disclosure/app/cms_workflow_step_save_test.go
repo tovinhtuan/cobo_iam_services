@@ -373,6 +373,9 @@ func TestWorkflowStepSave_CMSEditorRedactsEnterpriseSteps(t *testing.T) {
 	if !editor.HasWorkflow {
 		t.Fatal("redacted editor GET must still report has_workflow from pinned manifest")
 	}
+	if !editor.ActivationReady {
+		t.Fatalf("valid pinned steps must set activation_ready after redact, blockers=%v", editor.ActivationBlockers)
+	}
 	if strings.TrimSpace(editor.ImplementationContent) != "" {
 		t.Fatalf("editor GET must omit implementation_content narrative so FE does not hydrate fake steps, got %q", editor.ImplementationContent)
 	}

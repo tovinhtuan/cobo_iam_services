@@ -310,6 +310,11 @@ func (s *service) SubmitRecord(ctx context.Context, req SubmitRecordRequest) (*R
 		cur.Status = "In Progress"
 	}
 	cur.UpdatedBy = req.Subject.UserID
+	// Explicit company submission — first stamp only (MATERIALIZATION_IS_NOT_SUBMISSION).
+	if cur.SubmittedAt == nil {
+		now := time.Now().UTC()
+		cur.SubmittedAt = &now
+	}
 	updated, err := s.repo.Update(ctx, *cur)
 	if err != nil {
 		return nil, err
@@ -712,6 +717,7 @@ func (s *service) GetTypeVersionDetail(ctx context.Context, req GetTypeVersionDe
 		return nil, err
 	}
 	ApplyLegalBasisReadCompat(ctx, item, s.legalBasisLegacyFallbackEnabled, s.legalBasisDivergenceWarningEnabled)
+	applyActivationReadiness(item)
 	return redactEnterpriseWorkflowStepsForCMSEditor(item), nil
 }
 
@@ -929,13 +935,13 @@ func (s *service) ActivateTypeVersion(ctx context.Context, req ActivateTypeVersi
 	}
 	published := ResolveTemplatePublicationWorkflow(req.TypeID, req.VersionNo, *versionDetail.WorkflowManifest)
 	if err := ValidateWorkflowStepsForActivation(published.Workflow); err != nil {
-		msg := "workflow is required"
-		if err != nil {
-			msg = err.Error()
+		code := perr.Code("TEMPLATE_WORKFLOW_INVALID")
+		if len(published.Workflow) == 0 {
+			code = perr.Code("TEMPLATE_NO_WORKFLOW")
 		}
 		return nil, &perr.HTTPError{
-			Code:       "TEMPLATE_NO_WORKFLOW",
-			Message:    msg,
+			Code:       code,
+			Message:    err.Error(),
 			HTTPStatus: http.StatusUnprocessableEntity,
 			Details: map[string]any{
 				"type_id":        req.TypeID,
@@ -943,7 +949,7 @@ func (s *service) ActivateTypeVersion(ctx context.Context, req ActivateTypeVersi
 				"source":         published.Source,
 				"has_workflow":   published.HasWorkflow,
 				"workflow_valid": false,
-				"field_errors":   map[string]string{"enterprise_workflow": msg},
+				"field_errors":   map[string]string{"enterprise_workflow": err.Error()},
 			},
 		}
 	}
@@ -1294,6 +1300,75 @@ func enrichEffectiveWorkflowDTO(dto *EffectiveWorkflowDTO) {
 	dto.ValidationErrors = nil
 }
 
+// applyActivationReadiness mirrors ActivateTypeVersion workflow guards without mutating state.
+// Must run on unredacted detail before CMS editor redact.
+func applyActivationReadiness(item *DisclosureTypeDTO) {
+	if item == nil {
+		return
+	}
+	item.ActivationReady = false
+	item.ActivationBlockers = nil
+	if item.WorkflowAuthorityMode != WorkflowAuthorityTemplatePinned || item.WorkflowManifest == nil {
+		item.ActivationBlockers = []ActivationBlockerDTO{{
+			Code:    "TEMPLATE_WORKFLOW_NOT_PINNED",
+			Message: "Phiên bản chưa có workflow publication được ghim (TEMPLATE_PINNED).",
+		}}
+		return
+	}
+	published := ResolveTemplatePublicationWorkflow(item.TypeID, item.VersionNo, *item.WorkflowManifest)
+	if len(published.Workflow) == 0 {
+		item.ActivationBlockers = []ActivationBlockerDTO{{
+			Code:    "TEMPLATE_NO_WORKFLOW",
+			Message: "Phiên bản chưa có bước workflow hợp lệ để đăng lên Portal.",
+		}}
+		return
+	}
+	blockers := make([]ActivationBlockerDTO, 0)
+	for i, step := range published.Workflow {
+		stepLabel := strings.TrimSpace(step.Stage)
+		if stepLabel == "" {
+			stepLabel = fmt.Sprintf("Bước %d", i+1)
+		}
+		stepID := strings.TrimSpace(step.StepID)
+		if stepID == "" || strings.TrimSpace(step.Stage) == "" {
+			blockers = append(blockers, ActivationBlockerDTO{
+				Code: "WORKFLOW_STEP_IDENTITY_REQUIRED", Message: stepLabel + ": thiếu step_id hoặc tên bước.",
+				StepKey: stepID, StepID: stepID,
+			})
+			continue
+		}
+		if strings.TrimSpace(step.DepartmentID) == "" {
+			blockers = append(blockers, ActivationBlockerDTO{
+				Code: "WORKFLOW_STEP_DEPARTMENT_REQUIRED", Message: stepLabel + ": chưa chọn phòng/ban hợp lệ.",
+				StepKey: stepID, StepID: stepID,
+			})
+		}
+		if len(step.AssigneeRoleIds) == 0 {
+			blockers = append(blockers, ActivationBlockerDTO{
+				Code: "WORKFLOW_STEP_ROLE_REQUIRED", Message: stepLabel + ": chưa chọn vai trò người xử lý.",
+				StepKey: stepID, StepID: stepID,
+			})
+		}
+		if step.ProcessingDays <= 0 {
+			blockers = append(blockers, ActivationBlockerDTO{
+				Code: "WORKFLOW_STEP_SLA_REQUIRED", Message: stepLabel + ": SLA (số ngày xử lý) chưa hợp lệ.",
+				StepKey: stepID, StepID: stepID,
+			})
+		}
+		if err := ValidateWorkflowStepReminderConfigForPersist(step.ReminderConfig); err != nil {
+			blockers = append(blockers, ActivationBlockerDTO{
+				Code: "WORKFLOW_STEP_REMINDER_INVALID", Message: stepLabel + ": cấu hình nhắc nhở chưa hợp lệ.",
+				StepKey: stepID, StepID: stepID,
+			})
+		}
+	}
+	if len(blockers) > 0 {
+		item.ActivationBlockers = blockers
+		return
+	}
+	item.ActivationReady = true
+}
+
 func (s *service) GetEffectiveWorkflow(ctx context.Context, req GetEffectiveWorkflowRequest) (*GetEffectiveWorkflowResponse, error) {
 	req.TypeID = strings.TrimSpace(req.TypeID)
 	if req.TypeID == "" {
@@ -1624,16 +1699,15 @@ func (s *service) UpsertCompanyTypePreference(ctx context.Context, req UpsertCom
 		UpdatedBy:         req.Subject.MembershipID,
 		CycleAnchorMonth:  req.CycleAnchorMonth,
 		CycleAnchorDay:    req.CycleAnchorDay,
+		ClearCycleAnchor:  req.ClearCycleAnchor,
 	}); err != nil {
 		return nil, err
 	}
-	return companyTypePreferenceDTO(req.Subject.CompanyID, req.TypeID, &CompanyTypePreference{
-		CompanyID:         req.Subject.CompanyID,
-		TypeID:            req.TypeID,
-		AutoCreateEnabled: req.AutoCreateEnabled,
-		CycleAnchorMonth:  req.CycleAnchorMonth,
-		CycleAnchorDay:    req.CycleAnchorDay,
-	}), nil
+	pref, err := s.repo.GetCompanyTypePreference(ctx, req.Subject.CompanyID, req.TypeID)
+	if err != nil {
+		return nil, err
+	}
+	return companyTypePreferenceDTO(req.Subject.CompanyID, req.TypeID, pref), nil
 }
 
 func companyTypePreferenceDTO(companyID, typeID string, pref *CompanyTypePreference) *CompanyTypePreferenceDTO {
@@ -1646,6 +1720,7 @@ func companyTypePreferenceDTO(companyID, typeID string, pref *CompanyTypePrefere
 		dto.AutoCreateEnabled = pref.AutoCreateEnabled
 		dto.CycleAnchorMonth = pref.CycleAnchorMonth
 		dto.CycleAnchorDay = pref.CycleAnchorDay
+		dto.HasCycleAnchorOverride = pref.CycleAnchorMonth > 0 || pref.CycleAnchorDay > 0
 	}
 	return dto
 }

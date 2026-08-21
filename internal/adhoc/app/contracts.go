@@ -111,6 +111,9 @@ type CreateRecordOpts struct {
 	// ProposalWorkflow, when schema_version=2, is the frozen proposal-owned snapshot authority.
 	// RecordCreator must materialize from this blob and MUST NOT call GetEffectiveWorkflow.
 	ProposalWorkflow *ProposalWorkflowSnapshot
+	// SkipCompanySubmit: periodic materialize creates record + workflow without company submit.
+	// submitted_at stays NULL until explicit SubmitRecord (MATERIALIZATION_IS_NOT_SUBMISSION).
+	SkipCompanySubmit bool
 }
 
 // RecordCreator is the cross-module interface the ad-hoc service uses to submit a disclosure record.

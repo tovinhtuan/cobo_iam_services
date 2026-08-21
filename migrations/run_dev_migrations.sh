@@ -130,6 +130,7 @@ seed_dev_identity_authorization.sql
 0128_workflow_task_assignees.up.sql
 0129_workflow_step_milestones_milestone_type_varchar.up.sql
 0130_template_workflow_publication_pin.up.sql
+0131_effective_t_submitted_at_open_at.up.sql
 seed_dev_company_subscriptions.sql
 "
 

@@ -1031,6 +1031,7 @@ func (h *Handler) upsertCompanyTypePreference(w http.ResponseWriter, r *http.Req
 		AutoCreateEnabled bool `json:"auto_create_enabled"`
 		CycleAnchorMonth  int  `json:"cycle_anchor_month,omitempty"`
 		CycleAnchorDay    int  `json:"cycle_anchor_day,omitempty"`
+		ClearCycleAnchor  bool `json:"clear_cycle_anchor,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		httpx.WriteError(w, nil, err)
@@ -1042,6 +1043,7 @@ func (h *Handler) upsertCompanyTypePreference(w http.ResponseWriter, r *http.Req
 		AutoCreateEnabled: body.AutoCreateEnabled,
 		CycleAnchorMonth:  body.CycleAnchorMonth,
 		CycleAnchorDay:    body.CycleAnchorDay,
+		ClearCycleAnchor:  body.ClearCycleAnchor,
 	})
 	if err != nil {
 		httpx.WriteError(w, nil, err)

@@ -1,3 +1,35 @@
+## Recurring disclosure Effective T Scheduling V1 (2026-08-21)
+
+- Pointer: FE `../cobo_web_design/docs/ai-cache/recurring-disclosure-effective-t-2026-08-21/`
+- BE: effective schedule resolver, worker seed, clear override, submitted_at/open_at migration 0131
+- Verdict: implemented + DEV deploy; wait confirmation
+- NO_PRODUCTION / NO_COMMIT / NO_PUSH
+
+## Recurring disclosure Effective T — reconciliation STOP (2026-08-21)
+
+- Pointer: FE `../cobo_web_design/docs/ai-cache/recurring-disclosure-effective-t-2026-08-21/`
+- Verdict: wait PO (inclusive vs exclusive Due, cutoff, legacy T relabel); no implement yet
+- NO_CODE / NO_DB / NO_DEPLOY / NO_COMMIT / NO_PUSH
+
+## Recurring disclosure business contract extraction (2026-08-21)
+
+- Pointer: FE `../cobo_web_design/docs/ai-cache/recurring-disclosure-business-contract-extraction-2026-08-21.md`
+- Verdict: `RECURRING_DISCLOSURE_BUSINESS_CONTRACT_EXTRACTION_COMPLETE` — wait PO; `IMPLEMENTATION_SAFE_TO_START=false`
+- NO_CODE / NO_DB / NO_DEPLOY / NO_COMMIT / NO_PUSH
+
+## Template cycle / periodicity vs deadline — source audit (2026-08-21)
+
+- Pointer: FE `../cobo_web_design/docs/ai-cache/template-cycle-deadline-source-audit-2026-08-21.md`
+- Verdict `TEMPLATE_CYCLE_DEADLINE_SOURCE_AUDIT_COMPLETE` / superseded for scheduling by recurring-disclosure extraction
+- NO_CODE / NO_DB / NO_DEPLOY / NO_COMMIT / NO_PUSH
+
+## Workflow publish readiness + Đăng lên Portal CTA (2026-08-21)
+
+- Pointer: FE `../cobo_web_design/docs/ai-cache/workflow-publish-readiness-fix-2026-08-21/`
+- BE: `activation_ready` / blockers on version GET; Activate code split empty vs invalid
+- Verdict: `WORKFLOW_PUBLISH_TO_PORTAL_DEV_VERIFIED`
+- NO_PRODUCTION / NO_COMMIT / NO_PUSH
+
 ## Template portal state filter (2026-08-21)
 
 - Pointer: FE `../cobo_web_design/docs/ai-cache/template-portal-state-filter-2026-08-21/`

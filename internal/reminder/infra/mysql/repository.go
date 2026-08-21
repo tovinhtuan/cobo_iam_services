@@ -365,6 +365,7 @@ func (r *Repository) MaterializeDueOccurrences(ctx context.Context, now time.Tim
 			WHERE c.enabled = 1
 			  AND c.mode = 'DaysBefore'
 			  AND dr.planned_date IS NOT NULL
+			  AND dr.submitted_at IS NULL
 
 			UNION ALL
 
@@ -384,6 +385,7 @@ func (r *Repository) MaterializeDueOccurrences(ctx context.Context, now time.Tim
 			WHERE c.enabled = 1
 			  AND c.mode = 'SpecificDate'
 			  AND dr.planned_date IS NOT NULL
+			  AND dr.submitted_at IS NULL
 			  AND CAST(js.specific_date AS DATE) <= dr.planned_date
 		) src
 		WHERE src.due_utc <= ?

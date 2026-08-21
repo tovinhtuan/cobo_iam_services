@@ -70,13 +70,18 @@ func (r *Repository) Update(ctx context.Context, rec disclosureapp.RecordDTO) (*
 	if rec.CompletedAt != nil {
 		completedAt = rec.CompletedAt.UTC()
 	}
+	var submittedAt any
+	if rec.SubmittedAt != nil {
+		submittedAt = rec.SubmittedAt.UTC()
+	}
 	res, err := r.db.ExecContext(ctx, `
 		UPDATE disclosure_records
 		SET type_id = NULLIF(?, ''), department_id = ?, title = ?, summary = ?, content = ?, planned_date = NULLIF(?, ''), published_date = NULLIF(?, ''), status = ?, attachments_json = CAST(? AS JSON), evidence_link = NULLIF(?, ''), updated_by = ?,
 			completed_at = COALESCE(completed_at, ?),
-			completed_source = COALESCE(completed_source, NULLIF(?, ''))
+			completed_source = COALESCE(completed_source, NULLIF(?, '')),
+			submitted_at = COALESCE(submitted_at, ?)
 		WHERE record_id = ? AND company_id = ?
-	`, rec.TypeID, rec.DepartmentID, rec.Title, rec.Summary, rec.Content, rec.PlannedDate, rec.PublishedDate, rec.Status, string(attachmentsJSON), rec.EvidenceLink, rec.UpdatedBy, completedAt, rec.CompletedSource, rec.RecordID, rec.CompanyID)
+	`, rec.TypeID, rec.DepartmentID, rec.Title, rec.Summary, rec.Content, rec.PlannedDate, rec.PublishedDate, rec.Status, string(attachmentsJSON), rec.EvidenceLink, rec.UpdatedBy, completedAt, rec.CompletedSource, submittedAt, rec.RecordID, rec.CompanyID)
 	if err != nil {
 		return nil, fmt.Errorf("disclosure update: %w", err)
 	}
@@ -100,14 +105,16 @@ func (r *Repository) FindByID(ctx context.Context, companyID, recordID string) (
 				LIMIT 1
 			), ''),
 			dr.created_by, dr.updated_by, dr.created_at, dr.updated_at,
-			dr.completed_at, COALESCE(dr.completed_source, '')
+			dr.completed_at, COALESCE(dr.completed_source, ''),
+			dr.submitted_at
 		FROM disclosure_records dr
 		WHERE dr.company_id = ? AND dr.record_id = ?
 	`, companyID, recordID)
 	var rec disclosureapp.RecordDTO
 	var attachmentsRaw []byte
 	var completedAt sql.NullTime
-	if err := row.Scan(&rec.RecordID, &rec.CompanyID, &rec.TypeID, &rec.DepartmentID, &rec.Title, &rec.Summary, &rec.Content, &rec.PlannedDate, &rec.PublishedDate, &rec.Status, &attachmentsRaw, &rec.EvidenceLink, &rec.WorkflowInstanceID, &rec.CreatedBy, &rec.UpdatedBy, &rec.CreatedAt, &rec.UpdatedAt, &completedAt, &rec.CompletedSource); err != nil {
+	var submittedAt sql.NullTime
+	if err := row.Scan(&rec.RecordID, &rec.CompanyID, &rec.TypeID, &rec.DepartmentID, &rec.Title, &rec.Summary, &rec.Content, &rec.PlannedDate, &rec.PublishedDate, &rec.Status, &attachmentsRaw, &rec.EvidenceLink, &rec.WorkflowInstanceID, &rec.CreatedBy, &rec.UpdatedBy, &rec.CreatedAt, &rec.UpdatedAt, &completedAt, &rec.CompletedSource, &submittedAt); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, perr.NewHTTPError(404, perr.CodeInvalidRequest, "record not found", nil)
 		}
@@ -116,6 +123,10 @@ func (r *Repository) FindByID(ctx context.Context, companyID, recordID string) (
 	if completedAt.Valid {
 		t := completedAt.Time.UTC()
 		rec.CompletedAt = &t
+	}
+	if submittedAt.Valid {
+		t := submittedAt.Time.UTC()
+		rec.SubmittedAt = &t
 	}
 	if err := decodeAttachments(attachmentsRaw, &rec.Attachments); err != nil {
 		return nil, fmt.Errorf("decode attachments: %w", err)
@@ -2188,6 +2199,7 @@ func (r *Repository) ListActivePeriodicTypes(ctx context.Context) ([]disclosurea
 		       COALESCE(JSON_EXTRACT(dtv.deadline_config_json, '$.deadline_days'), 0)                   AS deadline_days,
 		       COALESCE(JSON_EXTRACT(dtv.deadline_config_json, '$.cycle_anchor_day'), 0)                AS anchor_day,
 		       COALESCE(JSON_EXTRACT(dtv.deadline_config_json, '$.cycle_anchor_month'), 0)              AS anchor_month,
+		       COALESCE(JSON_EXTRACT(dtv.deadline_config_json, '$.open_days_before_t'), 0)              AS open_days_before_t,
 		       CASE WHEN dt.company_id IS NULL THEN 1 ELSE 0 END AS is_global,
 		       dtv.applicability_rules_json
 		FROM disclosure_types dt
@@ -2206,7 +2218,7 @@ func (r *Repository) ListActivePeriodicTypes(ctx context.Context) ([]disclosurea
 		var isGlobal int
 		var rulesRaw []byte
 		if err := rows.Scan(&row.TypeID, &row.FrequencyUnit, &row.FrequencyInterval,
-			&row.DeadlineDays, &row.CycleAnchorDay, &row.CycleAnchorMonth, &isGlobal, &rulesRaw); err != nil {
+			&row.DeadlineDays, &row.CycleAnchorDay, &row.CycleAnchorMonth, &row.OpenDaysBeforeT, &isGlobal, &rulesRaw); err != nil {
 			return nil, fmt.Errorf("scan periodic type row: %w", err)
 		}
 		row.IsGlobal = isGlobal == 1
@@ -2225,11 +2237,16 @@ func (r *Repository) UpsertPeriodicCycle(ctx context.Context, in disclosureapp.P
 	if !in.CycleStart.IsZero() {
 		cycleStart = in.CycleStart.Format("2006-01-02")
 	}
+	var openAt any
+	if !in.OpenAt.IsZero() {
+		openAt = in.OpenAt.Format("2006-01-02")
+	}
+	// Sticky snapshot: do not refresh cycle_start/open_at/due_date on duplicate logical slot.
 	const q = `
-		INSERT INTO periodic_cycles (cycle_id, type_id, company_id, cycle_label, cycle_start, due_date)
-		VALUES (?, ?, ?, ?, ?, ?)
+		INSERT INTO periodic_cycles (cycle_id, type_id, company_id, cycle_label, cycle_start, open_at, due_date)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
 		ON DUPLICATE KEY UPDATE cycle_id = cycle_id`
-	_, err := r.db.ExecContext(ctx, q, in.CycleID, in.TypeID, in.CompanyID, in.CycleLabel, cycleStart, in.DueDate.Format("2006-01-02"))
+	_, err := r.db.ExecContext(ctx, q, in.CycleID, in.TypeID, in.CompanyID, in.CycleLabel, cycleStart, openAt, in.DueDate.Format("2006-01-02"))
 	if err != nil {
 		return fmt.Errorf("upsert periodic cycle: %w", err)
 	}
@@ -2293,14 +2310,16 @@ func (r *Repository) DeleteUnmaterializedPeriodicCycle(ctx context.Context, cycl
 
 func (r *Repository) ListPendingCycles(ctx context.Context, asOf time.Time, bufferDays int) ([]disclosureapp.PeriodicCycleRow, error) {
 	cutoff := asOf.AddDate(0, 0, bufferDays).Format("2006-01-02")
+	// Materialize when OpenAt (fallback cycle_start) is within technical lookahead — not DueDate.
 	const q = `
 		SELECT pc.cycle_id, pc.type_id, COALESCE(dtv.name, ''), pc.company_id, pc.cycle_label,
-		       pc.cycle_start, pc.due_date
+		       pc.cycle_start, pc.open_at, pc.due_date
 		FROM periodic_cycles pc
 		INNER JOIN disclosure_types dt ON dt.type_id = pc.type_id
 		INNER JOIN disclosure_type_versions dtv ON dtv.type_id = dt.type_id AND dtv.version_no = dt.active_version_no
-		WHERE pc.record_id IS NULL AND pc.materialized_at IS NULL AND pc.due_date <= ?
-		ORDER BY pc.due_date ASC
+		WHERE pc.record_id IS NULL AND pc.materialized_at IS NULL
+		  AND COALESCE(pc.open_at, pc.cycle_start, pc.due_date) <= ?
+		ORDER BY COALESCE(pc.open_at, pc.cycle_start, pc.due_date) ASC
 		LIMIT 200`
 	rows, err := r.db.QueryContext(ctx, q, cutoff)
 	if err != nil {
@@ -2310,12 +2329,15 @@ func (r *Repository) ListPendingCycles(ctx context.Context, asOf time.Time, buff
 	var out []disclosureapp.PeriodicCycleRow
 	for rows.Next() {
 		var row disclosureapp.PeriodicCycleRow
-		var cycleStart, dueDate sql.NullTime
-		if err := rows.Scan(&row.CycleID, &row.TypeID, &row.TypeName, &row.CompanyID, &row.CycleLabel, &cycleStart, &dueDate); err != nil {
+		var cycleStart, openAt, dueDate sql.NullTime
+		if err := rows.Scan(&row.CycleID, &row.TypeID, &row.TypeName, &row.CompanyID, &row.CycleLabel, &cycleStart, &openAt, &dueDate); err != nil {
 			return nil, fmt.Errorf("scan pending cycle: %w", err)
 		}
 		if cycleStart.Valid {
 			row.CycleStart = dateOnlyUTC(cycleStart.Time)
+		}
+		if openAt.Valid {
+			row.OpenAt = dateOnlyUTC(openAt.Time)
 		}
 		if dueDate.Valid {
 			row.DueDate = dateOnlyUTC(dueDate.Time)
@@ -2417,20 +2439,68 @@ func (r *Repository) UpsertCompanyTypePreference(ctx context.Context, in disclos
 	if in.AutoCreateEnabled {
 		enabled = 1
 	}
+	if in.ClearCycleAnchor {
+		const qClear = `
+			INSERT INTO company_type_preferences (company_id, type_id, auto_create_enabled, updated_by, cycle_anchor_month, cycle_anchor_day)
+			VALUES (?, ?, ?, ?, NULL, NULL)
+			ON DUPLICATE KEY UPDATE
+			  auto_create_enabled = VALUES(auto_create_enabled),
+			  updated_by = VALUES(updated_by),
+			  cycle_anchor_month = NULL,
+			  cycle_anchor_day = NULL`
+		_, err := r.db.ExecContext(ctx, qClear, in.CompanyID, in.TypeID, enabled, in.UpdatedBy)
+		if err != nil {
+			return fmt.Errorf("upsert company type preference clear: %w", err)
+		}
+		return nil
+	}
 	const q = `
 		INSERT INTO company_type_preferences (company_id, type_id, auto_create_enabled, updated_by, cycle_anchor_month, cycle_anchor_day)
 		VALUES (?, ?, ?, ?, NULLIF(?, 0), NULLIF(?, 0))
 		ON DUPLICATE KEY UPDATE
 		  auto_create_enabled = VALUES(auto_create_enabled),
 		  updated_by = VALUES(updated_by),
-		  cycle_anchor_month = COALESCE(VALUES(cycle_anchor_month), cycle_anchor_month),
-		  cycle_anchor_day   = COALESCE(VALUES(cycle_anchor_day),   cycle_anchor_day)`
+		  cycle_anchor_month = IF(VALUES(cycle_anchor_month) IS NULL, cycle_anchor_month, VALUES(cycle_anchor_month)),
+		  cycle_anchor_day   = IF(VALUES(cycle_anchor_day) IS NULL, cycle_anchor_day, VALUES(cycle_anchor_day))`
 	_, err := r.db.ExecContext(ctx, q, in.CompanyID, in.TypeID, enabled, in.UpdatedBy,
 		in.CycleAnchorMonth, in.CycleAnchorDay)
 	if err != nil {
 		return fmt.Errorf("upsert company type preference: %w", err)
 	}
 	return nil
+}
+
+func (r *Repository) ListCompanyTypePreferencesByTypeIDs(ctx context.Context, typeIDs []string) ([]disclosureapp.CompanyTypePreference, error) {
+	if len(typeIDs) == 0 {
+		return nil, nil
+	}
+	placeholders := make([]string, len(typeIDs))
+	args := make([]any, len(typeIDs))
+	for i, id := range typeIDs {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+	q := fmt.Sprintf(`
+		SELECT company_id, type_id, auto_create_enabled, COALESCE(updated_by, ''),
+		       COALESCE(cycle_anchor_month, 0), COALESCE(cycle_anchor_day, 0)
+		FROM company_type_preferences
+		WHERE type_id IN (%s)`, strings.Join(placeholders, ","))
+	rows, err := r.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list company type preferences: %w", err)
+	}
+	defer rows.Close()
+	var out []disclosureapp.CompanyTypePreference
+	for rows.Next() {
+		var pref disclosureapp.CompanyTypePreference
+		var enabled int
+		if err := rows.Scan(&pref.CompanyID, &pref.TypeID, &enabled, &pref.UpdatedBy, &pref.CycleAnchorMonth, &pref.CycleAnchorDay); err != nil {
+			return nil, fmt.Errorf("scan company type preference: %w", err)
+		}
+		pref.AutoCreateEnabled = enabled == 1
+		out = append(out, pref)
+	}
+	return out, rows.Err()
 }
 
 // GetCompanyTypeDeadlineContext returns CompanyDeadlineContext enriched with

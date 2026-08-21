@@ -13,17 +13,7 @@ import (
 )
 
 // seedPeriodicCycles computes expected cycles for the current tick and upserts them.
-// Returns the number of new cycle slots inserted (duplicates are silently ignored).
-//
-// READY_FOR_5B (Periodic Worker): computeCycleLabelAndStart below is Source B
-// (legacy, anchor-blind cycle_start) — the locked Cycle Start SoT is Source C
-// (deadlineengine.ResolveT0, see deadline-engine-cycle-start-sot-review-2026-06-12.md).
-// Batch 5B added a shadow=Source C compute (see deadlineengine_shadow.go,
-// shadow.periodicWorker below) for comparison/audit only — the seeded
-// cycle_start/due_date below remain Source B, unchanged. 5B/5E cutover
-// replaces the computeCycleLabelAndStart call with
-// DeadlineEngineAdapter.ResolveDeadline (cycleCtx=nil for new seeds, per I-21);
-// cycle_label may remain derived from this function's calendar-period logic.
+// Effective T = Company override ?? CMS active anchors (canonical ResolveEffectiveAnchor + ResolveOccurrenceT).
 func seedPeriodicCycles(ctx context.Context, now time.Time, repo Repository, idg idgen.Generator, calc *DeadlineCalculator, strictApplicabilityFilter bool, shadow *deadlineEngineShadowRunner) (int, error) {
 	types, err := repo.ListActivePeriodicTypes(ctx)
 	if err != nil {
@@ -34,11 +24,28 @@ func seedPeriodicCycles(ctx context.Context, now time.Time, repo Repository, idg
 		return 0, fmt.Errorf("list active companies: %w", err)
 	}
 
+	typeIDs := make([]string, 0, len(types))
+	for _, t := range types {
+		typeIDs = append(typeIDs, t.TypeID)
+	}
+	prefs, err := repo.ListCompanyTypePreferencesByTypeIDs(ctx, typeIDs)
+	if err != nil {
+		return 0, fmt.Errorf("list company preferences: %w", err)
+	}
+	prefByKey := make(map[string]CompanyTypePreference, len(prefs))
+	for _, p := range prefs {
+		prefByKey[p.CompanyID+"|"+p.TypeID] = p
+	}
+
+	loc := asiaHoChiMinh()
 	seeded := 0
 	for _, t := range types {
+		label := ResolveLogicalSlot(t.FrequencyUnit, now, loc)
+		cmsAnchor := AnchorConfig{Month: t.CycleAnchorMonth, Day: t.CycleAnchorDay}
+
 		for _, companyID := range companyIDs {
-			pref, _ := repo.GetCompanyTypePreference(ctx, companyID, t.TypeID)
-			if pref != nil && !pref.AutoCreateEnabled {
+			pref, hasPref := prefByKey[companyID+"|"+t.TypeID]
+			if hasPref && !pref.AutoCreateEnabled {
 				continue
 			}
 			profile, err := repo.GetCompanyApplicabilityProfile(ctx, companyID)
@@ -48,7 +55,22 @@ func seedPeriodicCycles(ctx context.Context, now time.Time, repo Repository, idg
 			if t.IsGlobal && !applicability.IsApplicable(t.ApplicabilityRules, profile, strictApplicabilityFilter) {
 				continue
 			}
-			label, cycleStart := computeCycleLabelAndStart(t, now)
+
+			companyAnchor := AnchorConfig{}
+			if hasPref {
+				companyAnchor = AnchorConfig{Month: pref.CycleAnchorMonth, Day: pref.CycleAnchorDay}
+			}
+			effAnchor, tSource := ResolveEffectiveAnchor(cmsAnchor, companyAnchor)
+			cycleStart, err := ResolveOccurrenceT(t.FrequencyUnit, label, effAnchor, loc)
+			if err != nil {
+				slog.WarnContext(ctx, "periodic seed skip: resolve T",
+					slog.String("type_id", t.TypeID),
+					slog.String("company_id", companyID),
+					slog.String("err", err.Error()))
+				continue
+			}
+			_ = tSource
+
 			deadlineDays := t.DeadlineDays
 			durationType := DurationTypeCalendarDays
 			if t.ApplicabilityRules != nil {
@@ -61,12 +83,10 @@ func seedPeriodicCycles(ctx context.Context, now time.Time, repo Repository, idg
 			}
 			dueDate, err := calc.addDurationInclusive(ctx, cycleStart, deadlineDays, durationType)
 			if err != nil {
-				// log-only: don't fail entire batch for one bad config
 				continue
 			}
-			// Batch 5B Phase B (shadow only, see deadlineengine_shadow.go):
-			// compares Source B (cycleStart/dueDate above, persisted below)
-			// against Source C for audit. Never written to periodic_cycles.
+			openAt := ResolveOpenAt(cycleStart, t.OpenDaysBeforeT)
+
 			shadow.periodicWorker(ctx, companyID, t, profile, cycleStart, dueDate, now)
 			if err := repo.UpsertPeriodicCycle(ctx, PeriodicCycleRow{
 				CycleID:    idg.NewUUID(),
@@ -74,6 +94,7 @@ func seedPeriodicCycles(ctx context.Context, now time.Time, repo Repository, idg
 				CompanyID:  companyID,
 				CycleLabel: label,
 				CycleStart: cycleStart,
+				OpenAt:     openAt,
 				DueDate:    dueDate,
 			}); err != nil {
 				continue
@@ -84,10 +105,10 @@ func seedPeriodicCycles(ctx context.Context, now time.Time, repo Repository, idg
 	return seeded, nil
 }
 
-// materializePeriodicDisclosures picks up pending cycles whose due_date <= now+buffer
-// and creates the actual disclosure records with workflow (WF-A).
+// materializePeriodicDisclosures picks pending cycles whose OpenAt <= now+buffer
+// and creates disclosure records with workflow (no company submitted_at).
 func materializePeriodicDisclosures(ctx context.Context, now time.Time, repo PeriodicMaterializeRepository, creator PeriodicRecordCreator) (int, error) {
-	const bufferDays = 7
+	const bufferDays = 7 // MATERIALIZATION_LOOKAHEAD (technical)
 	cycles, err := repo.ListPendingCycles(ctx, now, bufferDays)
 	if err != nil {
 		return 0, fmt.Errorf("list pending cycles: %w", err)
@@ -139,44 +160,6 @@ func materializePeriodicDisclosures(ctx context.Context, now time.Time, repo Per
 	return materialized, nil
 }
 
-// computeCycleLabelAndStart returns the unique cycle_label and the cycle start date
-// for a given template type and reference time.
-func computeCycleLabelAndStart(t PeriodicTypeRow, now time.Time) (label string, start time.Time) {
-	switch NormalizeFrequencyUnit(t.FrequencyUnit) {
-	case PeriodicityDaily:
-		ict := now.In(asiaHoChiMinh())
-		start = time.Date(ict.Year(), ict.Month(), ict.Day(), 0, 0, 0, 0, ict.Location())
-		label = start.Format("2006-01-02")
-	case PeriodicityWeekly:
-		ict := now.In(asiaHoChiMinh())
-		start = weekStartSunday(ict)
-		label = start.Format("2006-01-02")
-	case PeriodicityMonthly:
-		label = now.Format("2006-01")
-		start = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
-	case PeriodicityQuarterly:
-		q := (int(now.Month())-1)/3 + 1
-		startMonth := time.Month((q-1)*3 + 1)
-		label = fmt.Sprintf("%d-Q%d", now.Year(), q)
-		start = time.Date(now.Year(), startMonth, 1, 0, 0, 0, 0, now.Location())
-	case PeriodicityYearly:
-		anchorMonth := t.CycleAnchorMonth
-		if anchorMonth <= 0 || anchorMonth > 12 {
-			anchorMonth = 1
-		}
-		anchorDay := t.CycleAnchorDay
-		if anchorDay <= 0 || anchorDay > 31 {
-			anchorDay = 1
-		}
-		label = fmt.Sprintf("%d", now.Year())
-		start = time.Date(now.Year(), time.Month(anchorMonth), anchorDay, 0, 0, 0, 0, now.Location())
-	default:
-		label = now.Format("2006-01-02")
-		start = now
-	}
-	return
-}
-
 func autoRecordTitle(c PeriodicCycleRow) string {
 	name := strings.TrimSpace(c.TypeName)
 	if name == "" {
@@ -187,4 +170,16 @@ func autoRecordTitle(c PeriodicCycleRow) string {
 		return name
 	}
 	return fmt.Sprintf("%s — %s", name, cycle)
+}
+
+// computeCycleLabelAndStart is the legacy helper used by unit tests; delegates to canonical resolver.
+func computeCycleLabelAndStart(t PeriodicTypeRow, now time.Time) (label string, start time.Time) {
+	loc := asiaHoChiMinh()
+	label = ResolveLogicalSlot(t.FrequencyUnit, now, loc)
+	anchor := AnchorConfig{Month: t.CycleAnchorMonth, Day: t.CycleAnchorDay}
+	start, err := ResolveOccurrenceT(t.FrequencyUnit, label, anchor, loc)
+	if err != nil {
+		start = stripTime(now.In(loc))
+	}
+	return
 }

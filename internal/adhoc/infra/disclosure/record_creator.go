@@ -37,7 +37,8 @@ func (a *RecordCreatorAdapter) CreateAndSubmitRecord(ctx context.Context, compan
 // back to DynamicRule (which uses COMPANY_ESTABLISHED_DATE — wrong for periodic).
 func (a *RecordCreatorAdapter) CreateAndSubmitRecordWithPlannedDate(ctx context.Context, companyID, typeID, createdByMembershipID, title string, t0Date *time.Time, plannedDate string) (string, string, error) {
 	return a.CreateAndSubmitRecordWithOpts(ctx, companyID, typeID, createdByMembershipID, title, t0Date, adhocapp.CreateRecordOpts{
-		PlannedDate: plannedDate,
+		PlannedDate:       plannedDate,
+		SkipCompanySubmit: true, // Effective T V1: materialize ≠ company submission
 	})
 }
 
@@ -93,11 +94,13 @@ func (a *RecordCreatorAdapter) CreateAndSubmitRecordWithOpts(ctx context.Context
 		}
 		return "", "", fmt.Errorf("create record: %w", err)
 	}
-	if _, err := a.svc.SubmitRecord(ctx, disclosureapp.SubmitRecordRequest{
-		Subject:  sub,
-		RecordID: rec.RecordID,
-	}); err != nil {
-		return "", "", fmt.Errorf("submit record: %w", err)
+	if !opts.SkipCompanySubmit {
+		if _, err := a.svc.SubmitRecord(ctx, disclosureapp.SubmitRecordRequest{
+			Subject:  sub,
+			RecordID: rec.RecordID,
+		}); err != nil {
+			return "", "", fmt.Errorf("submit record: %w", err)
+		}
 	}
 
 	instanceID := ""

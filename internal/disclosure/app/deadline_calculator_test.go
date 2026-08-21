@@ -218,10 +218,9 @@ func TestCalculatePeriodicYearly_CustomAnchorJuly(t *testing.T) {
 	}
 }
 
-func TestCalculatePeriodicYearly_FutureAnchorUsesLastYear(t *testing.T) {
-	// Yearly with anchor 01/07, now = 2026-05-01 (before anchor)
-	// Most recent past anchor = 2025-07-01 (Wednesday)
-	// deadline_days=3 → 2025-07-03
+func TestCalculatePeriodicYearly_CurrentSlotEvenIfFutureT(t *testing.T) {
+	// Effective T V1: yearly logical slot = calendar year; T may be in the future.
+	// now = 2026-05-01, T=07/01 → cycleStart = 2026-07-01 (not prior year rollback).
 	calc := NewDeadlineCalculator(mockHolidayProvider{})
 	now := time.Date(2026, 5, 1, 0, 0, 0, 0, time.FixedZone("ICT", 7*60*60))
 	summary, err := calc.CalculateDeadlineSummary(context.Background(), &TemplateDeadlineConfig{
@@ -234,11 +233,11 @@ func TestCalculatePeriodicYearly_FutureAnchorUsesLastYear(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
-	if summary.StartDate == nil || *summary.StartDate != "2025-07-01" {
-		t.Fatalf("cycleStart=%v want 2025-07-01", summary.StartDate)
+	if summary.StartDate == nil || *summary.StartDate != "2026-07-01" {
+		t.Fatalf("cycleStart=%v want 2026-07-01", summary.StartDate)
 	}
-	if summary.DeadlineDate == nil || *summary.DeadlineDate != "2025-07-03" {
-		t.Fatalf("deadlineDate=%v want 2025-07-03", summary.DeadlineDate)
+	if summary.DeadlineDate == nil || *summary.DeadlineDate != "2026-07-03" {
+		t.Fatalf("deadlineDate=%v want 2026-07-03", summary.DeadlineDate)
 	}
 }
 
@@ -260,51 +259,49 @@ func TestCalculatePeriodic_ZeroDeadlineDays_ReturnsNil(t *testing.T) {
 }
 
 func TestCalculatePeriodic_CompanyCycleAnchorOverride(t *testing.T) {
-	// Template anchor: quarterly standard (anchor_month=1)
-	// Company override: CycleAnchorMonth=4 (fiscal year starts April)
-	// now = 2026-08-01 → company fiscal Q2 = Jul → cycleStart = 2026-07-01
-	// deadline_days=3 → 2026-07-03
+	// YEARLY: CMS T=09/30, company override T=10/05, now in 2026 → Effective T=2026-10-05
 	calc := NewDeadlineCalculator(mockHolidayProvider{})
 	now := time.Date(2026, 8, 1, 0, 0, 0, 0, time.FixedZone("ICT", 7*60*60))
 	summary, err := calc.CalculateDeadlineSummary(context.Background(), &TemplateDeadlineConfig{
-		DeadlineMode:     DeadlineModePeriodic,
-		FrequencyUnit:    "quarterly",
-		CycleAnchorMonth: 1, // template default: Jan
-		CycleAnchorDay:   1,
-		DeadlineDays:     3,
+		DeadlineMode:         DeadlineModePeriodic,
+		FrequencyUnit:        "yearly",
+		CycleAnchorMonth:     9,
+		CycleAnchorDay:       30,
+		DeadlineDays:         20,
+		DeadlineDurationType: DurationTypeCalendarDays,
 	}, CompanyDeadlineContext{
-		CycleAnchorMonth: 4, // company override: April
+		CycleAnchorMonth: 10,
+		CycleAnchorDay:   5,
 	}, now)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
-	if summary.StartDate == nil || *summary.StartDate != "2026-07-01" {
-		t.Fatalf("cycleStart=%v want 2026-07-01 (company override)", summary.StartDate)
+	if summary.StartDate == nil || *summary.StartDate != "2026-10-05" {
+		t.Fatalf("cycleStart=%v want 2026-10-05 (company override)", summary.StartDate)
 	}
-	if summary.DeadlineDate == nil || *summary.DeadlineDate != "2026-07-03" {
-		t.Fatalf("deadlineDate=%v want 2026-07-03", summary.DeadlineDate)
+	if summary.DeadlineDate == nil || *summary.DeadlineDate != "2026-10-24" {
+		t.Fatalf("deadlineDate=%v want 2026-10-24 (inclusive N=20)", summary.DeadlineDate)
 	}
 }
 
-func TestCalculatePeriodicQuarterly_PreviousYearRollback(t *testing.T) {
-	// anchor_month=11 (Nov), now = Jan 2026
-	// Q1=Nov-Jan, so Jan 2026 is in Q1 that started Nov 2025
-	// cycleStart = 2025-11-01 (Saturday) → actual cycle start as-is
-	// deadline_days=3 → working: 11-01 is Sat, next working = Mon 11-03 (d1), 11-04(d2), 11-05(d3) = 2025-11-05
+func TestCalculatePeriodicQuarterly_CalendarQuarterStart(t *testing.T) {
+	// Effective T V1: quarterly T = first day of calendar quarter (structured month_in_quarter residual).
+	// Jan 2026 → Q1 → 2026-01-01
 	calc := NewDeadlineCalculator(mockHolidayProvider{})
 	now := time.Date(2026, 1, 15, 0, 0, 0, 0, time.FixedZone("ICT", 7*60*60))
 	summary, err := calc.CalculateDeadlineSummary(context.Background(), &TemplateDeadlineConfig{
-		DeadlineMode:     DeadlineModePeriodic,
-		FrequencyUnit:    "quarterly",
-		CycleAnchorMonth: 11,
-		CycleAnchorDay:   1,
-		DeadlineDays:     3,
+		DeadlineMode:         DeadlineModePeriodic,
+		FrequencyUnit:        "quarterly",
+		CycleAnchorMonth:     11,
+		CycleAnchorDay:       1,
+		DeadlineDays:         3,
+		DeadlineDurationType: DurationTypeCalendarDays,
 	}, CompanyDeadlineContext{}, now)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
-	if summary.StartDate == nil || *summary.StartDate != "2025-11-01" {
-		t.Fatalf("cycleStart=%v want 2025-11-01", summary.StartDate)
+	if summary.StartDate == nil || *summary.StartDate != "2026-01-01" {
+		t.Fatalf("cycleStart=%v want 2026-01-01", summary.StartDate)
 	}
 }
 

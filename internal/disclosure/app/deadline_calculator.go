@@ -361,68 +361,16 @@ func (c *DeadlineCalculator) calculatePeriodic(
 	}, nil
 }
 
-// computeCycleStart returns the start date of the current period for periodic templates.
-// Priority: company.CycleAnchorMonth/Day (if non-zero) overrides config.CycleAnchorMonth/Day.
-// Confirmed behaviour (per business contract 2026-05-29):
-//   - monthly: anchor_day of the current calendar month (always current month)
-//   - quarterly: first day of the current fiscal quarter based on anchor_month
-//   - yearly: most recent past occurrence of anchor_month/anchor_day
+// computeCycleStart returns Effective T for the current logical slot (canonical).
+// Priority: company.CycleAnchorMonth/Day overrides config; invalid days clamp to last day of month.
 func (c *DeadlineCalculator) computeCycleStart(config *TemplateDeadlineConfig, company CompanyDeadlineContext, now time.Time) time.Time {
-	// Determine effective anchor — company preference overrides template default.
-	anchorMonth := config.CycleAnchorMonth
-	anchorDay := config.CycleAnchorDay
-	if company.CycleAnchorMonth > 0 {
-		anchorMonth = company.CycleAnchorMonth
-	}
-	if company.CycleAnchorDay > 0 {
-		anchorDay = company.CycleAnchorDay
-	}
-	if anchorMonth <= 0 || anchorMonth > 12 {
-		anchorMonth = 1
-	}
-	if anchorDay <= 0 || anchorDay > 28 {
-		anchorDay = 1
-	}
-
-	switch NormalizeFrequencyUnit(config.FrequencyUnit) {
-	case PeriodicityDaily:
+	cms := AnchorConfig{Month: config.CycleAnchorMonth, Day: config.CycleAnchorDay}
+	co := AnchorConfig{Month: company.CycleAnchorMonth, Day: company.CycleAnchorDay}
+	eff, _ := ResolveEffectiveAnchor(cms, co)
+	label := ResolveLogicalSlot(config.FrequencyUnit, now, c.location)
+	t, err := ResolveOccurrenceT(config.FrequencyUnit, label, eff, c.location)
+	if err != nil {
 		return stripTime(now.In(c.location))
-
-	case PeriodicityWeekly:
-		return weekStartSunday(now.In(c.location))
-
-	case PeriodicityMonthly:
-		// cycleStart = anchor_day of current month (per confirmed business contract)
-		return time.Date(now.Year(), now.Month(), anchorDay, 0, 0, 0, 0, c.location)
-
-	case PeriodicityQuarterly:
-		// Compute which fiscal quarter we are in, based on anchorMonth.
-		// monthOffset: how many months since the last fiscal year start
-		monthOffset := (int(now.Month()) - anchorMonth + 12) % 12
-		quarterIndex := monthOffset / 3 // 0-based fiscal quarter index
-		cycleStartMonth := anchorMonth + quarterIndex*3
-		year := now.Year()
-		if cycleStartMonth > 12 {
-			cycleStartMonth -= 12
-			// No year decrement: roll-over within same calendar year
-			// (e.g. anchor=4, Q4 starts Jan → cycleStartMonth=1 ≤ now.Month is checked below)
-		}
-		// If computed start month is ahead of current month in the calendar year,
-		// the cycle started in the previous calendar year.
-		if cycleStartMonth > int(now.Month()) {
-			year--
-		}
-		return time.Date(year, time.Month(cycleStartMonth), 1, 0, 0, 0, 0, c.location)
-
-	case PeriodicityYearly:
-		// Most recent past occurrence of anchor_month/anchor_day.
-		anchorThisYear := time.Date(now.Year(), time.Month(anchorMonth), anchorDay, 0, 0, 0, 0, c.location)
-		if anchorThisYear.After(now) {
-			return time.Date(now.Year()-1, time.Month(anchorMonth), anchorDay, 0, 0, 0, 0, c.location)
-		}
-		return anchorThisYear
-
-	default:
-		return stripTime(now)
 	}
+	return t
 }

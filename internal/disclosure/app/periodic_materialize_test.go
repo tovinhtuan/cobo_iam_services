@@ -91,6 +91,10 @@ func (r *fakePeriodicRepo) UpsertCompanyTypePreference(context.Context, CompanyT
 	return nil
 }
 
+func (r *fakePeriodicRepo) ListCompanyTypePreferencesByTypeIDs(context.Context, []string) ([]CompanyTypePreference, error) {
+	return nil, nil
+}
+
 type fakePeriodicCreator struct {
 	recordID           string
 	workflowInstanceID string

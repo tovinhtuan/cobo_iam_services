@@ -161,6 +161,8 @@ type Repository interface {
 	ListAllActiveCompanyIDs(ctx context.Context) ([]string, error)
 	GetCompanyTypePreference(ctx context.Context, companyID, typeID string) (*CompanyTypePreference, error)
 	UpsertCompanyTypePreference(ctx context.Context, in CompanyTypePreference) error
+	// ListCompanyTypePreferencesByTypeIDs bulk-loads overrides for worker seed (avoid N+1).
+	ListCompanyTypePreferencesByTypeIDs(ctx context.Context, typeIDs []string) ([]CompanyTypePreference, error)
 
 	// Subscription quota.
 	CountCompanyTemplatesByCompanyID(ctx context.Context, companyID string) (int, error)
@@ -901,6 +903,11 @@ type DisclosureTypeDTO struct {
 	DisplayGroupCodes  []string                                  `json:"display_group_codes"`
 	IsMandatory        bool                                      `json:"is_mandatory"`
 	HasWorkflow        bool                                      `json:"has_workflow"`
+	// ActivationReady is computed from the unredacted version publication candidate
+	// (same predicates as ActivateTypeVersion). Safe to expose after CMS editor redact.
+	ActivationReady bool `json:"activation_ready"`
+	// ActivationBlockers are user-safe reasons when ActivationReady is false.
+	ActivationBlockers []ActivationBlockerDTO `json:"activation_blockers,omitempty"`
 	ReviewStatus       string                                    `json:"review_status,omitempty"`
 	ApplicabilityRules *applicability.TemplateApplicabilityRules `json:"applicability_rules,omitempty"`
 	// ResolvedDeadlineRule is the live semantic outcome of production ResolveStructure /
@@ -912,6 +919,15 @@ type DisclosureTypeDTO struct {
 	WorkflowManifest         *WorkflowPublicationManifest `json:"-"`
 	WorkflowSemanticHash     string                       `json:"-"`
 	PublicationCandidateHash string                       `json:"-"`
+}
+
+// ActivationBlockerDTO explains why a CMS template version cannot be activated yet.
+// Does not include raw workflow payload / department secrets beyond step identity.
+type ActivationBlockerDTO struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+	StepKey string `json:"step_key,omitempty"`
+	StepID  string `json:"step_id,omitempty"`
 }
 
 // ResolvedDeadlineRuleDTO is the Portal-facing semantic deadline rule (Option A).
@@ -968,10 +984,12 @@ type TemplateDeadlineConfig struct {
 	// StepDefaultSlaDays is the per-step workflow SLA fallback (calendar days).
 	// Intentionally separate from DeadlineDays (total SLA) to prevent timeline blow-up.
 	StepDefaultSlaDays int `json:"step_default_sla_days,omitempty"`
-	// CycleAnchorDay/Month define the fiscal year start for yearly periodic templates.
-	// 0 = unset (defaults to 01/01). Not needed for monthly/quarterly.
+	// CycleAnchorDay/Month = Mốc bắt đầu kỳ (T) for monthly/yearly (disclosure period start).
+	// 0 = unset (defaults to 01/01). Invalid days clamp to last day of month.
 	CycleAnchorDay   int `json:"cycle_anchor_day,omitempty"`
 	CycleAnchorMonth int `json:"cycle_anchor_month,omitempty"`
+	// OpenDaysBeforeT: OpenAt = EffectiveT − N calendar days (0 = OpenAt=T). CMS only.
+	OpenDaysBeforeT int `json:"open_days_before_t,omitempty"`
 	// DeadlineDurationType is a runtime-only override (WORKING_DAYS | CALENDAR_DAYS).
 	DeadlineDurationType string `json:"deadline_duration_type,omitempty"`
 }
@@ -1075,6 +1093,10 @@ type RecordDTO struct {
 	CompletedAt *time.Time `json:"completed_at,omitempty"`
 	// CompletedSource labels the write path (e.g. confirm_record).
 	CompletedSource string `json:"completed_source,omitempty"`
+	// SubmittedAt is set once on explicit company SubmitRecord (not materialize).
+	SubmittedAt *time.Time `json:"submitted_at,omitempty"`
+	// SubmissionCompliance is derived (PENDING|OVERDUE|SUBMITTED_ON_TIME|SUBMITTED_LATE); omitempty when empty.
+	SubmissionCompliance string `json:"submission_compliance,omitempty"`
 }
 
 // WorkflowBootstrapper creates a workflow instance when a disclosure record is submitted.
@@ -1109,6 +1131,7 @@ type PeriodicTypeRow struct {
 	DeadlineDays       int
 	CycleAnchorDay     int // 0 = unset → defaults to 1
 	CycleAnchorMonth   int // 0 = unset → defaults to 1
+	OpenDaysBeforeT    int // CMS open_days_before_t; 0 = OpenAt=T
 	IsGlobal           bool
 	ApplicabilityRules *applicability.TemplateApplicabilityRules
 }
@@ -1120,7 +1143,8 @@ type PeriodicCycleRow struct {
 	TypeName   string
 	CompanyID  string
 	CycleLabel string
-	CycleStart time.Time // DATE at seed; materialize T0 (AC-9)
+	CycleStart time.Time // Effective T snapshot at seed
+	OpenAt     time.Time // Business open; zero = legacy treat as CycleStart
 	DueDate    time.Time
 	RecordID   string // empty = pending
 }
@@ -1131,10 +1155,11 @@ type CompanyTypePreference struct {
 	TypeID            string
 	AutoCreateEnabled bool
 	UpdatedBy         string
-	// Per-company fiscal year start override for PERIODIC deadline mode.
-	// 0 = use template default (CycleAnchorMonth/CycleAnchorDay in TemplateDeadlineConfig).
+	// Per-company T override (disclosure period start). 0 = inherit CMS default.
 	CycleAnchorMonth int
 	CycleAnchorDay   int
+	// ClearCycleAnchor forces NULL on write (inherit CMS).
+	ClearCycleAnchor bool
 }
 
 // CompanyTypePreferenceDTO is the API-facing representation.
@@ -1143,9 +1168,11 @@ type CompanyTypePreferenceDTO struct {
 	CompanyID         string    `json:"company_id"`
 	AutoCreateEnabled bool      `json:"auto_create_enabled"`
 	UpdatedAt         time.Time `json:"updated_at"`
-	// Per-company fiscal year start override for PERIODIC deadline mode. 0 = use template default.
+	// Mốc bắt đầu kỳ (T) override. 0 = inherit CMS default.
 	CycleAnchorMonth int `json:"cycle_anchor_month,omitempty"`
 	CycleAnchorDay   int `json:"cycle_anchor_day,omitempty"`
+	// HasCycleAnchorOverride is true when company stored T override (not CMS inherit).
+	HasCycleAnchorOverride bool `json:"has_cycle_anchor_override"`
 }
 
 type GetCompanyTypePreferenceRequest struct {
@@ -1157,9 +1184,11 @@ type UpsertCompanyTypePreferenceRequest struct {
 	Subject           Subject
 	TypeID            string
 	AutoCreateEnabled bool
-	// Per-company cycle anchor override. 0 = keep/use template default.
+	// Per-company cycle anchor (T) override. Ignored when ClearCycleAnchor is true.
 	CycleAnchorMonth int `json:"cycle_anchor_month,omitempty"`
 	CycleAnchorDay   int `json:"cycle_anchor_day,omitempty"`
+	// ClearCycleAnchor sets override columns to NULL → inherit CMS Default T.
+	ClearCycleAnchor bool `json:"clear_cycle_anchor,omitempty"`
 }
 
 // ─── CMS System Template Management ──────────────────────────────────────────
