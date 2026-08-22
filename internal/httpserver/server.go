@@ -100,6 +100,10 @@ import (
 	wfcapp "github.com/cobo/cobo_iam_services/internal/workflowconfig/app"
 	wfcmysql "github.com/cobo/cobo_iam_services/internal/workflowconfig/infra/mysql"
 	wfchttp "github.com/cobo/cobo_iam_services/internal/workflowconfig/transport/http"
+	"github.com/cobo/cobo_iam_services/internal/workflowdoctemplate"
+	wdtinmem "github.com/cobo/cobo_iam_services/internal/workflowdoctemplate/infra/inmemory"
+	wdtmysql "github.com/cobo/cobo_iam_services/internal/workflowdoctemplate/infra/mysql"
+	wdthttp "github.com/cobo/cobo_iam_services/internal/workflowdoctemplate/transport/http"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -331,6 +335,17 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 		UploadTTL:     cfg.UserAvatarSignedURLTTL,
 		PublicBaseURL: cfg.PublicAPIBaseURL,
 	})
+
+	wdtDisk, err := mediaupload.NewDiskStorage(cfg.ResolveWorkflowDocTemplateStorageDir())
+	if err != nil {
+		return fmt.Errorf("workflow document template storage: %w", err)
+	}
+	var wdtRepo workflowdoctemplate.Repository = wdtinmem.NewRepository()
+	if pool != nil {
+		wdtRepo = wdtmysql.NewRepository(pool)
+	}
+	wdtSvc := workflowdoctemplate.NewService(wdtRepo, wdtDisk)
+	wdtHandler := wdthttp.NewHandler(wdtSvc, tokenManager, authSvc)
 	// In-app notification service
 	var inAppRepo inappapp.Repository = inappmem.NewRepository()
 	var inAppUserIDQuerier inappapp.UserIDQuerier
@@ -377,6 +392,7 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 	disclosureOpts = append(disclosureOpts, disclosureapp.WithLegalBasisStructuredWriteEnabled(cfg.LegalBasisStructuredWriteEnabled))
 	disclosureOpts = append(disclosureOpts, disclosureapp.WithLegalBasisLegacyFallbackEnabled(cfg.LegalBasisLegacyFallbackEnabled))
 	disclosureOpts = append(disclosureOpts, disclosureapp.WithLegalBasisDivergenceWarningEnabled(cfg.LegalBasisDivergenceWarningEnabled))
+	disclosureOpts = append(disclosureOpts, disclosureapp.WithWorkflowDocTemplateBinder(workflowdoctemplate.BinderAdapter{Svc: wdtSvc}))
 	tierLookup := func(ctx context.Context, userID string) string {
 		if identity == nil {
 			return ""
@@ -721,7 +737,7 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 		}
 	}
 
-	return muxRegisterHealthAndIAM(mux, log, cfg, sqlDB, iamHandler, meHandler, authHandler, disclosureHandler, workflowHandler, notificationHandler, reminderHandler, adminHandler, platformCMSHandler, adhocHandler, deadlineAlertsHandler, portalDashboardHandler, personalOpsHandler)
+	return muxRegisterHealthAndIAM(mux, log, cfg, sqlDB, iamHandler, meHandler, authHandler, disclosureHandler, workflowHandler, notificationHandler, reminderHandler, adminHandler, platformCMSHandler, wdtHandler, adhocHandler, deadlineAlertsHandler, portalDashboardHandler, personalOpsHandler)
 }
 
 func validateSecurityCriticalConfig(cfg config.Config) error {
@@ -765,6 +781,7 @@ func muxRegisterHealthAndIAM(
 	reminderHandler *reminderhttp.Handler,
 	adminHandler *companyaccesshttp.AdminHandler,
 	platformCMSHandler *platformcmshttp.Handler,
+	wdtHandler *wdthttp.Handler,
 	adhocHandler *adhochttp.Handler,
 	deadlineAlertsHandler *deadlinealertshttp.Handler,
 	portalDashboardHandler *portaldashboardhttp.Handler,
@@ -798,6 +815,7 @@ func muxRegisterHealthAndIAM(
 	reminderHandler.Register(mux)
 	adminHandler.Register(mux)
 	platformCMSHandler.Register(mux)
+	wdtHandler.Register(mux)
 	if adhocHandler != nil {
 		adhocHandler.Register(mux)
 	}

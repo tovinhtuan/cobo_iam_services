@@ -498,6 +498,11 @@ type WorkflowDocumentDTO struct {
 	DocID    string `json:"doc_id"`
 	Name     string `json:"name"`
 	Required bool   `json:"required"`
+	// TemplateFileID is an optional immutable workflow document template file reference (B1 asset).
+	// Empty means name-only requirement. Not a company submission attachment.
+	TemplateFileID string `json:"template_file_id,omitempty"`
+	// TemplateFileName is a display snapshot of the sample file name (not authorization authority).
+	TemplateFileName string `json:"template_file_name,omitempty"`
 }
 
 // WorkflowStepGroupDTO is one tổ/nhóm assignment for a workflow step.
@@ -1226,6 +1231,9 @@ type GlobalWorkflowStepInput struct {
 	DueRule           string   `json:"due_rule"`
 	ProcessingDays    int      `json:"processing_days"`
 	DisplayOrder      int      `json:"display_order"`
+	// Documents are optional document requirements (name + optional template file).
+	// Stored in global_workflow_steps.documents_json alongside reminder_config (no migration).
+	Documents []WorkflowDocumentDTO `json:"documents,omitempty"`
 	// ReminderConfig is omitted for DEFAULT (effective [3,1] at runtime). CUSTOM persists
 	// enabled/mode/days_before. Stored in global_workflow_steps.documents_json (no migration).
 	ReminderConfig *WorkflowStepReminderConfig `json:"reminder_config,omitempty"`

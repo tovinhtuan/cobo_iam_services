@@ -162,6 +162,7 @@ func ValidateWorkflowStepReminderConfigForPersist(cfg *WorkflowStepReminderConfi
 }
 
 type globalWorkflowStepDocumentsEnvelope struct {
+	Documents      []WorkflowDocumentDTO       `json:"documents,omitempty"`
 	ReminderConfig *WorkflowStepReminderConfig `json:"reminder_config,omitempty"`
 }
 
@@ -170,37 +171,47 @@ const legacyDocumentsJSONKey = "documents"
 // EncodeGlobalWorkflowStepReminderDocumentsJSON stores reminder_config inside the existing
 // global_workflow_steps.documents_json JSON column (no migration). DEFAULT omit → nil/NULL.
 func EncodeGlobalWorkflowStepReminderDocumentsJSON(cfg *WorkflowStepReminderConfig) ([]byte, error) {
-	return MergeGlobalWorkflowStepReminderDocumentsJSON(nil, cfg)
+	return MergeGlobalWorkflowStepDocumentsJSON(nil, nil, cfg)
 }
 
 // MergeGlobalWorkflowStepReminderDocumentsJSON writes reminder_config without erasing
 // leftover document payload in the same JSON column.
 // DEFAULT omit (cfg==nil) removes reminder_config only; a legacy array is kept as-is.
 func MergeGlobalWorkflowStepReminderDocumentsJSON(existing []byte, cfg *WorkflowStepReminderConfig) ([]byte, error) {
+	return MergeGlobalWorkflowStepDocumentsJSON(existing, nil, cfg)
+}
+
+// MergeGlobalWorkflowStepDocumentsJSON merges optional documents[] and reminder_config into documents_json.
+// docs == nil → preserve existing documents payload; docs != nil (incl. empty) → replace documents.
+func MergeGlobalWorkflowStepDocumentsJSON(existing []byte, docs []WorkflowDocumentDTO, cfg *WorkflowStepReminderConfig) ([]byte, error) {
 	existing = bytesTrimSpace(existing)
-	if cfg == nil {
+
+	// Reminder-only strip / preserve path (docs not explicitly provided).
+	if docs == nil && cfg == nil {
 		return stripReminderConfigFromDocumentsJSON(existing)
 	}
-	if len(existing) == 0 || string(existing) == "null" {
-		return json.Marshal(globalWorkflowStepDocumentsEnvelope{ReminderConfig: CloneWorkflowStepReminderConfig(cfg)})
+
+	preservedDocs := docs
+	if docs == nil {
+		preservedDocs = DecodeGlobalWorkflowStepDocuments(existing)
 	}
-	if existing[0] == '[' {
-		env := map[string]any{
-			legacyDocumentsJSONKey: json.RawMessage(append([]byte(nil), existing...)),
-			"reminder_config":      CloneWorkflowStepReminderConfig(cfg),
-		}
-		return json.Marshal(env)
+
+	var rem *WorkflowStepReminderConfig
+	if cfg != nil {
+		rem = CloneWorkflowStepReminderConfig(cfg)
 	}
-	var obj map[string]json.RawMessage
-	if err := json.Unmarshal(existing, &obj); err != nil {
-		return json.Marshal(globalWorkflowStepDocumentsEnvelope{ReminderConfig: CloneWorkflowStepReminderConfig(cfg)})
+
+	env := map[string]any{}
+	if len(preservedDocs) > 0 {
+		env[legacyDocumentsJSONKey] = preservedDocs
 	}
-	rem, err := json.Marshal(CloneWorkflowStepReminderConfig(cfg))
-	if err != nil {
-		return nil, err
+	if rem != nil {
+		env["reminder_config"] = rem
 	}
-	obj["reminder_config"] = rem
-	return json.Marshal(obj)
+	if len(env) == 0 {
+		return nil, nil
+	}
+	return json.Marshal(env)
 }
 
 func stripReminderConfigFromDocumentsJSON(existing []byte) ([]byte, error) {
@@ -243,6 +254,36 @@ func DecodeGlobalWorkflowStepReminderDocumentsJSON(raw []byte) *WorkflowStepRemi
 		return nil
 	}
 	return CloneWorkflowStepReminderConfig(&cfg)
+}
+
+// DecodeGlobalWorkflowStepDocuments reads document requirements from documents_json.
+func DecodeGlobalWorkflowStepDocuments(raw []byte) []WorkflowDocumentDTO {
+	raw = bytesTrimSpace(raw)
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil
+	}
+	if raw[0] == '[' {
+		var docs []WorkflowDocumentDTO
+		if err := json.Unmarshal(raw, &docs); err != nil {
+			return nil
+		}
+		return docs
+	}
+	var envelope globalWorkflowStepDocumentsEnvelope
+	if err := json.Unmarshal(raw, &envelope); err == nil && len(envelope.Documents) > 0 {
+		return envelope.Documents
+	}
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return nil
+	}
+	if docsRaw, ok := obj[legacyDocumentsJSONKey]; ok {
+		var docs []WorkflowDocumentDTO
+		if err := json.Unmarshal(docsRaw, &docs); err == nil {
+			return docs
+		}
+	}
+	return nil
 }
 
 func bytesTrimSpace(raw []byte) []byte {

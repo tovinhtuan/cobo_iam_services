@@ -1,3 +1,18 @@
+## Workflow Step Document Requirements Full V1 (2026-08-22)
+
+- B1 upload purpose-scoped + 0132 assets table; B2 documents[] + binder; FE editors/preview/portal.
+- E2E bugfix: CMS facade documents persist; workflowconfig manifest documents; DEV redeploy.
+- Pre-merge gap closed: CMS upsert calls `NormalizeAndValidateWorkflowDocuments` + `validateWorkflowDocumentTemplateRefs(..., "cms")` — evidence `11-cms-server-validation-hardening.md`
+- Pointer: FE `../cobo_web_design/docs/ai-cache/workflow-step-document-requirements-2026-08-22/`
+- NO_PRODUCTION / NO_COMMIT / NO_PUSH / NO_MERGE
+
+## Workflow Step Document Requirements V1 — STOP (2026-08-22)
+
+- Reconciliation: `documents[{doc_id,name,required}]` already config domain; CMS media PARTIAL (no Company upload / no xlsx ACL).
+- Pointer: FE `../cobo_web_design/docs/ai-cache/workflow-step-document-requirements-2026-08-22/`
+- Verdict: `IMPLEMENTATION_SAFE_TO_START=false` / WAIT_FOR_PO
+- NO_CODE / NO_DB / NO_DEPLOY / NO_COMMIT / NO_PUSH / NO_MERGE
+
 ## Company Workflow Step Safe HTML (2026-08-22)
 
 - Company override draft/active validates/normalizes additive `description_format` (same enums as CMS); no migration.

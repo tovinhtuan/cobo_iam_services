@@ -58,6 +58,7 @@ func (r *VersionRepository) BuildManifest(ctx context.Context, typeID string) (w
 			DueRule           string                        `json:"due_rule"`
 			ProcessingDays    int                           `json:"processing_days"`
 			DisplayOrder      int                           `json:"display_order"`
+			Documents         []wfcapp.ManifestDocument     `json:"documents"`
 			ReminderConfig    *wfcapp.ManifestReminderConfig `json:"reminder_config"`
 		} `json:"steps"`
 	}
@@ -73,13 +74,14 @@ func (r *VersionRepository) BuildManifest(ctx context.Context, typeID string) (w
 		if len(step.AssigneeRoleIDs) > 0 {
 			role = step.AssigneeRoleIDs[0]
 		}
+		docs := append([]wfcapp.ManifestDocument(nil), step.Documents...)
 		m.Steps = append(m.Steps, wfcapp.ManifestStep{
 			StepID: step.StepID, StepKey: step.StepKey, Stage: step.Stage, Name: step.Stage,
 			Description: step.Description, DescriptionFormat: step.DescriptionFormat,
 			Instructions: step.Instructions, Role: role,
 			DepartmentID: step.DepartmentID, DueRule: step.DueRule,
 			ProcessingDays: step.ProcessingDays, DisplayOrder: step.DisplayOrder,
-			ReminderConfig: step.ReminderConfig,
+			Documents: docs, ReminderConfig: step.ReminderConfig,
 		})
 	}
 	return wfcapp.NormalizeManifest(m), nil

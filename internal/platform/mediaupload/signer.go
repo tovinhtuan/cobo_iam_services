@@ -14,8 +14,10 @@ import (
 type Purpose string
 
 const (
-	PurposeUserAvatarUpload  Purpose = "user_avatar_upload"
-	PurposeUserAvatarContent Purpose = "user_avatar_content"
+	PurposeUserAvatarUpload            Purpose = "user_avatar_upload"
+	PurposeUserAvatarContent           Purpose = "user_avatar_content"
+	PurposeWorkflowDocTemplateUpload   Purpose = "workflow_doc_template_upload"
+	PurposeWorkflowDocTemplateContent  Purpose = "workflow_doc_template_content"
 )
 
 // SignInput binds a signed URL to owner, asset, HTTP method, path, and optional upload metadata.

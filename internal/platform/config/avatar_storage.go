@@ -19,6 +19,16 @@ func (c Config) ResolveUserAvatarStorageDir() string {
 	return filepath.Clean(filepath.Join(cmsRoot, "user-avatars"))
 }
 
+// ResolveWorkflowDocTemplateStorageDir returns disk root for workflow sample/template files.
+// Uses {CMSMediaStorageDir}/workflow-doc-templates (reuses CMS media root; separate purpose prefix).
+func (c Config) ResolveWorkflowDocTemplateStorageDir() string {
+	cmsRoot := strings.TrimSpace(c.CMSMediaStorageDir)
+	if cmsRoot == "" {
+		cmsRoot = "./var/cms-media"
+	}
+	return filepath.Clean(filepath.Join(cmsRoot, "workflow-doc-templates"))
+}
+
 // UserAvatarAllowedContentTypesSet returns a set of allowed MIME types.
 func (c Config) UserAvatarAllowedContentTypesSet() map[string]struct{} {
 	out := make(map[string]struct{})

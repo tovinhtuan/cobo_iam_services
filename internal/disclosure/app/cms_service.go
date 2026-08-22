@@ -136,6 +136,16 @@ func (s *service) CmsUpsertGlobalWorkflow(ctx context.Context, req CmsUpsertGlob
 		return nil, err
 	}
 	merged := mergeIncomingWorkflowSteps(workflowStepsFromDetail(detail), req.Steps)
+	// Server-side document contract (parity with Company override write):
+	// name required (trim); template_file_id optional; when present → AssertCanBind(cms).
+	for i := range merged {
+		if err := NormalizeAndValidateWorkflowDocuments(&merged[i]); err != nil {
+			return nil, err
+		}
+	}
+	if err := s.validateWorkflowDocumentTemplateRefs(ctx, req.Subject.CompanyID, "cms", merged); err != nil {
+		return nil, err
+	}
 	blocks, err := replaceTemplateWorkflowSteps(detail.Blocks, merged)
 	if err != nil {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, err.Error(), nil)
@@ -431,6 +441,7 @@ func projectGlobalStepsFromDetail(detail *DisclosureTypeDTO) []GlobalWorkflowSte
 			Instructions: step.Instructions,
 			DepartmentID: step.DepartmentID, AssigneeRoleIds: append([]string(nil), step.AssigneeRoleIds...),
 			DueRule: step.DueRule, ProcessingDays: step.ProcessingDays, DisplayOrder: step.DisplayOrder,
+			Documents:      append([]WorkflowDocumentDTO(nil), step.Documents...),
 			ReminderConfig: CloneWorkflowStepReminderConfig(step.ReminderConfig),
 		})
 	}
@@ -483,6 +494,11 @@ func workflowStepFromGlobalInput(in GlobalWorkflowStepInput, prev WorkflowStepDT
 	next.DueRule = in.DueRule
 	next.ProcessingDays = in.ProcessingDays
 	next.DisplayOrder = in.DisplayOrder
+	// documents != nil (incl. empty) replaces; omitted (nil) preserves prev — same envelope
+	// semantics as documents_json merge for the facade write path.
+	if in.Documents != nil {
+		next.Documents = append([]WorkflowDocumentDTO(nil), in.Documents...)
+	}
 	next.ReminderConfig = CloneWorkflowStepReminderConfig(in.ReminderConfig)
 	return next
 }

@@ -81,6 +81,53 @@ func ValidateCompanyWorkflowOverrideSteps(steps []WorkflowStepDTO) error {
 				steps[i].DescriptionFormat = ""
 			}
 		}
+		if err := NormalizeAndValidateWorkflowDocuments(&steps[i]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// NormalizeAndValidateWorkflowDocuments validates document requirements on a step.
+// Empty documents list is valid. Each present document requires a non-blank name.
+// Template file is optional. Does not invent uniqueness on name.
+func NormalizeAndValidateWorkflowDocuments(step *WorkflowStepDTO) error {
+	if step == nil {
+		return nil
+	}
+	for j := range step.Documents {
+		step.Documents[j].DocID = strings.TrimSpace(step.Documents[j].DocID)
+		step.Documents[j].Name = strings.TrimSpace(step.Documents[j].Name)
+		step.Documents[j].TemplateFileID = strings.TrimSpace(step.Documents[j].TemplateFileID)
+		step.Documents[j].TemplateFileName = strings.TrimSpace(step.Documents[j].TemplateFileName)
+		if step.Documents[j].TemplateFileID == "" {
+			step.Documents[j].TemplateFileName = ""
+		}
+		if step.Documents[j].Name == "" {
+			return &perr.HTTPError{
+				Code:       perr.CodeWorkflowOverrideInvalid,
+				Message:    "Vui lòng nhập tên tài liệu.",
+				HTTPStatus: http.StatusBadRequest,
+				Details: map[string]any{
+					"field_errors": map[string]string{
+						fmt.Sprintf("workflow.documents[%d].name", j): "Vui lòng nhập tên tài liệu.",
+					},
+					"field": "documents.name",
+				},
+			}
+		}
+		if step.Documents[j].DocID == "" {
+			return &perr.HTTPError{
+				Code:       perr.CodeWorkflowOverrideInvalid,
+				Message:    fmt.Sprintf("workflow document %d is invalid: doc_id is required", j),
+				HTTPStatus: http.StatusBadRequest,
+				Details: map[string]any{
+					"field_errors": map[string]string{
+						fmt.Sprintf("workflow.documents[%d].doc_id", j): "doc_id is required",
+					},
+				},
+			}
+		}
 	}
 	return nil
 }

@@ -31,6 +31,12 @@ type service struct {
 	legalBasisDivergenceWarningEnabled bool
 	tierLookup                         func(ctx context.Context, userID string) string
 	workflowBootstrap                  WorkflowBootstrapper
+	docTemplateBinder                  WorkflowDocTemplateBinder
+}
+
+// WorkflowDocTemplateBinder validates template_file_id references on workflow documents.
+type WorkflowDocTemplateBinder interface {
+	AssertCanBind(ctx context.Context, fileID, bindScope, bindCompanyID string) error
 }
 
 // ServiceOption configures disclosure service construction.
@@ -62,6 +68,13 @@ func WithDeadlineEngineV2Shadow(enabled bool) ServiceOption {
 func WithWorkflowGroupsEnabled(enabled bool) ServiceOption {
 	return func(s *service) {
 		s.workflowGroupsEnabled = enabled
+	}
+}
+
+// WithWorkflowDocTemplateBinder validates template_file_id on CMS and company workflow documents.
+func WithWorkflowDocTemplateBinder(b WorkflowDocTemplateBinder) ServiceOption {
+	return func(s *service) {
+		s.docTemplateBinder = b
 	}
 }
 
@@ -1013,6 +1026,9 @@ func (s *service) UpsertCompanyWorkflowOverrideDraft(ctx context.Context, req Up
 	if err := ValidateCompanyWorkflowOverrideSteps(req.Workflow); err != nil {
 		return nil, err
 	}
+	if err := s.validateWorkflowDocumentTemplateRefs(ctx, req.Subject.CompanyID, "company", req.Workflow); err != nil {
+		return nil, err
+	}
 	if err := s.authorize(ctx, req.Subject, "template.workflow.override.write", authapp.ResourceRef{
 		Type: "disclosure_type",
 		ID:   req.TypeID,
@@ -1876,6 +1892,24 @@ func (s *service) enforceHasWorkflowGate(ctx context.Context, companyID, typeID 
 	if !hasWorkflow {
 		return perr.NewHTTPError(http.StatusUnprocessableEntity, "TEMPLATE_NO_WORKFLOW",
 			"template has no effective workflow; disclosure cannot be created", nil)
+	}
+	return nil
+}
+
+func (s *service) validateWorkflowDocumentTemplateRefs(ctx context.Context, companyID, bindScope string, steps []WorkflowStepDTO) error {
+	if s.docTemplateBinder == nil {
+		return nil
+	}
+	for i := range steps {
+		for j := range steps[i].Documents {
+			fileID := strings.TrimSpace(steps[i].Documents[j].TemplateFileID)
+			if fileID == "" {
+				continue
+			}
+			if err := s.docTemplateBinder.AssertCanBind(ctx, fileID, bindScope, companyID); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }

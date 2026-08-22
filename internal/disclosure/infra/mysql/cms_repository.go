@@ -196,6 +196,7 @@ func (r *Repository) listGlobalWorkflowSteps(ctx context.Context, workflowID str
 			step.AssigneeRoleIds = []string{}
 		}
 		step.ReminderConfig = disclosureapp.DecodeGlobalWorkflowStepReminderDocumentsJSON(documentsJSON)
+		step.Documents = disclosureapp.DecodeGlobalWorkflowStepDocuments(documentsJSON)
 		out = append(out, step)
 	}
 	return out, rows.Err()
@@ -289,9 +290,9 @@ func (r *Repository) UpsertGlobalWorkflow(ctx context.Context, req disclosureapp
 		if len(existingDocs) == 0 {
 			existingDocs = existingDocsByStepID[strings.TrimSpace(step.StepID)]
 		}
-		documentsJSON, encErr := disclosureapp.MergeGlobalWorkflowStepReminderDocumentsJSON(existingDocs, step.ReminderConfig)
+		documentsJSON, encErr := disclosureapp.MergeGlobalWorkflowStepDocumentsJSON(existingDocs, step.Documents, step.ReminderConfig)
 		if encErr != nil {
-			return nil, fmt.Errorf("encode reminder_config for step %d: %w", i, encErr)
+			return nil, fmt.Errorf("encode documents_json for step %d: %w", i, encErr)
 		}
 		_, err = tx.ExecContext(ctx, `
 			INSERT INTO global_workflow_steps (step_id, step_key, workflow_id, stage, description, instructions, department_id, assignee_role_ids, due_rule, processing_days, display_order, documents_json, created_at)

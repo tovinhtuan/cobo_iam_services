@@ -91,3 +91,53 @@ func TestCmsUpsertGlobalWorkflow_RejectsEmptyCustomReminder(t *testing.T) {
 		t.Fatal("empty custom must reject")
 	}
 }
+
+func TestCmsUpsertGlobalWorkflow_DocumentsPersistAndClear(t *testing.T) {
+	ctx := context.Background()
+	const typeID = "dt-documents-persist"
+	svc, _ := newSeededWFService(t, typeID)
+	base := disclosureapp.GlobalWorkflowStepInput{
+		Stage: "Review", DepartmentID: "d1", AssigneeRoleIds: []string{"r1"},
+		ProcessingDays: 3, DueRule: "T+3", DisplayOrder: 1,
+	}
+
+	withDocs := base
+	withDocs.Documents = []disclosureapp.WorkflowDocumentDTO{
+		{DocID: "doc_a", Name: "Báo cáo tài chính Quý 3", Required: true, TemplateFileID: "wdt_cms_f1", TemplateFileName: "form.xlsx"},
+		{DocID: "doc_b", Name: "Biên bản xác nhận số liệu", Required: true},
+	}
+	wf, err := svc.CmsUpsertGlobalWorkflow(ctx, disclosureapp.CmsUpsertGlobalWorkflowRequest{
+		Subject: testSubjectWF, TypeID: typeID, Steps: []disclosureapp.GlobalWorkflowStepInput{withDocs},
+	})
+	if err != nil {
+		t.Fatalf("upsert with documents: %v", err)
+	}
+	if len(wf.Steps) != 1 || len(wf.Steps[0].Documents) != 2 {
+		t.Fatalf("documents dropped on persist: %#v", wf.Steps[0].Documents)
+	}
+	if wf.Steps[0].Documents[0].TemplateFileID != "wdt_cms_f1" || wf.Steps[0].Documents[1].Name != "Biên bản xác nhận số liệu" {
+		t.Fatalf("document fields wrong: %#v", wf.Steps[0].Documents)
+	}
+
+	got, err := svc.CmsGetGlobalWorkflow(ctx, disclosureapp.CmsGetGlobalWorkflowRequest{
+		Subject: testSubjectWF, TypeID: typeID,
+	})
+	if err != nil || got.Data == nil {
+		t.Fatalf("reload: %v data=%v", err, got)
+	}
+	if len(got.Data.Steps[0].Documents) != 2 || got.Data.Steps[0].Documents[0].DocID != "doc_a" {
+		t.Fatalf("reload lost documents: %#v", got.Data.Steps[0].Documents)
+	}
+
+	cleared := base
+	cleared.Documents = []disclosureapp.WorkflowDocumentDTO{}
+	wf, err = svc.CmsUpsertGlobalWorkflow(ctx, disclosureapp.CmsUpsertGlobalWorkflowRequest{
+		Subject: testSubjectWF, TypeID: typeID, Steps: []disclosureapp.GlobalWorkflowStepInput{cleared},
+	})
+	if err != nil {
+		t.Fatalf("clear documents: %v", err)
+	}
+	if len(wf.Steps[0].Documents) != 0 {
+		t.Fatalf("empty documents must replace, got %#v", wf.Steps[0].Documents)
+	}
+}

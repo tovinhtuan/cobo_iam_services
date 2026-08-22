@@ -84,6 +84,51 @@ func TestValidateCompanyWorkflowOverrideSteps_UnknownFormatRejected(t *testing.T
 	}
 }
 
+func TestValidateCompanyWorkflowOverrideSteps_BlankDocumentNameRejected(t *testing.T) {
+	err := ValidateCompanyWorkflowOverrideSteps([]WorkflowStepDTO{
+		{
+			StepID: "s1",
+			Stage:  "Collect",
+			Documents: []WorkflowDocumentDTO{
+				{DocID: "doc_1", Name: "   ", Required: true},
+			},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected blank name error")
+	}
+}
+
+func TestValidateCompanyWorkflowOverrideSteps_NameOnlyDocumentOK(t *testing.T) {
+	err := ValidateCompanyWorkflowOverrideSteps([]WorkflowStepDTO{
+		{
+			StepID: "s1",
+			Stage:  "Collect",
+			Documents: []WorkflowDocumentDTO{
+				{DocID: "doc_1", Name: "BCTC Q3", Required: true},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestValidateCompanyWorkflowOverrideSteps_DocumentWithFileOK(t *testing.T) {
+	err := ValidateCompanyWorkflowOverrideSteps([]WorkflowStepDTO{
+		{
+			StepID: "s1",
+			Stage:  "Collect",
+			Documents: []WorkflowDocumentDTO{
+				{DocID: "doc_1", Name: "BCTC Q3", Required: true, TemplateFileID: "wdt_abc", TemplateFileName: "form.xlsx"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestValidateCompanyWorkflowOverrideSteps_LegacyMissingFormatOK(t *testing.T) {
 	steps := []WorkflowStepDTO{
 		{StepID: "s1", Stage: "Review", ProcessingDays: 1, Description: "BCTT"},

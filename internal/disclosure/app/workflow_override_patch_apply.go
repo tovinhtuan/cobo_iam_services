@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"sort"
+	"strings"
 )
 
 // Sprint 3 / Batch 5 — Patch Application Engine.
@@ -300,6 +301,12 @@ func decodeDocuments(v any) ([]WorkflowDocumentDTO, bool) {
 		}
 		if b, ok := m["required"].(bool); ok {
 			d.Required = b
+		}
+		if s, ok := m["template_file_id"].(string); ok {
+			d.TemplateFileID = strings.TrimSpace(s)
+		}
+		if s, ok := m["template_file_name"].(string); ok {
+			d.TemplateFileName = strings.TrimSpace(s)
 		}
 		out = append(out, d)
 	}

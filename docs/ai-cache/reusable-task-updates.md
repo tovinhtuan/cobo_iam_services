@@ -1,4 +1,30 @@
 
+## 2026-08-22 — CMS document server validation hardening
+
+- task type: DELTA_ONLY_SERVER_CONTRACT_HARDENING
+- objective: CMS workflow upsert BE name + AssertCanBind(cms) parity with Company
+- implemented: `CmsUpsertGlobalWorkflow` → NormalizeAndValidateWorkflowDocuments + validateWorkflowDocumentTemplateRefs("cms"); targeted tests
+- pointer: FE `../cobo_web_design/docs/ai-cache/workflow-step-document-requirements-2026-08-22/11-cms-server-validation-hardening.md`
+- verification: go test disclosure/app + workflowdoctemplate PASS; docker compose build api PASS; deploy-dev be PASS; DEV API smoke PASS
+- NO_PRODUCTION / NO_COMMIT / NO_PUSH / NO_MERGE
+
+## 2026-08-22 — Workflow Step Document Requirements Full V1
+
+- task type: cross-repo feature (B1→B4) + browser E2E + pre-merge source review
+- pointer: FE `../cobo_web_design/docs/ai-cache/workflow-step-document-requirements-2026-08-22/`
+- BE: workflowdoctemplate + documents[] additive + 0132 migration + CMS facade Documents fix
+- premerge: READY_FOR_COMMIT=true — EXCLUDE `deploy-artifacts/**`
+- NO_PRODUCTION / NO_COMMIT / NO_PUSH / NO_MERGE
+
+## 2026-08-22 — Workflow Step Document Requirements V1 STOP
+
+- task type: source reconciliation / contract freeze (no implement)
+- objective: DocumentRequirement name + optional template file on workflow steps
+- discovered: documents[] exists; CMS media insufficient for Company + office MIME + template ACL
+- pointer: FE `../cobo_web_design/docs/ai-cache/workflow-step-document-requirements-2026-08-22/`
+- verdict: `IMPLEMENTATION_SAFE_TO_START=false` / WAIT_FOR_PO_CONFIRMATION
+- NO_CODE / NO_DB / NO_DEPLOY / NO_COMMIT / NO_PUSH
+
 ## 2026-08-22 — Company Workflow Step Safe HTML
 
 - task type: CONTENT_PRESENTATION_FEATURE (company override description only)

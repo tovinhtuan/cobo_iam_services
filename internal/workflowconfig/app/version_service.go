@@ -32,6 +32,16 @@ type ManifestReminderConfig struct {
 	DaysBefore []int  `json:"days_before,omitempty"`
 }
 
+// ManifestDocument is an optional document requirement snapshot inside a published version.
+// JSON shape matches disclosure WorkflowDocumentDTO (workflowconfig must not import disclosure).
+type ManifestDocument struct {
+	DocID            string `json:"doc_id"`
+	Name             string `json:"name"`
+	Required         bool   `json:"required"`
+	TemplateFileID   string `json:"template_file_id,omitempty"`
+	TemplateFileName string `json:"template_file_name,omitempty"`
+}
+
 // ManifestStep is one immutable step in a published version snapshot. Includes step_key.
 type ManifestStep struct {
 	StepID            string                  `json:"step_id"`
@@ -46,6 +56,7 @@ type ManifestStep struct {
 	DueRule           string                  `json:"due_rule"`
 	ProcessingDays    int                     `json:"processing_days"`
 	DisplayOrder      int                     `json:"display_order"`
+	Documents         []ManifestDocument      `json:"documents,omitempty"`
 	ReminderConfig    *ManifestReminderConfig `json:"reminder_config,omitempty"`
 }
 

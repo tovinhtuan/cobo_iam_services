@@ -102,9 +102,11 @@ func normalizeWorkflowDocuments(raw any) []WorkflowDocumentDTO {
 			continue
 		}
 		out = append(out, WorkflowDocumentDTO{
-			DocID:    firstNonBlankString(row["doc_id"], row["code"], row["id"]),
-			Name:     strings.TrimSpace(fmt.Sprint(row["name"])),
-			Required: normalizeBool(row["required"]),
+			DocID:            firstNonBlankString(row["doc_id"], row["code"], row["id"]),
+			Name:             strings.TrimSpace(fmt.Sprint(row["name"])),
+			Required:         normalizeBool(row["required"]),
+			TemplateFileID:   optionalTrimmedString(row["template_file_id"]),
+			TemplateFileName: optionalTrimmedString(row["template_file_name"]),
 		})
 	}
 	return out

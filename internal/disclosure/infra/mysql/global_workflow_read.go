@@ -27,6 +27,7 @@ type activeGlobalWorkflowManifestStep struct {
 	DueRule           string                                    `json:"due_rule"`
 	ProcessingDays    int                                       `json:"processing_days"`
 	DisplayOrder      int                                       `json:"display_order"`
+	Documents         []disclosureapp.WorkflowDocumentDTO       `json:"documents,omitempty"`
 	ReminderConfig    *disclosureapp.WorkflowStepReminderConfig `json:"reminder_config,omitempty"`
 }
 
@@ -86,6 +87,7 @@ func (r *Repository) loadActiveGlobalWorkflow(ctx context.Context, typeID string
 			DueRule:           dueRule,
 			ProcessingDays:    ms.ProcessingDays,
 			DisplayOrder:      ms.DisplayOrder,
+			Documents:         append([]disclosureapp.WorkflowDocumentDTO(nil), ms.Documents...),
 			ReminderConfig:    disclosureapp.CloneWorkflowStepReminderConfig(ms.ReminderConfig),
 		})
 	}
@@ -137,6 +139,7 @@ func (r *Repository) GetGlobalWorkflowVersionManifest(ctx context.Context, typeI
 			DueRule:           dueRule,
 			ProcessingDays:    ms.ProcessingDays,
 			DisplayOrder:      ms.DisplayOrder,
+			Documents:         append([]disclosureapp.WorkflowDocumentDTO(nil), ms.Documents...),
 			ReminderConfig:    disclosureapp.CloneWorkflowStepReminderConfig(ms.ReminderConfig),
 		})
 	}

@@ -117,3 +117,16 @@ func AvatarObjectKey(userID, assetID, ext string) string {
 	}
 	return fmt.Sprintf("users/%s/avatar/%s.%s", userID, assetID, ext)
 }
+
+// WorkflowDocTemplateObjectKey builds an immutable storage key for a workflow sample/template file.
+// scope is "cms" or "company"; each upload uses a new fileID (never overwrite in place).
+func WorkflowDocTemplateObjectKey(scope, companyID, fileID, safeFileName string) string {
+	scope = strings.TrimSpace(scope)
+	companyID = strings.TrimSpace(companyID)
+	fileID = strings.TrimSpace(fileID)
+	safeFileName = strings.TrimSpace(safeFileName)
+	if safeFileName == "" {
+		safeFileName = "file.bin"
+	}
+	return fmt.Sprintf("workflow_doc_template/%s/%s/%s/%s", scope, companyID, fileID, safeFileName)
+}
