@@ -47,17 +47,18 @@ func (r *VersionRepository) BuildManifest(ctx context.Context, typeID string) (w
 	}
 	var publication struct {
 		Steps []struct {
-			StepID          string                       `json:"step_id"`
-			StepKey         string                       `json:"step_key"`
-			Stage           string                       `json:"stage"`
-			Description     string                       `json:"description"`
-			Instructions    string                       `json:"instructions"`
-			DepartmentID    string                       `json:"department_id"`
-			AssigneeRoleIDs []string                     `json:"assignee_role_ids"`
-			DueRule         string                       `json:"due_rule"`
-			ProcessingDays  int                          `json:"processing_days"`
-			DisplayOrder    int                          `json:"display_order"`
-			ReminderConfig  *wfcapp.ManifestReminderConfig `json:"reminder_config"`
+			StepID            string                        `json:"step_id"`
+			StepKey           string                        `json:"step_key"`
+			Stage             string                        `json:"stage"`
+			Description       string                        `json:"description"`
+			DescriptionFormat string                        `json:"description_format"`
+			Instructions      string                        `json:"instructions"`
+			DepartmentID      string                        `json:"department_id"`
+			AssigneeRoleIDs   []string                      `json:"assignee_role_ids"`
+			DueRule           string                        `json:"due_rule"`
+			ProcessingDays    int                           `json:"processing_days"`
+			DisplayOrder      int                           `json:"display_order"`
+			ReminderConfig    *wfcapp.ManifestReminderConfig `json:"reminder_config"`
 		} `json:"steps"`
 	}
 	if err := json.Unmarshal(raw, &publication); err != nil {
@@ -74,7 +75,8 @@ func (r *VersionRepository) BuildManifest(ctx context.Context, typeID string) (w
 		}
 		m.Steps = append(m.Steps, wfcapp.ManifestStep{
 			StepID: step.StepID, StepKey: step.StepKey, Stage: step.Stage, Name: step.Stage,
-			Description: step.Description, Instructions: step.Instructions, Role: role,
+			Description: step.Description, DescriptionFormat: step.DescriptionFormat,
+			Instructions: step.Instructions, Role: role,
 			DepartmentID: step.DepartmentID, DueRule: step.DueRule,
 			ProcessingDays: step.ProcessingDays, DisplayOrder: step.DisplayOrder,
 			ReminderConfig: step.ReminderConfig,

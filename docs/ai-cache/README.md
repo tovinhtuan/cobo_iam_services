@@ -1,3 +1,17 @@
+## Company Workflow Step Safe HTML (2026-08-22)
+
+- Company override draft/active validates/normalizes additive `description_format` (same enums as CMS); no migration.
+- Pointer: FE `../cobo_web_design/docs/ai-cache/company-workflow-step-safe-html-2026-08-22/`
+- Verdict: `COMPANY_WORKFLOW_STEP_SAFE_HTML_DEV_VERIFIED` / Live Activate `NOT_VERIFIED`
+- NO_PRODUCTION / NO_COMMIT / NO_PUSH / NO_MERGE
+
+## Workflow step description Safe HTML (2026-08-22)
+
+- Additive `description_format` (`plain_text`|`safe_html`) on workflow step JSON/manifest; FE shared DOMPurify renderer.
+- Pointer: FE `../cobo_web_design/docs/ai-cache/workflow-step-safe-html-2026-08-22/`
+- Verdict: `WORKFLOW_STEP_SAFE_HTML_DEV_VERIFIED` / Live Activate `NOT_VERIFIED`
+- NO_PRODUCTION / NO_COMMIT / NO_PUSH / NO_MERGE
+
 ## Recurring disclosure Effective T Scheduling V1 (2026-08-21)
 
 - Pointer: FE `../cobo_web_design/docs/ai-cache/recurring-disclosure-effective-t-2026-08-21/`

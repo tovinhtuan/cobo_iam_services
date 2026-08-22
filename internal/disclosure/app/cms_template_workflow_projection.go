@@ -45,12 +45,13 @@ func normalizeTemplateWorkflowConfig(config map[string]any) []WorkflowStepDTO {
 			continue
 		}
 		step := WorkflowStepDTO{
-			StepID:          firstNonBlankString(row["step_id"], row["id"]),
-			Stage:           strings.TrimSpace(fmt.Sprint(row["stage"])),
-			Description:     optionalTrimmedString(row["description"]),
-			Instructions:    optionalTrimmedString(row["instructions"]),
-			DepartmentID:    strings.TrimSpace(fmt.Sprint(row["department_id"])),
-			AssigneeRoleIds: normalizeStringSlice(row["assignee_role_ids"]),
+			StepID:            firstNonBlankString(row["step_id"], row["id"]),
+			Stage:             strings.TrimSpace(fmt.Sprint(row["stage"])),
+			Description:       optionalTrimmedString(row["description"]),
+			DescriptionFormat: optionalTrimmedString(row["description_format"]),
+			Instructions:      optionalTrimmedString(row["instructions"]),
+			DepartmentID:      strings.TrimSpace(fmt.Sprint(row["department_id"])),
+			AssigneeRoleIds:   normalizeStringSlice(row["assignee_role_ids"]),
 			AssigneeMembershipID: optionalTrimmedString(row["assignee_membership_id"]),
 			AssigneeMembershipIDs: normalizeStringSlice(row["assignee_membership_ids"]),
 			DueRule:         strings.TrimSpace(fmt.Sprint(row["due_rule"])),
@@ -58,6 +59,19 @@ func normalizeTemplateWorkflowConfig(config map[string]any) []WorkflowStepDTO {
 			DisplayOrder:    normalizeInt(row["display_order"]),
 			Documents:       normalizeWorkflowDocuments(row["documents"]),
 			Groups:          normalizeWorkflowGroups(row["groups"]),
+		}
+		if step.DescriptionFormat != "" {
+			if err := ValidateWorkflowStepDescriptionFormatForPersist(step.DescriptionFormat); err != nil {
+				// Corrupt legacy row: safe plain fallback on read (never panic normalize).
+				step.DescriptionFormat = ""
+			} else {
+				norm := NormalizeWorkflowStepDescriptionFormat(step.DescriptionFormat)
+				if norm == WorkflowStepDescriptionFormatPlainText {
+					step.DescriptionFormat = ""
+				} else {
+					step.DescriptionFormat = norm
+				}
+			}
 		}
 		if step.DisplayOrder <= 0 {
 			step.DisplayOrder = index + 1

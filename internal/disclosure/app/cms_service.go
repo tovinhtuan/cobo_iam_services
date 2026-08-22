@@ -110,6 +110,19 @@ func (s *service) CmsUpsertGlobalWorkflow(ctx context.Context, req CmsUpsertGlob
 				Details: map[string]any{"step_index": i, "field": "reminder_config"},
 			}
 		}
+		if err := ValidateWorkflowStepDescriptionFormatForPersist(step.DescriptionFormat); err != nil {
+			return nil, &perr.HTTPError{
+				HTTPStatus: http.StatusBadRequest, Code: perr.CodeInvalidRequest,
+				Message: err.Error(),
+				Details: map[string]any{"step_index": i, "field": "description_format"},
+			}
+		}
+		if strings.TrimSpace(step.DescriptionFormat) != "" {
+			req.Steps[i].DescriptionFormat = NormalizeWorkflowStepDescriptionFormat(step.DescriptionFormat)
+			if req.Steps[i].DescriptionFormat == WorkflowStepDescriptionFormatPlainText {
+				req.Steps[i].DescriptionFormat = ""
+			}
+		}
 	}
 	detail, _, err := s.templateWorkflowCandidateDetail(ctx, req.Subject, req.TypeID)
 	if err != nil {
@@ -414,7 +427,8 @@ func projectGlobalStepsFromDetail(detail *DisclosureTypeDTO) []GlobalWorkflowSte
 		}
 		out = append(out, GlobalWorkflowStepInput{
 			StepID: step.StepID, StepKey: key, Stage: step.Stage,
-			Description: step.Description, Instructions: step.Instructions,
+			Description: step.Description, DescriptionFormat: step.DescriptionFormat,
+			Instructions: step.Instructions,
 			DepartmentID: step.DepartmentID, AssigneeRoleIds: append([]string(nil), step.AssigneeRoleIds...),
 			DueRule: step.DueRule, ProcessingDays: step.ProcessingDays, DisplayOrder: step.DisplayOrder,
 			ReminderConfig: CloneWorkflowStepReminderConfig(step.ReminderConfig),
@@ -456,6 +470,13 @@ func workflowStepFromGlobalInput(in GlobalWorkflowStepInput, prev WorkflowStepDT
 	}
 	next.Stage = in.Stage
 	next.Description = in.Description
+	next.DescriptionFormat = in.DescriptionFormat
+	if strings.TrimSpace(next.DescriptionFormat) != "" {
+		next.DescriptionFormat = NormalizeWorkflowStepDescriptionFormat(next.DescriptionFormat)
+		if next.DescriptionFormat == WorkflowStepDescriptionFormatPlainText {
+			next.DescriptionFormat = ""
+		}
+	}
 	next.Instructions = in.Instructions
 	next.DepartmentID = in.DepartmentID
 	next.AssigneeRoleIds = append([]string(nil), in.AssigneeRoleIds...)

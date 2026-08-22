@@ -1,4 +1,22 @@
 
+## 2026-08-22 — Company Workflow Step Safe HTML
+
+- task type: CONTENT_PRESENTATION_FEATURE (company override description only)
+- objective: reuse CMS plain_text|safe_html for Portal Tùy chỉnh workflow → Mô tả / Hướng dẫn thực hiện
+- pointer: FE `docs/ai-cache/company-workflow-step-safe-html-2026-08-22/`
+- BE: ValidateCompanyWorkflowOverrideSteps accepts/normalizes description_format; no migration
+- verdict: `COMPANY_WORKFLOW_STEP_SAFE_HTML_DEV_VERIFIED`
+- NO_PRODUCTION / NO_COMMIT / NO_PUSH / NO_MERGE
+
+## 2026-08-22 — Workflow step description Safe HTML
+
+- task type: CONTENT_PRESENTATION_FEATURE (description only)
+- objective: plain_text | safe_html for CMS Workflow mẫu → Mô tả bước; shared sanitizer; Portal Preview unsaved
+- pointer: FE `docs/ai-cache/workflow-step-safe-html-2026-08-22/`
+- BE: additive `description_format` on WorkflowStepDTO / ManifestStep; no migration
+- verdict: `WORKFLOW_STEP_SAFE_HTML_DEV_VERIFIED`
+- NO_PRODUCTION / NO_COMMIT / NO_PUSH / NO_MERGE
+
 ## 2026-08-21 — Template portal state filter IMPLEMENT
 
 - task type: cross-repo list filter (BE params + MySQL/inmemory + FE URL UI)

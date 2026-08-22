@@ -526,9 +526,12 @@ type WorkflowStepDTO struct {
 	StepID          string   `json:"step_id"`
 	Stage           string   `json:"stage"`
 	Description     string   `json:"description,omitempty"`
-	Instructions    string   `json:"instructions,omitempty"`
-	DepartmentID    string   `json:"department_id"`
-	AssigneeRoleIds []string `json:"assignee_role_ids"`
+	// DescriptionFormat is presentation-only for description: "plain_text" | "safe_html".
+	// Missing/empty on read → plain_text. Does not affect workflow routing/SLA/activation.
+	DescriptionFormat string   `json:"description_format,omitempty"`
+	Instructions      string   `json:"instructions,omitempty"`
+	DepartmentID      string   `json:"department_id"`
+	AssigneeRoleIds   []string `json:"assignee_role_ids"`
 	// AssigneeMembershipID is an optional company-override direct assignee (singular).
 	// Additive; omitted on CMS default steps. Reminder routing prefers this over department head.
 	AssigneeMembershipID string `json:"assignee_membership_id,omitempty"`
@@ -1215,12 +1218,14 @@ type GlobalWorkflowStepInput struct {
 	StepKey         string   `json:"step_key,omitempty"`
 	Stage           string   `json:"stage"`
 	Description     string   `json:"description,omitempty"`
-	Instructions    string   `json:"instructions,omitempty"`
-	DepartmentID    string   `json:"department_id"`
-	AssigneeRoleIds []string `json:"assignee_role_ids"`
-	DueRule         string   `json:"due_rule"`
-	ProcessingDays  int      `json:"processing_days"`
-	DisplayOrder    int      `json:"display_order"`
+	// DescriptionFormat: "plain_text" | "safe_html". Additive JSON; missing → plain_text on read.
+	DescriptionFormat string   `json:"description_format,omitempty"`
+	Instructions      string   `json:"instructions,omitempty"`
+	DepartmentID      string   `json:"department_id"`
+	AssigneeRoleIds   []string `json:"assignee_role_ids"`
+	DueRule           string   `json:"due_rule"`
+	ProcessingDays    int      `json:"processing_days"`
+	DisplayOrder      int      `json:"display_order"`
 	// ReminderConfig is omitted for DEFAULT (effective [3,1] at runtime). CUSTOM persists
 	// enabled/mode/days_before. Stored in global_workflow_steps.documents_json (no migration).
 	ReminderConfig *WorkflowStepReminderConfig `json:"reminder_config,omitempty"`

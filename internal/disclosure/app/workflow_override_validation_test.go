@@ -51,3 +51,48 @@ func TestValidateCompanyWorkflowOverrideSteps_InstructionsTooLong(t *testing.T) 
 		t.Fatalf("code = %v, want WORKFLOW_OVERRIDE_INVALID", he)
 	}
 }
+
+func TestValidateCompanyWorkflowOverrideSteps_SafeHTMLFormatAccepted(t *testing.T) {
+	steps := []WorkflowStepDTO{
+		{
+			StepID:            "s1",
+			Stage:             "Review",
+			ProcessingDays:    1,
+			Description:       "<p><strong>Company QA</strong></p>",
+			DescriptionFormat: "safe_html",
+		},
+	}
+	err := ValidateCompanyWorkflowOverrideSteps(steps)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if steps[0].DescriptionFormat != "safe_html" {
+		t.Fatalf("description_format=%q", steps[0].DescriptionFormat)
+	}
+}
+
+func TestValidateCompanyWorkflowOverrideSteps_UnknownFormatRejected(t *testing.T) {
+	err := ValidateCompanyWorkflowOverrideSteps([]WorkflowStepDTO{
+		{StepID: "s1", Stage: "Review", ProcessingDays: 1, DescriptionFormat: "raw_html"},
+	})
+	if err == nil {
+		t.Fatal("expected error for unknown description_format")
+	}
+	he, ok := perr.AsHTTPError(err)
+	if !ok || he.Code != perr.CodeWorkflowOverrideInvalid {
+		t.Fatalf("code = %v, want WORKFLOW_OVERRIDE_INVALID", he)
+	}
+}
+
+func TestValidateCompanyWorkflowOverrideSteps_LegacyMissingFormatOK(t *testing.T) {
+	steps := []WorkflowStepDTO{
+		{StepID: "s1", Stage: "Review", ProcessingDays: 1, Description: "BCTT"},
+	}
+	err := ValidateCompanyWorkflowOverrideSteps(steps)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if steps[0].DescriptionFormat != "" {
+		t.Fatalf("expected empty plain default, got %q", steps[0].DescriptionFormat)
+	}
+}
