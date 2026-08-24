@@ -856,7 +856,11 @@ func (s *service) UpsertTypeVersion(ctx context.Context, req UpsertTypeVersionRe
 		}
 	}
 	if req.DeadlineConfig != nil {
-		if err := ValidateCycleAnchorDay(req.DeadlineConfig.CycleAnchorDay); err != nil {
+		if err := ValidateScheduleAnchorFields(
+			req.DeadlineConfig.CycleAnchorDay,
+			req.DeadlineConfig.CycleAnchorWeekday,
+			req.DeadlineConfig.MonthInQuarter,
+		); err != nil {
 			return nil, err
 		}
 	}
@@ -1484,7 +1488,11 @@ func (s *service) UpdateTemplateDeadlineConfig(ctx context.Context, req UpdateTe
 	if req.DeadlineConfig.ProcessingDays < 0 {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "processing_days must be >= 0", nil)
 	}
-	if err := ValidateCycleAnchorDay(req.DeadlineConfig.CycleAnchorDay); err != nil {
+	if err := ValidateScheduleAnchorFields(
+		req.DeadlineConfig.CycleAnchorDay,
+		req.DeadlineConfig.CycleAnchorWeekday,
+		req.DeadlineConfig.MonthInQuarter,
+	); err != nil {
 		return nil, err
 	}
 	if err := s.repo.UpdateActiveVersionDeadlineConfig(ctx, req.TypeID, req.DeadlineConfig, req.Subject.UserID); err != nil {

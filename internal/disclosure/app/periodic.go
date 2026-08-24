@@ -41,7 +41,12 @@ func seedPeriodicCycles(ctx context.Context, now time.Time, repo Repository, idg
 	seeded := 0
 	for _, t := range types {
 		label := ResolveLogicalSlot(t.FrequencyUnit, now, loc)
-		cmsAnchor := AnchorConfig{Month: t.CycleAnchorMonth, Day: t.CycleAnchorDay}
+		cmsAnchor := AnchorConfig{
+			Month:          t.CycleAnchorMonth,
+			Day:            t.CycleAnchorDay,
+			Weekday:        t.CycleAnchorWeekday,
+			MonthInQuarter: t.MonthInQuarter,
+		}
 
 		for _, companyID := range companyIDs {
 			pref, hasPref := prefByKey[companyID+"|"+t.TypeID]
@@ -176,7 +181,12 @@ func autoRecordTitle(c PeriodicCycleRow) string {
 func computeCycleLabelAndStart(t PeriodicTypeRow, now time.Time) (label string, start time.Time) {
 	loc := asiaHoChiMinh()
 	label = ResolveLogicalSlot(t.FrequencyUnit, now, loc)
-	anchor := AnchorConfig{Month: t.CycleAnchorMonth, Day: t.CycleAnchorDay}
+	anchor := AnchorConfig{
+		Month:          t.CycleAnchorMonth,
+		Day:            t.CycleAnchorDay,
+		Weekday:        t.CycleAnchorWeekday,
+		MonthInQuarter: t.MonthInQuarter,
+	}
 	start, err := ResolveOccurrenceT(t.FrequencyUnit, label, anchor, loc)
 	if err != nil {
 		start = stripTime(now.In(loc))

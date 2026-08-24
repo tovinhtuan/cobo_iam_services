@@ -364,7 +364,12 @@ func (c *DeadlineCalculator) calculatePeriodic(
 // computeCycleStart returns Effective T for the current logical slot (canonical).
 // Priority: company.CycleAnchorMonth/Day overrides config; invalid days clamp to last day of month.
 func (c *DeadlineCalculator) computeCycleStart(config *TemplateDeadlineConfig, company CompanyDeadlineContext, now time.Time) time.Time {
-	cms := AnchorConfig{Month: config.CycleAnchorMonth, Day: config.CycleAnchorDay}
+	cms := AnchorConfig{
+		Month:          config.CycleAnchorMonth,
+		Day:            config.CycleAnchorDay,
+		Weekday:        config.CycleAnchorWeekday,
+		MonthInQuarter: config.MonthInQuarter,
+	}
 	co := AnchorConfig{Month: company.CycleAnchorMonth, Day: company.CycleAnchorDay}
 	eff, _ := ResolveEffectiveAnchor(cms, co)
 	label := ResolveLogicalSlot(config.FrequencyUnit, now, c.location)

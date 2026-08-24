@@ -997,6 +997,12 @@ type TemplateDeadlineConfig struct {
 	// calendar resolution clamps via ClampDayOfMonth (e.g. 31 Apr → 30).
 	CycleAnchorDay   int `json:"cycle_anchor_day,omitempty"`
 	CycleAnchorMonth int `json:"cycle_anchor_month,omitempty"`
+	// CycleAnchorWeekday = weekly T weekday (Go time.Weekday: 0=Sunday..6=Saturday).
+	// nil/absent = legacy Sunday. Explicit invalid values are rejected on write.
+	CycleAnchorWeekday *int `json:"cycle_anchor_weekday,omitempty"`
+	// MonthInQuarter = quarterly T month within calendar quarter (1..3).
+	// nil/absent = legacy 1 (first month of quarter). Not calendar month-of-year.
+	MonthInQuarter *int `json:"month_in_quarter,omitempty"`
 	// OpenDaysBeforeT: OpenAt = EffectiveT − N calendar days (0 = OpenAt=T). CMS only.
 	OpenDaysBeforeT int `json:"open_days_before_t,omitempty"`
 	// DeadlineDurationType is a runtime-only override (WORKING_DAYS | CALENDAR_DAYS).
@@ -1140,6 +1146,10 @@ type PeriodicTypeRow struct {
 	DeadlineDays       int
 	CycleAnchorDay     int // 0 = unset → defaults to 1
 	CycleAnchorMonth   int // 0 = unset → defaults to 1
+	// CycleAnchorWeekday nil = legacy Sunday; 0..6 when set (Go weekday).
+	CycleAnchorWeekday *int
+	// MonthInQuarter nil = legacy 1; 1..3 when set.
+	MonthInQuarter *int
 	OpenDaysBeforeT    int // CMS open_days_before_t; 0 = OpenAt=T
 	IsGlobal           bool
 	ApplicabilityRules *applicability.TemplateApplicabilityRules
@@ -1167,6 +1177,10 @@ type CompanyTypePreference struct {
 	// Per-company T override (disclosure period start). 0 = inherit CMS default.
 	CycleAnchorMonth int
 	CycleAnchorDay   int
+	// Phase 0 storage expand (Phase 3 enables typed override runtime).
+	// nil = inherit CMS; not exposed on Company write API in Phase 0/1.
+	CycleAnchorWeekday *int
+	MonthInQuarter     *int
 	// ClearCycleAnchor forces NULL on write (inherit CMS).
 	ClearCycleAnchor bool
 }

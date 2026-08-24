@@ -18,6 +18,12 @@ const (
 const (
 	CycleAnchorDayMin = 1
 	CycleAnchorDayMax = 31
+
+	CycleAnchorWeekdayMin = 0 // time.Sunday
+	CycleAnchorWeekdayMax = 6 // time.Saturday
+
+	MonthInQuarterMin = 1
+	MonthInQuarterMax = 3
 )
 
 // ValidateCycleAnchorDay enforces an explicitly configured T day-of-month.
@@ -38,25 +44,77 @@ func ValidateCycleAnchorDay(day int) error {
 	return nil
 }
 
-// AnchorConfig is structured T (month/day) from CMS or company override.
-type AnchorConfig struct {
-	Month int // 1-12; 0 = unset
-	Day   int // 1-31; 0 = unset
+// ValidateCycleAnchorWeekday enforces an explicitly configured weekly T weekday.
+// weekday == nil means unset/legacy (Sunday at resolve) and is allowed.
+// Encoding: Go time.Weekday 0=Sunday .. 6=Saturday. Invalid values are rejected (no modulo).
+func ValidateCycleAnchorWeekday(weekday *int) error {
+	if weekday == nil {
+		return nil
+	}
+	if *weekday < CycleAnchorWeekdayMin || *weekday > CycleAnchorWeekdayMax {
+		return perr.NewHTTPError(
+			http.StatusBadRequest,
+			perr.CodeInvalidRequest,
+			fmt.Sprintf("cycle_anchor_weekday must be between %d and %d (got %d)", CycleAnchorWeekdayMin, CycleAnchorWeekdayMax, *weekday),
+			nil,
+		)
+	}
+	return nil
 }
 
-// HasOverride reports whether company provided a T override.
+// ValidateMonthInQuarter enforces an explicitly configured quarterly month-in-quarter.
+// miq == nil means unset/legacy (1 at resolve) and is allowed.
+// Encoding: 1..3 (first/second/third month of calendar quarter). No clamp.
+func ValidateMonthInQuarter(miq *int) error {
+	if miq == nil {
+		return nil
+	}
+	if *miq < MonthInQuarterMin || *miq > MonthInQuarterMax {
+		return perr.NewHTTPError(
+			http.StatusBadRequest,
+			perr.CodeInvalidRequest,
+			fmt.Sprintf("month_in_quarter must be between %d and %d (got %d)", MonthInQuarterMin, MonthInQuarterMax, *miq),
+			nil,
+		)
+	}
+	return nil
+}
+
+// ValidateScheduleAnchorFields validates optional schedule-anchor fields on write.
+// Missing/nil fields remain valid (legacy). Explicit out-of-range values fail.
+func ValidateScheduleAnchorFields(day int, weekday *int, monthInQuarter *int) error {
+	if err := ValidateCycleAnchorDay(day); err != nil {
+		return err
+	}
+	if err := ValidateCycleAnchorWeekday(weekday); err != nil {
+		return err
+	}
+	return ValidateMonthInQuarter(monthInQuarter)
+}
+
+// AnchorConfig is structured T from CMS or company override.
+// Weekday and MonthInQuarter use pointers so nil = unset (legacy defaults at normalize).
+type AnchorConfig struct {
+	Month          int  // 1-12; 0 = unset
+	Day            int  // 1-31; 0 = unset
+	Weekday        *int // 0=Sun..6=Sat; nil = unset → Sunday
+	MonthInQuarter *int // 1..3; nil = unset → 1
+}
+
+// HasOverride reports whether company provided a T override (month/day Phase-1 fields).
+// Weekday/MonthInQuarter company override is Phase 3 (not enabled here).
 func (a AnchorConfig) HasOverride() bool {
 	return a.Month > 0 || a.Day > 0
 }
 
 // EffectiveSchedule is the canonical resolved schedule for one logical slot.
 type EffectiveSchedule struct {
-	FrequencyUnit string
-	CycleLabel    string
-	EffectiveT    time.Time
-	TSource       string
-	OpenAt        time.Time
-	DueDate       time.Time
+	FrequencyUnit  string
+	CycleLabel     string
+	EffectiveT     time.Time
+	TSource        string
+	OpenAt         time.Time
+	DueDate        time.Time
 	OpenDaysBefore int
 	DeadlineDays   int
 }
@@ -84,6 +142,8 @@ func ClampDayOfMonth(year int, month time.Month, day int, loc *time.Location) ti
 }
 
 // ResolveEffectiveAnchor returns company override if set, else CMS default.
+// Phase 0/1: only Month/Day participate in company override merge.
+// Weekday/MonthInQuarter company override deferred to Phase 3.
 func ResolveEffectiveAnchor(cms, company AnchorConfig) (AnchorConfig, string) {
 	if company.Month > 0 || company.Day > 0 {
 		out := cms
@@ -96,6 +156,34 @@ func ResolveEffectiveAnchor(cms, company AnchorConfig) (AnchorConfig, string) {
 		return out, TSourceCompany
 	}
 	return cms, TSourceCMS
+}
+
+// NormalizeScheduleAnchor applies frequency-aware legacy defaults for resolution.
+// Does not mutate persisted configuration; returns a copy-style struct for T resolve.
+//
+//	daily:     no anchor
+//	weekly:    weekday = explicit || Sunday (0)
+//	monthly:   day left to ResolveOccurrenceT (0 → 1)
+//	quarterly: month_in_quarter = explicit || 1; day = explicit || 1
+//	yearly:    month/day left to ResolveOccurrenceT
+func NormalizeScheduleAnchor(frequencyUnit string, raw AnchorConfig) AnchorConfig {
+	out := raw
+	switch NormalizeFrequencyUnit(frequencyUnit) {
+	case PeriodicityWeekly:
+		if out.Weekday == nil {
+			sun := int(time.Sunday) // 0
+			out.Weekday = &sun
+		}
+	case PeriodicityQuarterly:
+		if out.MonthInQuarter == nil {
+			one := 1
+			out.MonthInQuarter = &one
+		}
+		if out.Day <= 0 {
+			out.Day = 1
+		}
+	}
+	return out
 }
 
 // ResolveLogicalSlot returns cycle_label for the current period (slot ≠ resolved T).
@@ -123,15 +211,16 @@ func ResolveLogicalSlot(frequencyUnit string, now time.Time, loc *time.Location)
 
 // ResolveOccurrenceT resolves Effective T for a logical slot using effective anchors.
 // YEARLY/MONTHLY use structured month/day with last-day clamp.
-// WEEKLY: Sunday week boundary (weekday residual OUT_OF_SCOPE for V1).
-// QUARTERLY: first day of calendar quarter (structured month_in_quarter residual).
-// DAILY: the slot calendar day.
+// WEEKLY: Sunday-based slot identity; T = Sunday + configured weekday offset (legacy Sunday).
+// QUARTERLY: YYYY-Qn slot; T = Clamp(Q_start_month + MiQ - 1, day) (legacy MiQ=1 day=1).
+// DAILY: the slot calendar day (month/day/weekday ignored).
 func ResolveOccurrenceT(frequencyUnit string, cycleLabel string, anchor AnchorConfig, loc *time.Location) (time.Time, error) {
 	if loc == nil {
 		loc = asiaHoChiMinh()
 	}
-	month := anchor.Month
-	day := anchor.Day
+	norm := NormalizeScheduleAnchor(frequencyUnit, anchor)
+	month := norm.Month
+	day := norm.Day
 	if month <= 0 || month > 12 {
 		month = 1
 	}
@@ -151,7 +240,12 @@ func ResolveOccurrenceT(frequencyUnit string, cycleLabel string, anchor AnchorCo
 		if err != nil {
 			return time.Time{}, err
 		}
-		return weekStartSunday(t), nil
+		sunday := weekStartSunday(t)
+		weekday := int(time.Sunday)
+		if norm.Weekday != nil {
+			weekday = *norm.Weekday
+		}
+		return stripTime(sunday.AddDate(0, 0, weekday)), nil
 	case PeriodicityMonthly:
 		var y int
 		var m time.Month
@@ -167,8 +261,13 @@ func ResolveOccurrenceT(frequencyUnit string, cycleLabel string, anchor AnchorCo
 		if q < 1 || q > 4 {
 			q = 1
 		}
+		miq := 1
+		if norm.MonthInQuarter != nil {
+			miq = *norm.MonthInQuarter
+		}
 		startMonth := time.Month((q-1)*3 + 1)
-		return ClampDayOfMonth(y, startMonth, 1, loc), nil
+		targetMonth := startMonth + time.Month(miq-1)
+		return ClampDayOfMonth(y, targetMonth, day, loc), nil
 	case PeriodicityYearly:
 		var y int
 		if _, err := fmt.Sscanf(cycleLabel, "%d", &y); err != nil {

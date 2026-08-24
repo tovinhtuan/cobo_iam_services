@@ -30,6 +30,54 @@ func TestValidateCycleAnchorDay(t *testing.T) {
 	}
 }
 
+func TestUpdateTemplateDeadlineConfig_RejectsInvalidWeekdayAndMiQ(t *testing.T) {
+	repo := &cmsTemplateAuthzRepo{}
+	svc := newCMSTemplateAuthzService(
+		[]string{permissionPlatformCMSView, permissionCMSTemplateWrite},
+		repo,
+	)
+	badWeekday := 99
+	_, err := svc.UpdateTemplateDeadlineConfig(context.Background(), UpdateTemplateDeadlineConfigRequest{
+		Subject: Subject{UserID: "user-001", MembershipID: "member-001", CompanyID: "company-001"},
+		TypeID:  "dt-001",
+		DeadlineConfig: TemplateDeadlineConfig{
+			T0Policy:           "system_date",
+			DeadlineDays:       5,
+			CycleAnchorWeekday: &badWeekday,
+		},
+	})
+	if err == nil {
+		t.Fatal("expected reject weekday=99")
+	}
+	badMiQ := 4
+	_, err = svc.UpdateTemplateDeadlineConfig(context.Background(), UpdateTemplateDeadlineConfigRequest{
+		Subject: Subject{UserID: "user-001", MembershipID: "member-001", CompanyID: "company-001"},
+		TypeID:  "dt-001",
+		DeadlineConfig: TemplateDeadlineConfig{
+			T0Policy:       "system_date",
+			DeadlineDays:   5,
+			MonthInQuarter: &badMiQ,
+		},
+	})
+	if err == nil {
+		t.Fatal("expected reject month_in_quarter=4")
+	}
+	// Absent weekday/MiQ still valid (legacy).
+	_, err = svc.UpdateTemplateDeadlineConfig(context.Background(), UpdateTemplateDeadlineConfigRequest{
+		Subject: Subject{UserID: "user-001", MembershipID: "member-001", CompanyID: "company-001"},
+		TypeID:  "dt-001",
+		DeadlineConfig: TemplateDeadlineConfig{
+			T0Policy:     "system_date",
+			DeadlineDays: 5,
+			FrequencyUnit: "weekly",
+		},
+	})
+	if err != nil {
+		t.Fatalf("legacy absent anchors must pass: %v", err)
+	}
+}
+
+
 func TestUpdateTemplateDeadlineConfig_RejectsInvalidCycleAnchorDay(t *testing.T) {
 	repo := &cmsTemplateAuthzRepo{}
 	svc := newCMSTemplateAuthzService(

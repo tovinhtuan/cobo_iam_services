@@ -1,3 +1,9 @@
+## Periodicity V2 Phase 0+1 (2026-08-24)
+
+- Foundation + canonical resolver: `cycle_anchor_weekday`, `month_in_quarter`; migration 0133; ResolveOccurrenceT weekly/quarterly.
+- Canonical docs: `../cobo_web_design/docs/ai-cache/periodicity-v2-phase-0-1-2026-08-24/`
+- DEV migrate+be PASS; READY_FOR_PHASE_2; NO_COMMIT/NO_PUSH/NO_MERGE — WAIT_FOR_CONFIRMATION
+
 ## Periodicity V2 impact plan (2026-08-24)
 
 - PLAN ONLY — canonical docs live in sibling FE repo:

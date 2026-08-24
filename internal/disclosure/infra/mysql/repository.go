@@ -2199,6 +2199,14 @@ func (r *Repository) ListActivePeriodicTypes(ctx context.Context) ([]disclosurea
 		       COALESCE(JSON_EXTRACT(dtv.deadline_config_json, '$.deadline_days'), 0)                   AS deadline_days,
 		       COALESCE(JSON_EXTRACT(dtv.deadline_config_json, '$.cycle_anchor_day'), 0)                AS anchor_day,
 		       COALESCE(JSON_EXTRACT(dtv.deadline_config_json, '$.cycle_anchor_month'), 0)              AS anchor_month,
+		       CASE
+		         WHEN JSON_EXTRACT(dtv.deadline_config_json, '$.cycle_anchor_weekday') IS NULL THEN NULL
+		         ELSE CAST(JSON_UNQUOTE(JSON_EXTRACT(dtv.deadline_config_json, '$.cycle_anchor_weekday')) AS SIGNED)
+		       END AS anchor_weekday,
+		       CASE
+		         WHEN JSON_EXTRACT(dtv.deadline_config_json, '$.month_in_quarter') IS NULL THEN NULL
+		         ELSE CAST(JSON_UNQUOTE(JSON_EXTRACT(dtv.deadline_config_json, '$.month_in_quarter')) AS SIGNED)
+		       END AS month_in_quarter,
 		       COALESCE(JSON_EXTRACT(dtv.deadline_config_json, '$.open_days_before_t'), 0)              AS open_days_before_t,
 		       CASE WHEN dt.company_id IS NULL THEN 1 ELSE 0 END AS is_global,
 		       dtv.applicability_rules_json
@@ -2217,10 +2225,14 @@ func (r *Repository) ListActivePeriodicTypes(ctx context.Context) ([]disclosurea
 		var row disclosureapp.PeriodicTypeRow
 		var isGlobal int
 		var rulesRaw []byte
+		var weekdayRaw, miqRaw sql.NullInt64
 		if err := rows.Scan(&row.TypeID, &row.FrequencyUnit, &row.FrequencyInterval,
-			&row.DeadlineDays, &row.CycleAnchorDay, &row.CycleAnchorMonth, &row.OpenDaysBeforeT, &isGlobal, &rulesRaw); err != nil {
+			&row.DeadlineDays, &row.CycleAnchorDay, &row.CycleAnchorMonth, &weekdayRaw, &miqRaw,
+			&row.OpenDaysBeforeT, &isGlobal, &rulesRaw); err != nil {
 			return nil, fmt.Errorf("scan periodic type row: %w", err)
 		}
+		row.CycleAnchorWeekday = nullIntPtr(weekdayRaw)
+		row.MonthInQuarter = nullIntPtr(miqRaw)
 		row.IsGlobal = isGlobal == 1
 		if rules, err := applicability.ParseRulesJSON(rulesRaw); err != nil {
 			return nil, fmt.Errorf("parse applicability rules: %w", err)
@@ -2230,6 +2242,14 @@ func (r *Repository) ListActivePeriodicTypes(ctx context.Context) ([]disclosurea
 		out = append(out, row)
 	}
 	return out, rows.Err()
+}
+
+func nullIntPtr(n sql.NullInt64) *int {
+	if !n.Valid {
+		return nil
+	}
+	v := int(n.Int64)
+	return &v
 }
 
 func (r *Repository) UpsertPeriodicCycle(ctx context.Context, in disclosureapp.PeriodicCycleRow) error {
@@ -2441,13 +2461,15 @@ func (r *Repository) UpsertCompanyTypePreference(ctx context.Context, in disclos
 	}
 	if in.ClearCycleAnchor {
 		const qClear = `
-			INSERT INTO company_type_preferences (company_id, type_id, auto_create_enabled, updated_by, cycle_anchor_month, cycle_anchor_day)
-			VALUES (?, ?, ?, ?, NULL, NULL)
+			INSERT INTO company_type_preferences (company_id, type_id, auto_create_enabled, updated_by, cycle_anchor_month, cycle_anchor_day, cycle_anchor_weekday, month_in_quarter)
+			VALUES (?, ?, ?, ?, NULL, NULL, NULL, NULL)
 			ON DUPLICATE KEY UPDATE
 			  auto_create_enabled = VALUES(auto_create_enabled),
 			  updated_by = VALUES(updated_by),
 			  cycle_anchor_month = NULL,
-			  cycle_anchor_day = NULL`
+			  cycle_anchor_day = NULL,
+			  cycle_anchor_weekday = NULL,
+			  month_in_quarter = NULL`
 		_, err := r.db.ExecContext(ctx, qClear, in.CompanyID, in.TypeID, enabled, in.UpdatedBy)
 		if err != nil {
 			return fmt.Errorf("upsert company type preference clear: %w", err)
