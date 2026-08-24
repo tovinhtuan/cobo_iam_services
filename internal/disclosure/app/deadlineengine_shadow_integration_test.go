@@ -102,6 +102,49 @@ func TestSeedPeriodicCycles_ShadowEnabledVsDisabled_SameDBWrites(t *testing.T) {
 	}
 }
 
+func TestSeedPeriodicCycles_ApplicableFromLowerBoundFilter(t *testing.T) {
+	ctx := context.Background()
+	// UTC 2026-08-24 10:00 → HCM same calendar day → monthly slot 2026-08
+	now := time.Date(2026, 8, 24, 10, 0, 0, 0, time.UTC)
+	repo := &seedShadowTestRepo{
+		Repository: inmemory.NewRepository(),
+		types: []disclosureapp.PeriodicTypeRow{
+			{
+				TypeID: "t-before", FrequencyUnit: "monthly", CycleAnchorDay: 5, DeadlineDays: 10, IsGlobal: false,
+				ApplicableFromMode: disclosureapp.ApplicableFromModeNext, ApplicableFromSlot: "2026-09",
+			},
+			{
+				TypeID: "t-equal", FrequencyUnit: "monthly", CycleAnchorDay: 5, DeadlineDays: 10, IsGlobal: false,
+				ApplicableFromMode: disclosureapp.ApplicableFromModeCurrent, ApplicableFromSlot: "2026-08",
+			},
+			{
+				TypeID: "t-legacy", FrequencyUnit: "monthly", CycleAnchorDay: 5, DeadlineDays: 10, IsGlobal: false,
+			},
+			{
+				TypeID: "t-unfrozen", FrequencyUnit: "monthly", CycleAnchorDay: 5, DeadlineDays: 10, IsGlobal: false,
+				ApplicableFromMode: disclosureapp.ApplicableFromModeNext, ApplicableFromSlot: "",
+			},
+		},
+		companies: []string{"co-1"},
+	}
+	svc := disclosureapp.NewService(repo, nil, idgen.UUIDv7Generator{}, disclosureapp.WithHolidayCalendarProvider(noHolidaysProvider{}))
+	n, err := svc.SeedPeriodicCycles(ctx, now)
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if n != 2 {
+		t.Fatalf("seeded=%d want 2 (equal+legacy); captured=%d", n, len(repo.captured))
+	}
+	for _, row := range repo.captured {
+		if row.TypeID == "t-before" || row.TypeID == "t-unfrozen" {
+			t.Fatalf("ineligible type upserted: %s", row.TypeID)
+		}
+		if row.CycleLabel != "2026-08" {
+			t.Fatalf("raw candidate window must stay current slot, got %s", row.CycleLabel)
+		}
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Batch 5B — Behavior Preservation: GetTypeDetail (Phase A shadow)
 // ---------------------------------------------------------------------------

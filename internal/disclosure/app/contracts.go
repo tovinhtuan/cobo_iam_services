@@ -163,6 +163,9 @@ type Repository interface {
 	UpsertCompanyTypePreference(ctx context.Context, in CompanyTypePreference) error
 	// ListCompanyTypePreferencesByTypeIDs bulk-loads overrides for worker seed (avoid N+1).
 	ListCompanyTypePreferencesByTypeIDs(ctx context.Context, typeIDs []string) ([]CompanyTypePreference, error)
+	// DeactivateIncompatibleCompanyCycleOverrides marks ACTIVE overrides inactive when CMS frequency changes.
+	// Retains historical values; does not delete. Same-frequency activation is a no-op for matching bindings.
+	DeactivateIncompatibleCompanyCycleOverrides(ctx context.Context, typeID, newFrequencyUnit string) (int64, error)
 
 	// Subscription quota.
 	CountCompanyTemplatesByCompanyID(ctx context.Context, companyID string) (int, error)
@@ -434,6 +437,10 @@ type ActivateTypeVersionRequest struct {
 	VersionNo             int    `json:"version_no"`
 	Reason                string `json:"reason"`
 	ExpectedCandidateHash string `json:"-"`
+	// FreezeApplicableFromMode/Slot: when set by service, repo persists into deadline_config_json in the same TX.
+	FreezeApplicableFromMode string `json:"-"`
+	FreezeApplicableFromSlot string `json:"-"`
+	FreezeApplicableFrom     bool   `json:"-"`
 }
 
 type ActivateTypeVersionResponse struct {
@@ -442,6 +449,9 @@ type ActivateTypeVersionResponse struct {
 	IsActive    bool      `json:"is_active"`
 	UpdatedBy   string    `json:"updated_by"`
 	ActivatedAt time.Time `json:"activated_at"`
+	// Additive Phase 6: activation-time schedule impact (advisory; never blocks Activate).
+	ActivationWarnings     []ActivationWarningDTO     `json:"activation_warnings,omitempty"`
+	FirstOccurrencePreview *FirstOccurrencePreviewDTO `json:"first_occurrence_preview,omitempty"`
 }
 
 // BE-004A: Company-defined template create/update (portal path).
@@ -916,7 +926,11 @@ type DisclosureTypeDTO struct {
 	ActivationReady bool `json:"activation_ready"`
 	// ActivationBlockers are user-safe reasons when ActivationReady is false.
 	ActivationBlockers []ActivationBlockerDTO `json:"activation_blockers,omitempty"`
-	ReviewStatus       string                                    `json:"review_status,omitempty"`
+	// ActivationWarnings are advisory schedule impact signals (never flip ActivationReady).
+	ActivationWarnings []ActivationWarningDTO `json:"activation_warnings,omitempty"`
+	// FirstOccurrencePreview is CMS-baseline first materializable slot impact (read-only).
+	FirstOccurrencePreview *FirstOccurrencePreviewDTO `json:"first_occurrence_preview,omitempty"`
+	ReviewStatus           string                                    `json:"review_status,omitempty"`
 	ApplicabilityRules *applicability.TemplateApplicabilityRules `json:"applicability_rules,omitempty"`
 	// ResolvedDeadlineRule is the live semantic outcome of production ResolveStructure /
 	// ResolveDeadlineDays for the authenticated company (additive; omit when unavailable).
@@ -936,6 +950,33 @@ type ActivationBlockerDTO struct {
 	Message string `json:"message"`
 	StepKey string `json:"step_key,omitempty"`
 	StepID  string `json:"step_id,omitempty"`
+}
+
+// ActivationWarningDTO is a non-blocking activation advisory (Phase 6).
+type ActivationWarningDTO struct {
+	Code     string `json:"code"`
+	Severity string `json:"severity,omitempty"` // WARNING
+	Message  string `json:"message"`
+	Blocking bool   `json:"blocking"` // always false for Phase 6 schedule warnings
+}
+
+// FirstOccurrencePreviewDTO is CMS-baseline first materializable occurrence impact.
+// Scope is always cms_baseline unless a future aggregate path is explicitly added.
+type FirstOccurrencePreviewDTO struct {
+	Scope                             string  `json:"scope"`
+	EvaluatedAt                       string  `json:"evaluated_at"`
+	FrequencyUnit                     string  `json:"frequency_unit,omitempty"`
+	ApplicableFromMode                string  `json:"applicable_from_mode,omitempty"`
+	ProspectiveApplicableFromSlot     *string `json:"prospective_applicable_from_slot,omitempty"`
+	CurrentLogicalSlot                string  `json:"current_logical_slot,omitempty"`
+	FirstOccurrenceSlot               string  `json:"first_occurrence_slot,omitempty"`
+	FirstOccurrenceIsCurrentCandidate bool    `json:"first_occurrence_is_current_candidate"`
+	T                                 *string `json:"t,omitempty"`
+	OpenAt                            *string `json:"open_at,omitempty"`
+	DueAt                             *string `json:"due_at,omitempty"`
+	Status                            string  `json:"status,omitempty"`
+	UnavailableReason                 string  `json:"unavailable_reason,omitempty"`
+	CompanyNote                       string  `json:"company_note,omitempty"`
 }
 
 // ResolvedDeadlineRuleDTO is the Portal-facing semantic deadline rule (Option A).
@@ -1007,6 +1048,11 @@ type TemplateDeadlineConfig struct {
 	OpenDaysBeforeT int `json:"open_days_before_t,omitempty"`
 	// DeadlineDurationType is a runtime-only override (WORKING_DAYS | CALENDAR_DAYS).
 	DeadlineDurationType string `json:"deadline_duration_type,omitempty"`
+	// ApplicableFromMode: CURRENT_SLOT | NEXT_SLOT | SPECIFIC_SLOT; empty = legacy absent.
+	// Authoring intent; after Activate relative modes keep mode for audit but slot is frozen.
+	ApplicableFromMode string `json:"applicable_from_mode,omitempty"`
+	// ApplicableFromSlot: frequency-native cycle_label (same as ResolveLogicalSlot). Empty until Activate for CURRENT/NEXT.
+	ApplicableFromSlot string `json:"applicable_from_slot,omitempty"`
 }
 
 // WorkflowOverrideReminderPreviewMilestoneDTO is one projected reminder row for draft preview.
@@ -1153,6 +1199,10 @@ type PeriodicTypeRow struct {
 	OpenDaysBeforeT    int // CMS open_days_before_t; 0 = OpenAt=T
 	IsGlobal           bool
 	ApplicabilityRules *applicability.TemplateApplicabilityRules
+	// ApplicableFromMode / ApplicableFromSlot from ACTIVE deadline_config_json (Phase 4/5).
+	// Empty/empty = legacy; worker uses frozen slot only (never resolves CURRENT/NEXT).
+	ApplicableFromMode string
+	ApplicableFromSlot string
 }
 
 // PeriodicCycleRow represents one (type, company, cycle) idempotency slot.
@@ -1177,10 +1227,14 @@ type CompanyTypePreference struct {
 	// Per-company T override (disclosure period start). 0 = inherit CMS default.
 	CycleAnchorMonth int
 	CycleAnchorDay   int
-	// Phase 0 storage expand (Phase 3 enables typed override runtime).
-	// nil = inherit CMS; not exposed on Company write API in Phase 0/1.
+	// Phase 0 storage; Phase 3 enables typed override runtime.
 	CycleAnchorWeekday *int
 	MonthInQuarter     *int
+	// Phase 3: frequency binding + persistent active/inactive authority.
+	// OverrideFrequency is the CMS frequency the override was authored against.
+	// OverrideActive: nil=NONE, true=ACTIVE, false=INACTIVE (retained after frequency change).
+	OverrideFrequency string
+	OverrideActive    *bool
 	// ClearCycleAnchor forces NULL on write (inherit CMS).
 	ClearCycleAnchor bool
 }
@@ -1191,11 +1245,23 @@ type CompanyTypePreferenceDTO struct {
 	CompanyID         string    `json:"company_id"`
 	AutoCreateEnabled bool      `json:"auto_create_enabled"`
 	UpdatedAt         time.Time `json:"updated_at"`
-	// Mốc bắt đầu kỳ (T) override. 0 = inherit CMS default.
-	CycleAnchorMonth int `json:"cycle_anchor_month,omitempty"`
-	CycleAnchorDay   int `json:"cycle_anchor_day,omitempty"`
-	// HasCycleAnchorOverride is true when company stored T override (not CMS inherit).
+	// Company raw override fields (0/nil = unset). Only ACTIVE+compatible values are authority.
+	CycleAnchorMonth   int  `json:"cycle_anchor_month,omitempty"`
+	CycleAnchorDay     int  `json:"cycle_anchor_day,omitempty"`
+	CycleAnchorWeekday *int `json:"cycle_anchor_weekday,omitempty"`
+	MonthInQuarter     *int `json:"month_in_quarter,omitempty"`
+	// HasCycleAnchorOverride is true when company has ACTIVE override compatible with current CMS frequency.
 	HasCycleAnchorOverride bool `json:"has_cycle_anchor_override"`
+	// OverrideActive mirrors persistent state: true/false/omitted(none).
+	OverrideActive *bool `json:"cycle_anchor_override_active,omitempty"`
+	// OverrideFrequency is the binding frequency (may differ from current CMS after change).
+	OverrideFrequency string `json:"cycle_anchor_override_frequency,omitempty"`
+	// CMS active-version schedule context (read-only; Company cannot change frequency).
+	CMSFrequencyUnit       string `json:"cms_frequency_unit,omitempty"`
+	CMSCycleAnchorMonth    int    `json:"cms_cycle_anchor_month,omitempty"`
+	CMSCycleAnchorDay      int    `json:"cms_cycle_anchor_day,omitempty"`
+	CMSCycleAnchorWeekday  *int   `json:"cms_cycle_anchor_weekday,omitempty"`
+	CMSMonthInQuarter      *int   `json:"cms_month_in_quarter,omitempty"`
 }
 
 type GetCompanyTypePreferenceRequest struct {
@@ -1208,8 +1274,11 @@ type UpsertCompanyTypePreferenceRequest struct {
 	TypeID            string
 	AutoCreateEnabled bool
 	// Per-company cycle anchor (T) override. Ignored when ClearCycleAnchor is true.
-	CycleAnchorMonth int `json:"cycle_anchor_month,omitempty"`
-	CycleAnchorDay   int `json:"cycle_anchor_day,omitempty"`
+	// Frequency authority always comes from CMS active version — not from this request.
+	CycleAnchorMonth   int  `json:"cycle_anchor_month,omitempty"`
+	CycleAnchorDay     int  `json:"cycle_anchor_day,omitempty"`
+	CycleAnchorWeekday *int `json:"cycle_anchor_weekday,omitempty"`
+	MonthInQuarter     *int `json:"month_in_quarter,omitempty"`
 	// ClearCycleAnchor sets override columns to NULL → inherit CMS Default T.
 	ClearCycleAnchor bool `json:"clear_cycle_anchor,omitempty"`
 }

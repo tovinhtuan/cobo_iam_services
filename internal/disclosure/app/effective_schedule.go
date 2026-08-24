@@ -101,10 +101,9 @@ type AnchorConfig struct {
 	MonthInQuarter *int // 1..3; nil = unset → 1
 }
 
-// HasOverride reports whether company provided a T override (month/day Phase-1 fields).
-// Weekday/MonthInQuarter company override is Phase 3 (not enabled here).
+// HasOverride reports whether company provided a T override (any typed field).
 func (a AnchorConfig) HasOverride() bool {
-	return a.Month > 0 || a.Day > 0
+	return a.Month > 0 || a.Day > 0 || a.Weekday != nil || a.MonthInQuarter != nil
 }
 
 // EffectiveSchedule is the canonical resolved schedule for one logical slot.
@@ -141,21 +140,69 @@ func ClampDayOfMonth(year int, month time.Month, day int, loc *time.Location) ti
 	return time.Date(year, month, day, 0, 0, 0, 0, loc)
 }
 
-// ResolveEffectiveAnchor returns company override if set, else CMS default.
-// Phase 0/1: only Month/Day participate in company override merge.
-// Weekday/MonthInQuarter company override deferred to Phase 3.
-func ResolveEffectiveAnchor(cms, company AnchorConfig) (AnchorConfig, string) {
-	if company.Month > 0 || company.Day > 0 {
-		out := cms
-		if company.Month > 0 {
-			out.Month = company.Month
-		}
-		if company.Day > 0 {
-			out.Day = company.Day
-		}
-		return out, TSourceCompany
+// ResolveEffectiveAnchor returns company override if ACTIVE + frequency-compatible, else CMS.
+//
+// Precedence: CompatibleActiveCompanyOverride > CMS > (NormalizeScheduleAnchor legacy defaults).
+// Atomic: Quarterly/Yearly take the full Company tuple or full CMS — no field-level merge.
+// Legacy quarterly day-only (MiQ unset) preserves prior behavior: Company day + CMS MiQ.
+// Daily: Company never owns anchor.
+// Pure function — no DB writes.
+func ResolveEffectiveAnchor(frequencyUnit string, cms AnchorConfig, company CompanyOverrideAuthority) (AnchorConfig, string) {
+	freq := NormalizeFrequencyUnit(frequencyUnit)
+	if !company.Active || NormalizeFrequencyUnit(company.Frequency) != freq {
+		return cms, TSourceCMS
 	}
-	return cms, TSourceCMS
+	co := company.Anchor
+	switch freq {
+	case PeriodicityDaily:
+		return cms, TSourceCMS
+	case PeriodicityWeekly:
+		if co.Weekday == nil {
+			return cms, TSourceCMS
+		}
+		out := cms
+		out.Weekday = co.Weekday
+		return out, TSourceCompany
+	case PeriodicityMonthly:
+		if co.Day <= 0 {
+			return cms, TSourceCMS
+		}
+		out := cms
+		out.Day = co.Day
+		return out, TSourceCompany
+	case PeriodicityQuarterly:
+		if co.Day <= 0 {
+			return cms, TSourceCMS
+		}
+		out := cms
+		out.Day = co.Day
+		if co.MonthInQuarter != nil {
+			// V2 atomic override
+			out.MonthInQuarter = co.MonthInQuarter
+		}
+		// Legacy: MiQ nil → keep CMS MiQ (preserve pre-V2 day-only quarterly override)
+		return out, TSourceCompany
+	case PeriodicityYearly:
+		if co.Month <= 0 || co.Day <= 0 {
+			return cms, TSourceCMS
+		}
+		out := cms
+		out.Month = co.Month
+		out.Day = co.Day
+		return out, TSourceCompany
+	default:
+		if co.Month > 0 || co.Day > 0 {
+			out := cms
+			if co.Month > 0 {
+				out.Month = co.Month
+			}
+			if co.Day > 0 {
+				out.Day = co.Day
+			}
+			return out, TSourceCompany
+		}
+		return cms, TSourceCMS
+	}
 }
 
 // NormalizeScheduleAnchor applies frequency-aware legacy defaults for resolution.

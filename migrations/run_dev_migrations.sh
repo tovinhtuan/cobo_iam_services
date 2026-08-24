@@ -133,6 +133,7 @@ seed_dev_identity_authorization.sql
 0131_effective_t_submitted_at_open_at.up.sql
 0132_workflow_document_template_assets.up.sql
 0133_company_type_preference_schedule_anchor_v2.up.sql
+0134_company_type_preference_override_binding.up.sql
 seed_dev_company_subscriptions.sql
 "
 

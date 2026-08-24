@@ -95,6 +95,10 @@ func (r *fakePeriodicRepo) ListCompanyTypePreferencesByTypeIDs(context.Context, 
 	return nil, nil
 }
 
+func (r *fakePeriodicRepo) DeactivateIncompatibleCompanyCycleOverrides(context.Context, string, string) (int64, error) {
+	return 0, nil
+}
+
 type fakePeriodicCreator struct {
 	recordID           string
 	workflowInstanceID string

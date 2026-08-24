@@ -1296,6 +1296,23 @@ func (r *Repository) ActivateTypeVersion(ctx context.Context, req disclosureapp.
 	}
 
 	now := time.Now().UTC()
+
+	// Capture prior active frequency (for Company override invalidation on frequency change).
+	var priorFreq sql.NullString
+	_ = tx.QueryRowContext(ctx, `
+		SELECT LOWER(TRIM(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(dtv.deadline_config_json, '$.frequency_unit')), '')))
+		FROM disclosure_types dt
+		JOIN disclosure_type_versions dtv ON dtv.type_id = dt.type_id AND dtv.version_no = dt.active_version_no
+		WHERE dt.type_id = ?
+	`, req.TypeID).Scan(&priorFreq)
+
+	var newFreq sql.NullString
+	_ = tx.QueryRowContext(ctx, `
+		SELECT LOWER(TRIM(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(deadline_config_json, '$.frequency_unit')), '')))
+		FROM disclosure_type_versions
+		WHERE type_id = ? AND version_no = ?
+	`, req.TypeID, req.VersionNo).Scan(&newFreq)
+
 	_, err = tx.ExecContext(ctx, `
 		UPDATE disclosure_type_versions
 		SET updated_by = CASE WHEN version_no = ? THEN ? ELSE updated_by END,
@@ -1314,6 +1331,39 @@ func (r *Repository) ActivateTypeVersion(ctx context.Context, req disclosureapp.
 	if err != nil {
 		return nil, err
 	}
+
+	if req.FreezeApplicableFrom {
+		_, err = tx.ExecContext(ctx, `
+			UPDATE disclosure_type_versions
+			SET deadline_config_json = JSON_SET(
+				COALESCE(deadline_config_json, JSON_OBJECT()),
+				'$.applicable_from_mode', CAST(? AS CHAR CHARACTER SET utf8mb4),
+				'$.applicable_from_slot', CAST(? AS CHAR CHARACTER SET utf8mb4)
+			)
+			WHERE type_id = ? AND version_no = ?
+		`, req.FreezeApplicableFromMode, req.FreezeApplicableFromSlot, req.TypeID, req.VersionNo)
+		if err != nil {
+			return nil, fmt.Errorf("freeze applicable_from: %w", err)
+		}
+	}
+
+	// Same-frequency activation preserves Company overrides; frequency change marks them inactive.
+	priorN := disclosureapp.NormalizeFrequencyUnit(priorFreq.String)
+	newN := disclosureapp.NormalizeFrequencyUnit(newFreq.String)
+	if priorN != "" && newN != "" && priorN != newN {
+		_, err = tx.ExecContext(ctx, `
+			UPDATE company_type_preferences
+			SET cycle_anchor_override_active = 0
+			WHERE type_id = ?
+			  AND cycle_anchor_override_active = 1
+			  AND cycle_anchor_override_frequency IS NOT NULL
+			  AND LOWER(TRIM(cycle_anchor_override_frequency)) <> ?
+		`, req.TypeID, newN)
+		if err != nil {
+			return nil, fmt.Errorf("deactivate incompatible company cycle overrides: %w", err)
+		}
+	}
+
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
@@ -2209,7 +2259,9 @@ func (r *Repository) ListActivePeriodicTypes(ctx context.Context) ([]disclosurea
 		       END AS month_in_quarter,
 		       COALESCE(JSON_EXTRACT(dtv.deadline_config_json, '$.open_days_before_t'), 0)              AS open_days_before_t,
 		       CASE WHEN dt.company_id IS NULL THEN 1 ELSE 0 END AS is_global,
-		       dtv.applicability_rules_json
+		       dtv.applicability_rules_json,
+		       COALESCE(JSON_UNQUOTE(JSON_EXTRACT(dtv.deadline_config_json, '$.applicable_from_mode')), '') AS applicable_from_mode,
+		       COALESCE(JSON_UNQUOTE(JSON_EXTRACT(dtv.deadline_config_json, '$.applicable_from_slot')), '') AS applicable_from_slot
 		FROM disclosure_types dt
 		JOIN disclosure_type_versions dtv ON dtv.type_id = dt.type_id AND dtv.version_no = dt.active_version_no
 		WHERE JSON_UNQUOTE(JSON_EXTRACT(dtv.deadline_config_json, '$.template_category')) IN ('periodic', 'custom')
@@ -2228,7 +2280,8 @@ func (r *Repository) ListActivePeriodicTypes(ctx context.Context) ([]disclosurea
 		var weekdayRaw, miqRaw sql.NullInt64
 		if err := rows.Scan(&row.TypeID, &row.FrequencyUnit, &row.FrequencyInterval,
 			&row.DeadlineDays, &row.CycleAnchorDay, &row.CycleAnchorMonth, &weekdayRaw, &miqRaw,
-			&row.OpenDaysBeforeT, &isGlobal, &rulesRaw); err != nil {
+			&row.OpenDaysBeforeT, &isGlobal, &rulesRaw,
+			&row.ApplicableFromMode, &row.ApplicableFromSlot); err != nil {
 			return nil, fmt.Errorf("scan periodic type row: %w", err)
 		}
 		row.CycleAnchorWeekday = nullIntPtr(weekdayRaw)
@@ -2436,12 +2489,18 @@ func (r *Repository) ListAllActiveCompanyIDs(ctx context.Context) ([]string, err
 
 func (r *Repository) GetCompanyTypePreference(ctx context.Context, companyID, typeID string) (*disclosureapp.CompanyTypePreference, error) {
 	const q = `SELECT auto_create_enabled, COALESCE(updated_by, ''),
-	           COALESCE(cycle_anchor_month, 0), COALESCE(cycle_anchor_day, 0)
+	           COALESCE(cycle_anchor_month, 0), COALESCE(cycle_anchor_day, 0),
+	           cycle_anchor_weekday, month_in_quarter,
+	           cycle_anchor_override_frequency, cycle_anchor_override_active
 	           FROM company_type_preferences WHERE company_id = ? AND type_id = ?`
 	var pref disclosureapp.CompanyTypePreference
 	var enabled int
+	var weekday, miq sql.NullInt64
+	var overrideFreq sql.NullString
+	var overrideActive sql.NullBool
 	err := r.db.QueryRowContext(ctx, q, companyID, typeID).Scan(
-		&enabled, &pref.UpdatedBy, &pref.CycleAnchorMonth, &pref.CycleAnchorDay)
+		&enabled, &pref.UpdatedBy, &pref.CycleAnchorMonth, &pref.CycleAnchorDay,
+		&weekday, &miq, &overrideFreq, &overrideActive)
 	if err == sql.ErrNoRows {
 		return nil, nil // no row = default enabled
 	}
@@ -2451,6 +2510,15 @@ func (r *Repository) GetCompanyTypePreference(ctx context.Context, companyID, ty
 	pref.CompanyID = companyID
 	pref.TypeID = typeID
 	pref.AutoCreateEnabled = enabled == 1
+	pref.CycleAnchorWeekday = nullIntPtr(weekday)
+	pref.MonthInQuarter = nullIntPtr(miq)
+	if overrideFreq.Valid {
+		pref.OverrideFrequency = overrideFreq.String
+	}
+	if overrideActive.Valid {
+		v := overrideActive.Bool
+		pref.OverrideActive = &v
+	}
 	return &pref, nil
 }
 
@@ -2461,35 +2529,99 @@ func (r *Repository) UpsertCompanyTypePreference(ctx context.Context, in disclos
 	}
 	if in.ClearCycleAnchor {
 		const qClear = `
-			INSERT INTO company_type_preferences (company_id, type_id, auto_create_enabled, updated_by, cycle_anchor_month, cycle_anchor_day, cycle_anchor_weekday, month_in_quarter)
-			VALUES (?, ?, ?, ?, NULL, NULL, NULL, NULL)
+			INSERT INTO company_type_preferences (
+			  company_id, type_id, auto_create_enabled, updated_by,
+			  cycle_anchor_month, cycle_anchor_day, cycle_anchor_weekday, month_in_quarter,
+			  cycle_anchor_override_frequency, cycle_anchor_override_active
+			)
+			VALUES (?, ?, ?, ?, NULL, NULL, NULL, NULL, NULL, NULL)
 			ON DUPLICATE KEY UPDATE
 			  auto_create_enabled = VALUES(auto_create_enabled),
 			  updated_by = VALUES(updated_by),
 			  cycle_anchor_month = NULL,
 			  cycle_anchor_day = NULL,
 			  cycle_anchor_weekday = NULL,
-			  month_in_quarter = NULL`
+			  month_in_quarter = NULL,
+			  cycle_anchor_override_frequency = NULL,
+			  cycle_anchor_override_active = NULL`
 		_, err := r.db.ExecContext(ctx, qClear, in.CompanyID, in.TypeID, enabled, in.UpdatedBy)
 		if err != nil {
 			return fmt.Errorf("upsert company type preference clear: %w", err)
 		}
 		return nil
 	}
+
+	// auto_create-only (no anchor fields, no binding): preserve existing override columns.
+	if in.OverrideActive == nil && in.OverrideFrequency == "" &&
+		in.CycleAnchorMonth == 0 && in.CycleAnchorDay == 0 &&
+		in.CycleAnchorWeekday == nil && in.MonthInQuarter == nil {
+		const qAuto = `
+			INSERT INTO company_type_preferences (company_id, type_id, auto_create_enabled, updated_by)
+			VALUES (?, ?, ?, ?)
+			ON DUPLICATE KEY UPDATE
+			  auto_create_enabled = VALUES(auto_create_enabled),
+			  updated_by = VALUES(updated_by)`
+		_, err := r.db.ExecContext(ctx, qAuto, in.CompanyID, in.TypeID, enabled, in.UpdatedBy)
+		if err != nil {
+			return fmt.Errorf("upsert company type preference auto_create: %w", err)
+		}
+		return nil
+	}
+
+	overrideActive := 0
+	if in.OverrideActive != nil && *in.OverrideActive {
+		overrideActive = 1
+	}
 	const q = `
-		INSERT INTO company_type_preferences (company_id, type_id, auto_create_enabled, updated_by, cycle_anchor_month, cycle_anchor_day)
-		VALUES (?, ?, ?, ?, NULLIF(?, 0), NULLIF(?, 0))
+		INSERT INTO company_type_preferences (
+		  company_id, type_id, auto_create_enabled, updated_by,
+		  cycle_anchor_month, cycle_anchor_day, cycle_anchor_weekday, month_in_quarter,
+		  cycle_anchor_override_frequency, cycle_anchor_override_active
+		)
+		VALUES (?, ?, ?, ?, NULLIF(?, 0), NULLIF(?, 0), ?, ?, NULLIF(?, ''), ?)
 		ON DUPLICATE KEY UPDATE
 		  auto_create_enabled = VALUES(auto_create_enabled),
 		  updated_by = VALUES(updated_by),
-		  cycle_anchor_month = IF(VALUES(cycle_anchor_month) IS NULL, cycle_anchor_month, VALUES(cycle_anchor_month)),
-		  cycle_anchor_day   = IF(VALUES(cycle_anchor_day) IS NULL, cycle_anchor_day, VALUES(cycle_anchor_day))`
+		  cycle_anchor_month = VALUES(cycle_anchor_month),
+		  cycle_anchor_day = VALUES(cycle_anchor_day),
+		  cycle_anchor_weekday = VALUES(cycle_anchor_weekday),
+		  month_in_quarter = VALUES(month_in_quarter),
+		  cycle_anchor_override_frequency = VALUES(cycle_anchor_override_frequency),
+		  cycle_anchor_override_active = VALUES(cycle_anchor_override_active)`
 	_, err := r.db.ExecContext(ctx, q, in.CompanyID, in.TypeID, enabled, in.UpdatedBy,
-		in.CycleAnchorMonth, in.CycleAnchorDay)
+		in.CycleAnchorMonth, in.CycleAnchorDay, nullIntArg(in.CycleAnchorWeekday), nullIntArg(in.MonthInQuarter),
+		in.OverrideFrequency, overrideActive)
 	if err != nil {
 		return fmt.Errorf("upsert company type preference: %w", err)
 	}
 	return nil
+}
+
+func nullIntArg(v *int) any {
+	if v == nil {
+		return nil
+	}
+	return *v
+}
+
+func (r *Repository) DeactivateIncompatibleCompanyCycleOverrides(ctx context.Context, typeID, newFrequencyUnit string) (int64, error) {
+	newFreq := disclosureapp.NormalizeFrequencyUnit(newFrequencyUnit)
+	if typeID == "" || newFreq == "" {
+		return 0, nil
+	}
+	const q = `
+		UPDATE company_type_preferences
+		SET cycle_anchor_override_active = 0
+		WHERE type_id = ?
+		  AND cycle_anchor_override_active = 1
+		  AND cycle_anchor_override_frequency IS NOT NULL
+		  AND LOWER(TRIM(cycle_anchor_override_frequency)) <> ?`
+	res, err := r.db.ExecContext(ctx, q, typeID, newFreq)
+	if err != nil {
+		return 0, fmt.Errorf("deactivate incompatible company cycle overrides: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
 }
 
 func (r *Repository) ListCompanyTypePreferencesByTypeIDs(ctx context.Context, typeIDs []string) ([]disclosureapp.CompanyTypePreference, error) {
@@ -2504,7 +2636,9 @@ func (r *Repository) ListCompanyTypePreferencesByTypeIDs(ctx context.Context, ty
 	}
 	q := fmt.Sprintf(`
 		SELECT company_id, type_id, auto_create_enabled, COALESCE(updated_by, ''),
-		       COALESCE(cycle_anchor_month, 0), COALESCE(cycle_anchor_day, 0)
+		       COALESCE(cycle_anchor_month, 0), COALESCE(cycle_anchor_day, 0),
+		       cycle_anchor_weekday, month_in_quarter,
+		       cycle_anchor_override_frequency, cycle_anchor_override_active
 		FROM company_type_preferences
 		WHERE type_id IN (%s)`, strings.Join(placeholders, ","))
 	rows, err := r.db.QueryContext(ctx, q, args...)
@@ -2516,10 +2650,24 @@ func (r *Repository) ListCompanyTypePreferencesByTypeIDs(ctx context.Context, ty
 	for rows.Next() {
 		var pref disclosureapp.CompanyTypePreference
 		var enabled int
-		if err := rows.Scan(&pref.CompanyID, &pref.TypeID, &enabled, &pref.UpdatedBy, &pref.CycleAnchorMonth, &pref.CycleAnchorDay); err != nil {
+		var weekday, miq sql.NullInt64
+		var overrideFreq sql.NullString
+		var overrideActive sql.NullBool
+		if err := rows.Scan(&pref.CompanyID, &pref.TypeID, &enabled, &pref.UpdatedBy,
+			&pref.CycleAnchorMonth, &pref.CycleAnchorDay, &weekday, &miq,
+			&overrideFreq, &overrideActive); err != nil {
 			return nil, fmt.Errorf("scan company type preference: %w", err)
 		}
 		pref.AutoCreateEnabled = enabled == 1
+		pref.CycleAnchorWeekday = nullIntPtr(weekday)
+		pref.MonthInQuarter = nullIntPtr(miq)
+		if overrideFreq.Valid {
+			pref.OverrideFrequency = overrideFreq.String
+		}
+		if overrideActive.Valid {
+			v := overrideActive.Bool
+			pref.OverrideActive = &v
+		}
 		out = append(out, pref)
 	}
 	return out, rows.Err()
@@ -2536,12 +2684,12 @@ func (r *Repository) GetCompanyTypeDeadlineContext(ctx context.Context, companyI
 	if err != nil || pref == nil {
 		return base, err // no preference or error → use base context
 	}
-	if pref.CycleAnchorMonth > 0 {
-		base.CycleAnchorMonth = pref.CycleAnchorMonth
-	}
-	if pref.CycleAnchorDay > 0 {
-		base.CycleAnchorDay = pref.CycleAnchorDay
-	}
+	base.CycleAnchorMonth = pref.CycleAnchorMonth
+	base.CycleAnchorDay = pref.CycleAnchorDay
+	base.CycleAnchorWeekday = pref.CycleAnchorWeekday
+	base.MonthInQuarter = pref.MonthInQuarter
+	base.OverrideActive = pref.OverrideActive
+	base.OverrideFrequency = pref.OverrideFrequency
 	return base, nil
 }
 

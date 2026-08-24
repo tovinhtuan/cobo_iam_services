@@ -142,14 +142,23 @@ function Invoke-DevSsh {
   param([Parameter(Mandatory)][string]$RemoteCommand)
 
   $target = "${DevUser}@${DevHost}"
-  if ($UsePlink) {
-    & $PlinkExe -batch -P $DevPort -pw $DevSshPassword $target $RemoteCommand
-  } else {
-    $sshArgs = @(Get-SshArgs) + @($target, $RemoteCommand)
-    & ssh @sshArgs
+  # Docker/compose often writes warnings to stderr; with $ErrorActionPreference=Stop,
+  # PowerShell treats that as terminating even when ssh exit code is 0.
+  $prevEap = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try {
+    if ($UsePlink) {
+      & $PlinkExe -batch -P $DevPort -pw $DevSshPassword $target $RemoteCommand
+    } else {
+      $sshArgs = @(Get-SshArgs) + @($target, $RemoteCommand)
+      & ssh @sshArgs
+    }
+    $code = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $prevEap
   }
-  if ($LASTEXITCODE -ne 0) {
-    throw "SSH failed (exit $LASTEXITCODE): $RemoteCommand"
+  if ($code -ne 0) {
+    throw "SSH failed (exit $code): $RemoteCommand"
   }
 }
 

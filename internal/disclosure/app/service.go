@@ -730,7 +730,7 @@ func (s *service) GetTypeVersionDetail(ctx context.Context, req GetTypeVersionDe
 		return nil, err
 	}
 	ApplyLegalBasisReadCompat(ctx, item, s.legalBasisLegacyFallbackEnabled, s.legalBasisDivergenceWarningEnabled)
-	applyActivationReadiness(item)
+	applyActivationReadiness(item, time.Now().UTC(), s.calculator)
 	return redactEnterpriseWorkflowStepsForCMSEditor(item), nil
 }
 
@@ -863,6 +863,9 @@ func (s *service) UpsertTypeVersion(ctx context.Context, req UpsertTypeVersionRe
 		); err != nil {
 			return nil, err
 		}
+		if err := PrepareApplicableFromForDraftWrite(req.DeadlineConfig, ""); err != nil {
+			return nil, err
+		}
 	}
 	publicationCandidate, err := BuildTemplatePublicationCandidate(req)
 	if err != nil {
@@ -984,12 +987,47 @@ func (s *service) ActivateTypeVersion(ctx context.Context, req ActivateTypeVersi
 			return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, err.Error(), nil)
 		}
 	}
+	activationNow := time.Now().UTC()
+	var actWarnings []ActivationWarningDTO
+	var actPreview *FirstOccurrencePreviewDTO
+	if versionDetail.DeadlineConfig != nil {
+		if err := ValidateApplicableFromForActivate(versionDetail.DeadlineConfig); err != nil {
+			return nil, err
+		}
+		mode, slot, ferr := FreezeApplicableFromAtActivate(versionDetail.DeadlineConfig, activationNow)
+		if ferr != nil {
+			return nil, ferr
+		}
+		if mode != "" || slot != "" || !IsLegacyApplicableFrom(versionDetail.DeadlineConfig.ApplicableFromMode, versionDetail.DeadlineConfig.ApplicableFromSlot) {
+			req.FreezeApplicableFrom = true
+			req.FreezeApplicableFromMode = mode
+			if mode == "" {
+				req.FreezeApplicableFromMode = NormalizeApplicableFromMode(versionDetail.DeadlineConfig.ApplicableFromMode)
+			}
+			req.FreezeApplicableFromSlot = slot
+		}
+		// Same activationNow + same frozen boundary for warning classification (no second clock).
+		cfgPreview := *versionDetail.DeadlineConfig
+		if strings.TrimSpace(slot) != "" {
+			cfgPreview.ApplicableFromMode = ApplicableFromModeSpecific
+			cfgPreview.ApplicableFromSlot = slot
+		}
+		actPreview, actWarnings = BuildFirstOccurrencePreview(ctx, &cfgPreview, activationNow, s.calculator)
+	}
 	// FE activate omits ExpectedCandidateHash and uses the locked current candidate.
 	// Callers that supply a hash (validate-then-activate) must match or receive 409.
 	if req.ExpectedCandidateHash == "" {
 		req.ExpectedCandidateHash = versionDetail.PublicationCandidateHash
 	}
-	return s.repo.ActivateTypeVersion(ctx, req)
+	resp, err := s.repo.ActivateTypeVersion(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if resp != nil {
+		resp.ActivationWarnings = actWarnings
+		resp.FirstOccurrencePreview = actPreview
+	}
+	return resp, nil
 }
 
 func (s *service) GetCompanyWorkflowOverride(ctx context.Context, req GetCompanyWorkflowOverrideRequest) (*GetCompanyWorkflowOverrideResponse, error) {
@@ -1327,17 +1365,21 @@ func enrichEffectiveWorkflowDTO(dto *EffectiveWorkflowDTO) {
 
 // applyActivationReadiness mirrors ActivateTypeVersion workflow guards without mutating state.
 // Must run on unredacted detail before CMS editor redact.
-func applyActivationReadiness(item *DisclosureTypeDTO) {
+// evalAt + calc feed Phase 6 CMS-baseline first-occurrence preview (read-only; never flips ready).
+func applyActivationReadiness(item *DisclosureTypeDTO, evalAt time.Time, calc *DeadlineCalculator) {
 	if item == nil {
 		return
 	}
 	item.ActivationReady = false
 	item.ActivationBlockers = nil
+	item.ActivationWarnings = nil
+	item.FirstOccurrencePreview = nil
 	if item.WorkflowAuthorityMode != WorkflowAuthorityTemplatePinned || item.WorkflowManifest == nil {
 		item.ActivationBlockers = []ActivationBlockerDTO{{
 			Code:    "TEMPLATE_WORKFLOW_NOT_PINNED",
 			Message: "Phiên bản chưa có workflow publication được ghim (TEMPLATE_PINNED).",
 		}}
+		attachFirstOccurrencePreview(item, evalAt, calc)
 		return
 	}
 	published := ResolveTemplatePublicationWorkflow(item.TypeID, item.VersionNo, *item.WorkflowManifest)
@@ -1346,6 +1388,7 @@ func applyActivationReadiness(item *DisclosureTypeDTO) {
 			Code:    "TEMPLATE_NO_WORKFLOW",
 			Message: "Phiên bản chưa có bước workflow hợp lệ để đăng lên Portal.",
 		}}
+		attachFirstOccurrencePreview(item, evalAt, calc)
 		return
 	}
 	blockers := make([]ActivationBlockerDTO, 0)
@@ -1389,9 +1432,37 @@ func applyActivationReadiness(item *DisclosureTypeDTO) {
 	}
 	if len(blockers) > 0 {
 		item.ActivationBlockers = blockers
+		attachFirstOccurrencePreview(item, evalAt, calc)
 		return
 	}
+	if item.DeadlineConfig != nil {
+		if err := ValidateApplicableFromForActivate(item.DeadlineConfig); err != nil {
+			msg := err.Error()
+			code := "APPLICABLE_FROM_INVALID"
+			if he, ok := perr.AsHTTPError(err); ok {
+				msg = he.Message
+				if he.Details != nil {
+					if c, ok := he.Details["code"].(string); ok && c != "" {
+						code = c
+					}
+				}
+			}
+			item.ActivationBlockers = []ActivationBlockerDTO{{Code: code, Message: msg}}
+			attachFirstOccurrencePreview(item, evalAt, calc)
+			return
+		}
+	}
 	item.ActivationReady = true
+	attachFirstOccurrencePreview(item, evalAt, calc)
+}
+
+func attachFirstOccurrencePreview(item *DisclosureTypeDTO, evalAt time.Time, calc *DeadlineCalculator) {
+	if item == nil || item.DeadlineConfig == nil {
+		return
+	}
+	preview, warnings := BuildFirstOccurrencePreview(context.Background(), item.DeadlineConfig, evalAt, calc)
+	item.FirstOccurrencePreview = preview
+	item.ActivationWarnings = warnings
 }
 
 func (s *service) GetEffectiveWorkflow(ctx context.Context, req GetEffectiveWorkflowRequest) (*GetEffectiveWorkflowResponse, error) {
@@ -1713,7 +1784,7 @@ func (s *service) GetCompanyTypePreference(ctx context.Context, req GetCompanyTy
 	if err != nil {
 		return nil, err
 	}
-	return companyTypePreferenceDTO(req.Subject.CompanyID, req.TypeID, pref), nil
+	return s.companyTypePreferenceDTO(ctx, req.Subject.CompanyID, req.TypeID, pref)
 }
 
 // UpsertCompanyTypePreference sets auto_create_enabled for a (company, type) pair.
@@ -1724,43 +1795,80 @@ func (s *service) UpsertCompanyTypePreference(ctx context.Context, req UpsertCom
 	}); err != nil {
 		return nil, err
 	}
-	// Clear override ignores day payload and inherits CMS; only validate explicit day.
-	if !req.ClearCycleAnchor {
-		if err := ValidateCycleAnchorDay(req.CycleAnchorDay); err != nil {
+
+	_, cmsCfg, err := s.repo.GetActiveVersionDeadlineConfig(ctx, req.TypeID)
+	if err != nil {
+		return nil, err
+	}
+	cmsFreq := ""
+	if cmsCfg != nil {
+		cmsFreq = NormalizeFrequencyUnit(cmsCfg.FrequencyUnit)
+	}
+
+	var write CompanyTypePreference
+	if req.ClearCycleAnchor {
+		write = CompanyTypePreference{
+			CompanyID:         req.Subject.CompanyID,
+			TypeID:            req.TypeID,
+			AutoCreateEnabled: req.AutoCreateEnabled,
+			UpdatedBy:         req.Subject.MembershipID,
+			ClearCycleAnchor:  true,
+		}
+	} else if CompanyOverrideWriteTouchesAnchor(req) {
+		if err := ValidateCompanyCycleAnchorOverride(cmsFreq, req); err != nil {
 			return nil, err
 		}
+		write = BuildCompanyOverrideWrite(cmsFreq, req)
+	} else {
+		// auto_create-only: do not materialize inherited CMS values as override.
+		write = CompanyTypePreference{
+			CompanyID:         req.Subject.CompanyID,
+			TypeID:            req.TypeID,
+			AutoCreateEnabled: req.AutoCreateEnabled,
+			UpdatedBy:         req.Subject.MembershipID,
+		}
 	}
-	if err := s.repo.UpsertCompanyTypePreference(ctx, CompanyTypePreference{
-		CompanyID:         req.Subject.CompanyID,
-		TypeID:            req.TypeID,
-		AutoCreateEnabled: req.AutoCreateEnabled,
-		UpdatedBy:         req.Subject.MembershipID,
-		CycleAnchorMonth:  req.CycleAnchorMonth,
-		CycleAnchorDay:    req.CycleAnchorDay,
-		ClearCycleAnchor:  req.ClearCycleAnchor,
-	}); err != nil {
+
+	if err := s.repo.UpsertCompanyTypePreference(ctx, write); err != nil {
 		return nil, err
 	}
 	pref, err := s.repo.GetCompanyTypePreference(ctx, req.Subject.CompanyID, req.TypeID)
 	if err != nil {
 		return nil, err
 	}
-	return companyTypePreferenceDTO(req.Subject.CompanyID, req.TypeID, pref), nil
+	return s.companyTypePreferenceDTO(ctx, req.Subject.CompanyID, req.TypeID, pref)
 }
 
-func companyTypePreferenceDTO(companyID, typeID string, pref *CompanyTypePreference) *CompanyTypePreferenceDTO {
+func (s *service) companyTypePreferenceDTO(ctx context.Context, companyID, typeID string, pref *CompanyTypePreference) (*CompanyTypePreferenceDTO, error) {
 	dto := &CompanyTypePreferenceDTO{
 		TypeID:            typeID,
 		CompanyID:         companyID,
 		AutoCreateEnabled: true, // default when no row
 	}
+	_, cmsCfg, cmsErr := s.repo.GetActiveVersionDeadlineConfig(ctx, typeID)
+	if cmsErr != nil {
+		cmsCfg = nil
+	}
+	cmsFreq := ""
+	if cmsCfg != nil {
+		cmsFreq = NormalizeFrequencyUnit(cmsCfg.FrequencyUnit)
+		dto.CMSFrequencyUnit = cmsFreq
+		dto.CMSCycleAnchorMonth = cmsCfg.CycleAnchorMonth
+		dto.CMSCycleAnchorDay = cmsCfg.CycleAnchorDay
+		dto.CMSCycleAnchorWeekday = cmsCfg.CycleAnchorWeekday
+		dto.CMSMonthInQuarter = cmsCfg.MonthInQuarter
+	}
 	if pref != nil {
 		dto.AutoCreateEnabled = pref.AutoCreateEnabled
 		dto.CycleAnchorMonth = pref.CycleAnchorMonth
 		dto.CycleAnchorDay = pref.CycleAnchorDay
-		dto.HasCycleAnchorOverride = pref.CycleAnchorMonth > 0 || pref.CycleAnchorDay > 0
+		dto.CycleAnchorWeekday = pref.CycleAnchorWeekday
+		dto.MonthInQuarter = pref.MonthInQuarter
+		dto.OverrideActive = pref.OverrideActive
+		dto.OverrideFrequency = pref.OverrideFrequency
+		dto.HasCycleAnchorOverride = HasActiveCompatibleOverride(pref, cmsFreq)
 	}
-	return dto
+	return dto, nil
 }
 
 // companyTemplateLifecycleTransitions defines valid (from → to) pairs.

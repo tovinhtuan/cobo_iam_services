@@ -31,12 +31,16 @@ func TestClampDayOfMonth(t *testing.T) {
 
 func TestResolveEffectiveAnchor_CompanyWins(t *testing.T) {
 	cms := disclosureapp.AnchorConfig{Month: 9, Day: 30}
-	co := disclosureapp.AnchorConfig{Month: 10, Day: 5}
-	got, src := disclosureapp.ResolveEffectiveAnchor(cms, co)
+	co := disclosureapp.CompanyOverrideAuthority{
+		Active:    true,
+		Frequency: "yearly",
+		Anchor:    disclosureapp.AnchorConfig{Month: 10, Day: 5},
+	}
+	got, src := disclosureapp.ResolveEffectiveAnchor("yearly", cms, co)
 	if src != disclosureapp.TSourceCompany || got.Month != 10 || got.Day != 5 {
 		t.Fatalf("got=%+v src=%s", got, src)
 	}
-	got2, src2 := disclosureapp.ResolveEffectiveAnchor(cms, disclosureapp.AnchorConfig{})
+	got2, src2 := disclosureapp.ResolveEffectiveAnchor("yearly", cms, disclosureapp.CompanyOverrideAuthority{})
 	if src2 != disclosureapp.TSourceCMS || got2.Month != 9 || got2.Day != 30 {
 		t.Fatalf("fallback got=%+v src=%s", got2, src2)
 	}

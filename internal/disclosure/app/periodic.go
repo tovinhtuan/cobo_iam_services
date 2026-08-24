@@ -41,6 +41,28 @@ func seedPeriodicCycles(ctx context.Context, now time.Time, repo Repository, idg
 	seeded := 0
 	for _, t := range types {
 		label := ResolveLogicalSlot(t.FrequencyUnit, now, loc)
+		eligible, decision, afErr := EvaluateApplicableFromEligibility(
+			t.FrequencyUnit, label, t.ApplicableFromMode, t.ApplicableFromSlot,
+		)
+		if afErr != nil {
+			slog.WarnContext(ctx, "periodic seed skip: applicable_from invalid",
+				slog.String("type_id", t.TypeID),
+				slog.String("frequency_unit", t.FrequencyUnit),
+				slog.String("candidate_slot", label),
+				slog.String("applicable_from_slot", t.ApplicableFromSlot),
+				slog.String("decision", decision),
+				slog.String("err", afErr.Error()))
+			continue
+		}
+		if !eligible {
+			slog.DebugContext(ctx, "periodic seed skip: before applicable_from",
+				slog.String("type_id", t.TypeID),
+				slog.String("frequency_unit", t.FrequencyUnit),
+				slog.String("candidate_slot", label),
+				slog.String("applicable_from_slot", t.ApplicableFromSlot),
+				slog.String("decision", decision))
+			continue
+		}
 		cmsAnchor := AnchorConfig{
 			Month:          t.CycleAnchorMonth,
 			Day:            t.CycleAnchorDay,
@@ -61,11 +83,11 @@ func seedPeriodicCycles(ctx context.Context, now time.Time, repo Repository, idg
 				continue
 			}
 
-			companyAnchor := AnchorConfig{}
+			companyAuth := CompanyOverrideAuthority{}
 			if hasPref {
-				companyAnchor = AnchorConfig{Month: pref.CycleAnchorMonth, Day: pref.CycleAnchorDay}
+				companyAuth = PreferenceToOverrideAuthority(&pref, t.FrequencyUnit)
 			}
-			effAnchor, tSource := ResolveEffectiveAnchor(cmsAnchor, companyAnchor)
+			effAnchor, tSource := ResolveEffectiveAnchor(t.FrequencyUnit, cmsAnchor, companyAuth)
 			cycleStart, err := ResolveOccurrenceT(t.FrequencyUnit, label, effAnchor, loc)
 			if err != nil {
 				slog.WarnContext(ctx, "periodic seed skip: resolve T",

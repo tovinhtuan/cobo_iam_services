@@ -44,9 +44,14 @@ type CompanyDeadlineContext struct {
 	EstablishedMonth int
 	EstablishedDay   int
 	// Per-company cycle anchor override for PERIODIC deadline mode.
-	// 0 = use template default (CycleAnchorMonth/CycleAnchorDay in TemplateDeadlineConfig).
-	CycleAnchorMonth int
-	CycleAnchorDay   int
+	// 0 / nil = unset. Precedence is resolved via ResolveEffectiveAnchor (Phase 3 typed).
+	CycleAnchorMonth   int
+	CycleAnchorDay     int
+	CycleAnchorWeekday *int
+	MonthInQuarter     *int
+	// OverrideActive + OverrideFrequency gate Company authority (persistent inactivation).
+	OverrideActive    *bool
+	OverrideFrequency string
 }
 
 type HolidayCalendarProvider interface {
@@ -362,7 +367,7 @@ func (c *DeadlineCalculator) calculatePeriodic(
 }
 
 // computeCycleStart returns Effective T for the current logical slot (canonical).
-// Priority: company.CycleAnchorMonth/Day overrides config; invalid days clamp to last day of month.
+// Priority: ACTIVE+compatible Company override > CMS; invalid days clamp at resolve only.
 func (c *DeadlineCalculator) computeCycleStart(config *TemplateDeadlineConfig, company CompanyDeadlineContext, now time.Time) time.Time {
 	cms := AnchorConfig{
 		Month:          config.CycleAnchorMonth,
@@ -370,8 +375,15 @@ func (c *DeadlineCalculator) computeCycleStart(config *TemplateDeadlineConfig, c
 		Weekday:        config.CycleAnchorWeekday,
 		MonthInQuarter: config.MonthInQuarter,
 	}
-	co := AnchorConfig{Month: company.CycleAnchorMonth, Day: company.CycleAnchorDay}
-	eff, _ := ResolveEffectiveAnchor(cms, co)
+	auth := PreferenceToOverrideAuthority(&CompanyTypePreference{
+		CycleAnchorMonth:   company.CycleAnchorMonth,
+		CycleAnchorDay:     company.CycleAnchorDay,
+		CycleAnchorWeekday: company.CycleAnchorWeekday,
+		MonthInQuarter:     company.MonthInQuarter,
+		OverrideActive:     company.OverrideActive,
+		OverrideFrequency:  company.OverrideFrequency,
+	}, config.FrequencyUnit)
+	eff, _ := ResolveEffectiveAnchor(config.FrequencyUnit, cms, auth)
 	label := ResolveLogicalSlot(config.FrequencyUnit, now, c.location)
 	t, err := ResolveOccurrenceT(config.FrequencyUnit, label, eff, c.location)
 	if err != nil {

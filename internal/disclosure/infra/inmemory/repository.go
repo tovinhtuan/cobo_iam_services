@@ -847,6 +847,19 @@ func (r *Repository) ActivateTypeVersion(_ context.Context, req disclosureapp.Ac
 	vs[target].IsReleased = true
 	vs[target].UpdatedBy = req.Subject.UserID
 	vs[target].ActivatedAt = now
+	if req.FreezeApplicableFrom {
+		if snapshot.DeadlineConfig == nil {
+			snapshot.DeadlineConfig = &disclosureapp.TemplateDeadlineConfig{}
+		}
+		cp := *snapshot.DeadlineConfig
+		cp.ApplicableFromMode = req.FreezeApplicableFromMode
+		cp.ApplicableFromSlot = req.FreezeApplicableFromSlot
+		snapshot.DeadlineConfig = &cp
+		if byVersion, ok := r.catalogByVer[req.TypeID]; ok {
+			byVersion[req.VersionNo] = snapshot
+			r.catalogByVer[req.TypeID] = byVersion
+		}
+	}
 	r.versions[req.TypeID] = vs
 	current.VersionNo = req.VersionNo
 	if byVersion, ok := r.catalogByVer[req.TypeID]; ok {
@@ -1524,6 +1537,10 @@ func (r *Repository) UpsertCompanyTypePreference(_ context.Context, _ disclosure
 
 func (r *Repository) ListCompanyTypePreferencesByTypeIDs(_ context.Context, _ []string) ([]disclosureapp.CompanyTypePreference, error) {
 	return nil, nil
+}
+
+func (r *Repository) DeactivateIncompatibleCompanyCycleOverrides(_ context.Context, _, _ string) (int64, error) {
+	return 0, nil
 }
 
 func (r *Repository) GetCompanyTypeDeadlineContext(ctx context.Context, companyID, _ string) (disclosureapp.CompanyDeadlineContext, error) {

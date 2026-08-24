@@ -1028,22 +1028,26 @@ func (h *Handler) upsertCompanyTypePreference(w http.ResponseWriter, r *http.Req
 	}
 	typeID := strings.TrimSpace(r.PathValue("type_id"))
 	var body struct {
-		AutoCreateEnabled bool `json:"auto_create_enabled"`
-		CycleAnchorMonth  int  `json:"cycle_anchor_month,omitempty"`
-		CycleAnchorDay    int  `json:"cycle_anchor_day,omitempty"`
-		ClearCycleAnchor  bool `json:"clear_cycle_anchor,omitempty"`
+		AutoCreateEnabled  bool `json:"auto_create_enabled"`
+		CycleAnchorMonth   int  `json:"cycle_anchor_month,omitempty"`
+		CycleAnchorDay     int  `json:"cycle_anchor_day,omitempty"`
+		CycleAnchorWeekday *int `json:"cycle_anchor_weekday,omitempty"`
+		MonthInQuarter     *int `json:"month_in_quarter,omitempty"`
+		ClearCycleAnchor   bool `json:"clear_cycle_anchor,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		httpx.WriteError(w, nil, err)
 		return
 	}
 	resp, err := h.svc.UpsertCompanyTypePreference(r.Context(), disclosureapp.UpsertCompanyTypePreferenceRequest{
-		Subject:           sub,
-		TypeID:            typeID,
-		AutoCreateEnabled: body.AutoCreateEnabled,
-		CycleAnchorMonth:  body.CycleAnchorMonth,
-		CycleAnchorDay:    body.CycleAnchorDay,
-		ClearCycleAnchor:  body.ClearCycleAnchor,
+		Subject:            sub,
+		TypeID:             typeID,
+		AutoCreateEnabled:  body.AutoCreateEnabled,
+		CycleAnchorMonth:   body.CycleAnchorMonth,
+		CycleAnchorDay:     body.CycleAnchorDay,
+		CycleAnchorWeekday: body.CycleAnchorWeekday,
+		MonthInQuarter:     body.MonthInQuarter,
+		ClearCycleAnchor:   body.ClearCycleAnchor,
 	})
 	if err != nil {
 		httpx.WriteError(w, nil, err)

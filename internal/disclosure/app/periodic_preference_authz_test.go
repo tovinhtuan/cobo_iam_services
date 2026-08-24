@@ -12,12 +12,18 @@ import (
 
 type preferenceAuthzRepo struct {
 	Repository
-	pref *CompanyTypePreference
+	pref     *CompanyTypePreference
+	cmsFreq  string
+	cmsCfg   *TemplateDeadlineConfig
+	deactivated int64
 }
 
 func (r *preferenceAuthzRepo) GetCompanyTypePreference(_ context.Context, companyID, typeID string) (*CompanyTypePreference, error) {
 	if r.pref != nil {
-		return r.pref, nil
+		p := *r.pref
+		p.CompanyID = companyID
+		p.TypeID = typeID
+		return &p, nil
 	}
 	return nil, nil
 }
@@ -25,6 +31,25 @@ func (r *preferenceAuthzRepo) GetCompanyTypePreference(_ context.Context, compan
 func (r *preferenceAuthzRepo) UpsertCompanyTypePreference(_ context.Context, in CompanyTypePreference) error {
 	r.pref = &in
 	return nil
+}
+
+func (r *preferenceAuthzRepo) GetActiveVersionDeadlineConfig(_ context.Context, _ string) (int, *TemplateDeadlineConfig, error) {
+	if r.cmsCfg != nil {
+		return 1, r.cmsCfg, nil
+	}
+	freq := r.cmsFreq
+	if freq == "" {
+		freq = PeriodicityMonthly
+	}
+	return 1, &TemplateDeadlineConfig{
+		FrequencyUnit:    freq,
+		CycleAnchorMonth: 1,
+		CycleAnchorDay:   5,
+	}, nil
+}
+
+func (r *preferenceAuthzRepo) DeactivateIncompatibleCompanyCycleOverrides(_ context.Context, _, _ string) (int64, error) {
+	return r.deactivated, nil
 }
 
 type permissionAuthService struct {
