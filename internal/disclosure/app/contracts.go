@@ -993,7 +993,8 @@ type TemplateDeadlineConfig struct {
 	// Intentionally separate from DeadlineDays (total SLA) to prevent timeline blow-up.
 	StepDefaultSlaDays int `json:"step_default_sla_days,omitempty"`
 	// CycleAnchorDay/Month = Mốc bắt đầu kỳ (T) for monthly/yearly (disclosure period start).
-	// 0 = unset (defaults to 01/01). Invalid days clamp to last day of month.
+	// 0 = unset (defaults to 01/01). Explicit day must be 1..31 (write validation);
+	// calendar resolution clamps via ClampDayOfMonth (e.g. 31 Apr → 30).
 	CycleAnchorDay   int `json:"cycle_anchor_day,omitempty"`
 	CycleAnchorMonth int `json:"cycle_anchor_month,omitempty"`
 	// OpenDaysBeforeT: OpenAt = EffectiveT − N calendar days (0 = OpenAt=T). CMS only.

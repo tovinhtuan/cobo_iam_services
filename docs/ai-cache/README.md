@@ -1,3 +1,16 @@
+## Periodicity V2 impact plan (2026-08-24)
+
+- PLAN ONLY — canonical docs live in sibling FE repo:
+- `../cobo_web_design/docs/ai-cache/periodicity-v2-impact-plan-2026-08-24/`
+- CODE_CHANGED=false; WAIT_FOR_PO_APPROVAL; NO_COMMIT/NO_PUSH/NO_MERGE
+
+## Cycle anchor day write validation 1..31 (2026-08-24)
+
+- Server hardening: `ValidateCycleAnchorDay` on CMS config/upsert + Company prefs; reject ≤0 (except unset 0) and ≥32.
+- Evidence: `cycle-anchor-day-write-validation-2026-08-24/`
+- ClampDayOfMonth unchanged; no migration; DEV BE deploy + API smoke PASS
+- NO_PRODUCTION / NO_COMMIT / NO_PUSH / NO_MERGE — WAIT_FOR_CONFIRMATION
+
 ## Workflow Step Document Requirements Full V1 (2026-08-22)
 
 - B1 upload purpose-scoped + 0132 assets table; B2 documents[] + binder; FE editors/preview/portal.

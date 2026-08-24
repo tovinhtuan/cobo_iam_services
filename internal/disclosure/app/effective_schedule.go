@@ -2,7 +2,10 @@ package app
 
 import (
 	"fmt"
+	"net/http"
 	"time"
+
+	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 )
 
 // TSource identifies Effective T authority.
@@ -10,6 +13,30 @@ const (
 	TSourceCMS     = "CMS"
 	TSourceCompany = "COMPANY"
 )
+
+// Cycle anchor day-of-month configuration bounds (CMS + Company write contract).
+const (
+	CycleAnchorDayMin = 1
+	CycleAnchorDayMax = 31
+)
+
+// ValidateCycleAnchorDay enforces an explicitly configured T day-of-month.
+// day == 0 means unset/omitted (inherit CMS or use defaults) and is allowed.
+// Invalid values must fail — do not clamp configuration to a valid day.
+func ValidateCycleAnchorDay(day int) error {
+	if day == 0 {
+		return nil
+	}
+	if day < CycleAnchorDayMin || day > CycleAnchorDayMax {
+		return perr.NewHTTPError(
+			http.StatusBadRequest,
+			perr.CodeInvalidRequest,
+			fmt.Sprintf("cycle_anchor_day must be between %d and %d (got %d)", CycleAnchorDayMin, CycleAnchorDayMax, day),
+			nil,
+		)
+	}
+	return nil
+}
 
 // AnchorConfig is structured T (month/day) from CMS or company override.
 type AnchorConfig struct {

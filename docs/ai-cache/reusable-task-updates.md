@@ -1,4 +1,14 @@
 
+## 2026-08-24 — Cycle anchor day write validation (1..31)
+
+- task type: DELTA_ONLY_SERVER_CONTRACT_HARDENING
+- objective: reject cycle_anchor_day outside 1..31 on CMS + Company writes; preserve unset/clear
+- implemented: `ValidateCycleAnchorDay` + wire UpdateTemplateDeadlineConfig / UpsertTypeVersion / UpsertCompanyTypePreference
+- pointer: `docs/ai-cache/cycle-anchor-day-write-validation-2026-08-24/`
+- verification: go test PASS; go build PASS; docker compose build api PASS; deploy-dev be PASS; API smoke 32→400, 31→200
+- CLAMP_DAY_OF_MONTH_SOURCE_CHANGED=false; NEW_DB_MIGRATION=false; FE unchanged
+- NO_PRODUCTION / NO_COMMIT / NO_PUSH / NO_MERGE
+
 ## 2026-08-22 — CMS document server validation hardening
 
 - task type: DELTA_ONLY_SERVER_CONTRACT_HARDENING
