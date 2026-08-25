@@ -1,3 +1,10 @@
+## Deadline Alert V1 Phase 4 — premerge system review (2026-08-25)
+
+- Review-only: contract/SQL/auth/perf/tests; clean commit candidate manifest; no app source change this phase
+- Evidence: `deadline-alert-v1-phase-4-premerge-system-review-2026-08-25/` (`00`–`14`)
+- READY_FOR_COMMIT=true (clean files); READY_FOR_PUSH/MERGE/PROD=false; OPEN_P0=0; PERFORMANCE=P1_FOLLOW_UP
+- NO_COMMIT / NO_PUSH / NO_MERGE / NO_PRODUCTION — WAIT_FOR_CONFIRMATION
+
 ## Deadline Alert V1 Phase 3 — DEV verification (2026-08-25)
 
 - BE-only deploy to avi-server1; healthz/readyz 200; QA API+browser E2E PASS (Draft actionable + Submit removes alert)
