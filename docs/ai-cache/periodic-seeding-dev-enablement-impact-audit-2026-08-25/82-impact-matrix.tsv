@@ -1,0 +1,53 @@
+company	code	template	name	freq	slot	af	cycle_exists	new_cycle	new_record	open_reached	Due	alert	bucket	workflow	T	OpenAt
+08f59da2-252c-47b3-a873-266aeb14f6dd	cskh_9bea	bang-tinh-luong-nhan-vien	Bảng tính lương nhân viên	monthly	2026-08	/	False	True	True	True	2026-08-06	True	OVERDUE	True	2026-08-01	2026-08-01
+144ca32b-cd59-467b-aba9-9576d3b148ad	ctcp_nh_a_an_ph_t_xanh_5239	bang-tinh-luong-nhan-vien	Bảng tính lương nhân viên	monthly	2026-08	/	False	True	True	True	2026-08-06	True	OVERDUE	True	2026-08-01	2026-08-01
+bd1f02f7-2a54-4848-b0f3-b7cd9dfb9a55	qa_manual_qr_pkg_20260814_3324	bang-tinh-luong-nhan-vien	Bảng tính lương nhân viên	monthly	2026-08	/	False	True	True	True	2026-08-06	True	OVERDUE	True	2026-08-01	2026-08-01
+c_001	c001	bang-tinh-luong-nhan-vien	Bảng tính lương nhân viên	monthly	2026-08	/	False	True	True	True	2026-08-06	True	OVERDUE	True	2026-08-01	2026-08-01
+08f59da2-252c-47b3-a873-266aeb14f6dd	cskh_9bea	bang-tinh-luong-nhan-vien-ban-sao	Bảng tính lương nhân viên (bản sao)	monthly	2026-08	/	False	True	True	False	2026-09-04	False		True	2026-08-31	2026-08-31
+144ca32b-cd59-467b-aba9-9576d3b148ad	ctcp_nh_a_an_ph_t_xanh_5239	bang-tinh-luong-nhan-vien-ban-sao	Bảng tính lương nhân viên (bản sao)	monthly	2026-08	/	False	True	True	False	2026-09-04	False		True	2026-08-31	2026-08-31
+bd1f02f7-2a54-4848-b0f3-b7cd9dfb9a55	qa_manual_qr_pkg_20260814_3324	bang-tinh-luong-nhan-vien-ban-sao	Bảng tính lương nhân viên (bản sao)	monthly	2026-08	/	False	True	True	False	2026-09-04	False		True	2026-08-31	2026-08-31
+c_001	c001	bang-tinh-luong-nhan-vien-ban-sao	Bảng tính lương nhân viên (bản sao)	monthly	2026-08	/	False	True	True	False	2026-09-04	False		True	2026-08-31	2026-08-31
+08f59da2-252c-47b3-a873-266aeb14f6dd	cskh_9bea	bang-tinh-luong-nhan-vien-ban-sao-2	Bảng tính lương nhân viên tháng	monthly	2026-08	CURRENT_SLOT/2026-08	False	True	True	True	2026-08-06	True	OVERDUE	True	2026-08-01	2026-08-01
+144ca32b-cd59-467b-aba9-9576d3b148ad	ctcp_nh_a_an_ph_t_xanh_5239	bang-tinh-luong-nhan-vien-ban-sao-2	Bảng tính lương nhân viên tháng	monthly	2026-08	CURRENT_SLOT/2026-08	False	True	True	True	2026-08-06	True	OVERDUE	True	2026-08-01	2026-08-01
+bd1f02f7-2a54-4848-b0f3-b7cd9dfb9a55	qa_manual_qr_pkg_20260814_3324	bang-tinh-luong-nhan-vien-ban-sao-2	Bảng tính lương nhân viên tháng	monthly	2026-08	CURRENT_SLOT/2026-08	False	True	True	True	2026-08-06	True	OVERDUE	True	2026-08-01	2026-08-01
+c_001	c001	bang-tinh-luong-nhan-vien-ban-sao-2	Bảng tính lương nhân viên tháng	monthly	2026-08	CURRENT_SLOT/2026-08	False	True	True	True	2026-08-06	True	OVERDUE	True	2026-08-01	2026-08-01
+08f59da2-252c-47b3-a873-266aeb14f6dd	cskh_9bea	bang-tinh-luong-nhan-vien-thang-ban-sao	Bảng tính lương nhân viên ngày	daily	2026-08-25	CURRENT_SLOT/2026-08-25	False	True	True	True	2026-08-31	True	UPCOMING	True	2026-08-25	2026-08-25
+144ca32b-cd59-467b-aba9-9576d3b148ad	ctcp_nh_a_an_ph_t_xanh_5239	bang-tinh-luong-nhan-vien-thang-ban-sao	Bảng tính lương nhân viên ngày	daily	2026-08-25	CURRENT_SLOT/2026-08-25	False	True	True	True	2026-08-31	True	UPCOMING	True	2026-08-25	2026-08-25
+bd1f02f7-2a54-4848-b0f3-b7cd9dfb9a55	qa_manual_qr_pkg_20260814_3324	bang-tinh-luong-nhan-vien-thang-ban-sao	Bảng tính lương nhân viên ngày	daily	2026-08-25	CURRENT_SLOT/2026-08-25	False	True	True	True	2026-08-31	True	UPCOMING	True	2026-08-25	2026-08-25
+c_001	c001	bang-tinh-luong-nhan-vien-thang-ban-sao	Bảng tính lương nhân viên ngày	daily	2026-08-25	CURRENT_SLOT/2026-08-25	False	True	True	True	2026-08-31	True	UPCOMING	True	2026-08-25	2026-08-25
+08f59da2-252c-47b3-a873-266aeb14f6dd	cskh_9bea	bao-cao-tai-chinh-thang	Báo cáo tài chính tháng	monthly	2026-08	/	False	True	True	True	2026-08-10	True	OVERDUE	True	2026-08-01	2026-08-01
+144ca32b-cd59-467b-aba9-9576d3b148ad	ctcp_nh_a_an_ph_t_xanh_5239	bao-cao-tai-chinh-thang	Báo cáo tài chính tháng	monthly	2026-08	/	False	True	True	True	2026-08-10	True	OVERDUE	True	2026-08-01	2026-08-01
+bd1f02f7-2a54-4848-b0f3-b7cd9dfb9a55	qa_manual_qr_pkg_20260814_3324	bao-cao-tai-chinh-thang	Báo cáo tài chính tháng	monthly	2026-08	/	False	True	True	True	2026-08-10	True	OVERDUE	True	2026-08-01	2026-08-01
+c_001	c001	bao-cao-tai-chinh-thang	Báo cáo tài chính tháng	monthly	2026-08	/	False	True	True	True	2026-08-10	True	OVERDUE	True	2026-08-01	2026-08-01
+08f59da2-252c-47b3-a873-266aeb14f6dd	cskh_9bea	bao-cao-tcq1	Báo cáo tcq1	yearly	2026	/	False	True	True	False	2026-09-20	False		True	2026-09-01	2026-09-01
+144ca32b-cd59-467b-aba9-9576d3b148ad	ctcp_nh_a_an_ph_t_xanh_5239	bao-cao-tcq1	Báo cáo tcq1	yearly	2026	/	False	True	True	False	2026-09-20	False		True	2026-09-01	2026-09-01
+bd1f02f7-2a54-4848-b0f3-b7cd9dfb9a55	qa_manual_qr_pkg_20260814_3324	bao-cao-tcq1	Báo cáo tcq1	yearly	2026	/	False	True	True	False	2026-09-20	False		True	2026-09-01	2026-09-01
+c_001	c001	bao-cao-tcq1	Báo cáo tcq1	yearly	2026	/	False	True	True	False	2026-09-20	False		True	2026-09-01	2026-09-01
+08f59da2-252c-47b3-a873-266aeb14f6dd	cskh_9bea	bao-cao-test-final	Báo cáo test final	yearly	2026	/	False	True	True	False	2026-09-20	False		True	2026-09-01	2026-09-01
+144ca32b-cd59-467b-aba9-9576d3b148ad	ctcp_nh_a_an_ph_t_xanh_5239	bao-cao-test-final	Báo cáo test final	yearly	2026	/	False	True	True	False	2026-09-20	False		True	2026-09-01	2026-09-01
+bd1f02f7-2a54-4848-b0f3-b7cd9dfb9a55	qa_manual_qr_pkg_20260814_3324	bao-cao-test-final	Báo cáo test final	yearly	2026	/	False	True	True	False	2026-09-20	False		True	2026-09-01	2026-09-01
+c_001	c001	bao-cao-test-final	Báo cáo test final	yearly	2026	/	False	True	True	False	2026-09-20	False		True	2026-09-01	2026-09-01
+08f59da2-252c-47b3-a873-266aeb14f6dd	cskh_9bea	bao-cao-test-final-ban-sao	Báo cáo test final (bản sao)	yearly	2026	/	False	True	True	False	2026-09-20	False		True	2026-09-01	2026-09-01
+144ca32b-cd59-467b-aba9-9576d3b148ad	ctcp_nh_a_an_ph_t_xanh_5239	bao-cao-test-final-ban-sao	Báo cáo test final (bản sao)	yearly	2026	/	False	True	True	False	2026-09-20	False		True	2026-09-01	2026-09-01
+bd1f02f7-2a54-4848-b0f3-b7cd9dfb9a55	qa_manual_qr_pkg_20260814_3324	bao-cao-test-final-ban-sao	Báo cáo test final (bản sao)	yearly	2026	/	False	True	True	False	2026-09-20	False		True	2026-09-01	2026-09-01
+c_001	c001	bao-cao-test-final-ban-sao	Báo cáo test final (bản sao)	yearly	2026	/	False	True	True	False	2026-09-20	False		True	2026-09-01	2026-09-01
+08f59da2-252c-47b3-a873-266aeb14f6dd	cskh_9bea	bao-cao-tuan-test	Báo cáo tuấn test	yearly	2026	/	False	True	True	False	2026-09-20	False		True	2026-09-01	2026-09-01
+144ca32b-cd59-467b-aba9-9576d3b148ad	ctcp_nh_a_an_ph_t_xanh_5239	bao-cao-tuan-test	Báo cáo tuấn test	yearly	2026	/	False	True	True	False	2026-09-20	False		True	2026-09-01	2026-09-01
+bd1f02f7-2a54-4848-b0f3-b7cd9dfb9a55	qa_manual_qr_pkg_20260814_3324	bao-cao-tuan-test	Báo cáo tuấn test	yearly	2026	/	False	True	True	False	2026-09-20	False		True	2026-09-01	2026-09-01
+c_001	c001	bao-cao-tuan-test	Báo cáo tuấn test	yearly	2026	/	False	True	True	False	2026-09-20	False		True	2026-09-01	2026-09-01
+08f59da2-252c-47b3-a873-266aeb14f6dd	cskh_9bea	bao-cao-tuan-test-ban-sao	Báo cáo tuấn test 5	yearly	2026	/	False	True	True	False	2026-09-20	False		True	2026-09-01	2026-09-01
+144ca32b-cd59-467b-aba9-9576d3b148ad	ctcp_nh_a_an_ph_t_xanh_5239	bao-cao-tuan-test-ban-sao	Báo cáo tuấn test 5	yearly	2026	/	False	True	True	False	2026-09-20	False		True	2026-09-01	2026-09-01
+bd1f02f7-2a54-4848-b0f3-b7cd9dfb9a55	qa_manual_qr_pkg_20260814_3324	bao-cao-tuan-test-ban-sao	Báo cáo tuấn test 5	yearly	2026	/	False	True	True	False	2026-09-20	False		True	2026-09-01	2026-09-01
+c_001	c001	bao-cao-tuan-test-ban-sao	Báo cáo tuấn test 5	yearly	2026	/	False	True	True	False	2026-09-20	False		True	2026-09-01	2026-09-01
+08f59da2-252c-47b3-a873-266aeb14f6dd	cskh_9bea	qa-model-a-financial-20260820-1509	QA Model A Financial 20260820-1509	quarterly	2026-Q3	/	False	True	True	True	2026-07-30	True	OVERDUE	True	2026-07-01	2026-07-01
+144ca32b-cd59-467b-aba9-9576d3b148ad	ctcp_nh_a_an_ph_t_xanh_5239	qa-model-a-financial-20260820-1509	QA Model A Financial 20260820-1509	quarterly	2026-Q3	/	False	True	True	True	2026-07-30	True	OVERDUE	True	2026-07-01	2026-07-01
+bd1f02f7-2a54-4848-b0f3-b7cd9dfb9a55	qa_manual_qr_pkg_20260814_3324	qa-model-a-financial-20260820-1509	QA Model A Financial 20260820-1509	quarterly	2026-Q3	/	False	True	True	True	2026-07-30	True	OVERDUE	True	2026-07-01	2026-07-01
+c_001	c001	qa-model-a-financial-20260820-1509	QA Model A Financial 20260820-1509	quarterly	2026-Q3	/	False	True	True	True	2026-07-30	True	OVERDUE	True	2026-07-01	2026-07-01
+08f59da2-252c-47b3-a873-266aeb14f6dd	cskh_9bea	qa-template-real-user-smoke-20260821-0941	QA Template Real User Smoke 20260821-0941	quarterly	2026-Q3	/	False	True	True	True	2026-07-30	True	OVERDUE	True	2026-07-01	2026-07-01
+144ca32b-cd59-467b-aba9-9576d3b148ad	ctcp_nh_a_an_ph_t_xanh_5239	qa-template-real-user-smoke-20260821-0941	QA Template Real User Smoke 20260821-0941	quarterly	2026-Q3	/	False	True	True	True	2026-07-30	True	OVERDUE	True	2026-07-01	2026-07-01
+bd1f02f7-2a54-4848-b0f3-b7cd9dfb9a55	qa_manual_qr_pkg_20260814_3324	qa-template-real-user-smoke-20260821-0941	QA Template Real User Smoke 20260821-0941	quarterly	2026-Q3	/	False	True	True	True	2026-07-30	True	OVERDUE	True	2026-07-01	2026-07-01
+c_001	c001	qa-template-real-user-smoke-20260821-0941	QA Template Real User Smoke 20260821-0941	quarterly	2026-Q3	/	False	True	True	True	2026-07-30	True	OVERDUE	True	2026-07-01	2026-07-01
+08f59da2-252c-47b3-a873-266aeb14f6dd	cskh_9bea	qa-ui-clone-20260821-1115	QA UI Clone 20260821-1115	quarterly	2026-Q3	/	False	True	True	True	2026-07-30	True	OVERDUE	True	2026-07-01	2026-07-01
+144ca32b-cd59-467b-aba9-9576d3b148ad	ctcp_nh_a_an_ph_t_xanh_5239	qa-ui-clone-20260821-1115	QA UI Clone 20260821-1115	quarterly	2026-Q3	/	False	True	True	True	2026-07-30	True	OVERDUE	True	2026-07-01	2026-07-01
+bd1f02f7-2a54-4848-b0f3-b7cd9dfb9a55	qa_manual_qr_pkg_20260814_3324	qa-ui-clone-20260821-1115	QA UI Clone 20260821-1115	quarterly	2026-Q3	/	False	True	True	True	2026-07-30	True	OVERDUE	True	2026-07-01	2026-07-01
+c_001	c001	qa-ui-clone-20260821-1115	QA UI Clone 20260821-1115	quarterly	2026-Q3	/	False	True	True	True	2026-07-30	True	OVERDUE	True	2026-07-01	2026-07-01

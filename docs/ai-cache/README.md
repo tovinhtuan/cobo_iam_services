@@ -1,3 +1,25 @@
+## Periodic seeding controlled DEV enablement (2026-08-25)
+
+- Enabled worker bundle: `PERIODIC_SEEDING_ENABLED=true` + `WORKFLOW_SNAPSHOT_ENABLED=true` (worker-only recreate)
+- First tick: +52 cycles/+52 Draft/+52 workflows; orphans=0; target DAILY 4× UPCOMING; steady-state idempotent
+- Evidence: `periodic-seeding-controlled-dev-enablement-2026-08-25/`
+- NO_COMMIT / NO_PUSH / NO_MERGE / NO_PRODUCTION — WAIT_FOR_CONFIRMATION
+
+## Periodic seeding DEV enablement impact audit (2026-08-25)
+
+- READ-ONLY: blast radius before `PERIODIC_SEEDING_ENABLED=true`
+- Verdict: **CONDITIONAL_GO** (must also set worker `WORKFLOW_SNAPSHOT_ENABLED=true`; ~52 cycles / ≤52 records / ~28 alerts / ~24 OVERDUE)
+- Evidence: `periodic-seeding-dev-enablement-impact-audit-2026-08-25/` (`00`–`15` + matrix)
+- NO_CONFIG_CHANGE / NO_WORKER_RESTART / NO_DB_MUTATION — WAIT_FOR_CONFIRMATION
+
+## Deadline Alert — DAILY template root-cause audit (2026-08-25)
+
+- READ-ONLY: template "Bảng tính lương nhân viên ngày" Active DAILY AF frozen but no Portal deadline alert
+- Root: DEV `PERIODIC_SEEDING_ENABLED=false` → no Seed/Materialize → cycles=0 records=0
+- Class `I_PERIODIC_SEEDING_DISABLED`; FIX_LAYER=CONFIG; IMPLEMENTATION_STARTED=false
+- Evidence: `deadline-alert-daily-template-root-cause-2026-08-25/` (`00`–`09`)
+- NO_FIX / NO_DB_MUTATION / NO_WORKER_TRIGGER / NO_DEPLOY / NO_COMMIT — WAIT_FOR_CONFIRMATION
+
 ## Deadline Alert V1 Phase 4 — premerge system review (2026-08-25)
 
 - Review-only: contract/SQL/auth/perf/tests; clean commit candidate manifest; no app source change this phase

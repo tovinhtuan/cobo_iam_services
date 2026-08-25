@@ -1,0 +1,53 @@
+company	code	tid	freq	new_cycle	new_record	alert	bucket
+08f59da2-252c-47b3-a873-266aeb14f6dd	cskh_9bea	bang-tinh-luong-nhan-vien	monthly	True	True	True	OVERDUE
+144ca32b-cd59-467b-aba9-9576d3b148ad	ctcp_nh_a_an_ph_t_xanh_5239	bang-tinh-luong-nhan-vien	monthly	True	True	True	OVERDUE
+bd1f02f7-2a54-4848-b0f3-b7cd9dfb9a55	qa_manual_qr_pkg_20260814_3324	bang-tinh-luong-nhan-vien	monthly	True	True	True	OVERDUE
+c_001	c001	bang-tinh-luong-nhan-vien	monthly	True	True	True	OVERDUE
+08f59da2-252c-47b3-a873-266aeb14f6dd	cskh_9bea	bang-tinh-luong-nhan-vien-ban-sao	monthly	True	True	False	
+144ca32b-cd59-467b-aba9-9576d3b148ad	ctcp_nh_a_an_ph_t_xanh_5239	bang-tinh-luong-nhan-vien-ban-sao	monthly	True	True	False	
+bd1f02f7-2a54-4848-b0f3-b7cd9dfb9a55	qa_manual_qr_pkg_20260814_3324	bang-tinh-luong-nhan-vien-ban-sao	monthly	True	True	False	
+c_001	c001	bang-tinh-luong-nhan-vien-ban-sao	monthly	True	True	False	
+08f59da2-252c-47b3-a873-266aeb14f6dd	cskh_9bea	bang-tinh-luong-nhan-vien-ban-sao-2	monthly	True	True	True	OVERDUE
+144ca32b-cd59-467b-aba9-9576d3b148ad	ctcp_nh_a_an_ph_t_xanh_5239	bang-tinh-luong-nhan-vien-ban-sao-2	monthly	True	True	True	OVERDUE
+bd1f02f7-2a54-4848-b0f3-b7cd9dfb9a55	qa_manual_qr_pkg_20260814_3324	bang-tinh-luong-nhan-vien-ban-sao-2	monthly	True	True	True	OVERDUE
+c_001	c001	bang-tinh-luong-nhan-vien-ban-sao-2	monthly	True	True	True	OVERDUE
+08f59da2-252c-47b3-a873-266aeb14f6dd	cskh_9bea	bang-tinh-luong-nhan-vien-thang-ban-sao	daily	True	True	True	UPCOMING
+144ca32b-cd59-467b-aba9-9576d3b148ad	ctcp_nh_a_an_ph_t_xanh_5239	bang-tinh-luong-nhan-vien-thang-ban-sao	daily	True	True	True	UPCOMING
+bd1f02f7-2a54-4848-b0f3-b7cd9dfb9a55	qa_manual_qr_pkg_20260814_3324	bang-tinh-luong-nhan-vien-thang-ban-sao	daily	True	True	True	UPCOMING
+c_001	c001	bang-tinh-luong-nhan-vien-thang-ban-sao	daily	True	True	True	UPCOMING
+08f59da2-252c-47b3-a873-266aeb14f6dd	cskh_9bea	bao-cao-tai-chinh-thang	monthly	True	True	True	OVERDUE
+144ca32b-cd59-467b-aba9-9576d3b148ad	ctcp_nh_a_an_ph_t_xanh_5239	bao-cao-tai-chinh-thang	monthly	True	True	True	OVERDUE
+bd1f02f7-2a54-4848-b0f3-b7cd9dfb9a55	qa_manual_qr_pkg_20260814_3324	bao-cao-tai-chinh-thang	monthly	True	True	True	OVERDUE
+c_001	c001	bao-cao-tai-chinh-thang	monthly	True	True	True	OVERDUE
+08f59da2-252c-47b3-a873-266aeb14f6dd	cskh_9bea	bao-cao-tcq1	yearly	True	True	False	
+144ca32b-cd59-467b-aba9-9576d3b148ad	ctcp_nh_a_an_ph_t_xanh_5239	bao-cao-tcq1	yearly	True	True	False	
+bd1f02f7-2a54-4848-b0f3-b7cd9dfb9a55	qa_manual_qr_pkg_20260814_3324	bao-cao-tcq1	yearly	True	True	False	
+c_001	c001	bao-cao-tcq1	yearly	True	True	False	
+08f59da2-252c-47b3-a873-266aeb14f6dd	cskh_9bea	bao-cao-test-final	yearly	True	True	False	
+144ca32b-cd59-467b-aba9-9576d3b148ad	ctcp_nh_a_an_ph_t_xanh_5239	bao-cao-test-final	yearly	True	True	False	
+bd1f02f7-2a54-4848-b0f3-b7cd9dfb9a55	qa_manual_qr_pkg_20260814_3324	bao-cao-test-final	yearly	True	True	False	
+c_001	c001	bao-cao-test-final	yearly	True	True	False	
+08f59da2-252c-47b3-a873-266aeb14f6dd	cskh_9bea	bao-cao-test-final-ban-sao	yearly	True	True	False	
+144ca32b-cd59-467b-aba9-9576d3b148ad	ctcp_nh_a_an_ph_t_xanh_5239	bao-cao-test-final-ban-sao	yearly	True	True	False	
+bd1f02f7-2a54-4848-b0f3-b7cd9dfb9a55	qa_manual_qr_pkg_20260814_3324	bao-cao-test-final-ban-sao	yearly	True	True	False	
+c_001	c001	bao-cao-test-final-ban-sao	yearly	True	True	False	
+08f59da2-252c-47b3-a873-266aeb14f6dd	cskh_9bea	bao-cao-tuan-test	yearly	True	True	False	
+144ca32b-cd59-467b-aba9-9576d3b148ad	ctcp_nh_a_an_ph_t_xanh_5239	bao-cao-tuan-test	yearly	True	True	False	
+bd1f02f7-2a54-4848-b0f3-b7cd9dfb9a55	qa_manual_qr_pkg_20260814_3324	bao-cao-tuan-test	yearly	True	True	False	
+c_001	c001	bao-cao-tuan-test	yearly	True	True	False	
+08f59da2-252c-47b3-a873-266aeb14f6dd	cskh_9bea	bao-cao-tuan-test-ban-sao	yearly	True	True	False	
+144ca32b-cd59-467b-aba9-9576d3b148ad	ctcp_nh_a_an_ph_t_xanh_5239	bao-cao-tuan-test-ban-sao	yearly	True	True	False	
+bd1f02f7-2a54-4848-b0f3-b7cd9dfb9a55	qa_manual_qr_pkg_20260814_3324	bao-cao-tuan-test-ban-sao	yearly	True	True	False	
+c_001	c001	bao-cao-tuan-test-ban-sao	yearly	True	True	False	
+08f59da2-252c-47b3-a873-266aeb14f6dd	cskh_9bea	qa-model-a-financial-20260820-1509	quarterly	True	True	True	OVERDUE
+144ca32b-cd59-467b-aba9-9576d3b148ad	ctcp_nh_a_an_ph_t_xanh_5239	qa-model-a-financial-20260820-1509	quarterly	True	True	True	OVERDUE
+bd1f02f7-2a54-4848-b0f3-b7cd9dfb9a55	qa_manual_qr_pkg_20260814_3324	qa-model-a-financial-20260820-1509	quarterly	True	True	True	OVERDUE
+c_001	c001	qa-model-a-financial-20260820-1509	quarterly	True	True	True	OVERDUE
+08f59da2-252c-47b3-a873-266aeb14f6dd	cskh_9bea	qa-template-real-user-smoke-20260821-0941	quarterly	True	True	True	OVERDUE
+144ca32b-cd59-467b-aba9-9576d3b148ad	ctcp_nh_a_an_ph_t_xanh_5239	qa-template-real-user-smoke-20260821-0941	quarterly	True	True	True	OVERDUE
+bd1f02f7-2a54-4848-b0f3-b7cd9dfb9a55	qa_manual_qr_pkg_20260814_3324	qa-template-real-user-smoke-20260821-0941	quarterly	True	True	True	OVERDUE
+c_001	c001	qa-template-real-user-smoke-20260821-0941	quarterly	True	True	True	OVERDUE
+08f59da2-252c-47b3-a873-266aeb14f6dd	cskh_9bea	qa-ui-clone-20260821-1115	quarterly	True	True	True	OVERDUE
+144ca32b-cd59-467b-aba9-9576d3b148ad	ctcp_nh_a_an_ph_t_xanh_5239	qa-ui-clone-20260821-1115	quarterly	True	True	True	OVERDUE
+bd1f02f7-2a54-4848-b0f3-b7cd9dfb9a55	qa_manual_qr_pkg_20260814_3324	qa-ui-clone-20260821-1115	quarterly	True	True	True	OVERDUE
+c_001	c001	qa-ui-clone-20260821-1115	quarterly	True	True	True	OVERDUE

@@ -1,0 +1,14 @@
+# 08 — Records / workflows
+
+```text
+ACTUAL_NEW_RECORDS=52 (17→69)
+ACTUAL_NEW_WORKFLOW_INSTANCES=52 (6→58)
+RECORD_DELTA_GUARD=PASS
+WORKFLOW_DELTA_GUARD=PASS
+ORPHAN_DRAFT_RECORDS=0
+AUTO_SUBMIT_OCCURRED=false (all Draft, submitted_at NULL)
+CYCLE_WITH_CREATED_RECORD_BUT_RECORD_ID_NULL=0
+pending_null_record current slots=0
+WORKFLOW_TASK_INTEGRITY=PASS (52 tasks / 52 instances; max_tasks_per_instance=1)
+WORKFLOW_SNAPSHOT_CREATED_FROM_EXPECTED_SOURCE=PASS (global_template / company_override)
+```

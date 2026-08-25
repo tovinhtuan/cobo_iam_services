@@ -1,4 +1,33 @@
 
+## 2026-08-25 — Periodic seeding controlled DEV enablement
+
+- **task type:** controlled DEV config enablement (ops)
+- **changed:** `.env` PERIODIC_SEEDING_ENABLED + WORKFLOW_SNAPSHOT_ENABLED; worker-only recreate
+- **result:** PASS — +52 cycles/records/workflows; target daily recovered; flags remain true
+- **evidence:** `docs/ai-cache/periodic-seeding-controlled-dev-enablement-2026-08-25/`
+- APPLICATION_SOURCE_CHANGED=false; NO_COMMIT
+
+## 2026-08-25 — Periodic seeding DEV enablement impact audit
+
+- **task type:** read-only config enablement impact audit
+- **objective:** GO/CONDITIONAL_GO/NO_GO for PERIODIC_SEEDING_ENABLED=true on DEV
+- **discovered:** flag gates seed+materialize at startup; worker missing WORKFLOW_SNAPSHOT (P0 orphan risk); ~52 new cycles across 4 applicable companies; ~24 immediate OVERDUE alerts; target DAILY recoverable only before HCM rollover
+- **verdict:** CONDITIONAL_GO; APPLICATION_CODE_FIX_REQUIRED=false; DEV_CONFIG_CHANGE_REQUIRED=true
+- **evidence:** `docs/ai-cache/periodic-seeding-dev-enablement-impact-audit-2026-08-25/`
+- NO_CONFIG_CHANGE this turn — WAIT_FOR_CONFIRMATION
+
+## 2026-08-25 — Deadline Alert DAILY template root-cause (read-only)
+
+- **task type:** narrow root-cause audit (source + DEV data)
+- **objective:** why Active DAILY CURRENT_SLOT template missing from Cảnh báo về thời hạn
+- **target:** `bang-tinh-luong-nhan-vien-thang-ban-sao` / Bảng tính lương nhân viên ngày
+- **discovered:** `PERIODIC_SEEDING_ENABLED=false` on DEV; SeedPeriodicCycles never wired; cycles=0; records=0
+- **class:** I_PERIODIC_SEEDING_DISABLED; FIRST_BROKEN_BOUNDARY=worker enablement / CONFIG
+- **affected:** CONFIG/runtime DEV only; Deadline Alert SQL not first failure
+- **verification:** SSH read-only SELECT + printenv; APPLICATION_SOURCE_CHANGED=false; DEV_DATA_MUTATED=false
+- **next:** enable seeding (ops) then re-audit cycle→record→alert — WAIT_FOR_CONFIRMATION
+- **evidence:** `docs/ai-cache/deadline-alert-daily-template-root-cause-2026-08-25/`
+
 ## 2026-08-24 — Cycle anchor day write validation (1..31)
 
 - task type: DELTA_ONLY_SERVER_CONTRACT_HARDENING
