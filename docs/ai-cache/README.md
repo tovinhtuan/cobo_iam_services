@@ -1,3 +1,26 @@
+## Deadline Alert V1 Phase 1 — SQL membership (2026-08-25)
+
+- `ListRows` V1 membership: Draft + submitted_at IS NULL; periodic COALESCE(open_at,cycle_start)<=TodayHCM; irregular NOT EXISTS
+- Files: `internal/deadlinealerts/infra/mysql/{repository.go,list_rows_membership.go,list_rows_membership_test.go}`
+- Evidence: `deadline-alert-v1-phase-1-sql-membership-2026-08-25/` (`00`–`06`)
+- Repository tests PASS; GO_DRAFT_FILTER still present; FULL_FEATURE=false; READY_FOR_PHASE_2
+- NO_DEV_DEPLOY / NO_E2E / NO_COMMIT / NO_PUSH / NO_MERGE — WAIT_FOR_CONFIRMATION
+
+## Deadline Alert V1 solution plan 2026-08-25
+
+- Pointer: FE `../cobo_web_design/docs/ai-cache/deadline-alert-v1-solution-plan-2026-08-25/`
+- PLAN ONLY; APPLICATION_SOURCE_CHANGED=false
+
+## Deadline alert domain review plan 2026-08-25
+
+- Pointer: FE `../cobo_web_design/docs/ai-cache/deadline-alert-domain-review-plan-2026-08-25/`
+- PLAN ONLY; APPLICATION_SOURCE_CHANGED=false
+
+## Deadline alert source audit 2026-08-25
+
+- Pointer: FE `../cobo_web_design/docs/ai-cache/deadline-alert-source-audit-2026-08-25/` (+ local `deadline-alert-source-audit-2026-08-25/00-pointer.md`)
+- AUDIT ONLY; CODE_CHANGED=false
+
 ## Periodicity V2 Phase 0+1 (2026-08-24)
 
 - Foundation + canonical resolver: `cycle_anchor_weekday`, `month_in_quarter`; migration 0133; ResolveOccurrenceT weekly/quarterly.

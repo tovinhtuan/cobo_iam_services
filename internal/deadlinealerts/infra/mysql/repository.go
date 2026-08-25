@@ -20,6 +20,7 @@ type Repository struct {
 	db         *sql.DB
 	disclosure *disclosuremysql.Repository
 	holidays   deadlineengine.NonTradingDayChecker
+	now        func() time.Time
 
 	dayTypeColMu     sync.RWMutex
 	dayTypeColCached bool
@@ -33,8 +34,18 @@ func WithHolidays(h deadlineengine.NonTradingDayChecker) Option {
 	return func(r *Repository) { r.holidays = h }
 }
 
+// WithNow overrides the clock used for Asia/Ho_Chi_Minh business-date membership
+// (OpenAt window). Does not change the Repository interface.
+func WithNow(fn func() time.Time) Option {
+	return func(r *Repository) {
+		if fn != nil {
+			r.now = fn
+		}
+	}
+}
+
 func NewRepository(db *sql.DB, opts ...Option) *Repository {
-	r := &Repository{db: db, disclosure: disclosuremysql.NewRepository(db)}
+	r := &Repository{db: db, disclosure: disclosuremysql.NewRepository(db), now: time.Now}
 	for _, opt := range opts {
 		opt(r)
 	}
@@ -56,6 +67,11 @@ func (r *Repository) ListRows(ctx context.Context, companyID string, scope deadl
 	}
 
 	scopeClause, scopeArgs := deadlinealertsapp.BuildListRowsScopeSQL(scope)
+	nowFn := r.now
+	if nowFn == nil {
+		nowFn = time.Now
+	}
+	todayHCM := businessDateHCM(nowFn())
 	query := `
 		SELECT
 			dr.company_id,
@@ -84,10 +100,10 @@ func (r *Repository) ListRows(ctx context.Context, companyID string, scope deadl
 		LEFT JOIN deadline_alert_confirmations dac ON dac.company_id = dr.company_id
 			AND dac.record_id = dr.record_id
 		WHERE dr.company_id = ?
-		  AND LOWER(TRIM(dr.status)) <> 'draft'` + scopeClause + `
+` + listRowsV1ObligationMembershipSQL + scopeClause + `
 		ORDER BY dr.created_at DESC
 	`
-	args := append([]any{companyID}, scopeArgs...)
+	args := append([]any{companyID, todayHCM}, scopeArgs...)
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
