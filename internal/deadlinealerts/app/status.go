@@ -33,10 +33,6 @@ func isTerminalRecordStatus(status string) bool {
 	}
 }
 
-func isDraftRecordStatus(status string) bool {
-	return strings.EqualFold(strings.TrimSpace(status), "draft")
-}
-
 func alertStatusFromRemainingDays(remainingDays int, terminal bool) string {
 	if terminal {
 		return "DONE"

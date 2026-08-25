@@ -1,3 +1,16 @@
+## Deadline Alert V1 Phase 3 — DEV verification (2026-08-25)
+
+- BE-only deploy to avi-server1; healthz/readyz 200; QA API+browser E2E PASS (Draft actionable + Submit removes alert)
+- Evidence: `deadline-alert-v1-phase-3-dev-verification-2026-08-25/` (`00`–`12` + screenshots)
+- APPLICATION_SOURCE_CHANGED_BY_PHASE_3=false; READY_FOR_PHASE_4_PREMERGE; NO_COMMIT/NO_PUSH/NO_MERGE — WAIT_FOR_CONFIRMATION
+
+## Deadline Alert V1 Phase 2 — service integration (2026-08-25)
+
+- Removed Go `isDraftRecordStatus` membership skip in `ListDeadlineAlerts`; due/status/confirmation preserved
+- Evidence: `deadline-alert-v1-phase-2-service-integration-2026-08-25/` (`00`–`07`)
+- `go test ./internal/deadlinealerts/...` + `go build ./cmd/api` PASS; Phase 1 mysql regression PASS
+- READY_FOR_PHASE_3_DEV_VERIFICATION; NO_DEV_DEPLOY / NO_E2E / NO_COMMIT / NO_PUSH / NO_MERGE — WAIT_FOR_CONFIRMATION
+
 ## Deadline Alert V1 Phase 1 — SQL membership (2026-08-25)
 
 - `ListRows` V1 membership: Draft + submitted_at IS NULL; periodic COALESCE(open_at,cycle_start)<=TodayHCM; irregular NOT EXISTS

@@ -1,0 +1,114 @@
+{
+  "today_hcm_assumed": "2026-08-25",
+  "type_id": "bao-cao-tuan-test",
+  "company_id": "c_001",
+  "record_ids": {
+    "pre": "01a037b1-f22c-7418-979f-9c67023dd1b3",
+    "overdue": "01a037b1-f2cb-7272-8437-f97240dcf9a4",
+    "today": "01a037b1-f36b-731d-b458-aa6f3b99c57b",
+    "future": "01a037b1-f413-79b6-9206-661c108116f4",
+    "irregular": "01a037b1-f4c1-7e20-acb8-f75cd81b045f",
+    "submit": "01a037b1-f577-76f0-8ea3-6d2202926375"
+  },
+  "results": {
+    "AUTH_LOGIN_SELECT_COMPANY": {
+      "status": "PASS",
+      "note": ""
+    },
+    "QA_RECORDS_CREATED": {
+      "status": "PASS",
+      "note": "n=6"
+    },
+    "QA_PERIODIC_CYCLES_LINKED": {
+      "status": "PASS",
+      "note": ""
+    },
+    "DB_pre": {
+      "record_id": "01a037b1-f22c-7418-979f-9c67023dd1b3",
+      "row": "Draft|NULL|2026-09-01|2026-08-01|2026-09-15|HAS_PC"
+    },
+    "DB_overdue": {
+      "record_id": "01a037b1-f2cb-7272-8437-f97240dcf9a4",
+      "row": "Draft|NULL|2026-08-01|2026-07-01|2026-08-20|HAS_PC"
+    },
+    "DB_today": {
+      "record_id": "01a037b1-f36b-731d-b458-aa6f3b99c57b",
+      "row": "Draft|NULL|2026-08-25|2026-08-01|2026-08-25|HAS_PC"
+    },
+    "DB_future": {
+      "record_id": "01a037b1-f413-79b6-9206-661c108116f4",
+      "row": "Draft|NULL|2026-08-10|2026-08-01|2026-09-10|HAS_PC"
+    },
+    "DB_irregular": {
+      "record_id": "01a037b1-f4c1-7e20-acb8-f75cd81b045f",
+      "row": "Draft|NULL|NULL|NULL|2026-08-18|NO_PC"
+    },
+    "DB_submit": {
+      "record_id": "01a037b1-f577-76f0-8ea3-6d2202926375",
+      "row": "Draft|NULL|2026-08-01|2026-07-01|2026-08-15|HAS_PC"
+    },
+    "API_LIST_HTTP": {
+      "status": "PASS",
+      "note": "status=200"
+    },
+    "API_TOTAL": {
+      "status": "INFO",
+      "note": "total=11 items=11"
+    },
+    "DUPLICATE_ALERT_ROWS": {
+      "status": "PASS",
+      "note": "dup_keys=0"
+    },
+    "PRE_OPENAT_HIDDEN": {
+      "status": "PASS",
+      "note": "record=01a037b1… present=False"
+    },
+    "API_RETURNS_ACTIONABLE_PERIODIC_DRAFT": {
+      "status": "PASS",
+      "note": "record=01a037b1… present=True"
+    },
+    "PERIODIC_FUTURE_DUE_STATUS": {
+      "status": "PASS",
+      "note": "record=01a037b1… present=True status=UPCOMING"
+    },
+    "DUE_TODAY_STATUS": {
+      "status": "PASS",
+      "note": "record=01a037b1… present=True status=DUE_SOON"
+    },
+    "PERIODIC_UNSUBMITTED_OVERDUE": {
+      "status": "PASS",
+      "note": "record=01a037b1… present=True status=OVERDUE"
+    },
+    "IRREGULAR_ALERT_REGRESSION": {
+      "status": "PASS",
+      "note": "record=01a037b1… present=True"
+    },
+    "SUBMIT_BEFORE_VISIBLE": {
+      "status": "PASS",
+      "note": "record=01a037b1… present=True"
+    },
+    "SUBMIT_ACTION_HTTP": {
+      "status": "PASS",
+      "note": "http=200"
+    },
+    "SUBMIT_AFTER_DB": "PendingReview|2026-08-25|2026-08-01|2026-07-01|2026-08-15|HAS_PC",
+    "SUBMIT_REMOVES_DEADLINE_ALERT": {
+      "status": "PASS",
+      "note": ""
+    },
+    "INTERNAL_WORKFLOW_DELAY_IS_NOT_COMPANY_OVERDUE": {
+      "status": "PASS",
+      "note": "after_db=PendingReview|2026-08-25|2026-08-01|2026-07-01|2026-08-15|HAS_PC"
+    },
+    "LEGACY_PENDING_REVIEW_NOT_LISTED": {
+      "status": "PASS",
+      "note": ""
+    }
+  },
+  "api_sample_statuses": {
+    "01a037b1-f2cb-7272-8437-f97240dcf9a4": "OVERDUE",
+    "01a037b1-f36b-731d-b458-aa6f3b99c57b": "DUE_SOON",
+    "01a037b1-f413-79b6-9206-661c108116f4": "UPCOMING",
+    "01a037b1-f4c1-7e20-acb8-f75cd81b045f": "OVERDUE"
+  }
+}

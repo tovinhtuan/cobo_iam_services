@@ -96,13 +96,41 @@ func allowAuthSvc() authapp.Service {
 	return authapp.NewService(authinmem.NewResolver(authRepo), authinmem.NewChecker(), authRepo)
 }
 
-func TestListDeadlineAlerts_filtersDraftAndPaginates(t *testing.T) {
+func TestListDeadlineAlerts_actionableDraftSurvivesAndPaginates(t *testing.T) {
+	// stubRepo simulates Phase-1 ListRows: already-eligible Draft obligations only.
 	repo := &stubRepo{rows: []AlertRow{
-		{CompanyID: "c1", RecordID: "r-draft", Title: "Draft", RecordStatus: "draft", PlannedDate: "2026-06-01"},
-		{CompanyID: "c1", RecordID: "r-live", Title: "Live", RecordStatus: "submitted", PlannedDate: "2026-06-10"},
+		{CompanyID: "c1", RecordID: "r-draft-a", Title: "Draft A", RecordStatus: "Draft", PlannedDate: "2026-06-01"},
+		{CompanyID: "c1", RecordID: "r-draft-b", Title: "Draft B", RecordStatus: "draft", PlannedDate: "2026-06-10"},
 	}}
 	svc := NewService(repo, allowAuthSvc(), disclosureapp.NewDeadlineCalculator(disclosureapp.NewHolidayCalendarFileProvider("configs/non_trading_days")))
 	svc.(*service).now = func() time.Time { return time.Date(2026, 5, 25, 0, 0, 0, 0, time.UTC) }
+
+	resp, err := svc.ListDeadlineAlerts(context.Background(), ListDeadlineAlertsRequest{
+		Subject: Subject{UserID: "u1", MembershipID: "m_admin_001", CompanyID: "c_001"},
+		Page:    1, PageSize: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Total != 2 {
+		t.Fatalf("count/list parity: total=%d want 2", resp.Total)
+	}
+	if len(resp.Items) != 1 || resp.Items[0].RecordID != "r-draft-a" {
+		t.Fatalf("page slice got %+v", resp)
+	}
+	if resp.Items[0].Status != "UPCOMING" {
+		t.Fatalf("status %s", resp.Items[0].Status)
+	}
+}
+
+func TestListDeadlineAlerts_actionableDraftStatusClassification(t *testing.T) {
+	repo := &stubRepo{rows: []AlertRow{
+		{CompanyID: "c1", RecordID: "r-future", Title: "Future", RecordStatus: "Draft", PlannedDate: "2026-09-10"},
+		{CompanyID: "c1", RecordID: "r-today", Title: "Today", RecordStatus: "Draft", PlannedDate: "2026-08-25"},
+		{CompanyID: "c1", RecordID: "r-overdue", Title: "Overdue", RecordStatus: "Draft", PlannedDate: "2026-08-20"},
+	}}
+	svc := NewService(repo, allowAuthSvc(), disclosureapp.NewDeadlineCalculator(disclosureapp.NewHolidayCalendarFileProvider("configs/non_trading_days")))
+	svc.(*service).now = func() time.Time { return time.Date(2026, 8, 25, 0, 0, 0, 0, time.UTC) }
 
 	resp, err := svc.ListDeadlineAlerts(context.Background(), ListDeadlineAlertsRequest{
 		Subject: Subject{UserID: "u1", MembershipID: "m_admin_001", CompanyID: "c_001"},
@@ -111,11 +139,66 @@ func TestListDeadlineAlerts_filtersDraftAndPaginates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resp.Total != 1 || len(resp.Items) != 1 || resp.Items[0].RecordID != "r-live" {
-		t.Fatalf("got %+v", resp)
+	if resp.Total != 3 || len(resp.Items) != 3 {
+		t.Fatalf("multi-row got %+v", resp)
 	}
-	if resp.Items[0].Status != "UPCOMING" {
-		t.Fatalf("status %s", resp.Items[0].Status)
+	byID := map[string]string{}
+	for _, it := range resp.Items {
+		byID[it.RecordID] = it.Status
+	}
+	if byID["r-future"] != "UPCOMING" {
+		t.Fatalf("future due status=%s want UPCOMING", byID["r-future"])
+	}
+	if byID["r-today"] != "DUE_SOON" {
+		t.Fatalf("due today status=%s want DUE_SOON", byID["r-today"])
+	}
+	if byID["r-overdue"] != "OVERDUE" {
+		t.Fatalf("overdue status=%s want OVERDUE", byID["r-overdue"])
+	}
+}
+
+func TestListDeadlineAlerts_unresolvedDueSkipped(t *testing.T) {
+	repo := &stubRepo{rows: []AlertRow{
+		{CompanyID: "c1", RecordID: "r-nodue", Title: "No due", RecordStatus: "Draft"},
+		{CompanyID: "c1", RecordID: "r-ok", Title: "Has due", RecordStatus: "Draft", PlannedDate: "2026-09-01"},
+	}}
+	svc := NewService(repo, allowAuthSvc(), disclosureapp.NewDeadlineCalculator(disclosureapp.NewHolidayCalendarFileProvider("configs/non_trading_days")))
+	svc.(*service).now = func() time.Time { return time.Date(2026, 8, 25, 0, 0, 0, 0, time.UTC) }
+
+	resp, err := svc.ListDeadlineAlerts(context.Background(), ListDeadlineAlertsRequest{
+		Subject: Subject{UserID: "u1", MembershipID: "m_admin_001", CompanyID: "c_001"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Total != 1 || resp.Items[0].RecordID != "r-ok" {
+		t.Fatalf("unresolved due must be skipped; got %+v", resp)
+	}
+}
+
+func TestListDeadlineAlerts_confirmedDraftRemainsActiveObligation(t *testing.T) {
+	confirmedAt := time.Date(2026, 8, 24, 0, 0, 0, 0, time.UTC)
+	repo := &stubRepo{rows: []AlertRow{
+		{
+			CompanyID: "c1", RecordID: "r-confirmed-draft", Title: "Confirmed Draft",
+			RecordStatus: "Draft", PlannedDate: "2026-08-30",
+			ConfirmedBy: "m_admin_001", ConfirmedAt: &confirmedAt,
+		},
+	}}
+	svc := NewService(repo, allowAuthSvc(), disclosureapp.NewDeadlineCalculator(disclosureapp.NewHolidayCalendarFileProvider("configs/non_trading_days")))
+	svc.(*service).now = func() time.Time { return time.Date(2026, 8, 25, 0, 0, 0, 0, time.UTC) }
+
+	resp, err := svc.ListDeadlineAlerts(context.Background(), ListDeadlineAlertsRequest{
+		Subject: Subject{UserID: "u1", MembershipID: "m_admin_001", CompanyID: "c_001"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Items) != 1 || resp.Items[0].RecordID != "r-confirmed-draft" {
+		t.Fatalf("confirmed Draft must remain listed; got %+v", resp)
+	}
+	if resp.Items[0].Status != "DONE" {
+		t.Fatalf("confirmation presentation status=%s want DONE", resp.Items[0].Status)
 	}
 }
 

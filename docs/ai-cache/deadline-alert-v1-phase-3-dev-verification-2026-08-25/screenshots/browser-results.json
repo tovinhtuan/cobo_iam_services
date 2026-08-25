@@ -1,0 +1,42 @@
+{
+  "API_PRECHECK": {
+    "status": "PASS",
+    "note": "total=10"
+  },
+  "API_OVERDUE_PRESENT": {
+    "status": "FAIL",
+    "note": ""
+  },
+  "API_FUTURE_PRESENT": {
+    "status": "FAIL",
+    "note": ""
+  },
+  "API_PRE_ABSENT": {
+    "status": "PASS",
+    "note": ""
+  },
+  "BROWSER_PAGE_LOADED": {
+    "status": "PASS",
+    "note": "api_status=200"
+  },
+  "BROWSER_RENDERS_ACTIONABLE_DRAFT": {
+    "status": "FAIL",
+    "note": ""
+  },
+  "BROWSER_PRE_OPENAT_HIDDEN": {
+    "status": "PASS",
+    "note": ""
+  },
+  "BROWSER_POST_SUBMIT_ALERT_REMOVED": {
+    "status": "PASS",
+    "note": ""
+  },
+  "DRAFT_ALERT_NAVIGATION": {
+    "status": "NOT_REQUIRED",
+    "note": "NOT_REQUIRED"
+  },
+  "CROSS_COMPANY_LEAK": {
+    "status": "PASS",
+    "note": "c_002_total=undefined"
+  }
+}

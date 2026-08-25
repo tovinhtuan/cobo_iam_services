@@ -30,12 +30,6 @@ func TestMatchesDateRange(t *testing.T) {
 	}
 }
 
-func TestIsDraftRecordStatus_excluded(t *testing.T) {
-	if !isDraftRecordStatus("draft") {
-		t.Fatal("expected draft")
-	}
-}
-
 func TestIsTerminalRecordStatus_includesPublished(t *testing.T) {
 	if !isTerminalRecordStatus("Published") {
 		t.Fatal("expected published terminal")

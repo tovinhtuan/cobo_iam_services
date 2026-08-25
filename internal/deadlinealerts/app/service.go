@@ -92,11 +92,10 @@ func (s *service) ListDeadlineAlerts(ctx context.Context, req ListDeadlineAlerts
 		}
 	}
 
+	// Membership (NeedsCompanyAction + AlertWindow) is owned by repository ListRows (Phase 1).
+	// Service only enriches: access re-check, due resolution, status/confirmation presentation.
 	enriched := make([]DeadlineAlertDTO, 0)
 	for _, row := range rows {
-		if isDraftRecordStatus(row.RecordStatus) {
-			continue
-		}
 		if !accessScope.AllowsRow(row) {
 			continue
 		}
