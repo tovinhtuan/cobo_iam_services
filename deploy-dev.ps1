@@ -398,8 +398,14 @@ function Invoke-DeployFe {
 
   Push-Location $FeDir
   try {
+    # Vite may write chunk-size warnings to stderr; with $ErrorActionPreference=Stop,
+    # PowerShell treats that as terminating even when npm exit code is 0.
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
     & npm run build
-    if ($LASTEXITCODE -ne 0) { throw 'npm run build failed' }
+    $buildCode = $LASTEXITCODE
+    $ErrorActionPreference = $prevEap
+    if ($buildCode -ne 0) { throw 'npm run build failed' }
   } finally {
     Pop-Location
   }

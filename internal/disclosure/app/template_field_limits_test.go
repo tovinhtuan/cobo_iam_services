@@ -28,6 +28,18 @@ func (r *descriptionLimitRepo) UpsertTypeVersion(_ context.Context, req UpsertTy
 	return &UpsertTypeVersionResponse{TypeID: req.TypeID, VersionNo: 1, IsActive: true, UpdatedBy: req.Subject.UserID}, nil
 }
 
+func (r *descriptionLimitRepo) ListTypeVersions(context.Context, string, string) ([]DisclosureTypeVersionDTO, error) {
+	return nil, nil
+}
+
+func (r *descriptionLimitRepo) GetTypeVersionDetail(context.Context, string, string, int) (*DisclosureTypeDTO, error) {
+	return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "not found", nil)
+}
+
+func (r *descriptionLimitRepo) GetActiveVersionDeadlineConfig(context.Context, string) (int, *TemplateDeadlineConfig, error) {
+	return 0, nil, nil
+}
+
 func TestUpsertTypeVersion_RejectsDescriptionOverMaxLength(t *testing.T) {
 	repo := &descriptionLimitRepo{}
 	svc := newCMSUpsertDeadlineService(repo)

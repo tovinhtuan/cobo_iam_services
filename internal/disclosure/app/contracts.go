@@ -878,7 +878,11 @@ type DisclosureTypeSummaryDTO struct {
 	ResolvedStructureDeadlineDays *int                                      `json:"resolved_structure_deadline_days,omitempty"`
 	ActiveVersionNo               int                                       `json:"active_version_no,omitempty"`
 	ListedVersionNo               int                                       `json:"listed_version_no,omitempty"`
-	CreatedAt                     time.Time                                 `json:"-"`
+	// ApplicabilityState is derived (UPCOMING|ACTIVE|ENDED); omit when not applicable.
+	ApplicabilityState string `json:"applicability_state,omitempty"`
+	// DeadlineConfig is loaded for applicability derivation on list; never serialized.
+	DeadlineConfig *TemplateDeadlineConfig `json:"-"`
+	CreatedAt      time.Time               `json:"-"`
 }
 
 type DisclosureTypeDTO struct {
@@ -930,7 +934,10 @@ type DisclosureTypeDTO struct {
 	ActivationWarnings []ActivationWarningDTO `json:"activation_warnings,omitempty"`
 	// FirstOccurrencePreview is CMS-baseline first materializable slot impact (read-only).
 	FirstOccurrencePreview *FirstOccurrencePreviewDTO `json:"first_occurrence_preview,omitempty"`
-	ReviewStatus           string                                    `json:"review_status,omitempty"`
+	ReviewStatus           string                     `json:"review_status,omitempty"`
+	// ApplicabilityState is derived Portal presentation (UPCOMING|ACTIVE|ENDED); not persisted.
+	// Orthogonal to lifecycle / review_status. Empty when omit (non-periodic / invalid config).
+	ApplicabilityState string                                    `json:"applicability_state,omitempty"`
 	ApplicabilityRules *applicability.TemplateApplicabilityRules `json:"applicability_rules,omitempty"`
 	// ResolvedDeadlineRule is the live semantic outcome of production ResolveStructure /
 	// ResolveDeadlineDays for the authenticated company (additive; omit when unavailable).
@@ -1053,6 +1060,16 @@ type TemplateDeadlineConfig struct {
 	ApplicableFromMode string `json:"applicable_from_mode,omitempty"`
 	// ApplicableFromSlot: frequency-native cycle_label (same as ResolveLogicalSlot). Empty until Activate for CURRENT/NEXT.
 	ApplicableFromSlot string `json:"applicable_from_slot,omitempty"`
+	// ApplicableTo: optional upper-bound applicability as YYYY-MM-DD (Asia/Ho_Chi_Minh business date).
+	// Empty / omitted / JSON null = OPEN_ENDED (legacy templates unchanged).
+	// Ownership: Template Version deadline_config_json (same blob as ApplicableFrom*).
+	// Runtime: compare resolved occurrence T_HCM_date <= ApplicableTo (inclusive).
+	// Worker seed enforces via EvaluateApplicableToEligibility before UpsertPeriodicCycle (Phase C).
+	ApplicableTo string `json:"applicable_to,omitempty"`
+	// ApplicableToProvided is true when the JSON object included key "applicable_to"
+	// (including null/""). Distinguishes omit→preserve from explicit clear→OPEN_ENDED
+	// under full-replace deadline_config writes. Not serialized.
+	ApplicableToProvided bool `json:"-"`
 }
 
 // WorkflowOverrideReminderPreviewMilestoneDTO is one projected reminder row for draft preview.
@@ -1203,6 +1220,9 @@ type PeriodicTypeRow struct {
 	// Empty/empty = legacy; worker uses frozen slot only (never resolves CURRENT/NEXT).
 	ApplicableFromMode string
 	ApplicableFromSlot string
+	// ApplicableTo from ACTIVE deadline_config_json (Phase A/C). Empty = OPEN_ENDED.
+	// Worker compares effective Company T (HCM date) via EvaluateApplicableToEligibility.
+	ApplicableTo string
 }
 
 // PeriodicCycleRow represents one (type, company, cycle) idempotency slot.

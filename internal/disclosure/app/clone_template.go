@@ -256,8 +256,10 @@ func (s *service) materializeCloneUpsert(ctx context.Context, req CloneTypeFromA
 		cp := *source.DeadlineConfig
 		deadlineCfg = &cp
 		ApplyCloneApplicableFromDefaults(deadlineCfg)
+		ApplyCloneApplicableToDefaults(deadlineCfg)
 	} else {
 		deadlineCfg = &TemplateDeadlineConfig{ApplicableFromMode: ApplicableFromModeNext}
+		ApplyCloneApplicableToDefaults(deadlineCfg)
 	}
 
 	upsert := UpsertTypeVersionRequest{

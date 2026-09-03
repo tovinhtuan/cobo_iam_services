@@ -98,6 +98,28 @@ func seedPeriodicCycles(ctx context.Context, now time.Time, repo Repository, idg
 			}
 			_ = tSource
 
+			// ApplicableTo upper bound: effective Company T (HCM date) vs template ApplicableTo.
+			// OPEN_ENDED / T<=To → continue; T>To → skip; invalid non-empty → fail-closed skip.
+			toEligible, toDecision, toErr := EvaluateApplicableToEligibility(cycleStart, t.ApplicableTo, loc)
+			if toErr != nil {
+				slog.WarnContext(ctx, "periodic seed skip: applicable_to invalid",
+					slog.String("type_id", t.TypeID),
+					slog.String("company_id", companyID),
+					slog.String("applicable_to", t.ApplicableTo),
+					slog.String("decision", toDecision),
+					slog.String("err", toErr.Error()))
+				continue
+			}
+			if !toEligible {
+				slog.DebugContext(ctx, "periodic seed skip: after applicable_to",
+					slog.String("type_id", t.TypeID),
+					slog.String("company_id", companyID),
+					slog.String("candidate_slot", label),
+					slog.String("applicable_to", t.ApplicableTo),
+					slog.String("decision", toDecision))
+				continue
+			}
+
 			deadlineDays := t.DeadlineDays
 			durationType := DurationTypeCalendarDays
 			if t.ApplicabilityRules != nil {

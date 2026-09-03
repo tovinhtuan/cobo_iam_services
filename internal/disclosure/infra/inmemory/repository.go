@@ -379,6 +379,7 @@ func (r *Repository) ListTypes(_ context.Context, params disclosureapp.ListTypes
 			Name:               listItem.Name,
 			Category:           listItem.Category,
 			TemplateCategory:   listItem.TemplateCategory,
+			Periodicity:        listItem.Periodicity,
 			Description:        listItem.Description,
 			DeadlineRule:       listItem.DeadlineRule,
 			HasWorkflow:        disclosureapp.TemplateHasWorkflow(listItem.Blocks),
@@ -386,6 +387,7 @@ func (r *Repository) ListTypes(_ context.Context, params disclosureapp.ListTypes
 			ApplicabilityRules: listItem.ApplicabilityRules,
 			ActiveVersionNo:    activeVersionNo,
 			ListedVersionNo:    listedVersionNo,
+			DeadlineConfig:     listItem.DeadlineConfig,
 		})
 	}
 	total := len(out)

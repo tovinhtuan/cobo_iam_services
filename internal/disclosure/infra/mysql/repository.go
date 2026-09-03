@@ -375,7 +375,7 @@ func (r *Repository) ListTypes(ctx context.Context, params disclosureapp.ListTyp
 		dataSQL = `SELECT t.type_id, t.group_id, COALESCE(t.display_group_code, ''), t.company_id,
 		       COALESCE(t.is_mandatory, 0), COALESCE(t.review_status, ''), t.active_version_no, v.version_no,
 		       v.name, v.category, v.template_category, COALESCE(LEFT(v.description, 1024), ''), v.deadline_rule, v.tags_json,
-		       COALESCE(v.periodicity, ''), v.applicability_rules_json, t.created_at
+		       COALESCE(v.periodicity, ''), v.applicability_rules_json, COALESCE(v.deadline_config_json, JSON_OBJECT()), t.created_at
 		` + baseSQL + `
 		ORDER BY ` + sortCol + ` ` + sortDir
 	}
@@ -418,13 +418,14 @@ func (r *Repository) ListTypes(ctx context.Context, params disclosureapp.ListTyp
 
 		var tagsRaw []byte
 		var rulesRaw []byte
+		var deadlineConfigRaw []byte
 		var ownerCompanyID sql.NullString
 		var listedVersionNo int
 		if err := rows.Scan(
 			&item.TypeID, &item.GroupID, &item.DisplayGroupCode, &ownerCompanyID,
 			&item.IsMandatory, &item.ReviewStatus, &item.ActiveVersionNo, &listedVersionNo,
 			&item.Name, &item.Category, &item.TemplateCategory, &item.Description, &item.DeadlineRule, &tagsRaw,
-			&item.Periodicity, &rulesRaw, &item.CreatedAt,
+			&item.Periodicity, &rulesRaw, &deadlineConfigRaw, &item.CreatedAt,
 		); err != nil {
 			return nil, 0, err
 		}
@@ -433,6 +434,9 @@ func (r *Repository) ListTypes(ctx context.Context, params disclosureapp.ListTyp
 			return nil, 0, err
 		} else {
 			item.ApplicabilityRules = rules
+		}
+		if err := decodeDeadlineConfigJSON(deadlineConfigRaw, &item.DeadlineConfig); err != nil {
+			return nil, 0, err
 		}
 		item.OwnerCompanyID = ownerCompanyID.String
 		if ownerCompanyID.Valid && strings.TrimSpace(ownerCompanyID.String) != "" {
@@ -2261,7 +2265,8 @@ func (r *Repository) ListActivePeriodicTypes(ctx context.Context) ([]disclosurea
 		       CASE WHEN dt.company_id IS NULL THEN 1 ELSE 0 END AS is_global,
 		       dtv.applicability_rules_json,
 		       COALESCE(JSON_UNQUOTE(JSON_EXTRACT(dtv.deadline_config_json, '$.applicable_from_mode')), '') AS applicable_from_mode,
-		       COALESCE(JSON_UNQUOTE(JSON_EXTRACT(dtv.deadline_config_json, '$.applicable_from_slot')), '') AS applicable_from_slot
+		       COALESCE(JSON_UNQUOTE(JSON_EXTRACT(dtv.deadline_config_json, '$.applicable_from_slot')), '') AS applicable_from_slot,
+		       COALESCE(JSON_UNQUOTE(JSON_EXTRACT(dtv.deadline_config_json, '$.applicable_to')), '') AS applicable_to
 		FROM disclosure_types dt
 		JOIN disclosure_type_versions dtv ON dtv.type_id = dt.type_id AND dtv.version_no = dt.active_version_no
 		WHERE JSON_UNQUOTE(JSON_EXTRACT(dtv.deadline_config_json, '$.template_category')) IN ('periodic', 'custom')
@@ -2281,7 +2286,7 @@ func (r *Repository) ListActivePeriodicTypes(ctx context.Context) ([]disclosurea
 		if err := rows.Scan(&row.TypeID, &row.FrequencyUnit, &row.FrequencyInterval,
 			&row.DeadlineDays, &row.CycleAnchorDay, &row.CycleAnchorMonth, &weekdayRaw, &miqRaw,
 			&row.OpenDaysBeforeT, &isGlobal, &rulesRaw,
-			&row.ApplicableFromMode, &row.ApplicableFromSlot); err != nil {
+			&row.ApplicableFromMode, &row.ApplicableFromSlot, &row.ApplicableTo); err != nil {
 			return nil, fmt.Errorf("scan periodic type row: %w", err)
 		}
 		row.CycleAnchorWeekday = nullIntPtr(weekdayRaw)

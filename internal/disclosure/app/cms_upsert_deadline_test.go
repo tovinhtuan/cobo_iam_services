@@ -2,9 +2,11 @@ package app
 
 import (
 	"context"
+	"net/http"
 	"testing"
 
 	"github.com/cobo/cobo_iam_services/internal/disclosure/app/applicability"
+	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 	"github.com/cobo/cobo_iam_services/internal/platform/idgen"
 )
 
@@ -25,6 +27,19 @@ func (r *upsertDeadlineRepo) ListDisplayGroups(_ context.Context) ([]DisplayGrou
 func (r *upsertDeadlineRepo) UpsertTypeVersion(_ context.Context, req UpsertTypeVersionRequest) (*UpsertTypeVersionResponse, error) {
 	r.upsertCalled = true
 	return &UpsertTypeVersionResponse{TypeID: req.TypeID, VersionNo: 1, IsActive: true, UpdatedBy: req.Subject.UserID}, nil
+}
+
+// Stubs so preserveApplicableToIfOmitted (Phase D) can no-op safely on this partial fake.
+func (r *upsertDeadlineRepo) ListTypeVersions(context.Context, string, string) ([]DisclosureTypeVersionDTO, error) {
+	return nil, nil
+}
+
+func (r *upsertDeadlineRepo) GetTypeVersionDetail(context.Context, string, string, int) (*DisclosureTypeDTO, error) {
+	return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "not found", nil)
+}
+
+func (r *upsertDeadlineRepo) GetActiveVersionDeadlineConfig(context.Context, string) (int, *TemplateDeadlineConfig, error) {
+	return 0, nil, nil
 }
 
 func newCMSUpsertDeadlineService(repo Repository) Service {

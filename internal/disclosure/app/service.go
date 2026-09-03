@@ -560,8 +560,11 @@ func (s *service) ListTypes(ctx context.Context, req ListTypesRequest) (*ListTyp
 		}
 	}
 	catalog := s.loadDeadlineRuleCatalog(ctx)
+	now := time.Now()
 	for i := range ordered {
 		enrichDeadlineRuleDisplaySummary(&ordered[i], catalog)
+		ApplyDerivedApplicabilityState(&ordered[i].ApplicabilityState, ordered[i].DeadlineConfig, ordered[i].Periodicity, now)
+		ordered[i].DeadlineConfig = nil
 	}
 	return &ListTypesResponse{Items: ordered, Total: total, Page: page, PageSize: pageSize}, nil
 }
@@ -661,6 +664,7 @@ func (s *service) GetTypeDetail(ctx context.Context, req GetTypeDetailRequest) (
 	}
 
 	if item.DeadlineConfig == nil {
+		ApplyDerivedApplicabilityState(&item.ApplicabilityState, nil, item.Periodicity, time.Now())
 		return item, nil
 	}
 	companyCtx, err := s.repo.GetCompanyTypeDeadlineContext(ctx, req.Subject.CompanyID, req.TypeID)
@@ -671,6 +675,7 @@ func (s *service) GetTypeDetail(ctx context.Context, req GetTypeDetailRequest) (
 			RuleDescription: ptrString("Không lấy được ngữ cảnh doanh nghiệp để tính deadline."),
 			Timezone:        ptrString("Asia/Ho_Chi_Minh"),
 		}
+		ApplyDerivedApplicabilityState(&item.ApplicabilityState, item.DeadlineConfig, item.Periodicity, time.Now())
 		return item, nil
 	}
 	now := time.Now()
@@ -693,6 +698,7 @@ func (s *service) GetTypeDetail(ctx context.Context, req GetTypeDetailRequest) (
 			RuleDescription: ptrString("Không thể tính deadline từ cấu hình hiện tại."),
 			Timezone:        ptrString("Asia/Ho_Chi_Minh"),
 		}
+		ApplyDerivedApplicabilityState(&item.ApplicabilityState, item.DeadlineConfig, item.Periodicity, now)
 		return item, nil
 	}
 	item.DeadlineSummary = summary
@@ -711,6 +717,7 @@ func (s *service) GetTypeDetail(ctx context.Context, req GetTypeDetailRequest) (
 				companyCtx, profile, summary.StartDate, summary.DeadlineDate, now)
 		}
 	}
+	ApplyDerivedApplicabilityState(&item.ApplicabilityState, item.DeadlineConfig, item.Periodicity, now)
 	return item, nil
 }
 
@@ -866,6 +873,10 @@ func (s *service) UpsertTypeVersion(ctx context.Context, req UpsertTypeVersionRe
 		if err := PrepareApplicableFromForDraftWrite(req.DeadlineConfig, ""); err != nil {
 			return nil, err
 		}
+		s.preserveApplicableToIfOmitted(ctx, &req)
+		if err := PrepareApplicableToForDraftWrite(req.DeadlineConfig); err != nil {
+			return nil, err
+		}
 	}
 	publicationCandidate, err := BuildTemplatePublicationCandidate(req)
 	if err != nil {
@@ -877,6 +888,25 @@ func (s *service) UpsertTypeVersion(ctx context.Context, req UpsertTypeVersionRe
 		return nil, mapRepositoryUpsertError(err)
 	}
 	return resp, nil
+}
+
+// preserveApplicableToIfOmitted copies ApplicableTo from the current open draft or
+// active version when the client omitted the key under full-replace deadline_config.
+// Clone (CreateOnly) skips this — ApplyCloneApplicableToDefaults already CLEARed.
+func (s *service) preserveApplicableToIfOmitted(ctx context.Context, req *UpsertTypeVersionRequest) {
+	if req == nil || req.DeadlineConfig == nil || req.CreateOnly {
+		return
+	}
+	if !ShouldPreserveApplicableTo(req.DeadlineConfig) {
+		return
+	}
+	if detail, _, err := s.templateWorkflowCandidateDetail(ctx, req.Subject, req.TypeID); err == nil && detail != nil && detail.DeadlineConfig != nil {
+		req.DeadlineConfig.ApplicableTo = detail.DeadlineConfig.ApplicableTo
+		return
+	}
+	if _, existing, err := s.repo.GetActiveVersionDeadlineConfig(ctx, req.TypeID); err == nil && existing != nil {
+		req.DeadlineConfig.ApplicableTo = existing.ApplicableTo
+	}
 }
 
 func normalizeDisplayGroupCodes(codes []string) []string {
@@ -993,6 +1023,9 @@ func (s *service) ActivateTypeVersion(ctx context.Context, req ActivateTypeVersi
 	if versionDetail.DeadlineConfig != nil {
 		if err := ValidateApplicableFromForActivate(versionDetail.DeadlineConfig); err != nil {
 			return nil, err
+		}
+		if blockers := CollectApplicableToActivationBlockers(versionDetail.DeadlineConfig, activationNow); len(blockers) > 0 {
+			return nil, applicableToActivationHTTPError(blockers[0])
 		}
 		mode, slot, ferr := FreezeApplicableFromAtActivate(versionDetail.DeadlineConfig, activationNow)
 		if ferr != nil {
@@ -1451,6 +1484,11 @@ func applyActivationReadiness(item *DisclosureTypeDTO, evalAt time.Time, calc *D
 			attachFirstOccurrencePreview(item, evalAt, calc)
 			return
 		}
+		if toBlockers := CollectApplicableToActivationBlockers(item.DeadlineConfig, evalAt); len(toBlockers) > 0 {
+			item.ActivationBlockers = toBlockers
+			attachFirstOccurrencePreview(item, evalAt, calc)
+			return
+		}
 	}
 	item.ActivationReady = true
 	attachFirstOccurrencePreview(item, evalAt, calc)
@@ -1564,6 +1602,14 @@ func (s *service) UpdateTemplateDeadlineConfig(ctx context.Context, req UpdateTe
 		req.DeadlineConfig.CycleAnchorWeekday,
 		req.DeadlineConfig.MonthInQuarter,
 	); err != nil {
+		return nil, err
+	}
+	if ShouldPreserveApplicableTo(&req.DeadlineConfig) {
+		if _, existing, err := s.repo.GetActiveVersionDeadlineConfig(ctx, req.TypeID); err == nil && existing != nil {
+			req.DeadlineConfig.ApplicableTo = existing.ApplicableTo
+		}
+	}
+	if err := PrepareApplicableToForDraftWrite(&req.DeadlineConfig); err != nil {
 		return nil, err
 	}
 	if err := s.repo.UpdateActiveVersionDeadlineConfig(ctx, req.TypeID, req.DeadlineConfig, req.Subject.UserID); err != nil {
