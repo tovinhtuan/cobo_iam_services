@@ -185,15 +185,35 @@ func GenerateMilestoneCandidates(tl StepTimeline, t0 time.Time, companyID, insta
 }
 
 func buildMilestoneID(instanceID, stepID, milestoneType string, idFn func() string) string {
-	// deterministic prefix + random suffix to guarantee uniqueness
-	return fmt.Sprintf("%s_%s_%s_%s", instanceID[:8], stepID[:min(8, len(stepID))], milestoneType, idFn()[:8])
+	// Identity is per workflow instance × step × milestone type.
+	// UUIDv7 / time-ordered IDs share a long time PREFIX; truncating the PREFIX
+	// (old: instanceID[:8] + idFn()[:8]) made INSERT IGNORE collapse rows when
+	// N companies materialize in the same millisecond (DEF-006).
+	// Prefer trailing entropy so multi-company inserts stay unique within VARCHAR(80).
+	// milestoneType stays embedded for RecoverDueMinusMilestoneTypeFromID.
+	inst := idTailCompact(instanceID, 16)
+	step := idTailCompact(stepID, 12)
+	entropy := idTailCompact(idFn(), 16)
+	id := fmt.Sprintf("%s_%s_%s_%s", inst, step, milestoneType, entropy)
+	if len(id) <= 80 {
+		return id
+	}
+	// Rare long milestoneType: keep type substring + truncate entropy only.
+	over := len(id) - 80
+	if over < len(entropy) {
+		entropy = entropy[:len(entropy)-over]
+		return fmt.Sprintf("%s_%s_%s_%s", inst, step, milestoneType, entropy)
+	}
+	return id[:80]
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
+// idTailCompact strips hyphens and keeps the last n runes (UUIDv7 entropy lives at the end).
+func idTailCompact(s string, n int) string {
+	s = strings.ReplaceAll(strings.TrimSpace(s), "-", "")
+	if n <= 0 || len(s) <= n {
+		return s
 	}
-	return b
+	return s[len(s)-n:]
 }
 
 // processingDaysForStep resolves per-step duration from due_rule (T+N) or defaults.

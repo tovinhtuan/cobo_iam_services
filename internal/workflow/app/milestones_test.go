@@ -2,11 +2,13 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
 	adhocapp "github.com/cobo/cobo_iam_services/internal/adhoc/app"
+	"github.com/google/uuid"
 )
 
 type fakeMilestoneRepository struct {
@@ -55,6 +57,124 @@ func TestCreateWorkflowInstanceInternalSeedsMilestonesWhenTimelineEnabled(t *tes
 	}
 	if milestones.inserted[0].InstanceID != repo.createdInstance.WorkflowInstanceID {
 		t.Fatalf("expected milestone instance_id %q, got %q", repo.createdInstance.WorkflowInstanceID, milestones.inserted[0].InstanceID)
+	}
+}
+
+type uuidv7WorkflowIDGen struct{}
+
+func (uuidv7WorkflowIDGen) NewUUID() string {
+	id, err := uuid.NewV7()
+	if err != nil {
+		panic(err)
+	}
+	return id.String()
+}
+
+// DEF-006: N companies sharing template/step must each get distinct milestone rows (no INSERT IGNORE collapse).
+func TestCreateWorkflowInstanceInternal_MultiCompanyMilestoneCompleteness(t *testing.T) {
+	companies := []string{"co-a", "co-b", "co-c"}
+	repo := &fakeWorkflowRepository{}
+	milestones := &fakeMilestoneRepository{}
+	svc := NewService(repo, nil, uuidv7WorkflowIDGen{},
+		WithMilestoneRepository(milestones),
+		WithFlags(Flags{TimelineEnabled: true}),
+	)
+	t0 := time.Date(2026, time.September, 4, 0, 0, 0, 0, time.UTC)
+	snapshot := []StepSnapshot{{
+		StepID: "step-001", StepCode: "step-001", DueRule: "T+2", DisplayOrder: 1,
+		ProcessingDays: 2, EffectiveReminderDays: []int{1},
+	}}
+
+	byCompany := map[string][]StepMilestoneRow{}
+	idSeen := map[string]string{}
+	for i, company := range companies {
+		_, err := svc.CreateWorkflowInstanceInternal(context.Background(), CreateWorkflowInstanceRequest{
+			Subject: Subject{
+				UserID: "user-" + company, MembershipID: "m-" + company, CompanyID: company,
+			},
+			RecordID: fmt.Sprintf("record-%d", i),
+			T0Date:   &t0,
+			T0Policy: "system_date",
+			Snapshot: snapshot,
+		})
+		if err != nil {
+			t.Fatalf("company %s: %v", company, err)
+		}
+	}
+	for _, row := range milestones.inserted {
+		byCompany[row.CompanyID] = append(byCompany[row.CompanyID], row)
+		if prev, ok := idSeen[row.MilestoneID]; ok {
+			t.Fatalf("duplicate milestone_id %q for companies %s and %s", row.MilestoneID, prev, row.CompanyID)
+		}
+		idSeen[row.MilestoneID] = row.CompanyID
+	}
+	if len(byCompany) != len(companies) {
+		t.Fatalf("companies with milestones=%d want %d (ids=%v)", len(byCompany), len(companies), byCompany)
+	}
+	for _, company := range companies {
+		rows := byCompany[company]
+		if len(rows) == 0 {
+			t.Fatalf("company %s missing milestones", company)
+		}
+		for _, row := range rows {
+			if row.CompanyID != company {
+				t.Fatalf("cross-company leak: company bucket %s has row company %s", company, row.CompanyID)
+			}
+			if row.InstanceID == "" {
+				t.Fatal("instance_id required")
+			}
+		}
+	}
+
+	// Idempotency: second create for same companies with new records still unique IDs; no shared collision.
+	before := len(milestones.inserted)
+	for i, company := range companies {
+		_, err := svc.CreateWorkflowInstanceInternal(context.Background(), CreateWorkflowInstanceRequest{
+			Subject:  Subject{UserID: "user-" + company, MembershipID: "m-" + company, CompanyID: company},
+			RecordID: fmt.Sprintf("record-round2-%d", i),
+			T0Date:   &t0,
+			T0Policy: "system_date",
+			Snapshot: snapshot,
+		})
+		if err != nil {
+			t.Fatalf("round2 %s: %v", company, err)
+		}
+	}
+	after := len(milestones.inserted)
+	if after <= before {
+		t.Fatalf("expected more milestones after second wave: before=%d after=%d", before, after)
+	}
+	idSeen2 := map[string]int{}
+	for _, row := range milestones.inserted {
+		idSeen2[row.MilestoneID]++
+		if idSeen2[row.MilestoneID] > 1 {
+			t.Fatalf("duplicate milestone_id after second wave: %q", row.MilestoneID)
+		}
+	}
+}
+
+func TestCreateWorkflowInstanceInternal_IneligibleCompanySkippedByCallerContract(t *testing.T) {
+	// Service seeds per CreateWorkflowInstanceInternal call; eligibility filtering is upstream.
+	// Prove single-company regression still seeds when TimelineEnabled.
+	repo := &fakeWorkflowRepository{}
+	milestones := &fakeMilestoneRepository{}
+	svc := NewService(repo, nil, uuidv7WorkflowIDGen{},
+		WithMilestoneRepository(milestones),
+		WithFlags(Flags{TimelineEnabled: true}),
+	)
+	t0 := time.Date(2026, time.September, 4, 0, 0, 0, 0, time.UTC)
+	_, err := svc.CreateWorkflowInstanceInternal(context.Background(), CreateWorkflowInstanceRequest{
+		Subject:  Subject{UserID: "u", MembershipID: "m", CompanyID: "only-co"},
+		RecordID: "r1",
+		T0Date:   &t0,
+		T0Policy: "system_date",
+		Snapshot: []StepSnapshot{{StepID: "step-001", StepCode: "step-001", DueRule: "T+1", DisplayOrder: 1}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(milestones.inserted) == 0 {
+		t.Fatal("single company regression: expected milestones")
 	}
 }
 

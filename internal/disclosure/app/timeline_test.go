@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 func TestParseDueRuleProcessingDays(t *testing.T) {
@@ -185,5 +187,54 @@ func TestGenerateMilestoneCandidates_LegacyHelperStillHasBeforeStart(t *testing.
 	}
 	if !foundBefore {
 		t.Fatal("legacy helper must still produce before_start_*")
+	}
+}
+
+// DEF-006: UUIDv7 time-prefix truncation must not collapse milestones across companies.
+func TestBuildMilestoneID_MultiCompanyUUIDv7NoCollision(t *testing.T) {
+	const n = 8
+	instances := make([]string, n)
+	for i := 0; i < n; i++ {
+		id, err := uuid.NewV7()
+		if err != nil {
+			t.Fatalf("uuid.NewV7: %v", err)
+		}
+		instances[i] = id.String()
+	}
+	seen := map[string]string{}
+	for _, inst := range instances {
+		mid := buildMilestoneID(inst, "step-001", "due_minus_1d", func() string {
+			id, err := uuid.NewV7()
+			if err != nil {
+				t.Fatalf("uuid.NewV7 entropy: %v", err)
+			}
+			return id.String()
+		})
+		if len(mid) > 80 {
+			t.Fatalf("milestone_id length %d exceeds VARCHAR(80): %q", len(mid), mid)
+		}
+		if prev, ok := seen[mid]; ok {
+			t.Fatalf("collision: instances %q and %q share milestone_id %q", prev, inst, mid)
+		}
+		seen[mid] = inst
+		if recovered, ok := RecoverDueMinusMilestoneTypeFromID(mid); !ok || recovered != "due_minus_1d" {
+			t.Fatalf("id %q must embed due_minus_1d", mid)
+		}
+	}
+	if len(seen) != n {
+		t.Fatalf("unique=%d want %d", len(seen), n)
+	}
+}
+
+func TestBuildMilestoneID_IdempotentSameInputs(t *testing.T) {
+	idFn := func() string { return "01a06cd0-ffff-7000-8000-123456789abc" }
+	a := buildMilestoneID("01a06cd0-aaaa-7101-8a95-aaaaaaaaaaaa", "step-001", "due_minus_1d", idFn)
+	b := buildMilestoneID("01a06cd0-aaaa-7101-8a95-aaaaaaaaaaaa", "step-001", "due_minus_1d", idFn)
+	if a != b {
+		t.Fatalf("same inputs must be stable: %q vs %q", a, b)
+	}
+	other := buildMilestoneID("01a06cd0-bbbb-7102-8a95-bbbbbbbbbbbb", "step-001", "due_minus_1d", idFn)
+	if a == other {
+		t.Fatalf("different instance must not collide: %q", a)
 	}
 }
