@@ -561,6 +561,10 @@ func (s *service) ListTypes(ctx context.Context, req ListTypesRequest) (*ListTyp
 	}
 	catalog := s.loadDeadlineRuleCatalog(ctx)
 	now := time.Now()
+	if listMode != "management" {
+		// Company-scoped resolved due for portal cards (before DeadlineConfig is stripped).
+		s.enrichPortalListResolvedDue(ctx, req.Subject.CompanyID, ordered, now)
+	}
 	for i := range ordered {
 		enrichDeadlineRuleDisplaySummary(&ordered[i], catalog)
 		ApplyDerivedApplicabilityState(&ordered[i].ApplicabilityState, ordered[i].DeadlineConfig, ordered[i].Periodicity, now)

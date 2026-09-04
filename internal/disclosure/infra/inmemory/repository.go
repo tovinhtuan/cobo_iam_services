@@ -1497,6 +1497,10 @@ func (r *Repository) GetPeriodicCycle(_ context.Context, _, _, _ string) (*discl
 	return nil, nil
 }
 
+func (r *Repository) ListPortalListCycleDues(_ context.Context, _ string, _ []string) ([]disclosureapp.PortalListCycleDueRow, error) {
+	return nil, nil
+}
+
 func (r *Repository) InsertPeriodicCycle(_ context.Context, _ disclosureapp.PeriodicCycleRow) error {
 	return nil
 }

@@ -2360,6 +2360,51 @@ func (r *Repository) GetPeriodicCycle(ctx context.Context, typeID, companyID, cy
 	return &row, nil
 }
 
+// ListPortalListCycleDues batch-loads company-scoped cycle dues for portal list cards (no N+1).
+// Prefer disclosure_records.planned_date when the cycle is linked; else periodic_cycles.due_date.
+func (r *Repository) ListPortalListCycleDues(ctx context.Context, companyID string, typeIDs []string) ([]disclosureapp.PortalListCycleDueRow, error) {
+	companyID = strings.TrimSpace(companyID)
+	if companyID == "" || len(typeIDs) == 0 {
+		return nil, nil
+	}
+	placeholders := make([]string, len(typeIDs))
+	args := make([]any, 0, 1+len(typeIDs))
+	args = append(args, companyID)
+	for i, id := range typeIDs {
+		placeholders[i] = "?"
+		args = append(args, id)
+	}
+	q := fmt.Sprintf(`
+		SELECT pc.type_id, pc.cycle_label,
+		       COALESCE(DATE_FORMAT(dr.planned_date, '%%Y-%%m-%%d'), DATE_FORMAT(pc.due_date, '%%Y-%%m-%%d'), '') AS due_ymd,
+		       CASE
+		         WHEN dr.planned_date IS NOT NULL THEN 'PLANNED_DATE'
+		         WHEN pc.due_date IS NOT NULL THEN 'CYCLE_DUE'
+		         ELSE ''
+		       END AS due_source
+		FROM periodic_cycles pc
+		LEFT JOIN disclosure_records dr ON dr.record_id = pc.record_id
+		WHERE pc.company_id = ?
+		  AND pc.type_id IN (%s)`, strings.Join(placeholders, ","))
+	rows, err := r.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list portal list cycle dues: %w", err)
+	}
+	defer rows.Close()
+	out := make([]disclosureapp.PortalListCycleDueRow, 0)
+	for rows.Next() {
+		var row disclosureapp.PortalListCycleDueRow
+		if err := rows.Scan(&row.TypeID, &row.CycleLabel, &row.DueDateYYYYMMDD, &row.Source); err != nil {
+			return nil, fmt.Errorf("scan portal list cycle due: %w", err)
+		}
+		if strings.TrimSpace(row.DueDateYYYYMMDD) == "" {
+			continue
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
 func (r *Repository) InsertPeriodicCycle(ctx context.Context, in disclosureapp.PeriodicCycleRow) error {
 	var cycleStart any
 	if !in.CycleStart.IsZero() {

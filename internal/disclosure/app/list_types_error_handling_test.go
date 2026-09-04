@@ -38,6 +38,14 @@ func (r *errorRepo) GetCompanyApplicabilityProfile(_ context.Context, _ string) 
 	return r.applicability, nil
 }
 
+func (r *errorRepo) GetCompanyDeadlineContext(_ context.Context, companyID string) (CompanyDeadlineContext, error) {
+	return CompanyDeadlineContext{CompanyID: companyID}, nil
+}
+
+func (r *errorRepo) ListCompanyTypePreferencesByTypeIDs(_ context.Context, _ []string) ([]CompanyTypePreference, error) {
+	return nil, nil
+}
+
 func (r *errorRepo) ListActiveDeadlineRuleCatalog(_ context.Context) ([]DeadlineRuleCatalogDTO, error) {
 	return nil, nil
 }

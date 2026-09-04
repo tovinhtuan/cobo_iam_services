@@ -53,6 +53,14 @@ func (r *listTypesPaginationRepo) GetCompanyApplicabilityProfile(_ context.Conte
 	return applicability.CompanyApplicabilityProfile{}, nil
 }
 
+func (r *listTypesPaginationRepo) GetCompanyDeadlineContext(_ context.Context, companyID string) (CompanyDeadlineContext, error) {
+	return CompanyDeadlineContext{CompanyID: companyID}, nil
+}
+
+func (r *listTypesPaginationRepo) ListCompanyTypePreferencesByTypeIDs(_ context.Context, _ []string) ([]CompanyTypePreference, error) {
+	return nil, nil
+}
+
 func (r *listTypesPaginationRepo) ListActiveDeadlineRuleCatalog(_ context.Context) ([]DeadlineRuleCatalogDTO, error) {
 	return nil, nil
 }

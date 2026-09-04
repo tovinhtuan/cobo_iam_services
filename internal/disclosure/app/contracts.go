@@ -880,9 +880,23 @@ type DisclosureTypeSummaryDTO struct {
 	ListedVersionNo               int                                       `json:"listed_version_no,omitempty"`
 	// ApplicabilityState is derived (UPCOMING|ACTIVE|ENDED); omit when not applicable.
 	ApplicabilityState string `json:"applicability_state,omitempty"`
+	// ResolvedDueAt is company-scoped portal list presentation (RFC3339 Asia/Ho_Chi_Minh EOD).
+	// Prefer persisted cycle/planned_date; else deadline-summary preview. Null when unresolved.
+	ResolvedDueAt *string `json:"resolved_due_at,omitempty"`
+	// ResolvedDueSource is additive provenance for QA/debug (CYCLE_DUE|PLANNED_DATE|DEADLINE_SUMMARY_PREVIEW).
+	ResolvedDueSource string `json:"resolved_due_source,omitempty"`
 	// DeadlineConfig is loaded for applicability derivation on list; never serialized.
 	DeadlineConfig *TemplateDeadlineConfig `json:"-"`
 	CreatedAt      time.Time               `json:"-"`
+}
+
+// PortalListCycleDueRow is one persisted cycle due hint for portal list enrichment (company-scoped).
+type PortalListCycleDueRow struct {
+	TypeID     string
+	CycleLabel string
+	// DueDateYYYYMMDD is planned_date when present, else periodic_cycles.due_date.
+	DueDateYYYYMMDD string
+	Source          string // PLANNED_DATE | CYCLE_DUE
 }
 
 type DisclosureTypeDTO struct {

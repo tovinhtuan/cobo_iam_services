@@ -1,3 +1,9 @@
+## Portal Company resolved deadline display (2026-09-04)
+
+- List API adds `resolved_due_at` (company-scoped); pointer: `portal-company-resolved-deadline-display-2026-09-04/00-pointer.md`
+- Full evidence in sibling FE repo `docs/ai-cache/portal-company-resolved-deadline-display-2026-09-04/`
+- NO_COMMIT / NO_PUSH / NO_MERGE / NO_PRODUCTION — WAIT_FOR_CONFIRMATION
+
 ## Periodic seeding controlled DEV enablement (2026-08-25)
 
 - Enabled worker bundle: `PERIODIC_SEEDING_ENABLED=true` + `WORKFLOW_SNAPSHOT_ENABLED=true` (worker-only recreate)
