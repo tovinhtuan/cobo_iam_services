@@ -885,6 +885,9 @@ type DisclosureTypeSummaryDTO struct {
 	ResolvedDueAt *string `json:"resolved_due_at,omitempty"`
 	// ResolvedDueSource is additive provenance for QA/debug (CYCLE_DUE|PLANNED_DATE|DEADLINE_SUMMARY_PREVIEW).
 	ResolvedDueSource string `json:"resolved_due_source,omitempty"`
+	// ResolvedDeadlineRule is company-scoped execution term DTO (resolvedDays, dayType, baseDateSource).
+	// Matches GetTypeDetail; provides single authoritative formatting for portal list card.
+	ResolvedDeadlineRule *ResolvedDeadlineRuleDTO `json:"resolved_deadline_rule,omitempty"`
 	// DeadlineConfig is loaded for applicability derivation on list; never serialized.
 	DeadlineConfig *TemplateDeadlineConfig `json:"-"`
 	CreatedAt      time.Time               `json:"-"`

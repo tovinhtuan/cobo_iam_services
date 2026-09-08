@@ -176,6 +176,54 @@ func TestEnrichPortalListResolvedDue_noOccurrenceNoGeneric(t *testing.T) {
 	}
 }
 
+func TestEnrichPortalListResolvedDue_resolvedDeadlineRuleParity(t *testing.T) {
+	repo := &listResolvedDueTestRepo{
+		cycles: []PortalListCycleDueRow{{
+			TypeID:          "t-periodic",
+			CycleLabel:      "2026-09-04",
+			DueDateYYYYMMDD: "2026-09-08",
+			Source:          resolvedDueSourceCycleDue,
+		}},
+	}
+	svc := &service{repo: repo, calculator: NewDeadlineCalculator(nil)}
+	rules := &applicability.TemplateApplicabilityRules{
+		DeadlineDays:    5,
+		DeadlineDayType: "calendar",
+	}
+	items := []DisclosureTypeSummaryDTO{{
+		TypeID:             "t-periodic",
+		TemplateCategory:   TemplateCategoryPeriodic,
+		Periodicity:        "daily",
+		ApplicabilityRules: rules,
+		DeadlineConfig: &TemplateDeadlineConfig{
+			DeadlineMode:         DeadlineModePeriodic,
+			DeadlineDays:         5,
+			FrequencyUnit:        "daily",
+			TemplateCategory:     TemplateCategoryPeriodic,
+			DeadlineDurationType: DurationTypeCalendarDays,
+		},
+	}}
+	now := time.Date(2026, 9, 4, 12, 0, 0, 0, asiaHoChiMinh())
+	svc.enrichPortalListResolvedDue(context.Background(), "c_001", items, now)
+
+	if items[0].ResolvedDeadlineRule == nil {
+		t.Fatal("expected resolved_deadline_rule to be enriched on list summary")
+	}
+	if items[0].ResolvedDeadlineRule.ResolvedDays == nil || *items[0].ResolvedDeadlineRule.ResolvedDays != 5 {
+		t.Fatalf("expected resolvedDays=5, got %v", items[0].ResolvedDeadlineRule.ResolvedDays)
+	}
+	if items[0].ResolvedDeadlineRule.DayType != "CALENDAR_DAYS" {
+		t.Fatalf("expected dayType=CALENDAR_DAYS, got %q", items[0].ResolvedDeadlineRule.DayType)
+	}
+	if items[0].ResolvedDeadlineRule.BaseDateSource != BaseDateSourceCycleStart {
+		t.Fatalf("expected baseDateSource=CYCLE_START, got %q", items[0].ResolvedDeadlineRule.BaseDateSource)
+	}
+	// Runtime resolved_due_at must STILL be preserved!
+	if items[0].ResolvedDueAt == nil || *items[0].ResolvedDueAt != "2026-09-08T23:59:59+07:00" {
+		t.Fatalf("expected runtime resolvedDueAt preserved, got %v", items[0].ResolvedDueAt)
+	}
+}
+
 type listResolvedDueTestRepo struct {
 	Repository
 	cycles        []PortalListCycleDueRow
