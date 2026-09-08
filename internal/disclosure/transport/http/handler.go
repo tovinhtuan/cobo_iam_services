@@ -78,6 +78,8 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/company/disclosure-types/{type_id}/lifecycle/{action}", h.transitionCompanyTemplateLifecycle)
 
 	// Platform CMS — platform admin only (gate: platform.cms.view)
+	mux.HandleFunc("POST /api/v1/platform/cms/templates/import/validate", h.cmsValidateTemplateImport)
+	mux.HandleFunc("POST /api/v1/platform/cms/templates/import/confirm", h.cmsConfirmTemplateImport)
 	mux.HandleFunc("POST /api/v1/platform/cms/templates/{type_id}/archive", h.cmsArchiveTemplate)
 	mux.HandleFunc("GET /api/v1/platform/cms/templates/{type_id}/workflow", h.cmsGetGlobalWorkflow)
 	mux.HandleFunc("PUT /api/v1/platform/cms/templates/{type_id}/workflow", h.cmsUpsertGlobalWorkflow)

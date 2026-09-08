@@ -15,6 +15,7 @@ const (
 	CodePasswordResetTokenInvalid     Code = "PASSWORD_RESET_TOKEN_INVALID_OR_EXPIRED"
 	CodeUserInvitationTokenInvalid    Code = "USER_INVITATION_TOKEN_INVALID_OR_EXPIRED"
 	CodeEmailVerificationTokenInvalid Code = "EMAIL_VERIFICATION_TOKEN_INVALID_OR_EXPIRED"
+	CodeInvalidImportToken            Code = "INVALID_IMPORT_TOKEN"
 	CodeEmailVerificationOTPLocked    Code = "EMAIL_VERIFICATION_OTP_LOCKED"
 	CodeRateLimited                   Code = "RATE_LIMITED"
 	CodeNoActiveCompanyAccess         Code = "NO_ACTIVE_COMPANY_ACCESS"

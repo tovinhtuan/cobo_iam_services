@@ -1,4 +1,118 @@
 
+## 2026-09-08 — COBO CMS Template Import: Phase E — DEV Deploy + Real Backend / Frontend Integration + Real Browser E2E + DB / Runtime Verification + Security / Log Review + Release Gate
+
+- task type: DEV_REAL_E2E_RELEASE_GATE (IMPLEMENTATION & DEV VERIFICATION MODE — PHASE E ONLY)
+- objective: verify that the complete Import Template V1 actually works end-to-end on the real DEV environment with real frontend, real backend, real database, and real browser without unintended side effects.
+- implemented & verified:
+  - Deployed to DEV: Backend binaries (`cobo-iam-api` & `cobo-iam-worker`) compiled and deployed via `make deploy-be`. Frontend built and deployed to Nginx via `make deploy-fe`. Target environment strictly DEV (`DEPLOY_TARGET_ENVIRONMENT=DEV`).
+  - Signing Secret Gate: Verified `CMS_TEMPLATE_IMPORT_SIGNING_SECRET` present in DEV API runtime (`PRESENT`), non-empty, high entropy (64 hex characters), consistent across API instances, not exposed in evidence/logs (`SECRET_VALUE_EXPOSED=false`), zero fallback (`IMPORT_SIGNING_SECRET_FALLBACK=false`).
+  - Database Migration: Zero migrations required, zero applied (`DB_MIGRATION_REQUIRED=false`, `DB_MIGRATION_APPLIED=false`).
+  - Real Browser E2E Flow (Playwright, zero mocks):
+    - Real Validate (`POST /api/v1/platform/cms/templates/import/validate`, `multipart/form-data`) returned HTTP 200 OK with `parse_valid: true`, `domain_valid: true`, `mapping_required: true`, and valid HMAC `validation_token`.
+    - Real Business Preview: Rendered all general fields, periodicity, deadline config, and ApplicabilityRules. DEF-005 deadline copy verified as "20 ngày" (not "ngày làm việc").
+    - Real Department Mapping: Resolved 3 source departments (`dept-finance`, `dept-legal`, `dept-bod`) to existing DEV catalog departments (`dept-003`, `dept-001`, `dept-004`). Zero inline create.
+    - Real 409 Conflict: Attempted confirm with existing ID `bang-tinh-luong-nhan-vien-ban-sao-2`; returned HTTP 409 `STATE_CONFLICT`, displayed inline UI conflict alert, zero modification to existing template (`DEV_409_EXISTING_TEMPLATE_MUTATED=false`).
+    - Real Confirm (`POST /api/v1/platform/cms/templates/import/confirm`, JSON): Created unique QA template `qa-import-periodic-1788864118253`; returned HTTP 201 Created.
+    - Real Navigation: Navigated directly to CMS Draft Editor (`/cms/templates?type_id=qa-import-periodic-1788864118253`). Strictly zero Portal navigation (`SUCCESS_NAVIGATES_TO_PORTAL=false`).
+    - Real Hard Reload: Performed full browser page reload from DEV server; template name, configuration, and workflow steps hydrated with complete fidelity (`DEV_END_TO_END_FIELD_FIDELITY=PASS`, `SILENT_FIELD_LOSS_ON_DEV=0`).
+    - Real 422 Negative Contract: Forwarded tampered validation token to real BE; returned HTTP 422 `INVALID_IMPORT_TOKEN`, cleared token, rendered Revalidate CTA, caused zero DB writes. Clicking Revalidate successfully fetched fresh token.
+    - Portal Absence: Imported draft template verified strictly absent from active Portal obligations in both browser UI (`10-dev-portal-absence.png`) and tenant API (`GET /api/v1/disclosure-types`).
+  - Database Lifecycle & Invariants Verified via Real SQL:
+    - `disclosure_types`: count=1, `status="active"`, `active_version_no=0`.
+    - `disclosure_type_versions`: count=1, `version_no=1`, `is_released=0` (`false`).
+    - Workflow steps: count=3 with fresh server UUIDv7 step IDs and mapped department codes.
+    - Document requirements: metadata preserved, zero physical assets/binary rows created.
+    - Runtime Isolation: `periodic_cycles=0`, `disclosure_records=0`, `workflow_instances=0`, `company_type_preferences=0`, `company_template_workflow_overrides=0`.
+  - Audit Event: Exactly 1 `disclosure.type.import` event recorded in `audit_logs` post-commit.
+  - Security & Logs: Zero secret leaks, zero token leaks, zero panics, zero unexpected 5xx errors.
+  - Defect Counts: `OPEN_P0=0`, `OPEN_P1=0`, `OPEN_P2=0`.
+- verification:
+  - 10 screenshots captured in `cobo_web_design/docs/ai-cache/cms-template-import-phase-e-dev-real-e2e-release-gate-2026-09-08/screenshots/`.
+  - Full Playwright E2E test script executed with exit code 0.
+- pointer: `cobo_web_design/docs/ai-cache/cms-template-import-phase-e-dev-real-e2e-release-gate-2026-09-08/` (25 parts: `00-context.md` through `24-final-verdict.md`).
+- CMS_TEMPLATE_IMPORT_PHASE_E_COMPLETE=true; PHASE_E_RESULT=PASS; CMS_TEMPLATE_IMPORT_DEV_VERIFIED=true; READY_FOR_COMMIT=true; READY_FOR_PUSH=false; READY_FOR_MERGE=false; READY_FOR_PRODUCTION=false; PRODUCTION_DEPLOY_PERFORMED=false; NO_COMMIT; NO_PUSH; NO_MERGE; NO_PRODUCTION; STOP / WAIT_FOR_PO_CONFIRMATION
+
+## 2026-09-08 — COBO CMS Template Import: Phase C.1 — Focused Contract Correction + Business Field Fidelity + Token Contract Reconciliation + Secret Hardening + MySQL Concurrency/Rollback Closure
+
+- task type: FOCUSED_CONTRACT_CORRECTION (IMPLEMENTATION MODE — PHASE C.1 ONLY — DELTA PASS OVER PHASE C)
+- objective: close P1-01 (ApplicabilityRules fidelity), P1-02 (Token HTTP contract drift), P1-03 (Full importable field roundtrip proof), P1-04 (Signing secret hardening), and GAP-01 (MySQL concurrency & rollback proof).
+- implemented & corrected:
+  - P1-01: Added `applicability_rules` to JSON schemas (`cobo_iam_services` and `cobo_web_design`), added `ApplicabilityRules *applicability.TemplateApplicabilityRules` to `TemplateImportDefinitionV1`, updated normalizer (`NormalizeTemplateImportV1`) with deep copying, added validation in `ValidateImportTemplate`, and updated `materializeImportUpsert` in `template_import_confirm.go` to preserve imported rules if present and fallback to default only when omitted.
+  - P1-02: Added `CodeInvalidImportToken = "INVALID_IMPORT_TOKEN"` in `internal/platform/errors/errors.go`. Updated `ConfirmTemplateImport` to return HTTP 422 with `INVALID_IMPORT_TOKEN` on invalid/tampered/expired token, wrong purpose, wrong schema, and payload hash mismatch. Updated HTTP handler tests and Phase A/D contracts.
+  - P1-03: Created `TestTemplateImportConfirm_FullImportableFieldRoundTrip` exercising all 34 V1 importable business fields (taxonomy, narrative texts, checklist, tags, legal bases, deadline config, applicability rules, blocks, workflow steps, documents). Verified roundtrip without silent data loss.
+  - P1-04: Hardened `ResolveTemplateImportSigningSecret` to strictly require dedicated `CMS_TEMPLATE_IMPORT_SIGNING_SECRET` without fallback to `CMS_MEDIA_UPLOAD_SIGNING_SECRET`. Added test `TestTemplateImportSigningSecret_NoMediaFallback`.
+  - GAP-01: Verified and documented transaction boundary, row-level locking (`SELECT ... FOR UPDATE`), and `CreateOnly` 409 duplicate translation. Created `TestUpsertTypeVersion_MySQLTransactionalIntegrityAndConcurrencyProof` in `internal/disclosure/infra/mysql/repository_atomic_materialization_test.go` and verified 10-goroutine concurrency race and zero-partial-write rollback tests.
+- contracts & invariants locked:
+  - `APPLICABILITY_RULES_ROUNDTRIP`: `PASS`; `APPLICABILITY_RULES_SILENT_RESET`: `false`.
+  - `INVALID_IMPORT_TOKEN_HTTP_STATUS`: `422`; `INVALID_IMPORT_TOKEN_ERROR_CODE`: `INVALID_IMPORT_TOKEN`.
+  - `IMPORT_SIGNING_SECRET_FALLBACK`: `false`; `IMPORT_SECRET_MISSING_FAIL_CLOSED`: `PASS`.
+  - `FULL_IMPORTABLE_FIELD_ROUNDTRIP`: `PASS`; `SILENT_BUSINESS_FIELD_LOSS`: `0`.
+  - `MYSQL_CONCURRENT_UNIQUE_RACE_PROOF`: `PASS`; `MYSQL_TRANSACTION_ROLLBACK_PROOF`: `PASS`.
+- verification:
+  - Targeted app tests: `go test -v ./internal/disclosure/app/... -run "TestTemplateImportConfirm"` PASS.
+  - Targeted MySQL tests: `go test -v ./internal/disclosure/infra/mysql/...` PASS.
+  - Module regression: `go test ./internal/disclosure/...` PASS.
+  - Go build: `go build ./...` PASS.
+  - Docker API build: `docker compose -f docker-compose.dev.yml build api` PASS.
+  - Secret scan: `SECRET_SCAN = PASS` (0 secrets).
+- pointer: `docs/ai-cache/cms-template-import-phase-c1-focused-correction-2026-09-08/` (18 parts: `00-context.md` through `17-final-verdict.md`).
+- CMS_TEMPLATE_IMPORT_PHASE_C1_COMPLETE=true; PHASE_C1_RESULT=PASS; BE_IMPORT_BACKEND_COMPLETE=true; READY_FOR_PHASE_D=true; READY_FOR_DEV_DEPLOY=false; READY_FOR_COMMIT=true; READY_FOR_PUSH=false; READY_FOR_MERGE=false; READY_FOR_PRODUCTION=false; STOP / WAIT_FOR_PO_CONFIRMATION
+
+## 2026-09-08 — COBO CMS Template Import: Phase C — Confirm + Transactional Materialization + Token/Hash Verification + Mapping + Concurrency + Audit + Rollback Proof
+
+- task type: CONFIRM_TRANSACTIONAL_MATERIALIZATION (IMPLEMENTATION MODE — PHASE C ONLY — BACKEND ONLY)
+- objective: implement `POST /api/v1/platform/cms/templates/import/confirm` with full token verification, canonical payload hash binding, department mapping, mutable reference revalidation, transactional materialization (New Root + Draft v1) via `UpsertTypeVersion(CreateOnly=true)`, concurrency race safety, post-commit audit logging, and rollback / zero-partial-write proof.
+- implemented:
+  - Backend Service: `ConfirmTemplateImport` in `internal/disclosure/app/template_import_confirm.go` & contracts in `internal/disclosure/app/contracts.go`.
+  - HTTP Handler: `cmsConfirmTemplateImport` in `internal/disclosure/transport/http/import_template_handler.go` & registered in `internal/disclosure/transport/http/handler.go`.
+  - Materialization Mapper: `materializeImportUpsert` constructing `UpsertTypeVersionRequest` with `CreateOnly=true`, scope `"global"`, 6 canonical mandatory blocks, and `applicability.DefaultGlobalRules(isPeriodic)`.
+  - Fail-Closed Signing Secret: `ResolveTemplateImportSigningSecret` strictly reads from environment without insecure defaults; missing secret immediately halts token verification with zero DB writes.
+  - Concurrency Safety: `TypeExists` precheck + DB unique constraint + MySQL 1062 translation to HTTP 409 Conflict.
+  - Post-Commit Audit: logs action `disclosure.type.import` with metadata (`creation_mode`, `target_type_id`, `version_no`, `schema_version`, `payload_hash`, `actor_id`).
+  - Unit & Integration Tests:
+    - `internal/disclosure/app/template_import_confirm_test.go`: 9 test suites covering happy paths (H1-H8), token/payload tamper tests (TP2-TP8), secret fail-closed, target name authority, replay semantics, department mapping matrix (M4-M9), display group revalidation, 10-goroutine concurrency race, and rollback / zero-partial-write proof.
+    - `internal/disclosure/transport/http/import_template_handler_test.go`: E2E validate -> confirm integration test, duplicate replay 409 test, malformed body, missing auth, tampered token, hash mismatch, and target name mismatch tests.
+- contracts & invariants locked:
+  - `CONFIRM_ENDPOINT`: `POST /api/v1/platform/cms/templates/import/confirm` (`application/json`).
+  - `CMS_WRITE_AUTH_REVALIDATED`: `true` (`platform.cms.view` + `cms.template.write`).
+  - `VALIDATION_TOKEN_VERIFICATION`: `PASS` (signature, actor, purpose `template_import`, expiry 15 min, schema `1.0`).
+  - `CANONICAL_PAYLOAD_HASH_VERIFICATION`: `PASS` (SHA-256 canonical normalized template hash).
+  - `TARGET_NAME_CONFIRM_AUTHORITY`: `MUST_EQUAL_NORMALIZED_NAME`.
+  - `TOKEN_SINGLE_USE`: `false` (stateless architecture).
+  - `SAME_TOKEN_SAME_TARGET_REPLAY`: `FIRST_201_SECOND_409` (duplicate resource protection).
+  - `TOKEN_REPLAY_DIFFERENT_TARGET_ID_BEHAVIOR`: `ALLOWED_BY_CONTRACT`.
+  - `FAILED_CONFIRM_CONSUMES_TOKEN`: `false`.
+  - `RETRY_AFTER_ROLLBACK_TEST`: `PASS`.
+  - `CONCURRENT_TYPE_ID_RACE_TEST`: `PASS` (10 goroutines: 1 success, 9 conflicts, 0 other errors).
+  - `DEPARTMENT_REVALIDATION_ON_CONFIRM`: `true` (bulk query, 0 N+1).
+  - `DISPLAY_GROUP_REVALIDATION_ON_CONFIRM`: `true` (bulk query, 0 N+1).
+  - `ROLE_REVALIDATION_ON_CONFIRM`: `false` (static strings).
+  - `DEPARTMENT_MAPPING_APPLICATION`: `PASS` (M1-M10 matrix).
+  - `IMPORT_MATERIALIZATION_AUTHORITY`: `UpsertTypeVersion` (`CreateOnly=true`).
+  - `NEW_ROOT_CREATED`: `true` (`status="active"`, `active_version_no=0`, `version_no=1`, `is_released=false`, `activated_at=NULL`).
+  - `PORTAL_STATE`: `not_active`.
+  - `AUTO_ACTIVATE`: `false`; `AUTO_PUBLISH`: `false`.
+  - `EXISTING_ROOT_UPDATE_SUPPORTED`: `false`.
+  - `STEP_ID_NORMALIZATION_STRATEGY`: `SERVER_OWNED_UUID` (generated at Confirm materialization).
+  - `DOCUMENT_METADATA_PERSISTED`: `PASS`; `TEMPLATE_FILE_ID_PERSISTED`: `false` (`""`); `DOCUMENT_BINARY_WRITE_COUNT`: `0`.
+  - `APPLICABLE_FROM_NEXT_PERSISTENCE`: `PASS`; `APPLICABLE_TO_VALID_PAST_PERSISTENCE`: `PASS`.
+  - `IMPORT_VALID_NE_ACTIVATION_READY`: `true`.
+  - `COMPANY_OVERRIDE_WRITE_COUNT`: `0`; `RUNTIME_WRITE_COUNT`: `0`.
+  - `TEMPLATE_AGGREGATE_MATERIALIZATION_ATOMIC`: `true`.
+  - `AUDIT_ATOMICITY_MODEL`: `POST_COMMIT`; `IMPORT_AUDIT_ACTION`: `disclosure.type.import`.
+  - `ZERO_PARTIAL_WRITE_PROOF`: `PASS`.
+- verification:
+  - Targeted app tests: `go test -v ./internal/disclosure/app -run "TestTemplateImportConfirm"` PASS (9/9).
+  - Targeted handler tests: `go test -v ./internal/disclosure/transport/http -run "TestCmsConfirmTemplateImport"` PASS (8/8).
+  - Full module regression: `go test ./internal/disclosure/...` PASS.
+  - Go build: `go build ./...` PASS.
+  - Docker API build: `docker compose -f docker-compose.dev.yml build api` PASS (exit code 0).
+  - FE status: `FE_SOURCE_CHANGED = false`.
+  - DB migration: `DB_MIGRATION_REQUIRED = false`.
+  - Secret scan: `SECRET_SCAN = PASS` (0 secrets).
+- pointer: `docs/ai-cache/cms-template-import-phase-c-be-confirm-materialization-2026-09-08/` (23 parts: `00-context.md` through `22-final-verdict.md`).
+- CMS_TEMPLATE_IMPORT_PHASE_C_COMPLETE=true; PHASE_C_RESULT=PASS; READY_FOR_PHASE_D=true; READY_FOR_DEV_DEPLOY=false; READY_FOR_COMMIT=true; READY_FOR_PUSH=false; READY_FOR_MERGE=false; READY_FOR_PRODUCTION=false; STOP / WAIT_FOR_PO_CONFIRMATION
+
 ## 2026-08-25 — Periodic seeding controlled DEV enablement
 
 - **task type:** controlled DEV config enablement (ops)

@@ -81,6 +81,12 @@ type Service interface {
 	CmsCreateDeadlineRule(ctx context.Context, req CmsDeadlineRuleCreateRequest) (*CmsDeadlineRuleDTO, error)
 	CmsUpdateDeadlineRule(ctx context.Context, req CmsDeadlineRuleUpdateRequest) (*CmsDeadlineRuleDTO, error)
 	CmsDeleteDeadlineRule(ctx context.Context, req CmsDeadlineRuleDeleteRequest) error
+
+	// CMS Template Import (Phase B).
+	ValidateTemplateImport(ctx context.Context, req ValidateTemplateImportRequest) (*ValidateTemplateImportResponse, error)
+
+	// CMS Template Import Confirm (Phase C).
+	ConfirmTemplateImport(ctx context.Context, req ConfirmTemplateImportRequest) (*ConfirmTemplateImportResponse, error)
 }
 
 type Repository interface {

@@ -1,0 +1,413 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://cobo.vn/schemas/template-import-v1.schema.json",
+  "title": "CoBoTemplateImportEnvelopeV1",
+  "description": "Formal JSON schema v1.0 for CMS Template Import in CoBo Portal (Phase A contract).",
+  "type": "object",
+  "required": ["schema_version", "template"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0",
+      "description": "Import file format specification version. Must be exactly '1.0'. Distinct from template version_no."
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Optional authoring and export provenance metadata.",
+      "additionalProperties": false,
+      "properties": {
+        "exported_at": {
+          "type": "string",
+          "description": "ISO 8601 timestamp of export."
+        },
+        "exported_by": {
+          "type": "string",
+          "description": "Identity or email of exporter."
+        },
+        "source_system": {
+          "type": "string",
+          "description": "Identifier of the source CoBo instance or external system."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Optional author notes or changelog."
+        }
+      }
+    },
+    "template": {
+      "$ref": "#/definitions/TemplateDefinitionV1"
+    }
+  },
+  "definitions": {
+    "TemplateDefinitionV1": {
+      "type": "object",
+      "description": "Core template business specification.",
+      "required": ["name", "template_category", "deadline_rule"],
+      "additionalProperties": false,
+      "properties": {
+        "type_id": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[a-z0-9][a-z0-9_-]*$",
+          "description": "Optional suggested template identifier slug. Server validates uniqueness at Validate and Confirm."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "description": "Template title / obligation name."
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 3200,
+          "description": "Template description (max 3200 bytes per CMS validation rules)."
+        },
+        "category": {
+          "type": "string",
+          "description": "Human-readable category label (e.g. 'Định kỳ', 'Bất thường')."
+        },
+        "template_category": {
+          "type": "string",
+          "enum": ["periodic", "irregular"],
+          "description": "Primary template category: 'periodic' (chu kỳ) or 'irregular' (sự kiện bất thường)."
+        },
+        "group_id": {
+          "type": "string",
+          "description": "Target taxonomy group ID (e.g. 'group-001' for periodic, 'group-002' for irregular). If omitted, derived from template_category."
+        },
+        "deadline_strategy": {
+          "type": "string",
+          "enum": ["fixed_cycle_days", "event_relative_hours", "configurable"],
+          "description": "Strategy for calculating the compliance deadline."
+        },
+        "deadline_rule": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Human-readable deadline rule string (e.g. 'Trong vòng 20 ngày kể từ khi kết thúc quý.', 'T+5')."
+        },
+        "periodicity": {
+          "type": "string",
+          "enum": ["daily", "weekly", "monthly", "quarterly", "yearly", "event_based", "ad_hoc"],
+          "description": "Cycle frequency. Required if template_category is periodic."
+        },
+        "display_group_codes": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Portal display group codes (e.g. ['display_groups_003']). If omitted or empty, derived from template_category."
+        },
+        "legal_basis": {
+          "type": "string",
+          "description": "Summary of legal basis text."
+        },
+        "applicability": {
+          "type": "string",
+          "description": "Scope of applicability text (e.g. 'Doanh nghiệp niêm yết quy mô lớn')."
+        },
+        "applicability_rules": {
+          "$ref": "#/definitions/TemplateApplicabilityRulesV1"
+        },
+        "implementation_content": {
+          "type": "string",
+          "description": "Implementation guidelines."
+        },
+        "implementation_notes": {
+          "type": "string",
+          "description": "Operational notes for compliance officers."
+        },
+        "special_cases": {
+          "type": "string",
+          "description": "Exceptions and special handling rules."
+        },
+        "report_content": {
+          "type": "string",
+          "description": "Detailed reporting requirements and disclosure format."
+        },
+        "required_docs": {
+          "type": "string",
+          "description": "Summary of required documents."
+        },
+        "channels_text": {
+          "type": "string",
+          "description": "Publication channels (e.g. 'UBCKNN, SGDCK, Website công ty')."
+        },
+        "beneficiaries": {
+          "type": "string",
+          "description": "Target audience / beneficiaries."
+        },
+        "receiving_authorities": {
+          "type": "string",
+          "description": "Receiving supervisory bodies."
+        },
+        "format": {
+          "type": "string",
+          "description": "Accepted file format (e.g. 'PDF, Excel')."
+        },
+        "legal_risks_text": {
+          "type": "string",
+          "description": "Legal risks and penalties for non-compliance."
+        },
+        "general_info": {
+          "type": "string",
+          "description": "General overview information."
+        },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Categorization tags."
+        },
+        "legal_bases": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/LegalBasisItemV1" },
+          "description": "Structured legal basis citations."
+        },
+        "checklist": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/ChecklistItemV1" },
+          "description": "Obligation checklist requirements."
+        },
+        "deadline_config": {
+          "$ref": "#/definitions/DeadlineConfigV1"
+        },
+        "workflow": {
+          "$ref": "#/definitions/WorkflowDefinitionV1"
+        }
+      }
+    },
+    "LegalBasisItemV1": {
+      "type": "object",
+      "required": ["title"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "description": "Optional citation reference ID." },
+        "title": { "type": "string", "description": "Legal document title (e.g. 'Thông tư 96/2020/TT-BTC')." },
+        "code": { "type": "string", "description": "Document legal code or number." },
+        "authority": { "type": "string", "description": "Issuing authority (e.g. 'Bộ Tài chính')." },
+        "issue_date": { "type": "string", "description": "Issue date YYYY-MM-DD." },
+        "summary": { "type": "string", "description": "Summary of article/point." },
+        "link": { "type": "string", "description": "Reference link to official gazette." }
+      }
+    },
+    "ChecklistItemV1": {
+      "type": "object",
+      "required": ["title"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "description": "Optional checklist item ID." },
+        "title": { "type": "string", "description": "Checklist item requirement text." },
+        "owner": { "type": "string", "description": "Responsible role or title." },
+        "due_date": { "type": "string", "description": "Relative due description." },
+        "status": { "type": "string", "description": "Default status." }
+      }
+    },
+    "DeadlineConfigV1": {
+      "type": "object",
+      "description": "Periodicity V2 schedule, duration, and applicability configuration.",
+      "additionalProperties": false,
+      "properties": {
+        "frequency_unit": {
+          "type": "string",
+          "enum": ["DAILY", "WEEKLY", "MONTHLY", "QUARTERLY", "YEARLY"],
+          "description": "Periodic frequency unit."
+        },
+        "cycle_anchor_day": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 31,
+          "description": "Anchor day of month (1-31)."
+        },
+        "cycle_anchor_weekday": {
+          "type": "string",
+          "enum": ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"],
+          "description": "Weekly cycle anchor weekday."
+        },
+        "month_in_quarter": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3,
+          "description": "Month offset within quarter (1, 2, or 3)."
+        },
+        "applicable_from_mode": {
+          "type": "string",
+          "enum": ["CURRENT_SLOT", "NEXT_SLOT", "SPECIFIC_SLOT", "CURRENT", "NEXT", "SPECIFIC"],
+          "description": "Applicability start authoring intent. CURRENT_SLOT or NEXT_SLOT clears stale frozen slot; SPECIFIC_SLOT preserves slot."
+        },
+        "applicable_from_slot": {
+          "type": "string",
+          "description": "Canonical frequency-native cycle label (e.g. '2026-Q1', '2026-03'). Used only when mode is SPECIFIC_SLOT."
+        },
+        "applicable_to": {
+          "type": "string",
+          "pattern": "^$|^\\d{4}-\\d{2}-\\d{2}$",
+          "description": "Template end date in YYYY-MM-DD format, or empty for OPEN_ENDED. Valid past dates are preserved in Draft and warned in Preview."
+        },
+        "duration_type": {
+          "type": "string",
+          "enum": ["CALENDAR_DAYS", "WORKING_DAYS"],
+          "description": "Working vs calendar day calculation for cycle start."
+        },
+        "deadline_duration_type": {
+          "type": "string",
+          "enum": ["CALENDAR_DAYS", "WORKING_DAYS"],
+          "description": "Working vs calendar day calculation for deadline due date."
+        },
+        "deadline_days": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of days from cycle anchor to compliance deadline."
+        },
+        "open_days_before": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of days before cycle end when workflow task opens."
+        }
+      }
+    },
+    "WorkflowDefinitionV1": {
+      "type": "object",
+      "description": "Model A workflow step template definition.",
+      "required": ["steps"],
+      "additionalProperties": false,
+      "properties": {
+        "steps": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/WorkflowStepV1" },
+          "description": "Ordered workflow steps."
+        }
+      }
+    },
+    "WorkflowStepV1": {
+      "type": "object",
+      "required": ["stage"],
+      "additionalProperties": false,
+      "properties": {
+        "step_id": {
+          "type": "string",
+          "description": "Source step identifier. Server regenerates fresh UUIDs upon import."
+        },
+        "stage": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "description": "Human-readable workflow step title (e.g. 'Thu thập thông tin', 'Rà soát pháp lý', 'Phê duyệt')."
+        },
+        "description": {
+          "type": "string",
+          "description": "Detailed step description."
+        },
+        "instructions": {
+          "type": "string",
+          "description": "Specific execution instructions for assignees."
+        },
+        "department_id": {
+          "type": "string",
+          "description": "Department code assigned to this step. Must match or be mapped to target workflow_template_departments."
+        },
+        "department_name": {
+          "type": "string",
+          "description": "Optional human-readable source department name used for preview auto-mapping."
+        },
+        "assignee_role_ids": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Global role keys responsible for this step (e.g. ['reviewer'], ['approver'])."
+        },
+        "processing_days": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Step processing SLA duration in days (minimum 1)."
+        },
+        "due_rule": {
+          "type": "string",
+          "description": "Step due rule (e.g. 'T+3', 'H+24')."
+        },
+        "display_order": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Sequential display order index."
+        },
+        "reminder_config": {
+          "$ref": "#/definitions/StepReminderConfigV1"
+        },
+        "documents": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/WorkflowDocumentV1" },
+          "description": "Step document checklist requirements."
+        }
+      }
+    },
+    "StepReminderConfigV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean", "description": "Whether automated reminders are enabled for this step." },
+        "offsets_days": {
+          "type": "array",
+          "items": { "type": "integer" },
+          "description": "Days relative to deadline to send reminders (e.g. [-3, -1, 0])."
+        },
+        "template_key": { "type": "string", "description": "Email/alert notification template key." }
+      }
+    },
+    "WorkflowDocumentV1": {
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "description": "Document requirement title (e.g. 'Báo cáo tài chính quý (PDF có chữ ký số)')."
+        },
+        "required": {
+          "type": "boolean",
+          "description": "Whether this document must be uploaded before completing the step."
+        },
+        "template_file_name": {
+          "type": "string",
+          "description": "Informational metadata showing the recommended sample filename (e.g. 'Mau_01_BCTC.xlsx'). Binary is not imported."
+        },
+        "template_file_id": {
+          "type": "string",
+          "description": "Non-portable source storage ID. If provided, strictly cleared to '' upon import."
+        }
+      }
+    },
+    "TemplateApplicabilityRulesV1": {
+      "type": "object",
+      "description": "Periodicity and company applicability rules for compliance determination.",
+      "additionalProperties": false,
+      "properties": {
+        "applicable_company_classes": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "List of company classes obligation applies to (e.g. ['public_large', 'public_normal', 'public_listed'])."
+        },
+        "applicable_sectors": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "List of business sectors obligation applies to."
+        },
+        "deadline_by_structure": {
+          "type": "object",
+          "description": "Deadline offsets mapped by corporate structure criterion."
+        },
+        "deadline_days": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of days for deadline calculation."
+        },
+        "deadline_day_type": {
+          "type": "string",
+          "enum": ["calendar", "working"],
+          "description": "Day type for deadline duration: 'calendar' or 'working'."
+        },
+        "use_structure_deadline": {
+          "type": "boolean",
+          "description": "Whether to use structure-specific deadline."
+        }
+      }
+    }
+  }
+}
