@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -325,7 +326,11 @@ func ptrBool(v bool) *bool       { return &v }
 // READY_FOR_5B (Portal Preview / Deadline Hint): this is Source A — the
 // preview-only twin of deadlineengine's Source C (locked Cycle Start SoT).
 // Cutover replaces this body with DeadlineEngineAdapter.ResolveDeadline;
-// behavior unchanged in Batch 5A.
+// behavior unchanged in Batch 5A except Option-1 applicability-aware slot selection.
+//
+// Option 1 (2026-09-09): Source A preview slot is constrained by ApplicableFrom
+// (lower bound via ResolveFirstMaterializableSlot) and ApplicableTo (upper bound
+// via EvaluateApplicableToEligibility on resolved T). Read-only; no runtime writes.
 func (c *DeadlineCalculator) calculatePeriodic(
 	ctx context.Context,
 	config *TemplateDeadlineConfig,
@@ -335,7 +340,11 @@ func (c *DeadlineCalculator) calculatePeriodic(
 	if config.DeadlineDays <= 0 {
 		return nil, nil
 	}
-	cycleStart := c.computeCycleStart(config, company, now)
+	cycleStart, ok := c.computeCycleStart(config, company, now)
+	if !ok {
+		// No eligible preview slot inside ApplicableFrom..ApplicableTo (or unresolvable).
+		return nil, nil
+	}
 	durationType := DurationTypeWorkingDays
 	if config.DeadlineDurationType != "" {
 		durationType = config.DeadlineDurationType
@@ -366,9 +375,20 @@ func (c *DeadlineCalculator) calculatePeriodic(
 	}, nil
 }
 
-// computeCycleStart returns Effective T for the current logical slot (canonical).
+// computeCycleStart returns Effective T for the applicability-aware preview slot.
 // Priority: ACTIVE+compatible Company override > CMS; invalid days clamp at resolve only.
-func (c *DeadlineCalculator) computeCycleStart(config *TemplateDeadlineConfig, company CompanyDeadlineContext, now time.Time) time.Time {
+//
+// Slot selection:
+//  1. candidate = ResolveLogicalSlot(now)
+//  2. eligible  = ResolveFirstMaterializableSlot(candidate, ApplicableFrom boundary)
+//     — never backshifts; legacy/null AF keeps candidate; unfrozen empty slot keeps candidate
+//  3. ResolveOccurrenceT(eligible, effective anchor)
+//  4. EvaluateApplicableToEligibility(T, ApplicableTo) — if ineligible, ok=false (no synthetic DueAt)
+func (c *DeadlineCalculator) computeCycleStart(config *TemplateDeadlineConfig, company CompanyDeadlineContext, now time.Time) (time.Time, bool) {
+	if config == nil {
+		return time.Time{}, false
+	}
+	freq := NormalizeFrequencyUnit(config.FrequencyUnit)
 	cms := AnchorConfig{
 		Month:          config.CycleAnchorMonth,
 		Day:            config.CycleAnchorDay,
@@ -382,12 +402,35 @@ func (c *DeadlineCalculator) computeCycleStart(config *TemplateDeadlineConfig, c
 		MonthInQuarter:     company.MonthInQuarter,
 		OverrideActive:     company.OverrideActive,
 		OverrideFrequency:  company.OverrideFrequency,
-	}, config.FrequencyUnit)
-	eff, _ := ResolveEffectiveAnchor(config.FrequencyUnit, cms, auth)
-	label := ResolveLogicalSlot(config.FrequencyUnit, now, c.location)
-	t, err := ResolveOccurrenceT(config.FrequencyUnit, label, eff, c.location)
-	if err != nil {
-		return stripTime(now.In(c.location))
+	}, freq)
+	eff, _ := ResolveEffectiveAnchor(freq, cms, auth)
+
+	candidate := ResolveLogicalSlot(freq, now, c.location)
+	if strings.TrimSpace(candidate) == "" {
+		return time.Time{}, false
 	}
-	return t
+
+	legacy := IsLegacyApplicableFrom(config.ApplicableFromMode, config.ApplicableFromSlot)
+	boundary := strings.TrimSpace(config.ApplicableFromSlot)
+	if !legacy && boundary != "" {
+		if _, err := NormalizeLogicalSlot(freq, boundary); err != nil {
+			// Invalid frozen boundary → fail closed (omit preview), do not invent a date.
+			return time.Time{}, false
+		}
+	}
+	label, err := ResolveFirstMaterializableSlot(freq, candidate, boundary, legacy)
+	if err != nil || strings.TrimSpace(label) == "" {
+		return time.Time{}, false
+	}
+
+	t, err := ResolveOccurrenceT(freq, label, eff, c.location)
+	if err != nil {
+		return time.Time{}, false
+	}
+
+	eligible, _, toErr := EvaluateApplicableToEligibility(t, config.ApplicableTo, c.location)
+	if toErr != nil || !eligible {
+		return time.Time{}, false
+	}
+	return t, true
 }

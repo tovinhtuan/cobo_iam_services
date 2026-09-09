@@ -145,7 +145,7 @@ func TestIsLegacyApplicableFrom(t *testing.T) {
 	}
 }
 
-func TestPrepareApplicableFrom_LegacyUntouchedAndSameRootPromote(t *testing.T) {
+func TestPrepareApplicableFrom_LegacyUntouchedAndFrozenRelativePreserve(t *testing.T) {
 	cfg := &disclosureapp.TemplateDeadlineConfig{FrequencyUnit: "monthly"}
 	if err := disclosureapp.PrepareApplicableFromForDraftWrite(cfg, ""); err != nil {
 		t.Fatal(err)
@@ -154,16 +154,35 @@ func TestPrepareApplicableFrom_LegacyUntouchedAndSameRootPromote(t *testing.T) {
 		t.Fatalf("legacy must stay empty, got %+v", cfg)
 	}
 
-	cfg = &disclosureapp.TemplateDeadlineConfig{
-		FrequencyUnit:      "monthly",
-		ApplicableFromMode: disclosureapp.ApplicableFromModeNext,
-		ApplicableFromSlot: "2026-09",
+	cases := []struct {
+		name     string
+		mode     string
+		slot     string
+		freq     string
+		wantMode string
+		wantSlot string
+	}{
+		{"NEXT empty", disclosureapp.ApplicableFromModeNext, "", "monthly", disclosureapp.ApplicableFromModeNext, ""},
+		{"NEXT frozen", disclosureapp.ApplicableFromModeNext, "2026-09", "monthly", disclosureapp.ApplicableFromModeNext, "2026-09"},
+		{"CURRENT empty", disclosureapp.ApplicableFromModeCurrent, "", "monthly", disclosureapp.ApplicableFromModeCurrent, ""},
+		{"CURRENT frozen", disclosureapp.ApplicableFromModeCurrent, "2026-10", "monthly", disclosureapp.ApplicableFromModeCurrent, "2026-10"},
+		{"SPECIFIC slot", disclosureapp.ApplicableFromModeSpecific, "2026-12", "monthly", disclosureapp.ApplicableFromModeSpecific, "2026-12"},
+		{"SPECIFIC empty", disclosureapp.ApplicableFromModeSpecific, "", "monthly", disclosureapp.ApplicableFromModeSpecific, ""},
 	}
-	if err := disclosureapp.PrepareApplicableFromForDraftWrite(cfg, ""); err != nil {
-		t.Fatal(err)
-	}
-	if cfg.ApplicableFromMode != disclosureapp.ApplicableFromModeSpecific || cfg.ApplicableFromSlot != "2026-09" {
-		t.Fatalf("same-root relative+slot → SPECIFIC, got %+v", cfg)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := &disclosureapp.TemplateDeadlineConfig{
+				FrequencyUnit:      tc.freq,
+				ApplicableFromMode: tc.mode,
+				ApplicableFromSlot: tc.slot,
+			}
+			if err := disclosureapp.PrepareApplicableFromForDraftWrite(c, ""); err != nil {
+				t.Fatal(err)
+			}
+			if c.ApplicableFromMode != tc.wantMode || c.ApplicableFromSlot != tc.wantSlot {
+				t.Fatalf("got mode=%q slot=%q want mode=%q slot=%q", c.ApplicableFromMode, c.ApplicableFromSlot, tc.wantMode, tc.wantSlot)
+			}
+		})
 	}
 
 	cfg = &disclosureapp.TemplateDeadlineConfig{

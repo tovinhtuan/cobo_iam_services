@@ -1,4 +1,10 @@
 
+## 2026-09-09 — Tenant DeadlineSummary Option 1: applicability-aware Source A
+
+- BE: `deadline_calculator.computeCycleStart` respects AF/AT; tests + DEV deploy PASS; DueAt 2026-10-07 for bang-tinh-luong AF Oct
+- Evidence: `cobo_web_design/docs/ai-cache/tenant-deadline-summary-applicability-aware-option1-2026-09-09/` + IAM `00-pointer.md`
+- READY_FOR_COMMIT=true — NO_COMMIT / NO_PUSH / NO_MERGE / NO_PRODUCTION
+
 ## 2026-09-09 — COBO CMS Template Import: Phase F.2.1 — DEV Human-Authorable Example Verification
 
 - task type: DEV_VERIFICATION (F2.1)

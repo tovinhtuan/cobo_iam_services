@@ -237,7 +237,8 @@ func slotStartDate(frequencyUnit, slot string) (time.Time, error) {
 
 // PrepareApplicableFromForDraftWrite normalizes authoring fields for Upsert/Save Draft.
 // Does NOT freeze CURRENT/NEXT. Legacy untouched stays empty.
-// Same-root safety: relative mode + non-empty slot → SPECIFIC_SLOT (preserve boundary).
+// Frozen-relative (CURRENT/NEXT + concrete slot after Activate) is a first-class state:
+// mode and normalized slot are preserved — never auto-promoted to SPECIFIC_SLOT.
 func PrepareApplicableFromForDraftWrite(cfg *TemplateDeadlineConfig, priorFreq string) error {
 	if cfg == nil {
 		return nil
@@ -269,7 +270,7 @@ func PrepareApplicableFromForDraftWrite(cfg *TemplateDeadlineConfig, priorFreq s
 			if err != nil {
 				return err
 			}
-			cfg.ApplicableFromMode = ApplicableFromModeSpecific
+			cfg.ApplicableFromMode = mode
 			cfg.ApplicableFromSlot = norm
 			return nil
 		}

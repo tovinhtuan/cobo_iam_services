@@ -88,14 +88,14 @@ func TestDeadlineCalculator_DailyWeeklyT0(t *testing.T) {
 	company := CompanyDeadlineContext{}
 	utcBoundary := time.Date(2026, 8, 14, 17, 30, 0, 0, time.UTC)
 
-	daily := calc.computeCycleStart(&TemplateDeadlineConfig{FrequencyUnit: "daily"}, company, utcBoundary)
-	if daily.Format("2006-01-02") != "2026-08-15" {
-		t.Fatalf("daily T0=%s", daily.Format("2006-01-02"))
+	daily, okDaily := calc.computeCycleStart(&TemplateDeadlineConfig{FrequencyUnit: "daily"}, company, utcBoundary)
+	if !okDaily || daily.Format("2006-01-02") != "2026-08-15" {
+		t.Fatalf("daily T0=%s ok=%v", daily.Format("2006-01-02"), okDaily)
 	}
 
-	weekly := calc.computeCycleStart(&TemplateDeadlineConfig{FrequencyUnit: "weekly"}, company, utcBoundary)
-	if weekly.Format("2006-01-02") != "2026-08-09" {
-		t.Fatalf("weekly T0=%s", weekly.Format("2006-01-02"))
+	weekly, okWeekly := calc.computeCycleStart(&TemplateDeadlineConfig{FrequencyUnit: "weekly"}, company, utcBoundary)
+	if !okWeekly || weekly.Format("2006-01-02") != "2026-08-09" {
+		t.Fatalf("weekly T0=%s ok=%v", weekly.Format("2006-01-02"), okWeekly)
 	}
 
 	summary, err := calc.CalculateDeadlineSummary(ctx, &TemplateDeadlineConfig{
