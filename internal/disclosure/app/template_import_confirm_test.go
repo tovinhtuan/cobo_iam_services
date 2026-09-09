@@ -1945,3 +1945,83 @@ func TestTemplateImportConfirm_FullImportableFieldRoundTrip(t *testing.T) {
 		t.Errorf("step 2 DepartmentID = %q, want dept-004", manifestSteps[1].DepartmentID)
 	}
 }
+
+// TestTemplateImportConfirm_DraftLifecycleFields verifies that confirming an imported template
+// adheres to the source-defined Draft v1 lifecycle contract:
+// - active_version_no = 0 (root inactive on Portal)
+// - version_no = 1
+// - is_released = false (draft state, mutable)
+// - is_active = false (not active on Portal)
+// - activated_at is populated with creation timestamp (per schema NOT NULL DEFAULT CURRENT_TIMESTAMP & UpsertTypeVersion)
+// - NO Activate call is made; Portal state remains "not_active".
+func TestTemplateImportConfirm_DraftLifecycleFields(t *testing.T) {
+	svc, repo, sub := setupConfirmTestService()
+
+	norm := samplePeriodicNormalizedTemplate()
+	tok := issueValidTokenForDefinition(t, norm, sub.UserID)
+
+	targetID := "draft-lifecycle-fields-001"
+	confirmReq := disclosureapp.ConfirmTemplateImportRequest{
+		Subject:            sub,
+		ValidationToken:    tok,
+		TargetTypeID:       targetID,
+		TargetName:         norm.Name,
+		NormalizedTemplate: *norm,
+	}
+
+	before := time.Now().UTC().Add(-1 * time.Second)
+	confirmResp, err := svc.ConfirmTemplateImport(context.Background(), confirmReq)
+	if err != nil {
+		t.Fatalf("ConfirmTemplateImport failed: %v", err)
+	}
+	after := time.Now().UTC().Add(1 * time.Second)
+
+	// 1. Response DTO lifecycle fields
+	if confirmResp.TypeID != targetID {
+		t.Errorf("TypeID = %q, want %q", confirmResp.TypeID, targetID)
+	}
+	if confirmResp.VersionNo != 1 {
+		t.Errorf("VersionNo = %d, want 1", confirmResp.VersionNo)
+	}
+	if confirmResp.IsActive != false {
+		t.Errorf("IsActive = %v, want false", confirmResp.IsActive)
+	}
+	if confirmResp.IsReleased != false {
+		t.Errorf("IsReleased = %v, want false", confirmResp.IsReleased)
+	}
+	if confirmResp.PortalState != "not_active" {
+		t.Errorf("PortalState = %q, want 'not_active'", confirmResp.PortalState)
+	}
+	if confirmResp.RootStatus != "active" {
+		t.Errorf("RootStatus = %q, want 'active'", confirmResp.RootStatus)
+	}
+	if confirmResp.CreatedAt.Before(before) || confirmResp.CreatedAt.After(after) {
+		t.Errorf("CreatedAt = %v, expected between %v and %v", confirmResp.CreatedAt, before, after)
+	}
+
+	// 2. Repository version listing lifecycle verification
+	versions, err := repo.ListTypeVersions(context.Background(), "", targetID)
+	if err != nil {
+		t.Fatalf("ListTypeVersions failed: %v", err)
+	}
+	if len(versions) != 1 {
+		t.Fatalf("expected 1 version, got %d", len(versions))
+	}
+	v1 := versions[0]
+	if v1.VersionNo != 1 {
+		t.Errorf("v1.VersionNo = %d, want 1", v1.VersionNo)
+	}
+	if v1.IsActive != false {
+		t.Errorf("v1.IsActive = %v, want false (Portal must not be active)", v1.IsActive)
+	}
+	if v1.IsReleased != false {
+		t.Errorf("v1.IsReleased = %v, want false (draft must not be released)", v1.IsReleased)
+	}
+	if v1.ActivatedAt.IsZero() {
+		t.Errorf("v1.ActivatedAt is zero; expected creation timestamp populated per source semantics")
+	}
+	if v1.ActivatedAt.Before(before) || v1.ActivatedAt.After(after) {
+		t.Errorf("v1.ActivatedAt = %v, expected creation timestamp between %v and %v", v1.ActivatedAt, before, after)
+	}
+}
+

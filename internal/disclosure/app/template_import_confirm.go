@@ -109,7 +109,12 @@ func (s *service) ConfirmTemplateImport(ctx context.Context, req ConfirmTemplate
 		for _, st := range req.NormalizedTemplate.Workflow.Steps {
 			sid := strings.TrimSpace(st.DepartmentID)
 			sname := strings.TrimSpace(st.DepartmentName)
-			if sid != "" || sname != "" {
+			key := DepartmentMappingSourceKey(sid, sname)
+			if key != "" {
+				sourceDeptsUsed[key] = sname
+			}
+			// Backward-compat: also accept legacy keys keyed only by department_id.
+			if sid != "" && sid != key {
 				sourceDeptsUsed[sid] = sname
 			}
 		}
@@ -150,15 +155,23 @@ func (s *service) ConfirmTemplateImport(ctx context.Context, req ConfirmTemplate
 		for i, st := range req.NormalizedTemplate.Workflow.Steps {
 			stepDeptID := strings.TrimSpace(st.DepartmentID)
 			stepDeptName := strings.TrimSpace(st.DepartmentName)
+			mapKey := DepartmentMappingSourceKey(stepDeptID, stepDeptName)
 			var finalDeptCode string
 
-			// Precedence: 1. Explicit mapping -> 2. Code match -> 3. Name match
-			if mappedTgt, ok := req.DepartmentMappings[stepDeptID]; ok && strings.TrimSpace(mappedTgt) != "" {
+			// Precedence: 1. Explicit mapping (portable key) -> 2. Legacy id key -> 3. Code match -> 4. Name match
+			if mappedTgt, ok := req.DepartmentMappings[mapKey]; ok && strings.TrimSpace(mappedTgt) != "" {
 				finalDeptCode = targetDeptByCode[strings.ToLower(strings.TrimSpace(mappedTgt))]
-			} else if canon, ok := targetDeptByCode[strings.ToLower(stepDeptID)]; ok {
-				finalDeptCode = canon
-			} else if canon, ok := targetDeptByName[strings.ToLower(stepDeptName)]; ok {
-				finalDeptCode = canon
+			} else if stepDeptID != "" {
+				if mappedTgt, ok := req.DepartmentMappings[stepDeptID]; ok && strings.TrimSpace(mappedTgt) != "" {
+					finalDeptCode = targetDeptByCode[strings.ToLower(strings.TrimSpace(mappedTgt))]
+				}
+			}
+			if finalDeptCode == "" {
+				if canon, ok := targetDeptByCode[strings.ToLower(stepDeptID)]; ok {
+					finalDeptCode = canon
+				} else if canon, ok := targetDeptByName[strings.ToLower(stepDeptName)]; ok {
+					finalDeptCode = canon
+				}
 			}
 
 			if finalDeptCode == "" {
@@ -170,6 +183,7 @@ func (s *service) ConfirmTemplateImport(ctx context.Context, req ConfirmTemplate
 						"step_index":             i + 1,
 						"source_department_id":   stepDeptID,
 						"source_department_name": stepDeptName,
+						"mapping_key":            mapKey,
 					},
 				}
 			}
@@ -451,9 +465,24 @@ func (s *service) materializeImportUpsert(
 	}
 	blocks[0].Description = legalFlat
 
-	// Checklist & Tags & Display Groups
-	checklist := make([]ChecklistItemDTO, len(norm.Checklist))
-	copy(checklist, norm.Checklist)
+	// Checklist: regenerate server-owned IDs (file-local ids are authoring aids only).
+	checklist := make([]ChecklistItemDTO, 0, len(norm.Checklist))
+	for _, item := range norm.Checklist {
+		id := ""
+		if s.idg != nil {
+			id = s.idg.NewUUID()
+		}
+		if id == "" {
+			id = idgen.UUIDv7Generator{}.NewUUID()
+		}
+		checklist = append(checklist, ChecklistItemDTO{
+			ID:      id,
+			Title:   item.Title,
+			Owner:   item.Owner,
+			DueDate: item.DueDate,
+			Status:  item.Status,
+		})
+	}
 	tags := append([]string(nil), norm.Tags...)
 	displayGroups := append([]string(nil), norm.DisplayGroupCodes...)
 

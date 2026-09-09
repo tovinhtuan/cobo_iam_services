@@ -1,10 +1,10 @@
 {
   "schema_version": "1.0",
   "metadata": {
-    "exported_at": "2026-09-08T08:30:00Z",
-    "exported_by": "compliance.admin@cobo.vn",
-    "source_system": "cobo-cms-prod",
-    "notes": "Mẫu BCTC Quý chuẩn hóa theo Thông tư 96/2020/TT-BTC dành cho doanh nghiệp niêm yết quy mô lớn."
+    "exported_at": "2026-09-09T00:00:00Z",
+    "exported_by": "cms.example.author@cobo.vn",
+    "source_system": "cobo-cms-example",
+    "notes": "File mẫu human-authorable schema_version 1.0. Admin chỉnh nội dung nghiệp vụ rồi import Draft v1. Không cần biết UUID/DB ID. Phòng ban dùng code+name portable; Validate sẽ yêu cầu ánh xạ nếu chưa khớp danh mục CMS. Vai trò dùng mã tĩnh reviewer/approver/… Không phải export template đang có trên hệ thống."
   },
   "template": {
     "type_id": "bctc-quy-doanh-nghiep-niem-yet",
@@ -12,17 +12,15 @@
     "description": "Công bố thông tin Báo cáo tài chính quý kèm giải trình biến động lợi nhuận sau thuế từ 10% trở lên theo quy định tại Điều 14 Thông tư 96/2020/TT-BTC.",
     "category": "Định kỳ",
     "template_category": "periodic",
-    "group_id": "group-001",
     "deadline_strategy": "fixed_cycle_days",
     "deadline_rule": "Trong vòng 20 ngày kể từ ngày kết thúc quý.",
     "periodicity": "quarterly",
-    "display_group_codes": ["display_groups_003"],
     "legal_basis": "Điều 14 Thông tư 96/2020/TT-BTC hướng dẫn công bố thông tin trên thị trường chứng khoán.",
     "applicability": "Công ty đại chúng quy mô lớn, công ty niêm yết trên HOSE và HNX.",
     "implementation_content": "Kế toán trưởng và Ban Tài chính lập BCTC quý, chuyển Ban Kiểm soát rà soát trước khi Tổng Giám đốc phê duyệt và công bố.",
     "implementation_notes": "Đối chiếu kỹ số liệu lũy kế năm và lập bản giải trình nếu LNST biến động >= 10% so với cùng kỳ năm trước.",
     "special_cases": "Trường hợp có công ty con hoặc đơn vị cấp dưới không có tư cách pháp nhân phải nộp BCTC hợp nhất.",
-    "report_content": "1. Bảng cân đối kế toán quý\n2. Báo cáo kết quả hoạt động kinh doanh quý\n3. Báo cáo lưu chuyển tiền tệ quý\n4. Bản thuyết minh Báo cáo tài chính\n5. Văn bản giải trình biến động LNST (nếu có).",
+    "report_content": "1. Bảng cân đối kế toán quý\n2. Báo cáo kết quả hoạt động kinh doanh quý\n3. Báo cáo lưu chuyển tiền tệ quý\n4. Bản thuyết minh báo cáo tài chính\n5. Văn bản giải trình biến động LNST (nếu có).",
     "required_docs": "BCTC quý có đầy đủ chữ ký của Kế toán trưởng và Người đại diện theo pháp luật, đóng dấu hoặc chữ ký số.",
     "channels_text": "Hệ thống IDS của UBCKNN, hệ thống CBTT của SGDCK (HOSE/HNX) và trang thông tin điện tử của công ty.",
     "beneficiaries": "Cổ đông, nhà đầu tư, cơ quan quản lý nhà nước.",
@@ -30,10 +28,14 @@
     "format": "Tập tin PDF ký số và dữ liệu số hóa theo chuẩn của UBCKNN.",
     "legal_risks_text": "Phạt tiền từ 70.000.000 đồng đến 100.000.000 đồng đối với hành vi không công bố hoặc chậm công bố theo Nghị định 156/2020/NĐ-CP.",
     "general_info": "Mẫu biểu chuẩn hóa dùng chung cho toàn bộ kỳ báo cáo quý trong năm tài chính.",
-    "tags": ["Định kỳ", "Tài chính", "BCTC Quý", "TT96"],
+    "tags": [
+      "Định kỳ",
+      "Tài chính",
+      "BCTC Quý",
+      "TT96"
+    ],
     "legal_bases": [
       {
-        "id": "lb-tt96-d14",
         "title": "Thông tư số 96/2020/TT-BTC",
         "code": "96/2020/TT-BTC",
         "authority": "Bộ Tài chính",
@@ -44,21 +46,18 @@
     ],
     "checklist": [
       {
-        "id": "chk-01",
         "title": "Khóa sổ kế toán quý và lập dự thảo BCTC",
         "owner": "Kế toán trưởng",
         "due_date": "T+10",
         "status": "pending"
       },
       {
-        "id": "chk-02",
         "title": "Soát xét biến động lợi nhuận và lập văn bản giải trình",
         "owner": "Phòng Tài chính - Kế toán",
         "due_date": "T+15",
         "status": "pending"
       },
       {
-        "id": "chk-03",
         "title": "Tổng Giám đốc ký phê duyệt và đóng dấu số",
         "owner": "Tổng Giám đốc",
         "due_date": "T+18",
@@ -71,29 +70,58 @@
       "month_in_quarter": 3,
       "applicable_from_mode": "NEXT_SLOT",
       "applicable_from_slot": "",
-      "applicable_to": "2028-12-31",
       "duration_type": "CALENDAR_DAYS",
       "deadline_duration_type": "CALENDAR_DAYS",
       "deadline_days": 20,
       "open_days_before": 15
     },
+    "applicability_rules": {
+      "applicable_company_classes": [
+        "listed",
+        "large_public"
+      ],
+      "applicable_sectors": [
+        "commercial",
+        "service"
+      ],
+      "deadline_days": 20,
+      "deadline_day_type": "calendar",
+      "use_structure_deadline": true,
+      "deadline_by_structure": {
+        "simple_structure": {
+          "days": 20
+        },
+        "has_subsidiaries": {
+          "days": 30
+        },
+        "has_subordinate_units": {
+          "days": 25
+        }
+      }
+    },
     "workflow": {
       "steps": [
         {
-          "step_id": "src-step-01",
           "stage": "Thu thập số liệu & Soạn thảo BCTC",
           "description": "Tập hợp số liệu từ các phòng ban, hoàn thiện sổ cái và lập các biểu mẫu BCTC quý.",
           "instructions": "Đảm bảo tuân thủ biểu mẫu chuẩn mực kế toán Việt Nam (VAS) và các quy định bổ sung của UBCKNN.",
-          "department_id": "dept-finance",
-          "department_name": "Phòng Tài chính - Kế toán",
-          "assignee_role_ids": ["reviewer", "finance_reviewer"],
+          "department": {
+            "code": "finance",
+            "name": "Phòng Tài chính - Kế toán"
+          },
+          "assignee_roles": [
+            "REVIEWER",
+            "finance_reviewer"
+          ],
           "processing_days": 10,
           "due_rule": "T+10",
           "display_order": 1,
           "reminder_config": {
             "enabled": true,
-            "offsets_days": [-3, -1],
-            "template_key": "reminder_quarterly_draft"
+            "offsets_days": [
+              -3,
+              -1
+            ]
           },
           "documents": [
             {
@@ -109,20 +137,26 @@
           ]
         },
         {
-          "step_id": "src-step-02",
           "stage": "Rà soát tính tuân thủ & Giải trình",
           "description": "Phòng Pháp chế và Thư ký HĐQT rà soát điều kiện công bố và kiểm tra giải trình chênh lệch lợi nhuận.",
           "instructions": "Kiểm tra kỹ thời hạn công bố và nội dung giải trình biến động LNST nếu có.",
-          "department_id": "dept-legal",
-          "department_name": "Phòng Pháp chế & Tuân thủ",
-          "assignee_role_ids": ["reviewer", "legal_reviewer"],
+          "department": {
+            "code": "legal",
+            "name": "Phòng Pháp chế & Tuân thủ"
+          },
+          "assignee_roles": [
+            "REVIEWER",
+            "legal_reviewer"
+          ],
           "processing_days": 5,
           "due_rule": "T+15",
           "display_order": 2,
           "reminder_config": {
             "enabled": true,
-            "offsets_days": [-2, 0],
-            "template_key": "reminder_legal_review"
+            "offsets_days": [
+              -2,
+              0
+            ]
           },
           "documents": [
             {
@@ -133,20 +167,25 @@
           ]
         },
         {
-          "step_id": "src-step-03",
           "stage": "Phê duyệt & Phát hành công bố",
           "description": "Người đại diện theo pháp luật hoặc Người được ủy quyền CBTT ký số và gửi lên hệ thống UBCKNN/SGDCK.",
           "instructions": "Thực hiện ký số USB Token / HSM trên bản PDF trước khi tải lên cổng tiếp nhận.",
-          "department_id": "dept-bod",
-          "department_name": "Ban Giám đốc",
-          "assignee_role_ids": ["approver"],
+          "department": {
+            "code": "bod",
+            "name": "Ban Giám đốc"
+          },
+          "assignee_roles": [
+            "APPROVER"
+          ],
           "processing_days": 3,
           "due_rule": "T+18",
           "display_order": 3,
           "reminder_config": {
             "enabled": true,
-            "offsets_days": [-1, 0],
-            "template_key": "reminder_director_approval"
+            "offsets_days": [
+              -1,
+              0
+            ]
           },
           "documents": [
             {

@@ -14,6 +14,31 @@ import (
 	"github.com/cobo/cobo_iam_services/internal/platform/httpx"
 )
 
+// cmsDownloadTemplateImportExample handles GET /api/v1/platform/cms/templates/import/example.
+// Returns the canonical schema_version=1.0 Import example as a downloadable JSON attachment.
+// Zero DB writes. Filename is server-owned static value.
+func (h *Handler) cmsDownloadTemplateImportExample(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subjectFromToken(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+
+	resp, err := h.svc.GetTemplateImportExample(r.Context(), disclosureapp.GetTemplateImportExampleRequest{
+		Subject: sub,
+	})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", resp.ContentType)
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, resp.Filename))
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(resp.Payload)
+}
+
 // cmsValidateTemplateImport handles POST /api/v1/platform/cms/templates/import/validate.
 // It parses the uploaded multipart .json file with strict transport and file size guards,
 // runs the normalization and domain validation engine, and returns stateless preview and HMAC token.

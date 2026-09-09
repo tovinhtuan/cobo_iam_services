@@ -210,6 +210,7 @@ func ValidateImportTemplate(
 			// Department resolution (O(1) in-memory)
 			deptID := strings.TrimSpace(step.DepartmentID)
 			deptName := strings.TrimSpace(step.DepartmentName)
+			mapSourceKey := DepartmentMappingSourceKey(deptID, deptName)
 
 			if deptID == "" && deptName == "" {
 				activationBlockers = append(activationBlockers, ActivationBlockerDTO{
@@ -221,12 +222,12 @@ func ValidateImportTemplate(
 					// Exact code match!
 				} else if dept, ok := departmentsByName[strings.ToLower(deptName)]; ok {
 					// Exact name match! Auto-mapped.
-					mapKey := deptID + ":" + dept.DepartmentCode
+					mapKey := mapSourceKey + ":" + dept.DepartmentCode
 					if _, seen := seenMappings[mapKey]; !seen {
 						seenMappings[mapKey] = struct{}{}
 						requiredMappings = append(requiredMappings, TemplateImportRequiredMappingDTO{
 							Type:          "department",
-							SourceID:      deptID,
+							SourceID:      mapSourceKey,
 							SourceName:    deptName,
 							TargetID:      dept.DepartmentCode,
 							IsAutoMatched: true,
@@ -234,21 +235,21 @@ func ValidateImportTemplate(
 					}
 				} else {
 					// Unmatched department requires explicit user mapping.
-					mapKey := deptID
+					mapKey := mapSourceKey
 					if _, seen := seenMappings[mapKey]; !seen {
 						seenMappings[mapKey] = struct{}{}
 						requiredMappings = append(requiredMappings, TemplateImportRequiredMappingDTO{
 							Type:          "department",
-							SourceID:      deptID,
+							SourceID:      mapSourceKey,
 							SourceName:    deptName,
 							TargetID:      "",
 							IsAutoMatched: false,
 						})
 						warnings = append(warnings, TemplateImportValidationIssueDTO{
 							Code:      "UNRESOLVED_DEPARTMENT_MAPPING",
-							FieldPath: stepPath + ".department_id",
+							FieldPath: stepPath + ".department",
 							Severity:  ValidationSeverityWarning,
-							Message:   fmt.Sprintf("%s: Phòng/ban nguồn (%s - %s) chưa được gán vào phòng/ban nào của hệ thống.", stepLabel, deptID, deptName),
+							Message:   fmt.Sprintf("%s: Phòng/ban nguồn (%s) chưa được gán vào phòng/ban nào của hệ thống.", stepLabel, displayDepartmentRef(deptID, deptName)),
 							SuggestedAction: "Chọn phòng/ban tương ứng từ danh mục hệ thống trước khi xác nhận.",
 						})
 					}
@@ -258,19 +259,19 @@ func ValidateImportTemplate(
 					// Matched by name
 					step.DepartmentID = dept.DepartmentCode
 				} else {
-					mapKey := deptName
+					mapKey := mapSourceKey
 					if _, seen := seenMappings[mapKey]; !seen {
 						seenMappings[mapKey] = struct{}{}
 						requiredMappings = append(requiredMappings, TemplateImportRequiredMappingDTO{
 							Type:          "department",
-							SourceID:      "",
+							SourceID:      mapSourceKey,
 							SourceName:    deptName,
 							TargetID:      "",
 							IsAutoMatched: false,
 						})
 						warnings = append(warnings, TemplateImportValidationIssueDTO{
 							Code:      "UNRESOLVED_DEPARTMENT_MAPPING",
-							FieldPath: stepPath + ".department_name",
+							FieldPath: stepPath + ".department",
 							Severity:  ValidationSeverityWarning,
 							Message:   fmt.Sprintf("%s: Phòng/ban %q chưa có trong hệ thống.", stepLabel, deptName),
 							SuggestedAction: "Gán phòng/ban hệ thống tương ứng.",
@@ -423,6 +424,19 @@ func isAllowedStandardRole(role string) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func displayDepartmentRef(code, name string) string {
+	code = strings.TrimSpace(code)
+	name = strings.TrimSpace(name)
+	switch {
+	case code != "" && name != "":
+		return code + " — " + name
+	case name != "":
+		return name
+	default:
+		return code
 	}
 }
 

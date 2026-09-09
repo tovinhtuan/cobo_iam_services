@@ -45,15 +45,24 @@ func TestTemplateImportContracts_ExampleFileParses(t *testing.T) {
 	if env.Template.DeadlineConfig.ApplicableFromMode != disclosureapp.ApplicableFromModeNext {
 		t.Errorf("applicable_from_mode = %q, want NEXT_SLOT", env.Template.DeadlineConfig.ApplicableFromMode)
 	}
-	if env.Template.DeadlineConfig.ApplicableTo != "2028-12-31" {
-		t.Errorf("applicable_to = %q, want 2028-12-31", env.Template.DeadlineConfig.ApplicableTo)
+	if env.Template.DeadlineConfig.ApplicableTo != "" {
+		t.Errorf("applicable_to = %q, want open-ended (empty) for durable example", env.Template.DeadlineConfig.ApplicableTo)
+	}
+	if env.Template.ApplicabilityRules == nil || len(env.Template.ApplicabilityRules.ApplicableSectors) == 0 {
+		t.Fatal("expected explicit non-default applicability_rules in canonical example")
 	}
 	if env.Template.Workflow == nil || len(env.Template.Workflow.Steps) != 3 {
 		t.Fatalf("expected 3 workflow steps, got %v", env.Template.Workflow)
 	}
 
-	// Verify step 1 documents
+	// Verify step 1 documents / portable department shape
 	s1 := env.Template.Workflow.Steps[0]
+	if s1.Department == nil || s1.Department.Code == "" || s1.Department.Name == "" {
+		t.Fatalf("expected department{code,name} on step 1, got %#v", s1.Department)
+	}
+	if len(s1.AssigneeRoles) == 0 {
+		t.Fatal("expected assignee_roles on step 1")
+	}
 	if len(s1.Documents) != 2 {
 		t.Errorf("step 1 document count = %d, want 2", len(s1.Documents))
 	}

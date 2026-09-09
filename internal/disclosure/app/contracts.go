@@ -87,6 +87,9 @@ type Service interface {
 
 	// CMS Template Import Confirm (Phase C).
 	ConfirmTemplateImport(ctx context.Context, req ConfirmTemplateImportRequest) (*ConfirmTemplateImportResponse, error)
+
+	// CMS Template Import Example Download (Phase F) — canonical reference JSON, zero DB writes.
+	GetTemplateImportExample(ctx context.Context, req GetTemplateImportExampleRequest) (*GetTemplateImportExampleResponse, error)
 }
 
 type Repository interface {

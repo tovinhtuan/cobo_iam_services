@@ -1024,3 +1024,63 @@ func TestCmsConfirmTemplateImport_E2EAndHandlerMatrix(t *testing.T) {
 		}
 	})
 }
+
+func TestCmsDownloadTemplateImportExample(t *testing.T) {
+	handler, _ := setupImportTestServer()
+
+	t.Run("authorized_download_200_attachment", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/platform/cms/templates/import/example", nil)
+		req.Header.Set("Authorization", "Bearer valid-token")
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+		}
+		ct := rec.Header().Get("Content-Type")
+		if !strings.HasPrefix(ct, "application/json") {
+			t.Fatalf("Content-Type=%q", ct)
+		}
+		cd := rec.Header().Get("Content-Disposition")
+		wantCD := `attachment; filename="cobo-template-import-example-v1.0.json"`
+		if cd != wantCD {
+			t.Fatalf("Content-Disposition=%q want %q", cd, wantCD)
+		}
+		var env map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+			t.Fatalf("payload not JSON: %v", err)
+		}
+		if env["schema_version"] != "1.0" {
+			t.Fatalf("schema_version=%v", env["schema_version"])
+		}
+	})
+
+	t.Run("missing_token_unauthorized", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/platform/cms/templates/import/example", nil)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("status=%d want 401", rec.Code)
+		}
+	})
+
+	t.Run("forbidden_without_write_permission", func(t *testing.T) {
+		_ = os.Setenv("CMS_TEMPLATE_IMPORT_SIGNING_SECRET", "test-cms-template-import-secret-for-suite")
+		repo := inmemory.NewRepository()
+		auth := &cmsAuthMock{perms: []string{"platform.cms.view"}}
+		svc := disclosureapp.NewService(repo, auth, idgen.UUIDv7Generator{})
+		inspector := testTokenInspector{sub: "admin-platform-1", membershipID: "mem-1", companyID: "cobo-platform"}
+		h := disclosurehttp.NewHandler(svc, inspector, nil, &testAuditSpy{})
+		mux := http.NewServeMux()
+		h.Register(mux)
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/platform/cms/templates/import/example", nil)
+		req.Header.Set("Authorization", "Bearer valid-token")
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("status=%d want 403 body=%s", rec.Code, rec.Body.String())
+		}
+	})
+}
+

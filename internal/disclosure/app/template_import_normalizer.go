@@ -104,11 +104,11 @@ func NormalizeTemplateImportV1(raw TemplateImportDefinitionV1) *TemplateImportDe
 	// 10. Tags deduplication & trimming
 	out.Tags = cleanStringSlice(out.Tags)
 
-	// 11. Legal bases trimming
+	// 11. Legal bases trimming — strip optional file-local ids (Confirm regenerates UUIDs)
 	if len(out.LegalBases) > 0 {
 		lbs := make([]LegalBasisDTO, 0, len(out.LegalBases))
 		for _, lb := range out.LegalBases {
-			lb.ID = strings.TrimSpace(lb.ID)
+			lb.ID = ""
 			lb.Title = strings.TrimSpace(lb.Title)
 			lb.Code = strings.TrimSpace(lb.Code)
 			lb.Authority = strings.TrimSpace(lb.Authority)
@@ -122,11 +122,11 @@ func NormalizeTemplateImportV1(raw TemplateImportDefinitionV1) *TemplateImportDe
 		out.LegalBases = lbs
 	}
 
-	// 12. Checklist trimming
+	// 12. Checklist trimming — strip optional file-local ids (Confirm regenerates UUIDs)
 	if len(out.Checklist) > 0 {
 		chks := make([]ChecklistItemDTO, 0, len(out.Checklist))
 		for _, chk := range out.Checklist {
-			chk.ID = strings.TrimSpace(chk.ID)
+			chk.ID = ""
 			chk.Title = strings.TrimSpace(chk.Title)
 			chk.Owner = strings.TrimSpace(chk.Owner)
 			chk.DueDate = strings.TrimSpace(chk.DueDate)
@@ -238,7 +238,7 @@ func normalizeWorkflow(wf *TemplateImportWorkflowV1) {
 	steps := make([]TemplateImportWorkflowStepV1, 0, len(wf.Steps))
 	for i, step := range wf.Steps {
 		s := step
-		// Non-portable source step_id stripped. Defer final UUID to Phase C materialization.
+		// Non-portable source step_id stripped. Defer final UUID to Confirm materialization.
 		s.StepID = ""
 		s.Stage = strings.TrimSpace(s.Stage)
 		s.Description = strings.TrimSpace(s.Description)
@@ -250,12 +250,29 @@ func normalizeWorkflow(wf *TemplateImportWorkflowV1) {
 			s.DisplayOrder = i + 1
 		}
 
-		// Roles
-		s.AssigneeRoleIDs = cleanStringSlice(s.AssigneeRoleIDs)
+		// Preferred department {code,name} flattens into legacy fields for Validate/Confirm.
+		if s.Department != nil {
+			code := strings.TrimSpace(s.Department.Code)
+			name := strings.TrimSpace(s.Department.Name)
+			if s.DepartmentID == "" {
+				s.DepartmentID = code
+			}
+			if s.DepartmentName == "" {
+				s.DepartmentName = name
+			}
+			// Keep flattened portable refs; clear nested object to avoid dual authority.
+			s.Department = nil
+		}
 
-		// Reminder config
+		// Preferred assignee_roles merges into assignee_role_ids (static codes, not DB UUIDs).
+		roles := append([]string(nil), s.AssigneeRoles...)
+		roles = append(roles, s.AssigneeRoleIDs...)
+		s.AssigneeRoleIDs = normalizePortableRoleCodes(cleanStringSlice(roles))
+		s.AssigneeRoles = nil
+
+		// Reminder template_key is non-portable / not persisted on Confirm — clear.
 		if s.ReminderConfig != nil {
-			s.ReminderConfig.TemplateKey = strings.TrimSpace(s.ReminderConfig.TemplateKey)
+			s.ReminderConfig.TemplateKey = ""
 		}
 
 		// Documents
@@ -277,6 +294,39 @@ func normalizeWorkflow(wf *TemplateImportWorkflowV1) {
 		steps = append(steps, s)
 	}
 	wf.Steps = steps
+}
+
+// normalizePortableRoleCodes maps human-facing aliases onto canonical static role codes.
+func normalizePortableRoleCodes(roles []string) []string {
+	if len(roles) == 0 {
+		return roles
+	}
+	out := make([]string, 0, len(roles))
+	seen := make(map[string]struct{}, len(roles))
+	for _, raw := range roles {
+		role := strings.ToLower(strings.TrimSpace(raw))
+		switch role {
+		case "maker", "author", "drafter":
+			role = "creator"
+		case "reviewer", "role-reviewer", "disclosure_reviewer":
+			role = "reviewer"
+		case "approver", "role-approver":
+			role = "approver"
+		case "legal_reviewer", "role-legal-reviewer":
+			role = "legal_reviewer"
+		case "finance_reviewer", "role-finance-reviewer":
+			role = "finance_reviewer"
+		}
+		if role == "" {
+			continue
+		}
+		if _, ok := seen[role]; ok {
+			continue
+		}
+		seen[role] = struct{}{}
+		out = append(out, role)
+	}
+	return out
 }
 
 func cleanStringSlice(slice []string) []string {

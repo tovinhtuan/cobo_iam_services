@@ -1,6 +1,7 @@
 package app
 
 import (
+	"strings"
 	"time"
 
 	"github.com/cobo/cobo_iam_services/internal/disclosure/app/applicability"
@@ -117,20 +118,43 @@ type TemplateImportWorkflowV1 struct {
 	Steps []TemplateImportWorkflowStepV1 `json:"steps"`
 }
 
+// TemplateImportDepartmentRefV1 is the preferred human-authorable department reference.
+// Prefer code/name over opaque DB UUIDs. Validate resolves by exact code, then exact name,
+// else mapping_required (admin picks CMS-visible catalog target).
+type TemplateImportDepartmentRefV1 struct {
+	Code string `json:"code,omitempty"`
+	Name string `json:"name,omitempty"`
+}
+
 // TemplateImportWorkflowStepV1 represents a single workflow step in the import file.
 type TemplateImportWorkflowStepV1 struct {
-	StepID          string                               `json:"step_id,omitempty"`
+	StepID          string                               `json:"step_id,omitempty"` // Optional file-local; stripped; Confirm generates server UUID
 	Stage           string                               `json:"stage"`
 	Description     string                               `json:"description,omitempty"`
 	Instructions    string                               `json:"instructions,omitempty"`
-	DepartmentID    string                               `json:"department_id,omitempty"`
-	DepartmentName  string                               `json:"department_name,omitempty"`
-	AssigneeRoleIDs []string                             `json:"assignee_role_ids,omitempty"`
+	Department      *TemplateImportDepartmentRefV1       `json:"department,omitempty"` // Preferred portable ref
+	DepartmentID    string                               `json:"department_id,omitempty"` // Legacy portable source code (not DB UUID)
+	DepartmentName  string                               `json:"department_name,omitempty"` // Legacy / display name
+	AssigneeRoles   []string                             `json:"assignee_roles,omitempty"` // Preferred static role codes
+	AssigneeRoleIDs []string                             `json:"assignee_role_ids,omitempty"` // Legacy alias for assignee_roles
 	ProcessingDays  int                                  `json:"processing_days,omitempty"`
 	DueRule         string                               `json:"due_rule,omitempty"`
 	DisplayOrder    int                                  `json:"display_order,omitempty"`
 	ReminderConfig  *TemplateImportStepReminderConfigV1  `json:"reminder_config,omitempty"`
 	Documents       []TemplateImportWorkflowDocumentV1   `json:"documents,omitempty"`
+}
+
+// DepartmentMappingSourceKey returns a stable non-empty mapping key for Confirm/FE.
+// Prefer department source code; else "dept-name:<normalized name>". Never empty when name exists.
+func DepartmentMappingSourceKey(departmentID, departmentName string) string {
+	if id := strings.TrimSpace(departmentID); id != "" {
+		return id
+	}
+	name := strings.TrimSpace(departmentName)
+	if name == "" {
+		return ""
+	}
+	return "dept-name:" + strings.ToLower(name)
 }
 
 // TemplateImportStepReminderConfigV1 represents automated reminder settings for a step.

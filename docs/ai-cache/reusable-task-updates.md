@@ -1,4 +1,70 @@
 
+## 2026-09-09 — COBO CMS Template Import: Phase F.2.1 — DEV Human-Authorable Example Verification
+
+- task type: DEV_VERIFICATION (F2.1)
+- QA: `qa-import-human-authorable-1788924517502` — Confirm 201; server-owned IDs generated; mapped departments; portal inactive; runtime 0
+- pointer: `cobo_web_design/docs/ai-cache/cms-template-import-phase-f21-dev-human-authorable-verification-2026-09-09/`
+- PHASE_F21_RESULT=PASS; PHASE_F2_RELEASE_GATE=PASS; READY_FOR_COMMIT=true; NO_COMMIT / NO_PUSH / NO_MERGE / NO_PRODUCTION — WAIT_FOR_PO_CONFIRMATION
+
+## 2026-09-09 — COBO CMS Template Import: Phase F.2 — Human-authorable portable contract (remove opaque IDs)
+
+- task type: CONTRACT_CORRECTION + IMPLEMENTATION (local only; no DEV deploy)
+- objective: Admin can download example JSON, edit business content, upload — without DB UUIDs / opaque internal IDs.
+- implemented: department{code,name} + assignee_roles; server-owned ID strip/regen; mapping keys; canonical example EXAMPLE_OPAQUE_ID_COUNT=0.
+- verification: disclosure tests + go build + docker compose build api PASS.
+- pointer: `cobo_web_design/docs/ai-cache/cms-template-import-phase-f2-human-authorable-portable-contract-2026-09-09/`
+- PHASE_F2_RESULT=PASS; READY_FOR_DEV_VERIFICATION=true; NO_DEPLOY / NO_COMMIT / NO_PUSH / NO_MERGE / NO_PRODUCTION — WAIT_FOR_PO_CONFIRMATION
+
+## 2026-09-09 — COBO CMS Template Import: Phase F.1 — DEV Example Download Verification (real download → exact re-upload → Validate)
+
+- task type: DEV_VERIFICATION (PHASE F.1 ONLY — no feature redesign)
+- objective: prove authorized CMS admin can download canonical Example JSON from REAL DEV and feed that exact file into REAL Import Validate successfully, with zero DB writes and Import state isolation.
+- verified on DEV: deploy-be + deploy-fe PASS; GET /import/example 200 with correct disposition; exact downloaded bytes Validate parse_valid/domain_valid true; mapping_required=true allowed; DB counts unchanged; state/token isolation PASS.
+- pointer: `cobo_web_design/docs/ai-cache/cms-template-import-phase-f1-dev-example-download-verification-2026-09-09/`
+- PHASE_F1_RESULT=PASS; CMS_TEMPLATE_IMPORT_EXAMPLE_DEV_VERIFIED=true; PHASE_F_RELEASE_GATE=PASS; READY_FOR_COMMIT=true; NO_COMMIT / NO_PUSH / NO_MERGE / NO_PRODUCTION — WAIT_FOR_PO_CONFIRMATION
+
+## 2026-09-09 — COBO CMS Template Import: Phase F — Download Canonical Example JSON for CMS Admin Reference
+
+- task type: DELTA_FEATURE (PHASE F — DOWNLOAD_IMPORT_EXAMPLE only)
+- objective: add safe CTA **Tải file mẫu JSON** on Import screen; BE owns canonical schema_version=1.0 artifact; FE downloads via API without second FE schema copy; does not export existing templates.
+- implemented:
+  - BE: embedded artifact `internal/disclosure/app/artifacts/cobo-template-import-example-v1.0.json`; `GetTemplateImportExample` gated by `platform.cms.view` + `cms.template.write`; `GET /api/v1/platform/cms/templates/import/example` with Content-Disposition filename `cobo-template-import-example-v1.0.json`; zero DB writes.
+  - Example aligned to C1: explicit `applicability_rules`, `NEXT_SLOT`, open-ended `applicable_to`, CALENDAR_DAYS, portable dept codes, document metadata only (no `template_file_id`).
+  - FE: `ImportExampleDownload` near dropzone; independent of validation_token / Import state; loading + toast/error UX.
+- verification: `go test ./internal/disclosure/...` PASS; `go build ./...` PASS; `docker compose -f docker-compose.dev.yml build api` PASS; Vitest import suite 39 PASS; `npm run build` PASS.
+- pointer: `cobo_web_design/docs/ai-cache/cms-template-import-phase-f-example-download-2026-09-09/` (+ IAM `00-pointer.md`)
+- PHASE_F_RESULT=PASS; READY_FOR_DEV_VERIFICATION=true; READY_FOR_COMMIT=true; DEV_DEPLOY_PERFORMED=false; NO_DEPLOY / NO_COMMIT / NO_PUSH / NO_MERGE / NO_PRODUCTION — WAIT_FOR_PO_CONFIRMATION
+
+## 2026-09-09 — COBO CMS Template Import: Phase E.1 — Lifecycle-Focused Verification / Fix (activated_at Semantics + Source Trace + DB Schema Defaults + Contract Reconciliation + Fresh QA Import + Release Gate PASS)
+
+
+- task type: LIFECYCLE_VERIFICATION_AND_RECONCILIATION (PHASE E.1 ONLY — FOCUSED SOURCE AUDIT + DEV REVERIFICATION)
+- objective: reconcile the lifecycle semantics of imported Draft v1 templates, specifically resolving why `active_version_no = 0`, `version_no = 1`, `is_released = false`, `Portal State = not active`, `runtime side effects = 0`, but `activated_at != NULL` on DEV.
+- key findings & root cause:
+  - Source Trace: End-to-end trace proved that `UpsertTypeVersion` (`internal/disclosure/infra/mysql/repository.go:1157`) populates `activated_at` with `now` on initial INSERT for ALL flows (Create Blank, Clone, and Import Confirm).
+  - DB Schema Semantics: `disclosure_type_versions.activated_at` was created in migration `0012` as `TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP` (`ACTIVATED_AT_NULLABLE=false`, `ACTIVATED_AT_DB_DEFAULT=CURRENT_TIMESTAMP`, `ACTIVATED_AT_DB_TRIGGER=NONE`). Inserting `NULL` is strictly rejected by MySQL (`ERROR 1048 (23000): Column 'activated_at' cannot be null`).
+  - Four Lifecycle Flows Comparison: Canonical Create Blank drafts on DEV (`qa-final-def001-seed-20260904`, `qa-browser-smoke-template-alert-1788526242598`) and Clone drafts have `active_version_no = 0`, `is_released = 0`, and `activated_at = created_at`. They are never `NULL`.
+  - Portal Activation Authority: Active publication on Portal is governed strictly by `disclosure_types.active_version_no > 0` AND `disclosure_type_versions.is_released = 1`. `activated_at` is a legacy column with non-activation meaning for drafts (stores creation timestamp on initial insert; overwritten with actual activation timestamp upon explicit activation).
+  - Classification: `ACTIVATED_AT_SEMANTICS=LEGACY_FIELD_WITH_NON_ACTIVATION_MEANING`.
+  - Decision Branch: **Branch B (Contract Reconciliation)**. `IMPORT_ACTIVATED_AT_BUG=false`. No code defect exists. The assumption that `activated_at` must be `NULL` for Drafts was an external misconception disproven by MySQL schema constraints and canonical backend code.
+- implementation & tests:
+  - Application Source: `BE_SOURCE_CHANGED=false`, `FE_SOURCE_CHANGED=false`.
+  - Test Suite Added: `TestTemplateImportConfirm_DraftLifecycleFields` in `internal/disclosure/app/template_import_confirm_test.go` locking in the source-defined Draft lifecycle contract.
+  - Regressions: `IMPORT_DRAFT_LIFECYCLE_TARGETED_TEST=PASS`, `CREATE_BLANK_REGRESSION=PASS`, `CLONE_REGRESSION=PASS`, `ACTIVATE_REGRESSION=PASS`, `DISCLOSURE_REGRESSION_TESTS=PASS`, `BE_BUILD=PASS`.
+- fresh dev verification (Real Headless Browser):
+  - Brand-New QA Target: `QA_TARGET_TYPE_ID_NEW=qa-import-lifecycle-1788916576896` (old QA row untouched).
+  - Confirm Response: HTTP 201 Created (`is_active=false`, `is_released=false`, `portal_state="not_active"`).
+  - Immediate DB Snapshot: `root.active_version_no=0`, `root.status="active"`, `version.version_no=1`, `version.is_released=0`, `version.activated_at="2026-09-09 01:16:26"`.
+  - Delayed DB Snapshot: Zero automatic lifecycle transitions (`AUTOMATIC_LIFECYCLE_TRANSITION_DETECTED=false`).
+  - Browser Hard Reload: Loaded from real backend with full field fidelity (`REAL_DEV_HARD_RELOAD=PASS`).
+  - Portal Absence: Verified completely absent in Portal UI (`03-fresh-portal-absence.png`) and tenant APIs (`DEV_PORTAL_ACTIVE_AFTER_IMPORT=false`).
+  - Runtime Isolation: `cycles=0`, `records=0`, `instances=0`, `tasks=0` (`DEV_RUNTIME_WRITE_COUNT=0`).
+  - Company Isolation: `preferences=0`, `overrides=0` (`DEV_COMPANY_OVERRIDE_WRITE_COUNT=0`).
+  - Audit Logs: Exactly 1 `disclosure.type.import` event; 0 activation, 0 publish events.
+- defect resolution: `OPEN_P0=0`, `OPEN_P1=0` (reconciled), `OPEN_P2=0`.
+- pointer: `cobo_web_design/docs/ai-cache/cms-template-import-phase-e1-activated-at-lifecycle-2026-09-09/` (18 parts: `00-context.md` through `17-final-verdict.md` + 3 screenshots).
+- CMS_TEMPLATE_IMPORT_PHASE_E1_COMPLETE=true; PHASE_E1_RESULT=PASS; PHASE_E_RELEASE_GATE=PASS; CMS_TEMPLATE_IMPORT_DEV_VERIFIED=true; READY_FOR_COMMIT=true; READY_FOR_PUSH=false; READY_FOR_MERGE=false; READY_FOR_PRODUCTION=false; PRODUCTION_DEPLOY_PERFORMED=false; NO_COMMIT; NO_PUSH; NO_MERGE; NO_PRODUCTION; STOP / WAIT_FOR_PO_CONFIRMATION
+
 ## 2026-09-08 — COBO CMS Template Import: Phase E — DEV Deploy + Real Backend / Frontend Integration + Real Browser E2E + DB / Runtime Verification + Security / Log Review + Release Gate
 
 - task type: DEV_REAL_E2E_RELEASE_GATE (IMPLEMENTATION & DEV VERIFICATION MODE — PHASE E ONLY)

@@ -179,7 +179,7 @@
       "required": ["title"],
       "additionalProperties": false,
       "properties": {
-        "id": { "type": "string", "description": "Optional citation reference ID." },
+        "id": { "type": "string", "description": "Optional file-local citation key. Ignored for persistence; Confirm regenerates server-owned UUID." },
         "title": { "type": "string", "description": "Legal document title (e.g. 'Thông tư 96/2020/TT-BTC')." },
         "code": { "type": "string", "description": "Document legal code or number." },
         "authority": { "type": "string", "description": "Issuing authority (e.g. 'Bộ Tài chính')." },
@@ -193,7 +193,7 @@
       "required": ["title"],
       "additionalProperties": false,
       "properties": {
-        "id": { "type": "string", "description": "Optional checklist item ID." },
+        "id": { "type": "string", "description": "Optional file-local checklist key. Ignored for persistence; Confirm regenerates server-owned UUID." },
         "title": { "type": "string", "description": "Checklist item requirement text." },
         "owner": { "type": "string", "description": "Responsible role or title." },
         "due_date": { "type": "string", "description": "Relative due description." },
@@ -283,7 +283,7 @@
       "properties": {
         "step_id": {
           "type": "string",
-          "description": "Source step identifier. Server regenerates fresh UUIDs upon import."
+          "description": "Optional file-local step key. Stripped on normalize; Confirm always generates a fresh server UUID. Do not use DB UUIDs."
         },
         "stage": {
           "type": "string",
@@ -299,18 +299,38 @@
           "type": "string",
           "description": "Specific execution instructions for assignees."
         },
+        "department": {
+          "type": "object",
+          "description": "Preferred portable department reference. Validate resolves by exact code, else exact name, else mapping_required.",
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "type": "string",
+              "description": "Portable department source code (human-authored, not DB UUID)."
+            },
+            "name": {
+              "type": "string",
+              "description": "Human-readable department name visible in CMS catalog mapping."
+            }
+          }
+        },
         "department_id": {
           "type": "string",
-          "description": "Department code assigned to this step. Must match or be mapped to target workflow_template_departments."
+          "description": "Legacy portable department source code (same meaning as department.code). Not a DB UUID."
         },
         "department_name": {
           "type": "string",
-          "description": "Optional human-readable source department name used for preview auto-mapping."
+          "description": "Legacy human-readable source department name (same meaning as department.name)."
+        },
+        "assignee_roles": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Preferred static workflow role codes (e.g. ['reviewer','approver'] or aliases MAKER/REVIEWER/APPROVER). Not DB role UUIDs."
         },
         "assignee_role_ids": {
           "type": "array",
           "items": { "type": "string" },
-          "description": "Global role keys responsible for this step (e.g. ['reviewer'], ['approver'])."
+          "description": "Legacy alias for assignee_roles. Values are static role codes, not database primary keys."
         },
         "processing_days": {
           "type": "integer",
@@ -346,7 +366,7 @@
           "items": { "type": "integer" },
           "description": "Days relative to deadline to send reminders (e.g. [-3, -1, 0])."
         },
-        "template_key": { "type": "string", "description": "Email/alert notification template key." }
+        "template_key": { "type": "string", "description": "Deprecated/non-portable notification key. Cleared on import; not persisted." }
       }
     },
     "WorkflowDocumentV1": {
@@ -370,7 +390,7 @@
         },
         "template_file_id": {
           "type": "string",
-          "description": "Non-portable source storage ID. If provided, strictly cleared to '' upon import."
+          "description": "Non-portable source storage ID. If provided, strictly cleared to '' upon import. Do not author this field."
         }
       }
     },
