@@ -9,6 +9,7 @@ import (
 	"time"
 
 	adhocapp "github.com/cobo/cobo_iam_services/internal/adhoc/app"
+	"github.com/cobo/cobo_iam_services/internal/companyorg"
 	deadlinealertsapp "github.com/cobo/cobo_iam_services/internal/deadlinealerts/app"
 	disclosureapp "github.com/cobo/cobo_iam_services/internal/disclosure/app"
 	"github.com/cobo/cobo_iam_services/internal/disclosure/app/deadlineengine"
@@ -478,6 +479,10 @@ func (r *Repository) ListCompanyDepartments(ctx context.Context, companyID strin
 		out = []deadlinealertsapp.DeadlineAlertFilterOptionDTO{}
 	}
 	return out, rows.Err()
+}
+
+func (r *Repository) HasActiveEnterpriseAdmin(ctx context.Context, companyID string) (bool, error) {
+	return companyorg.HasActiveEnterpriseAdmin(ctx, r.db, companyID)
 }
 
 func (r *Repository) ListTemplateDepartments(ctx context.Context) ([]deadlinealertsapp.DeadlineAlertFilterOptionDTO, error) {

@@ -19,26 +19,44 @@ type StepRuntimeState struct {
 	DelayDaysApplied            int
 }
 
+// Company department resolution for Tenant presentation (reminder fallback facts).
+// Display-only — does not block alerts/workflow.
+const (
+	CompanyDepartmentResolutionNoConfig = "NO_CONFIG"
+	CompanyDepartmentResolutionMatched  = "MATCHED"
+	CompanyDepartmentResolutionMissing  = "MISSING"
+
+	ReminderFallbackRecipientTypeCompanyAdmin = "COMPANY_ADMIN"
+)
+
 // DeadlineStepDTO is the API view for one workflow step on deadline detail.
 type DeadlineStepDTO struct {
 	StepCode           string   `json:"step_code"`
 	StepName           string   `json:"step_name"`
 	Order              int      `json:"order"`
-	DepartmentName     string   `json:"department_name,omitempty"`
-	PlannedStartDate   string   `json:"planned_start_date"`
-	PlannedEndDate     string   `json:"planned_end_date"`
-	DurationDays       int      `json:"duration_days"`
-	Status             string   `json:"status"`
-	IsCurrentByTime    bool     `json:"is_current_by_time"`
-	IsCompleted        bool     `json:"is_completed"`
-	IsLocked           bool     `json:"is_locked"`
-	IsFuture           bool     `json:"is_future"`
-	IsDelayed          bool     `json:"is_delayed"`
-	CompletedAt        string   `json:"completed_at,omitempty"`
-	CompletedByName    string   `json:"completed_by_name,omitempty"`
-	DelayDays          int      `json:"delay_days"`
-	AvailableActions   []string `json:"available_actions"`
-	LockReason         string   `json:"lock_reason,omitempty"`
+	// DepartmentID is the configured/snapshot department token (id or code).
+	DepartmentID   string `json:"department_id,omitempty"`
+	DepartmentName string `json:"department_name,omitempty"`
+	// CompanyDepartmentResolution: NO_CONFIG | MATCHED | MISSING (inactive = MISSING).
+	CompanyDepartmentResolution string `json:"company_department_resolution,omitempty"`
+	// ReminderFallbackRecipientType is COMPANY_ADMIN when MISSING; empty when MATCHED/NO_CONFIG.
+	ReminderFallbackRecipientType string `json:"reminder_fallback_recipient_type,omitempty"`
+	// CompanyAdminRecipientAvailable is set when MISSING: whether ≥1 eligible admin_doanh_nghiep exists.
+	CompanyAdminRecipientAvailable *bool `json:"company_admin_recipient_available,omitempty"`
+	PlannedStartDate               string   `json:"planned_start_date"`
+	PlannedEndDate                 string   `json:"planned_end_date"`
+	DurationDays                   int      `json:"duration_days"`
+	Status                         string   `json:"status"`
+	IsCurrentByTime                bool     `json:"is_current_by_time"`
+	IsCompleted                    bool     `json:"is_completed"`
+	IsLocked                       bool     `json:"is_locked"`
+	IsFuture                       bool     `json:"is_future"`
+	IsDelayed                      bool     `json:"is_delayed"`
+	CompletedAt                    string   `json:"completed_at,omitempty"`
+	CompletedByName                string   `json:"completed_by_name,omitempty"`
+	DelayDays                      int      `json:"delay_days"`
+	AvailableActions               []string `json:"available_actions"`
+	LockReason                     string   `json:"lock_reason,omitempty"`
 }
 
 // ListDeadlineStepsResponse is returned by GET .../deadlines/{record_id}/steps.
@@ -133,11 +151,13 @@ func ComputeDeadlineSteps(
 			lockReason = "not_current"
 		}
 
+		configuredDept := strings.TrimSpace(snap.Department)
 		dto := DeadlineStepDTO{
 			StepCode:         code,
 			StepName:         displayStepName(snap),
 			Order:            i + 1,
-			DepartmentName:   snap.Department,
+			DepartmentID:     configuredDept,
+			DepartmentName:   configuredDept,
 			PlannedStartDate: tl.StartDate.Format("2006-01-02"),
 			PlannedEndDate:   tl.EndDate.Format("2006-01-02"),
 			DurationDays:     tl.ProcessingDays,
@@ -150,6 +170,9 @@ func ComputeDeadlineSteps(
 			DelayDays:        st.DelayDaysApplied,
 			AvailableActions: actions,
 			LockReason:       lockReason,
+		}
+		if configuredDept == "" {
+			dto.CompanyDepartmentResolution = CompanyDepartmentResolutionNoConfig
 		}
 		if st.CompletedAt != nil {
 			dto.CompletedAt = st.CompletedAt.UTC().Format(time.RFC3339)

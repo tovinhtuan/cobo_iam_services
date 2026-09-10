@@ -80,6 +80,10 @@ func (r *Repository) ListCompanyDepartments(_ context.Context, _ string) ([]dead
 	return []deadlinealertsapp.DeadlineAlertFilterOptionDTO{}, nil
 }
 
+func (r *Repository) HasActiveEnterpriseAdmin(_ context.Context, _ string) (bool, error) {
+	return false, nil
+}
+
 func (r *Repository) ListTemplateDepartments(_ context.Context) ([]deadlinealertsapp.DeadlineAlertFilterOptionDTO, error) {
 	return []deadlinealertsapp.DeadlineAlertFilterOptionDTO{}, nil
 }

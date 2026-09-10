@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/cobo/cobo_iam_services/internal/companyorg"
 	reminderapp "github.com/cobo/cobo_iam_services/internal/reminder/app"
 )
 
@@ -193,31 +194,7 @@ func (q *MembershipEmailQuerier) EmailsByMemberships(ctx context.Context, compan
 // ResolveCompanyDepartment maps a snapshot department key to an active company department.
 // Match key: departments.department_id OR departments.department_code, same company, active.
 func (q *MembershipEmailQuerier) ResolveCompanyDepartment(ctx context.Context, companyID, snapshotDepartmentKey string) (string, bool, error) {
-	companyID = strings.TrimSpace(companyID)
-	key := strings.TrimSpace(snapshotDepartmentKey)
-	if companyID == "" || key == "" {
-		return "", false, nil
-	}
-	var departmentID string
-	err := q.db.QueryRowContext(ctx, `
-		SELECT department_id
-		FROM departments
-		WHERE company_id = ?
-		  AND status = 'active'
-		  AND (department_id = ? OR department_code = ?)
-		LIMIT 1
-	`, companyID, key, key).Scan(&departmentID)
-	if err == sql.ErrNoRows {
-		return "", false, nil
-	}
-	if err != nil {
-		return "", false, fmt.Errorf("resolve company department: %w", err)
-	}
-	departmentID = strings.TrimSpace(departmentID)
-	if departmentID == "" {
-		return "", false, nil
-	}
-	return departmentID, true, nil
+	return companyorg.ResolveActiveDepartment(ctx, q.db, companyID, snapshotDepartmentKey)
 }
 
 // EmailsByDepartmentHead returns the active head email for a company department.

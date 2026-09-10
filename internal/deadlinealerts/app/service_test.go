@@ -17,6 +17,8 @@ type stubRepo struct {
 	departments       []DeadlineAlertFilterOptionDTO
 	templateDepts     []DeadlineAlertFilterOptionDTO
 	reportGroups      []DeadlineAlertFilterOptionDTO
+	adminAvailable    bool
+	adminAvailableSet bool
 }
 
 func (s *stubRepo) ListRows(_ context.Context, _ string, _ DeadlineAlertAccessScope) ([]AlertRow, error) {
@@ -35,6 +37,13 @@ func (s *stubRepo) ListCompanyDepartments(_ context.Context, _ string) ([]Deadli
 		return []DeadlineAlertFilterOptionDTO{}, nil
 	}
 	return s.departments, nil
+}
+
+func (s *stubRepo) HasActiveEnterpriseAdmin(_ context.Context, _ string) (bool, error) {
+	if s.adminAvailableSet {
+		return s.adminAvailable, nil
+	}
+	return false, nil
 }
 
 func (s *stubRepo) ListTemplateDepartments(_ context.Context) ([]DeadlineAlertFilterOptionDTO, error) {

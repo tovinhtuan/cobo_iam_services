@@ -1,3 +1,18 @@
+## Tenant missing-department warning (presentation) — 2026-09-10
+
+- BE additive step read-model + shared companyorg resolver; FE DeadlineWorkflowCard warning (reminder-email copy only)
+- Evidence: `tenant-deadline-alert-missing-department-presentation-2026-09-10/`
+- NO_COMMIT / NO_PUSH / NO_MERGE / NO_PRODUCTION — WAIT_FOR_PO_CONFIRMATION
+
+## 2026-09-10 — Tenant Deadline Alert: Missing Department + Company Admin Fallback (SOURCE AUDIT)
+
+- task type: SOURCE_AUDIT_ONLY (no implementation)
+- objective: prove configured vs company-resolved department vs effective recipient/fallback for “Phòng ban xử lý” on Cảnh báo về thời hạn
+- discovered: UI label from DepartmentDict (company + template catalog) can show “Phòng Nhân sự” without company org match; reminder WORKFLOW_STEP falls back to admin_doanh_nghiep; Portal deadline-alert APIs expose neither resolution_status nor fallback recipient
+- SOLUTION_CLASS=API_PRESENTATION_EXTENSION; PO_DECISION_REQUIRED=true for fallback copy scope
+- pointer: `docs/ai-cache/tenant-deadline-alert-missing-department-admin-fallback-audit-2026-09-10/`
+- NO_IMPLEMENTATION / NO_COMMIT / NO_DEPLOY — WAIT_FOR_PO_CONFIRMATION
+
 
 ## 2026-09-09 — Tenant DeadlineSummary Option 1: applicability-aware Source A
 

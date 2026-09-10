@@ -259,18 +259,69 @@ func (s *service) enrichStepDepartmentNames(ctx context.Context, companyID strin
 		return err
 	}
 	dict := NewDepartmentDict(companyDepts, templateDepts)
+
+	needsAdminAvailability := false
 	for i := range resp.Steps {
-		raw := strings.TrimSpace(resp.Steps[i].DepartmentName)
-		if raw == "" {
+		token := strings.TrimSpace(resp.Steps[i].DepartmentID)
+		if token == "" {
+			token = strings.TrimSpace(resp.Steps[i].DepartmentName)
+		}
+		if token == "" {
+			resp.Steps[i].DepartmentID = ""
+			resp.Steps[i].CompanyDepartmentResolution = CompanyDepartmentResolutionNoConfig
+			resp.Steps[i].ReminderFallbackRecipientType = ""
+			resp.Steps[i].CompanyAdminRecipientAvailable = nil
 			continue
 		}
-		if label := strings.TrimSpace(dict.ResolveLabel(raw)); label != "" {
+		resp.Steps[i].DepartmentID = token
+
+		if label := strings.TrimSpace(dict.ResolveLabel(token)); label != "" {
 			resp.Steps[i].DepartmentName = label
+		} else if LooksLikeTechnicalDepartmentRef(token) {
+			resp.Steps[i].DepartmentName = ""
+		} else {
+			resp.Steps[i].DepartmentName = token
+		}
+
+		if companyDepartmentTokenMatched(companyDepts, token) {
+			resp.Steps[i].CompanyDepartmentResolution = CompanyDepartmentResolutionMatched
+			resp.Steps[i].ReminderFallbackRecipientType = ""
+			resp.Steps[i].CompanyAdminRecipientAvailable = nil
 			continue
 		}
-		if LooksLikeTechnicalDepartmentRef(raw) {
-			resp.Steps[i].DepartmentName = ""
+		resp.Steps[i].CompanyDepartmentResolution = CompanyDepartmentResolutionMissing
+		resp.Steps[i].ReminderFallbackRecipientType = ReminderFallbackRecipientTypeCompanyAdmin
+		needsAdminAvailability = true
+	}
+
+	if !needsAdminAvailability {
+		return nil
+	}
+	adminAvailable, err := s.repo.HasActiveEnterpriseAdmin(ctx, companyID)
+	if err != nil {
+		return err
+	}
+	for i := range resp.Steps {
+		if resp.Steps[i].CompanyDepartmentResolution != CompanyDepartmentResolutionMissing {
+			continue
 		}
+		v := adminAvailable
+		resp.Steps[i].CompanyAdminRecipientAvailable = &v
 	}
 	return nil
+}
+
+// companyDepartmentTokenMatched mirrors MembershipEmailQuerier / companyorg:
+// active company department where id OR code equals the configured token.
+func companyDepartmentTokenMatched(companyDepts []DeadlineAlertFilterOptionDTO, token string) bool {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return false
+	}
+	for _, d := range companyDepts {
+		if strings.TrimSpace(d.ID) == token || strings.TrimSpace(d.Code) == token {
+			return true
+		}
+	}
+	return false
 }

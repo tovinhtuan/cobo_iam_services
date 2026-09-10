@@ -109,6 +109,8 @@ type Repository interface {
 	ListDisplayGroupCodesByTypeIDs(ctx context.Context, typeIDs []string) (map[string][]string, error)
 	ListCompanyDepartments(ctx context.Context, companyID string) ([]DeadlineAlertFilterOptionDTO, error)
 	ListTemplateDepartments(ctx context.Context) ([]DeadlineAlertFilterOptionDTO, error)
+	// HasActiveEnterpriseAdmin reports ≥1 eligible admin_doanh_nghiep (same eligibility as reminder AdminEmailsByCompany).
+	HasActiveEnterpriseAdmin(ctx context.Context, companyID string) (bool, error)
 	ListReportGroupOptions(ctx context.Context) ([]DeadlineAlertFilterOptionDTO, error)
 	GetCompanyDeadlineContext(ctx context.Context, companyID string) (disclosureapp.CompanyDeadlineContext, error)
 	// GetCompanyTypeDeadlineContext returns company context enriched with
