@@ -59,3 +59,14 @@ func TestListActivePeriodicTypesSQLIncludesApplicableTo(t *testing.T) {
 		t.Fatal("applicable_to must come from active version join")
 	}
 }
+
+func TestListActivePeriodicTypesSQLIncludesPeriodicCycleGenerationLeadDays(t *testing.T) {
+	data, err := os.ReadFile("repository.go")
+	if err != nil {
+		t.Fatalf("read repository.go: %v", err)
+	}
+	src := string(data)
+	if !strings.Contains(src, "periodic_cycle_generation_lead_days") {
+		t.Fatal("periodic type listing must extract periodic_cycle_generation_lead_days from ACTIVE deadline_config_json")
+	}
+}

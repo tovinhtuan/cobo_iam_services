@@ -874,6 +874,9 @@ func (s *service) UpsertTypeVersion(ctx context.Context, req UpsertTypeVersionRe
 		); err != nil {
 			return nil, err
 		}
+		if err := ValidatePeriodicCycleGenerationLeadDays(req.DeadlineConfig.PeriodicCycleGenerationLeadDays); err != nil {
+			return nil, err
+		}
 		if err := PrepareApplicableFromForDraftWrite(req.DeadlineConfig, ""); err != nil {
 			return nil, err
 		}
@@ -1606,6 +1609,9 @@ func (s *service) UpdateTemplateDeadlineConfig(ctx context.Context, req UpdateTe
 		req.DeadlineConfig.CycleAnchorWeekday,
 		req.DeadlineConfig.MonthInQuarter,
 	); err != nil {
+		return nil, err
+	}
+	if err := ValidatePeriodicCycleGenerationLeadDays(req.DeadlineConfig.PeriodicCycleGenerationLeadDays); err != nil {
 		return nil, err
 	}
 	if ShouldPreserveApplicableTo(&req.DeadlineConfig) {

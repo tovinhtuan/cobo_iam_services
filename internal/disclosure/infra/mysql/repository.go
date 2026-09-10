@@ -2266,7 +2266,8 @@ func (r *Repository) ListActivePeriodicTypes(ctx context.Context) ([]disclosurea
 		       dtv.applicability_rules_json,
 		       COALESCE(JSON_UNQUOTE(JSON_EXTRACT(dtv.deadline_config_json, '$.applicable_from_mode')), '') AS applicable_from_mode,
 		       COALESCE(JSON_UNQUOTE(JSON_EXTRACT(dtv.deadline_config_json, '$.applicable_from_slot')), '') AS applicable_from_slot,
-		       COALESCE(JSON_UNQUOTE(JSON_EXTRACT(dtv.deadline_config_json, '$.applicable_to')), '') AS applicable_to
+		       COALESCE(JSON_UNQUOTE(JSON_EXTRACT(dtv.deadline_config_json, '$.applicable_to')), '') AS applicable_to,
+		       COALESCE(JSON_EXTRACT(dtv.deadline_config_json, '$.periodic_cycle_generation_lead_days'), 0) AS periodic_cycle_generation_lead_days
 		FROM disclosure_types dt
 		JOIN disclosure_type_versions dtv ON dtv.type_id = dt.type_id AND dtv.version_no = dt.active_version_no
 		WHERE JSON_UNQUOTE(JSON_EXTRACT(dtv.deadline_config_json, '$.template_category')) IN ('periodic', 'custom')
@@ -2286,7 +2287,8 @@ func (r *Repository) ListActivePeriodicTypes(ctx context.Context) ([]disclosurea
 		if err := rows.Scan(&row.TypeID, &row.FrequencyUnit, &row.FrequencyInterval,
 			&row.DeadlineDays, &row.CycleAnchorDay, &row.CycleAnchorMonth, &weekdayRaw, &miqRaw,
 			&row.OpenDaysBeforeT, &isGlobal, &rulesRaw,
-			&row.ApplicableFromMode, &row.ApplicableFromSlot, &row.ApplicableTo); err != nil {
+			&row.ApplicableFromMode, &row.ApplicableFromSlot, &row.ApplicableTo,
+			&row.PeriodicCycleGenerationLeadDays); err != nil {
 			return nil, fmt.Errorf("scan periodic type row: %w", err)
 		}
 		row.CycleAnchorWeekday = nullIntPtr(weekdayRaw)
@@ -2433,7 +2435,8 @@ func (r *Repository) DeleteUnmaterializedPeriodicCycle(ctx context.Context, cycl
 
 func (r *Repository) ListPendingCycles(ctx context.Context, asOf time.Time, bufferDays int) ([]disclosureapp.PeriodicCycleRow, error) {
 	cutoff := asOf.AddDate(0, 0, bufferDays).Format("2006-01-02")
-	// Materialize when OpenAt (fallback cycle_start) is within technical lookahead — not DueDate.
+	// Materialize when COALESCE(OpenAt, cycle_start) <= asOf+bufferDays.
+	// Caller passes bufferDays=0 and asOf=TodayHCM so OpenAt must already have arrived.
 	const q = `
 		SELECT pc.cycle_id, pc.type_id, COALESCE(dtv.name, ''), pc.company_id, pc.cycle_label,
 		       pc.cycle_start, pc.open_at, pc.due_date

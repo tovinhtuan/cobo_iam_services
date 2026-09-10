@@ -1,0 +1,16 @@
+{
+  "items": [
+    {
+      "cycle_id": "01a08aab-6beb-7bd2-8630-5de820641d4c",
+      "type_id": "qa-af-option-a-ui-1788961913245",
+      "type_name": "QA AF Option A UI 1788961913245",
+      "frequency_unit": "monthly",
+      "cycle_label": "2026-10",
+      "cycle_start": "2026-10-10",
+      "open_at": "2026-10-10",
+      "due_at": "2026-10-14",
+      "state": "UPCOMING"
+    }
+  ],
+  "alerts_total_unchanged": 40
+}

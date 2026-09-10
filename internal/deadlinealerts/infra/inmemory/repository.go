@@ -91,3 +91,7 @@ func (r *Repository) ListTemplateDepartments(_ context.Context) ([]deadlinealert
 func (r *Repository) ListReportGroupOptions(_ context.Context) ([]deadlinealertsapp.DeadlineAlertFilterOptionDTO, error) {
 	return []deadlinealertsapp.DeadlineAlertFilterOptionDTO{}, nil
 }
+
+func (r *Repository) ListNextAlertCycles(_ context.Context, _, _ string) ([]deadlinealertsapp.NextAlertCycleRow, error) {
+	return nil, nil
+}

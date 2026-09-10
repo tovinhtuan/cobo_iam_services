@@ -1,3 +1,62 @@
+## CMS Portal Preview Next Alert company-context audit (2026-09-10)
+
+- task type: source audit only (pointer)
+- canonical: cobo_web_design/docs/ai-cache/cms-portal-preview-next-alert-company-context-audit-2026-09-10/
+- verdict: Preview cannot authoritatively render Next Alert (no company/runtime authority)
+- recommendation: PREVIEW_SHOULD_NOT_SHOW_NEXT_ALERT
+- NO_IMPLEMENTATION
+
+## Tenant Next Alert OpenAt authority parity B.1 (2026-09-10)
+
+- task type: reconciliation + minimal fix
+- result: REAL_MISMATCH_FIXED — Next Alert EffectiveOpenAt = COALESCE(open_at, cycle_start)
+- evidence: tenant-next-alert-openat-authority-parity-2026-09-10/
+- worker/CMS/FE logic unchanged; BE deploy-be PASS
+- NO_COMMIT WAIT_FOR_PO_CONFIRMATION
+
+## Tenant Next Alert future cycle projection V1 (2026-09-10)
+
+- task type: implement (cross-repo)
+- objective: read-only next-alert projection from future periodic_cycle + Tenant section
+- endpoint: GET /api/v1/company/deadline-alerts/next
+- evidence: tenant-next-alert-future-cycle-projection-v1-2026-09-10/
+- verification: BE/FE tests + deploy + DEV monthly QA PASS
+- NO_COMMIT WAIT_FOR_PO_CONFIRMATION
+
+## Periodic future cycle pre-generation V1 Phase A (2026-09-10)
+
+- task type: implement (cross-repo CMS + worker)
+- objective: seed next applicable future periodic_cycle when lead_days>0; materialize only at/after OpenAt
+- implemented: deadline_config field; ResolveNextApplicableLogicalSlot; additive future seed; materializer bufferDays=0; CMS editor + tests; DEV deploy+QA
+- evidence: `periodic-future-cycle-pregeneration-v1-2026-09-10/`
+- contracts: CONFIG in deadline_config_json; COMPANY_OVERRIDE=false; no early record/workflow/tasks
+- verification: go test disclosure app/mysql PASS; vitest PASS; deploy-be/fe PASS; DEV future cycle 2026-09-11 record_id NULL
+- remaining: Phase B tenant next-alert UI; WAIT_FOR_PO_CONFIRMATION (NO_COMMIT)
+
+## Periodic future cycle pre-generation Phase A (2026-09-10)
+
+- task type: BE implement (Phase A)
+- objective: seed next applicable `periodic_cycle` when TodayHCM >= T_future − lead; delay record/workflow until OpenAt
+- implemented:
+  - Field `periodic_cycle_generation_lead_days` on `TemplateDeadlineConfig` (*int, 0..90; nil/0=off); company cannot override
+  - `ListActivePeriodicTypes` JSON_EXTRACT → `PeriodicTypeRow.PeriodicCycleGenerationLeadDays`
+  - `ResolveNextApplicableLogicalSlot` + `GenerateAtDate` + `ValidatePeriodicCycleGenerationLeadDays`
+  - `seedPeriodicCycles`: extract `seedOneCompanySlot`; CURRENT_SLOT unchanged; future NEXT_APPLICABLE only when lead>0 + GenerateAt met; AF skip current still allows future
+  - `materializePeriodicDisclosures`: bufferDays=0, asOf=TodayHCM (remove +7d lookahead)
+  - Write validation on UpdateTemplateDeadlineConfig + UpsertTypeVersion
+- tests: `periodic_future_pregen_test.go` + materialize PREOPEN/at-OpenAt; fake ListPendingCycles filters like SQL
+- verification: `go test ./internal/disclosure/app/ ./internal/disclosure/infra/mysql/` PASS; `docker compose -f docker-compose.dev.yml build api` PASS (exit 0)
+- constraints: no DB migration; no FE; no Deadline Alert/reminder changes; NO_DEPLOY / NO_COMMIT
+- remaining: CMS UI to author lead days; optional DEV E2E with PERIODIC_SEEDING_ENABLED
+
+## Periodic future occurrence pre-generation — SOURCE AUDIT (2026-09-10)
+
+- task type: source audit only (no implementation)
+- objective: can worker materialize next applicable slot before T via materialization_lead_days?
+- discovered: CURRENT_SLOT_ONLY explicit; seed+materialize already split; sticky freeze; alert OpenAt-gated but record/WF actionable without OpenAt; NextLogicalSlot exists unused by worker; recommend DEADLINE_CONFIG_JSON + REQUIRE_SPLIT_CYCLE_AND_RECORD_MATERIALIZATION; PO decisions required
+- evidence: docs/ai-cache/periodic-future-occurrence-materialization-audit-2026-09-10/
+- NO_IMPLEMENTATION / NO_DEPLOY / WAIT_FOR_PO_CONFIRMATION
+
 ## Tenant workflow authoritative available_actions (2026-09-10)
 
 - BE TaskDTO.available_actions via EvaluateTaskAction (policy+assignee+pending); FE CTA bind; local 403 opt-out

@@ -19,6 +19,8 @@ type stubRepo struct {
 	reportGroups      []DeadlineAlertFilterOptionDTO
 	adminAvailable    bool
 	adminAvailableSet bool
+	nextAlertCycles   []NextAlertCycleRow
+	listNextCalls     int
 }
 
 func (s *stubRepo) ListRows(_ context.Context, _ string, _ DeadlineAlertAccessScope) ([]AlertRow, error) {
@@ -98,6 +100,18 @@ func (s *stubRepo) UpsertStepCompleted(_ context.Context, _, _, _, _ string, _ t
 
 func (s *stubRepo) UpsertStepIncomplete(_ context.Context, _, _, _, _, _ string, _ int, _ time.Time) error {
 	return nil
+}
+
+func (s *stubRepo) ListNextAlertCycles(_ context.Context, companyID, todayHCM string) ([]NextAlertCycleRow, error) {
+	s.listNextCalls++
+	_ = companyID
+	_ = todayHCM
+	if s.nextAlertCycles == nil {
+		return nil, nil
+	}
+	out := make([]NextAlertCycleRow, len(s.nextAlertCycles))
+	copy(out, s.nextAlertCycles)
+	return out, nil
 }
 
 func allowAuthSvc() authapp.Service {

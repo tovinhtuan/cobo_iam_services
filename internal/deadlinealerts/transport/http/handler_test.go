@@ -39,6 +39,10 @@ func (fakeSvc) ListDeadlineAlertFilterOptions(_ context.Context, _ deadlinealert
 	}, nil
 }
 
+func (fakeSvc) ListNextDeadlineAlerts(_ context.Context, _ deadlinealertsapp.Subject) (*deadlinealertsapp.ListNextDeadlineAlertsResponse, error) {
+	return &deadlinealertsapp.ListNextDeadlineAlertsResponse{Items: []deadlinealertsapp.NextDeadlineAlertDTO{}}, nil
+}
+
 func (fakeSvc) ConfirmDeadlineAlert(_ context.Context, req deadlinealertsapp.ConfirmDeadlineAlertRequest) (*deadlinealertsapp.ConfirmDeadlineAlertResponse, error) {
 	return &deadlinealertsapp.ConfirmDeadlineAlertResponse{
 		RecordID:    req.RecordID,

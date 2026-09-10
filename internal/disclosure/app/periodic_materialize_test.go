@@ -36,11 +36,26 @@ func (r *fakePeriodicRepo) ListActivePeriodicTypes(context.Context) ([]PeriodicT
 
 func (r *fakePeriodicRepo) UpsertPeriodicCycle(context.Context, PeriodicCycleRow) error { return nil }
 
-func (r *fakePeriodicRepo) ListPendingCycles(_ context.Context, _ time.Time, _ int) ([]PeriodicCycleRow, error) {
+func (r *fakePeriodicRepo) ListPendingCycles(_ context.Context, asOf time.Time, bufferDays int) ([]PeriodicCycleRow, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	out := make([]PeriodicCycleRow, len(r.cycles))
-	copy(out, r.cycles)
+	cutoff := asOf.AddDate(0, 0, bufferDays)
+	out := make([]PeriodicCycleRow, 0, len(r.cycles))
+	for _, c := range r.cycles {
+		gate := c.OpenAt
+		if gate.IsZero() {
+			gate = c.CycleStart
+		}
+		if gate.IsZero() {
+			continue
+		}
+		gateDay := time.Date(gate.Year(), gate.Month(), gate.Day(), 0, 0, 0, 0, time.UTC)
+		cutDay := time.Date(cutoff.Year(), cutoff.Month(), cutoff.Day(), 0, 0, 0, 0, time.UTC)
+		if gateDay.After(cutDay) {
+			continue
+		}
+		out = append(out, c)
+	}
 	return out, nil
 }
 
@@ -294,4 +309,79 @@ func TestIsEmptyEffectiveWorkflowDetectsHTTPWrappedSnapshotError(t *testing.T) {
 	if !workflowerrs.IsEmptyEffectiveWorkflow(err) {
 		t.Fatalf("expected empty effective workflow, got %v", err)
 	}
+}
+
+func TestMaterializePeriodic_PreopenExcludedWithBufferZero(t *testing.T) {
+	loc := asiaHoChiMinh()
+	now := time.Date(2026, 9, 10, 12, 0, 0, 0, loc)
+	openAt := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	cycleStart := time.Date(2026, 10, 5, 0, 0, 0, 0, time.UTC)
+	repo := newFakePeriodicRepo([]PeriodicCycleRow{{
+		CycleID: "c-pre", TypeID: "t1", CompanyID: "co-1", CycleLabel: "2026-10",
+		CycleStart: cycleStart, OpenAt: openAt, DueDate: cycleStart.AddDate(0, 0, 7),
+	}})
+	creator := &fakePeriodicCreator{recordID: "r1", workflowInstanceID: "w1"}
+
+	pending, err := repo.ListPendingCycles(context.Background(), stripTime(now), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 0 {
+		t.Fatalf("PREOPEN buffer=0 must exclude; got %d", len(pending))
+	}
+	n, err := materializePeriodicDisclosures(context.Background(), now, repo, creator)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 || creator.calls != 0 {
+		t.Fatalf("materialize want 0; n=%d calls=%d", n, creator.calls)
+	}
+}
+
+func TestMaterializePeriodic_AtAndAfterOpenAt(t *testing.T) {
+	loc := asiaHoChiMinh()
+	openAt := time.Date(2026, 9, 10, 0, 0, 0, 0, time.UTC)
+	cycleStart := time.Date(2026, 9, 15, 0, 0, 0, 0, time.UTC)
+	cycle := PeriodicCycleRow{
+		CycleID: "c-open", TypeID: "t1", CompanyID: "co-1", CycleLabel: "2026-09",
+		CycleStart: cycleStart, OpenAt: openAt, DueDate: cycleStart.AddDate(0, 0, 7),
+	}
+
+	t.Run("at", func(t *testing.T) {
+		repo := newFakePeriodicRepo([]PeriodicCycleRow{cycle})
+		creator := &fakePeriodicCreator{recordID: "r1", workflowInstanceID: "w1"}
+		now := time.Date(2026, 9, 10, 8, 0, 0, 0, loc)
+		pending, _ := repo.ListPendingCycles(context.Background(), stripTime(now), 0)
+		if len(pending) != 1 {
+			t.Fatalf("at OpenAt want 1 pending got %d", len(pending))
+		}
+		n, err := materializePeriodicDisclosures(context.Background(), now, repo, creator)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if n != 1 {
+			t.Fatalf("materialized=%d want 1", n)
+		}
+	})
+
+	t.Run("after_once", func(t *testing.T) {
+		repo := newFakePeriodicRepo([]PeriodicCycleRow{cycle})
+		creator := &fakePeriodicCreator{recordID: "r1", workflowInstanceID: "w1"}
+		now := time.Date(2026, 9, 12, 8, 0, 0, 0, loc)
+		n, err := materializePeriodicDisclosures(context.Background(), now, repo, creator)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if n != 1 {
+			t.Fatalf("first materialize=%d want 1", n)
+		}
+		repo.tryClaimReturns["c-open"] = false
+		n, err = materializePeriodicDisclosures(context.Background(), now, repo, creator)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if n != 0 {
+			t.Fatalf("second materialize=%d want 0", n)
+		}
+	})
 }

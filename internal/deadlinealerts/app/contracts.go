@@ -59,6 +59,39 @@ type ListDeadlineAlertsResponse struct {
 	Total    int                `json:"total"`
 }
 
+// NextDeadlineAlertState is the only presentation state for read-only future-cycle projection.
+const NextDeadlineAlertStateUpcoming = "UPCOMING"
+
+// NextDeadlineAlertDTO is a READ-ONLY projection of a pre-seeded future periodic_cycle.
+// It is NOT a DeadlineAlertDTO — no record_id, workflow, or task fields.
+type NextDeadlineAlertDTO struct {
+	CycleID       string `json:"cycle_id"`
+	TypeID        string `json:"type_id"`
+	TypeName      string `json:"type_name"`
+	FrequencyUnit string `json:"frequency_unit,omitempty"`
+	CycleLabel    string `json:"cycle_label"`
+	CycleStart    string `json:"cycle_start"` // Effective T (YYYY-MM-DD)
+	OpenAt        string `json:"open_at"`     // COALESCE(open_at, cycle_start) YYYY-MM-DD — materializer authority
+	DueAt         string `json:"due_at"`      // YYYY-MM-DD
+	State         string `json:"state"`       // UPCOMING
+}
+
+type ListNextDeadlineAlertsResponse struct {
+	Items []NextDeadlineAlertDTO `json:"items"`
+}
+
+// NextAlertCycleRow is the repository read model before one-per-template reduction.
+type NextAlertCycleRow struct {
+	CycleID       string
+	TypeID        string
+	TypeName      string
+	FrequencyUnit string
+	CycleLabel    string
+	CycleStart    string // YYYY-MM-DD
+	OpenAt        string // effective open YYYY-MM-DD (COALESCE already applied)
+	DueAt         string // YYYY-MM-DD
+}
+
 type ConfirmDeadlineAlertRequest struct {
 	Subject        Subject
 	RecordID       string
@@ -124,11 +157,16 @@ type Repository interface {
 	ListStepStates(ctx context.Context, workflowInstanceID string) (map[string]StepRuntimeState, error)
 	UpsertStepCompleted(ctx context.Context, companyID, workflowInstanceID, stepCode, membershipID string, at time.Time) error
 	UpsertStepIncomplete(ctx context.Context, companyID, workflowInstanceID, stepCode, membershipID, reason string, delayDays int, at time.Time) error
+	// ListNextAlertCycles returns unmaterialized future periodic_cycles for company where
+	// TodayHCM < COALESCE(open_at, cycle_start), active template only.
+	// READ-ONLY. Ordered by OpenAt ASC, CycleStart ASC, TypeID ASC, CycleID ASC.
+	ListNextAlertCycles(ctx context.Context, companyID, todayHCM string) ([]NextAlertCycleRow, error)
 }
 
 type Service interface {
 	ListDeadlineAlerts(ctx context.Context, req ListDeadlineAlertsRequest) (*ListDeadlineAlertsResponse, error)
 	ListDeadlineAlertFilterOptions(ctx context.Context, sub Subject) (*DeadlineAlertFilterOptionsResponse, error)
+	ListNextDeadlineAlerts(ctx context.Context, sub Subject) (*ListNextDeadlineAlertsResponse, error)
 	ConfirmDeadlineAlert(ctx context.Context, req ConfirmDeadlineAlertRequest) (*ConfirmDeadlineAlertResponse, error)
 	ListDeadlineSteps(ctx context.Context, sub Subject, recordID string) (*ListDeadlineStepsResponse, error)
 	CompleteDeadlineStep(ctx context.Context, req CompleteStepRequest) (*ListDeadlineStepsResponse, error)

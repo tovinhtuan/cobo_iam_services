@@ -1,0 +1,2 @@
+# Quality
+REACT_RUNTIME_ERRORS=0 observed; API 200; PANIC_COUNT=0

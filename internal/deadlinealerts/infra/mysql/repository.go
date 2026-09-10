@@ -545,3 +545,69 @@ func (r *Repository) ListReportGroupOptions(ctx context.Context) ([]deadlinealer
 	}
 	return out, rows.Err()
 }
+
+// ListNextAlertCycles returns company-scoped future periodic_cycles eligible for
+// Tenant "Cảnh báo tiếp theo" projection. READ-ONLY; no mutations.
+//
+// Eligibility (SQL):
+//   - company_id = ?
+//   - record_id IS NULL (not yet materialized to disclosure_record)
+//   - active template (active_version_no > 0 + version row)
+//   - TodayHCM < COALESCE(open_at, cycle_start)
+//     (materializer-aligned; due_date must NOT extend the Next Alert window)
+//
+// Sort: OpenAt ASC, CycleStart ASC, TypeID ASC, CycleID ASC (service keeps 1/type).
+func (r *Repository) ListNextAlertCycles(ctx context.Context, companyID, todayHCM string) ([]deadlinealertsapp.NextAlertCycleRow, error) {
+	companyID = strings.TrimSpace(companyID)
+	todayHCM = strings.TrimSpace(todayHCM)
+	if companyID == "" || todayHCM == "" {
+		return nil, nil
+	}
+	const q = `
+		SELECT
+			pc.cycle_id,
+			pc.type_id,
+			COALESCE(dtv.name, ''),
+			COALESCE(JSON_UNQUOTE(JSON_EXTRACT(dtv.deadline_config_json, '$.frequency_unit')), ''),
+			pc.cycle_label,
+			COALESCE(DATE_FORMAT(pc.cycle_start, '%Y-%m-%d'), ''),
+			COALESCE(DATE_FORMAT(COALESCE(pc.open_at, pc.cycle_start), '%Y-%m-%d'), ''),
+			COALESCE(DATE_FORMAT(pc.due_date, '%Y-%m-%d'), '')
+		FROM periodic_cycles pc
+		INNER JOIN disclosure_types dt ON dt.type_id = pc.type_id
+			AND dt.active_version_no > 0
+		INNER JOIN disclosure_type_versions dtv ON dtv.type_id = dt.type_id
+			AND dtv.version_no = dt.active_version_no
+		WHERE pc.company_id = ?
+		  AND pc.record_id IS NULL
+		  AND COALESCE(pc.open_at, pc.cycle_start) IS NOT NULL
+		  AND COALESCE(pc.open_at, pc.cycle_start) > ?
+		ORDER BY
+			COALESCE(pc.open_at, pc.cycle_start) ASC,
+			pc.cycle_start ASC,
+			pc.type_id ASC,
+			pc.cycle_id ASC`
+	rows, err := r.db.QueryContext(ctx, q, companyID, todayHCM)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []deadlinealertsapp.NextAlertCycleRow
+	for rows.Next() {
+		var row deadlinealertsapp.NextAlertCycleRow
+		if err := rows.Scan(
+			&row.CycleID,
+			&row.TypeID,
+			&row.TypeName,
+			&row.FrequencyUnit,
+			&row.CycleLabel,
+			&row.CycleStart,
+			&row.OpenAt,
+			&row.DueAt,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}

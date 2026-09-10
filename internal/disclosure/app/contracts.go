@@ -1096,6 +1096,10 @@ type TemplateDeadlineConfig struct {
 	// (including null/""). Distinguishes omit→preserve from explicit clear→OPEN_ENDED
 	// under full-replace deadline_config writes. Not serialized.
 	ApplicableToProvided bool `json:"-"`
+	// PeriodicCycleGenerationLeadDays: calendar days before Effective T to seed the
+	// next applicable periodic_cycle only (NEXT_APPLICABLE_LOGICAL_SLOT_ONLY).
+	// nil/absent/0 = no future pre-generation; max 90. CMS template only — company cannot override.
+	PeriodicCycleGenerationLeadDays *int `json:"periodic_cycle_generation_lead_days,omitempty"`
 }
 
 // WorkflowOverrideReminderPreviewMilestoneDTO is one projected reminder row for draft preview.
@@ -1249,6 +1253,9 @@ type PeriodicTypeRow struct {
 	// ApplicableTo from ACTIVE deadline_config_json (Phase A/C). Empty = OPEN_ENDED.
 	// Worker compares effective Company T (HCM date) via EvaluateApplicableToEligibility.
 	ApplicableTo string
+	// PeriodicCycleGenerationLeadDays from ACTIVE deadline_config_json (NULL/absent → 0).
+	// 0 = no future pregen; 1..90 = seed next applicable slot when TodayHCM >= T − lead.
+	PeriodicCycleGenerationLeadDays int
 }
 
 // PeriodicCycleRow represents one (type, company, cycle) idempotency slot.

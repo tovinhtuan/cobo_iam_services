@@ -26,6 +26,7 @@ func NewHandler(log *slog.Logger, svc deadlinealertsapp.Service, inspector iamap
 
 func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/company/deadline-alerts", h.listDeadlineAlerts)
+	mux.HandleFunc("GET /api/v1/company/deadline-alerts/next", h.listNextDeadlineAlerts)
 	mux.HandleFunc("GET /api/v1/company/deadline-alerts/filter-options", h.listDeadlineAlertFilterOptions)
 	mux.HandleFunc("POST /api/v1/company/deadline-alerts/{id}/confirm", h.confirmDeadlineAlert)
 	mux.HandleFunc("GET /api/v1/company/deadlines/{record_id}/steps", h.listDeadlineSteps)
@@ -78,6 +79,23 @@ func (h *Handler) listDeadlineAlertFilterOptions(w http.ResponseWriter, r *http.
 	}
 	if resp.ReportGroups == nil {
 		resp.ReportGroups = []deadlinealertsapp.DeadlineAlertFilterOptionDTO{}
+	}
+	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) listNextDeadlineAlerts(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subjectFromToken(r)
+	if err != nil {
+		httpx.WriteError(w, h.log, err)
+		return
+	}
+	resp, err := h.svc.ListNextDeadlineAlerts(r.Context(), sub)
+	if err != nil {
+		httpx.WriteError(w, h.log, err)
+		return
+	}
+	if resp.Items == nil {
+		resp.Items = []deadlinealertsapp.NextDeadlineAlertDTO{}
 	}
 	httpx.WriteJSON(w, http.StatusOK, resp)
 }
