@@ -212,4 +212,7 @@ type TaskDTO struct {
 	AssigneeMembershipIDs []string         `json:"assignee_membership_ids,omitempty"`
 	Status                string           `json:"status"`
 	Assignee              *TaskAssigneeDTO `json:"assignee,omitempty"`
+	// AvailableActions is dynamic, current-membership-specific UI authority for this task.
+	// Informational only — mutation APIs remain authoritative. Never persisted.
+	AvailableActions []string `json:"available_actions"`
 }

@@ -1,3 +1,17 @@
+## Tenant workflow authoritative available_actions (2026-09-10)
+
+- BE TaskDTO.available_actions via EvaluateTaskAction (policy+assignee+pending); FE CTA bind; local 403 opt-out
+- Evidence: `tenant-workflow-authoritative-available-actions-2026-09-10/` (00–35)
+- Reject policy unchanged → OPEN_P2 follow-up; DEV verified empty actions for m_system_worker assignee
+- PHASE_RESULT=PASS; READY_FOR_COMMIT=true
+- NO_PRODUCTION / NO_COMMIT / NO_PUSH / NO_MERGE — WAIT_FOR_PO_CONFIRMATION
+
+## Tenant workflow review/reject permission audit — 2026-09-10
+
+- SOURCE AUDIT: CTA visible via `workflow.review`+pending; BE denies (assignee mismatch / reject policy); 403→ForbiddenPage
+- Evidence: `tenant-workflow-review-reject-permission-audit-2026-09-10/`
+- NO_IMPLEMENTATION / NO_COMMIT / WAIT_FOR_PO_CONFIRMATION
+
 ## Tenant missing-department warning (presentation) — 2026-09-10
 
 - BE additive step read-model + shared companyorg resolver; FE DeadlineWorkflowCard warning (reminder-email copy only)

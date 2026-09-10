@@ -207,7 +207,12 @@ func (s *service) ListInstanceTasks(ctx context.Context, req ListInstanceTasksRe
 	}); err != nil {
 		return nil, err
 	}
-	return s.repo.ListTasksByInstance(ctx, req.Subject.CompanyID, req.WorkflowInstanceID)
+	tasks, err := s.repo.ListTasksByInstance(ctx, req.Subject.CompanyID, req.WorkflowInstanceID)
+	if err != nil {
+		return nil, err
+	}
+	s.enrichTaskAvailableActions(ctx, req.Subject, tasks)
+	return tasks, nil
 }
 
 func (s *service) ListInstanceReminders(ctx context.Context, req ListInstanceRemindersRequest) ([]InstanceReminderDTO, error) {
@@ -283,22 +288,20 @@ func (s *service) transitionTask(ctx context.Context, req TaskActionRequest, act
 	if err != nil {
 		return nil, err
 	}
-	if err := s.authorize(ctx, req.Subject, action, authapp.ResourceRef{
-		Type: "workflow_task",
-		ID:   req.TaskID,
-		Attributes: map[string]any{
-			"assignee_membership_id":  task.AssigneeMembershipID,
-			"assignee_membership_ids": task.AssigneeMembershipIDs,
-			"workflow_state":          task.Status,
-		},
-	}); err != nil {
-		return nil, err
+	wire := policyActionToWire(action)
+	ok, denyCode, authErr := s.EvaluateTaskAction(ctx, req.Subject, *task, wire)
+	if authErr != nil {
+		return nil, authErr
 	}
-	if !IsMembershipTaskAssignee(req.Subject.MembershipID, task.AssigneeMembershipID, task.AssigneeMembershipIDs) {
-		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodeResponsibilityRequired, "task assignee mismatch", nil)
-	}
-	if task.Status != "pending" {
-		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "task is not pending", nil)
+	if !ok {
+		msg := "access denied"
+		switch denyCode {
+		case perr.CodeResponsibilityRequired:
+			msg = "task assignee mismatch"
+		case perr.CodeStateConflict:
+			msg = "task is not pending"
+		}
+		return nil, httpErrorForTaskActionDeny(denyCode, msg)
 	}
 
 	plan, err := s.planTaskTransition(ctx, req.Subject, *task, nextStatus)
@@ -313,6 +316,9 @@ func (s *service) transitionTask(ctx context.Context, req TaskActionRequest, act
 		if err := s.runInstanceCompletionSideEffects(ctx, req.Subject, *plan.Instance, *task, nextStatus); err != nil {
 			return nil, err
 		}
+	}
+	if upd != nil {
+		upd.AvailableActions = s.ComputeAvailableActions(ctx, req.Subject, *upd)
 	}
 	return upd, nil
 }
