@@ -57,6 +57,9 @@ type DeadlineStepDTO struct {
 	DelayDays                      int      `json:"delay_days"`
 	AvailableActions               []string `json:"available_actions"`
 	LockReason                     string   `json:"lock_reason,omitempty"`
+	// TimelinessStatus is BE-owned processing timeliness (nullable when future / insufficient data).
+	// Independent from disclosure DueAt and from is_delayed / delay_days flags.
+	TimelinessStatus *string `json:"timeliness_status"`
 }
 
 // ListDeadlineStepsResponse is returned by GET .../deadlines/{record_id}/steps.
@@ -64,6 +67,12 @@ type ListDeadlineStepsResponse struct {
 	RecordID        string            `json:"record_id"`
 	CurrentStepCode string            `json:"current_step_code"`
 	Steps           []DeadlineStepDTO `json:"steps"`
+	// TimelinessStatus is workflow-level processing timeliness from the final step.
+	TimelinessStatus *string `json:"timeliness_status"`
+	// TimelinessDeadline is the final step delay-adjusted planned_end_date (YYYY-MM-DD), when known.
+	TimelinessDeadline *string `json:"timeliness_deadline,omitempty"`
+	// TimelinessCompletedAt is the final step CompletedAt (RFC3339), when known.
+	TimelinessCompletedAt *string `json:"timeliness_completed_at,omitempty"`
 }
 
 type MarkIncompleteStepRequest struct {
@@ -177,17 +186,47 @@ func ComputeDeadlineSteps(
 		if st.CompletedAt != nil {
 			dto.CompletedAt = st.CompletedAt.UTC().Format(time.RFC3339)
 		}
+		dto.TimelinessStatus = timelinessStatusString(ResolveStepTimeliness(StepTimelinessInput{
+			IsFuture:    isFuture,
+			IsCompleted: isCompleted,
+			PlannedEnd:  dto.PlannedEndDate,
+			CompletedAt: st.CompletedAt,
+			TodayHCM:    todayLocal,
+			Location:    loc,
+		}))
 		if isCurrent {
 			currentCode = code
 		}
 		steps = append(steps, dto)
 	}
 
-	return ListDeadlineStepsResponse{
+	resp := ListDeadlineStepsResponse{
 		RecordID:        ctx.RecordID,
 		CurrentStepCode: currentCode,
 		Steps:           steps,
-	}, nil
+	}
+	if len(steps) > 0 {
+		final := steps[len(steps)-1]
+		finalCode := stepCodeFromSnapshot(snapshot[len(snapshot)-1])
+		finalState := states[finalCode]
+		resp.TimelinessStatus = timelinessStatusString(ResolveWorkflowTimeliness(WorkflowTimelinessInput{
+			FinalStepExists:    true,
+			FinalStepCompleted: final.IsCompleted,
+			FinalPlannedEnd:    final.PlannedEndDate,
+			FinalCompletedAt:   finalState.CompletedAt,
+			TodayHCM:           todayLocal,
+			Location:           loc,
+		}))
+		if pe := strings.TrimSpace(final.PlannedEndDate); pe != "" {
+			v := pe
+			resp.TimelinessDeadline = &v
+		}
+		if final.CompletedAt != "" {
+			v := final.CompletedAt
+			resp.TimelinessCompletedAt = &v
+		}
+	}
+	return resp, nil
 }
 
 func snapshotToWorkflowSteps(snapshot []workflowapp.StepSnapshot) []disclosureapp.WorkflowStepDTO {

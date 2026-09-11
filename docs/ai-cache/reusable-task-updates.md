@@ -1,3 +1,27 @@
+## Tenant Workflow Authoritative Timeliness V1 (2026-09-11)
+
+- BE: `timeliness.go` classifiers + DTO fields on deadline steps response
+- Evidence canonical: `cobo_web_design/docs/ai-cache/tenant-workflow-authoritative-timeliness-v1-2026-09-11/`
+- Pointer: `docs/ai-cache/tenant-workflow-authoritative-timeliness-v1-2026-09-11/00-pointer.md`
+- READY_FOR_COMMIT=true; NO_PRODUCTION
+
+## Tenant workflow timeliness status audit (2026-09-11)
+
+- pointer FE audit; BE supplies is_delayed/completed_at/planned_end/OVERDUE
+- canonical: cobo_web_design/docs/ai-cache/tenant-workflow-timeliness-status-audit-2026-09-11/
+
+## Tenant Deadline Detail remove duplicate workflow steps (2026-09-11)
+
+- pointer: FE-only; BE unchanged
+- canonical: cobo_web_design/docs/ai-cache/tenant-deadline-detail-remove-duplicate-workflow-steps-2026-09-11/
+
+## Tenant Deadline Detail duplicate workflow presentation audit (2026-09-11)
+
+- task type: source audit only (pointer)
+- canonical: cobo_web_design/docs/ai-cache/tenant-deadline-detail-duplicate-workflow-presentation-audit-2026-09-11/
+- verdict: SAFE_REMOVE_PRESENTATION_ONLY; BE unchanged
+- NO_IMPLEMENTATION
+
 ## CMS Portal Preview Next Alert company-context audit (2026-09-10)
 
 - task type: source audit only (pointer)
