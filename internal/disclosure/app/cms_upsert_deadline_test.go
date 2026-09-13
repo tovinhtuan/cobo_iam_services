@@ -185,7 +185,7 @@ func (r *activateDeadlineRepo) GetTypeVersionDetail(_ context.Context, _, typeID
 				"steps": []any{map[string]any{
 					"step_id": "s1", "stage": "Review", "department_id": "dept-finance",
 					"assignee_role_ids": []any{"role-reviewer"}, "processing_days": float64(2),
-					"display_order": float64(1), "documents": []any{},
+					"display_order": float64(1), "description": "Mo ta Review", "documents": []any{},
 				}},
 			}},
 		},

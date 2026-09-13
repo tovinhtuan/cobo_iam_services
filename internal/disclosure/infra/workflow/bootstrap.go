@@ -35,6 +35,8 @@ func (b *Bootstrap) EnsureOnSubmit(ctx context.Context, sub disclosureapp.Subjec
 		return "", fmt.Errorf("get effective workflow: %w", err)
 	}
 	workflowSource := workflowSourceLabel(effResp.Data.Source)
+	// Same effective workflow authority as StepSnapshot — do not refetch documents separately.
+	documentRequirements := workflowapp.ProjectDocumentRequirementSnapshots(effResp.Data.Workflow)
 	snapshot := workflowapp.MapEffectiveWorkflowToSnapshot(effResp.Data.Workflow, workflowSource)
 	if err := workflowapp.ValidateSnapshot(snapshot); err != nil {
 		return "", perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "template has no effective workflow steps", err)
@@ -51,11 +53,12 @@ func (b *Bootstrap) EnsureOnSubmit(ctx context.Context, sub disclosureapp.Subjec
 			MembershipID: sub.MembershipID,
 			CompanyID:    sub.CompanyID,
 		},
-		RecordID:       rec.RecordID,
-		Snapshot:       snapshot,
-		WorkflowSource: workflowSource,
-		T0Date:         t0,
-		T0Policy:       "user_defined",
+		RecordID:             rec.RecordID,
+		Snapshot:             snapshot,
+		DocumentRequirements: documentRequirements,
+		WorkflowSource:       workflowSource,
+		T0Date:               t0,
+		T0Policy:             "user_defined",
 	})
 	if err != nil {
 		return "", err

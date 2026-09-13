@@ -76,10 +76,19 @@ const (
 	// RBAC Phase C — role_name validation failure.
 	CodeInvalidRoleName Code = "invalid_role_name"
 	// RBAC Phase E — primary role assignment eligibility / lockout.
-	CodeRoleNotAssignable           Code = "role_not_assignable"
-	CodeRoleInactive                Code = "role_inactive"
-	CodeSelfRoleChangeBlocked       Code = "self_role_change_blocked"
-	CodeLastAdminRoleChangeBlocked  Code = "last_admin_role_change_blocked"
+	CodeRoleNotAssignable          Code = "role_not_assignable"
+	CodeRoleInactive               Code = "role_inactive"
+	CodeSelfRoleChangeBlocked      Code = "self_role_change_blocked"
+	CodeLastAdminRoleChangeBlocked Code = "last_admin_role_change_blocked"
+	// B2 — workflow step document fulfillment
+	CodeDocumentRequirementSnapshotNotFound Code = "DOCUMENT_REQUIREMENT_SNAPSHOT_NOT_FOUND"
+	CodeDocumentFulfillmentFileNotFound     Code = "DOCUMENT_FULFILLMENT_FILE_NOT_FOUND"
+	CodeDocumentFulfillmentFileTooLarge     Code = "DOCUMENT_FULFILLMENT_FILE_TOO_LARGE"
+	CodeDocumentFulfillmentFileTypeInvalid  Code = "DOCUMENT_FULFILLMENT_FILE_TYPE_INVALID"
+	CodeDocumentFulfillmentFileLimitReached Code = "DOCUMENT_FULFILLMENT_FILE_LIMIT_REACHED"
+	CodeWorkflowStepNotCurrent              Code = "WORKFLOW_STEP_NOT_CURRENT"
+	CodeWorkflowStepAlreadyCompleted        Code = "WORKFLOW_STEP_ALREADY_COMPLETED"
+	CodeWorkflowStepRequiredDocumentMissing Code = "WORKFLOW_STEP_REQUIRED_DOCUMENT_MISSING"
 )
 
 // HTTPError is returned to clients as JSON { "error": { ... } }.

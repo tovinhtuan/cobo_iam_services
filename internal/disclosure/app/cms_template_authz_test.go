@@ -72,6 +72,7 @@ func (r *cmsTemplateAuthzRepo) GetTypeVersionDetail(_ context.Context, _, typeID
 							"assignee_role_ids": []any{"role-reviewer"},
 							"processing_days":   float64(2),
 							"display_order":     float64(1),
+							"description":       "Mo ta Review",
 							"documents":         []any{},
 						},
 					},

@@ -1,0 +1,67 @@
+{
+  "DEV_RUNTIME_REQUIREMENT_LIST": "PASS",
+  "DEV_UPLOAD": "PASS",
+  "DEV_DOWNLOAD": "PASS",
+  "DEV_ONE_TO_MANY": "PASS",
+  "DEV_LOGICAL_DELETE": "PASS",
+  "DEV_REPLACE_LINEAGE": "PASS",
+  "DEV_FILE_LIMIT": "AUTOMATED_ONLY",
+  "DEV_COMPLETED_STEP_IMMUTABILITY": "NOT_AVAILABLE",
+  "DEV_NON_CURRENT_STEP_MUTATION_DENIED": "NOT_AVAILABLE",
+  "DEV_CROSS_COMPANY_DOWNLOAD_DENIED": "PASS",
+  "DEV_CROSS_COMPANY_UPLOAD_DENIED": "PASS",
+  "DEV_VIEW_ONLY_MUTATION_DENIED": "NOT_AVAILABLE",
+  "DEV_REQUIRED_DOCUMENT_GATE_ACTIVE": false,
+  "DEV_STORAGE_NAMESPACE": "PASS",
+  "DEV_STORAGE_PATH_LEAK_COUNT": 0,
+  "BE_HEALTH": "PASS",
+  "WORKER_HEALTH": "PASS",
+  "API_UNEXPECTED_5XX": 0,
+  "recordId": "01a0968f-d2be-7551-87b9-6f65bfd1d34c",
+  "stepCode": "step-001",
+  "workflowInstanceId": "01a0968f-d2c3-745f-a5a1-0cdad30f9aed",
+  "listStatus": 200,
+  "requirementCount": 1,
+  "upload": {
+    "status": 201,
+    "body": {
+      "file": {
+        "file_id": "wff_37ac148b2d34470aa7f6256c4979cd04",
+        "file_name": "b2-smoke.pdf",
+        "mime_type": "application/pdf",
+        "file_size": 15,
+        "uploaded_at": "2026-09-13T16:43:05.653530179Z",
+        "uploaded_by": "u_admin_dn"
+      }
+    },
+    "db1": [
+      "ACTIVE\tworkflow-step-document-fulfillments/c_001/wff_37ac148b2d34470aa7f6256c4979cd04/b2-smoke.pdf\tb2-smoke.pdf"
+    ]
+  },
+  "physicalExistsProbe": "/app/var/cms-media/workflow-step-document-fulfillments/workflow-step-document-fulfillments/c_001/wff_e0715acef6c14385adb4d30aa25a8dac/b2-smoke.pdf",
+  "download": {
+    "status": 200,
+    "cd": "attachment; filename=\"b2-smoke.pdf\"",
+    "ctype": "application/pdf"
+  },
+  "replace": {
+    "status": 200,
+    "lineage": [
+      "wff_b8163e2a585e40dbbc24b81cdf3ab560\tSUPERSEDED\t\twff_c31b89f658a34f79aec74c5322a94695",
+      "wff_c31b89f658a34f79aec74c5322a94695\tACTIVE\twff_b8163e2a585e40dbbc24b81cdf3ab560"
+    ]
+  },
+  "delete": {
+    "status": 204,
+    "afterDel": [
+      "DELETED\tworkflow-step-document-fulfillments/c_001/wff_37ac148b2d34470aa7f6256c4979cd04/b2-smoke.pdf"
+    ],
+    "visible": false
+  },
+  "crossDl": {
+    "status": 403
+  },
+  "crossUp": {
+    "status": 403
+  }
+}

@@ -13,6 +13,7 @@ type Repository struct {
 	mu        sync.RWMutex
 	instances map[string]workflowapp.WorkflowInstanceDTO
 	tasks     map[string]workflowapp.TaskDTO
+	docReqs   []workflowapp.DocumentRequirementSnapshot
 }
 
 func NewRepository() *Repository {
@@ -24,8 +25,12 @@ func ikey(companyID, id string) string { return companyID + ":" + id }
 func (r *Repository) CreateInstance(_ context.Context, in workflowapp.WorkflowInstanceDTO) (*workflowapp.WorkflowInstanceDTO, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.instances[ikey(in.CompanyID, in.WorkflowInstanceID)] = in
 	cp := in
+	if len(in.DocumentRequirements) > 0 {
+		r.docReqs = append(r.docReqs, in.DocumentRequirements...)
+	}
+	cp.DocumentRequirements = nil
+	r.instances[ikey(in.CompanyID, in.WorkflowInstanceID)] = cp
 	return &cp, nil
 }
 
@@ -129,4 +134,32 @@ func (r *Repository) ListTasksByInstance(_ context.Context, companyID, workflowI
 		}
 	}
 	return out, nil
+}
+
+func (r *Repository) ListDocumentRequirementSnapshotsByInstanceStep(
+	_ context.Context, companyID, workflowInstanceID, stepCode string,
+) ([]workflowapp.DocumentRequirementSnapshot, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]workflowapp.DocumentRequirementSnapshot, 0)
+	for _, row := range r.docReqs {
+		if row.CompanyID == companyID && row.WorkflowInstanceID == workflowInstanceID && row.StepCode == stepCode {
+			out = append(out, row)
+		}
+	}
+	return out, nil
+}
+
+func (r *Repository) GetDocumentRequirementSnapshotByID(
+	_ context.Context, companyID, snapshotID string,
+) (*workflowapp.DocumentRequirementSnapshot, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for i := range r.docReqs {
+		if r.docReqs[i].CompanyID == companyID && r.docReqs[i].ID == snapshotID {
+			cp := r.docReqs[i]
+			return &cp, nil
+		}
+	}
+	return nil, nil
 }

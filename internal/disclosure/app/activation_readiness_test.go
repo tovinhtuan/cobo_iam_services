@@ -13,8 +13,8 @@ func TestApplyActivationReadiness_PinnedValid(t *testing.T) {
 		WorkflowManifest: &WorkflowPublicationManifest{
 			SchemaVersion: WorkflowManifestSchemaVersion,
 			Steps: []WorkflowPublicationStep{
-				{WorkflowStepDTO: WorkflowStepDTO{StepID: "s1", Stage: "A", DepartmentID: "d1", AssigneeRoleIds: []string{"r1"}, ProcessingDays: 1, DueRule: "T+1"}},
-				{WorkflowStepDTO: WorkflowStepDTO{StepID: "s2", Stage: "B", DepartmentID: "d2", AssigneeRoleIds: []string{"r1"}, ProcessingDays: 1, DueRule: "T+1"}},
+				{WorkflowStepDTO: WorkflowStepDTO{StepID: "s1", Stage: "A", DepartmentID: "d1", AssigneeRoleIds: []string{"r1"}, ProcessingDays: 1, DueRule: "T+1", Description: "Mo ta A"}},
+				{WorkflowStepDTO: WorkflowStepDTO{StepID: "s2", Stage: "B", DepartmentID: "d2", AssigneeRoleIds: []string{"r1"}, ProcessingDays: 1, DueRule: "T+1", Description: "Mo ta B"}},
 			},
 		},
 	}
@@ -69,7 +69,7 @@ func TestApplyActivationReadiness_OverdueWarningDoesNotBlock(t *testing.T) {
 		WorkflowManifest: &WorkflowPublicationManifest{
 			SchemaVersion: WorkflowManifestSchemaVersion,
 			Steps: []WorkflowPublicationStep{
-				{WorkflowStepDTO: WorkflowStepDTO{StepID: "s1", Stage: "A", DepartmentID: "d1", AssigneeRoleIds: []string{"r1"}, ProcessingDays: 1, DueRule: "T+1"}},
+				{WorkflowStepDTO: WorkflowStepDTO{StepID: "s1", Stage: "A", DepartmentID: "d1", AssigneeRoleIds: []string{"r1"}, ProcessingDays: 1, DueRule: "T+1", Description: "Mo ta"}},
 			},
 		},
 		DeadlineConfig: &TemplateDeadlineConfig{

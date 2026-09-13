@@ -42,6 +42,10 @@ type Repository interface {
 	// ApplyTaskTransition atomically updates a pending task and optionally creates the next
 	// task + updates the instance (v2 multi-step) or marks the instance terminal.
 	ApplyTaskTransition(ctx context.Context, in TaskTransitionApply) (*TaskDTO, error)
+	// ListDocumentRequirementSnapshotsByInstanceStep is an internal B1 read helper (no public API).
+	ListDocumentRequirementSnapshotsByInstanceStep(ctx context.Context, companyID, workflowInstanceID, stepCode string) ([]DocumentRequirementSnapshot, error)
+	// GetDocumentRequirementSnapshotByID loads one B1 snapshot by id within company.
+	GetDocumentRequirementSnapshotByID(ctx context.Context, companyID, snapshotID string) (*DocumentRequirementSnapshot, error)
 }
 
 // TaskTransitionApply is one atomic pending→terminal task transition.
@@ -158,6 +162,9 @@ type CreateWorkflowInstanceRequest struct {
 	// FirstTaskAssigneeMembershipIDs materializes one logical first task with relation rows (schema v3).
 	// Singular column is left NULL — never pick first as shadow authority.
 	FirstTaskAssigneeMembershipIDs []string `json:"first_task_assignee_membership_ids,omitempty"`
+	// DocumentRequirements are frozen from the same effective workflow used to build Snapshot.
+	// Must not be independently refetched. Empty/nil is valid (documents=[]).
+	DocumentRequirements []DocumentRequirementSnapshot `json:"document_requirements,omitempty"`
 }
 
 type TaskActionRequest struct {
@@ -187,6 +194,9 @@ type WorkflowInstanceDTO struct {
 	WorkflowSource     string         `json:"workflow_source,omitempty"`
 	T0Date             *time.Time     `json:"t0_date,omitempty"`
 	T0Policy           string         `json:"t0_policy,omitempty"`
+	// DocumentRequirements is write-only at CreateInstance (same TX as instance insert).
+	// Not loaded by FindInstance in B1.
+	DocumentRequirements []DocumentRequirementSnapshot `json:"-"`
 }
 
 // TaskAssigneeDTO is additive display metadata for portal responsibility views.

@@ -147,6 +147,7 @@ func TestCloneTypeFromActive_T3T4T18_SourceTargetIsolation(t *testing.T) {
 	v2 = append(v2, disclosureapp.GlobalWorkflowStepInput{
 		StepID: sourceID + "-step-5", Stage: "Extra", DepartmentID: "d5",
 		AssigneeRoleIds: []string{"r5"}, DueRule: "T+5", ProcessingDays: 5, DisplayOrder: 5,
+		Description: "Mo ta Extra",
 	})
 	mustUpsertWF(t, svc, sourceID, v2)
 	mustActivateSource(t, svc, sourceID, 2)

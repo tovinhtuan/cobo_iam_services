@@ -32,7 +32,14 @@ func (r *Repository) CreateInstance(ctx context.Context, in workflowapp.Workflow
 	if in.T0Date != nil {
 		t0Date = in.T0Date.Format("2006-01-02")
 	}
-	_, err = r.db.ExecContext(ctx, `
+
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("begin create workflow instance: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	_, err = tx.ExecContext(ctx, `
 		INSERT INTO workflow_instances (
 			workflow_instance_id, company_id, record_id, status, current_step_code, created_by,
 			snapshot_json, t0_date, t0_policy, workflow_source
@@ -42,7 +49,14 @@ func (r *Repository) CreateInstance(ctx context.Context, in workflowapp.Workflow
 	if err != nil {
 		return nil, fmt.Errorf("workflow instance insert: %w", err)
 	}
+	if err := insertDocumentRequirementSnapshotsTx(ctx, tx, in.DocumentRequirements); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit create workflow instance: %w", err)
+	}
 	cp := in
+	cp.DocumentRequirements = nil
 	return &cp, nil
 }
 
@@ -467,4 +481,159 @@ func nullStr(s string) any {
 		return nil
 	}
 	return s
+}
+
+func nullStrPtr(s string) any {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	return strings.TrimSpace(s)
+}
+
+func insertDocumentRequirementSnapshotsTx(ctx context.Context, tx *sql.Tx, rows []workflowapp.DocumentRequirementSnapshot) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	for _, row := range rows {
+		id := strings.TrimSpace(row.ID)
+		companyID := strings.TrimSpace(row.CompanyID)
+		recordID := strings.TrimSpace(row.DisclosureRecordID)
+		instanceID := strings.TrimSpace(row.WorkflowInstanceID)
+		stepCode := strings.TrimSpace(row.StepCode)
+		sourceDocID := strings.TrimSpace(row.SourceDocID)
+		requirementKey := strings.TrimSpace(row.RequirementKey)
+		if requirementKey == "" {
+			requirementKey = sourceDocID
+		}
+		name := strings.TrimSpace(row.Name)
+		if id == "" || companyID == "" || recordID == "" || instanceID == "" || stepCode == "" || sourceDocID == "" || name == "" {
+			return fmt.Errorf("document requirement snapshot row incomplete")
+		}
+		required := 0
+		if row.Required {
+			required = 1
+		}
+		// Idempotent re-seed for the same unique identity (retry-safe).
+		_, err := tx.ExecContext(ctx, `
+			INSERT INTO workflow_step_document_requirement_snapshots (
+				id, company_id, disclosure_record_id, workflow_instance_id, step_code,
+				source_doc_id, requirement_key, name, required,
+				template_file_id, template_file_name, ordinal
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			ON DUPLICATE KEY UPDATE id = id
+		`, id, companyID, recordID, instanceID, stepCode,
+			sourceDocID, requirementKey, name, required,
+			nullStrPtr(row.TemplateFileID), nullStrPtr(row.TemplateFileName), row.Ordinal)
+		if err != nil {
+			return fmt.Errorf("document requirement snapshot insert: %w", err)
+		}
+	}
+	return nil
+}
+
+func (r *Repository) ListDocumentRequirementSnapshotsByInstanceStep(
+	ctx context.Context,
+	companyID, workflowInstanceID, stepCode string,
+) ([]workflowapp.DocumentRequirementSnapshot, error) {
+	companyID = strings.TrimSpace(companyID)
+	workflowInstanceID = strings.TrimSpace(workflowInstanceID)
+	stepCode = strings.TrimSpace(stepCode)
+	if companyID == "" || workflowInstanceID == "" || stepCode == "" {
+		return nil, nil
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, company_id, disclosure_record_id, workflow_instance_id, step_code,
+		       source_doc_id, requirement_key, name, required,
+		       template_file_id, template_file_name, ordinal, created_at
+		FROM workflow_step_document_requirement_snapshots
+		WHERE company_id = ? AND workflow_instance_id = ? AND step_code = ?
+		ORDER BY ordinal ASC, source_doc_id ASC
+	`, companyID, workflowInstanceID, stepCode)
+	if err != nil {
+		return nil, fmt.Errorf("list document requirement snapshots: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]workflowapp.DocumentRequirementSnapshot, 0)
+	for rows.Next() {
+		var row workflowapp.DocumentRequirementSnapshot
+		var required int
+		var tplID, tplName sql.NullString
+		if err := rows.Scan(
+			&row.ID,
+			&row.CompanyID,
+			&row.DisclosureRecordID,
+			&row.WorkflowInstanceID,
+			&row.StepCode,
+			&row.SourceDocID,
+			&row.RequirementKey,
+			&row.Name,
+			&required,
+			&tplID,
+			&tplName,
+			&row.Ordinal,
+			&row.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		row.Required = required != 0
+		if tplID.Valid {
+			row.TemplateFileID = tplID.String
+		}
+		if tplName.Valid {
+			row.TemplateFileName = tplName.String
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repository) GetDocumentRequirementSnapshotByID(
+	ctx context.Context,
+	companyID, snapshotID string,
+) (*workflowapp.DocumentRequirementSnapshot, error) {
+	companyID = strings.TrimSpace(companyID)
+	snapshotID = strings.TrimSpace(snapshotID)
+	if companyID == "" || snapshotID == "" {
+		return nil, nil
+	}
+	row := r.db.QueryRowContext(ctx, `
+		SELECT id, company_id, disclosure_record_id, workflow_instance_id, step_code,
+		       source_doc_id, requirement_key, name, required,
+		       template_file_id, template_file_name, ordinal, created_at
+		FROM workflow_step_document_requirement_snapshots
+		WHERE company_id = ? AND id = ?
+	`, companyID, snapshotID)
+	var out workflowapp.DocumentRequirementSnapshot
+	var required int
+	var tplID, tplName sql.NullString
+	err := row.Scan(
+		&out.ID,
+		&out.CompanyID,
+		&out.DisclosureRecordID,
+		&out.WorkflowInstanceID,
+		&out.StepCode,
+		&out.SourceDocID,
+		&out.RequirementKey,
+		&out.Name,
+		&required,
+		&tplID,
+		&tplName,
+		&out.Ordinal,
+		&out.CreatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get document requirement snapshot: %w", err)
+	}
+	out.Required = required != 0
+	if tplID.Valid {
+		out.TemplateFileID = tplID.String
+	}
+	if tplName.Valid {
+		out.TemplateFileName = tplName.String
+	}
+	return &out, nil
 }

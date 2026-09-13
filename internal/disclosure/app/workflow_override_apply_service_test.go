@@ -291,7 +291,7 @@ func TestApplyWorkflowOverrideRebase_ConcurrentChange_RejectsWithoutPartialWrite
 		Subject:  disclosureapp.Subject{UserID: "other-session", MembershipID: "m2", CompanyID: companyID},
 		TypeID:   staleTestTypeID,
 		Publish:  true,
-		Workflow: []disclosureapp.WorkflowStepDTO{{StepID: "seed-step-1", Stage: "Concurrently Edited", DepartmentID: "d1", AssigneeRoleIds: []string{"reviewer"}, DisplayOrder: 1, Documents: []disclosureapp.WorkflowDocumentDTO{}}},
+		Workflow: []disclosureapp.WorkflowStepDTO{{StepID: "seed-step-1", Stage: "Concurrently Edited", DepartmentID: "d1", AssigneeRoleIds: []string{"reviewer"}, DisplayOrder: 1, Description: "Concurrent edit", Documents: []disclosureapp.WorkflowDocumentDTO{}}},
 	}); err != nil {
 		t.Fatalf("concurrent publish: %v", err)
 	}
@@ -331,7 +331,7 @@ func TestApplyWorkflowOverrideRebase_FieldConflictAcceptGlobal_ActuallyAppliesNe
 		Subject:  disclosureapp.Subject{UserID: "u1", MembershipID: "m1", CompanyID: companyID},
 		TypeID:   staleTestTypeID,
 		Publish:  true,
-		Workflow: []disclosureapp.WorkflowStepDTO{{StepID: "seed-step-1", Stage: "Seed Step", DepartmentID: "d1", AssigneeRoleIds: []string{"reviewer"}, DueRule: "T+99", DisplayOrder: 1, Documents: []disclosureapp.WorkflowDocumentDTO{}}},
+		Workflow: []disclosureapp.WorkflowStepDTO{{StepID: "seed-step-1", Stage: "Seed Step", DepartmentID: "d1", AssigneeRoleIds: []string{"reviewer"}, DueRule: "T+99", DisplayOrder: 1, Description: "Seed description", Documents: []disclosureapp.WorkflowDocumentDTO{}}},
 	}); err != nil {
 		t.Fatalf("set company due_rule: %v", err)
 	}

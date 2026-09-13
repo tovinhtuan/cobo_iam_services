@@ -16,6 +16,7 @@ func validStep(id, stage string) WorkflowStepDTO {
 		AssigneeRoleIds: []string{"role-reviewer"},
 		ProcessingDays:  2,
 		DisplayOrder:    1,
+		Description:     "Mo ta " + stage,
 	}
 }
 
@@ -33,6 +34,7 @@ func enterpriseBlocks(steps ...WorkflowStepDTO) []TemplateBlockDTO {
 			"assignee_role_ids": []any{role},
 			"processing_days":   float64(s.ProcessingDays),
 			"display_order":     float64(i + 1),
+			"description":       s.Description,
 			"documents":         []any{},
 		})
 	}

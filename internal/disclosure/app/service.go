@@ -1015,6 +1015,27 @@ func (s *service) ActivateTypeVersion(ctx context.Context, req ActivateTypeVersi
 			},
 		}
 	}
+	// Description gate is separate from structural ValidateWorkflowStepsForActivation so
+	// effective-workflow enrichment / grandfathered actives are not retro-invalidated.
+	if descBlockers := CollectWorkflowStepDescriptionActivationBlockers(published.Workflow); len(descBlockers) > 0 {
+		fieldErrors := map[string]string{}
+		for i, step := range published.Workflow {
+			if IsWorkflowStepDescriptionSemanticEmpty(step.Description, step.DescriptionFormat) {
+				fieldErrors[fmt.Sprintf("workflow[%d].description", i)] = workflowStepDescriptionBlockerMessage(step.Stage, i)
+			}
+		}
+		return nil, &perr.HTTPError{
+			Code:       perr.Code(ActivationBlockerWorkflowStepDescriptionRequired),
+			Message:    descBlockers[0].Message,
+			HTTPStatus: http.StatusUnprocessableEntity,
+			Details: map[string]any{
+				"type_id":             req.TypeID,
+				"version_no":          req.VersionNo,
+				"activation_blockers": descBlockers,
+				"field_errors":        fieldErrors,
+			},
+		}
+	}
 	if err := validatePortalDeadlineRule(versionDetail.DeadlineRule, s.loadDeadlineRuleCatalog(ctx)); err != nil {
 		return nil, err
 	}
@@ -1159,6 +1180,10 @@ func (s *service) UpsertCompanyWorkflowOverrideDraft(ctx context.Context, req Up
 		resp.Workflow = req.Workflow
 	}
 	if req.Publish && resp != nil {
+		// Publish skips ApproveCompanyWorkflowOverride service path — enforce description here.
+		if err2 := ValidateCompanyWorkflowOverrideStepDescriptionsForActivation(req.Workflow); err2 != nil {
+			return nil, err2
+		}
 		if err2 := s.authorize(ctx, req.Subject, "template.workflow.override.approve", authapp.ResourceRef{
 			Type: "disclosure_type",
 			ID:   req.TypeID,
@@ -1207,6 +1232,9 @@ func (s *service) ApproveCompanyWorkflowOverride(ctx context.Context, req Approv
 		return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "workflow override draft version not found", nil)
 	}
 	if err := ValidateCompanyWorkflowOverrideSteps(view.DraftVersion.Workflow); err != nil {
+		return nil, err
+	}
+	if err := ValidateCompanyWorkflowOverrideStepDescriptionsForActivation(view.DraftVersion.Workflow); err != nil {
 		return nil, err
 	}
 	return s.repo.ApproveCompanyWorkflowOverride(ctx, req)
@@ -1466,6 +1494,13 @@ func applyActivationReadiness(item *DisclosureTypeDTO, evalAt time.Time, calc *D
 		if err := ValidateWorkflowStepReminderConfigForPersist(step.ReminderConfig); err != nil {
 			blockers = append(blockers, ActivationBlockerDTO{
 				Code: "WORKFLOW_STEP_REMINDER_INVALID", Message: stepLabel + ": cấu hình nhắc nhở chưa hợp lệ.",
+				StepKey: stepID, StepID: stepID,
+			})
+		}
+		if IsWorkflowStepDescriptionSemanticEmpty(step.Description, step.DescriptionFormat) {
+			blockers = append(blockers, ActivationBlockerDTO{
+				Code:    ActivationBlockerWorkflowStepDescriptionRequired,
+				Message: workflowStepDescriptionBlockerMessage(step.Stage, i),
 				StepKey: stepID, StepID: stepID,
 			})
 		}

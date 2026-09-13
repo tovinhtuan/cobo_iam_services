@@ -8,6 +8,7 @@ import (
 
 	deadlinealertsapp "github.com/cobo/cobo_iam_services/internal/deadlinealerts/app"
 	workflowapp "github.com/cobo/cobo_iam_services/internal/workflow/app"
+	wffmysql "github.com/cobo/cobo_iam_services/internal/workflowfulfillment/mysql"
 )
 
 func (r *Repository) GetWorkflowInstanceByRecord(ctx context.Context, companyID, recordID string) (*deadlinealertsapp.WorkflowInstanceRow, error) {
@@ -100,7 +101,62 @@ func (r *Repository) UpsertStepCompleted(
 	companyID, workflowInstanceID, stepCode, membershipID string,
 	at time.Time,
 ) error {
-	_, err := r.db.ExecContext(ctx, `
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// B3 + B2-compatible lock order: snapshots (id ASC) → step state → validate → complete.
+	snaps, err := wffmysql.LockDocumentRequirementSnapshots(ctx, tx, companyID, workflowInstanceID, stepCode)
+	if err != nil {
+		return err
+	}
+
+	var completedAt sql.NullTime
+	err = tx.QueryRowContext(ctx, `
+		SELECT completed_at FROM workflow_instance_step_states
+		WHERE workflow_instance_id = ? AND step_code = ?
+		FOR UPDATE
+	`, workflowInstanceID, stepCode).Scan(&completedAt)
+	if err != nil && err != sql.ErrNoRows {
+		return err
+	}
+	if err == sql.ErrNoRows {
+		_, err = tx.ExecContext(ctx, `
+			INSERT INTO workflow_instance_step_states (
+				company_id, workflow_instance_id, step_code
+			) VALUES (?, ?, ?)
+		`, companyID, workflowInstanceID, stepCode)
+		if err != nil {
+			err = tx.QueryRowContext(ctx, `
+				SELECT completed_at FROM workflow_instance_step_states
+				WHERE workflow_instance_id = ? AND step_code = ?
+				FOR UPDATE
+			`, workflowInstanceID, stepCode).Scan(&completedAt)
+			if err != nil {
+				return err
+			}
+		} else {
+			err = tx.QueryRowContext(ctx, `
+				SELECT completed_at FROM workflow_instance_step_states
+				WHERE workflow_instance_id = ? AND step_code = ?
+				FOR UPDATE
+			`, workflowInstanceID, stepCode).Scan(&completedAt)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	if completedAt.Valid {
+		return tx.Commit()
+	}
+
+	if err := wffmysql.ValidateRequiredDocumentFulfillmentLocked(ctx, tx, companyID, workflowInstanceID, stepCode, snaps); err != nil {
+		return err
+	}
+
+	_, err = tx.ExecContext(ctx, `
 		INSERT INTO workflow_instance_step_states (
 			company_id, workflow_instance_id, step_code,
 			completed_at, completed_by_membership_id
@@ -110,7 +166,10 @@ func (r *Repository) UpsertStepCompleted(
 			completed_by_membership_id = VALUES(completed_by_membership_id),
 			updated_at = CURRENT_TIMESTAMP
 	`, companyID, workflowInstanceID, stepCode, at, membershipID)
-	return err
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (r *Repository) UpsertStepIncomplete(

@@ -1,3 +1,119 @@
+## Tenant workflow step evidence B4 — Tenant runtime fulfillment UX (2026-09-14)
+
+- Pointer: `tenant-workflow-step-evidence-b4-tenant-ux-2026-09-14/00-pointer.md`
+- Full: sibling FE `../cobo_web_design/docs/ai-cache/tenant-workflow-step-evidence-b4-tenant-ux-2026-09-14/`
+- FE-only Bằng chứng UX on B2/B3; BE unchanged
+- FE_SOURCE_CHANGED=true; READY_FOR_B5=true — WAIT_FOR_PO_CONFIRMATION
+
+## Tenant workflow step evidence B3 — Complete required-document gate (2026-09-13)
+
+- Pointer: `tenant-workflow-step-evidence-b3-complete-gate-2026-09-13/00-pointer.md`
+- Full: sibling FE `../cobo_web_design/docs/ai-cache/tenant-workflow-step-evidence-b3-complete-gate-2026-09-13/`
+- UpsertStepCompleted TX gate on B1 snapshots + B2 ACTIVE; error WORKFLOW_STEP_REQUIRED_DOCUMENT_MISSING (422); legacy zero-snap preserved
+- BE_SOURCE_CHANGED=true; FE/DB/API file surface unchanged; READY_FOR_B4=true — WAIT_FOR_PO_CONFIRMATION
+
+## Tenant workflow step evidence B2 — runtime fulfillment (2026-09-13)
+
+- Pointer: `tenant-workflow-step-evidence-b2-runtime-fulfillment-2026-09-13/00-pointer.md`
+- Full: sibling FE `../cobo_web_design/docs/ai-cache/tenant-workflow-step-evidence-b2-runtime-fulfillment-2026-09-13/`
+- Migration 0136 + fulfillment CRUD/ACL/replace lineage; DEV deploy+smoke PASS
+- BE_SOURCE_CHANGED=true; READY_FOR_B3=true — WAIT_FOR_PO_CONFIRMATION
+
+## Tenant workflow step evidence B1 — requirement snapshot (2026-09-13)
+
+- Pointer: `tenant-workflow-step-evidence-b1-requirement-snapshot-2026-09-13/00-pointer.md`
+- Full: sibling FE `../cobo_web_design/docs/ai-cache/tenant-workflow-step-evidence-b1-requirement-snapshot-2026-09-13/`
+- Migration 0135 + CreateWorkflowInstanceInternal TX snapshot; DEV deploy+smoke PASS
+- BE_SOURCE_CHANGED=true; READY_FOR_B2=true — WAIT_FOR_PO_CONFIRMATION
+
+## Tenant workflow step evidence V1 — contract + implementation plan (2026-09-13)
+
+- Pointer: `tenant-workflow-step-evidence-v1-contract-plan-2026-09-13/00-pointer.md`
+- Full: sibling FE `../cobo_web_design/docs/ai-cache/tenant-workflow-step-evidence-v1-contract-plan-2026-09-13/`
+- Document Requirement Fulfillment; snapshot at CreateWorkflowInstanceInternal; Complete gate; B1–B6 roadmap
+- BE_SOURCE_CHANGED=false; READY_FOR_B1=true — WAIT_FOR_PO_CONFIRMATION
+
+## Tenant workflow step evidence / runtime upload audit (2026-09-13)
+
+- Pointer: `tenant-workflow-step-evidence-runtime-upload-audit-2026-09-13/00-pointer.md`
+- Full evidence in sibling FE `../cobo_web_design/docs/ai-cache/tenant-workflow-step-evidence-runtime-upload-audit-2026-09-13/`
+- DEEP_SOURCE_AUDIT_ONLY: Step Detail "Bằng chứng"; no runtime fulfillment; media reusable; feature LARGE
+- BE_SOURCE_CHANGED=false; READY_FOR_IMPLEMENTATION_PLAN=true — WAIT_FOR_PO_CONFIRMATION
+
+## Tenant Step Detail — remove Tác vụ tab (2026-09-13)
+
+- Pointer: `tenant-step-detail-task-section-removal-2026-09-13/00-pointer.md`
+- Full evidence in sibling FE `../cobo_web_design/docs/ai-cache/tenant-step-detail-task-section-removal-2026-09-13/`
+- FE-only presentation removal; WorkflowCard/listTasks/actions preserved; BE unchanged
+- BE_SOURCE_CHANGED=false; FE deploy only; READY_FOR_COMMIT=true — WAIT_FOR_PO_CONFIRMATION
+
+## Tenant Step Detail — task section removal delta check (2026-09-13)
+
+- Pointer: `tenant-step-detail-task-section-removal-delta-check-2026-09-13/00-pointer.md`
+- Full evidence in sibling FE `../cobo_web_design/docs/ai-cache/tenant-step-detail-task-section-removal-delta-check-2026-09-13/`
+- SOURCE_CHECK_ONLY: no unique UI info in Step Detail Tác vụ tab; recommend REMOVE_PRESENTATION
+- BE_SOURCE_CHANGED=false; NO_IMPLEMENTATION — WAIT_FOR_PO_CONFIRMATION
+
+## Tenant Step Detail — timeliness + task presentation fix (2026-09-13)
+
+- Pointer: `tenant-step-detail-timeliness-task-presentation-fix-2026-09-13/00-pointer.md`
+- Full evidence in sibling FE `../cobo_web_design/docs/ai-cache/tenant-step-detail-timeliness-task-presentation-fix-2026-09-13/`
+- FE-only: consume BE `timeliness_status`; relabel Tác vụ; BE unchanged
+- BE_SOURCE_CHANGED=false; FE deploy only; READY_FOR_COMMIT=true — WAIT_FOR_PO_CONFIRMATION
+
+## Tenant Step Detail — timeliness + "Tác vụ bắt buộc" audit (2026-09-13)
+
+- Pointer: `tenant-step-detail-timeliness-required-task-audit-2026-09-13/00-pointer.md`
+- Full evidence in sibling FE `../cobo_web_design/docs/ai-cache/tenant-step-detail-timeliness-required-task-audit-2026-09-13/`
+- SOURCE_AUDIT_ONLY: Step Detail remaining metric ignores BE `timeliness_status`; Tác vụ bắt buộc is FE label over TaskDTO
+- BE_SOURCE_CHANGED=false; NO_IMPLEMENTATION — WAIT_FOR_PO_CONFIRMATION
+
+## Tenant step description readiness v1 (2026-09-13)
+
+- Pointer: `tenant-step-description-activation-readiness-v1-2026-09-13/00-pointer.md`
+- Full evidence in sibling FE `../cobo_web_design/docs/ai-cache/tenant-step-description-activation-readiness-v1-2026-09-13/`
+- BE shared semantic description gate on Template Activate + override approve/apply
+- BE_SOURCE_CHANGED=true; DEV deploy PASS; READY_FOR_COMMIT=true — WAIT_FOR_PO_CONFIRMATION
+
+## Tenant step description — activation readiness audit (2026-09-13)
+
+- Pointer: `tenant-step-description-activation-readiness-audit-2026-09-13/00-pointer.md`
+- Full evidence in sibling FE `../cobo_web_design/docs/ai-cache/tenant-step-description-activation-readiness-audit-2026-09-13/`
+- PLAN_ONLY: description required on Activate?; BE readiness authority confirmed; no description blocker today
+- BE_SOURCE_CHANGED=false; NO_IMPLEMENTATION — WAIT_FOR_PO_CONFIRMATION
+
+## Workflow authoring data correction plan (2026-09-13)
+
+- Pointer: sibling FE `docs/ai-cache/workflow-authoring-data-correction-plan-2026-09-13/`
+- PLAN_ONLY; no CMS/DB mutation
+
+## Tenant workflow authoring data audit (2026-09-13)
+
+- Pointer: sibling FE `docs/ai-cache/tenant-workflow-authoring-data-audit-2026-09-13/`
+- SOURCE_DATA_AUDIT_ONLY; APPLICATION_SOURCE_CHANGED=false; no DB mutation
+
+## Tenant step detail content + role display fix (2026-09-13)
+
+- Pointer: FE-only; BE unchanged. Evidence in sibling `cobo_web_design/docs/ai-cache/tenant-step-detail-content-role-display-fix-2026-09-13/`
+- BE_SOURCE_CHANGED=false; FE deploy only
+
+## Tenant step detail content + owner authority audit (2026-09-13)
+
+- Pointer: `tenant-step-detail-content-owner-authority-audit-2026-09-13/00-pointer.md`
+- Full evidence in sibling FE repo
+- SOURCE_AUDIT_ONLY; BE source unchanged
+
+## Tenant current processing department presentation fix (2026-09-13)
+
+- FE-only pointer: sibling `../cobo_web_design/docs/ai-cache/tenant-current-processing-department-presentation-fix-2026-09-13/`
+- BE source unchanged; FE `deploy-dev.ps1 -Mode fe` PASS
+
+## Tenant current processing department authority audit (2026-09-13)
+
+- Pointer: `tenant-current-processing-department-authority-audit-2026-09-13/00-pointer.md`
+- Full evidence in sibling FE `../cobo_web_design/docs/ai-cache/tenant-current-processing-department-authority-audit-2026-09-13/`
+- SOURCE_AUDIT_ONLY; BE source unchanged
+
 ## Portal Company resolved deadline display (2026-09-04)
 
 - List API adds `resolved_due_at` (company-scoped); pointer: `portal-company-resolved-deadline-display-2026-09-04/00-pointer.md`

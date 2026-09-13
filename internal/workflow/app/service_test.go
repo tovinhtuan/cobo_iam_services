@@ -15,13 +15,15 @@ type fakeWorkflowRepository struct {
 	mu        sync.Mutex
 	instances map[string]WorkflowInstanceDTO
 	tasks     map[string]TaskDTO
+	docReqs   []DocumentRequirementSnapshot
 
 	createdInstance WorkflowInstanceDTO
 	createdTask     TaskDTO
 
-	failNextCreateTask     error
-	failNextCreateInstance error
-	createTaskCalls        int
+	failNextCreateTask       error
+	failNextCreateInstance   error
+	failDocRequirementInsert error
+	createTaskCalls          int
 }
 
 func (f *fakeWorkflowRepository) ensure() {
@@ -42,9 +44,18 @@ func (f *fakeWorkflowRepository) CreateInstance(_ context.Context, in WorkflowIn
 		f.failNextCreateInstance = nil
 		return nil, err
 	}
+	if f.failDocRequirementInsert != nil && len(in.DocumentRequirements) > 0 {
+		err := f.failDocRequirementInsert
+		f.failDocRequirementInsert = nil
+		return nil, err
+	}
 	f.createdInstance = in
 	f.instances[in.CompanyID+":"+in.WorkflowInstanceID] = in
+	if len(in.DocumentRequirements) > 0 {
+		f.docReqs = append(f.docReqs, in.DocumentRequirements...)
+	}
 	cp := in
+	cp.DocumentRequirements = nil
 	return &cp, nil
 }
 
@@ -168,6 +179,34 @@ func (f *fakeWorkflowRepository) ApplyTaskTransition(_ context.Context, in TaskT
 	}
 	cp := cur
 	return &cp, nil
+}
+
+func (f *fakeWorkflowRepository) ListDocumentRequirementSnapshotsByInstanceStep(
+	_ context.Context, companyID, workflowInstanceID, stepCode string,
+) ([]DocumentRequirementSnapshot, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]DocumentRequirementSnapshot, 0)
+	for _, row := range f.docReqs {
+		if row.CompanyID == companyID && row.WorkflowInstanceID == workflowInstanceID && row.StepCode == stepCode {
+			out = append(out, row)
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeWorkflowRepository) GetDocumentRequirementSnapshotByID(
+	_ context.Context, companyID, snapshotID string,
+) (*DocumentRequirementSnapshot, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i := range f.docReqs {
+		if f.docReqs[i].CompanyID == companyID && f.docReqs[i].ID == snapshotID {
+			cp := f.docReqs[i]
+			return &cp, nil
+		}
+	}
+	return nil, nil
 }
 
 type fakeWorkflowIDGen struct{}

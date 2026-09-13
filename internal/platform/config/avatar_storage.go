@@ -29,6 +29,16 @@ func (c Config) ResolveWorkflowDocTemplateStorageDir() string {
 	return filepath.Clean(filepath.Join(cmsRoot, "workflow-doc-templates"))
 }
 
+// ResolveWorkflowDocFulfillmentStorageDir returns disk root for runtime step document fulfillment files.
+// Uses {CMSMediaStorageDir}/workflow-step-document-fulfillments.
+func (c Config) ResolveWorkflowDocFulfillmentStorageDir() string {
+	cmsRoot := strings.TrimSpace(c.CMSMediaStorageDir)
+	if cmsRoot == "" {
+		cmsRoot = "./var/cms-media"
+	}
+	return filepath.Clean(filepath.Join(cmsRoot, "workflow-step-document-fulfillments"))
+}
+
 // UserAvatarAllowedContentTypesSet returns a set of allowed MIME types.
 func (c Config) UserAvatarAllowedContentTypesSet() map[string]struct{} {
 	out := make(map[string]struct{})

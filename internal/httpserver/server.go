@@ -104,6 +104,10 @@ import (
 	wdtinmem "github.com/cobo/cobo_iam_services/internal/workflowdoctemplate/infra/inmemory"
 	wdtmysql "github.com/cobo/cobo_iam_services/internal/workflowdoctemplate/infra/mysql"
 	wdthttp "github.com/cobo/cobo_iam_services/internal/workflowdoctemplate/transport/http"
+	wff "github.com/cobo/cobo_iam_services/internal/workflowfulfillment"
+	wffmemory "github.com/cobo/cobo_iam_services/internal/workflowfulfillment/memory"
+	wffmysql "github.com/cobo/cobo_iam_services/internal/workflowfulfillment/mysql"
+	wffhttp "github.com/cobo/cobo_iam_services/internal/workflowfulfillment/transport/http"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -435,6 +439,18 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 	}
 	deadlineAlertsSvc := deadlinealertsapp.NewService(deadlineAlertsRepo, authSvc, deadlineCalc)
 	deadlineAlertsHandler := deadlinealertshttp.NewHandler(log, deadlineAlertsSvc, tokenManager)
+
+	fulfillmentDisk, err := mediaupload.NewDiskStorage(cfg.ResolveWorkflowDocFulfillmentStorageDir())
+	if err != nil {
+		return fmt.Errorf("workflow document fulfillment storage: %w", err)
+	}
+	var fulfillmentFiles wff.Repository = wffmemory.NewRepository()
+	if pool != nil {
+		fulfillmentFiles = wffmysql.NewRepository(pool)
+	}
+	fulfillmentBridge := &wff.DeadlineBridge{Repo: deadlineAlertsRepo, Auth: authSvc}
+	fulfillmentSvc := wff.NewService(fulfillmentBridge, workflowRepo, fulfillmentFiles, fulfillmentDisk, log)
+	fulfillmentHandler := wffhttp.NewHandler(log, fulfillmentSvc, tokenManager)
 	var idemStore idempotency.Store
 	var adhocSvc adhocapp.Service
 	if pool != nil {
@@ -737,7 +753,7 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 		}
 	}
 
-	return muxRegisterHealthAndIAM(mux, log, cfg, sqlDB, iamHandler, meHandler, authHandler, disclosureHandler, workflowHandler, notificationHandler, reminderHandler, adminHandler, platformCMSHandler, wdtHandler, adhocHandler, deadlineAlertsHandler, portalDashboardHandler, personalOpsHandler)
+	return muxRegisterHealthAndIAM(mux, log, cfg, sqlDB, iamHandler, meHandler, authHandler, disclosureHandler, workflowHandler, notificationHandler, reminderHandler, adminHandler, platformCMSHandler, wdtHandler, adhocHandler, deadlineAlertsHandler, fulfillmentHandler, portalDashboardHandler, personalOpsHandler)
 }
 
 func validateSecurityCriticalConfig(cfg config.Config) error {
@@ -784,6 +800,7 @@ func muxRegisterHealthAndIAM(
 	wdtHandler *wdthttp.Handler,
 	adhocHandler *adhochttp.Handler,
 	deadlineAlertsHandler *deadlinealertshttp.Handler,
+	fulfillmentHandler *wffhttp.Handler,
 	portalDashboardHandler *portaldashboardhttp.Handler,
 	personalOpsHandler *personalopshttp.Handler,
 ) error {
@@ -820,6 +837,9 @@ func muxRegisterHealthAndIAM(
 		adhocHandler.Register(mux)
 	}
 	deadlineAlertsHandler.Register(mux)
+	if fulfillmentHandler != nil {
+		fulfillmentHandler.Register(mux)
+	}
 	portalDashboardHandler.Register(mux)
 	personalOpsHandler.Register(mux)
 	return nil

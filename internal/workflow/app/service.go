@@ -106,6 +106,13 @@ func (s *service) createWorkflowInstance(ctx context.Context, req CreateWorkflow
 	// flag only; it must never permit new NULL snapshot_json rows.
 	inst.Snapshot = append([]StepSnapshot(nil), req.Snapshot...)
 	inst.WorkflowSource = strings.TrimSpace(req.WorkflowSource)
+	inst.DocumentRequirements = prepareDocumentRequirementSnapshots(
+		req.DocumentRequirements,
+		inst.WorkflowInstanceID,
+		req.Subject.CompanyID,
+		req.RecordID,
+		s.idg,
+	)
 
 	created, err := s.repo.CreateInstance(ctx, inst)
 	if err != nil {
@@ -160,6 +167,43 @@ func (s *service) createWorkflowInstance(ctx context.Context, req CreateWorkflow
 		}
 	}
 	return created, nil
+}
+
+func prepareDocumentRequirementSnapshots(
+	in []DocumentRequirementSnapshot,
+	workflowInstanceID, companyID, recordID string,
+	idg idgen.Generator,
+) []DocumentRequirementSnapshot {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]DocumentRequirementSnapshot, 0, len(in))
+	for _, row := range in {
+		cp := row
+		if strings.TrimSpace(cp.ID) == "" {
+			cp.ID = idg.NewUUID()
+		}
+		cp.WorkflowInstanceID = workflowInstanceID
+		cp.CompanyID = companyID
+		cp.DisclosureRecordID = recordID
+		cp.StepCode = strings.TrimSpace(cp.StepCode)
+		cp.SourceDocID = strings.TrimSpace(cp.SourceDocID)
+		cp.RequirementKey = strings.TrimSpace(cp.RequirementKey)
+		if cp.RequirementKey == "" {
+			cp.RequirementKey = cp.SourceDocID
+		}
+		cp.Name = strings.TrimSpace(cp.Name)
+		cp.TemplateFileID = strings.TrimSpace(cp.TemplateFileID)
+		cp.TemplateFileName = strings.TrimSpace(cp.TemplateFileName)
+		if cp.TemplateFileID == "" {
+			cp.TemplateFileName = ""
+		}
+		if cp.StepCode == "" || cp.SourceDocID == "" {
+			continue
+		}
+		out = append(out, cp)
+	}
+	return out
 }
 
 func (s *service) ApproveTask(ctx context.Context, req TaskActionRequest) (*TaskDTO, error) {

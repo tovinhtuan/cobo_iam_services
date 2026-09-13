@@ -134,6 +134,8 @@ seed_dev_identity_authorization.sql
 0132_workflow_document_template_assets.up.sql
 0133_company_type_preference_schedule_anchor_v2.up.sql
 0134_company_type_preference_override_binding.up.sql
+0135_workflow_step_document_requirement_snapshots.up.sql
+0136_workflow_step_document_fulfillment_files.up.sql
 seed_dev_company_subscriptions.sql
 "
 

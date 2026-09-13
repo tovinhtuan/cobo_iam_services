@@ -62,8 +62,8 @@ type ApplyWorkflowOverrideRebaseResult struct {
 //  1. type exists                         -> computeRebasePreview (404 NOT_FOUND, reused)
 //  2. override exists                     -> computeRebasePreview (404 OVERRIDE_NOT_FOUND, reused)
 //  3. override is stale                   -> computeRebasePreview (409 NOT_STALE if NOT stale, reused)
-//  4/5. preview target/base still current -> compared against the cached preview entry below
-//  6/7. all conflicts resolved            -> scanned from the freshly recomputed conflict list
+//     4/5. preview target/base still current -> compared against the cached preview entry below
+//     6/7. all conflicts resolved            -> scanned from the freshly recomputed conflict list
 //  8. Rule 8 deferred-validation blocker   -> RULE_8_APPLY_POLICY.md's exact check
 //  9. patch application preserves fields  -> ApplyPatchOperations' own design guarantee
 //  10. idempotency key valid              -> enforced at the HTTP handler, before this is ever called
@@ -174,6 +174,9 @@ func (s *service) ApplyWorkflowOverrideRebase(ctx context.Context, req ApplyWork
 		return nil, err
 	}
 	if err := ValidateCompanyWorkflowOverrideSteps(newSnapshot); err != nil {
+		return nil, err
+	}
+	if err := ValidateCompanyWorkflowOverrideStepDescriptionsForActivation(newSnapshot); err != nil {
 		return nil, err
 	}
 

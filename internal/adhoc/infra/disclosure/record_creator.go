@@ -50,6 +50,7 @@ func (a *RecordCreatorAdapter) CreateAndSubmitRecordWithOpts(ctx context.Context
 	}
 
 	var snapshot []workflowapp.StepSnapshot
+	var documentRequirements []workflowapp.DocumentRequirementSnapshot
 	var workflowSource string
 	var firstTaskAssignee string
 	var firstTaskAssignees []string
@@ -61,6 +62,7 @@ func (a *RecordCreatorAdapter) CreateAndSubmitRecordWithOpts(ctx context.Context
 			return "", "", err
 		}
 		snapshot = resolved.snapshot
+		documentRequirements = resolved.documentRequirements
 		workflowSource = resolved.workflowSource
 		firstTaskAssignee = resolved.firstTaskAssignee
 		firstTaskAssignees = resolved.firstTaskAssignees
@@ -113,6 +115,7 @@ func (a *RecordCreatorAdapter) CreateAndSubmitRecordWithOpts(ctx context.Context
 			},
 			RecordID:                       rec.RecordID,
 			Snapshot:                       snapshot,
+			DocumentRequirements:           documentRequirements,
 			WorkflowSource:                 workflowSource,
 			FirstTaskAssigneeMembershipID:  firstTaskAssignee,
 			FirstTaskAssigneeMembershipIDs: firstTaskAssignees,
@@ -142,12 +145,13 @@ func (a *RecordCreatorAdapter) CreateAndSubmitRecordWithOpts(ctx context.Context
 }
 
 type resolvedWorkflowMaterialization struct {
-	snapshot           []workflowapp.StepSnapshot
-	workflowSource     string
-	firstTaskAssignee  string
-	firstTaskAssignees []string
-	mode               string
-	effectiveWorkflowN int // for tests: GetEffectiveWorkflow call count implied (0 or 1)
+	snapshot             []workflowapp.StepSnapshot
+	documentRequirements []workflowapp.DocumentRequirementSnapshot
+	workflowSource       string
+	firstTaskAssignee    string
+	firstTaskAssignees   []string
+	mode                 string
+	effectiveWorkflowN   int // for tests: GetEffectiveWorkflow call count implied (0 or 1)
 }
 
 func resolveWorkflowSnapshotForMaterialize(
@@ -173,10 +177,11 @@ func resolveWorkflowSnapshotForMaterialize(
 				return nil, perr.NewHTTPError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, "frozen proposal workflow has no materializable steps", err)
 			}
 			return &resolvedWorkflowMaterialization{
-				snapshot:           snapshot,
-				workflowSource:     workflowapp.WorkflowSourceProposalSnapshotV3,
-				firstTaskAssignees: adhocapp.FirstStepAssigneeMembershipIDs(opts.ProposalWorkflow),
-				mode:               adhocapp.MaterializationModeV3Snapshot,
+				snapshot:             snapshot,
+				documentRequirements: nil, // proposal path has no documents[] fulfillment authority in V1
+				workflowSource:       workflowapp.WorkflowSourceProposalSnapshotV3,
+				firstTaskAssignees:   adhocapp.FirstStepAssigneeMembershipIDs(opts.ProposalWorkflow),
+				mode:                 adhocapp.MaterializationModeV3Snapshot,
 			}, nil
 		}
 		if opts.ProposalWorkflow.SchemaVersion == adhocapp.ProposalWorkflowSchemaV2 {
@@ -194,10 +199,11 @@ func resolveWorkflowSnapshotForMaterialize(
 				return nil, perr.NewHTTPError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, "frozen proposal workflow has no materializable steps", err)
 			}
 			return &resolvedWorkflowMaterialization{
-				snapshot:          snapshot,
-				workflowSource:    workflowapp.WorkflowSourceProposalSnapshotV2,
-				firstTaskAssignee: adhocapp.FirstStepAssigneeMembershipID(opts.ProposalWorkflow),
-				mode:              adhocapp.MaterializationModeV2Snapshot,
+				snapshot:             snapshot,
+				documentRequirements: nil,
+				workflowSource:       workflowapp.WorkflowSourceProposalSnapshotV2,
+				firstTaskAssignee:    adhocapp.FirstStepAssigneeMembershipID(opts.ProposalWorkflow),
+				mode:                 adhocapp.MaterializationModeV2Snapshot,
 			}, nil
 		}
 	}
@@ -210,17 +216,20 @@ func resolveWorkflowSnapshotForMaterialize(
 		return nil, fmt.Errorf("get effective workflow: %w", err)
 	}
 	workflowSource := mapWorkflowSource(effResp.Data.Source)
+	// Project document requirements from the exact effective workflow used for StepSnapshot.
+	documentRequirements := workflowapp.ProjectDocumentRequirementSnapshots(effResp.Data.Workflow)
 	snapshot := workflowapp.MapEffectiveWorkflowToSnapshot(effResp.Data.Workflow, workflowSource)
 	snapshot = workflowapp.ApplyAdHocStepOverrides(snapshot, opts.StepOverrides)
 	if err := workflowapp.ValidateSnapshot(snapshot); err != nil {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "template has no effective workflow steps", err)
 	}
 	return &resolvedWorkflowMaterialization{
-		snapshot:           snapshot,
-		workflowSource:     workflowSource,
-		firstTaskAssignee:  "", // legacy: CreateWorkflowInstance uses Subject.MembershipID (creator)
-		mode:               adhocapp.MaterializationModeLegacy,
-		effectiveWorkflowN: 1,
+		snapshot:             snapshot,
+		documentRequirements: documentRequirements,
+		workflowSource:       workflowSource,
+		firstTaskAssignee:    "", // legacy: CreateWorkflowInstance uses Subject.MembershipID (creator)
+		mode:                 adhocapp.MaterializationModeLegacy,
+		effectiveWorkflowN:   1,
 	}, nil
 }
 

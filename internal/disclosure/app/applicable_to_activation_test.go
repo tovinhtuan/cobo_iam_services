@@ -18,6 +18,7 @@ func pinnedWorkflowManifest() *WorkflowPublicationManifest {
 			{WorkflowStepDTO: WorkflowStepDTO{
 				StepID: "s1", Stage: "A", DepartmentID: "d1",
 				AssigneeRoleIds: []string{"r1"}, ProcessingDays: 1, DueRule: "T+1",
+				Description: "Mô tả bước A",
 			}},
 		},
 	}
@@ -327,11 +328,84 @@ func baseActivateDetail(cfg *TemplateDeadlineConfig) *DisclosureTypeDTO {
 					map[string]any{
 						"step_id": "review", "stage": "Review", "department_id": "dept-finance",
 						"assignee_role_ids": []any{"role-reviewer"}, "processing_days": float64(2),
-						"display_order": float64(1), "documents": []any{},
+						"display_order": float64(1), "description": "Mo ta Review", "documents": []any{},
 					},
 				},
 			},
 		}},
+	}
+}
+
+func TestActivateTypeVersion_RejectsSemanticEmptyDescription(t *testing.T) {
+	detail := baseActivateDetail(&TemplateDeadlineConfig{
+		FrequencyUnit: "daily", ApplicableTo: "2099-12-31",
+		ApplicableFromMode: ApplicableFromModeSpecific, ApplicableFromSlot: "2026-01-01",
+		DeadlineDays: 5,
+	})
+	// Overwrite steps with empty description.
+	detail.Blocks = []TemplateBlockDTO{{
+		BlockID: "block-workflow", BlockKey: "enterprise_workflow", BlockType: "rich_text",
+		Config: map[string]any{
+			"steps": []any{
+				map[string]any{
+					"step_id": "review", "stage": "Review", "department_id": "dept-finance",
+					"assignee_role_ids": []any{"role-reviewer"}, "processing_days": float64(2),
+					"display_order": float64(1), "description": "", "documents": []any{},
+				},
+			},
+		},
+	}}
+	svc, repo := newActivateApplicableToService(detail)
+	_, err := svc.ActivateTypeVersion(context.Background(), ActivateTypeVersionRequest{
+		Subject: Subject{UserID: "u1", MembershipID: "m1", CompanyID: "c1"},
+		TypeID: "dt-at-act", VersionNo: 2,
+	})
+	if err == nil {
+		t.Fatal("expected description reject")
+	}
+	he, ok := err.(*perr.HTTPError)
+	if !ok || he.HTTPStatus != http.StatusUnprocessableEntity || string(he.Code) != ActivationBlockerWorkflowStepDescriptionRequired {
+		t.Fatalf("err=%v", err)
+	}
+	if repo.activated {
+		t.Fatal("must not activate")
+	}
+}
+
+func TestActivateTypeVersion_SameRootNewVersionRequiresDescription(t *testing.T) {
+	// Simulates same-root v2 activate: structural OK but empty description → blocked (no grandfather).
+	detail := baseActivateDetail(&TemplateDeadlineConfig{
+		FrequencyUnit: "daily", ApplicableTo: "2099-12-31",
+		ApplicableFromMode: ApplicableFromModeSpecific, ApplicableFromSlot: "2026-01-01",
+		DeadlineDays: 5,
+	})
+	detail.VersionNo = 2
+	detail.Blocks[0].Config["steps"] = []any{
+		map[string]any{
+			"step_id": "review", "stage": "Review", "department_id": "dept-finance",
+			"assignee_role_ids": []any{"role-reviewer"}, "processing_days": float64(2),
+			"display_order": float64(1), "description": "   ", "documents": []any{},
+		},
+	}
+	svc, _ := newActivateApplicableToService(detail)
+	_, err := svc.ActivateTypeVersion(context.Background(), ActivateTypeVersionRequest{
+		Subject: Subject{UserID: "u1", MembershipID: "m1", CompanyID: "c1"},
+		TypeID: "dt-at-act", VersionNo: 2,
+	})
+	if err == nil {
+		t.Fatal("same-root v2 with empty description must block")
+	}
+}
+
+func TestCloneEmptyDescriptionLifecycle_ActivateBlockedAfterDraftAllowed(t *testing.T) {
+	// Clone/draft path: ValidateCompanyWorkflowOverrideSteps allows empty;
+	// activation path rejects — mirrors clone draft → activate contract.
+	steps := []WorkflowStepDTO{{StepID: "s1", Stage: "Cloned", ProcessingDays: 1, Description: ""}}
+	if err := ValidateCompanyWorkflowOverrideSteps(steps); err != nil {
+		t.Fatalf("draft/clone save must allow empty description: %v", err)
+	}
+	if err := ValidateCompanyWorkflowOverrideStepDescriptionsForActivation(steps); err == nil {
+		t.Fatal("activate/approve must block empty description")
 	}
 }
 

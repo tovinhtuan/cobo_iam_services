@@ -189,7 +189,7 @@ func seedOverride(t *testing.T, repo *inmemory.Repository, companyID, typeID, ba
 			TypeID:  typeID,
 			Publish: true,
 			Workflow: []disclosureapp.WorkflowStepDTO{
-				{StepID: "seed-step-1", Stage: "Seed Step", DepartmentID: "d1", AssigneeRoleIds: []string{"reviewer"}, DisplayOrder: 1, Documents: []disclosureapp.WorkflowDocumentDTO{}},
+				{StepID: "seed-step-1", Stage: "Seed Step", DepartmentID: "d1", AssigneeRoleIds: []string{"reviewer"}, DisplayOrder: 1, Description: "Seed description", Documents: []disclosureapp.WorkflowDocumentDTO{}},
 			},
 		})
 	if err != nil {

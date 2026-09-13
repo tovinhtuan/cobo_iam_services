@@ -39,6 +39,7 @@ func TestGlobalWorkflowChain(t *testing.T) {
 				DueRule:         "T+5",
 				ProcessingDays:  5,
 				DisplayOrder:    1,
+				Description:     "Mo ta Review",
 			},
 		},
 	})
