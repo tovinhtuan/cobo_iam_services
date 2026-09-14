@@ -1,0 +1,94 @@
+{
+  "DEV_UPLOAD_AUDIT": "PASS",
+  "DEV_DELETE_AUDIT": "PASS",
+  "DEV_REPLACE_AUDIT": "PASS",
+  "DEV_MULTI_REPLACE_LINEAGE": "AUTOMATED_ONLY",
+  "DEV_CROSS_COMPANY_READ_DENIED": "PASS",
+  "DEV_CROSS_COMPANY_UPLOAD_DENIED": "PASS",
+  "DEV_CROSS_COMPANY_DELETE_DENIED": "PASS",
+  "DEV_CROSS_COMPANY_REPLACE_DENIED": "PASS",
+  "DEV_STORAGE_PATH_LEAK_COUNT": 0,
+  "DEV_FAILED_MUTATION_SUCCESS_AUDIT_COUNT": 0,
+  "DEV_COMPLETED_IMMUTABILITY": "NOT_AVAILABLE",
+  "DEV_B3_GATE_REGRESSION": "PASS",
+  "DEV_B4_UX_REGRESSION": "PASS",
+  "DEV_B4_HARD_RELOAD_REGRESSION": "PASS",
+  "REACT_RUNTIME_ERRORS": 0,
+  "UNHANDLED_BROWSER_ERRORS": 0,
+  "BE_HEALTH": "PASS",
+  "WORKER_HEALTH": "PASS",
+  "API_UNEXPECTED_5XX": 0,
+  "recordId": "01a09bb6-26f3-77d6-af3b-1030ca271540",
+  "stepCode": "step-001",
+  "workflowInstanceId": "01a09bb6-26f8-76c3-b711-5c03adf9245e",
+  "upload": {
+    "status": 201,
+    "fileA": "wff_ea40cced301d40d9b2126c196bc78b99",
+    "upAudits": 1,
+    "upMeta": {
+      "file_size": 13,
+      "mime_type": "application/pdf",
+      "step_code": "step-001",
+      "source_doc_id": "b5-qa-doc",
+      "requirement_name": "B5 QA Requirement",
+      "original_file_name": "b5-smoke.pdf",
+      "fulfillment_file_id": "wff_ea40cced301d40d9b2126c196bc78b99",
+      "disclosure_record_id": "01a09bb6-26f3-77d6-af3b-1030ca271540",
+      "workflow_instance_id": "01a09bb6-26f8-76c3-b711-5c03adf9245e",
+      "requirement_snapshot_id": "b5qa-1789351939671"
+    },
+    "upDb": [
+      "ACTIVE\tworkflow-step-document-fulfillments/c_001/wff_ea40cced301d40d9b2126c196bc78b99/b5-smoke.pdf"
+    ]
+  },
+  "replace": {
+    "status": 200,
+    "fileB": "wff_5256262f94e646fdb9edb19ee8e9d576",
+    "repAudits": 1,
+    "repMeta": {
+      "file_size": 9,
+      "mime_type": "application/pdf",
+      "step_code": "step-001",
+      "new_file_id": "wff_5256262f94e646fdb9edb19ee8e9d576",
+      "old_file_id": "wff_ea40cced301d40d9b2126c196bc78b99",
+      "lifecycle_new": "ACTIVE",
+      "lifecycle_old_to": "SUPERSEDED",
+      "lifecycle_old_from": "ACTIVE",
+      "original_file_name": "b5-smoke-b.pdf",
+      "fulfillment_file_id": "wff_5256262f94e646fdb9edb19ee8e9d576",
+      "disclosure_record_id": "01a09bb6-26f3-77d6-af3b-1030ca271540",
+      "workflow_instance_id": "01a09bb6-26f8-76c3-b711-5c03adf9245e",
+      "old_original_file_name": "b5-smoke.pdf",
+      "requirement_snapshot_id": "b5qa-1789351939671"
+    },
+    "lineage": [
+      "wff_5256262f94e646fdb9edb19ee8e9d576\tACTIVE\twff_ea40cced301d40d9b2126c196bc78b99\tNULL",
+      "wff_ea40cced301d40d9b2126c196bc78b99\tSUPERSEDED\tNULL\twff_5256262f94e646fdb9edb19ee8e9d576"
+    ],
+    "diskA": "b5-smoke.pdf",
+    "diskB": "b5-smoke-b.pdf"
+  },
+  "delete": {
+    "status": 204,
+    "delAudits": 1,
+    "delDb": [
+      "DELETED"
+    ],
+    "diskBAfter": "b5-smoke-b.pdf"
+  },
+  "crossCompanyLogin": "user@example.com",
+  "cross": {
+    "get": 403,
+    "up": 403,
+    "del": 403,
+    "rep": 403,
+    "beforeFailAudits": [
+      "0"
+    ]
+  },
+  "badUp": 401,
+  "complete": {
+    "status": 422,
+    "code": "WORKFLOW_STEP_REQUIRED_DOCUMENT_MISSING"
+  }
+}

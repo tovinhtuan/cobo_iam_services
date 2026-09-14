@@ -1,0 +1,18 @@
+{
+  "RELEASE_BE_RESTART": "PASS",
+  "RELEASE_WORKER_RESTART_HEALTH": "PASS",
+  "RELEASE_FILE_METADATA_PERSISTENCE": "PASS",
+  "RELEASE_BINARY_PERSISTENCE": "PASS",
+  "RELEASE_POST_RESTART_DOWNLOAD": "PASS",
+  "RELEASE_WORKER_EVIDENCE_MUTATION_COUNT": 0,
+  "listStatus": 200,
+  "stillPresent": true,
+  "life": [
+    "ACTIVE"
+  ],
+  "disk": "b.pdf",
+  "dlStatus": 200,
+  "activeCount": [
+    "1"
+  ]
+}

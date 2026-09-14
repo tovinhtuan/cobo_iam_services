@@ -42,11 +42,15 @@ var extensionAllowedMIME = map[string]map[string]struct{}{
 // Must never be used alone as a storage path authority.
 func SanitizeFileName(name string) string {
 	name = strings.TrimSpace(name)
+	// Normalize Windows separators before filepath.Base (Linux Base does not strip `\`).
+	name = strings.ReplaceAll(name, "\\", "/")
 	name = filepath.Base(name)
 	name = strings.ReplaceAll(name, "..", "")
 	name = strings.ReplaceAll(name, "\n", "")
 	name = strings.ReplaceAll(name, "\r", "")
 	name = strings.ReplaceAll(name, `"`, "")
+	name = strings.ReplaceAll(name, "/", "")
+	name = strings.ReplaceAll(name, "\\", "")
 	name = strings.TrimSpace(name)
 	if name == "" || name == "." || name == string(filepath.Separator) {
 		return ""

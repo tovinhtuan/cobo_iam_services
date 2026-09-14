@@ -449,7 +449,7 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 		fulfillmentFiles = wffmysql.NewRepository(pool)
 	}
 	fulfillmentBridge := &wff.DeadlineBridge{Repo: deadlineAlertsRepo, Auth: authSvc}
-	fulfillmentSvc := wff.NewService(fulfillmentBridge, workflowRepo, fulfillmentFiles, fulfillmentDisk, log)
+	fulfillmentSvc := wff.NewService(fulfillmentBridge, workflowRepo, fulfillmentFiles, fulfillmentDisk, log).WithAudit(auditSvc)
 	fulfillmentHandler := wffhttp.NewHandler(log, fulfillmentSvc, tokenManager)
 	var idemStore idempotency.Store
 	var adhocSvc adhocapp.Service

@@ -143,6 +143,9 @@ func (r *Repository) UploadInTx(ctx context.Context, in wff.UploadTxInput) error
 	if count >= maxActive {
 		return wff.ErrActiveLimitReached{}
 	}
+	if err := wff.ValidateInitialLifecycle(in.File.LifecycleStatus); err != nil {
+		return err
+	}
 	if err := insertFile(ctx, tx, in.File); err != nil {
 		return err
 	}
@@ -180,6 +183,12 @@ func (r *Repository) ReplaceInTx(ctx context.Context, in wff.ReplaceTxInput) err
 		old.WorkflowInstanceID != in.WorkflowInstanceID ||
 		old.StepCode != in.StepCode {
 		return wff.ErrNotActive{Reason: "file context mismatch"}
+	}
+	if err := wff.ValidateTransition(old.LifecycleStatus, wff.LifecycleSuperseded); err != nil {
+		return err
+	}
+	if err := wff.ValidateInitialLifecycle(in.NewFile.LifecycleStatus); err != nil {
+		return err
 	}
 
 	in.NewFile.SupersedesFileID = old.ID
@@ -226,6 +235,9 @@ func (r *Repository) DeleteInTx(ctx context.Context, in wff.DeleteTxInput) error
 	}
 	if old.WorkflowInstanceID != in.WorkflowInstanceID || old.StepCode != in.StepCode {
 		return wff.ErrNotActive{Reason: "file context mismatch"}
+	}
+	if err := wff.ValidateTransition(old.LifecycleStatus, wff.LifecycleDeleted); err != nil {
+		return err
 	}
 	res, err := tx.ExecContext(ctx, `
 		UPDATE workflow_step_document_fulfillment_files

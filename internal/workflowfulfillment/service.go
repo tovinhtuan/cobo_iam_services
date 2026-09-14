@@ -14,12 +14,13 @@ import (
 	"github.com/google/uuid"
 )
 
-// Service implements B2 runtime document fulfillment.
+// Service implements B2 runtime document fulfillment (+ B5 audit/lifecycle hardening).
 type Service struct {
 	deadline  DeadlineContext
 	snapshots SnapshotReader
 	files     Repository
 	storage   ObjectStorage
+	audit     Auditor
 	now       func() time.Time
 	log       *slog.Logger
 }
@@ -42,6 +43,12 @@ func NewService(deadline DeadlineContext, snapshots SnapshotReader, files Reposi
 // WithNow overrides the clock (tests).
 func (s *Service) WithNow(now func() time.Time) *Service {
 	s.now = now
+	return s
+}
+
+// WithAudit wires platform audit (B5). Nil-safe: without audit, mutations still succeed.
+func (s *Service) WithAudit(a Auditor) *Service {
+	s.audit = a
 	return s
 }
 
@@ -189,11 +196,30 @@ func (s *Service) Upload(ctx context.Context, sub Subject, recordID, stepCode, r
 			s.log.Error("fulfillment compensating delete failed",
 				slog.String("storage_key_prefix", StorageNamespace),
 				slog.String("file_id", fileID),
+				slog.String("disclosure_record_id", meta.wf.RecordID),
+				slog.String("workflow_instance_id", meta.wf.WorkflowInstanceID),
+				slog.String("step_code", meta.stepCode),
+				slog.String("requirement_snapshot_id", snap.ID),
 				slog.String("err", delErr.Error()),
 			)
 		}
 		return nil, mapRepoErr(err)
 	}
+	s.appendFulfillmentAudit(ctx, AuditActionUpload, fileID, sub, fulfillmentAuditContext{
+		CompanyID:             sub.CompanyID,
+		DisclosureRecordID:    meta.wf.RecordID,
+		WorkflowInstanceID:    meta.wf.WorkflowInstanceID,
+		StepCode:              meta.stepCode,
+		RequirementSnapshotID: snap.ID,
+		ActorUserID:           sub.UserID,
+		ActorMembershipID:     sub.MembershipID,
+		SourceDocID:           snap.SourceDocID,
+		RequirementName:       snap.Name,
+	}, map[string]any{
+		"original_file_name": fileName,
+		"mime_type":          contentType,
+		"file_size":          written,
+	})
 	return &UploadResult{File: toFileDTO(row)}, nil
 }
 
@@ -248,7 +274,26 @@ func (s *Service) Delete(ctx context.Context, sub Subject, recordID, stepCode, f
 		DeletedAt:           s.now().UTC(),
 		RequireNotCompleted: true,
 	})
-	return mapRepoErr(err)
+	if err != nil {
+		return mapRepoErr(err)
+	}
+	// Logical delete only — no filesystem unlink on success path.
+	s.appendFulfillmentAudit(ctx, AuditActionDelete, fileID, sub, fulfillmentAuditContext{
+		CompanyID:             sub.CompanyID,
+		DisclosureRecordID:    meta.wf.RecordID,
+		WorkflowInstanceID:    meta.wf.WorkflowInstanceID,
+		StepCode:              meta.stepCode,
+		RequirementSnapshotID: f.RequirementSnapshotID,
+		ActorUserID:           sub.UserID,
+		ActorMembershipID:     sub.MembershipID,
+	}, map[string]any{
+		"original_file_name": f.OriginalFileName,
+		"mime_type":          f.MimeType,
+		"file_size":          f.FileSize,
+		"lifecycle_from":     LifecycleActive,
+		"lifecycle_to":       LifecycleDeleted,
+	})
+	return nil
 }
 
 func (s *Service) Replace(ctx context.Context, sub Subject, recordID, stepCode, fileID, fileName, contentType string, body io.Reader, sizeHint int64) (*UploadResult, error) {
@@ -321,11 +366,35 @@ func (s *Service) Replace(ctx context.Context, sub Subject, recordID, stepCode, 
 			s.log.Error("fulfillment replace compensating delete failed",
 				slog.String("storage_key_prefix", StorageNamespace),
 				slog.String("file_id", newID),
+				slog.String("disclosure_record_id", meta.wf.RecordID),
+				slog.String("workflow_instance_id", meta.wf.WorkflowInstanceID),
+				slog.String("step_code", meta.stepCode),
+				slog.String("requirement_snapshot_id", old.RequirementSnapshotID),
+				slog.String("old_file_id", old.ID),
 				slog.String("err", delErr.Error()),
 			)
 		}
 		return nil, mapRepoErr(err)
 	}
+	s.appendFulfillmentAudit(ctx, AuditActionReplace, newID, sub, fulfillmentAuditContext{
+		CompanyID:             sub.CompanyID,
+		DisclosureRecordID:    meta.wf.RecordID,
+		WorkflowInstanceID:    meta.wf.WorkflowInstanceID,
+		StepCode:              meta.stepCode,
+		RequirementSnapshotID: old.RequirementSnapshotID,
+		ActorUserID:           sub.UserID,
+		ActorMembershipID:     sub.MembershipID,
+	}, map[string]any{
+		"old_file_id":            old.ID,
+		"new_file_id":            newID,
+		"original_file_name":     fileName,
+		"mime_type":              contentType,
+		"file_size":              written,
+		"old_original_file_name": old.OriginalFileName,
+		"lifecycle_old_from":     LifecycleActive,
+		"lifecycle_old_to":       LifecycleSuperseded,
+		"lifecycle_new":          LifecycleActive,
+	})
 	return &UploadResult{File: toFileDTO(row)}, nil
 }
 
@@ -415,8 +484,13 @@ func mapRepoErr(err error) error {
 	if errors.As(err, &notActive) {
 		return perr.NewHTTPError(http.StatusNotFound, perr.CodeDocumentFulfillmentFileNotFound, "fulfillment file not found", nil)
 	}
+	var badLife ErrInvalidLifecycleTransition
+	if errors.As(err, &badLife) {
+		return perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "invalid fulfillment lifecycle transition", nil)
+	}
 	if strings.Contains(err.Error(), "requirement snapshot not found") {
 		return perr.NewHTTPError(http.StatusNotFound, perr.CodeDocumentRequirementSnapshotNotFound, "document requirement snapshot not found", nil)
 	}
-	return err
+	// Never return raw SQL / filesystem internals to API clients.
+	return perr.NewHTTPError(http.StatusInternalServerError, perr.CodeInternal, "fulfillment operation failed", err)
 }

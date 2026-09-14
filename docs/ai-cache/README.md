@@ -1,3 +1,16 @@
+## Tenant workflow step evidence B6 — Full V1 release verification (2026-09-14)
+
+- Pointer: `tenant-workflow-step-evidence-b6-full-v1-release-verification-2026-09-14/00-pointer.md`
+- Full: sibling FE pack
+- Verification-only; EVIDENCE_V1_DEV_DONE=true — WAIT_FOR_PO_CONFIRMATION
+
+## Tenant workflow step evidence B5 — Audit / lifecycle / security hardening (2026-09-14)
+
+- Pointer: `tenant-workflow-step-evidence-b5-audit-security-hardening-2026-09-14/00-pointer.md`
+- Full: sibling FE `../cobo_web_design/docs/ai-cache/tenant-workflow-step-evidence-b5-audit-security-hardening-2026-09-14/`
+- BE only: audit upload/delete/replace + lifecycle + security/concurrency; no FE/DB
+- BE_SOURCE_CHANGED=true; READY_FOR_B6=true — WAIT_FOR_PO_CONFIRMATION
+
 ## Tenant workflow step evidence B4 — Tenant runtime fulfillment UX (2026-09-14)
 
 - Pointer: `tenant-workflow-step-evidence-b4-tenant-ux-2026-09-14/00-pointer.md`
