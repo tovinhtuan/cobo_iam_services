@@ -1,0 +1,56 @@
+{
+  "recordId": "01a0b22e-d73a-72ec-823b-c93fc15da57c",
+  "wi": "01a0b22e-d73f-717c-9985-67022d0155ed",
+  "step": "step-001",
+  "snapCount": 3,
+  "reqCount": 3,
+  "canUpload": true,
+  "reqs": [
+    {
+      "requirement_snapshot_id": "01a0b22e-d73f-7188-8231-5191a9052ae3",
+      "source_doc_id": "qa-ev-r1-obligation-memo",
+      "name": "Bản ghi nhận nghĩa vụ CBTT",
+      "required": true,
+      "ordinal": 0,
+      "template_file": null,
+      "files": [],
+      "capabilities": {
+        "can_upload": true,
+        "can_download": true,
+        "can_delete": true,
+        "can_replace": true
+      }
+    },
+    {
+      "requirement_snapshot_id": "01a0b22e-d73f-718e-b0f3-eb945a25077f",
+      "source_doc_id": "qa-ev-r2-draft-disclosure",
+      "name": "Bản nháp công bố thông tin",
+      "required": true,
+      "ordinal": 1,
+      "template_file": null,
+      "files": [],
+      "capabilities": {
+        "can_upload": true,
+        "can_download": true,
+        "can_delete": true,
+        "can_replace": true
+      }
+    },
+    {
+      "requirement_snapshot_id": "01a0b22e-d73f-7194-a1ee-04f1587261fc",
+      "source_doc_id": "qa-ev-r3-supporting-note",
+      "name": "Ghi chú hỗ trợ (không bắt buộc)",
+      "required": false,
+      "ordinal": 2,
+      "template_file": null,
+      "files": [],
+      "capabilities": {
+        "can_upload": true,
+        "can_download": true,
+        "can_delete": true,
+        "can_replace": true
+      }
+    }
+  ],
+  "stepsStatus": 200
+}

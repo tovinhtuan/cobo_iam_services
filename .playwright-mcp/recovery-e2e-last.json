@@ -1,0 +1,301 @@
+{
+  "recordId": "01a0b22e-d73a-72ec-823b-c93fc15da57c",
+  "wi": "01a0b22e-d73f-717c-9985-67022d0155ed",
+  "step": "step-001",
+  "complete_missing": {
+    "status": 422,
+    "code": "WORKFLOW_STEP_REQUIRED_DOCUMENT_MISSING",
+    "body": {
+      "error": {
+        "code": "WORKFLOW_STEP_REQUIRED_DOCUMENT_MISSING",
+        "message": "required document fulfillment missing for workflow step",
+        "details": {
+          "missing_requirements": [
+            {
+              "name": "Bản ghi nhận nghĩa vụ CBTT",
+              "requirement_snapshot_id": "01a0b22e-d73f-7188-8231-5191a9052ae3",
+              "source_doc_id": "qa-ev-r1-obligation-memo"
+            },
+            {
+              "name": "Bản nháp công bố thông tin",
+              "requirement_snapshot_id": "01a0b22e-d73f-718e-b0f3-eb945a25077f",
+              "source_doc_id": "qa-ev-r2-draft-disclosure"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "upload_r1": {
+    "status": 201,
+    "body": {
+      "file": {
+        "file_id": "wff_306cf68853df49fbb052b2ddbd9c2da9",
+        "file_name": "evidence-r1.pdf",
+        "mime_type": "application/pdf",
+        "file_size": 20,
+        "uploaded_at": "2026-09-18T01:44:43.980371007Z",
+        "uploaded_by": "u_admin_dn"
+      }
+    }
+  },
+  "complete_after_r1": {
+    "status": 422,
+    "code": "WORKFLOW_STEP_REQUIRED_DOCUMENT_MISSING",
+    "body": {
+      "error": {
+        "code": "WORKFLOW_STEP_REQUIRED_DOCUMENT_MISSING",
+        "message": "required document fulfillment missing for workflow step",
+        "details": {
+          "missing_requirements": [
+            {
+              "name": "Bản nháp công bố thông tin",
+              "requirement_snapshot_id": "01a0b22e-d73f-718e-b0f3-eb945a25077f",
+              "source_doc_id": "qa-ev-r2-draft-disclosure"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "upload_r2": {
+    "status": 201
+  },
+  "complete_ok": {
+    "status": 200,
+    "body": {
+      "record_id": "01a0b22e-d73a-72ec-823b-c93fc15da57c",
+      "current_step_code": "",
+      "steps": [
+        {
+          "step_code": "step-001",
+          "step_name": "Xác định nghĩa vụ",
+          "order": 1,
+          "department_id": "dept-001",
+          "department_name": "Phòng Pháp chế",
+          "company_department_resolution": "MISSING",
+          "reminder_fallback_recipient_type": "COMPANY_ADMIN",
+          "company_admin_recipient_available": true,
+          "planned_start_date": "2026-09-18",
+          "planned_end_date": "2026-09-19",
+          "duration_days": 2,
+          "status": "completed",
+          "is_current_by_time": false,
+          "is_completed": true,
+          "is_locked": true,
+          "is_future": false,
+          "is_delayed": false,
+          "completed_at": "2026-09-18T01:44:45Z",
+          "delay_days": 0,
+          "available_actions": null,
+          "lock_reason": "completed",
+          "timeliness_status": "ON_TIME"
+        },
+        {
+          "step_code": "step-002",
+          "step_name": "Chuẩn bị dữ liệu",
+          "order": 2,
+          "department_id": "dept-003",
+          "department_name": "Phòng Kế toán",
+          "company_department_resolution": "MISSING",
+          "reminder_fallback_recipient_type": "COMPANY_ADMIN",
+          "company_admin_recipient_available": true,
+          "planned_start_date": "2026-09-20",
+          "planned_end_date": "2026-09-29",
+          "duration_days": 10,
+          "status": "not_started",
+          "is_current_by_time": false,
+          "is_completed": false,
+          "is_locked": true,
+          "is_future": true,
+          "is_delayed": false,
+          "delay_days": 0,
+          "available_actions": null,
+          "lock_reason": "not_started",
+          "timeliness_status": null
+        },
+        {
+          "step_code": "step-003",
+          "step_name": "Rà soát pháp lý",
+          "order": 3,
+          "department_id": "dept-001",
+          "department_name": "Phòng Pháp chế",
+          "company_department_resolution": "MISSING",
+          "reminder_fallback_recipient_type": "COMPANY_ADMIN",
+          "company_admin_recipient_available": true,
+          "planned_start_date": "2026-09-30",
+          "planned_end_date": "2026-10-14",
+          "duration_days": 15,
+          "status": "not_started",
+          "is_current_by_time": false,
+          "is_completed": false,
+          "is_locked": true,
+          "is_future": true,
+          "is_delayed": false,
+          "delay_days": 0,
+          "available_actions": null,
+          "lock_reason": "not_started",
+          "timeliness_status": null
+        },
+        {
+          "step_code": "step-004",
+          "step_name": "Phê duyệt nội bộ",
+          "order": 4,
+          "department_id": "dept-001",
+          "department_name": "Phòng Pháp chế",
+          "company_department_resolution": "MISSING",
+          "reminder_fallback_recipient_type": "COMPANY_ADMIN",
+          "company_admin_recipient_available": true,
+          "planned_start_date": "2026-10-15",
+          "planned_end_date": "2026-11-01",
+          "duration_days": 18,
+          "status": "not_started",
+          "is_current_by_time": false,
+          "is_completed": false,
+          "is_locked": true,
+          "is_future": true,
+          "is_delayed": false,
+          "delay_days": 0,
+          "available_actions": null,
+          "lock_reason": "not_started",
+          "timeliness_status": null
+        },
+        {
+          "step_code": "step-005",
+          "step_name": "Công bố/Báo cáo",
+          "order": 5,
+          "department_id": "dept-002",
+          "department_name": "Phòng Quan hệ cổ đông (IR)",
+          "company_department_resolution": "MISSING",
+          "reminder_fallback_recipient_type": "COMPANY_ADMIN",
+          "company_admin_recipient_available": true,
+          "planned_start_date": "2026-11-02",
+          "planned_end_date": "2026-11-21",
+          "duration_days": 20,
+          "status": "not_started",
+          "is_current_by_time": false,
+          "is_completed": false,
+          "is_locked": true,
+          "is_future": true,
+          "is_delayed": false,
+          "delay_days": 0,
+          "available_actions": null,
+          "lock_reason": "not_started",
+          "timeliness_status": null
+        },
+        {
+          "step_code": "step-006",
+          "step_name": "Lưu hồ sơ",
+          "order": 6,
+          "department_id": "dept-001",
+          "department_name": "Phòng Pháp chế",
+          "company_department_resolution": "MISSING",
+          "reminder_fallback_recipient_type": "COMPANY_ADMIN",
+          "company_admin_recipient_available": true,
+          "planned_start_date": "2026-11-22",
+          "planned_end_date": "2026-12-12",
+          "duration_days": 21,
+          "status": "not_started",
+          "is_current_by_time": false,
+          "is_completed": false,
+          "is_locked": true,
+          "is_future": true,
+          "is_delayed": false,
+          "delay_days": 0,
+          "available_actions": null,
+          "lock_reason": "not_started",
+          "timeliness_status": null
+        }
+      ],
+      "timeliness_status": "WITHIN_DEADLINE",
+      "timeliness_deadline": "2026-12-12"
+    }
+  },
+  "files": {
+    "error": "mysql: [Warning] Using a password on the command line interface can be insecure.\nERROR 1054 (42S22) at line 1: Unknown column 'file_id' in 'field list'\n"
+  },
+  "wi_after": [
+    "step-001\tin_progress"
+  ],
+  "audit_tables": [
+    "audit_logs"
+  ],
+  "audit_audit_logs": [
+    "16"
+  ],
+  "legacy": {
+    "status": 200,
+    "n": 0
+  },
+  "after_reqs": {
+    "record_id": "01a0b22e-d73a-72ec-823b-c93fc15da57c",
+    "workflow_instance_id": "01a0b22e-d73f-717c-9985-67022d0155ed",
+    "step_code": "step-001",
+    "completed": true,
+    "requirements": [
+      {
+        "requirement_snapshot_id": "01a0b22e-d73f-7188-8231-5191a9052ae3",
+        "source_doc_id": "qa-ev-r1-obligation-memo",
+        "name": "Bản ghi nhận nghĩa vụ CBTT",
+        "required": true,
+        "ordinal": 0,
+        "template_file": null,
+        "files": [
+          {
+            "file_id": "wff_306cf68853df49fbb052b2ddbd9c2da9",
+            "file_name": "evidence-r1.pdf",
+            "mime_type": "application/pdf",
+            "file_size": 20,
+            "uploaded_at": "2026-09-18T01:44:43.98Z",
+            "uploaded_by": "u_admin_dn"
+          }
+        ],
+        "capabilities": {
+          "can_upload": false,
+          "can_download": true,
+          "can_delete": false,
+          "can_replace": false
+        }
+      },
+      {
+        "requirement_snapshot_id": "01a0b22e-d73f-718e-b0f3-eb945a25077f",
+        "source_doc_id": "qa-ev-r2-draft-disclosure",
+        "name": "Bản nháp công bố thông tin",
+        "required": true,
+        "ordinal": 1,
+        "template_file": null,
+        "files": [
+          {
+            "file_id": "wff_5e67e747374f492189fa1bab2c926aea",
+            "file_name": "evidence-r2.pdf",
+            "mime_type": "application/pdf",
+            "file_size": 20,
+            "uploaded_at": "2026-09-18T01:44:44.749Z",
+            "uploaded_by": "u_admin_dn"
+          }
+        ],
+        "capabilities": {
+          "can_upload": false,
+          "can_download": true,
+          "can_delete": false,
+          "can_replace": false
+        }
+      },
+      {
+        "requirement_snapshot_id": "01a0b22e-d73f-7194-a1ee-04f1587261fc",
+        "source_doc_id": "qa-ev-r3-supporting-note",
+        "name": "Ghi chú hỗ trợ (không bắt buộc)",
+        "required": false,
+        "ordinal": 2,
+        "template_file": null,
+        "files": [],
+        "capabilities": {
+          "can_upload": false,
+          "can_download": true,
+          "can_delete": false,
+          "can_replace": false
+        }
+      }
+    ]
+  }
+}

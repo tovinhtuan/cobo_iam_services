@@ -1,0 +1,26 @@
+{
+  "SQL_SEEDED_REQUIREMENT_SNAPSHOTS": false,
+  "RELEASE_E2E_DIRECT_SNAPSHOT_SEED_COUNT": 0,
+  "SMOKE_ASSERT_EFFECTIVE_DOCUMENTS_GT_ZERO": true,
+  "SMOKE_ASSERT_REAL_SNAPSHOT_COUNT_GT_ZERO": true,
+  "SMOKE_ASSERT_TENANT_UPLOAD_CTA": true,
+  "SMOKE_ASSERT_REAL_TENANT_UPLOAD": true,
+  "MATERIALIZATION_PATH": "periodic_worker_CreateAndSubmitRecordWithPlannedDate",
+  "TYPE_ID": "qa-evidence-recovery-e2e-20260918",
+  "EFFECTIVE_DOCUMENT_COUNT": 3,
+  "chosen": {
+    "rid": "01a0b251-a17e-7cdc-91e9-c833c1e34797",
+    "step": "step-001",
+    "wi": "01a0b251-a183-7d1d-b2c0-6ee413d87b87",
+    "snapN": 3
+  },
+  "REAL_MATERIALIZED_SNAPSHOT_COUNT": 3,
+  "TENANT_RUNTIME_REQUIREMENT_COUNT": 3,
+  "TENANT_CAN_UPLOAD_CAPABILITY": true,
+  "REAL_UPLOAD_HTTP_STATUS": 201,
+  "complete_probe": {
+    "status": 422,
+    "code": "WORKFLOW_STEP_REQUIRED_DOCUMENT_MISSING"
+  },
+  "PHASE_SMOKE_RESULT": "PASS"
+}

@@ -1,4 +1,10 @@
 /**
+ * DEPRECATED for Evidence V1 release B1 proof.
+ * Do not use SQL INSERT into workflow_step_document_requirement_snapshots as B1 E2E proof.
+ * Canonical release smoke: recovery-authoring-real-e2e-smoke.cjs
+ * Set COBO_B6_ALLOW_LEGACY_SQL_SNAPSHOT_SEED=1 only for historical replay (not release gate).
+ */
+/**
  * B6 Full V1 Release Verification — DEV E2E smoke (safe QA fixtures).
  * Verification-only: no product source mutation.
  */
@@ -20,7 +26,14 @@ async function jfetch(url, opts = {}) {
   return { status: res.status, headers: res.headers, body, raw: text };
 }
 
+function forbidSnapshotSeed(reason) {
+  throw new Error('RELEASE_E2E_DIRECT_SNAPSHOT_SEED_FORBIDDEN: ' + reason + ' — use recovery-authoring-real-e2e-smoke.cjs');
+}
 function sshMysql(sql) {
+  if ((/INSERT\s+INTO\s+workflow_step_document_requirement_snapshots/i.test(String(sql)) || /SEED_FORBIDDEN/.test(String(sql))) && process.env.COBO_B6_ALLOW_LEGACY_SQL_SNAPSHOT_SEED !== '1') {
+    throw new Error('RELEASE_E2E_DIRECT_SNAPSHOT_SEED_FORBIDDEN: use recovery-authoring-real-e2e-smoke.cjs');
+  }
+
   const escaped = sql.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
   const cmd = `ssh -p 21239 -o BatchMode=yes root@88.216.208.0 "docker exec cobo-iam-mysql mysql -uroot -proot cobo_iam -Nse \\"${escaped}\\""`;
   try {
@@ -247,13 +260,13 @@ function passFail(cond) {
   const r3 = `b6-r3-${ts}`;
   // Clear prior QA snaps for this step to avoid pollution? Prefer insert unique ids only.
   sshMysql(
-    `INSERT INTO workflow_step_document_requirement_snapshots (id, company_id, disclosure_record_id, workflow_instance_id, step_code, source_doc_id, requirement_key, name, required, ordinal) VALUES ('${r1}', 'c_001', '${gate.rid}', '${gate.wi}', '${gate.stepCode}', 'b6-a', 'b6-a', 'B6 Required R1', 1, 0)`,
+    ``); forbidSnapshotSeed('b6-gate-r1'); sshMysql(`SELECT 1 WHERE 0 /* was seed r1 ${r1}', 'c_001', '${gate.rid}', '${gate.wi}', '${gate.stepCode}', 'b6-a', 'b6-a', 'B6 Required R1', 1, 0)`,
   );
   sshMysql(
-    `INSERT INTO workflow_step_document_requirement_snapshots (id, company_id, disclosure_record_id, workflow_instance_id, step_code, source_doc_id, requirement_key, name, required, ordinal) VALUES ('${r2}', 'c_001', '${gate.rid}', '${gate.wi}', '${gate.stepCode}', 'b6-b', 'b6-b', 'B6 Required R2', 1, 1)`,
+    `/* RELEASE_SEED_REMOVED */ SELECT 'SEED_FORBIDDEN' /* was snapshot-seed SQL (removed) */ (id, company_id, disclosure_record_id, workflow_instance_id, step_code, source_doc_id, requirement_key, name, required, ordinal) VALUES ('${r2}', 'c_001', '${gate.rid}', '${gate.wi}', '${gate.stepCode}', 'b6-b', 'b6-b', 'B6 Required R2', 1, 1)`,
   );
   sshMysql(
-    `INSERT INTO workflow_step_document_requirement_snapshots (id, company_id, disclosure_record_id, workflow_instance_id, step_code, source_doc_id, requirement_key, name, required, ordinal) VALUES ('${r3}', 'c_001', '${gate.rid}', '${gate.wi}', '${gate.stepCode}', 'b6-c', 'b6-c', 'B6 Optional R3', 0, 2)`,
+    `/* RELEASE_SEED_REMOVED */ SELECT 'SEED_FORBIDDEN' /* was snapshot-seed SQL (removed) */ (id, company_id, disclosure_record_id, workflow_instance_id, step_code, source_doc_id, requirement_key, name, required, ordinal) VALUES ('${r3}', 'c_001', '${gate.rid}', '${gate.wi}', '${gate.stepCode}', 'b6-c', 'b6-c', 'B6 Optional R3', 0, 2)`,
   );
 
   const listUrl = `${BASE}/api/v1/company/deadlines/${gate.rid}/steps/${encodeURIComponent(gate.stepCode)}/document-requirements`;
@@ -480,7 +493,7 @@ function passFail(cond) {
     const mr = `b6-mut-${ts}`;
     const src = `b6-mut-src-${ts}`;
     const ins = sshMysql(
-      `INSERT INTO workflow_step_document_requirement_snapshots (id, company_id, disclosure_record_id, workflow_instance_id, step_code, source_doc_id, requirement_key, name, required, ordinal) VALUES ('${mr}', 'c_001', '${mut.rid}', '${mut.wi}', '${mut.stepCode}', '${src}', '${src}', 'B6 Mut Req', 1, 0)`,
+      `/* RELEASE_SEED_REMOVED */ SELECT 'SEED_FORBIDDEN' /* was snapshot-seed SQL (removed) */ (id, company_id, disclosure_record_id, workflow_instance_id, step_code, source_doc_id, requirement_key, name, required, ordinal) VALUES ('${mr}', 'c_001', '${mut.rid}', '${mut.wi}', '${mut.stepCode}', '${src}', '${src}', 'B6 Mut Req', 1, 0)`,
     );
     const mList = `${BASE}/api/v1/company/deadlines/${mut.rid}/steps/${encodeURIComponent(mut.stepCode)}/document-requirements`;
     const mpA = multipart('a.pdf', '%PDF-a', 'application/pdf');

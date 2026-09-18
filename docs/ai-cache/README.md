@@ -1,3 +1,31 @@
+## Tenant generic step evidence V1.1 — G1 contract + source audit (2026-09-18)
+
+- Pack: `tenant-generic-step-evidence-v1-1-g1-contract-source-audit-2026-09-18/`
+- TABLE_STRATEGY=DEDICATED_GENERIC_EVIDENCE_TABLE (`workflow_step_evidence_files`)
+- G1_PHASE_RESULT=PASS; READY_FOR_G2=true — WAIT_FOR_PO_CONFIRMATION (NO_IMPLEMENTATION)
+
+## Tenant workflow step evidence V1 — final task completion (2026-09-18)
+
+- Pack: `tenant-workflow-step-evidence-v1-final-task-completion-2026-09-18/`
+- EVIDENCE_V1_FINAL_TASK_COMPLETION_REVIEW=PASS; TASK_COMPLETED=true; READY_FOR_USER_COMMIT=true
+- AGENT_COMMIT_ALLOWED=false; COMMIT_PERFORMED=false — WAIT_FOR_USER_COMMIT
+
+## Tenant workflow step evidence V1 — pre-commit final review (2026-09-18)
+
+- Pack: `tenant-workflow-step-evidence-v1-precommit-final-review-2026-09-18/`
+- PRE_COMMIT_FINAL_REVIEW=PASS; READY_FOR_COMMIT=true — WAIT_FOR_PO_CONFIRMATION (NO_COMMIT)
+
+## Tenant evidence authoring recovery — real materialization E2E (2026-09-18)
+
+- Pack: `tenant-evidence-authoring-data-correction-real-e2e-2026-09-18/`
+- ROOT_CAUSE=AUTHORING_EMPTY_DOCUMENTS_ZERO_SNAPSHOT corrected via QA authoring + real B1 path
+- EVIDENCE_V1_DEV_DONE restored; READY_FOR_COMMIT=true — WAIT_FOR_PO_CONFIRMATION
+
+## Tenant evidence upload runtime defect diagnosis (2026-09-18)
+
+- Pack: `tenant-evidence-upload-runtime-defect-diagnosis-2026-09-18/00-diagnosis.md`
+- Same as FE pack; SOURCE_CHANGED=false
+
 ## Tenant workflow step evidence B6 — Full V1 release verification (2026-09-14)
 
 - Pointer: `tenant-workflow-step-evidence-b6-full-v1-release-verification-2026-09-14/00-pointer.md`
