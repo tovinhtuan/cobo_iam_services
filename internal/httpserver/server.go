@@ -108,6 +108,10 @@ import (
 	wffmemory "github.com/cobo/cobo_iam_services/internal/workflowfulfillment/memory"
 	wffmysql "github.com/cobo/cobo_iam_services/internal/workflowfulfillment/mysql"
 	wffhttp "github.com/cobo/cobo_iam_services/internal/workflowfulfillment/transport/http"
+	wse "github.com/cobo/cobo_iam_services/internal/workflowstepevidence"
+	wsememory "github.com/cobo/cobo_iam_services/internal/workflowstepevidence/memory"
+	wsemysql "github.com/cobo/cobo_iam_services/internal/workflowstepevidence/mysql"
+	wsehttp "github.com/cobo/cobo_iam_services/internal/workflowstepevidence/transport/http"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -451,6 +455,13 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 	fulfillmentBridge := &wff.DeadlineBridge{Repo: deadlineAlertsRepo, Auth: authSvc}
 	fulfillmentSvc := wff.NewService(fulfillmentBridge, workflowRepo, fulfillmentFiles, fulfillmentDisk, log).WithAudit(auditSvc)
 	fulfillmentHandler := wffhttp.NewHandler(log, fulfillmentSvc, tokenManager)
+	// Generic step evidence (G2B): same DiskStorage root; distinct object-key namespace.
+	var evidenceFiles wse.Repository = wsememory.NewRepository()
+	if pool != nil {
+		evidenceFiles = wsemysql.NewRepository(pool)
+	}
+	evidenceSvc := wse.NewService(fulfillmentBridge, evidenceFiles, fulfillmentDisk, log).WithAudit(auditSvc)
+	evidenceHandler := wsehttp.NewHandler(log, evidenceSvc, tokenManager)
 	var idemStore idempotency.Store
 	var adhocSvc adhocapp.Service
 	if pool != nil {
@@ -753,7 +764,7 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 		}
 	}
 
-	return muxRegisterHealthAndIAM(mux, log, cfg, sqlDB, iamHandler, meHandler, authHandler, disclosureHandler, workflowHandler, notificationHandler, reminderHandler, adminHandler, platformCMSHandler, wdtHandler, adhocHandler, deadlineAlertsHandler, fulfillmentHandler, portalDashboardHandler, personalOpsHandler)
+	return muxRegisterHealthAndIAM(mux, log, cfg, sqlDB, iamHandler, meHandler, authHandler, disclosureHandler, workflowHandler, notificationHandler, reminderHandler, adminHandler, platformCMSHandler, wdtHandler, adhocHandler, deadlineAlertsHandler, fulfillmentHandler, evidenceHandler, portalDashboardHandler, personalOpsHandler)
 }
 
 func validateSecurityCriticalConfig(cfg config.Config) error {
@@ -801,6 +812,7 @@ func muxRegisterHealthAndIAM(
 	adhocHandler *adhochttp.Handler,
 	deadlineAlertsHandler *deadlinealertshttp.Handler,
 	fulfillmentHandler *wffhttp.Handler,
+	evidenceHandler *wsehttp.Handler,
 	portalDashboardHandler *portaldashboardhttp.Handler,
 	personalOpsHandler *personalopshttp.Handler,
 ) error {
@@ -839,6 +851,9 @@ func muxRegisterHealthAndIAM(
 	deadlineAlertsHandler.Register(mux)
 	if fulfillmentHandler != nil {
 		fulfillmentHandler.Register(mux)
+	}
+	if evidenceHandler != nil {
+		evidenceHandler.Register(mux)
 	}
 	portalDashboardHandler.Register(mux)
 	personalOpsHandler.Register(mux)

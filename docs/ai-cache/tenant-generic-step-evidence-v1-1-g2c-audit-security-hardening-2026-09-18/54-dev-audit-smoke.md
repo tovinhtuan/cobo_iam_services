@@ -1,0 +1,7 @@
+DEV audit smoke PASS
+record=01a0b04f-a5a3-763b-a5b1-efdbe006e641
+upload/delete/replace audits=1 each; download=0
+DEV_UPLOAD_AUDIT=PASS
+DEV_DELETE_AUDIT=PASS
+DEV_REPLACE_AUDIT=PASS
+DEV_DOWNLOAD_AUDIT_COUNT=0

@@ -1,0 +1,1 @@
+G2C_SERVICE_HARDENING_TEST_MATRIX=PASS — service_g2c_test.go suite

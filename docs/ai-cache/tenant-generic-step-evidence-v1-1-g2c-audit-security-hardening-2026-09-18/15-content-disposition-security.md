@@ -1,0 +1,3 @@
+# Content-Disposition
+EscapeContentDispositionFileName; handler sets attachment filename
+CONTENT_DISPOSITION_INJECTION=PASS

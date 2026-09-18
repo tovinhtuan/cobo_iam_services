@@ -89,6 +89,11 @@ const (
 	CodeWorkflowStepNotCurrent              Code = "WORKFLOW_STEP_NOT_CURRENT"
 	CodeWorkflowStepAlreadyCompleted        Code = "WORKFLOW_STEP_ALREADY_COMPLETED"
 	CodeWorkflowStepRequiredDocumentMissing Code = "WORKFLOW_STEP_REQUIRED_DOCUMENT_MISSING"
+	// G2C — generic workflow step evidence (not document fulfillment)
+	CodeWorkflowStepEvidenceFileNotFound     Code = "WORKFLOW_STEP_EVIDENCE_FILE_NOT_FOUND"
+	CodeWorkflowStepEvidenceFileTooLarge     Code = "WORKFLOW_STEP_EVIDENCE_FILE_TOO_LARGE"
+	CodeWorkflowStepEvidenceFileTypeInvalid  Code = "WORKFLOW_STEP_EVIDENCE_FILE_TYPE_INVALID"
+	CodeWorkflowStepEvidenceFileLimitReached Code = "WORKFLOW_STEP_EVIDENCE_FILE_LIMIT_REACHED"
 )
 
 // HTTPError is returned to clients as JSON { "error": { ... } }.

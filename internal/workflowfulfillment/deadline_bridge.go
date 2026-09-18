@@ -184,6 +184,12 @@ func (b *DeadlineBridge) ListStepStates(ctx context.Context, workflowInstanceID 
 	return out, nil
 }
 
+// EvaluateStepAuthority reports whether stepCode is the BE current step and/or completed.
+// Canonical helper shared by B2 fulfillment and Generic Step Evidence (G2B).
+func EvaluateStepAuthority(wf WorkflowContext, states map[string]StepState, stepCode string, now time.Time) (isCurrent, isCompleted bool, err error) {
+	return evaluateStepAuthority(wf, states, stepCode, now)
+}
+
 func evaluateStepAuthority(wf WorkflowContext, states map[string]StepState, stepCode string, now time.Time) (isCurrent, isCompleted bool, err error) {
 	stepCode = strings.TrimSpace(stepCode)
 	if stepCode == "" {

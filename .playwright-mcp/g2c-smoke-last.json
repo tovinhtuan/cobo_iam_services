@@ -1,0 +1,96 @@
+{
+  "DEV_UPLOAD_AUDIT": "PASS",
+  "DEV_DELETE_AUDIT": "PASS",
+  "DEV_REPLACE_AUDIT": "PASS",
+  "DEV_DOWNLOAD_AUDIT_COUNT": 0,
+  "DEV_ZERO_REQUIREMENT_GENERIC": "PASS",
+  "DEV_CROSS_COMPANY": "AUTOMATED_ONLY",
+  "DEV_CONTEXT_BINDING": "PASS",
+  "DEV_COMPLETED_READ_ONLY": "AUTOMATED_ONLY",
+  "DEV_GENERIC_CANNOT_SATISFY_REQUIRED_DOC": "AUTOMATED_ONLY",
+  "DEV_SUPERSEDED_BINARY_RETAINED": "PASS",
+  "DEV_DELETED_BINARY_RETAINED": "PASS",
+  "DEV_GENERIC_ERROR_DOMAIN_LEAK_COUNT": 0,
+  "DEV_BE_HEALTH": "PASS",
+  "DEV_WORKER_HEALTH": "PASS",
+  "DEV_UNEXPECTED_5XX": 0,
+  "recordId": "01a0b04f-a5a3-763b-a5b1-efdbe006e641",
+  "stepCode": "step-001",
+  "workflowInstanceId": "01a0b04f-a5a8-723d-8e6a-a00a3b219ad8",
+  "requirementSnapshotCount": 0,
+  "zeroReqList": {
+    "status": 200,
+    "canUpload": true,
+    "files": 0,
+    "snapN": 0
+  },
+  "upload": {
+    "status": 201,
+    "fileA": "wse_cc6f74505b424504912d6d39d81c1e74",
+    "upAudits": 1,
+    "upMetaKeys": [
+      "file_size",
+      "mime_type",
+      "operation",
+      "step_code",
+      "evidence_file_id",
+      "original_file_name",
+      "disclosure_record_id",
+      "workflow_instance_id"
+    ],
+    "upDb": [
+      "ACTIVE"
+    ]
+  },
+  "download": {
+    "status": 200,
+    "dlAudits": 0
+  },
+  "replace": {
+    "status": 200,
+    "fileB": "wse_7d0a8a8d2ef243cab93fe82265eda18d",
+    "repAudits": 1,
+    "repMetaKeys": [
+      "file_size",
+      "mime_type",
+      "operation",
+      "step_code",
+      "new_file_id",
+      "old_file_id",
+      "lifecycle_new",
+      "evidence_file_id",
+      "lifecycle_old_to",
+      "lifecycle_old_from",
+      "original_file_name",
+      "disclosure_record_id",
+      "workflow_instance_id",
+      "old_original_file_name"
+    ],
+    "lineage": [
+      "wse_7d0a8a8d2ef243cab93fe82265eda18d\tACTIVE",
+      "wse_cc6f74505b424504912d6d39d81c1e74\tSUPERSEDED"
+    ],
+    "diskA": true,
+    "diskB": true
+  },
+  "delete": {
+    "status": 204,
+    "delAudits": 1,
+    "delDb": [
+      "DELETED"
+    ],
+    "diskBAfter": true
+  },
+  "doubleDelete": {
+    "status": 404,
+    "code": "WORKFLOW_STEP_EVIDENCE_FILE_NOT_FOUND"
+  },
+  "DEV_DOUBLE_DELETE_ERROR": "PASS",
+  "invalidType": {
+    "status": 400,
+    "code": "WORKFLOW_STEP_EVIDENCE_FILE_TYPE_INVALID"
+  },
+  "wrongStep": {
+    "status": 404
+  }
+}

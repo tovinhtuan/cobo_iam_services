@@ -1,3 +1,36 @@
+## Tenant generic step evidence V1.1 — G5 Final Pre-Commit Review (2026-09-18)
+
+- Pointer: `tenant-generic-step-evidence-v1-1-g5-final-precommit-review-2026-09-18/`
+- Full pack: sibling cobo_web_design; READY_FOR_USER_COMMIT=true — WAIT_FOR_USER_COMMIT
+
+## Tenant generic step evidence V1.1 — G4 Full Integrated E2E + Release Verification (2026-09-18)
+
+- Pointer: `tenant-generic-step-evidence-v1-1-g4-full-release-verification-2026-09-18/00-pointer.md`
+- Full pack: sibling cobo_web_design; verification-only; READY_FOR_G5=true — WAIT_FOR_PO_CONFIRMATION
+
+## Tenant generic step evidence V1.1 — G3 Tenant UX (2026-09-18)
+
+- Pointer: sibling FE `../cobo_web_design/docs/ai-cache/tenant-generic-step-evidence-v1-1-g3-tenant-ux-2026-09-18/`
+- BE product unchanged this phase; READY_FOR_G4=true — WAIT_FOR_PO_CONFIRMATION
+
+## Tenant generic step evidence V1.1 — G2C audit/security/concurrency hardening (2026-09-18)
+
+- Pack: `tenant-generic-step-evidence-v1-1-g2c-audit-security-hardening-2026-09-18/`
+- AFTER_COMMIT_BEST_EFFORT audit upload/delete/replace; WORKFLOW_STEP_EVIDENCE_* error domain; DEV audit+retention smoke PASS
+- G2C_PHASE_RESULT=PASS; READY_FOR_G3=true — WAIT_FOR_PO_CONFIRMATION (NO_FE/NO_COMMIT)
+
+## Tenant generic step evidence V1.1 — G2B CRUD API (2026-09-18)
+
+- Pack: `tenant-generic-step-evidence-v1-1-g2b-crud-api-2026-09-18/`
+- 5 additive `/evidence-files` routes; BE capabilities; DEV smoke zero-req upload PASS
+- G2B_PHASE_RESULT=PASS; READY_FOR_G2C=true — WAIT_FOR_PO_CONFIRMATION (NO_FE/NO_AUDIT/NO_COMMIT)
+
+## Tenant generic step evidence V1.1 — G2A runtime domain (2026-09-18)
+
+- Pack: `tenant-generic-step-evidence-v1-1-g2a-runtime-domain-2026-09-18/`
+- Migration 0137 `workflow_step_evidence_files`; package `internal/workflowstepevidence`
+- G2A_PHASE_RESULT=PASS; READY_FOR_G2B=true — WAIT_FOR_PO_CONFIRMATION (NO_FE/NO_API/NO_COMMIT)
+
 ## Tenant generic step evidence V1.1 — G1 contract + source audit (2026-09-18)
 
 - Pack: `tenant-generic-step-evidence-v1-1-g1-contract-source-audit-2026-09-18/`

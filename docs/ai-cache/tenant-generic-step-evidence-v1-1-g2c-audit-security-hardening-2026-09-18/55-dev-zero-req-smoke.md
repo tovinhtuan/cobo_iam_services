@@ -1,0 +1,1 @@
+DEV_ZERO_REQUIREMENT_GENERIC=PASS snapN=0 can_upload=True

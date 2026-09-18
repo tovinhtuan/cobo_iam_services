@@ -1,0 +1,4 @@
+# Storage path
+EvidenceObjectKey server-side under namespace workflow-step-evidence
+STORAGE_PATH_SERVER_CONTROLLED=true
+FILE_PATH_TRAVERSAL_TO_OUTSIDE_NAMESPACE=false
