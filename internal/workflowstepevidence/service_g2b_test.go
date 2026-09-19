@@ -120,15 +120,17 @@ func (f *fakeEvidenceDeadline) ListStepStates(context.Context, string) (map[stri
 }
 
 func baseWF() wff.WorkflowContext {
+	// Fixed T0 so authority checks stay stable when tests freeze `now` (e.g. G2C WithNow).
+	// ProcessingDays keeps step-001 current for typical 2026 fixtures and sequential unlock.
 	return wff.WorkflowContext{
 		WorkflowInstanceID: "wi-1",
 		CompanyID:          "c_001",
 		RecordID:           "rec-1",
-		T0Date:             time.Now().UTC(),
+		T0Date:             time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC),
 		Timezone:           "Asia/Ho_Chi_Minh",
 		SnapshotJSONSteps: []workflowapp.StepSnapshot{
-			{StepCode: "step-001", StepID: "step-001"},
-			{StepCode: "step-002", StepID: "step-002"},
+			{StepCode: "step-001", StepID: "step-001", DisplayOrder: 1, ProcessingDays: 60},
+			{StepCode: "step-002", StepID: "step-002", DisplayOrder: 2, ProcessingDays: 60},
 		},
 	}
 }

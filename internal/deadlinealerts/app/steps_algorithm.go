@@ -98,7 +98,11 @@ type WorkflowInstanceContext struct {
 	Timezone           string
 }
 
-// ComputeDeadlineSteps builds step DTOs with time-based current detection.
+// ComputeDeadlineSteps builds step DTOs with sequential-unlock current detection.
+// Product contract (2026-09-19):
+//   EARLY_START_FIRST_STEP=false — step 0 stays locked until planned_start
+//   SUCCESSOR_UNLOCK_AFTER_PREDECESSOR_COMPLETION=true — after step N completes,
+//   step N+1 becomes current immediately (planned_start still used for SLA/display).
 func ComputeDeadlineSteps(
 	ctx WorkflowInstanceContext,
 	states map[string]StepRuntimeState,
@@ -135,12 +139,17 @@ func ComputeDeadlineSteps(
 
 		cls := classifyWorkflowStep(i, currentIdx, tl, st, todayLocal)
 		isCurrent := cls.isCurrent
-		isCurrentByTime := isCurrent && st.MarkedIncompleteAt == nil
+		// Calendar ∩ sequential current. Pure calendar on non-current steps would
+		// make FE treat a later window as "current" while an earlier incomplete step
+		// is still blocking. Early unlock: is_current_by_time=false but status=current.
+		inCalendarWindow := !todayLocal.Before(tl.StartDate) && !todayLocal.After(tl.EndDate)
+		isCurrentByTime := isCurrent && inCalendarWindow && st.MarkedIncompleteAt == nil
 		isFuture := cls.isFuture
 		status := cls.status
 		isLocked := cls.isLocked
 
 		var actions []string
+		// Sequential current is source of truth; is_future must already be false for current.
 		if canManage && isCurrent && !isCompleted && !isFuture {
 			actions = append(actions, "complete")
 			if st.MarkedIncompleteAt == nil {
@@ -302,42 +311,48 @@ func applyDelayShifts(
 	return out
 }
 
+// resolveCurrentStepIndex picks the actionable "current" step.
+//
+// Rules (product 2026-09-19):
+//  1. Blocking marked-incomplete step wins.
+//  2. Skip completed steps.
+//  3. First step (index 0): locked until planned_start; once at/after start
+//     (including overdue past end) it is current while incomplete.
+//  4. Successor steps: become current as soon as all predecessors are completed,
+//     without waiting for planned_start.
+//  5. Never return -1 when a successor is eligible after predecessor completion.
 func resolveCurrentStepIndex(
 	timelines []disclosureapp.StepTimeline,
 	states map[string]StepRuntimeState,
 	today time.Time,
 ) int {
-	// Blocking incomplete step first.
+	// 1. Blocking incomplete step first.
 	for i, tl := range timelines {
-		code := tl.StepID
-		st := states[code]
+		st := states[tl.StepID]
 		if st.CompletedAt != nil {
 			continue
 		}
 		if st.MarkedIncompleteAt != nil {
 			return i
 		}
-		_ = tl
 	}
-	// Time window.
+
+	// 2–4. First non-completed step with first-step calendar gate.
 	for i, tl := range timelines {
 		st := states[tl.StepID]
 		if st.CompletedAt != nil {
 			continue
 		}
-		if !today.Before(tl.StartDate) && !today.After(tl.EndDate) {
+		if i == 0 {
+			// EARLY_START_FIRST_STEP=false
+			if today.Before(tl.StartDate) {
+				return -1
+			}
 			return i
 		}
-	}
-	// Overdue: first non-completed step whose end is before today.
-	for i, tl := range timelines {
-		st := states[tl.StepID]
-		if st.CompletedAt != nil {
-			continue
-		}
-		if today.After(tl.EndDate) {
-			return i
-		}
+		// SUCCESSOR_UNLOCK_AFTER_PREDECESSOR_COMPLETION=true
+		// Predecessors are completed because we skipped CompletedAt != nil above.
+		return i
 	}
 	return -1
 }
