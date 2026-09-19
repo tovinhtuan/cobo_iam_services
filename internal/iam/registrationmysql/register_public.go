@@ -57,7 +57,7 @@ func grantRoleCompanyProfilePermissionsTx(ctx context.Context, tx *sql.Tx, roleI
 		INSERT INTO role_permissions (role_id, permission_id, status)
 		SELECT ?, p.permission_id, 'active'
 		FROM permissions p
-		WHERE p.permission_code IN ('company.view', 'company.edit', 'deadline.view')
+		WHERE p.permission_code IN ('company.view', 'company.edit', 'deadline.view', 'deadline.comment')
 		  AND p.status = 'active'
 		ON DUPLICATE KEY UPDATE status = VALUES(status)
 	`, roleID); err != nil {
@@ -161,6 +161,7 @@ func InsertCompanyWithDefaultRolesTx(ctx context.Context, tx *sql.Tx, companyID,
 	//   [0033]  workflow.* + ad_hoc_alert.read/focal_review/admin_review
 	//   [0062]  ad_hoc_alert.process_control
 	//   [0074]  deadline.view (also in grantRoleCompanyProfilePermissionsTx)
+	//   [0138]  deadline.comment (also in grantRoleCompanyProfilePermissionsTx)
 	//   [0077]  admin.membership.invite
 	//   [0079]  disclosure.auto_create.manage
 	if _, err := tx.ExecContext(ctx, `
@@ -195,6 +196,7 @@ func InsertCompanyWithDefaultRolesTx(ctx context.Context, tx *sql.Tx, companyID,
 			'ad_hoc_alert.process_control',
 			-- Deadline / calendar
 			'deadline.view',
+			'deadline.comment',
 			'deadline.create',
 			'deadline.assign',
 			'deadline.manage',

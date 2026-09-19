@@ -164,6 +164,9 @@ type Config struct {
 	WorkflowAdhocEnabled bool
 	// WORKFLOW_ADHOC_AUTOAPPROVE_ENABLED: skip focal approval step (single-stage admin-only).
 	WorkflowAdhocAutoApproveEnabled bool
+	// WORKFLOW_STEP_COMMENT_MENTIONS_ENABLED: V1.1 @Mention candidate search + can_mention.
+	// Default false — V1 comment behavior unchanged until explicitly enabled.
+	WorkflowStepCommentMentionsEnabled bool
 	// ADHOC_EMAIL_METRICS_ENABLED: emit cobo_adhoc_proposal_transition_total (Batch 5(a) / AK.3).
 	// Default true — additive-only instrumentation, zero behavioural risk.
 	AdhocEmailMetricsEnabled bool
@@ -273,6 +276,7 @@ func Load() (Config, error) {
 		WorkflowRemindersEnabled:            boolEnv("WORKFLOW_REMINDERS_ENABLED", false),
 		WorkflowAdhocEnabled:                devAwareBoolEnv("WORKFLOW_ADHOC_ENABLED", false, true),
 		WorkflowAdhocAutoApproveEnabled:     boolEnv("WORKFLOW_ADHOC_AUTOAPPROVE_ENABLED", false),
+		WorkflowStepCommentMentionsEnabled:  boolEnv("WORKFLOW_STEP_COMMENT_MENTIONS_ENABLED", false),
 		AdhocEmailMetricsEnabled:            boolEnv("ADHOC_EMAIL_METRICS_ENABLED", true),
 		PeriodicSeedingEnabled:              boolEnv("PERIODIC_SEEDING_ENABLED", false),
 		CompanyProvisionIdempotencyRequired: boolEnv("COMPANY_PROVISION_IDEMPOTENCY_REQUIRED", false),

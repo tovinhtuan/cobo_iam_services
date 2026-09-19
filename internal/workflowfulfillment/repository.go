@@ -30,11 +30,19 @@ type DeadlineContext interface {
 	AuthorizeMutation(ctx context.Context, sub Subject, recordID string) error
 }
 
+// CommentDeadlineContext extends DeadlineContext with comment-specific auth helpers.
+type CommentDeadlineContext interface {
+	DeadlineContext
+	AuthorizeComment(ctx context.Context, sub Subject) error
+	HasPermission(ctx context.Context, sub Subject, permissionCode string) (bool, error)
+}
+
 // WorkflowContext is the resolved runtime workflow for a disclosure record.
 type WorkflowContext struct {
 	WorkflowInstanceID string
 	CompanyID          string
 	RecordID           string
+	RecordStatus       string
 	T0Date             time.Time
 	Timezone           string
 	SnapshotJSONSteps  []workflowapp.StepSnapshot

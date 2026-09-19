@@ -80,6 +80,7 @@ var staticGrantPolicies = map[string]PermissionGrantPolicy{
 	"workflow.approve":                   policy("workflow.approve", "workflow", GrantTierGrantable, true, "Approve step"),
 	"workflow.confirm":                   policy("workflow.confirm", "workflow", GrantTierGrantable, true, "Confirm step"),
 	"deadline.view":                      policy("deadline.view", "deadline", GrantTierGrantable, true, "View deadlines"),
+	"deadline.comment":                   policy("deadline.comment", "deadline", GrantTierGrantable, true, "Comment on deadline workflow"),
 	"deadline.create":                    policy("deadline.create", "workflow", GrantTierGrantable, true, "Create workflow/deadline"),
 	"deadline.assign":                    policy("deadline.assign", "workflow", GrantTierGrantable, true, "Assign tasks"),
 	"deadline.manage":                    policy("deadline.manage", "workflow", GrantTierGrantable, true, "Manage/confirm"),

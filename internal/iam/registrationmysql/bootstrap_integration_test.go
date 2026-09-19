@@ -177,6 +177,7 @@ func TestIntegration_RegisterPublicAccount_GrantsDisclosureTypeManage(t *testing
 		"ad_hoc_alert.process_control",
 		// Deadline / calendar
 		"deadline.view",
+		"deadline.comment",
 		"deadline.create",
 		"deadline.assign",
 		"deadline.manage",

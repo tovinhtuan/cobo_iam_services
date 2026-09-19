@@ -141,6 +141,8 @@ services:
       LEGAL_BASIS_STRUCTURED_WRITE_ENABLED: "true"
       LEGAL_BASIS_LEGACY_FALLBACK_ENABLED: "true"
       LEGAL_BASIS_DIVERGENCE_WARNING_ENABLED: "true"
+      # V1.1 step discussion @mentions (candidate + persist + notify). Toggle off for flag-OFF smoke.
+      WORKFLOW_STEP_COMMENT_MENTIONS_ENABLED: "true"
     ports:
       - "8080:8080"
     volumes:

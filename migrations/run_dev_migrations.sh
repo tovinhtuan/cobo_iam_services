@@ -137,6 +137,9 @@ seed_dev_identity_authorization.sql
 0135_workflow_step_document_requirement_snapshots.up.sql
 0136_workflow_step_document_fulfillment_files.up.sql
 0137_workflow_step_evidence_files.up.sql
+0138_deadline_comment_permission.up.sql
+0139_workflow_step_comments.up.sql
+0140_workflow_step_comment_mentions.up.sql
 seed_dev_company_subscriptions.sql
 "
 

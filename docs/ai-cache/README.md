@@ -1,3 +1,9 @@
+## Tenant step discussion comments — implementation plan (2026-09-19)
+
+- Pointer: `tenant-step-discussion-comments-implementation-plan-2026-09-19/00-pointer.md`
+- V1: COMPLETE_DEV_VERIFIED; READY_FOR_USER_COMMIT=true; NO agent commit
+- V1.1 Phase 1–6 DEV VERIFIED; 0140 applied; READY_FOR_USER_COMMIT=true (`06-v1-1-dev-verification-result.md`)
+
 ## Tenant generic step evidence V1.1 — G5 Final Pre-Commit Review (2026-09-18)
 
 - Pointer: `tenant-generic-step-evidence-v1-1-g5-final-precommit-review-2026-09-18/`

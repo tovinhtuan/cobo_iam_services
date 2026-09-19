@@ -385,9 +385,11 @@ function Invoke-DeployFe {
   if (-not $env:VITE_PERSONAL_OPS_V2) { $env:VITE_PERSONAL_OPS_V2 = 'true' }
   if (-not $env:VITE_DASHBOARD_OPERATIONAL_V2) { $env:VITE_DASHBOARD_OPERATIONAL_V2 = 'true' }
   if (-not $env:VITE_DASHBOARD_OVERVIEW_API_ENABLED) { $env:VITE_DASHBOARD_OVERVIEW_API_ENABLED = 'true' }
+  if (-not $env:VITE_STEP_COMMENT_MENTIONS_V11) { $env:VITE_STEP_COMMENT_MENTIONS_V11 = 'true' }
   Write-Host "[deploy-dev][fe] VITE_PERSONAL_OPS_V2=$($env:VITE_PERSONAL_OPS_V2)"
   Write-Host "[deploy-dev][fe] VITE_DASHBOARD_OPERATIONAL_V2=$($env:VITE_DASHBOARD_OPERATIONAL_V2)"
   Write-Host "[deploy-dev][fe] VITE_DASHBOARD_OVERVIEW_API_ENABLED=$($env:VITE_DASHBOARD_OVERVIEW_API_ENABLED)"
+  Write-Host "[deploy-dev][fe] VITE_STEP_COMMENT_MENTIONS_V11=$($env:VITE_STEP_COMMENT_MENTIONS_V11)"
   if ($env:ALLOW_LEGACY_DEV_FLAGS -ne 'true') {
     if ($env:VITE_PERSONAL_OPS_V2 -ne 'true' -or $env:VITE_DASHBOARD_OPERATIONAL_V2 -ne 'true' -or $env:VITE_DASHBOARD_OVERVIEW_API_ENABLED -ne 'true') {
       throw 'DEV FE Vite flags must be true (or set ALLOW_LEGACY_DEV_FLAGS=true for intentional legacy rollback)'

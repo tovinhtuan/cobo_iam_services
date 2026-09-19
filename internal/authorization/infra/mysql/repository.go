@@ -250,6 +250,8 @@ func legacyPolicy(action string) *authapp.ActionPolicy {
 		required = "rbac.manage"
 	case "deadline.view":
 		required = "deadline.view"
+	case "deadline.comment":
+		required = "deadline.comment"
 	case "deadline.confirm":
 		required = "deadline.manage"
 	case "dashboard.view":

@@ -83,6 +83,10 @@ const (
 	KindAdhocProposalApproved           = "adhoc.proposal_approved"
 	KindAdhocProposalRejected           = "adhoc.proposal_rejected"
 	ResourceTypeAdHocProposal           = "ad_hoc_proposal"
+
+	// KindWorkflowStepCommentMentioned is sent after a step discussion comment
+	// @mention commits (V1.1). Generic title/body only — no comment text.
+	KindWorkflowStepCommentMentioned = "workflow.step_comment.mentioned"
 )
 
 const listLimit = 20

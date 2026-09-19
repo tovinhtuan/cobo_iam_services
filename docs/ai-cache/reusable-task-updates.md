@@ -1,3 +1,82 @@
+﻿## Tenant step discussion V1.1 Phase 6 DEV migrate+deploy+smoke (2026-09-19)
+
+- T6.1–T6.2: 0140 applied on DEV; BE/FE deploy; flag OFF/ON + mentions/notify + V1 regression PASS
+- Evidence: `06-v1-1-dev-verification-result.md`; LOCAL_DOCKER_BUILD=BLOCKED; STAGED=false; NO Production
+## Tenant step discussion V1.1 Phase 5 in-app mention notify (2026-09-19)
+
+- T5.1: AFTER_COMMIT CreateForUser kind=workflow.step_comment.mentioned; fail-closed recipient authz; no body leak; replay no re-notify
+- go test ./internal/workflowstepcomments/... PASS; go build PASS; Docker api build BLOCKED; 0140 not applied; FE unchanged; READY_FOR_PHASE_6=true; STAGED=false
+## Tenant step discussion V1.1 Phase 4 FE composer/render/edit (2026-09-19)
+
+- T4.1-T4.3: Unicode helpers, @ composer UX, render highlight, edit reconcile, POST/PATCH mentions payload
+- vitest discussion 22 PASS; npm build PASS; no migration apply; no notify; READY_FOR_PHASE_5=true; STAGED=false
+## Tenant step discussion V1.1 Phase 3 POST/PATCH mentions (2026-09-19)
+
+- T3.1-T3.4: validator, RequestHash V1-compat, POST/PATCH mentions, Tx, idempotency, DTO enrichment
+- migration 0140 not applied; no notification; no FE change this phase
+- go test ./internal/workflowstepcomments/... PASS; go build PASS; READY_FOR_PHASE_4=true; STAGED=false
+## Tenant step discussion V1.1 Phase 2 mention persistence (2026-09-19)
+
+- T2.1?T2.2: `0140_workflow_step_comment_mentions` + MentionsRepository MySQL/memory
+- run_dev_migrations.sh: 0138?0139?0140; 0138/0139 SQL untouched; not applied to DEV
+- no API POST mentions; no notify; READY_FOR_PHASE_3=true; STAGED=false
+
+## Tenant step discussion V1.1 Phase 1 candidate search (2026-09-19)
+
+- T1.1?T1.3 implemented: BE flag + candidates endpoint + can_mention; FE popover shell
+- no migration 0140; no POST mentions; no notification
+- focused BE/FE tests PASS; npm build PASS; Docker local BLOCKED
+- READY_FOR_PHASE_2=true; STAGED=false
+## Tenant step discussion V1.1 @Mention implementation plan (2026-09-19)
+
+- task type: implementation plan only (no code/migration/deploy)
+- contract updated: 04-v1-1-mentions-contract.md (product decisions locked)
+- plan: 05-v1-1-mentions-implementation-plan.md (Phases 0?7 / T0?T7)
+- RequestHash empty-mentions = V1 SHA256(body); flag OFF + mentions = 400 FEATURE_DISABLED
+- SELF_MENTION=true notify=false; can_mention capability day-1; candidates q min 2
+- V1_1_READY_FOR_IMPLEMENTATION=true; STAGED=false
+## Tenant step discussion V1.1 @Mention contract (2026-09-19)
+
+- task type: contract/design only (no code, no migration, no deploy)
+- file: tenant-step-discussion-comments-implementation-plan-2026-09-19/04-v1-1-mentions-contract.md
+- V1 preserved; additive mentions + candidate search + in-app notify AFTER_COMMIT
+- storage: separate table planned 0140 (not created); no FK; max 20 mentions; UTF8_RUNE offsets
+- source: MEMBER_SEARCH partial (need new endpoint); display names + inappnotification reusable; no existing mention model
+- STAGED=false; V1_1_READY_FOR_IMPLEMENTATION=false
+## Tenant step discussion comments ? DEV deploy + smoke (2026-09-19)
+
+- task type: DEV deployment + smoke verification
+- target: avi-server1 / 88.216.208.0:21239 /root/cobo_project (DEV only)
+- workflow: deploy-dev.ps1 Mode be+fe -SkipTests
+- migrations 0138/0139 verified (no re-apply); id VARCHAR(36); COMMENT_ID_FORMAT=UUID_V4
+- smoke PASS=31 FAIL=0; evidence+steps regression PASS; FE copy contract PASS
+- LOCAL_DOCKER_BUILD=BLOCKED; DEV_DEPLOY_BUILD=PASS; READY_FOR_USER_COMMIT=true
+- exclusions: deploy-artifacts/backend/bin/*, dist/
+- STAGED=false COMMITTED=false
+## Tenant step discussion comments ? ID contract drift resolve (2026-09-19)
+
+- task type: contract sync + verification
+- decision: COMMENT_ID_FORMAT=plain UUID; COMMENT_ID_PREFIX=NONE; DB=VARCHAR(36); no new migration
+- synced: plan CommentDTO, pointers, domain/DTO docs, FE fixtures, idempotency-key fallback renamed `idem_`
+- tests: TestCreate_PlainUUIDFitsVARCHAR36 + discussion FE tests PASS; go build / npm build PASS
+- DEV schema: id varchar(36) matches 0139; sample 6676128c-? len=36; SCHEMA_DRIFT=NONE
+- Docker local daemon FAIL ? DOCKER_BUILD=BLOCKED ? T13_PREMERGE=BLOCKED ? READY_FOR_USER_COMMIT=false
+- commit exclusions: deploy-artifacts/backend/bin/*, FE dist/
+## Tenant step discussion comments ? DEV verify T12 (2026-09-19)
+
+- DEV `88.216.208.0`: migrate 0138+0139 PASS; BE+FE redeployed; API smoke 24/24 PASS; local Docker build BLOCKED
+- bugfix: comment id length; now plain UUID
+- READY_FOR_USER_COMMIT=false (DOCKER_BUILD local blocked)
+- pointer: sibling FE pack `02-implementation-result.md`
+
+## Tenant step discussion comments ? implementation T2?T13 (2026-09-19)
+
+- task type: implement (cross-repo)
+- objective: Trao ??i step-scoped comments (plan Option B)
+- implemented: 0138/0139; authz `deadline.comment`; `internal/workflowstepcomments`; routes wired; FE in sibling repo
+- verification: package tests + `go build ./...` PASS; full `go test ./...` FAIL preexisting G2C evidence (not this delta); Docker BLOCKED (daemon); MIGRATION_APPLIED=false; NO_COMMIT
+- pointer: `tenant-step-discussion-comments-implementation-plan-2026-09-19/00-pointer.md`
+
 ## Tenant Workflow Authoritative Timeliness V1 (2026-09-11)
 
 - BE: `timeliness.go` classifiers + DTO fields on deadline steps response
@@ -33,7 +112,7 @@
 ## Tenant Next Alert OpenAt authority parity B.1 (2026-09-10)
 
 - task type: reconciliation + minimal fix
-- result: REAL_MISMATCH_FIXED — Next Alert EffectiveOpenAt = COALESCE(open_at, cycle_start)
+- result: REAL_MISMATCH_FIXED ? Next Alert EffectiveOpenAt = COALESCE(open_at, cycle_start)
 - evidence: tenant-next-alert-openat-authority-parity-2026-09-10/
 - worker/CMS/FE logic unchanged; BE deploy-be PASS
 - NO_COMMIT WAIT_FOR_PO_CONFIRMATION
@@ -60,10 +139,10 @@
 ## Periodic future cycle pre-generation Phase A (2026-09-10)
 
 - task type: BE implement (Phase A)
-- objective: seed next applicable `periodic_cycle` when TodayHCM >= T_future − lead; delay record/workflow until OpenAt
+- objective: seed next applicable `periodic_cycle` when TodayHCM >= T_future ? lead; delay record/workflow until OpenAt
 - implemented:
   - Field `periodic_cycle_generation_lead_days` on `TemplateDeadlineConfig` (*int, 0..90; nil/0=off); company cannot override
-  - `ListActivePeriodicTypes` JSON_EXTRACT → `PeriodicTypeRow.PeriodicCycleGenerationLeadDays`
+  - `ListActivePeriodicTypes` JSON_EXTRACT ? `PeriodicTypeRow.PeriodicCycleGenerationLeadDays`
   - `ResolveNextApplicableLogicalSlot` + `GenerateAtDate` + `ValidatePeriodicCycleGenerationLeadDays`
   - `seedPeriodicCycles`: extract `seedOneCompanySlot`; CURRENT_SLOT unchanged; future NEXT_APPLICABLE only when lead>0 + GenerateAt met; AF skip current still allows future
   - `materializePeriodicDisclosures`: bufferDays=0, asOf=TodayHCM (remove +7d lookahead)
@@ -73,7 +152,7 @@
 - constraints: no DB migration; no FE; no Deadline Alert/reminder changes; NO_DEPLOY / NO_COMMIT
 - remaining: CMS UI to author lead days; optional DEV E2E with PERIODIC_SEEDING_ENABLED
 
-## Periodic future occurrence pre-generation — SOURCE AUDIT (2026-09-10)
+## Periodic future occurrence pre-generation ? SOURCE AUDIT (2026-09-10)
 
 - task type: source audit only (no implementation)
 - objective: can worker materialize next applicable slot before T via materialization_lead_days?
@@ -84,79 +163,79 @@
 ## Tenant workflow authoritative available_actions (2026-09-10)
 
 - BE TaskDTO.available_actions via EvaluateTaskAction (policy+assignee+pending); FE CTA bind; local 403 opt-out
-- Evidence: `tenant-workflow-authoritative-available-actions-2026-09-10/` (00–35)
-- Reject policy unchanged → OPEN_P2 follow-up; DEV verified empty actions for m_system_worker assignee
+- Evidence: `tenant-workflow-authoritative-available-actions-2026-09-10/` (00?35)
+- Reject policy unchanged ? OPEN_P2 follow-up; DEV verified empty actions for m_system_worker assignee
 - PHASE_RESULT=PASS; READY_FOR_COMMIT=true
-- NO_PRODUCTION / NO_COMMIT / NO_PUSH / NO_MERGE — WAIT_FOR_PO_CONFIRMATION
+- NO_PRODUCTION / NO_COMMIT / NO_PUSH / NO_MERGE ? WAIT_FOR_PO_CONFIRMATION
 
-## Tenant workflow review/reject permission audit — 2026-09-10
+## Tenant workflow review/reject permission audit ? 2026-09-10
 
-- SOURCE AUDIT: CTA visible via `workflow.review`+pending; BE denies (assignee mismatch / reject policy); 403→ForbiddenPage
+- SOURCE AUDIT: CTA visible via `workflow.review`+pending; BE denies (assignee mismatch / reject policy); 403?ForbiddenPage
 - Evidence: `tenant-workflow-review-reject-permission-audit-2026-09-10/`
 - NO_IMPLEMENTATION / NO_COMMIT / WAIT_FOR_PO_CONFIRMATION
 
-## Tenant missing-department warning (presentation) — 2026-09-10
+## Tenant missing-department warning (presentation) ? 2026-09-10
 
 - BE additive step read-model + shared companyorg resolver; FE DeadlineWorkflowCard warning (reminder-email copy only)
 - Evidence: `tenant-deadline-alert-missing-department-presentation-2026-09-10/`
-- NO_COMMIT / NO_PUSH / NO_MERGE / NO_PRODUCTION — WAIT_FOR_PO_CONFIRMATION
+- NO_COMMIT / NO_PUSH / NO_MERGE / NO_PRODUCTION ? WAIT_FOR_PO_CONFIRMATION
 
-## 2026-09-10 — Tenant Deadline Alert: Missing Department + Company Admin Fallback (SOURCE AUDIT)
+## 2026-09-10 ? Tenant Deadline Alert: Missing Department + Company Admin Fallback (SOURCE AUDIT)
 
 - task type: SOURCE_AUDIT_ONLY (no implementation)
-- objective: prove configured vs company-resolved department vs effective recipient/fallback for “Phòng ban xử lý” on Cảnh báo về thời hạn
-- discovered: UI label from DepartmentDict (company + template catalog) can show “Phòng Nhân sự” without company org match; reminder WORKFLOW_STEP falls back to admin_doanh_nghiep; Portal deadline-alert APIs expose neither resolution_status nor fallback recipient
+- objective: prove configured vs company-resolved department vs effective recipient/fallback for ?Ph?ng ban x? l?? on C?nh b?o v? th?i h?n
+- discovered: UI label from DepartmentDict (company + template catalog) can show ?Ph?ng Nh?n s?? without company org match; reminder WORKFLOW_STEP falls back to admin_doanh_nghiep; Portal deadline-alert APIs expose neither resolution_status nor fallback recipient
 - SOLUTION_CLASS=API_PRESENTATION_EXTENSION; PO_DECISION_REQUIRED=true for fallback copy scope
 - pointer: `docs/ai-cache/tenant-deadline-alert-missing-department-admin-fallback-audit-2026-09-10/`
-- NO_IMPLEMENTATION / NO_COMMIT / NO_DEPLOY — WAIT_FOR_PO_CONFIRMATION
+- NO_IMPLEMENTATION / NO_COMMIT / NO_DEPLOY ? WAIT_FOR_PO_CONFIRMATION
 
 
-## 2026-09-09 — Tenant DeadlineSummary Option 1: applicability-aware Source A
+## 2026-09-09 ? Tenant DeadlineSummary Option 1: applicability-aware Source A
 
 - BE: `deadline_calculator.computeCycleStart` respects AF/AT; tests + DEV deploy PASS; DueAt 2026-10-07 for bang-tinh-luong AF Oct
 - Evidence: `cobo_web_design/docs/ai-cache/tenant-deadline-summary-applicability-aware-option1-2026-09-09/` + IAM `00-pointer.md`
-- READY_FOR_COMMIT=true — NO_COMMIT / NO_PUSH / NO_MERGE / NO_PRODUCTION
+- READY_FOR_COMMIT=true ? NO_COMMIT / NO_PUSH / NO_MERGE / NO_PRODUCTION
 
-## 2026-09-09 — COBO CMS Template Import: Phase F.2.1 — DEV Human-Authorable Example Verification
+## 2026-09-09 ? COBO CMS Template Import: Phase F.2.1 ? DEV Human-Authorable Example Verification
 
 - task type: DEV_VERIFICATION (F2.1)
-- QA: `qa-import-human-authorable-1788924517502` — Confirm 201; server-owned IDs generated; mapped departments; portal inactive; runtime 0
+- QA: `qa-import-human-authorable-1788924517502` ? Confirm 201; server-owned IDs generated; mapped departments; portal inactive; runtime 0
 - pointer: `cobo_web_design/docs/ai-cache/cms-template-import-phase-f21-dev-human-authorable-verification-2026-09-09/`
-- PHASE_F21_RESULT=PASS; PHASE_F2_RELEASE_GATE=PASS; READY_FOR_COMMIT=true; NO_COMMIT / NO_PUSH / NO_MERGE / NO_PRODUCTION — WAIT_FOR_PO_CONFIRMATION
+- PHASE_F21_RESULT=PASS; PHASE_F2_RELEASE_GATE=PASS; READY_FOR_COMMIT=true; NO_COMMIT / NO_PUSH / NO_MERGE / NO_PRODUCTION ? WAIT_FOR_PO_CONFIRMATION
 
-## 2026-09-09 — COBO CMS Template Import: Phase F.2 — Human-authorable portable contract (remove opaque IDs)
+## 2026-09-09 ? COBO CMS Template Import: Phase F.2 ? Human-authorable portable contract (remove opaque IDs)
 
 - task type: CONTRACT_CORRECTION + IMPLEMENTATION (local only; no DEV deploy)
-- objective: Admin can download example JSON, edit business content, upload — without DB UUIDs / opaque internal IDs.
+- objective: Admin can download example JSON, edit business content, upload ? without DB UUIDs / opaque internal IDs.
 - implemented: department{code,name} + assignee_roles; server-owned ID strip/regen; mapping keys; canonical example EXAMPLE_OPAQUE_ID_COUNT=0.
 - verification: disclosure tests + go build + docker compose build api PASS.
 - pointer: `cobo_web_design/docs/ai-cache/cms-template-import-phase-f2-human-authorable-portable-contract-2026-09-09/`
-- PHASE_F2_RESULT=PASS; READY_FOR_DEV_VERIFICATION=true; NO_DEPLOY / NO_COMMIT / NO_PUSH / NO_MERGE / NO_PRODUCTION — WAIT_FOR_PO_CONFIRMATION
+- PHASE_F2_RESULT=PASS; READY_FOR_DEV_VERIFICATION=true; NO_DEPLOY / NO_COMMIT / NO_PUSH / NO_MERGE / NO_PRODUCTION ? WAIT_FOR_PO_CONFIRMATION
 
-## 2026-09-09 — COBO CMS Template Import: Phase F.1 — DEV Example Download Verification (real download → exact re-upload → Validate)
+## 2026-09-09 ? COBO CMS Template Import: Phase F.1 ? DEV Example Download Verification (real download ? exact re-upload ? Validate)
 
-- task type: DEV_VERIFICATION (PHASE F.1 ONLY — no feature redesign)
+- task type: DEV_VERIFICATION (PHASE F.1 ONLY ? no feature redesign)
 - objective: prove authorized CMS admin can download canonical Example JSON from REAL DEV and feed that exact file into REAL Import Validate successfully, with zero DB writes and Import state isolation.
 - verified on DEV: deploy-be + deploy-fe PASS; GET /import/example 200 with correct disposition; exact downloaded bytes Validate parse_valid/domain_valid true; mapping_required=true allowed; DB counts unchanged; state/token isolation PASS.
 - pointer: `cobo_web_design/docs/ai-cache/cms-template-import-phase-f1-dev-example-download-verification-2026-09-09/`
-- PHASE_F1_RESULT=PASS; CMS_TEMPLATE_IMPORT_EXAMPLE_DEV_VERIFIED=true; PHASE_F_RELEASE_GATE=PASS; READY_FOR_COMMIT=true; NO_COMMIT / NO_PUSH / NO_MERGE / NO_PRODUCTION — WAIT_FOR_PO_CONFIRMATION
+- PHASE_F1_RESULT=PASS; CMS_TEMPLATE_IMPORT_EXAMPLE_DEV_VERIFIED=true; PHASE_F_RELEASE_GATE=PASS; READY_FOR_COMMIT=true; NO_COMMIT / NO_PUSH / NO_MERGE / NO_PRODUCTION ? WAIT_FOR_PO_CONFIRMATION
 
-## 2026-09-09 — COBO CMS Template Import: Phase F — Download Canonical Example JSON for CMS Admin Reference
+## 2026-09-09 ? COBO CMS Template Import: Phase F ? Download Canonical Example JSON for CMS Admin Reference
 
-- task type: DELTA_FEATURE (PHASE F — DOWNLOAD_IMPORT_EXAMPLE only)
-- objective: add safe CTA **Tải file mẫu JSON** on Import screen; BE owns canonical schema_version=1.0 artifact; FE downloads via API without second FE schema copy; does not export existing templates.
+- task type: DELTA_FEATURE (PHASE F ? DOWNLOAD_IMPORT_EXAMPLE only)
+- objective: add safe CTA **T?i file m?u JSON** on Import screen; BE owns canonical schema_version=1.0 artifact; FE downloads via API without second FE schema copy; does not export existing templates.
 - implemented:
   - BE: embedded artifact `internal/disclosure/app/artifacts/cobo-template-import-example-v1.0.json`; `GetTemplateImportExample` gated by `platform.cms.view` + `cms.template.write`; `GET /api/v1/platform/cms/templates/import/example` with Content-Disposition filename `cobo-template-import-example-v1.0.json`; zero DB writes.
   - Example aligned to C1: explicit `applicability_rules`, `NEXT_SLOT`, open-ended `applicable_to`, CALENDAR_DAYS, portable dept codes, document metadata only (no `template_file_id`).
   - FE: `ImportExampleDownload` near dropzone; independent of validation_token / Import state; loading + toast/error UX.
 - verification: `go test ./internal/disclosure/...` PASS; `go build ./...` PASS; `docker compose -f docker-compose.dev.yml build api` PASS; Vitest import suite 39 PASS; `npm run build` PASS.
 - pointer: `cobo_web_design/docs/ai-cache/cms-template-import-phase-f-example-download-2026-09-09/` (+ IAM `00-pointer.md`)
-- PHASE_F_RESULT=PASS; READY_FOR_DEV_VERIFICATION=true; READY_FOR_COMMIT=true; DEV_DEPLOY_PERFORMED=false; NO_DEPLOY / NO_COMMIT / NO_PUSH / NO_MERGE / NO_PRODUCTION — WAIT_FOR_PO_CONFIRMATION
+- PHASE_F_RESULT=PASS; READY_FOR_DEV_VERIFICATION=true; READY_FOR_COMMIT=true; DEV_DEPLOY_PERFORMED=false; NO_DEPLOY / NO_COMMIT / NO_PUSH / NO_MERGE / NO_PRODUCTION ? WAIT_FOR_PO_CONFIRMATION
 
-## 2026-09-09 — COBO CMS Template Import: Phase E.1 — Lifecycle-Focused Verification / Fix (activated_at Semantics + Source Trace + DB Schema Defaults + Contract Reconciliation + Fresh QA Import + Release Gate PASS)
+## 2026-09-09 ? COBO CMS Template Import: Phase E.1 ? Lifecycle-Focused Verification / Fix (activated_at Semantics + Source Trace + DB Schema Defaults + Contract Reconciliation + Fresh QA Import + Release Gate PASS)
 
 
-- task type: LIFECYCLE_VERIFICATION_AND_RECONCILIATION (PHASE E.1 ONLY — FOCUSED SOURCE AUDIT + DEV REVERIFICATION)
+- task type: LIFECYCLE_VERIFICATION_AND_RECONCILIATION (PHASE E.1 ONLY ? FOCUSED SOURCE AUDIT + DEV REVERIFICATION)
 - objective: reconcile the lifecycle semantics of imported Draft v1 templates, specifically resolving why `active_version_no = 0`, `version_no = 1`, `is_released = false`, `Portal State = not active`, `runtime side effects = 0`, but `activated_at != NULL` on DEV.
 - key findings & root cause:
   - Source Trace: End-to-end trace proved that `UpsertTypeVersion` (`internal/disclosure/infra/mysql/repository.go:1157`) populates `activated_at` with `now` on initial INSERT for ALL flows (Create Blank, Clone, and Import Confirm).
@@ -183,9 +262,9 @@
 - pointer: `cobo_web_design/docs/ai-cache/cms-template-import-phase-e1-activated-at-lifecycle-2026-09-09/` (18 parts: `00-context.md` through `17-final-verdict.md` + 3 screenshots).
 - CMS_TEMPLATE_IMPORT_PHASE_E1_COMPLETE=true; PHASE_E1_RESULT=PASS; PHASE_E_RELEASE_GATE=PASS; CMS_TEMPLATE_IMPORT_DEV_VERIFIED=true; READY_FOR_COMMIT=true; READY_FOR_PUSH=false; READY_FOR_MERGE=false; READY_FOR_PRODUCTION=false; PRODUCTION_DEPLOY_PERFORMED=false; NO_COMMIT; NO_PUSH; NO_MERGE; NO_PRODUCTION; STOP / WAIT_FOR_PO_CONFIRMATION
 
-## 2026-09-08 — COBO CMS Template Import: Phase E — DEV Deploy + Real Backend / Frontend Integration + Real Browser E2E + DB / Runtime Verification + Security / Log Review + Release Gate
+## 2026-09-08 ? COBO CMS Template Import: Phase E ? DEV Deploy + Real Backend / Frontend Integration + Real Browser E2E + DB / Runtime Verification + Security / Log Review + Release Gate
 
-- task type: DEV_REAL_E2E_RELEASE_GATE (IMPLEMENTATION & DEV VERIFICATION MODE — PHASE E ONLY)
+- task type: DEV_REAL_E2E_RELEASE_GATE (IMPLEMENTATION & DEV VERIFICATION MODE ? PHASE E ONLY)
 - objective: verify that the complete Import Template V1 actually works end-to-end on the real DEV environment with real frontend, real backend, real database, and real browser without unintended side effects.
 - implemented & verified:
   - Deployed to DEV: Backend binaries (`cobo-iam-api` & `cobo-iam-worker`) compiled and deployed via `make deploy-be`. Frontend built and deployed to Nginx via `make deploy-fe`. Target environment strictly DEV (`DEPLOY_TARGET_ENVIRONMENT=DEV`).
@@ -193,7 +272,7 @@
   - Database Migration: Zero migrations required, zero applied (`DB_MIGRATION_REQUIRED=false`, `DB_MIGRATION_APPLIED=false`).
   - Real Browser E2E Flow (Playwright, zero mocks):
     - Real Validate (`POST /api/v1/platform/cms/templates/import/validate`, `multipart/form-data`) returned HTTP 200 OK with `parse_valid: true`, `domain_valid: true`, `mapping_required: true`, and valid HMAC `validation_token`.
-    - Real Business Preview: Rendered all general fields, periodicity, deadline config, and ApplicabilityRules. DEF-005 deadline copy verified as "20 ngày" (not "ngày làm việc").
+    - Real Business Preview: Rendered all general fields, periodicity, deadline config, and ApplicabilityRules. DEF-005 deadline copy verified as "20 ng?y" (not "ng?y l?m vi?c").
     - Real Department Mapping: Resolved 3 source departments (`dept-finance`, `dept-legal`, `dept-bod`) to existing DEV catalog departments (`dept-003`, `dept-001`, `dept-004`). Zero inline create.
     - Real 409 Conflict: Attempted confirm with existing ID `bang-tinh-luong-nhan-vien-ban-sao-2`; returned HTTP 409 `STATE_CONFLICT`, displayed inline UI conflict alert, zero modification to existing template (`DEV_409_EXISTING_TEMPLATE_MUTATED=false`).
     - Real Confirm (`POST /api/v1/platform/cms/templates/import/confirm`, JSON): Created unique QA template `qa-import-periodic-1788864118253`; returned HTTP 201 Created.
@@ -216,9 +295,9 @@
 - pointer: `cobo_web_design/docs/ai-cache/cms-template-import-phase-e-dev-real-e2e-release-gate-2026-09-08/` (25 parts: `00-context.md` through `24-final-verdict.md`).
 - CMS_TEMPLATE_IMPORT_PHASE_E_COMPLETE=true; PHASE_E_RESULT=PASS; CMS_TEMPLATE_IMPORT_DEV_VERIFIED=true; READY_FOR_COMMIT=true; READY_FOR_PUSH=false; READY_FOR_MERGE=false; READY_FOR_PRODUCTION=false; PRODUCTION_DEPLOY_PERFORMED=false; NO_COMMIT; NO_PUSH; NO_MERGE; NO_PRODUCTION; STOP / WAIT_FOR_PO_CONFIRMATION
 
-## 2026-09-08 — COBO CMS Template Import: Phase C.1 — Focused Contract Correction + Business Field Fidelity + Token Contract Reconciliation + Secret Hardening + MySQL Concurrency/Rollback Closure
+## 2026-09-08 ? COBO CMS Template Import: Phase C.1 ? Focused Contract Correction + Business Field Fidelity + Token Contract Reconciliation + Secret Hardening + MySQL Concurrency/Rollback Closure
 
-- task type: FOCUSED_CONTRACT_CORRECTION (IMPLEMENTATION MODE — PHASE C.1 ONLY — DELTA PASS OVER PHASE C)
+- task type: FOCUSED_CONTRACT_CORRECTION (IMPLEMENTATION MODE ? PHASE C.1 ONLY ? DELTA PASS OVER PHASE C)
 - objective: close P1-01 (ApplicabilityRules fidelity), P1-02 (Token HTTP contract drift), P1-03 (Full importable field roundtrip proof), P1-04 (Signing secret hardening), and GAP-01 (MySQL concurrency & rollback proof).
 - implemented & corrected:
   - P1-01: Added `applicability_rules` to JSON schemas (`cobo_iam_services` and `cobo_web_design`), added `ApplicabilityRules *applicability.TemplateApplicabilityRules` to `TemplateImportDefinitionV1`, updated normalizer (`NormalizeTemplateImportV1`) with deep copying, added validation in `ValidateImportTemplate`, and updated `materializeImportUpsert` in `template_import_confirm.go` to preserve imported rules if present and fallback to default only when omitted.
@@ -242,9 +321,9 @@
 - pointer: `docs/ai-cache/cms-template-import-phase-c1-focused-correction-2026-09-08/` (18 parts: `00-context.md` through `17-final-verdict.md`).
 - CMS_TEMPLATE_IMPORT_PHASE_C1_COMPLETE=true; PHASE_C1_RESULT=PASS; BE_IMPORT_BACKEND_COMPLETE=true; READY_FOR_PHASE_D=true; READY_FOR_DEV_DEPLOY=false; READY_FOR_COMMIT=true; READY_FOR_PUSH=false; READY_FOR_MERGE=false; READY_FOR_PRODUCTION=false; STOP / WAIT_FOR_PO_CONFIRMATION
 
-## 2026-09-08 — COBO CMS Template Import: Phase C — Confirm + Transactional Materialization + Token/Hash Verification + Mapping + Concurrency + Audit + Rollback Proof
+## 2026-09-08 ? COBO CMS Template Import: Phase C ? Confirm + Transactional Materialization + Token/Hash Verification + Mapping + Concurrency + Audit + Rollback Proof
 
-- task type: CONFIRM_TRANSACTIONAL_MATERIALIZATION (IMPLEMENTATION MODE — PHASE C ONLY — BACKEND ONLY)
+- task type: CONFIRM_TRANSACTIONAL_MATERIALIZATION (IMPLEMENTATION MODE ? PHASE C ONLY ? BACKEND ONLY)
 - objective: implement `POST /api/v1/platform/cms/templates/import/confirm` with full token verification, canonical payload hash binding, department mapping, mutable reference revalidation, transactional materialization (New Root + Draft v1) via `UpsertTypeVersion(CreateOnly=true)`, concurrency race safety, post-commit audit logging, and rollback / zero-partial-write proof.
 - implemented:
   - Backend Service: `ConfirmTemplateImport` in `internal/disclosure/app/template_import_confirm.go` & contracts in `internal/disclosure/app/contracts.go`.
@@ -297,63 +376,63 @@
 - pointer: `docs/ai-cache/cms-template-import-phase-c-be-confirm-materialization-2026-09-08/` (23 parts: `00-context.md` through `22-final-verdict.md`).
 - CMS_TEMPLATE_IMPORT_PHASE_C_COMPLETE=true; PHASE_C_RESULT=PASS; READY_FOR_PHASE_D=true; READY_FOR_DEV_DEPLOY=false; READY_FOR_COMMIT=true; READY_FOR_PUSH=false; READY_FOR_MERGE=false; READY_FOR_PRODUCTION=false; STOP / WAIT_FOR_PO_CONFIRMATION
 
-## 2026-08-25 — Periodic seeding controlled DEV enablement
+## 2026-08-25 ? Periodic seeding controlled DEV enablement
 
 - **task type:** controlled DEV config enablement (ops)
 - **changed:** `.env` PERIODIC_SEEDING_ENABLED + WORKFLOW_SNAPSHOT_ENABLED; worker-only recreate
-- **result:** PASS — +52 cycles/records/workflows; target daily recovered; flags remain true
+- **result:** PASS ? +52 cycles/records/workflows; target daily recovered; flags remain true
 - **evidence:** `docs/ai-cache/periodic-seeding-controlled-dev-enablement-2026-08-25/`
 - APPLICATION_SOURCE_CHANGED=false; NO_COMMIT
 
-## 2026-08-25 — Periodic seeding DEV enablement impact audit
+## 2026-08-25 ? Periodic seeding DEV enablement impact audit
 
 - **task type:** read-only config enablement impact audit
 - **objective:** GO/CONDITIONAL_GO/NO_GO for PERIODIC_SEEDING_ENABLED=true on DEV
 - **discovered:** flag gates seed+materialize at startup; worker missing WORKFLOW_SNAPSHOT (P0 orphan risk); ~52 new cycles across 4 applicable companies; ~24 immediate OVERDUE alerts; target DAILY recoverable only before HCM rollover
 - **verdict:** CONDITIONAL_GO; APPLICATION_CODE_FIX_REQUIRED=false; DEV_CONFIG_CHANGE_REQUIRED=true
 - **evidence:** `docs/ai-cache/periodic-seeding-dev-enablement-impact-audit-2026-08-25/`
-- NO_CONFIG_CHANGE this turn — WAIT_FOR_CONFIRMATION
+- NO_CONFIG_CHANGE this turn ? WAIT_FOR_CONFIRMATION
 
-## 2026-08-25 — Deadline Alert DAILY template root-cause (read-only)
+## 2026-08-25 ? Deadline Alert DAILY template root-cause (read-only)
 
 - **task type:** narrow root-cause audit (source + DEV data)
-- **objective:** why Active DAILY CURRENT_SLOT template missing from Cảnh báo về thời hạn
-- **target:** `bang-tinh-luong-nhan-vien-thang-ban-sao` / Bảng tính lương nhân viên ngày
+- **objective:** why Active DAILY CURRENT_SLOT template missing from C?nh b?o v? th?i h?n
+- **target:** `bang-tinh-luong-nhan-vien-thang-ban-sao` / B?ng t?nh l??ng nh?n vi?n ng?y
 - **discovered:** `PERIODIC_SEEDING_ENABLED=false` on DEV; SeedPeriodicCycles never wired; cycles=0; records=0
 - **class:** I_PERIODIC_SEEDING_DISABLED; FIRST_BROKEN_BOUNDARY=worker enablement / CONFIG
 - **affected:** CONFIG/runtime DEV only; Deadline Alert SQL not first failure
 - **verification:** SSH read-only SELECT + printenv; APPLICATION_SOURCE_CHANGED=false; DEV_DATA_MUTATED=false
-- **next:** enable seeding (ops) then re-audit cycle→record→alert — WAIT_FOR_CONFIRMATION
+- **next:** enable seeding (ops) then re-audit cycle?record?alert ? WAIT_FOR_CONFIRMATION
 - **evidence:** `docs/ai-cache/deadline-alert-daily-template-root-cause-2026-08-25/`
 
-## 2026-08-24 — Cycle anchor day write validation (1..31)
+## 2026-08-24 ? Cycle anchor day write validation (1..31)
 
 - task type: DELTA_ONLY_SERVER_CONTRACT_HARDENING
 - objective: reject cycle_anchor_day outside 1..31 on CMS + Company writes; preserve unset/clear
 - implemented: `ValidateCycleAnchorDay` + wire UpdateTemplateDeadlineConfig / UpsertTypeVersion / UpsertCompanyTypePreference
 - pointer: `docs/ai-cache/cycle-anchor-day-write-validation-2026-08-24/`
-- verification: go test PASS; go build PASS; docker compose build api PASS; deploy-dev be PASS; API smoke 32→400, 31→200
+- verification: go test PASS; go build PASS; docker compose build api PASS; deploy-dev be PASS; API smoke 32?400, 31?200
 - CLAMP_DAY_OF_MONTH_SOURCE_CHANGED=false; NEW_DB_MIGRATION=false; FE unchanged
 - NO_PRODUCTION / NO_COMMIT / NO_PUSH / NO_MERGE
 
-## 2026-08-22 — CMS document server validation hardening
+## 2026-08-22 ? CMS document server validation hardening
 
 - task type: DELTA_ONLY_SERVER_CONTRACT_HARDENING
 - objective: CMS workflow upsert BE name + AssertCanBind(cms) parity with Company
-- implemented: `CmsUpsertGlobalWorkflow` → NormalizeAndValidateWorkflowDocuments + validateWorkflowDocumentTemplateRefs("cms"); targeted tests
+- implemented: `CmsUpsertGlobalWorkflow` ? NormalizeAndValidateWorkflowDocuments + validateWorkflowDocumentTemplateRefs("cms"); targeted tests
 - pointer: FE `../cobo_web_design/docs/ai-cache/workflow-step-document-requirements-2026-08-22/11-cms-server-validation-hardening.md`
 - verification: go test disclosure/app + workflowdoctemplate PASS; docker compose build api PASS; deploy-dev be PASS; DEV API smoke PASS
 - NO_PRODUCTION / NO_COMMIT / NO_PUSH / NO_MERGE
 
-## 2026-08-22 — Workflow Step Document Requirements Full V1
+## 2026-08-22 ? Workflow Step Document Requirements Full V1
 
-- task type: cross-repo feature (B1→B4) + browser E2E + pre-merge source review
+- task type: cross-repo feature (B1?B4) + browser E2E + pre-merge source review
 - pointer: FE `../cobo_web_design/docs/ai-cache/workflow-step-document-requirements-2026-08-22/`
 - BE: workflowdoctemplate + documents[] additive + 0132 migration + CMS facade Documents fix
-- premerge: READY_FOR_COMMIT=true — EXCLUDE `deploy-artifacts/**`
+- premerge: READY_FOR_COMMIT=true ? EXCLUDE `deploy-artifacts/**`
 - NO_PRODUCTION / NO_COMMIT / NO_PUSH / NO_MERGE
 
-## 2026-08-22 — Workflow Step Document Requirements V1 STOP
+## 2026-08-22 ? Workflow Step Document Requirements V1 STOP
 
 - task type: source reconciliation / contract freeze (no implement)
 - objective: DocumentRequirement name + optional template file on workflow steps
@@ -362,32 +441,32 @@
 - verdict: `IMPLEMENTATION_SAFE_TO_START=false` / WAIT_FOR_PO_CONFIRMATION
 - NO_CODE / NO_DB / NO_DEPLOY / NO_COMMIT / NO_PUSH
 
-## 2026-08-22 — Company Workflow Step Safe HTML
+## 2026-08-22 ? Company Workflow Step Safe HTML
 
 - task type: CONTENT_PRESENTATION_FEATURE (company override description only)
-- objective: reuse CMS plain_text|safe_html for Portal Tùy chỉnh workflow → Mô tả / Hướng dẫn thực hiện
+- objective: reuse CMS plain_text|safe_html for Portal T?y ch?nh workflow ? M? t? / H??ng d?n th?c hi?n
 - pointer: FE `docs/ai-cache/company-workflow-step-safe-html-2026-08-22/`
 - BE: ValidateCompanyWorkflowOverrideSteps accepts/normalizes description_format; no migration
 - verdict: `COMPANY_WORKFLOW_STEP_SAFE_HTML_DEV_VERIFIED`
 - NO_PRODUCTION / NO_COMMIT / NO_PUSH / NO_MERGE
 
-## 2026-08-22 — Workflow step description Safe HTML
+## 2026-08-22 ? Workflow step description Safe HTML
 
 - task type: CONTENT_PRESENTATION_FEATURE (description only)
-- objective: plain_text | safe_html for CMS Workflow mẫu → Mô tả bước; shared sanitizer; Portal Preview unsaved
+- objective: plain_text | safe_html for CMS Workflow m?u ? M? t? b??c; shared sanitizer; Portal Preview unsaved
 - pointer: FE `docs/ai-cache/workflow-step-safe-html-2026-08-22/`
 - BE: additive `description_format` on WorkflowStepDTO / ManifestStep; no migration
 - verdict: `WORKFLOW_STEP_SAFE_HTML_DEV_VERIFIED`
 - NO_PRODUCTION / NO_COMMIT / NO_PUSH / NO_MERGE
 
-## 2026-08-21 — Template portal state filter IMPLEMENT
+## 2026-08-21 ? Template portal state filter IMPLEMENT
 
 - task type: cross-repo list filter (BE params + MySQL/inmemory + FE URL UI)
 - pointer: FE `docs/ai-cache/template-portal-state-filter-2026-08-21.md`
 - verdict: `TEMPLATE_PORTAL_STATE_FILTER_DEV_VERIFIED`
 - NO_PRODUCTION / NO_COMMIT / NO_PUSH
 
-## 2026-08-21 — Template status filter source audit
+## 2026-08-21 ? Template status filter source audit
 
 - task type: source audit only (no implement)
 - objective: lock CMS `/cms/templates` status filter dimensions
@@ -395,66 +474,66 @@
 - verdict: `TEMPLATE_STATUS_SOURCE_AUDIT_COMPLETE` / WAIT_FOR_PO_CONFIRMATION
 - NO_CODE / NO_DB / NO_DEPLOY / NO_COMMIT / NO_PUSH
 
-## 2026-08-20 — CMS Lưu bước Model A (TEMPLATE_PINNED)
+## 2026-08-20 ? CMS L?u b??c Model A (TEMPLATE_PINNED)
 
 - task type: implement + DEV verify (no commit/push)
-- objective: existing UI "Lưu bước" on template-pinned draft; no FE src change; no legacy runtime authority
+- objective: existing UI "L?u b??c" on template-pinned draft; no FE src change; no legacy runtime authority
 - implemented: CmsUpsertGlobalWorkflow merge-save; GetTypeVersionDetail redact; unpublished CMS GetEffectiveWorkflow preview; cms_workflow_step_save_test.go
-- verification: `go test ./internal/disclosure/app -run WorkflowStepSave` PASS; vet/build api+worker PASS; `deploy-dev.ps1 -Mode be`; healthz/readyz 200; browser PUT 200 + Kích hoạt v1
+- verification: `go test ./internal/disclosure/app -run WorkflowStepSave` PASS; vet/build api+worker PASS; `deploy-dev.ps1 -Mode be`; healthz/readyz 200; browser PUT 200 + K?ch ho?t v1
 - evidence: sibling `cobo_web_design/docs/ai-cache/workflow-step-save-regression-2026-08-20/`
 - verdict: `CMS_WORKFLOW_STEP_SAVE_MODEL_A_DEV_VERIFIED`
 - BLOCKED local: `docker compose -f docker-compose.dev.yml build api` (no Docker daemon)
 - NO_PRODUCTION / NO_COMMIT / NO_PUSH
 
-## 2026-08-19 — CMS workflow canvas vs banner (FE sibling)
+## 2026-08-19 ? CMS workflow canvas vs banner (FE sibling)
 
 - BE unchanged; template Save already persisted `enterprise_workflow`
 - FE canvas was reading empty global workflow configuration
 - Evidence: `cobo_web_design/docs/ai-cache/cms-workflow-canvas-consistency-qa-2026-08-19/`
 - NO_PRODUCTION / NO_PUSH
 
-## 2026-08-19 — CMS template save/activate data-loss (FE sibling)
+## 2026-08-19 ? CMS template save/activate data-loss (FE sibling)
 
 - BE product source unchanged; activate remains pointer-only
-- FE hydration bug (PERIODIC→NONE, generalInfo wiped) reproduced + fixed on sibling
+- FE hydration bug (PERIODIC?NONE, generalInfo wiped) reproduced + fixed on sibling
 - Evidence: `cobo_web_design/docs/ai-cache/cms-template-save-activate-data-loss-qa-2026-08-19/`
 - NO_PRODUCTION / NO_PUSH
 
-## 2026-08-18 — Deadline alert active-template filter
+## 2026-08-18 ? Deadline alert active-template filter
 
 - ListRows INNER JOIN `disclosure_types.active_version_no > 0`
 - DEV deploy `2026-08-18T08:47:17Z`
 - Evidence: sibling FE `deadline-alert-active-template-filter-2026-08-18/`
 - NO_PRODUCTION / NO_PUSH
 
-## 2026-08-18 — Deadline alert cleanup before 17/08 (blocked)
+## 2026-08-18 ? Deadline alert cleanup before 17/08 (blocked)
 
-- tab Cảnh báo projects `disclosure_records`; mutation skipped
+- tab C?nh b?o projects `disclosure_records`; mutation skipped
 - Evidence: sibling FE `deadline-alert-cleanup-before-2026-08-17/`
 - NO_PRODUCTION / NO_PUSH
 
-## 2026-08-18 — Email business context (CTA record + EndDate)
+## 2026-08-18 ? Email business context (CTA record + EndDate)
 
 - reminder payload uses disclosure record_id and step_end; company from instance/record not recipient
 - DEV postfix D/EA/head SENT; deploy `2026-08-18T05:12:07Z`
 - Evidence: sibling FE `email-business-context-audit-2026-08-18/`
 - NO_PRODUCTION / NO_PUSH
 
-## 2026-08-18 — E1 no-head fallback (employees then EA)
+## 2026-08-18 ? E1 no-head fallback (employees then EA)
 
-- matched dept + no valid head → `EmailsByDepartments`; empty → EA; A/B/C/D preserved
+- matched dept + no valid head ? `EmailsByDepartments`; empty ? EA; A/B/C/D preserved
 - DEV E1-A/E1-B + A/B/C/D PASS; deploy `2026-08-18T03:46:59Z`
 - Evidence: sibling FE `e1-no-head-fallback-2026-08-18/`
 - NO_PRODUCTION / NO_PUSH
 
-## 2026-08-18 — Recipient authority routing (CMS head / EA fallback / override)
+## 2026-08-18 ? Recipient authority routing (CMS head / EA fallback / override)
 
 - DIRECT_ASSIGNEE > DEPARTMENT_HEAD > EA missing-dept; snapshot membership fields
 - DEV A/B/C/D PASS; deploy `2026-08-18T02:40:45Z`
 - Evidence: sibling FE `recipient-authority-verify-2026-08-18/`
 - NO_PRODUCTION / NO_PUSH
 
-## 2026-08-18 — Workflow step department alert (recipient snapshot-first)
+## 2026-08-18 ? Workflow step department alert (recipient snapshot-first)
 
 - task type: minimal DEV fix + smoke; 3-blocker PLAN on sibling FE pack
 - implemented: `InstanceStepReader` / snapshot-first `ResolveForWorkflowStep`; wire api+worker; test `TestResolveForWorkflowStep_InstanceSnapshotPreferredOverGlobal`
@@ -463,14 +542,14 @@
 - evidence: sibling FE `department-alert-validation-2026-08-18/`
 - NO_PRODUCTION / NO_PUSH
 
-## 2026-08-17 — DEV template cleanup (global archive PASS; company STOP)
+## 2026-08-17 ? DEV template cleanup (global archive PASS; company STOP)
 
 - KEEP `bao-cao-tai-chinh-quy-1`; 186 global archives via official API
 - Blocker: `BLOCKED_COMPANY_TEMPLATE_SAFE_CLEANUP_UNAVAILABLE`
 - Evidence: sibling FE `docs/ai-cache/dev-template-cleanup-2026-08-17/final-clean-all-except-latest/`
 - NO_PRODUCTION / NO_PUSH
 
-## 2026-08-17 — DEV template cleanup (STOP — keep name ambiguous)
+## 2026-08-17 ? DEV template cleanup (STOP ? keep name ambiguous)
 
 - Sibling FE evidence: `cobo_web_design/docs/ai-cache/dev-template-cleanup-2026-08-17/`
 - Blocker: `BLOCKED_KEEP_TEMPLATE_AMBIGUOUS` (`bao-cao-tai-chinh-quy-1` vs `dt-sys-q1-financial`)
@@ -478,39 +557,39 @@
 - Reminder blockers remain paused
 - NO_PRODUCTION / NO_PUSH
 
-## 2026-08-17 — Workflow step reminder (migration recovery)
+## 2026-08-17 ? Workflow step reminder (migration recovery)
 
 - 0129 applied on DEV; source-ready restored; `due_minus_7d` persists
 - Remaining: Mailpit/email evidence, verified A/B/C, template multi-step
-- Evidence: sibling FE pack `76`–`85` + `dev-smoke-custom-default/55+`
+- Evidence: sibling FE pack `76`?`85` + `dev-smoke-custom-default/55+`
 - NO_PRODUCTION / NO_PUSH
 
-## 2026-08-17 — Workflow step reminder (Phase 3–5 DEV smoke)
+## 2026-08-17 ? Workflow step reminder (Phase 3?5 DEV smoke)
 
-- Phase 3–4 PASS on DEV; Phase 5 ENUM blocker later repaired (see recovery)
+- Phase 3?4 PASS on DEV; Phase 5 ENUM blocker later repaired (see recovery)
 - Evidence: sibling FE `dev-smoke-custom-default/`
 - NO_PRODUCTION / NO_PUSH
 
-## 2026-08-17 — Workflow step reminder (Phase 2D source-ready)
+## 2026-08-17 ? Workflow step reminder (Phase 2D source-ready)
 
 
 - task type: quality + Docker + source-ready gate
 - objective: `WORKFLOW_STEP_REMINDER_RULE_ENGINE_READY`
 - result: FE+BE quality + Docker api/worker/web build parity; no migration; no deploy
-- evidence: sibling FE pack `62`–`75`
+- evidence: sibling FE pack `62`?`75`
 - next: Phase 3 after explicit confirmation
 - NO_MIGRATION / NO_DEPLOY / NO_PRODUCTION / NO_PUSH
 
-## 2026-08-17 — Workflow step reminder (Phase 2C BE runtime)
+## 2026-08-17 ? Workflow step reminder (Phase 2C BE runtime)
 
 - task type: BE implement
 - objective: `WORKFLOW_STEP_REMINDER_PHASE2C_RUNTIME_ENGINE_READY`
 - result: persistence + snapshot + due-minus engine; no migration
-- evidence: sibling FE pack `46`–`61`
+- evidence: sibling FE pack `46`?`61`
 - next: Phase 2D after explicit confirm
 - NO_MIGRATION / NO_DEPLOY / NO_PRODUCTION / NO_PUSH
 
-## 2026-08-17 — Workflow step reminder (Phase 2B CMS FE)
+## 2026-08-17 ? Workflow step reminder (Phase 2B CMS FE)
 
 - task type: FE implement (paired pointer)
 - objective: `WORKFLOW_STEP_REMINDER_PHASE2B_CMS_FE_READY`
@@ -519,26 +598,26 @@
 - next: Phase 2C runtime/snapshot after explicit confirm
 - NO_BACKEND_SOURCE_CHANGE / NO_MIGRATION / NO_DEPLOY / NO_PRODUCTION / NO_PUSH
 
-## 2026-08-17 — Workflow step reminder (Phase 2A contract lock)
+## 2026-08-17 ? Workflow step reminder (Phase 2A contract lock)
 
 
 - task type: contract lock (paired FE pack)
 - objective: `WORKFLOW_STEP_REMINDER_PHASE2A_CONTRACT_LOCKED`
 - result: CUSTOM-over-DEFAULT locked; DEFAULT=`[3,1]`; CMS disable=false; BE product source unchanged
 - evidence: sibling `cobo_web_design/docs/ai-cache/workflow-step-reminder-rule-engine-2026-08-17/`
-- next: Phase 2B FE after explicit confirm — no BE implement this phase
+- next: Phase 2B FE after explicit confirm ? no BE implement this phase
 - NO_BACKEND_SOURCE_CHANGE / NO_MIGRATION / NO_DEPLOY / NO_PRODUCTION / NO_PUSH
 
-## 2026-08-17 — CMS irregular → ad_hoc template persistence (FE pointer)
+## 2026-08-17 ? CMS irregular ? ad_hoc template persistence (FE pointer)
 
 - task type: FE source fix (paired pointer)
 - objective: `CMS_IRREGULAR_ADHOC_TEMPLATE_PERSISTENCE_FIX_READY`
-- result: FE sync Portal irregular → engine ad_hoc; BE unchanged; evidence in sibling `cobo_web_design/docs/ai-cache/cms-irregular-adhoc-template-persistence-fix-2026-08-17/`
+- result: FE sync Portal irregular ? engine ad_hoc; BE unchanged; evidence in sibling `cobo_web_design/docs/ai-cache/cms-irregular-adhoc-template-persistence-fix-2026-08-17/`
 - NO_BACKEND_SOURCE_CHANGE / NO_ALERT_ENGINE_CHANGE / NO_MIGRATION / NO_PRODUCTION / NO_PUSH
 
 
 
-## 2026-08-17 — CMS template → Enterprise abnormal alert post-fix deep smoke (DEV)
+## 2026-08-17 ? CMS template ? Enterprise abnormal alert post-fix deep smoke (DEV)
 
 - task type: deep smoke QA closeout (paired FE pack)
 - objective: `CMS_TEMPLATE_TO_ENTERPRISE_ABNORMAL_ALERT_DEEP_SMOKE_DEV_READY`
@@ -546,59 +625,59 @@
 - BE: no source/deploy/restart/migration this closeout
 - NO_BACKEND_DEPLOY / NO_WORKER_RESTART / NO_MIGRATION / NO_PRODUCTION / NO_PUSH
 
-## 2026-08-14 — Manual QR company package activation DEV
+## 2026-08-14 ? Manual QR company package activation DEV
 
-- paired FE pack `24`–`65`; `make deploy-be` PASS (worker recreated, no migrate)
+- paired FE pack `24`?`65`; `make deploy-be` PASS (worker recreated, no migrate)
 - QA company PREMIUM retained; user_subscription_tiers unchanged
 - NO_MIGRATION / NO_PRODUCTION / NO_PUSH
 
-## 2026-08-14 — Manual QR company package activation (implement)
+## 2026-08-14 ? Manual QR company package activation (implement)
 
 - paired FE pack: `../cobo_web_design/docs/ai-cache/manual-qr-company-package-activation-2026-08-14/`
 - `docker compose -f docker-compose.dev.yml build api` PASS
 - NO_MIGRATION / NO_WORKER / NO_DEV_DEPLOY / NO_PRODUCTION / NO_PUSH
 
-## 2026-08-14 — Manual QR package payment flow analysis
+## 2026-08-14 ? Manual QR package payment flow analysis
 
 - paired FE pack: `../cobo_web_design/docs/ai-cache/package-manual-qr-payment-flow-analysis-2026-08-14/`
 - verdict: **COBO_MANUAL_QR_PACKAGE_PAYMENT_FLOW_ANALYSIS_READY**
 - NO_SOURCE_IMPLEMENTATION / NO_DEV_DEPLOY / NO_PRODUCTION / NO_PUSH
 
-## 2026-08-14 — CMS template daily/weekly runtime DEV
+## 2026-08-14 ? CMS template daily/weekly runtime DEV
 
 - paired FE pack: `../cobo_web_design/docs/ai-cache/cms-template-daily-weekly-cycle-2026-08-14/`
-- deploy: make deploy-be (api+worker); YEAR_BOUNDARY unit parity 2026-01-01→2025-12-28
+- deploy: make deploy-be (api+worker); YEAR_BOUNDARY unit parity 2026-01-01?2025-12-28
 - verdict: **CMS_TEMPLATE_DAILY_WEEKLY_CYCLE_DEV_READY**
 - NO_MIGRATION / NO_PRODUCTION / NO_PUSH
 
-## 2026-08-14 — CMS template daily/weekly cycle
+## 2026-08-14 ? CMS template daily/weekly cycle
 
 - paired FE pack: `../cobo_web_design/docs/ai-cache/cms-template-daily-weekly-cycle-2026-08-14/`
 - BE: validation + frequency aliases + engine R-P + periodic seed SQL
 - verdict pointer: **CMS_TEMPLATE_DAILY_WEEKLY_CYCLE_READY**
 - NO_MIGRATION / NO_DEV_DEPLOY / NO_PRODUCTION / NO_PUSH
 
-## 2026-08-10 — T1 adhoc proposal tracking backend self-read + scope=my
+## 2026-08-10 ? T1 adhoc proposal tracking backend self-read + scope=my
 
 - task type: implement (BE)
 - objective: creator self-detail + scope=my list
 - files: internal/adhoc app/service/contracts + mysql List + http handler + tests
-- verify: go test ./internal/adhoc/...; vet; go build ./cmd/api; docker compose build api — PASS
-- evidence: FE pack `44`–`56` + results.t1
+- verify: go test ./internal/adhoc/...; vet; go build ./cmd/api; docker compose build api ? PASS
+- evidence: FE pack `44`?`56` + results.t1
 - verdict: **T1_ADHOC_PROPOSAL_TRACKING_BACKEND_READY**
 - markers: NO_MIGRATION; NO_FRONTEND; NO_DEV_DEPLOY; NO_PRODUCTION
 
-## 2026-08-10 — T0 adhoc proposal tracking product contract (pointer)
+## 2026-08-10 ? T0 adhoc proposal tracking product contract (pointer)
 
 - task type: docs pointer (FE pack is SoT)
 - objective: lock BE self-read necessity for tracking MVP
 - decision: **`T0_BACKEND_SELF_READ_REQUIRED=true`** (propose grantable without read; Get/List require read today)
 - T1 scope: creator self-detail OR; `GET list?scope=my`; no migration; no scope=assigned
-- evidence: `../cobo_web_design/docs/ai-cache/adhoc-proposal-tracking-discoverability-2026-08-10/` (`30`–`43`)
+- evidence: `../cobo_web_design/docs/ai-cache/adhoc-proposal-tracking-discoverability-2026-08-10/` (`30`?`43`)
 - verdict: **T0_ADHOC_PROPOSAL_TRACKING_PRODUCT_CONTRACT_READY**
 - markers: NO_TRACKING_PERMISSION_BROADENING; NO_MIGRATION; NO_DEPLOY; NO_PRODUCTION
 
-## 2026-08-10 — Ad-hoc proposal tracking discoverability audit + plan (pointer)
+## 2026-08-10 ? Ad-hoc proposal tracking discoverability audit + plan (pointer)
 
 - task type: smoke QA + plan (docs pointer; primary pack on FE)
 - objective: post-submit tracking discoverability
@@ -607,7 +686,7 @@
 - verdict: **ADHOC_PROPOSAL_TRACKING_IMPLEMENTATION_PLAN_READY**
 - markers: no BE source change; no migration; no deploy; no Production
 
-## 2026-08-10 — M4 adhoc multi-assignee DEV migration+deploy+E2E
+## 2026-08-10 ? M4 adhoc multi-assignee DEV migration+deploy+E2E
 
 - task type: coordinated DEV migration apply + deploy + authenticated E2E (no Production)
 - objective: ADHOC_PROPOSAL_MULTI_ASSIGNEE_DEV_READY
@@ -621,7 +700,7 @@
 
 - task type: docs pointer (BE)
 - verdict: **M3_ADHOC_PROPOSAL_MULTI_ASSIGNEE_FRONTEND_READY**
-- remaining: await confirm → M4
+- remaining: await confirm ? M4
 
 ## 2026-08-10 - Ad-hoc proposal multi-assignee M2 runtime + recipients
 
@@ -629,8 +708,8 @@
 - objective: workflow_task_assignees + v3 materialize + ANY auth/completion + Personal Ops/alert/reminder readers
 - implemented: migration 0128 source; nullable singular; relation authority; concurrent single-winner; recipient readers
 - verify: go test adhoc/workflow/deadlinealerts/personalops/reminder PASS; vet PASS; api+worker build PASS; docker api+worker PASS
-- evidence: `docs/ai-cache/adhoc-proposal-multi-assignee-2026-08-10/` (`56`–`75`)
-- remaining: await confirm → M3 FE; NO_MIGRATION_APPLY; NO_DEV_DEPLOY
+- evidence: `docs/ai-cache/adhoc-proposal-multi-assignee-2026-08-10/` (`56`?`75`)
+- remaining: await confirm ? M3 FE; NO_MIGRATION_APPLY; NO_DEV_DEPLOY
 
 ## 2026-08-10 - Ad-hoc proposal multi-assignee M1 backend contract
 
@@ -638,15 +717,15 @@
 - objective: v3 multi-assignee proposal contract foundation
 - implemented: assignee_membership_ids; schema_version=3; head resolver; submit normalize; runtime guard
 - verify: go test adhoc+workflow PASS; vet PASS; api+worker build PASS; docker compose build api PASS
-- evidence: `../cobo_web_design/docs/ai-cache/adhoc-proposal-multi-assignee-2026-08-10/` (`40`–`55`)
-- remaining: await confirm → M2; NO_DEV_DEPLOY
+- evidence: `../cobo_web_design/docs/ai-cache/adhoc-proposal-multi-assignee-2026-08-10/` (`40`?`55`)
+- remaining: await confirm ? M2; NO_DEV_DEPLOY
 
 ## 2026-08-10 - Ad-hoc proposal multi-assignee M0 Product contract lock
 
 - task type: Product contract lock (docs pointer)
 - objective: lock ANY + schema v3 + workflow_task_assignees + alert recipients
 - verdict: **M0_ADHOC_PROPOSAL_MULTI_ASSIGNEE_PRODUCT_CONTRACT_READY**
-- evidence: `../cobo_web_design/docs/ai-cache/adhoc-proposal-multi-assignee-2026-08-10/` (`28`–`39`)
+- evidence: `../cobo_web_design/docs/ai-cache/adhoc-proposal-multi-assignee-2026-08-10/` (`28`?`39`)
 - remaining: superseded by M1
 
 ## 2026-08-10 - Ad-hoc proposal multi-assignee audit + plan
@@ -662,16 +741,16 @@
 - task type: release (DEV)
 - objective: migration 0127 + BE/FE deploy + E2E
 - implemented: push-migration 0127; deploy-be; deploy-fe; run_dev_migrations list hotfix
-- evidence: `../cobo_web_design/docs/ai-cache/adhoc-proposal-deadline-day-type-2026-08-10/` (`60`–`90`)
-- next: stop at DEV — no Production
+- evidence: `../cobo_web_design/docs/ai-cache/adhoc-proposal-deadline-day-type-2026-08-10/` (`60`?`90`)
+- next: stop at DEV ? no Production
 
 ## 2026-08-10 - Ad-hoc proposal deadline day type Phase C runtime
 
 - task type: implement (BE)
 - objective: runtime proposal due by day type
 - implemented: authoritative calculator + consumers; tests; docker builds
-- evidence: `../cobo_web_design/docs/ai-cache/adhoc-proposal-deadline-day-type-2026-08-10/` (`44`–`59`)
-- next: Phase D after confirm — do not deploy Phase C alone
+- evidence: `../cobo_web_design/docs/ai-cache/adhoc-proposal-deadline-day-type-2026-08-10/` (`44`?`59`)
+- next: Phase D after confirm ? do not deploy Phase C alone
 
 ## 2026-08-10 - Ad-hoc proposal deadline day type Phase B (pointer)
 
@@ -690,43 +769,43 @@
 
 - verdict: **ADHOC_PROPOSAL_DEADLINE_DAY_TYPE_IMPLEMENTATION_PLAN_READY**
 - evidence: `../cobo_web_design/docs/ai-cache/adhoc-proposal-deadline-day-type-2026-08-10/`
-- next: await confirm → Phase A BE (no implement yet)
+- next: await confirm ? Phase A BE (no implement yet)
 
 ## 2026-08-07 - Ad-hoc proposal custom workflow Phase 4.1 browser Product E2E
 
 - task type: browser Product E2E + BE date normalize hotfix (no Production)
-- fixed: `normalizeDateOnly` on PatchDraftProposal DATE writes (MySQL scan ISO → YYYY-MM-DD)
+- fixed: `normalizeDateOnly` on PatchDraftProposal DATE writes (MySQL scan ISO ? YYYY-MM-DD)
 - verified: `go test ./internal/adhoc/... ./internal/workflow/app/...` PASS; docker compose build api PASS; `deploy-dev.ps1 -Mode be`
 - verdict: **ADHOC_PROPOSAL_CUSTOM_WORKFLOW_DEV_READY**
-- evidence (canonical): `../cobo_web_design/docs/ai-cache/adhoc-proposal-custom-workflow-contract-2026-08-07/` (`100`–`120`)
-- next: **stop at DEV** — no Production / no Phase 5
+- evidence (canonical): `../cobo_web_design/docs/ai-cache/adhoc-proposal-custom-workflow-contract-2026-08-07/` (`100`?`120`)
+- next: **stop at DEV** ? no Production / no Phase 5
 
 ## 2026-08-07 - Ad-hoc proposal custom workflow Phase 4 DEV deploy + E2E
 
 - task type: coordinated DEV deploy + authenticated E2E (no Production)
 - deployed: `deploy-dev.ps1 -Mode be` then `-Mode fe` (Makefile equiv. `deploy-be`/`deploy-fe`); Docker compose build api+worker PASS
 - verified: healthz/readyz 200; v2 freeze + multi-step chain on DEV; `NO_MIGRATION`
-- verdict: **ADHOC_PROPOSAL_CUSTOM_WORKFLOW_DEV_READY** (runtime) — Product browser E2E closed in Phase 4.1
-- evidence (canonical): `../cobo_web_design/docs/ai-cache/adhoc-proposal-custom-workflow-contract-2026-08-07/` (`77`–`99`)
-- next: Phase 4.1 complete — see entry above
+- verdict: **ADHOC_PROPOSAL_CUSTOM_WORKFLOW_DEV_READY** (runtime) ? Product browser E2E closed in Phase 4.1
+- evidence (canonical): `../cobo_web_design/docs/ai-cache/adhoc-proposal-custom-workflow-contract-2026-08-07/` (`77`?`99`)
+- next: Phase 4.1 complete ? see entry above
 
 ## 2026-08-07 - Ad-hoc proposal custom workflow Phase 3.6 multi-step runtime
 
 - task type: BE workflow runtime chain (no FE/deploy)
-- implemented: v2 non-final complete → next task from frozen snapshot; `ApplyTaskTransition` TX; StepSnapshot.assignee_membership_id; legacy unchanged
+- implemented: v2 non-final complete ? next task from frozen snapshot; `ApplyTaskTransition` TX; StepSnapshot.assignee_membership_id; legacy unchanged
 - verify: `go test ./internal/workflow/app/... ./internal/adhoc/...` PASS; `go vet` PASS; `go build` api+worker PASS; docker compose build api **BLOCKED** (daemon down); `NO_DEV_DEPLOY`
 - verdict: **PHASE_3_6_ADHOC_PROPOSAL_MULTI_STEP_RUNTIME_READY**
-- evidence (canonical): `../cobo_web_design/docs/ai-cache/adhoc-proposal-custom-workflow-contract-2026-08-07/` (`64`–`76`)
-- next: Phase 4 complete — see entry above
+- evidence (canonical): `../cobo_web_design/docs/ai-cache/adhoc-proposal-custom-workflow-contract-2026-08-07/` (`64`?`76`)
+- next: Phase 4 complete ? see entry above
 
 ## 2026-08-07 - Ad-hoc proposal custom workflow Phase 3.5 assignment convergence
 
 - task type: BE submit assignment lock (+ FE sibling); no deploy
 - implemented: `ValidateWorkflowForSubmit` before freeze; incomplete submit stays draft/unfrozen
-- verify: `go test ./internal/adhoc/... ./internal/workflow/app/...` PASS; `go vet` PASS; `docker compose … build api` PASS
+- verify: `go test ./internal/adhoc/... ./internal/workflow/app/...` PASS; `go vet` PASS; `docker compose ? build api` PASS
 - verdict: **PHASE_3_5_ADHOC_PROPOSAL_ASSIGNMENT_CONTRACT_READY**
-- evidence (canonical): `../cobo_web_design/docs/ai-cache/adhoc-proposal-custom-workflow-contract-2026-08-07/` (`54`–`63`)
-- next: Phase 3.6 complete — await Phase 4
+- evidence (canonical): `../cobo_web_design/docs/ai-cache/adhoc-proposal-custom-workflow-contract-2026-08-07/` (`54`?`63`)
+- next: Phase 3.6 complete ? await Phase 4
 
 ## 2026-08-07 - Ad-hoc proposal custom workflow Phase 3 runtime
 
@@ -734,8 +813,8 @@
 - implemented: v2 finalize router; MapProposalWorkflowToSnapshot; first-task assignee from snapshot; `V2_DIRECT_ASSIGNEE_REQUIRED`; legacy late-resolve preserved
 - verify: `go test ./internal/adhoc/... ./internal/workflow/app/...` PASS; `go vet` PASS; `docker compose -f docker-compose.dev.yml build api` PASS
 - verdict: **PHASE_3_ADHOC_PROPOSAL_CUSTOM_WORKFLOW_RUNTIME_READY**
-- evidence (canonical): `../cobo_web_design/docs/ai-cache/adhoc-proposal-custom-workflow-contract-2026-08-07/` (`40`–`53`)
-- next: await confirm → Phase 4 coordinated DEV deploy + E2E — **NO_DEV_DEPLOY** until then
+- evidence (canonical): `../cobo_web_design/docs/ai-cache/adhoc-proposal-custom-workflow-contract-2026-08-07/` (`40`?`53`)
+- next: await confirm ? Phase 4 coordinated DEV deploy + E2E ? **NO_DEV_DEPLOY** until then
 
 ## 2026-08-07 - Ad-hoc proposal custom workflow Phase 1 BE foundation
 
@@ -744,14 +823,14 @@
 - verify: `go test ./internal/adhoc/...` PASS; `go vet` PASS; `docker compose -f docker-compose.dev.yml build api` exit 0
 - verdict: **PHASE_1_ADHOC_PROPOSAL_CUSTOM_WORKFLOW_BACKEND_FOUNDATION_READY**
 - evidence (canonical): `../cobo_web_design/docs/ai-cache/adhoc-proposal-custom-workflow-contract-2026-08-07/`
-- next: Phase 3 runtime complete (see entry above) — still **NO_DEV_DEPLOY** until Phase 4
+- next: Phase 3 runtime complete (see entry above) ? still **NO_DEV_DEPLOY** until Phase 4
 
 ## 2026-08-06 - Company department metric Phase 2 DEV (BE pointer)
 
-- task type: pointer — DEV `make deploy-be` shipped `a9d03fb` (`department_count`)
+- task type: pointer ? DEV `make deploy-be` shipped `a9d03fb` (`department_count`)
 - evidence (canonical): `../cobo_web_design/docs/ai-cache/company-department-metric-2026-08-06/`
 - verdict: **PHASE_2_COMPANY_DEPARTMENT_METRIC_DEV_READY**
-- next: stop — no Production
+- next: stop ? no Production
 
 ## 2026-08-06 - Company department metric Phase 1 (BE pointer)
 
@@ -760,36 +839,36 @@
 - verify: dept tests PASS; `docker compose -f docker-compose.dev.yml build api` exit 0; no migration
 - evidence (canonical): `../cobo_web_design/docs/ai-cache/company-department-metric-2026-08-06/`
 - verdict: **PHASE_1_COMPANY_DEPARTMENT_METRIC_SOURCE_READY**
-- next: await confirm → Phase 2 DEV deploy + smoke
+- next: await confirm ? Phase 2 DEV deploy + smoke
 
 ## 2026-08-04 - Company Premium Phase 8 final handoff
 
-- task type: evidence/finalization only — no runtime/source deploy
-- reconciled Phase 0–7.1 lineage, nginx -T 20r/s burst40, API contract, deferred items, rollback
-- evidence: `docs/ai-cache/company-premium-implementation-2026-08-04/` (`36`–`46`)
-- FE mirror: `../cobo_web_design/docs/ai-cache/company-premium-fe-dev-2026-08-04/` (`21`–`23`)
+- task type: evidence/finalization only ? no runtime/source deploy
+- reconciled Phase 0?7.1 lineage, nginx -T 20r/s burst40, API contract, deferred items, rollback
+- evidence: `docs/ai-cache/company-premium-implementation-2026-08-04/` (`36`?`46`)
+- FE mirror: `../cobo_web_design/docs/ai-cache/company-premium-fe-dev-2026-08-04/` (`21`?`23`)
 - verdict: **COMPANY_PREMIUM_DEV_READY**
 
 ## 2026-08-04 - Company Premium Phase 7.1 nginx rate-limit fix
 
 - root cause: FE nginx `api_per_ip` 5r/s caused 503 during company-switch refresh storm
-- fix: `deploy-artifacts/web/nginx.conf` → 20r/s burst40; web recreate only
-- evidence FE: `../cobo_web_design/docs/ai-cache/company-premium-fe-dev-2026-08-04/` (`17`–`20`)
+- fix: `deploy-artifacts/web/nginx.conf` ? 20r/s burst40; web recreate only
+- evidence FE: `../cobo_web_design/docs/ai-cache/company-premium-fe-dev-2026-08-04/` (`17`?`20`)
 - verdict: **PHASE_7_COMPANY_PREMIUM_DEV_READY**
 
 ## 2026-08-04 - Company Premium Phase 7 FE DEV deploy (pointer)
 
-- task type: pointer — FE evidence in cobo_web_design
+- task type: pointer ? FE evidence in cobo_web_design
 - evidence: `../cobo_web_design/docs/ai-cache/company-premium-fe-dev-2026-08-04/`
 - verdict: **PHASE_7_COMPANY_PREMIUM_DEV_READY**
-- next: await confirmation → Phase 8
+- next: await confirmation ? Phase 8
 
 ## 2026-08-04 - Company Premium Phase 6 Frontend consumer (pointer)
 
-- task type: pointer — FE source/tests in cobo_web_design
+- task type: pointer ? FE source/tests in cobo_web_design
 - evidence FE: `../cobo_web_design/docs/ai-cache/company-premium-fe-phase6-2026-08-04/`
-- results: `docs/ai-cache/company-premium-implementation-2026-08-04/results.json` → PHASE_6_FRONTEND_CONSUMER_READY
-- next: await confirmation → Phase 7 FE-only DEV deploy
+- results: `docs/ai-cache/company-premium-implementation-2026-08-04/results.json` ? PHASE_6_FRONTEND_CONSUMER_READY
+- next: await confirmation ? Phase 7 FE-only DEV deploy
 
 ## 2026-08-04 - Company Premium Phase 5 Backend DEV migrate/deploy/smoke
 
@@ -797,20 +876,20 @@
 - target: `88.216.208.0` via `make deploy-dev MODE=migrate` then `MODE=be`
 - verified: 0125+seed applied; concurrency PASS_DEV; healthz/readyz; GetOwn/me plan contract; FE asset unchanged
 - risk cleared: `MYSQL_CONCURRENCY_VALIDATION_PASS_DEV`
-- evidence: `docs/ai-cache/company-premium-implementation-2026-08-04/` (`20`–`35`)
+- evidence: `docs/ai-cache/company-premium-implementation-2026-08-04/` (`20`?`35`)
 - verdict: **PHASE_5_BACKEND_DEV_READY**
-- next: await confirmation → Phase 6 Frontend
+- next: await confirmation ? Phase 6 Frontend
 
 ## 2026-08-04 - Company Premium Phase 4 backend quality + Patch safety
 
 - task type: quality/security/migration static + PatchOwnCompany response-safety fix
 - decisions: resolve plan before PATCH mutation (option b); STRICT unchanged; no DEV apply
 - verified: task-related failures 0; subscription/plan/me/owncompany targeted PASS; docker build api PASS
-- full `go test ./...`: NOT_FULL_PASS — 8 pre-existing failures (see 14-phase4-quality-results.json)
+- full `go test ./...`: NOT_FULL_PASS ? 8 pre-existing failures (see 14-phase4-quality-results.json)
 - open risk: `MYSQL_CONCURRENCY_VALIDATION_PENDING_PHASE_5`
-- evidence: `docs/ai-cache/company-premium-implementation-2026-08-04/` (`14`–`19`)
+- evidence: `docs/ai-cache/company-premium-implementation-2026-08-04/` (`14`?`19`)
 - verdict: **PHASE_4_BACKEND_QUALITY_READY**
-- next: await confirmation → Phase 5 DEV migration/deployment
+- next: await confirmation ? Phase 5 DEV migration/deployment
 
 ## 2026-08-04 - Company Premium Phase 3 API exposure
 
@@ -818,9 +897,9 @@
 - decisions: STRICT enrichment errors (never silent null); shared PlanDTO; batch GetEffectivePlans; CMS detail not enriched
 - verified: targeted handler/service tests PASS; `go test ./internal/subscription/...` PASS; docker compose build api PASS
 - open risk: `MYSQL_CONCURRENCY_VALIDATION_PENDING_PHASE_5` (not claimed verified)
-- evidence: `docs/ai-cache/company-premium-implementation-2026-08-04/` (`10`–`13`)
+- evidence: `docs/ai-cache/company-premium-implementation-2026-08-04/` (`10`?`13`)
 - verdict: **PHASE_3_API_EXPOSURE_READY**
-- next: await confirmation → Phase 4
+- next: await confirmation ? Phase 4
 
 ## 2026-08-04 - Company Premium Phase 2 shared Reader + hardening
 
@@ -828,19 +907,19 @@
 - decisions: seed via `seed_dev_company_subscriptions.sql` only; Create locks `companies` FOR UPDATE; no cache; batch dedupe/empty short-circuit
 - risk: `MYSQL_CONCURRENCY_VALIDATION_PENDING_PHASE_5` (MySQL unavailable locally)
 - verified: `go test ./internal/subscription/...` PASS (concurrency SKIP); vet/gofmt/diff-check; docker build api (see 07)
-- evidence: `docs/ai-cache/company-premium-implementation-2026-08-04/` (`06`–`09`)
+- evidence: `docs/ai-cache/company-premium-implementation-2026-08-04/` (`06`?`09`)
 - verdict: **PHASE_2_SHARED_READER_READY**
-- next: await confirmation → Phase 3 API exposure only
+- next: await confirmation ? Phase 3 API exposure only
 
 ## 2026-08-04 - Company Premium Phase 1 domain + migration foundation
 
 - task type: Case C domain/repo foundation + schema/fixtures (no API/deploy/DEV migrate)
-- decisions: reader returns full status; overlap reject via TX+FOR UPDATE; fixtures c_001 Premium / c_002 none; schema 0125 (0126 retracted Phase 2 → seed)
+- decisions: reader returns full status; overlap reject via TX+FOR UPDATE; fixtures c_001 Premium / c_002 none; schema 0125 (0126 retracted Phase 2 ? seed)
 - package: `internal/subscription/companyplan`
 - verified: `go test ./internal/subscription/...` PASS; vet/gofmt/diff-check PASS
-- evidence: `docs/ai-cache/company-premium-implementation-2026-08-04/` (`03`–`05`)
+- evidence: `docs/ai-cache/company-premium-implementation-2026-08-04/` (`03`?`05`)
 - verdict: **PHASE_1_DOMAIN_FOUNDATION_READY**
-- next: Phase 2 complete — see entry above
+- next: Phase 2 complete ? see entry above
 
 ## 2026-08-04 - Company Premium Phase 0 contract lock
 
@@ -849,7 +928,7 @@
 - locked: `company_subscriptions` SoT; additive `plan` / `plan:null`; shared Reader; A+B endpoints; badge PREMIUM+ACTIVE only; no user-tier fallback
 - evidence: `docs/ai-cache/company-premium-implementation-2026-08-04/`
 - verdict: **PHASE_0_CONTRACT_LOCKED**
-- next: await user confirmation → Phase 1 domain + migration foundation
+- next: await user confirmation ? Phase 1 domain + migration foundation
 
 ## 2026-08-03 - Company Premium Backend implementation plan
 
@@ -859,10 +938,10 @@
 - verdict: **COMPANY_PREMIUM_IMPLEMENTATION_PLAN_READY**
 - next: Product/Backend/Security approve SoT (B1 vs C) then Phase 0
 
-## 2026-08-03 - Operational Dashboard real KPI — DEV coordinated deploy + smoke
+## 2026-08-03 - Operational Dashboard real KPI ? DEV coordinated deploy + smoke
 
 - task type: DEV coordinated BE+FE deploy + authenticated smoke; pointer only in this repo
-- canonical: `../cobo_web_design/docs/ai-cache/dashboard-kpi-real-aggregation-2026-08-03/` (`20`–`43`)
+- canonical: `../cobo_web_design/docs/ai-cache/dashboard-kpi-real-aggregation-2026-08-03/` (`20`?`43`)
 - BE: source `bcbe14f` / feature `11531dd`; API-only recreate; worker/MySQL unchanged
 - verdict: **PASS_WITH_DATA_LIMITATIONS**
 
@@ -876,18 +955,18 @@
 
 ## 2026-07-31 - Resolved deadline rule (Phase 7 FINAL HANDOFF)
 
-- task type: pointer only; canonical evidence in FE pack 90–106
+- task type: pointer only; canonical evidence in FE pack 90?106
 - verdict: **PASS_RESOLVED_DEADLINE_RULE_BY_COMPANY_WITH_FIXTURE_LIMITATIONS** (await user review; stop)
 
 ## 2026-07-31 - Resolved deadline rule (Phase 6 Authenticated DEV Business E2E)
 
-- task type: pointer only; canonical evidence in FE pack 72–89
+- task type: pointer only; canonical evidence in FE pack 72?89
 - verdict: **PASS_WITH_FIXTURE_LIMITATIONS** (await user review; no Phase 7)
 
 ## 2026-07-31 - Resolved deadline rule (Phase 5 DEV DEPLOYMENT)
 
 - task type: DEV deploy pointer (canonical evidence in FE pack)
-- deployed API-only from `e2e3f1c`; FE `0bc028a` via make deploy-fe (see FE 51–71)
+- deployed API-only from `e2e3f1c`; FE `0bc028a` via make deploy-fe (see FE 51?71)
 - verdict: **PHASE_5_DEV_DEPLOYMENT_READY** (await Phase 6)
 
 ## 2026-07-31 - Resolved deadline rule by company (Phase 4 CONSISTENCY)
@@ -900,7 +979,7 @@
 
 - task type: FE-only (BE pointer)
 - note: Phase 2 full-suite FAIL corrected with baseline evidence at 661413d
-- FE verdict: **PHASE_3_FRONTEND_READY** — see cobo_web_design evidence pack
+- FE verdict: **PHASE_3_FRONTEND_READY** ? see cobo_web_design evidence pack
 - no BE implementation in Phase 3
 
 ## 2026-07-31 - Resolved deadline rule by company (Phase 2 BACKEND)
@@ -908,7 +987,7 @@
 - task type: backend additive API (Option A)
 - implemented: `resolved_deadline_rule` on GetTypeDetail; `ResolveDeadlineRule` + `ResolveDeadlineDays` wrapper; CYCLE_START; nullable due_date from summary
 - verified: disclosure packages PASS; go vet/build PASS; docker compose build api PASS; `go test ./...` FAIL pre-existing notification meta.yaml only
-- evidence: `docs/ai-cache/resolved-deadline-rule-implementation-2026-07-31/` (08–17)
+- evidence: `docs/ai-cache/resolved-deadline-rule-implementation-2026-07-31/` (08?17)
 - verdict: **PHASE_2_BACKEND_READY** (await Phase 3)
 
 ## 2026-07-31 - Resolved deadline rule by company (Phase 1 CONTRACT LOCK)
@@ -925,14 +1004,14 @@
 - objective: Portal shows **whatever rule production resolver selected** (not subsidiaries-only hardcode)
 - discovered: CMS **Model B** fixed `deadline_by_structure` map + toggle; resolver derives one criterion (subsidiaries>units>simple); no priority/dynamic rules
 - recommended: **Option A** expose generic `resolved_deadline_rule`; Option C generic engine = separate roadmap
-- QA: `use_structure_deadline=false` → must not show structure labels despite both company flags true
+- QA: `use_structure_deadline=false` ? must not show structure labels despite both company flags true
 - evidence: `cobo_web_design/docs/ai-cache/config-driven-enterprise-deadline-rule-plan-2026-07-31/`
 - verdict: **PLAN_READY_FOR_REVIEW**
 
 ## 2026-07-31 - Portal enterprise deadline rule solution plan (PLAN_ONLY)
 
 - task type: plan-only audit (FE/BE/contract/runtime)
-- objective: enable Portal “Kỳ hạn công bố/báo cáo” to show enterprise-resolved rule semantics
+- objective: enable Portal ?K? h?n c?ng b?/b?o c?o? to show enterprise-resolved rule semantics
 - discovered: section uses CMS `deadline_rule` only; BE already resolves N + `deadline_summary` (cycleStart + WORKING_DAYS); structure precedence subsidiaries>units>simple; QA toggle use_structure_deadline=false
 - recommended: Option A additive `resolved_deadline_rule` DTO; FE localize; no calculator/migration change
 - open: base-date wording vs engine (GAP-6); both-flags product confirm; due-date display
@@ -942,22 +1021,22 @@
 ## 2026-07-30 - Workflow Readiness Copy Consistency (FE-only DEV)
 
 - task type: FE presentation (no BE DTO/engine change)
-- note: readiness API still returns `no active global workflow…` for empty versioning; FE maps State A when effective exists
+- note: readiness API still returns `no active global workflow?` for empty versioning; FE maps State A when effective exists
 - evidence (FE): `cobo_web_design/docs/ai-cache/workflow-readiness-copy-consistency-2026-07-30/`
 - verdict: **PASS_WORKFLOW_READINESS_COPY_CONSISTENCY**
 
 ## 2026-07-30 - Workflow alert tasks 500 + CMS dual-source UX (DEV)
 
 - task type: remediation (BE tasks Scan NULL + FE dual-source panel)
-- root cause: **T500-RC4** — department subquery NULL scanned into string → 500; system assignee m_system_oneshot fail-soft
-- verified: tasks 200 + actor_type=SYSTEM; detail UI 4 steps; CMS versioning empty vs Global Template v1 · 4 steps; snapshot/task unchanged; API-only + FE web-only isolation PASS
+- root cause: **T500-RC4** ? department subquery NULL scanned into string ? 500; system assignee m_system_oneshot fail-soft
+- verified: tasks 200 + actor_type=SYSTEM; detail UI 4 steps; CMS versioning empty vs Global Template v1 ? 4 steps; snapshot/task unchanged; API-only + FE web-only isolation PASS
 - evidence: `docs/ai-cache/workflow-alert-tasks-500-and-source-ux-remediation-2026-07-30/`
 - verdict: **PASS_TASKS_API_AND_WORKFLOW_SOURCE_UX**
 
 ## 2026-07-30 - Workflow config vs deadline alert steps audit (DEV)
 
 - task type: audit-only (paired FE evidence)
-- entity: qa-monthly-deadline-alert-202607-1785382733 / c_001 / record 019fb134-b0d8-…
+- entity: qa-monthly-deadline-alert-202607-1785382733 / c_001 / record 019fb134-b0d8-?
 - RC-4 dual-SoT: CMS global_workflows=0; effective+snapshot+steps API = global_template 4 steps match; list current-step-only; tasks endpoint 500
 - evidence: `docs/ai-cache/workflow-config-vs-deadline-alert-steps-audit-2026-07-30/`
 - verdict: **EXPECTED_RUNTIME_REPRESENTATION**; no code/DB/migration/deploy
@@ -967,7 +1046,7 @@
 - task type: BE implement + DEV CLI apply + paired FE E2E
 - package: `internal/disclosure/app/periodic_oneshot` + `cmd/periodic-materialize-one`
 - scope: type `qa-monthly-deadline-alert-202607-1785382733` / company `c_001` / period `2026-07`
-- verified: MATERIALIZED 1 cycle+1 record due 2026-07-31; API UPCOMING; UI Sắp tới; idempotent NO_OP; PERIODIC_SEEDING_ENABLED=false; MySQL ID unchanged; direct SQL=0
+- verified: MATERIALIZED 1 cycle+1 record due 2026-07-31; API UPCOMING; UI S?p t?i; idempotent NO_OP; PERIODIC_SEEDING_ENABLED=false; MySQL ID unchanged; direct SQL=0
 - evidence: `docs/ai-cache/guarded-periodic-one-shot-materialization-2026-07-30/` (mirrored FE)
 - verdict: **PASS_ONE_SHOT_MATERIALIZATION_AND_ALERT_E2E**
 
@@ -986,7 +1065,7 @@
 ## 2026-07-30 - Deadline alert active-report audit (DEV)
 
 - task type: audit-only (cross-repo); paired FE evidence `../cobo_web_design/docs/ai-cache/deadline-alert-active-report-audit-2026-07-30/`
-- discovered: alerts from `disclosure_records` (not template-active alone); `bao-cao-tai-chinh-quy-2` Q2/2026 Completed → `PENDING_CONFIRM` due 2026-05-12; Overdue filter empty by design
+- discovered: alerts from `disclosure_records` (not template-active alone); `bao-cao-tai-chinh-quy-2` Q2/2026 Completed ? `PENDING_CONFIRM` due 2026-05-12; Overdue filter empty by design
 - flags: `PERIODIC_SEEDING_ENABLED=false` (existing cycles already present)
 - verdict: **EXPECTED_BEHAVIOR_CONFIRMED** RC-1; no code/DB/migration/deploy
 
@@ -999,7 +1078,7 @@
 ## 2026-07-30 - Workflow Configuration load 404 audit (DEV)
 
 - task type: audit-only (cross-repo); paired evidence in FE `docs/ai-cache/workflow-config-load-404-audit-2026-07-30/`
-- discovered: `WORKFLOW_VERSIONING_ENABLED` unset on DEV → `wfchttp.Register` skipped → `GET .../workflow/configuration` → Go `404 page not found`; ConfigService would 200 empty if registered; effective-workflow separate source
+- discovered: `WORKFLOW_VERSIONING_ENABLED` unset on DEV ? `wfchttp.Register` skipped ? `GET .../workflow/configuration` ? Go `404 page not found`; ConfigService would 200 empty if registered; effective-workflow separate source
 - verdict: **ROOT_CAUSE_CONFIRMED** RC-4; awaiting user confirm before env enable / FE gate
 - scope: no code/DB/migration/deploy
 
@@ -1014,7 +1093,7 @@
 - FE evidence: ../cobo_web_design/docs/ai-cache/cms-workflow-step-reorder-description-instructions-2026-07-10/
 - deploy: push-migration 0121 applied; docker compose build api PASS
 
-﻿## 2026-07-15 - CMS Alert Email default ON
+?## 2026-07-15 - CMS Alert Email default ON
 - BE alert_config_service force enabled; Get missing defaults ON; paired FE hide UI
 
 ## 2026-07-15 - CMS file types free-text validation
@@ -1025,7 +1104,7 @@
 - task type: BE contract/display honesty
 - implemented: RefineDeadlineRuleDisplay + time_calculation_basis on DisclosureTypeDTO
 - verify: go test disclosure/app Deadline/Refine PASS; docker compose build api PASS; deploy be
-- sibling FE evidence: cobo_web_design/docs/ai-cache/deadline-rule-cms-to-portal-flow-audit-fix-2026-07-10/ï»¿## 2026-07-13 - Personal Ops outcome/on_time Option B
+- sibling FE evidence: cobo_web_design/docs/ai-cache/deadline-rule-cms-to-portal-flow-audit-fix-2026-07-10/?## 2026-07-13 - Personal Ops outcome/on_time Option B
 - migration 0120 completed_at forward-only; ConfirmRecord stamp; personalops ComputeOnTimeRate
 - DEV: sample_size=0 unavailable; docker build api PASS; deploy migrate+be
 - evidence (FE): personal-ops-outcome-ontime-due-parity-rebaseline-2026-07-10/
@@ -1035,7 +1114,7 @@
 - on_time remains unavailable
 - evidence (FE): personal-ops-finalization-mock1-e2e-2026-07-10/
 
-ï»¿# Reusable Task Updates
+?# Reusable Task Updates
 
 ## 2026-07-13 - Personal Ops GET /api/v1/me/operational-overview
 - task type: implement BE aggregate API
@@ -1099,10 +1178,10 @@
 ## 2026-05-20 - Plan deadline alerts tab adjustment (cross-repo analysis)
 
 - task type: understand / plan
-- objective: recheck current UI/contract boundaries and prepare ticket-ready implementation plan for adjusting the `CÃ¡ÂºÂ£nh bÃƒÂ¡o thÃ¡Â»Âi hÃ¡ÂºÂ¡n` tab without affecting other flows
+- objective: recheck current UI/contract boundaries and prepare ticket-ready implementation plan for adjusting the `Cảnh b??�o thời hạn` tab without affecting other flows
 - discovered:
-  - FE route `/app/deadlines` renders `DeadlineList` and contains two internal tabs: `CÃ¡ÂºÂ£nh bÃƒÂ¡o thÃ¡Â»Âi hÃ¡ÂºÂ¡n` and `LÃ¡Â»â€¹ch sÃ¡Â»Â­ CBTT`.
-  - current alert cards are mock-driven from `mockDeadlines` and still render `owner` plus CTA buttons `Chi tiÃ¡ÂºÂ¿t` and `TÃ¡ÂºÂ¡o cÃ¡ÂºÂ£nh bÃƒÂ¡o mÃ¡Â»â€ºi`.
+  - FE route `/app/deadlines` renders `DeadlineList` and contains two internal tabs: `Cảnh b??�o thời hạn` and `L�???ch sử CBTT`.
+  - current alert cards are mock-driven from `mockDeadlines` and still render `owner` plus CTA buttons `Chi tiết` and `Tạo cảnh b??�o m�???i`.
   - current FE `DeadlineAlert` type does not contain workflow-derived department state; therefore requirement 4.2 cannot be implemented correctly by simple label changes.
   - BE workflow contract already exposes `workflow instance` data with `snapshot`, `current_step_code`, `t0_date`, `t0_policy`; snapshot rows include `department`, `step_code`, and `processing_days`.
   - current BE workflow task DTO is additive-safe but not yet shaped specifically for the deadline list card view; deriving active department from workflow instance is the safest boundary.
@@ -1116,7 +1195,7 @@
 - contracts/behaviors/constraints/decisions:
   - phase 1 should stay FE-only and isolate changes to the deadline alert card rendering path.
   - phase 2 should be additive: FE consumes workflow-backed department data without changing existing workflow action flows or history behavior.
-  - source of truth for `phÃƒÂ²ng Ã„â€˜ang thÃ¡Â»Â±c hiÃ¡Â»â€¡n` should come from workflow state / snapshot mapping, not from the current `owner` field.
+  - source of truth for `ph??�ng ?????ang thực hi�???n` should come from workflow state / snapshot mapping, not from the current `owner` field.
 - build/verification result:
   - planning-only task; no runtime code changes; docker/build verification not required
 - remaining gaps/risks/next steps:
@@ -1130,8 +1209,8 @@
 - findings:
   - current FE alert list has no stable link from `DeadlineAlert` to `workflow_instance_id`, so phase 2 cannot reliably fetch workflow-backed active departments until the source-of-truth join is defined.
   - current BE workflow contract exposes only singular `current_step_code`; this does not by itself satisfy the requirement to show multiple departments at the same time if more than one step can be active concurrently.
-  - current requirement wording says active department is based on `T0 + ngÃƒÂ y`, while the plan recommends backend `current_step_code` as source of truth; this is a deliberate architectural choice but needs explicit business/technical confirmation to avoid contract mismatch.
-  - the current page also has a top header CTA `TÃ¡ÂºÂ¡o cÃ¡ÂºÂ£nh bÃƒÂ¡o mÃ¡Â»â€ºi` for the `Deadlines` tab, not only per-item CTAs; requirement wording only mentions removing the button in each item, so header CTA scope must be confirmed before FE work starts.
+  - current requirement wording says active department is based on `T0 + ng??�y`, while the plan recommends backend `current_step_code` as source of truth; this is a deliberate architectural choice but needs explicit business/technical confirmation to avoid contract mismatch.
+  - the current page also has a top header CTA `Tạo cảnh b??�o m�???i` for the `Deadlines` tab, not only per-item CTAs; requirement wording only mentions removing the button in each item, so header CTA scope must be confirmed before FE work starts.
 - affected repos/files/modules:
   - `cobo_web_design/src/pages/portal/DeadlineList.tsx`
   - `cobo_web_design/src/types.ts`
@@ -2069,7 +2148,7 @@
     - reviews: `cms.review.approve`, `cms.review.reject`
     - schedules: `cms.schedule.create`, `cms.schedule.delete`
   - each append includes actor/company context and resource identifiers; schedule/create also includes publish date metadata
-  - expanded integration test to assert audit feed contains expected write-action events after full entriesÃ¢â€ â€™reviewsÃ¢â€ â€™schedules flow
+  - expanded integration test to assert audit feed contains expected write-action events after full entries�??????reviews�??????schedules flow
 - affected repos/files/modules:
   - `cobo_iam_services/internal/platformcms/transport/http/handler.go`
   - `cobo_iam_services/internal/httpserver/server_test.go`
@@ -2208,7 +2287,7 @@
   - Week 1 baseline status is mostly complete (auth/session/company switch/forbidden flows + openapi snapshot)
   - remaining Week 1 contract gap: `/api/v1/me` still omits `user.subscription_tier`
   - Week 2 CMS-related execution is effectively complete and expanded beyond original baseline (strict entry policy, prefix contracts, domain-backed P2 flows, audit enrichment, action filter, metrics endpoint)
-  - minor documentation update debt remains to align Ã¢â‚¬Å“stub/partialÃ¢â‚¬Â notes with current live CMS state
+  - minor documentation update debt remains to align �?????stub/partial�???� notes with current live CMS state
 - affected repos/files/modules:
   - `cobo_iam_services/internal/iam/transport/http/me_handler.go`
   - `cobo_iam_services/docs/PLATFORM_CMS_PREFIX_AND_TENANT.md`
@@ -2781,7 +2860,7 @@
   - `cobo_iam_services/migrations/0012_disclosure_catalog_versions.up.sql`
 - important contracts/behaviors/constraints/decisions:
   - current contract allows flexible free-text content; this is good for adoption speed but increases template drift risk across operators
-  - recommended backend rule baseline for Ã¢â‚¬Å“template chuÃ¡ÂºÂ©nÃ¢â‚¬Â:
+  - recommended backend rule baseline for �?????template chuẩn�???�:
     - periodic: require non-empty `periodicity` and normative `deadline_rule`
     - irregular: require event-based deadline semantics and trigger-condition content
     - custom: require governance/change-note context and explicit applicability scope
@@ -2796,7 +2875,7 @@
 ## 2026-05-01 - Add 3 Disclosure Template Types (Obligation/AGM/Transaction)
 
 - task type: implement
-- objective: bÃ¡Â»â€¢ sung thÃƒÂªm 3 loÃ¡ÂºÂ¡i template bÃƒÂ¡o cÃƒÂ¡o trong disclosure catalog Ã„â€˜Ã¡Â»Æ’ CMS cÃƒÂ³ thÃ¡Â»Æ’ tÃ¡ÂºÂ¡o/chÃ¡Â»Ân ngay: nghÃ„Â©a vÃ¡Â»Â¥, tÃ¡Â»â€¢ chÃ¡Â»Â©c Ã„â€˜Ã¡ÂºÂ¡i hÃ¡Â»â„¢i cÃ¡Â»â€¢ Ã„â€˜ÃƒÂ´ng, cÃƒÂ´ng bÃ¡Â»â€˜ thÃƒÂ´ng tin vÃ¡Â»Â giao dÃ¡Â»â€¹ch
+- objective: b�??? sung th??�m 3 loại template b??�o c??�o trong disclosure catalog ?????�?? CMS c??� th�?? tạo/chọn ngay: ngh??�a vụ, t�??? chức ?????ại h�???i c�??? ???????�ng, c??�ng b�??? th??�ng tin về giao d�???ch
 - what was implemented/discovered:
   - added new migration `0014_disclosure_catalog_extra_types.up.sql` to insert/upsert:
     - `dt-obligation-report` (group `group-001`)
@@ -2813,9 +2892,9 @@
 - important contracts/behaviors/constraints/decisions:
   - rollout-safe approach: add new migration instead of modifying historical migration to avoid drift on already-migrated environments
   - category/group mapping:
-    - nghÃ„Â©a vÃ¡Â»Â¥: `Ã„ÂÃ¡Â»â€¹nh kÃ¡Â»Â³` / `group-001`
-    - tÃ¡Â»â€¢ chÃ¡Â»Â©c Ã„â€˜Ã¡ÂºÂ¡i hÃ¡Â»â„¢i cÃ¡Â»â€¢ Ã„â€˜ÃƒÂ´ng: `Ã„ÂÃ¡Â»â€¹nh kÃ¡Â»Â³` / `group-001`
-    - cÃƒÂ´ng bÃ¡Â»â€˜ thÃƒÂ´ng tin vÃ¡Â»Â giao dÃ¡Â»â€¹ch: `BÃ¡ÂºÂ¥t thÃ†Â°Ã¡Â»Âng` / `group-002`
+    - ngh??�a vụ: `??��???nh kỳ` / `group-001`
+    - t�??? chức ?????ại h�???i c�??? ???????�ng: `??��???nh kỳ` / `group-001`
+    - c??�ng b�??? th??�ng tin về giao d�???ch: `Bất th??�ờng` / `group-002`
   - seed is idempotent via `ON DUPLICATE KEY UPDATE`
 - build/verification result:
   - targeted integration tests passed:
@@ -2828,11 +2907,11 @@
 ## 2026-05-01 - Template Standardization: Type-aware Validation + Enum Contract
 
 - task type: implement
-- objective: chuÃ¡ÂºÂ©n hÃƒÂ³a lifecycle template disclosure bÃ¡ÂºÂ±ng matrix validation theo loÃ¡ÂºÂ¡i (periodic/irregular/custom), enum hÃƒÂ³a field reference vÃƒÂ  bÃ¡Â»â€¢ sung test matrix integration
+- objective: chuẩn h??�a lifecycle template disclosure bằng matrix validation theo loại (periodic/irregular/custom), enum h??�a field reference v??� b�??? sung test matrix integration
 - what was implemented/discovered:
   - applied running-stack migrations and verified catalog data:
-    - `0014_disclosure_catalog_extra_types.up.sql` (3 loÃ¡ÂºÂ¡i mÃ¡Â»â€ºi)
-    - `0015_disclosure_template_enums.up.sql` (chuÃ¡ÂºÂ©n hÃƒÂ³a enum + thÃƒÂªm `deadline_strategy`)
+    - `0014_disclosure_catalog_extra_types.up.sql` (3 loại m�???i)
+    - `0015_disclosure_template_enums.up.sql` (chuẩn h??�a enum + th??�m `deadline_strategy`)
   - added backend template enum/validation module:
     - new `internal/disclosure/app/template_validation.go`
     - validates matrix by `template_category` and returns `400 INVALID_REQUEST` with `details.field_errors`
@@ -3071,37 +3150,37 @@
 - remaining gaps/risks/next steps:
   - if deployment environment uses customized role sets beyond seed roles, ops must assign new `template.workflow.override.*` permissions to intended roles before rollout
 
-## 2026-05-20 - Feature: KiÃ¡Â»Æ’m soÃƒÂ¡t quy trÃƒÂ¬nh (Process Controller) for Ad-Hoc Alert flow
+## 2026-05-20 - Feature: Ki�??m so??�t quy tr??�nh (Process Controller) for Ad-Hoc Alert flow
 
 - task type: feature-extension (cross-repo)
 - objective: replace permission-based admin approval gate (`ad_hoc_alert.admin_review`) in ad-hoc alert flow with identity-based process controller assigned by the proposal creator
 - affected repos/files/modules:
   - **cobo_iam_services**:
-    - `migrations/0042_adhoc_process_controller.up.sql` / `.down.sql` Ã¢â‚¬â€ nullable `process_controller_id` column + index
-    - `migrations/0033_smoke_workflow_dev_seed.up.sql` Ã¢â‚¬â€ seed new permission `ad_hoc_alert.process_control`
-    - `migrations/0034_seed_org_structure_demo.up.sql` Ã¢â‚¬â€ assign permission to `admin_doanh_nghiep` + `truong_phong` roles
-    - `internal/adhoc/app/contracts.go` Ã¢â‚¬â€ `EligibleController`, `MembershipValidator` interface, `ListEligibleControllers`, `ProcessControllerID` on DTO
-    - `internal/adhoc/infra/mysql/membership_validator.go` Ã¢â‚¬â€ NEW: SQL implementation of MembershipValidator
-    - `internal/adhoc/infra/mysql/repository.go` Ã¢â‚¬â€ scan/insert `process_controller_id` in all 4 repo methods
-    - `internal/adhoc/app/service.go` Ã¢â‚¬â€ validate controller at CreateProposal; identity gate at AdminApprove + Reject(admin stage); `ListEligibleControllers` method
-    - `internal/adhoc/transport/http/handler.go` Ã¢â‚¬â€ NEW route `GET /api/v1/company/ad-hoc-proposals/eligible-controllers` (registered BEFORE wildcard `{proposal_id}`)
-    - `internal/httpserver/server.go` Ã¢â‚¬â€ wire `MembershipValidator` into `adhocapp.NewService`
-    - `internal/adhoc/app/service_test.go` Ã¢â‚¬â€ updated 4 existing tests + 6 new process controller tests
-    - `internal/adhoc/transport/http/handler_test.go` Ã¢â‚¬â€ added `ListEligibleControllers` stub to fakeService
+    - `migrations/0042_adhoc_process_controller.up.sql` / `.down.sql` �?????? nullable `process_controller_id` column + index
+    - `migrations/0033_smoke_workflow_dev_seed.up.sql` �?????? seed new permission `ad_hoc_alert.process_control`
+    - `migrations/0034_seed_org_structure_demo.up.sql` �?????? assign permission to `admin_doanh_nghiep` + `truong_phong` roles
+    - `internal/adhoc/app/contracts.go` �?????? `EligibleController`, `MembershipValidator` interface, `ListEligibleControllers`, `ProcessControllerID` on DTO
+    - `internal/adhoc/infra/mysql/membership_validator.go` �?????? NEW: SQL implementation of MembershipValidator
+    - `internal/adhoc/infra/mysql/repository.go` �?????? scan/insert `process_controller_id` in all 4 repo methods
+    - `internal/adhoc/app/service.go` �?????? validate controller at CreateProposal; identity gate at AdminApprove + Reject(admin stage); `ListEligibleControllers` method
+    - `internal/adhoc/transport/http/handler.go` �?????? NEW route `GET /api/v1/company/ad-hoc-proposals/eligible-controllers` (registered BEFORE wildcard `{proposal_id}`)
+    - `internal/httpserver/server.go` �?????? wire `MembershipValidator` into `adhocapp.NewService`
+    - `internal/adhoc/app/service_test.go` �?????? updated 4 existing tests + 6 new process controller tests
+    - `internal/adhoc/transport/http/handler_test.go` �?????? added `ListEligibleControllers` stub to fakeService
   - **cobo_web_design**:
-    - `src/types.ts` Ã¢â‚¬â€ `EligibleProcessController` interface; `process_controller_id` on `AdHocProposalDto`; `ad_hoc_alert.process_control` permission
-    - `src/services/adHocAlertsApi.ts` Ã¢â‚¬â€ `listEligibleControllers()` method; `process_controller_membership_id` required field
-    - `src/services/workflowOverrideMappers.ts` Ã¢â‚¬â€ map `process_controller_id` in normalizer
-    - `src/pages/portal/AdHocProposalCreatePage.tsx` Ã¢â‚¬â€ required process controller combobox (eligible-controllers fetch + dropdown)
-    - `src/pages/portal/AdHocProposalDetailPage.tsx` Ã¢â‚¬â€ `canAdminApprove` now identity-based; button text "PhÃƒÂª duyÃ¡Â»â€¡t"; status "ChÃ¡Â»Â KiÃ¡Â»Æ’m soÃƒÂ¡t duyÃ¡Â»â€¡t"
-    - `src/pages/portal/AdHocProposalListPage.tsx` Ã¢â‚¬â€ status label updated
-    - `src/services/workflowServices.contract.test.ts` Ã¢â‚¬â€ 2 new contract tests
-    - `src/pages/portal/portal.workflow.regression.test.tsx` Ã¢â‚¬â€ fixed 4 tests + 1 new identity gate test
-  - `docs/canh-bao-bat-thuong-feature-doc.md` Ã¢â‚¬â€ updated to reflect Process Controller role
-  - `docs/permission_catalog.md` Ã¢â‚¬â€ added `ad_hoc_alert.process_control`; marked `ad_hoc_alert.admin_review` deprecated
+    - `src/types.ts` �?????? `EligibleProcessController` interface; `process_controller_id` on `AdHocProposalDto`; `ad_hoc_alert.process_control` permission
+    - `src/services/adHocAlertsApi.ts` �?????? `listEligibleControllers()` method; `process_controller_membership_id` required field
+    - `src/services/workflowOverrideMappers.ts` �?????? map `process_controller_id` in normalizer
+    - `src/pages/portal/AdHocProposalCreatePage.tsx` �?????? required process controller combobox (eligible-controllers fetch + dropdown)
+    - `src/pages/portal/AdHocProposalDetailPage.tsx` �?????? `canAdminApprove` now identity-based; button text "Ph??� duy�???t"; status "Chờ Ki�??m so??�t duy�???t"
+    - `src/pages/portal/AdHocProposalListPage.tsx` �?????? status label updated
+    - `src/services/workflowServices.contract.test.ts` �?????? 2 new contract tests
+    - `src/pages/portal/portal.workflow.regression.test.tsx` �?????? fixed 4 tests + 1 new identity gate test
+  - `docs/canh-bao-bat-thuong-feature-doc.md` �?????? updated to reflect Process Controller role
+  - `docs/permission_catalog.md` �?????? added `ad_hoc_alert.process_control`; marked `ad_hoc_alert.admin_review` deprecated
 - contracts/decisions (ADRs):
   - **ADR-1**: `process_controller_membership_id` required at create time; validated: not empty, not self, active membership, has `ad_hoc_alert.process_control`
-  - **ADR-2**: `AdminApprove` + `Reject(admin stage)` gate changed from permission check to identity check: `cur.ProcessControllerID != req.Subject.MembershipID Ã¢â€ â€™ 403`
+  - **ADR-2**: `AdminApprove` + `Reject(admin stage)` gate changed from permission check to identity check: `cur.ProcessControllerID != req.Subject.MembershipID �?????? 403`
   - **ADR-3**: `GET /api/v1/company/ad-hoc-proposals/eligible-controllers` added to adhoc module (NOT admin module) to avoid `admin.membership.list` permission requirement
   - **ADR-4**: `MembershipValidator` interface defined in `adhoc/app/contracts.go`, implemented in `adhoc/infra/mysql` to prevent circular imports with `authorization` module
   - **ADR-5**: Migration adds `process_controller_id` as NULL for zero-downtime rollout; application layer enforces non-null
@@ -3111,7 +3190,7 @@
   - `npx vitest run src/pages/portal/portal.workflow.regression.test.tsx`: 19 tests pass
   - `npx vitest run src/services/workflowServices.contract.test.ts`: all pass
 - remaining gaps/risks/next steps:
-  - **Reassign controller**: no endpoint to change `process_controller_id` after creation Ã¢â‚¬â€ only cancellation + re-creation workaround
+  - **Reassign controller**: no endpoint to change `process_controller_id` after creation �?????? only cancellation + re-creation workaround
   - **`ad_hoc_alert.admin_review` permission**: deprecated but not removed from DB; old admin users with this permission can no longer approve unless also designated as controller
   - ops must run migration 0042 before deploying; nullable column ensures safe rollout
 
@@ -3119,7 +3198,7 @@
 
 - task type: bug-fix
 - objective/question:
-  - investigate why `admin.dn@example.com` received access denied after clicking `TÃ¡ÂºÂ¡o cÃ¡ÂºÂ£nh bÃƒÂ¡o bÃ¡ÂºÂ¥t thÃ†Â°Ã¡Â»Âng mÃ¡Â»â€ºi` despite having `ad_hoc_alert.propose`
+  - investigate why `admin.dn@example.com` received access denied after clicking `Tạo cảnh b??�o bất th??�ờng m�???i` despite having `ad_hoc_alert.propose`
 - implemented/discovered:
   - confirmed DB effective permissions for membership `m_102` include `ad_hoc_alert.propose`
   - confirmed `/api/v1/me/effective-access` returns `ad_hoc_alert.propose` for a fresh `admin.dn@example.com` session
@@ -3155,7 +3234,7 @@
 - implemented/discovered:
   - created business + engineering summary doc:
     - `docs/ai-cache/adhoc-alert-crud-current-state-business-audit-summary.md`
-  - clarified that current scope is not Ã¢â‚¬Å“full alert CRUDÃ¢â‚¬Â; it is primarily a proposal workflow:
+  - clarified that current scope is not �?????full alert CRUD�???�; it is primarily a proposal workflow:
     - create/list/detail proposal
     - submit / focal approve / final approve / reject / cancel
     - auto-create disclosure record + workflow instance after final approval
@@ -3179,7 +3258,7 @@
   - `cobo_web_design/docs/canh-bao-bat-thuong-feature-doc.md`
   - `cobo_web_design/docs/permission_catalog.md`
 - contracts/behaviors/constraints/decisions:
-  - product wording should prefer Ã¢â‚¬Å“Ã„â€˜Ã¡Â»Â xuÃ¡ÂºÂ¥t cÃ¡ÂºÂ£nh bÃƒÂ¡o bÃ¡ÂºÂ¥t thÃ†Â°Ã¡Â»ÂngÃ¢â‚¬Â / Ã¢â‚¬Å“proposal workflowÃ¢â‚¬Â over Ã¢â‚¬Å“full CRUD cÃ¡ÂºÂ£nh bÃƒÂ¡oÃ¢â‚¬Â
+  - product wording should prefer �??????????ề xuất cảnh b??�o bất th??�ờng�???� / �?????proposal workflow�???� over �?????full CRUD cảnh b??�o�???�
   - final approval is identity-based via `process_controller_id`, not generic admin role-based
   - existing feature can be demoed, but documentation should not promise editable drafts or fully clean domain contracts
 - build/verification result:
@@ -3203,12 +3282,12 @@
     - `docs/ai-cache/adhoc-alert-crud-priority-action-plan.md`
     - `docs/ai-cache/adhoc-alert-business-one-pager.md`
   - dev plan is grouped by `P0/P1/P2` and focuses on execution order, ownership split, and acceptance
-  - business one-pager strips most engineering detail and frames the feature as a Ã¢â‚¬Å“proposal + approval workflowÃ¢â‚¬Â, not full final-alert CRUD
+  - business one-pager strips most engineering detail and frames the feature as a �?????proposal + approval workflow�???�, not full final-alert CRUD
 - affected repos/files/modules:
   - `cobo_iam_services/docs/ai-cache/adhoc-alert-crud-priority-action-plan.md`
   - `cobo_iam_services/docs/ai-cache/adhoc-alert-business-one-pager.md`
 - contracts/behaviors/constraints/decisions:
-  - business narrative should use Ã¢â‚¬Å“Ã„â€˜Ã¡Â»Â xuÃ¡ÂºÂ¥t cÃ¡ÂºÂ£nh bÃƒÂ¡o bÃ¡ÂºÂ¥t thÃ†Â°Ã¡Â»ÂngÃ¢â‚¬Â and avoid overclaiming editable drafts / full CRUD
+  - business narrative should use �??????????ề xuất cảnh b??�o bất th??�ờng�???� and avoid overclaiming editable drafts / full CRUD
   - engineering follow-up should prioritize contract correctness and admin-approve consistency before broader UX polish
 - build/verification result:
   - `BLOCKED:` documentation-only task; no runtime code changed in this cycle
@@ -3575,7 +3654,7 @@
     - `Implemented` only when FE and BE wiring are both visible
     - `Partial` when the route/design is clear but the backend surface is incomplete or indirect
     - `Planned` for spec-visible areas not fully evidenced in current code wiring
-  - although the user said "CMS hoÃ¡ÂºÂ·c Enterprise Admin", both focused inventories were generated because they are separate major surfaces and the split is more reusable this way
+  - although the user said "CMS hoặc Enterprise Admin", both focused inventories were generated because they are separate major surfaces and the split is more reusable this way
 - build/verification result:
   - `BLOCKED:` documentation-only task; no runtime code changed in this cycle
 - remaining gaps/risks/next steps:
@@ -3716,9 +3795,9 @@
   - when embed registry/render fails under `embed`, auth/reminder fall back to legacy rendering instead of failing the business path
   - reminder embed output is normalized to CRLF body lines to preserve the legacy SMTP body formatting
 - build/verification result:
-  - `go test ./internal/notification/app ./internal/notification/infra/registry ./internal/reminder/infra/email ./internal/iam/app` Ã¢Å“â€¦
-  - `go test ./internal/httpserver ./cmd/worker` Ã¢Å“â€¦
-  - `docker compose -f docker-compose.dev.yml build api` Ã¢Å“â€¦
+  - `go test ./internal/notification/app ./internal/notification/infra/registry ./internal/reminder/infra/email ./internal/iam/app` �?????
+  - `go test ./internal/httpserver ./cmd/worker` �?????
+  - `docker compose -f docker-compose.dev.yml build api` �?????
 - remaining gaps/risks/next steps:
   - auth worker delivery still consumes rendered `subject/body` payload exactly as before; phase 2 is still needed for `NotificationService` and `email.dispatch`
   - only `vi` template files exist in phase 1; locale fallback is wired but not yet populated with additional locales
@@ -3727,42 +3806,42 @@
 ## 2026-05-23 - DOC-001: Maker-checker capability split + sort_by API + CMS template migrations fix
 
 - task type: implement (multi-increment)
-- objective: chÃ¡Â»â€˜t 4 quyÃ¡ÂºÂ¿t Ã„â€˜Ã¡Â»â€¹nh DOC-001 vÃƒÂ  fix lÃ¡Â»â€”i danh sÃƒÂ¡ch template rÃ¡Â»â€”ng + API 500 trÃƒÂªn server dev
+- objective: ch�???t 4 quyết ?????�???nh DOC-001 v??� fix l�???i danh s??�ch template r�???ng + API 500 tr??�n server dev
 - what was implemented:
 
-  **Increment 1 Ã¢â‚¬â€ BE: lifecycle capability split (maker-checker)**
-  - tÃƒÂ¡ch permission `disclosure_type.manage` (maker: create/edit/submit-review) khÃ¡Â»Âi `disclosure_type.publish` (checker: publish/reject/archive)
-  - thÃƒÂªm helper `companyTemplateLifecycleCapability()` trong `internal/disclosure/app/service.go`
-  - test: `internal/disclosure/app/lifecycle_capability_test.go` Ã¢â‚¬â€ 7 tests, fakeAuthService, fakeLifecycleRepo
+  **Increment 1 �?????? BE: lifecycle capability split (maker-checker)**
+  - t??�ch permission `disclosure_type.manage` (maker: create/edit/submit-review) khỏi `disclosure_type.publish` (checker: publish/reject/archive)
+  - th??�m helper `companyTemplateLifecycleCapability()` trong `internal/disclosure/app/service.go`
+  - test: `internal/disclosure/app/lifecycle_capability_test.go` �?????? 7 tests, fakeAuthService, fakeLifecycleRepo
 
-  **Increment 2 Ã¢â‚¬â€ BE: sort_by cho list API**
-  - thÃƒÂªm `SortBy`/`SortDir` vÃƒÂ o `ListTypesParams` vÃƒÂ  `ListTypesRequest` (`internal/disclosure/app/contracts.go`)
-  - validation + defaulting trong service (`created_at DESC` nÃ¡ÂºÂ¿u khÃƒÂ´ng truyÃ¡Â»Ân)
-  - handler parse `sort_by`/`sort_dir` tÃ¡Â»Â« query params
-  - repo SQL `ORDER BY` Ã„â€˜ÃƒÂ£ Ã„â€˜Ã†Â°Ã¡Â»Â£c wire thÃ¡Â»Â±c sÃ¡Â»Â± (trÃ†Â°Ã¡Â»â€ºc Ã„â€˜ÃƒÂ³ hardcode `t.type_id ASC`)
+  **Increment 2 �?????? BE: sort_by cho list API**
+  - th??�m `SortBy`/`SortDir` v??�o `ListTypesParams` v??� `ListTypesRequest` (`internal/disclosure/app/contracts.go`)
+  - validation + defaulting trong service (`created_at DESC` nếu kh??�ng truyền)
+  - handler parse `sort_by`/`sort_dir` từ query params
+  - repo SQL `ORDER BY` ???????� ???????�ợc wire thực sự (tr??��???c ???????� hardcode `t.type_id ASC`)
   - allowed values: `sort_by=name|created_at`, `sort_dir=asc|desc`
 
-  **Increment 3 Ã¢â‚¬â€ BE: reset-override trÃ¡ÂºÂ£ 400 khi khÃƒÂ´ng cÃƒÂ³ override active**
-  - `ResetCompanyWorkflowOverrideActive` trong service.go kiÃ¡Â»Æ’m tra `effective_source == "global_template"` trÃ†Â°Ã¡Â»â€ºc khi cho phÃƒÂ©p reset
-  - trÃ¡ÂºÂ£ `400 INVALID_REQUEST` thay vÃƒÂ¬ 200 no-op
+  **Increment 3 �?????? BE: reset-override trả 400 khi kh??�ng c??� override active**
+  - `ResetCompanyWorkflowOverrideActive` trong service.go ki�??m tra `effective_source == "global_template"` tr??��???c khi cho ph??�p reset
+  - trả `400 INVALID_REQUEST` thay v??� 200 no-op
 
-  **Increment 4 Ã¢â‚¬â€ FE: capability split cho action visibility**
-  - `canManageCompanyTemplate` (disclosure_type.manage) Ã¢â‚¬â€ gate submit-review
-  - `canPublishCompanyTemplate` (disclosure_type.publish) Ã¢â‚¬â€ gate publish/reject/archive
-  - cÃ¡ÂºÂ­p nhÃ¡ÂºÂ­t `types.ts` Ã„â€˜Ã¡Â»Æ’ thÃƒÂªm 3 permission mÃ¡Â»â€ºi vÃƒÂ o union
-  - cÃ¡ÂºÂ­p nhÃ¡ÂºÂ­t regression tests Ã„â€˜Ã¡Â»Æ’ reflect permission split
+  **Increment 4 �?????? FE: capability split cho action visibility**
+  - `canManageCompanyTemplate` (disclosure_type.manage) �?????? gate submit-review
+  - `canPublishCompanyTemplate` (disclosure_type.publish) �?????? gate publish/reject/archive
+  - cập nhật `types.ts` ?????�?? th??�m 3 permission m�???i v??�o union
+  - cập nhật regression tests ?????�?? reflect permission split
 
-  **Fix: CMS migrations Ã„â€˜ÃƒÂºng sÃ¡Â»â€˜ (0053Ã¢â‚¬â€œ0057)**
-  - root cause: `deploy-artifacts/backend/migrations/0045Ã¢â‚¬â€œ0047` cÃƒÂ³ nÃ¡Â»â„¢i dung CMS nhÃ†Â°ng Ã„â€˜ÃƒÂ£ bÃ¡Â»â€¹ conflict sÃ¡Â»â€˜ vÃ¡Â»â€ºi migration chÃƒÂ­nh
-  - fix tÃ¡Â»Â« session trÃ†Â°Ã¡Â»â€ºc: tÃ¡ÂºÂ¡o lÃ¡ÂºÂ¡i Ã„â€˜ÃƒÂºng Ã¡Â»Å¸ `migrations/0053Ã¢â‚¬â€œ0055` (Ã„â€˜ÃƒÂ£ cÃƒÂ³), `0056_company_template_lifecycle`, `0057_workflow_override_versioning`
-  - session nÃƒÂ y xÃƒÂ³a file duplicate 0058/0059/0060 (Ã„â€˜Ã†Â°Ã¡Â»Â£c tÃ¡ÂºÂ¡o nhÃ¡ÂºÂ§m khi context window cÃ…Â©)
+  **Fix: CMS migrations ???????�ng s�??? (0053�??????0057)**
+  - root cause: `deploy-artifacts/backend/migrations/0045�??????0047` c??� n�???i dung CMS nh??�ng ???????� b�??? conflict s�??? v�???i migration ch??�nh
+  - fix từ session tr??��???c: tạo lại ???????�ng �? `migrations/0053�??????0055` (???????� c??�), `0056_company_template_lifecycle`, `0057_workflow_override_versioning`
+  - session n??�y x??�a file duplicate 0058/0059/0060 (???????�ợc tạo nhầm khi context window c??�)
 
-  **Fix: repo SQL sort thÃ¡Â»Â±c sÃ¡Â»Â± Ã„â€˜Ã†Â°Ã¡Â»Â£c dÃƒÂ¹ng**
-  - `internal/disclosure/infra/mysql/repository.go` Ã¢â‚¬â€ `ORDER BY` dÃƒÂ¹ng `sortCol`/`sortDir` thay vÃƒÂ¬ hardcode
+  **Fix: repo SQL sort thực sự ???????�ợc d??�ng**
+  - `internal/disclosure/infra/mysql/repository.go` �?????? `ORDER BY` d??�ng `sortCol`/`sortDir` thay v??� hardcode
 
-  **ChÃ¡ÂºÂ©n Ã„â€˜oÃƒÂ¡n API 500 trÃƒÂªn server dev**
-  - nguyÃƒÂªn nhÃƒÂ¢n: migration 0053Ã¢â‚¬â€œ0057 chÃ†Â°a Ã„â€˜Ã†Â°Ã¡Â»Â£c apply lÃƒÂªn DB server Ã¢â€ â€™ `review_status`, `is_mandatory` columns thiÃ¡ÂºÂ¿u Ã¢â€ â€™ MySQL error Ã¢â€ â€™ 500
-  - fix: apply migrations thÃ¡Â»Â§ cÃƒÂ´ng trÃƒÂªn server (xem lÃ¡Â»â€¡nh bÃƒÂªn dÃ†Â°Ã¡Â»â€ºi)
+  **Chẩn ?????o??�n API 500 tr??�n server dev**
+  - nguy??�n nh??�n: migration 0053�??????0057 ch??�a ???????�ợc apply l??�n DB server �?????? `review_status`, `is_mandatory` columns thiếu �?????? MySQL error �?????? 500
+  - fix: apply migrations thủ c??�ng tr??�n server (xem l�???nh b??�n d??��???i)
 
 - affected repos/files/modules:
   - `cobo_iam_services/internal/disclosure/app/service.go`
@@ -3774,13 +3853,13 @@
   - `cobo_web_design/src/pages/portal/DisclosureTypeDetail.tsx`
   - `cobo_web_design/src/pages/portal/DisclosureTypeDetail.lifecycle-regression.test.tsx`
   - `cobo_web_design/src/pages/portal/DisclosureTypeDetail.fe004cd-regression.test.tsx`
-  - migrations 0053Ã¢â‚¬â€œ0057 (Ã„â€˜ÃƒÂ£ tÃ¡Â»â€œn tÃ¡ÂºÂ¡i, khÃƒÂ´ng thay Ã„â€˜Ã¡Â»â€¢i)
-  - xÃƒÂ³a migrations 0058/0059/0060 (duplicate, Ã„â€˜ÃƒÂ£ remove)
+  - migrations 0053�??????0057 (???????� t�???n tại, kh??�ng thay ?????�???i)
+  - x??�a migrations 0058/0059/0060 (duplicate, ???????� remove)
 
 - contracts/behaviors/constraints/decisions:
   - `disclosure_type.manage`: create/edit/submit-review (maker)
-  - `disclosure_type.publish`: publish/reject/archive (checker) Ã¢â‚¬â€ tÃƒÂ¡ch biÃ¡Â»â€¡t hoÃƒÂ n toÃƒÂ n, khÃƒÂ´ng kiÃƒÂªm nhiÃ¡Â»â€¡m
-  - `archive` vÃƒÂ  `reject` cÃ…Â©ng thuÃ¡Â»â„¢c `publish` permission (khÃƒÂ´ng phÃ¡ÂºÂ£i `manage`) Ã„â€˜Ã¡Â»Æ’ Ã„â€˜Ã¡ÂºÂ£m bÃ¡ÂºÂ£o segregation of duties
+  - `disclosure_type.publish`: publish/reject/archive (checker) �?????? t??�ch bi�???t ho??�n to??�n, kh??�ng ki??�m nhi�???m
+  - `archive` v??� `reject` c??�ng thu�???c `publish` permission (kh??�ng phải `manage`) ?????�?? ?????ảm bảo segregation of duties
   - sort default: `created_at DESC`
   - reset-override 400 khi `effective_source == "global_template"` (Option A trong DOC-001 Q3)
 
@@ -3789,24 +3868,24 @@
   - FE: `npm run lint` (tsc --noEmit): pass
   - FE tests: lifecycle-regression + fe004cd-regression: pass sau khi fix permission assertions
 
-- server dev apply migrations Ã¢â‚¬â€ lÃ¡Â»â€¡nh SCP + run:
+- server dev apply migrations �?????? l�???nh SCP + run:
 
   ```
   Server: 88.216.208.0:21239  user: root  path: /root/cobo_project
   DB container: cobo-iam-mysql  DB: cobo_iam  user/pass: root/root
   ```
 
-  **BÃ†Â°Ã¡Â»â€ºc 1 Ã¢â‚¬â€ KiÃ¡Â»Æ’m tra migration hiÃ¡Â»â€¡n tÃ¡ÂºÂ¡i:**
+  **B??��???c 1 �?????? Ki�??m tra migration hi�???n tại:**
   ```
   ssh -p 21239 root@88.216.208.0 "docker exec cobo-iam-mysql mysql -uroot -proot cobo_iam -e \"SELECT file_name, executed_at FROM schema_migrations ORDER BY executed_at DESC LIMIT 20;\""
   ```
 
-  **BÃ†Â°Ã¡Â»â€ºc 2 Ã¢â‚¬â€ XÃƒÂ³a file CMS cÃ…Â© sai sÃ¡Â»â€˜ (nÃ¡ÂºÂ¿u tÃ¡Â»â€œn tÃ¡ÂºÂ¡i):**
+  **B??��???c 2 �?????? X??�a file CMS c??� sai s�??? (nếu t�???n tại):**
   ```
   ssh -p 21239 root@88.216.208.0 "rm -f /root/cobo_project/migrations/0045_cms_portal_template_tables.{up,down}.sql /root/cobo_project/migrations/0046_cms_display_groups_po_seed.{up,down}.sql /root/cobo_project/migrations/0047_cms_system_template_seed.{up,down}.sql && echo done"
   ```
 
-  **BÃ†Â°Ã¡Â»â€ºc 3 Ã¢â‚¬â€ SCP 5 file migration mÃ¡Â»â€ºi:**
+  **B??��???c 3 �?????? SCP 5 file migration m�???i:**
   ```powershell
   $SRC = "C:\Users\tvttt\OneDrive\Desktop\cobo\cobo_web\cobo_iam_services\migrations"
   $DST = "root@88.216.208.0:/root/cobo_project/migrations/"
@@ -3819,7 +3898,7 @@
     $DST
   ```
 
-  **BÃ†Â°Ã¡Â»â€ºc 4 Ã¢â‚¬â€ Apply tÃ¡Â»Â«ng migration (idempotent, skip nÃ¡ÂºÂ¿u Ã„â€˜ÃƒÂ£ apply):**
+  **B??��???c 4 �?????? Apply từng migration (idempotent, skip nếu ???????� apply):**
   ```powershell
   $PORT = "21239"; $HOST = "root@88.216.208.0"
   $MP   = "/root/cobo_project/migrations"
@@ -3840,34 +3919,34 @@
   }
   ```
 
-  **BÃ†Â°Ã¡Â»â€ºc 5 Ã¢â‚¬â€ Verify templates trong DB:**
+  **B??��???c 5 �?????? Verify templates trong DB:**
   ```
   ssh -p 21239 root@88.216.208.0 "docker exec cobo-iam-mysql mysql -uroot -proot cobo_iam -e \"SELECT type_id, status, is_mandatory FROM disclosure_types WHERE company_id IS NULL;\""
   ```
-  KÃ¡ÂºÂ¿t quÃ¡ÂºÂ£ mong Ã„â€˜Ã¡Â»Â£i: 3 rows Ã¢â‚¬â€ `dt-sys-q1-financial`, `dt-sys-hr-executive`, `dt-sys-board-resolution`
+  Kết quả mong ?????ợi: 3 rows �?????? `dt-sys-q1-financial`, `dt-sys-hr-executive`, `dt-sys-board-resolution`
 
 - remaining gaps/risks/next steps:
-  - sau khi apply migrations: rebuild Docker image API vÃ¡Â»â€ºi code mÃ¡Â»â€ºi (sort wiring + lifecycle capability) rÃ¡Â»â€œi redeploy
+  - sau khi apply migrations: rebuild Docker image API v�???i code m�???i (sort wiring + lifecycle capability) r�???i redeploy
   - `docker compose -f docker-compose.artifacts.yml build api && docker compose -f docker-compose.artifacts.yml up -d api`
-  - verify API khÃƒÂ´ng cÃƒÂ²n 500: `curl http://88.216.208.0:3000/api/v1/disclosure-types?page=1&page_size=20 -H "Authorization: Bearer <token>"`
+  - verify API kh??�ng c??�n 500: `curl http://88.216.208.0:3000/api/v1/disclosure-types?page=1&page_size=20 -H "Authorization: Bearer <token>"`
 
 ## 2026-06-08 - Batch 2A: wire durable email pipeline end-to-end (Transactional Publish + worker registration)
 
-- task type: feature implementation (scoped remediation batch Ã¢â‚¬â€ adhoc-email-spec-v3.md / Batch 2A rescoping plan, "PASS Ã¢â‚¬â€ READY TO IMPLEMENT")
+- task type: feature implementation (scoped remediation batch �?????? adhoc-email-spec-v3.md / Batch 2A rescoping plan, "PASS �?????? READY TO IMPLEMENT")
 - objective/question:
   - finish wiring the durable `email.dispatch` outbox pipeline end-to-end per ADR-3, strictly within the 7-item Batch 2A scope: Transactional Dispatch, `InsertNotificationTx`, `WithTransactionalDispatch`, `toEmailOutboxEvent`, worker `email.dispatch` registration, handler DI wiring, synthetic E2E test
-  - mandatory transaction decision: Option A Ã¢â‚¬â€ Transactional Publish (`BeginTx -> InsertNotificationTx -> PublishEventTx -> Commit`, no best-effort publish)
+  - mandatory transaction decision: Option A �?????? Transactional Publish (`BeginTx -> InsertNotificationTx -> PublishEventTx -> Commit`, no best-effort publish)
   - mandatory worker registration shape: wrapper closure `event.PayloadJSON -> emailDispatchHandler.Handle(ctx, event.PayloadJSON)`, never a direct method-value `processor.Register(type, handler.Handle)`
 - implemented/discovered:
-  - pre-implementation verification found **zero drift**: every constructor/interface signature assumed by the rescoping plan (`NewEmailDispatchHandler`, `NewEmailNotificationRepository`, `NewEmailDeliveryAttemptRepository`, `WithTransactionalEnqueue`/`toOutboxEvent`/`deliverAuthEmailEvent` patterns, `outboxmysql.Repository.PublishEventTx`, `platformoutbox.Processor.Register`/`HandlerFunc`) matched exactly Ã¢â‚¬â€ proceeded without redesign
+  - pre-implementation verification found **zero drift**: every constructor/interface signature assumed by the rescoping plan (`NewEmailDispatchHandler`, `NewEmailNotificationRepository`, `NewEmailDeliveryAttemptRepository`, `WithTransactionalEnqueue`/`toOutboxEvent`/`deliverAuthEmailEvent` patterns, `outboxmysql.Repository.PublishEventTx`, `platformoutbox.Processor.Register`/`HandlerFunc`) matched exactly �?????? proceeded without redesign
   - added `OutboxPublisher` (`PublishEventTx(ctx, tx, event)`) and `TxEmailNotificationRepository` (`EmailNotificationRepository` + `InsertNotificationTx`) contracts to `email_dispatch_contracts.go`
   - `EmailNotificationRepository.InsertNotificationTx` shares an `insertNotification(ctx, ex emailExecer, n)` helper with `InsertNotification` via an `emailExecer` seam (`*sql.DB`/`*sql.Tx`), mirroring the `execer`/`createJob` pattern in the sibling job repository
-  - `EmailNotificationService` gained `sqlDB`/`outbox` fields, `EmailServiceOption` (renamed from the originally-planned `ServiceOption` Ã¢â‚¬â€ that name collides with `notification.service.ServiceOption` in the same `app` package), and `WithTransactionalDispatch(db, outbox)`
-  - `DispatchEmail` now branches: when `sqlDB`+`outbox` are set AND `repo` satisfies `TxEmailNotificationRepository`, it calls `dispatchTransactional` (Insert + Publish + Commit atomically, with `ErrAlreadyDispatched` replay short-circuit); otherwise the existing non-transactional path is unchanged Ã¢â‚¬â€ every existing construction site keeps compiling/passing
-  - `toEmailOutboxEvent` builds the `email.dispatch` envelope with the **plain** (unsanitized) `req.Variables` in the payload Ã¢â‚¬â€ never `VariablesJSONSanitized` Ã¢â‚¬â€ because the worker handler needs real values (e.g. OTP) to render while the persisted row stores only the redacted copy
-  - `cmd/worker/main.go`: added `notificationmysql`/`notificationsmtp` imports; inside the existing `if sqlDB != nil` gate, constructed real MySQL-backed `EmailNotificationRepository`/`EmailDeliveryAttemptRepository`, the SMTP `DeliveryAdapter` (mirroring `httpserver/server.go`'s `notificationsmtp.NewAdapter(Config{Host/Port/User/Pass/From: cfg.SMTP*}, nil)`), and `EmailDispatchHandler`, then registered `email.dispatch` via the mandated wrapper-closure shape Ã¢â‚¬â€ gated on `sqlDB != nil` because the handler requires real DB-backed repositories that cannot be constructed without it
-  - deliberately did **not** construct `EmailNotificationService` in `httpserver/server.go`'s production DI graph: there is no in-scope caller (`adhoc`/Batch 2 untouchable; no existing dispatch/preview admin route), so doing so would be dead code or scope creep Ã¢â‚¬â€ AK.4's acceptance criterion ("constructed and reachable, proven only by the synthetic test") is satisfied by the new E2E test alone
-  - added `internal/notification/app/email_dispatch_e2e_test.go` (package `app_test`) Ã¢â‚¬â€ a **real-MySQL** synthetic E2E exercising the genuine production chain: `EmailNotificationService(WithTransactionalDispatch)` -> real `outboxmysql.Repository` -> real `platformoutbox.Processor.Tick` -> the exact wrapper-closure registration -> `EmailDispatchHandler` -> fake `DeliveryAdapter` (only the SMTP transport is faked):
+  - `EmailNotificationService` gained `sqlDB`/`outbox` fields, `EmailServiceOption` (renamed from the originally-planned `ServiceOption` �?????? that name collides with `notification.service.ServiceOption` in the same `app` package), and `WithTransactionalDispatch(db, outbox)`
+  - `DispatchEmail` now branches: when `sqlDB`+`outbox` are set AND `repo` satisfies `TxEmailNotificationRepository`, it calls `dispatchTransactional` (Insert + Publish + Commit atomically, with `ErrAlreadyDispatched` replay short-circuit); otherwise the existing non-transactional path is unchanged �?????? every existing construction site keeps compiling/passing
+  - `toEmailOutboxEvent` builds the `email.dispatch` envelope with the **plain** (unsanitized) `req.Variables` in the payload �?????? never `VariablesJSONSanitized` �?????? because the worker handler needs real values (e.g. OTP) to render while the persisted row stores only the redacted copy
+  - `cmd/worker/main.go`: added `notificationmysql`/`notificationsmtp` imports; inside the existing `if sqlDB != nil` gate, constructed real MySQL-backed `EmailNotificationRepository`/`EmailDeliveryAttemptRepository`, the SMTP `DeliveryAdapter` (mirroring `httpserver/server.go`'s `notificationsmtp.NewAdapter(Config{Host/Port/User/Pass/From: cfg.SMTP*}, nil)`), and `EmailDispatchHandler`, then registered `email.dispatch` via the mandated wrapper-closure shape �?????? gated on `sqlDB != nil` because the handler requires real DB-backed repositories that cannot be constructed without it
+  - deliberately did **not** construct `EmailNotificationService` in `httpserver/server.go`'s production DI graph: there is no in-scope caller (`adhoc`/Batch 2 untouchable; no existing dispatch/preview admin route), so doing so would be dead code or scope creep �?????? AK.4's acceptance criterion ("constructed and reachable, proven only by the synthetic test") is satisfied by the new E2E test alone
+  - added `internal/notification/app/email_dispatch_e2e_test.go` (package `app_test`) �?????? a **real-MySQL** synthetic E2E exercising the genuine production chain: `EmailNotificationService(WithTransactionalDispatch)` -> real `outboxmysql.Repository` -> real `platformoutbox.Processor.Tick` -> the exact wrapper-closure registration -> `EmailDispatchHandler` -> fake `DeliveryAdapter` (only the SMTP transport is faked):
     - `TestEmailDispatchE2E_TransactionalPublishWorkerDeliversHappyPath`: dispatch inserts+publishes atomically (status=pending, outbox row=pending) -> one `Tick` delivers -> status=sent/`sent_at` set/adapter called once with the real OTP in body -> outbox row=processed; then proves replay-safety (same idempotency key returns the same row, no duplicate outbox publish, no resend on a follow-up tick)
     - `TestEmailDispatchE2E_TransientErrorRetriesThenSucceeds`: first attempt returns a transient SMTP error -> notification=retry/`last_error_code=transient_smtp`, outbox row stays `pending` with a future `available_at` (redelivery scheduled, not dropped) -> an early tick does not redeliver -> forcing `available_at` into the past (simulates backoff elapsing) lets the processor redeliver -> second attempt succeeds -> status=sent, outbox row=processed
     - follows the `iam/infra/mysql/credentials_subscription_test.go` `openTestDB`/`t.Skipf` convention (`root:secret@tcp(127.0.0.1:3306)/cobo_iam?...`), with a run-unique `e2eIDGen` prefix and `t.Cleanup` deletes (`email_notifications` cascades to `email_delivery_attempts` via FK) so reruns against a persistent DB never collide or accumulate rows
@@ -3878,30 +3957,30 @@
   - `cobo_iam_services/cmd/worker/main.go`
   - `cobo_iam_services/internal/notification/app/email_dispatch_e2e_test.go` (new)
 - contracts/behaviors/constraints/decisions:
-  - `WithTransactionalDispatch` is purely additive Ã¢â‚¬â€ services constructed without it keep the legacy non-transactional `InsertNotification` path; no existing call site changed behavior
-  - `EmailServiceOption` (not `ServiceOption`) is the option-type name for `EmailNotificationService` Ã¢â‚¬â€ required because `ServiceOption` already exists for `notification.service` in the same `app` package
+  - `WithTransactionalDispatch` is purely additive �?????? services constructed without it keep the legacy non-transactional `InsertNotification` path; no existing call site changed behavior
+  - `EmailServiceOption` (not `ServiceOption`) is the option-type name for `EmailNotificationService` �?????? required because `ServiceOption` already exists for `notification.service` in the same `app` package
   - did not touch `internal/adhoc/...`, `AdhocProposalNotifier`, `internal/reminder/...`, migrations 0051/0052, retry/backoff constants, `EMAIL_SHADOW_MODE`, or any Batch 1 / Batch 5(a) surface
 - build/verification result:
-  - `go build ./...` Ã¢Å“â€¦
-  - `go vet ./...` Ã¢Å“â€¦
-  - `go test -race ./internal/notification/... ./internal/platform/outbox/...`: Ã¢Å“â€¦ all packages pass except one **pre-existing, unrelated** failure Ã¢â‚¬â€ `TestDispatchEmail_SanitisesAllSensitiveVars` fails identically on the unmodified baseline (`90b3db5`, verified via `git stash -u` + rerun): a template/test-fixture mismatch where `auth.user_invitation.new_user_company` requires `support_email` but the test's `Variables` map omits it. Not a Batch 2A regression; out of this batch's scope
-  - the two new synthetic E2E tests compile and run the `t.Skipf` path cleanly (`--- SKIP`) in this sandbox (no MySQL/Docker available Ã¢â‚¬â€ `docker ps` reported no docker cmd); they are written to run for real against a migrated MySQL instance (e.g. the staging box at `88.216.208.0:21239` per [[reference_dev_server]]) and assert the full pending -> sent / pending -> retry -> sent transitions there
+  - `go build ./...` �?????
+  - `go vet ./...` �?????
+  - `go test -race ./internal/notification/... ./internal/platform/outbox/...`: �????? all packages pass except one **pre-existing, unrelated** failure �?????? `TestDispatchEmail_SanitisesAllSensitiveVars` fails identically on the unmodified baseline (`90b3db5`, verified via `git stash -u` + rerun): a template/test-fixture mismatch where `auth.user_invitation.new_user_company` requires `support_email` but the test's `Variables` map omits it. Not a Batch 2A regression; out of this batch's scope
+  - the two new synthetic E2E tests compile and run the `t.Skipf` path cleanly (`--- SKIP`) in this sandbox (no MySQL/Docker available �?????? `docker ps` reported no docker cmd); they are written to run for real against a migrated MySQL instance (e.g. the staging box at `88.216.208.0:21239` per [[reference_dev_server]]) and assert the full pending -> sent / pending -> retry -> sent transitions there
 - remaining gaps/risks/next steps:
-  - BLOCKED (environment): could not execute the synthetic E2E tests against a live MySQL in this sandbox Ã¢â‚¬â€ they are runnable in staging/CI where `MYSQL_DSN`/Docker are available; recommend running `go test -race ./internal/notification/app/... -run EmailDispatchE2E -v` there before considering Batch 2A merge-ready
-  - the pre-existing `TestDispatchEmail_SanitisesAllSensitiveVars` failure should be triaged separately (likely needs `support_email` added to the test's `Variables`, or the template's required-var list reviewed) Ã¢â‚¬â€ not addressed here per "khÃƒÂ´ng mÃ¡Â»Å¸ rÃ¡Â»â„¢ng scope"
+  - BLOCKED (environment): could not execute the synthetic E2E tests against a live MySQL in this sandbox �?????? they are runnable in staging/CI where `MYSQL_DSN`/Docker are available; recommend running `go test -race ./internal/notification/app/... -run EmailDispatchE2E -v` there before considering Batch 2A merge-ready
+  - the pre-existing `TestDispatchEmail_SanitisesAllSensitiveVars` failure should be triaged separately (likely needs `support_email` added to the test's `Variables`, or the template's required-var list reviewed) �?????? not addressed here per "kh??�ng m�? r�???ng scope"
   - `EmailNotificationService` remains uncalled in production (`httpserver/server.go`); wiring an actual caller (e.g. an admin preview/dispatch route) is Batch 2 / new-surface territory and intentionally deferred
 
 ## 2026-06-08 - Batch 2: AdhocProposalNotifier cutover to durable email pipeline (Publisher-side Shadow Recipient Rewrite)
 
 - task type: implement
-- objective: cut `AdhocProposalNotifier` over to the durable `EmailNotificationService` pipeline behind two flags (`ADHOC_EMAIL_OUTBOX_ENABLED`, `EMAIL_SHADOW_MODE` + `ADHOC_EMAIL_SHADOW_RECIPIENT`) per the canonical D1 decision Ã¢â‚¬â€ Publisher-side Shadow Recipient Rewrite (NOT a worker-side adapter) Ã¢â‚¬â€ while keeping legacy byte-identical when both flags are off, and closing CF-12 (detached-context goroutine dispatch)
+- objective: cut `AdhocProposalNotifier` over to the durable `EmailNotificationService` pipeline behind two flags (`ADHOC_EMAIL_OUTBOX_ENABLED`, `EMAIL_SHADOW_MODE` + `ADHOC_EMAIL_SHADOW_RECIPIENT`) per the canonical D1 decision �?????? Publisher-side Shadow Recipient Rewrite (NOT a worker-side adapter) �?????? while keeping legacy byte-identical when both flags are off, and closing CF-12 (detached-context goroutine dispatch)
 - what was implemented:
   - Config (Phase 1): `AdhocEmailOutboxEnabled`, `AdhocEmailShadowRecipient`, `AdhocEmailMetricsEnabled` added to `internal/platform/config/config.go` + `configs/config.example.env` (env: `ADHOC_EMAIL_OUTBOX_ENABLED`, `ADHOC_EMAIL_SHADOW_RECIPIENT`, `ADHOC_EMAIL_METRICS_ENABLED`)
-  - Shadow Recipient Rewrite (Phase 2): `notifier.go`'s `sendEmail` is now a 3-way router Ã¢â‚¬â€ `outboxEnabled` (durable-only, real recipient, "wins") -> `shadowMode` (legacy to real recipient via new `sendLegacyEmail` extraction + durable to `shadowRecipient` via new `dispatchDurable`) -> default (legacy-only, byte-identical). The rewrite happens ONLY at the `sendEmail` call site for the durable branch Ã¢â‚¬â€ `sendLegacyEmail`/`dispatchDurable` never see or alter `recipientMembershipID`/idempotency key/audit fields
+  - Shadow Recipient Rewrite (Phase 2): `notifier.go`'s `sendEmail` is now a 3-way router �?????? `outboxEnabled` (durable-only, real recipient, "wins") -> `shadowMode` (legacy to real recipient via new `sendLegacyEmail` extraction + durable to `shadowRecipient` via new `dispatchDurable`) -> default (legacy-only, byte-identical). The rewrite happens ONLY at the `sendEmail` call site for the durable branch �?????? `sendLegacyEmail`/`dispatchDurable` never see or alter `recipientMembershipID`/idempotency key/audit fields
   - Notifier migration (Phase 3): all 4 `Notify*` methods now thread `eventType, recipientMembershipID, companyID` through to `sendEmail` -> `dispatchDurable`, which computes the LOCKED idempotency key `adhoc.<event_type>.<proposalID>.<recipientMembershipID>` and calls `DispatchEmail` with `SourceAggregateID=proposalID` (real, never rewritten)
   - CF-12 closure (Phase 4): deleted `dispatchNotificationAsync` (was `go func(){ ...context.Background()... }`) entirely from `internal/adhoc/app/service.go`; all 4 call sites now call `s.notifier.Notify*(ctx, ...)` synchronously with the live request-scoped `ctx`; removed the now-unused `log/slog` import
-  - Metrics (Phase 5): added `cobo_adhoc_email_shadow_total{company_id, outcome="match"|"mismatch"}` (`internal/adhoc/observability/metrics.go`, gated by `AdhocEmailMetricsEnabled` -> `adhocapp.NewNoopMetrics()` when off) and `RecordEmailShadowOutcome(companyID, outcome)` on the `adhocapp.Metrics` interface (+ `noopMetrics`, `spyMetrics` test stub). Grounding note: the spec's literal `COUNT(*) GROUP BY idempotency_key HAVING COUNT(*) > 1` is structurally tautological Ã¢â‚¬â€ `email_notifications.idempotency_key` carries a DB UNIQUE constraint (`uk_email_notifications_idempotency`, migration `0051_email_notifications.up.sql:33`), so that count can never exceed 1. Reinterpreted as the functionally-equivalent in-app-observable signal: detect when `DispatchEmail` short-circuits to a pre-existing record (`FindByIdempotencyKey`) whose `SourceAggregateID`/`TemplateKey` differ from what this call sent Ã¢â‚¬â€ i.e. the same idempotency key resolved to a different notification intent (a real collision). `RecipientEmail` was deliberately rejected as a comparison field: in the shadow branch it is always rewritten to `shadowRecipient`, so comparing it can never produce "mismatch" Ã¢â‚¬â€ caught via self-review before the metric shipped
-  - Tests (Phase 6): new `internal/adhoc/infra/notification/notifier_test.go` (`package notification_test`) Ã¢â‚¬â€ fakes (`noopInApp`, `recordingDeliveryAdapter`, `staticRegistry`/`staticRenderer` since `adhoc.*` template keys aren't in `notificationregistry.NewEmbedRegistry()`, `seqIDGen`, `spyMetrics`) + a real in-memory `*notifapp.EmailNotificationService` (`inmemory.NewEmailNotificationRepository`). 10 tests: TC-Shadow-01..05 (dual-send + shadow-sink-only delivery + idempotency-collision -> "mismatch" + empty-shadow-recipient skip + nil-notificationService no-op), TC-Rollback-01/02 (default flags = byte-identical legacy-only; `outboxEnabled` wins over `shadowMode` with no dual-send), a Case-C regression test, and two CF-12 closure tests Ã¢â‚¬â€ one functional (asserts a `context.WithValue` marker placed on the live `ctx` is observed synchronously by both the legacy `DeliveryAdapter.Send` and the durable pipeline's `TemplateRegistry.Resolve`, which a detached `context.Background()` goroutine could never see) and one static (`os.ReadFile` + `strings.Index` asserting zero occurrences of `context.Background()`/`dispatchNotificationAsync` in `internal/adhoc/app/service.go`)
+  - Metrics (Phase 5): added `cobo_adhoc_email_shadow_total{company_id, outcome="match"|"mismatch"}` (`internal/adhoc/observability/metrics.go`, gated by `AdhocEmailMetricsEnabled` -> `adhocapp.NewNoopMetrics()` when off) and `RecordEmailShadowOutcome(companyID, outcome)` on the `adhocapp.Metrics` interface (+ `noopMetrics`, `spyMetrics` test stub). Grounding note: the spec's literal `COUNT(*) GROUP BY idempotency_key HAVING COUNT(*) > 1` is structurally tautological �?????? `email_notifications.idempotency_key` carries a DB UNIQUE constraint (`uk_email_notifications_idempotency`, migration `0051_email_notifications.up.sql:33`), so that count can never exceed 1. Reinterpreted as the functionally-equivalent in-app-observable signal: detect when `DispatchEmail` short-circuits to a pre-existing record (`FindByIdempotencyKey`) whose `SourceAggregateID`/`TemplateKey` differ from what this call sent �?????? i.e. the same idempotency key resolved to a different notification intent (a real collision). `RecipientEmail` was deliberately rejected as a comparison field: in the shadow branch it is always rewritten to `shadowRecipient`, so comparing it can never produce "mismatch" �?????? caught via self-review before the metric shipped
+  - Tests (Phase 6): new `internal/adhoc/infra/notification/notifier_test.go` (`package notification_test`) �?????? fakes (`noopInApp`, `recordingDeliveryAdapter`, `staticRegistry`/`staticRenderer` since `adhoc.*` template keys aren't in `notificationregistry.NewEmbedRegistry()`, `seqIDGen`, `spyMetrics`) + a real in-memory `*notifapp.EmailNotificationService` (`inmemory.NewEmailNotificationRepository`). 10 tests: TC-Shadow-01..05 (dual-send + shadow-sink-only delivery + idempotency-collision -> "mismatch" + empty-shadow-recipient skip + nil-notificationService no-op), TC-Rollback-01/02 (default flags = byte-identical legacy-only; `outboxEnabled` wins over `shadowMode` with no dual-send), a Case-C regression test, and two CF-12 closure tests �?????? one functional (asserts a `context.WithValue` marker placed on the live `ctx` is observed synchronously by both the legacy `DeliveryAdapter.Send` and the durable pipeline's `TemplateRegistry.Resolve`, which a detached `context.Background()` goroutine could never see) and one static (`os.ReadFile` + `strings.Index` asserting zero occurrences of `context.Background()`/`dispatchNotificationAsync` in `internal/adhoc/app/service.go`)
 - affected repos/files/modules:
   - `cobo_iam_services/internal/platform/config/config.go`, `configs/config.example.env`
   - `cobo_iam_services/internal/adhoc/infra/notification/notifier.go`
@@ -3910,132 +3989,132 @@
   - `cobo_iam_services/internal/adhoc/observability/metrics.go`
   - `cobo_iam_services/internal/httpserver/server.go` (DI wiring: conditional `EmailNotificationService` construction on `pool != nil && outboxSQL != nil`, `adhocMetrics` moved before `proposalNotifier` construction, `adhocnotif.New(...)` updated to the new 11-arg signature)
 - contracts/behaviors/constraints/decisions:
-  - Behavior matrix verified end-to-end by tests: Case A (`shadow=false,outbox=false`) legacy-only byte-identical; Case B (`shadow=true,outbox=false`) dual pipeline Ã¢â‚¬â€ legacy to real recipient (system of record), durable to `shadowRecipient` only, never duplicating to the real user; Case C (`shadow=false,outbox=true`) durable-only, real recipient; Case D (both on) Ã¢â‚¬â€ OutboxEnabled wins, durable-only, no dual-send, no shadow metric
+  - Behavior matrix verified end-to-end by tests: Case A (`shadow=false,outbox=false`) legacy-only byte-identical; Case B (`shadow=true,outbox=false`) dual pipeline �?????? legacy to real recipient (system of record), durable to `shadowRecipient` only, never duplicating to the real user; Case C (`shadow=false,outbox=true`) durable-only, real recipient; Case D (both on) �?????? OutboxEnabled wins, durable-only, no dual-send, no shadow metric
   - did NOT touch `internal/notification/...`, `cmd/worker/...`, `internal/platform/outbox/...`, `EmailDispatchOutboxEventType`, `DeliveryMessage`, `email_notifications` schema; no new migration, no new event type, no new worker registration
-  - `sendLegacyEmail` is a byte-identical extraction of the pre-Batch-2 `sendEmail` body Ã¢â‚¬â€ guarantees Case A is unchanged
-  - rewrite touches ONLY the `to` argument passed into `dispatchDurable` for the shadow branch Ã¢â‚¬â€ `recipientMembershipID`, the idempotency key, and `SourceAggregateID`/audit trail fields are never rewritten
+  - `sendLegacyEmail` is a byte-identical extraction of the pre-Batch-2 `sendEmail` body �?????? guarantees Case A is unchanged
+  - rewrite touches ONLY the `to` argument passed into `dispatchDurable` for the shadow branch �?????? `recipientMembershipID`, the idempotency key, and `SourceAggregateID`/audit trail fields are never rewritten
 - build/verification result:
   - `go build ./...` passed
   - `go vet ./...` passed
-  - `gofmt -l` clean across all 6 touched/added files (1 file needed `gofmt -w` after edits Ã¢â‚¬â€ `service_test.go`)
-  - `go test -race ./internal/adhoc/...` passed Ã¢â‚¬â€ all packages pass (`app`, `infra/disclosure` [no tests], `infra/mysql`, `infra/notification`, `observability`, `transport/http`); all 10 new notifier tests pass individually (`-run "TestShadowMode|TestRollback|TestRegression_Outbox|TestCF12" -v`)
-  - `go test -race ./internal/notification/... ./internal/httpserver/...`: 4 pre-existing, unrelated failures confirmed out of scope Ã¢â‚¬â€ `TestDispatchEmail_SanitisesAllSensitiveVars` (documented in the Batch 2A entry above as failing identically on baseline `90b3db5`, a `support_email` template-fixture mismatch unrelated to adhoc), and 3 `httpserver` integration tests (`TestIntegration_platformCMSPrefix_dashboardCollectionsEntries` Ã¢â‚¬â€ 401 SESSION_EXPIRED; `TestIntegration_disclosureTypeCatalog_adminUpsertAndVersioning` / `...FixedDateWarnOnlyTimezone` / `...FixedDateMoveNextWorkingDay` Ã¢â‚¬â€ `template_category must be one of [periodic, irregular]` validation drift) Ã¢â‚¬â€ none reference `adhoc`/notifier code or any file this batch touched (verified via `grep -l adhoc` returning no matches and `git diff config.go` showing only additive `Adhoc*` fields)
+  - `gofmt -l` clean across all 6 touched/added files (1 file needed `gofmt -w` after edits �?????? `service_test.go`)
+  - `go test -race ./internal/adhoc/...` passed �?????? all packages pass (`app`, `infra/disclosure` [no tests], `infra/mysql`, `infra/notification`, `observability`, `transport/http`); all 10 new notifier tests pass individually (`-run "TestShadowMode|TestRollback|TestRegression_Outbox|TestCF12" -v`)
+  - `go test -race ./internal/notification/... ./internal/httpserver/...`: 4 pre-existing, unrelated failures confirmed out of scope �?????? `TestDispatchEmail_SanitisesAllSensitiveVars` (documented in the Batch 2A entry above as failing identically on baseline `90b3db5`, a `support_email` template-fixture mismatch unrelated to adhoc), and 3 `httpserver` integration tests (`TestIntegration_platformCMSPrefix_dashboardCollectionsEntries` �?????? 401 SESSION_EXPIRED; `TestIntegration_disclosureTypeCatalog_adminUpsertAndVersioning` / `...FixedDateWarnOnlyTimezone` / `...FixedDateMoveNextWorkingDay` �?????? `template_category must be one of [periodic, irregular]` validation drift) �?????? none reference `adhoc`/notifier code or any file this batch touched (verified via `grep -l adhoc` returning no matches and `git diff config.go` showing only additive `Adhoc*` fields)
 - remaining gaps/risks/next steps:
-  - the 4 pre-existing failures above should be triaged separately (template fixture `support_email` var; CMS dashboard session/auth fixture; `template_category` enum/test-data drift) Ã¢â‚¬â€ out of this batch's scope per "khÃƒÂ´ng tÃ¡Â»Â± mÃ¡Â»Å¸ rÃ¡Â»â„¢ng scope"
-  - `cobo_adhoc_email_shadow_total` "mismatch" can only fire on a genuine idempotency-key collision (two different notification intents producing the same `<event_type>.<proposalID>.<recipientMembershipID>` key) Ã¢â‚¬â€ by construction this should be vanishingly rare; the metric is a correctness tripwire, not an expected-traffic signal
-  - Docker rebuild not run in this sandbox (no `docker` binary available Ã¢â‚¬â€ consistent with the Batch 2A entry's note); recommend a fresh build + smoke test in staging before flipping `EMAIL_SHADOW_MODE`/`ADHOC_EMAIL_OUTBOX_ENABLED` to true anywhere
+  - the 4 pre-existing failures above should be triaged separately (template fixture `support_email` var; CMS dashboard session/auth fixture; `template_category` enum/test-data drift) �?????? out of this batch's scope per "kh??�ng tự m�? r�???ng scope"
+  - `cobo_adhoc_email_shadow_total` "mismatch" can only fire on a genuine idempotency-key collision (two different notification intents producing the same `<event_type>.<proposalID>.<recipientMembershipID>` key) �?????? by construction this should be vanishingly rare; the metric is a correctness tripwire, not an expected-traffic signal
+  - Docker rebuild not run in this sandbox (no `docker` binary available �?????? consistent with the Batch 2A entry's note); recommend a fresh build + smoke test in staging before flipping `EMAIL_SHADOW_MODE`/`ADHOC_EMAIL_OUTBOX_ENABLED` to true anywhere
 
-## 2026-06-11 - OPS-APPL-01 Ã¢â‚¬â€ Migration manifest 0091Ã¢â‚¬â€œ0095
+## 2026-06-11 - OPS-APPL-01 �?????? Migration manifest 0091�??????0095
 
 - task type: implement (migration runner only)
-- objective: `run_dev_migrations.sh` must auto-apply `0091`Ã¢â‚¬â€œ`0095`
+- objective: `run_dev_migrations.sh` must auto-apply `0091`�??????`0095`
 - implemented:
   - Added 5 migrations to `MIGRATIONS` list after `0090`
-  - Preflight drift: 0091/0093/0094 Ã¢â€ â€™ ledger-only when target columns exist
+  - Preflight drift: 0091/0093/0094 �?????? ledger-only when target columns exist
   - Ledger insert: `INSERT IGNORE` (0091 SQL self-records)
-- test (DEV `88.216.208.0`): migrate exit 0; 0091 preflight; ledger 0090Ã¢â‚¬â€œ0095; rerun idempotent; backfill 19=19
+- test (DEV `88.216.208.0`): migrate exit 0; 0091 preflight; ledger 0090�??????0095; rerun idempotent; backfill 19=19
 - build: `docker compose -f docker-compose.dev.yml build api` exit 0
 - prod pipeline: **NOT VERIFIED** (compose + deploy-dev.sh use same script)
-- verdict: **OPS-APPL-01 DONE** Ã¢â‚¬â€ Gate 0 PASS
+- verdict: **OPS-APPL-01 DONE** �?????? Gate 0 PASS
 
-## 2026-06-12 - Deadline Engine V2 Ã¢â‚¬â€ Batch 5A Foundations & Adapters
+## 2026-06-12 - Deadline Engine V2 �?????? Batch 5A Foundations & Adapters
 
 - task type: implement
 - objective: prepare additive-only infrastructure (adapter layer, feature flag confirmation, dual-compute/audit contracts, divergence classifier, wiring-readiness markers) so Batches 5B-5E can roll out the deadlineengine SoT (Source C) safely, with zero runtime/DB/output behavior change
 - what was implemented:
-  - `internal/disclosure/app/deadlineengine_adapter.go` (NEW): `DeadlineEngineAdapter` interface + `deadlineEngineAdapter` impl + `nonTradingDayCheckerAdapter`; maps existing `TemplateDeadlineConfig`/`TemplateApplicabilityRules`/`CompanyDeadlineContext`/`PeriodicCycleContext` into `deadlineengine.ResolveDeadline(...)` inputs Ã¢â‚¬â€ delegates 100%, no logic copy-pasted from `deadline_calculator.go`
+  - `internal/disclosure/app/deadlineengine_adapter.go` (NEW): `DeadlineEngineAdapter` interface + `deadlineEngineAdapter` impl + `nonTradingDayCheckerAdapter`; maps existing `TemplateDeadlineConfig`/`TemplateApplicabilityRules`/`CompanyDeadlineContext`/`PeriodicCycleContext` into `deadlineengine.ResolveDeadline(...)` inputs �?????? delegates 100%, no logic copy-pasted from `deadline_calculator.go`
   - `internal/disclosure/app/deadlineengine_dualcompute.go` (NEW): `DeadlineComparison`, `DeadlineAudit`, `ClassifyDivergence`, divergence constants `DivergenceNone/DateShift/MonthShift/YearlyRollback`
   - `internal/disclosure/app/deadlineengine_adapter_test.go` + `deadlineengine_dualcompute_test.go` (NEW): 17 tests, 100% coverage of both new files
   - `READY_FOR_5B` comment-only markers added (no behavior change) to:
-    - `internal/disclosure/app/deadline_calculator.go` (`calculatePeriodic` Ã¢â‚¬â€ Portal Preview / Deadline Hint, Source A)
-    - `internal/disclosure/app/periodic.go` (`seedPeriodicCycles` Ã¢â‚¬â€ Periodic Worker, Source B)
-    - `internal/disclosure/app/service.go` (`CreateRecord` Ã¢â‚¬â€ Manual Create, client-supplied planned_date)
-    - `internal/reminder/infra/mysql/repository.go` (`MaterializeDueOccurrences` Ã¢â‚¬â€ Reminder)
-    - `internal/disclosure/app/deadlineengine/hint.go` (`FormatHintLabelVI` Ã¢â‚¬â€ Deadline Hint, already wired into `Resolution.HintLabelVI`, not yet rendered anywhere)
-  - confirmed Phase C already satisfied: `DEADLINE_ENGINE_V2` flag exists since Batch 2 (`internal/platform/config/config.go`, default `false`, unused in runtime) Ã¢â‚¬â€ no new flag code needed
-- affected repos/files/modules: `cobo_iam_services` Ã¢â‚¬â€ `internal/disclosure/app/` (2 new impl + 2 new test files, 3 comment-only edits), `internal/reminder/infra/mysql/repository.go` (comment-only), `internal/disclosure/app/deadlineengine/hint.go` (comment-only)
+    - `internal/disclosure/app/deadline_calculator.go` (`calculatePeriodic` �?????? Portal Preview / Deadline Hint, Source A)
+    - `internal/disclosure/app/periodic.go` (`seedPeriodicCycles` �?????? Periodic Worker, Source B)
+    - `internal/disclosure/app/service.go` (`CreateRecord` �?????? Manual Create, client-supplied planned_date)
+    - `internal/reminder/infra/mysql/repository.go` (`MaterializeDueOccurrences` �?????? Reminder)
+    - `internal/disclosure/app/deadlineengine/hint.go` (`FormatHintLabelVI` �?????? Deadline Hint, already wired into `Resolution.HintLabelVI`, not yet rendered anywhere)
+  - confirmed Phase C already satisfied: `DEADLINE_ENGINE_V2` flag exists since Batch 2 (`internal/platform/config/config.go`, default `false`, unused in runtime) �?????? no new flag code needed
+- affected repos/files/modules: `cobo_iam_services` �?????? `internal/disclosure/app/` (2 new impl + 2 new test files, 3 comment-only edits), `internal/reminder/infra/mysql/repository.go` (comment-only), `internal/disclosure/app/deadlineengine/hint.go` (comment-only)
 - contracts/behaviors/constraints/decisions:
-  - Adapter, dual-compute, audit, and divergence types are new exported surface with **zero callers outside their own test files** Ã¢â‚¬â€ not wired into any runtime path
-  - `DivergenceNone`/`DateShift`/`MonthShift`/`YearlyRollback` semantics: equal dates Ã¢â€ â€™ NONE; different year Ã¢â€ â€™ YEARLY_ROLLBACK (RK-E09); same year different month Ã¢â€ â€™ MONTH_SHIFT; same year/month different day Ã¢â€ â€™ DATE_SHIFT
+  - Adapter, dual-compute, audit, and divergence types are new exported surface with **zero callers outside their own test files** �?????? not wired into any runtime path
+  - `DivergenceNone`/`DateShift`/`MonthShift`/`YearlyRollback` semantics: equal dates �?????? NONE; different year �?????? YEARLY_ROLLBACK (RK-E09); same year different month �?????? MONTH_SHIFT; same year/month different day �?????? DATE_SHIFT
   - No DB migration, no event publish, no metric emission, no `planned_date`/`cycle_start` recompute anywhere in this batch
 - build/verification result:
   - `go build ./...` => exit 0
   - `go test ./internal/disclosure/app/... -run 'DeadlineEngineAdapter|Divergence|DeadlineComparison|DeadlineAudit|NonTradingDayChecker' -v` => 17/17 PASS
   - `go tool cover -func` on new files => 100.0% all functions
-  - `go test ./...` => 2 pre-existing FAILs (`internal/httpserver`, `internal/companyaccess/transport/http`), confirmed via `git stash`/`git stash pop` to exist identically on base commit `8fb5fae` before this batch Ã¢â‚¬â€ unrelated to Batch 5A
+  - `go test ./...` => 2 pre-existing FAILs (`internal/httpserver`, `internal/companyaccess/transport/http`), confirmed via `git stash`/`git stash pop` to exist identically on base commit `8fb5fae` before this batch �?????? unrelated to Batch 5A
   - `gofmt -l` clean on all new files
 - remaining gaps/risks/next steps:
   - Batch 5B: wire `DeadlineEngineAdapter.ResolveDeadline` into `calculatePeriodic` (Portal Preview) and `seedPeriodicCycles` (Periodic Worker, `cycleCtx=nil` per I-21) behind `DEADLINE_ENGINE_V2`
   - Batch 5C: render `FormatHintLabelVI`/`Resolution.HintLabelVI` in Portal response
   - Batch 5D: enable `DeadlineComparison`/`DeadlineAudit` dual-compute path for shadow comparison before cutover
   - full report: `docs/ai-cache/deadline-engine-batch5a-implementation-2026-06-12.md`
-- verdict: **BATCH 5A COMPLETE Ã¢â‚¬â€ READY FOR 5B**
+- verdict: **BATCH 5A COMPLETE �?????? READY FOR 5B**
 
-## 2026-06-12 - Deadline Engine V2 Ã¢â‚¬â€ Batch 5B: Shadow Runtime Wiring
+## 2026-06-12 - Deadline Engine V2 �?????? Batch 5B: Shadow Runtime Wiring
 
 - task type: implement
-- objective: wire Deadline Engine V2 (Source C) as a **shadow-compute-only** path alongside the Old Runtime (Source A/B) at the three runtime entry points Ã¢â‚¬â€ Portal Preview, Periodic Worker seed tick, Manual Create Ã¢â‚¬â€ and emit a structured divergence-audit log, with zero impact on DB writes, API responses, or worker output. No cutover.
+- objective: wire Deadline Engine V2 (Source C) as a **shadow-compute-only** path alongside the Old Runtime (Source A/B) at the three runtime entry points �?????? Portal Preview, Periodic Worker seed tick, Manual Create �?????? and emit a structured divergence-audit log, with zero impact on DB writes, API responses, or worker output. No cutover.
 - what was implemented:
   - `internal/disclosure/app/deadlineengine_shadow.go` (NEW): `shadowSampler` (1-in-100 deterministic sampling for `NONE` divergence), `formatShadowDate`/`parseShadowDate`, `logDeadlineEngineShadow` (Phase E/F: exact `deadline_engine_shadow` JSON event, `slog`, no DB/Kafka/metrics), `deadlineEngineShadowRunner` with three methods:
     - `portalPreview` (Phase A): shadow `adapter.ResolveDeadline` alongside `DeadlineCalculator.CalculateDeadlineSummary` in `GetTypeDetail`; compares old `summary.StartDate`/`DeadlineDate` vs `res.ResolvedT0`/`PlannedDate`; result never used.
-    - `periodicWorker` (Phase B): shadow-compute after `computeCycleLabelAndStart` in `seedPeriodicCycles`; compares `oldCycleStart`/`oldDueDate` (Source B, written to DB) vs `newResolution.T0`/`PlannedDate` (never persisted); deliberately passes zero-value `CompanyDeadlineContext` (Source B is anchor-blind, so this isolates the Source B vs Source C algorithm divergence Ã¢â‚¬â€ RK-E09 Ã¢â‚¬â€ without R-C confounding).
+    - `periodicWorker` (Phase B): shadow-compute after `computeCycleLabelAndStart` in `seedPeriodicCycles`; compares `oldCycleStart`/`oldDueDate` (Source B, written to DB) vs `newResolution.T0`/`PlannedDate` (never persisted); deliberately passes zero-value `CompanyDeadlineContext` (Source B is anchor-blind, so this isolates the Source B vs Source C algorithm divergence �?????? RK-E09 �?????? without R-C confounding).
     - `manualCreate` (Phase C): after `repo.Create` succeeds in `CreateRecord`, shadow `adapter.ResolveDeadline` and compares client `planned_date` vs `res.PlannedDate`. Audit-only; request/record never mutated. Since Manual Create has no "old cycle_start", `DivergenceClass` is classified on **due-date** divergence (`ClassifyDivergence(oldDue, res.PlannedDate)`); `OldCycleStart==NewCycleStart==res.ResolvedT0` for log context only.
-  - `internal/disclosure/app/service.go`: new `shadowRunner *deadlineEngineShadowRunner` + `deadlineEngineV2Shadow bool` fields, `WithDeadlineEngineV2Shadow` option, constructed in `NewService` after options applied; wired into `GetTypeDetail`, `CreateRecord` (via `shadowManualCreate`), `SeedPeriodicCycles`. All call sites guarded by `s.shadowRunner.enabled` Ã¢â‚¬â€ zero extra repo/adapter calls when disabled (default).
+  - `internal/disclosure/app/service.go`: new `shadowRunner *deadlineEngineShadowRunner` + `deadlineEngineV2Shadow bool` fields, `WithDeadlineEngineV2Shadow` option, constructed in `NewService` after options applied; wired into `GetTypeDetail`, `CreateRecord` (via `shadowManualCreate`), `SeedPeriodicCycles`. All call sites guarded by `s.shadowRunner.enabled` �?????? zero extra repo/adapter calls when disabled (default).
   - `internal/disclosure/app/periodic.go`: `seedPeriodicCycles` gained trailing `shadow *deadlineEngineShadowRunner` param; one call `shadow.periodicWorker(...)` added after `dueDate` computed, before `repo.UpsertPeriodicCycle`.
   - `internal/platform/config/config.go`: new `DeadlineEngineV2Shadow bool`, env `DEADLINE_ENGINE_V2_SHADOW`, default `false`.
   - `internal/httpserver/server.go`: passes `cfg.DeadlineEngineV2Shadow` into `disclosureapp.WithDeadlineEngineV2Shadow(...)`.
   - Tests (NEW):
-    - `internal/disclosure/app/deadlineengine_shadow_test.go` Ã¢â‚¬â€ unit tests for sampler, log format (Phase E JSON shape via `slog.NewJSONHandler`), sampling rules (Phase F), date helpers, and all three runner methods (success, disabled, nil-runner, non-periodic/nil-rules skip, adapter-error-swallowed) via `fakeShadowAdapter`.
-    - `internal/disclosure/app/deadlineengine_shadow_integration_test.go` (`package app_test`) Ã¢â‚¬â€ proves Behavior Before == Behavior After using `internal/disclosure/infra/inmemory.Repository`: `SeedPeriodicCycles` DB writes identical (shadow on/off), `GetTypeDetail` `DeadlineSummaryDTO`/full DTO identical, `CreateRecord` returned `RecordDTO` identical Ã¢â‚¬â€ with shadow actually executing and logging real `DATE_SHIFT` divergence (uses a `noHolidaysProvider` test double to avoid missing-fixture errors so the shadow path runs for real, not short-circuited).
-    - `internal/platform/config/deadline_engine_v2_shadow_test.go` Ã¢â‚¬â€ `DEADLINE_ENGINE_V2_SHADOW` defaults false / explicit true.
-- affected repos/files/modules: `cobo_iam_services` only Ã¢â‚¬â€ `internal/disclosure/app/{deadlineengine_shadow.go,deadlineengine_shadow_test.go,deadlineengine_shadow_integration_test.go,service.go,periodic.go}`, `internal/platform/config/{config.go,deadline_engine_v2_shadow_test.go}`, `internal/httpserver/server.go`.
+    - `internal/disclosure/app/deadlineengine_shadow_test.go` �?????? unit tests for sampler, log format (Phase E JSON shape via `slog.NewJSONHandler`), sampling rules (Phase F), date helpers, and all three runner methods (success, disabled, nil-runner, non-periodic/nil-rules skip, adapter-error-swallowed) via `fakeShadowAdapter`.
+    - `internal/disclosure/app/deadlineengine_shadow_integration_test.go` (`package app_test`) �?????? proves Behavior Before == Behavior After using `internal/disclosure/infra/inmemory.Repository`: `SeedPeriodicCycles` DB writes identical (shadow on/off), `GetTypeDetail` `DeadlineSummaryDTO`/full DTO identical, `CreateRecord` returned `RecordDTO` identical �?????? with shadow actually executing and logging real `DATE_SHIFT` divergence (uses a `noHolidaysProvider` test double to avoid missing-fixture errors so the shadow path runs for real, not short-circuited).
+    - `internal/platform/config/deadline_engine_v2_shadow_test.go` �?????? `DEADLINE_ENGINE_V2_SHADOW` defaults false / explicit true.
+- affected repos/files/modules: `cobo_iam_services` only �?????? `internal/disclosure/app/{deadlineengine_shadow.go,deadlineengine_shadow_test.go,deadlineengine_shadow_integration_test.go,service.go,periodic.go}`, `internal/platform/config/{config.go,deadline_engine_v2_shadow_test.go}`, `internal/httpserver/server.go`.
 - contracts/behaviors/constraints/decisions:
-  - `planned_date`, `cycle_start`, `periodic_cycles`, `disclosure_records`, API response, reminder behavior, portal behavior, worker behavior Ã¢â‚¬â€ all unchanged (proven via integration tests, same on/off output).
+  - `planned_date`, `cycle_start`, `periodic_cycles`, `disclosure_records`, API response, reminder behavior, portal behavior, worker behavior �?????? all unchanged (proven via integration tests, same on/off output).
   - `DEADLINE_ENGINE_V2` remains unused/untouched (Batch 2). New flag `DEADLINE_ENGINE_V2_SHADOW` (default `false`) gates the entire shadow path; after this batch's deploy, flag stays `false`.
-  - Shadow compute never errors out to the caller Ã¢â‚¬â€ adapter errors are logged via `slog.WarnContext("deadline_engine_shadow_error", ...)` and swallowed.
-  - Log format (Phase E, exact): `{"event":"deadline_engine_shadow","company_id":...,"type_id":...,"divergence_class":...,"old_cycle_start":...,"new_cycle_start":...,"old_due_date":...,"new_due_date":...}`. Sampling (Phase F): `NONE` Ã¢â€ â€™ 1-in-100; `DATE_SHIFT`/`MONTH_SHIFT`/`YEARLY_ROLLBACK` Ã¢â€ â€™ always logged.
+  - Shadow compute never errors out to the caller �?????? adapter errors are logged via `slog.WarnContext("deadline_engine_shadow_error", ...)` and swallowed.
+  - Log format (Phase E, exact): `{"event":"deadline_engine_shadow","company_id":...,"type_id":...,"divergence_class":...,"old_cycle_start":...,"new_cycle_start":...,"old_due_date":...,"new_due_date":...}`. Sampling (Phase F): `NONE` �?????? 1-in-100; `DATE_SHIFT`/`MONTH_SHIFT`/`YEARLY_ROLLBACK` �?????? always logged.
 - build/verification result:
   - `go build ./...` => exit 0
   - `go test ./internal/disclosure/app/...` and `./internal/platform/config/...` => all PASS (incl. new shadow unit + integration tests)
   - `deadlineengine_shadow.go` coverage: 98.4% (`go tool cover`)
-  - `go test ./...` => only pre-existing failures in `internal/companyaccess/transport/http` (`TestCreateSelfServiceCompany_FeatureFlagOff`) and `internal/httpserver` (4 platform-CMS/template_category tests) Ã¢â‚¬â€ confirmed identical on `git stash` (pre-existing on `phase-300526`, unrelated to Batch 5B).
+  - `go test ./...` => only pre-existing failures in `internal/companyaccess/transport/http` (`TestCreateSelfServiceCompany_FeatureFlagOff`) and `internal/httpserver` (4 platform-CMS/template_category tests) �?????? confirmed identical on `git stash` (pre-existing on `phase-300526`, unrelated to Batch 5B).
   - `gofmt -l` clean on all new/modified Batch 5B files (pre-existing gofmt findings in `service.go`/`config.go` unrelated to this batch's lines).
 - remaining gaps/risks/next steps:
-  - Batch 5C: cutover planning Ã¢â‚¬â€ none of Worker/Portal/Reminder cutover, `planned_date` rewrite, periodic cycle rewrite, DB migration, backfill, or remediation were performed (non-goals, by design).
+  - Batch 5C: cutover planning �?????? none of Worker/Portal/Reminder cutover, `planned_date` rewrite, periodic cycle rewrite, DB migration, backfill, or remediation were performed (non-goals, by design).
   - `DEADLINE_ENGINE_V2_SHADOW` remains `false` after deploy; enabling it in a real environment requires real `configs/non_trading_days/*.json` fixtures for the target years (confirmed needed during integration test construction).
-- verdict: **BATCH 5B COMPLETE Ã¢â‚¬â€ READY FOR 5C**
+- verdict: **BATCH 5B COMPLETE �?????? READY FOR 5C**
 
 ---
 
-## Batch 5C.1 + 5D Ã¢â‚¬â€ Deadline Engine V2 Input Contract Fix & Shadow Divergence Verification (2026-06-12)
+## Batch 5C.1 + 5D �?????? Deadline Engine V2 Input Contract Fix & Shadow Divergence Verification (2026-06-12)
 
-- scope: 5C.1 (input contract resolution, no cutover) + 5D (shadow divergence verification on DEV). 5E (cutover) explicitly NOT performed Ã¢â‚¬â€ see verdict.
+- scope: 5C.1 (input contract resolution, no cutover) + 5D (shadow divergence verification on DEV). 5E (cutover) explicitly NOT performed �?????? see verdict.
 - **5C.1 decisions (locked)**:
-  1. `frequency_unit: "week"` (only `bao-cao-tan-suat`, DEV) Ã¢â€ â€™ **Option C (future backlog)**. `DeriveDeadlineBehavior` (resolve_t0.go) only supports `monthly|quarterly|yearly`; `ListActivePeriodicTypes` SQL already excludes `week` from the periodic worker. Adding weekly-cycle semantics to Source C is a scope-expanding engine change requiring product sign-off Ã¢â‚¬â€ out of scope for 5C.1/5D. The resulting `deadline_engine_shadow_error` (`unsupported frequency_unit: "week"`) for this single template is **expected and non-blocking** (swallowed by design, isolated to one template, old runtime unaffected).
-  2. `deadline_days must be > 0` (affected ALL periodic-eligible templates, root cause of shadow success=0 in prior 5C run) Ã¢â€ â€™ **Option B (adapter mapping bug, fixed)**. DEV `applicability_rules_json` rows (authored before the V2 `use_structure_deadline` flag existed) populate `deadline_by_structure` (required by CMS validation E01-E06 for periodic templates) but leave `deadline_days=0` and `use_structure_deadline=false`. `ResolveEffectiveN` (resolve_n.go) requires `DeadlineDays>0 || UseStructureDeadline=true`, so it always returned `ErrInvalidDeadlineDays`. Legacy Source A/B (`applicability.ResolveDeadlineDays`) consults `deadline_by_structure` unconditionally Ã¢â‚¬â€ no opt-in flag. Fix: added `normalizeRulesForEngine()` in `internal/disclosure/app/deadlineengine_adapter.go` Ã¢â‚¬â€ when `DeadlineDays<=0 && !UseStructureDeadline && len(DeadlineByStructure)>0`, returns a copy with `UseStructureDeadline=true` before calling `deadlineengine.ResolveDeadline`. Read-only normalization, no DB write, no mutation of caller's rules. Covered by new test `TestDeadlineEngineAdapter_ResolveDeadline_LegacyDeadlineByStructureFallback`.
+  1. `frequency_unit: "week"` (only `bao-cao-tan-suat`, DEV) �?????? **Option C (future backlog)**. `DeriveDeadlineBehavior` (resolve_t0.go) only supports `monthly|quarterly|yearly`; `ListActivePeriodicTypes` SQL already excludes `week` from the periodic worker. Adding weekly-cycle semantics to Source C is a scope-expanding engine change requiring product sign-off �?????? out of scope for 5C.1/5D. The resulting `deadline_engine_shadow_error` (`unsupported frequency_unit: "week"`) for this single template is **expected and non-blocking** (swallowed by design, isolated to one template, old runtime unaffected).
+  2. `deadline_days must be > 0` (affected ALL periodic-eligible templates, root cause of shadow success=0 in prior 5C run) �?????? **Option B (adapter mapping bug, fixed)**. DEV `applicability_rules_json` rows (authored before the V2 `use_structure_deadline` flag existed) populate `deadline_by_structure` (required by CMS validation E01-E06 for periodic templates) but leave `deadline_days=0` and `use_structure_deadline=false`. `ResolveEffectiveN` (resolve_n.go) requires `DeadlineDays>0 || UseStructureDeadline=true`, so it always returned `ErrInvalidDeadlineDays`. Legacy Source A/B (`applicability.ResolveDeadlineDays`) consults `deadline_by_structure` unconditionally �?????? no opt-in flag. Fix: added `normalizeRulesForEngine()` in `internal/disclosure/app/deadlineengine_adapter.go` �?????? when `DeadlineDays<=0 && !UseStructureDeadline && len(DeadlineByStructure)>0`, returns a copy with `UseStructureDeadline=true` before calling `deadlineengine.ResolveDeadline`. Read-only normalization, no DB write, no mutation of caller's rules. Covered by new test `TestDeadlineEngineAdapter_ResolveDeadline_LegacyDeadlineByStructureFallback`.
 - **Files changed**:
-  - `internal/disclosure/app/deadlineengine_adapter.go` Ã¢â‚¬â€ added `normalizeRulesForEngine()`, applied to `in.Rules` in `ResolveDeadline`.
-  - `internal/disclosure/app/deadlineengine_adapter_test.go` Ã¢â‚¬â€ added `TestDeadlineEngineAdapter_ResolveDeadline_LegacyDeadlineByStructureFallback`.
-  - `cmd/worker/main.go` Ã¢â‚¬â€ fixed Batch 5B wiring gap: `disclosureapp.WithDeadlineEngineV2Shadow(cfg.DeadlineEngineV2Shadow)` was constructed by `internal/httpserver/server.go` but **not** by the worker's `disclosureSvc` (used for `SeedPeriodicCycles`/periodic worker shadow). Added the missing option.
-- **Build/test**: `go build ./...` clean. `go test ./internal/disclosure/app/... ./internal/platform/config/...` pass. `go test ./...`: only pre-existing unrelated failure `TestCreateSelfServiceCompany_FeatureFlagOff` (internal/companyaccess/transport/http, self-service company creation flag Ã¢â‚¬â€ untouched by this batch). `gofmt -l` on edited files: clean (repo-wide `gofmt -l` noise is pre-existing/unrelated).
-- **Deploy**: `make deploy-be` to DEV (88.216.208.0). `cobo-iam-api`/`cobo-iam-worker` recreated, healthy (`/healthz`, `/readyz` ok). Flags after deploy: `DEADLINE_ENGINE_V2=false`, `DEADLINE_ENGINE_V2_SHADOW=true` (both containers) Ã¢â‚¬â€ unchanged from pre-deploy.
+  - `internal/disclosure/app/deadlineengine_adapter.go` �?????? added `normalizeRulesForEngine()`, applied to `in.Rules` in `ResolveDeadline`.
+  - `internal/disclosure/app/deadlineengine_adapter_test.go` �?????? added `TestDeadlineEngineAdapter_ResolveDeadline_LegacyDeadlineByStructureFallback`.
+  - `cmd/worker/main.go` �?????? fixed Batch 5B wiring gap: `disclosureapp.WithDeadlineEngineV2Shadow(cfg.DeadlineEngineV2Shadow)` was constructed by `internal/httpserver/server.go` but **not** by the worker's `disclosureSvc` (used for `SeedPeriodicCycles`/periodic worker shadow). Added the missing option.
+- **Build/test**: `go build ./...` clean. `go test ./internal/disclosure/app/... ./internal/platform/config/...` pass. `go test ./...`: only pre-existing unrelated failure `TestCreateSelfServiceCompany_FeatureFlagOff` (internal/companyaccess/transport/http, self-service company creation flag �?????? untouched by this batch). `gofmt -l` on edited files: clean (repo-wide `gofmt -l` noise is pre-existing/unrelated).
+- **Deploy**: `make deploy-be` to DEV (88.216.208.0). `cobo-iam-api`/`cobo-iam-worker` recreated, healthy (`/healthz`, `/readyz` ok). Flags after deploy: `DEADLINE_ENGINE_V2=false`, `DEADLINE_ENGINE_V2_SHADOW=true` (both containers) �?????? unchanged from pre-deploy.
 - **5D shadow verification (DEV)**:
   - Portal Preview (`GET /api/v1/disclosure-types/{type_id}`, company `08f59da2-...`):
-    - `bao-cao-tai-chinh-quy-1` (DeadlineMode=PERIODIC, frequency_unit empty) Ã¢â€ â€™ **SUCCESS**, `divergence_class=NONE` (cycle_start 2026-06-12 both), `old_due_date=2026-07-09` vs `new_due_date=2026-07-11` (2-day due-date divergence logged for analysis Ã¢â‚¬â€ `ClassifyDivergence` only compares cycle_start, by design/Batch 5A).
-    - `bao-cao-tan-suat` (frequency_unit=week) Ã¢â€ â€™ `shadow_error`: `unsupported frequency_unit: "week"` Ã¢â‚¬â€ expected per 5C.1 Decision 1, non-blocking.
-  - Periodic Worker (`PERIODIC_SEEDING_ENABLED=true` temporarily on worker only, `.env` backed up as `.env.bak.5d_preflip.<ts>`, reverted to `false` after evidence collected; `periodic_cycles` count unchanged 27Ã¢â€ â€™27, `disclosure_records` unchanged 83/57 during this window):
-    - `bao-cao-tai-chinh-quy-2` (frequency_unit=quarterly), company `08f59da2-...` Ã¢â€ â€™ **SUCCESS**, `divergence_class=NONE`, `old_due_date=2026-04-30 == new_due_date=2026-04-30` (full parity).
-  - Manual Create (`POST /api/v1/disclosures`, DEV-only labeled test record `[DEV-ONLY 5D SHADOW SMOKE TEST]`, record_id `019ebac1-d199-7773-89cf-5cca89835baa`, type `bao-cao-tai-chinh-quy-1`, `planned_date=2026-07-09` submitted and persisted unchanged Ã¢â‚¬â€ **no cutover, client value used as-is**) Ã¢â€ â€™ **SUCCESS**, `divergence_class=DATE_SHIFT`, `old_due_date=2026-07-09` (client) vs `new_due_date=2026-07-11` (engine).
+    - `bao-cao-tai-chinh-quy-1` (DeadlineMode=PERIODIC, frequency_unit empty) �?????? **SUCCESS**, `divergence_class=NONE` (cycle_start 2026-06-12 both), `old_due_date=2026-07-09` vs `new_due_date=2026-07-11` (2-day due-date divergence logged for analysis �?????? `ClassifyDivergence` only compares cycle_start, by design/Batch 5A).
+    - `bao-cao-tan-suat` (frequency_unit=week) �?????? `shadow_error`: `unsupported frequency_unit: "week"` �?????? expected per 5C.1 Decision 1, non-blocking.
+  - Periodic Worker (`PERIODIC_SEEDING_ENABLED=true` temporarily on worker only, `.env` backed up as `.env.bak.5d_preflip.<ts>`, reverted to `false` after evidence collected; `periodic_cycles` count unchanged 27�??????27, `disclosure_records` unchanged 83/57 during this window):
+    - `bao-cao-tai-chinh-quy-2` (frequency_unit=quarterly), company `08f59da2-...` �?????? **SUCCESS**, `divergence_class=NONE`, `old_due_date=2026-04-30 == new_due_date=2026-04-30` (full parity).
+  - Manual Create (`POST /api/v1/disclosures`, DEV-only labeled test record `[DEV-ONLY 5D SHADOW SMOKE TEST]`, record_id `019ebac1-d199-7773-89cf-5cca89835baa`, type `bao-cao-tai-chinh-quy-1`, `planned_date=2026-07-09` submitted and persisted unchanged �?????? **no cutover, client value used as-is**) �?????? **SUCCESS**, `divergence_class=DATE_SHIFT`, `old_due_date=2026-07-09` (client) vs `new_due_date=2026-07-11` (engine).
   - Totals: 3 `deadline_engine_shadow` events (NONE=2, DATE_SHIFT=1, MONTH_SHIFT=0, YEARLY_ROLLBACK=0), `shadow_error=1` (week, documented non-blocking per Decision 1). No panic/fatal in API or worker logs.
-  - 5D required success conditions met: Ã¢â€°Â¥1 periodic-worker success Ã¢Å“â€œ, Ã¢â€°Â¥1 portal-preview success Ã¢Å“â€œ, Ã¢â€°Â¥1 manual-create success Ã¢Å“â€œ.
-- **Behavior/data safety**: `periodic_cycles` 27Ã¢â€ â€™27 (unchanged). `disclosure_records` 83/57 Ã¢â€ â€™ 84/58 (the +1 is the labeled DEV-only smoke-test record; `planned_date` stored = client-submitted value, not engine value). Final DEV state restored: `DEADLINE_ENGINE_V2=false`, `DEADLINE_ENGINE_V2_SHADOW=true`, `PERIODIC_SEEDING_ENABLED=false` on both containers, health OK.
-- **5E (cutover) Ã¢â‚¬â€ NOT performed.** Blocked by explicit stop condition (Part C Ã‚Â§3.4): `RecordPayload` (`internal/disclosure/app/contracts.go`) carries only `planned_date`, **no T0 input field** Ã¢â‚¬â€ Manual Create cutover (server recomputing `planned_date` from `T0 + N`) cannot be implemented without a UI/API contract change to carry T0. Additionally, the DATE_SHIFT divergence found on `bao-cao-tai-chinh-quy-1` (consistent 2-day due-date difference, Source A vs Source C N/day-type) needs product/PO review before any V2-derived date is exposed in Portal/Manual Create Ã¢â‚¬â€ applies to cutover scopes 3.4 and 3.5.
+  - 5D required success conditions met: �???�1 periodic-worker success �?????, �???�1 portal-preview success �?????, �???�1 manual-create success �?????.
+- **Behavior/data safety**: `periodic_cycles` 27�??????27 (unchanged). `disclosure_records` 83/57 �?????? 84/58 (the +1 is the labeled DEV-only smoke-test record; `planned_date` stored = client-submitted value, not engine value). Final DEV state restored: `DEADLINE_ENGINE_V2=false`, `DEADLINE_ENGINE_V2_SHADOW=true`, `PERIODIC_SEEDING_ENABLED=false` on both containers, health OK.
+- **5E (cutover) �?????? NOT performed.** Blocked by explicit stop condition (Part C ??�3.4): `RecordPayload` (`internal/disclosure/app/contracts.go`) carries only `planned_date`, **no T0 input field** �?????? Manual Create cutover (server recomputing `planned_date` from `T0 + N`) cannot be implemented without a UI/API contract change to carry T0. Additionally, the DATE_SHIFT divergence found on `bao-cao-tai-chinh-quy-1` (consistent 2-day due-date difference, Source A vs Source C N/day-type) needs product/PO review before any V2-derived date is exposed in Portal/Manual Create �?????? applies to cutover scopes 3.4 and 3.5.
 - **remaining gaps / next steps**:
-  - Product decision needed: reconcile the 2-day due-date divergence (likely `deadline_day_type` default mismatch Ã¢â‚¬â€ Source A vs Source C `calendar`/`working` default, or inclusive-day-counting difference) before any cutover that changes user-visible dates.
+  - Product decision needed: reconcile the 2-day due-date divergence (likely `deadline_day_type` default mismatch �?????? Source A vs Source C `calendar`/`working` default, or inclusive-day-counting difference) before any cutover that changes user-visible dates.
   - API/contract change needed before Manual Create cutover (3.4): add a T0 input field to `RecordPayload`/`CreateRecordRequest`, or get explicit PO confirmation that `planned_date` itself may be treated as T0 (spec forbids silently assuming this).
-  - `bao-cao-tan-suat` (`frequency_unit=week`) remains out of V2 scope (Decision 1) Ã¢â‚¬â€ revisit if/when weekly periodic templates become a product priority.
-  - DEV-only smoke-test record `019ebac1-d199-7773-89cf-5cca89835baa` (`[DEV-ONLY 5D SHADOW SMOKE TEST]`, type `bao-cao-tai-chinh-quy-1`, company `08f59da2-...`) left in place Ã¢â‚¬â€ safe to delete (status=Draft).
-- verdict: **PARTIAL COMPLETE Ã¢â‚¬â€ BLOCKED BEFORE CUTOVER** (5C.1 PASS, 5D PASS, 5E blocked per stop conditions above)
+  - `bao-cao-tan-suat` (`frequency_unit=week`) remains out of V2 scope (Decision 1) �?????? revisit if/when weekly periodic templates become a product priority.
+  - DEV-only smoke-test record `019ebac1-d199-7773-89cf-5cca89835baa` (`[DEV-ONLY 5D SHADOW SMOKE TEST]`, type `bao-cao-tai-chinh-quy-1`, company `08f59da2-...`) left in place �?????? safe to delete (status=Draft).
+- verdict: **PARTIAL COMPLETE �?????? BLOCKED BEFORE CUTOVER** (5C.1 PASS, 5D PASS, 5E blocked per stop conditions above)
 
 ## 2026-06-18 - Invite user with title assignment
 
@@ -4121,11 +4200,11 @@
 ## 2026-07-29 - Phase 12.6A legal basis inventory (Docker DEV read-only)
 
 - task type: backend tooling + DEV inventory (read-only)
-- objective: Phase 12.6A Groups A–E inventory + in-memory dry-run using Docker DEV compose DB config (not MYSQL_READONLY_DSN)
+- objective: Phase 12.6A Groups A?E inventory + in-memory dry-run using Docker DEV compose DB config (not MYSQL_READONLY_DSN)
 - implemented/discovered:
   - SQL allowlist interceptor (`ValidateReadOnlySQL` + `AllowlistConnector`)
-  - CLI `--docker-dev` → published `127.0.0.1:3306` / db `cobo_iam` / masked user; app credential allowed only with READ ONLY tx + allowlist
-  - Live inventory: total=6, A=6, B=C=D=E=0; dry-run WRAP_LEGACY_FLAT×6; idempotent; mutations=0
+  - CLI `--docker-dev` ? published `127.0.0.1:3306` / db `cobo_iam` / masked user; app credential allowed only with READ ONLY tx + allowlist
+  - Live inventory: total=6, A=6, B=C=D=E=0; dry-run WRAP_LEGACY_FLAT?6; idempotent; mutations=0
   - DEV missing `is_released` (0122); probe + approximate via active version pointer
 - affected: `cmd/legal-basis-inventory`, `internal/disclosure/app/legal_basis_inventory/*`, plan evidence under `docs/ai-cache/legal-basis-contract-alignment-plan-2026-07-29/`
 - constraints: no `--apply`; no Compose edits; no container recreate for inventory; no Phase 12.6B
@@ -4139,7 +4218,7 @@
 - implemented: `phase-12-6b-*` design pack + 12.6A scope-exception; no apply tool; no DB write; no Docker build
 - dataset: 6 Group A GLOBAL active v1; WRAP_LEGACY_FLAT; flat-after-wrap=OD-7 projection
 - verdict: **BACKFILL_PLAN_READY**
-- remaining: Approvals 3–4 + explicit mutate phrase before implementation/execution
+- remaining: Approvals 3?4 + explicit mutate phrase before implementation/execution
 
 ## 2026-07-29 - Phase 12.6B-I guarded backfill tooling
 

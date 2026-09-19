@@ -158,6 +158,7 @@ func (b *DeadlineBridge) LoadWorkflowForRecord(ctx context.Context, sub Subject,
 		WorkflowInstanceID: wfRow.WorkflowInstanceID,
 		CompanyID:          sub.CompanyID,
 		RecordID:           recordID,
+		RecordStatus:       strings.TrimSpace(row.RecordStatus),
 		T0Date:             t0,
 		Timezone:           tz,
 		SnapshotJSONSteps:  snapshot,
@@ -243,4 +244,101 @@ func evaluateStepAuthority(wf WorkflowContext, states map[string]StepState, step
 		isCompleted = true
 	}
 	return isCurrent, isCompleted, nil
+}
+
+// ClassifyWorkflowStepStatus returns the canonical deadline step status token
+// (current|incomplete|completed|not_started|overdue|past_incomplete|…) for stepCode.
+func ClassifyWorkflowStepStatus(wf WorkflowContext, states map[string]StepState, stepCode string, now time.Time) (string, error) {
+	stepCode = strings.TrimSpace(stepCode)
+	if stepCode == "" {
+		return "", perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "step_code is required", nil)
+	}
+	found := false
+	for _, snap := range wf.SnapshotJSONSteps {
+		code := strings.TrimSpace(snap.StepCode)
+		if code == "" {
+			code = strings.TrimSpace(snap.StepID)
+		}
+		if code == stepCode {
+			found = true
+			break
+		}
+	}
+	if !found && len(wf.SnapshotJSONSteps) > 0 {
+		return "", perr.NewHTTPError(http.StatusNotFound, perr.CodeNotFound, "step not found", nil)
+	}
+	daStates := make(map[string]deadlinealertsapp.StepRuntimeState, len(states))
+	for k, v := range states {
+		daStates[k] = deadlinealertsapp.StepRuntimeState{
+			StepCode:                       v.StepCode,
+			CompletedAt:                    v.CompletedAt,
+			CompletedByMembershipID:        v.CompletedByMembershipID,
+			MarkedIncompleteAt:             v.MarkedIncompleteAt,
+			MarkedIncompleteByMembershipID: v.MarkedIncompleteByMembershipID,
+			IncompleteReason:               v.IncompleteReason,
+			DelayDaysApplied:               v.DelayDaysApplied,
+		}
+	}
+	resp, err := deadlinealertsapp.ComputeDeadlineSteps(deadlinealertsapp.WorkflowInstanceContext{
+		WorkflowInstanceID: wf.WorkflowInstanceID,
+		CompanyID:          wf.CompanyID,
+		RecordID:           wf.RecordID,
+		T0Date:             wf.T0Date,
+		Snapshot:           wf.SnapshotJSONSteps,
+		Timezone:           wf.Timezone,
+	}, daStates, now, wf.Timezone, true)
+	if err != nil {
+		return "", err
+	}
+	for _, s := range resp.Steps {
+		if s.StepCode == stepCode {
+			return strings.TrimSpace(s.Status), nil
+		}
+	}
+	return "unknown", nil
+}
+
+// AuthorizeComment checks deadline.comment (not deadline.manage / deadline.confirm).
+func (b *DeadlineBridge) AuthorizeComment(ctx context.Context, sub Subject) error {
+	decision, err := b.Auth.Authorize(ctx, authapp.AuthorizeRequest{
+		Subject: authapp.SubjectRef{
+			UserID:       sub.UserID,
+			MembershipID: sub.MembershipID,
+			CompanyID:    sub.CompanyID,
+		},
+		Action: "deadline.comment",
+		Resource: authapp.ResourceRef{
+			Type: "disclosure_record",
+			ID:   "",
+			Attributes: map[string]any{
+				"workflow_state": "*",
+			},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("authorize deadline.comment: %w", err)
+	}
+	if decision.Decision != authapp.DecisionAllow {
+		return perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "deadline.comment permission required", nil)
+	}
+	return nil
+}
+
+// HasPermission reports whether the subject holds permissionCode in company-scoped
+// effective access (permission list), not via role code inference.
+func (b *DeadlineBridge) HasPermission(ctx context.Context, sub Subject, permissionCode string) (bool, error) {
+	permissionCode = strings.TrimSpace(permissionCode)
+	if permissionCode == "" {
+		return false, nil
+	}
+	eff, err := b.Auth.GetEffectiveAccess(ctx, sub.MembershipID, sub.CompanyID)
+	if err != nil {
+		return false, fmt.Errorf("resolve effective access: %w", err)
+	}
+	for _, p := range eff.Permissions {
+		if strings.TrimSpace(p) == permissionCode {
+			return true, nil
+		}
+	}
+	return false, nil
 }

@@ -112,6 +112,8 @@ import (
 	wsememory "github.com/cobo/cobo_iam_services/internal/workflowstepevidence/memory"
 	wsemysql "github.com/cobo/cobo_iam_services/internal/workflowstepevidence/mysql"
 	wsehttp "github.com/cobo/cobo_iam_services/internal/workflowstepevidence/transport/http"
+	wsc "github.com/cobo/cobo_iam_services/internal/workflowstepcomments"
+	wschttp "github.com/cobo/cobo_iam_services/internal/workflowstepcomments/transport/http"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -468,6 +470,48 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 		idemStore = idempotencymysql.NewStore(pool)
 		log.Info("disclosure submit/confirm idempotency enabled (Idempotency-Key header)")
 	}
+	var commentFiles wsc.Repository = wsc.NewMemoryRepository()
+	if pool != nil {
+		commentFiles = wsc.NewMySQLRepository(pool)
+	}
+	commentSvc := wsc.NewService(fulfillmentBridge, commentFiles, log).WithIdempotency(idemStore).WithAudit(auditSvc)
+	if pool != nil {
+		commentSvc = commentSvc.WithDisplayNames(wsc.NewMySQLDisplayNames(pool))
+	}
+	if cfg.WorkflowStepCommentMentionsEnabled {
+		var candStore wsc.MentionCandidateStore
+		var mentionsRepo wsc.MentionsRepository
+		var membershipLookup wsc.MembershipActiveLookup
+		var mentionDisplays wsc.MentionDisplayResolver
+		if pool != nil {
+			candStore = wsc.NewMySQLMentionCandidateStore(pool)
+			mentionsRepo = wsc.NewMySQLMentionsRepository(pool)
+			membershipLookup = wsc.NewMySQLMembershipActiveLookup(pool)
+			mentionDisplays = wsc.NewMySQLMentionDisplayResolver(pool)
+			commentSvc = commentSvc.WithDB(pool)
+		} else {
+			candStore = &wsc.MemoryMentionCandidateStore{}
+			mentionsRepo = wsc.NewMemoryMentionsRepository()
+			membershipLookup = &wsc.MemoryMembershipActiveLookup{Active: map[string]map[string]bool{}}
+			mentionDisplays = &wsc.MemoryMentionDisplayResolver{ByMembership: map[string]wsc.MentionDisplayInfo{}}
+		}
+		commentSvc = commentSvc.
+			WithMentionsEnabled(true).
+			WithMentionCandidates(candStore).
+			WithMentionsRepository(mentionsRepo).
+			WithMembershipLookup(membershipLookup).
+			WithMentionDisplays(mentionDisplays).
+			WithMentionNotifier(inAppSvc)
+		if pool != nil {
+			commentSvc = commentSvc.WithMembershipUserResolver(wsc.NewMySQLMembershipUserResolver(pool))
+		} else {
+			commentSvc = commentSvc.WithMembershipUserResolver(&wsc.MemoryMembershipUserResolver{
+				UserByMembership: map[string]map[string]string{},
+			})
+		}
+		log.Info("workflow step comment mentions enabled (candidates + persist + notify)")
+	}
+	commentHandler := wschttp.NewHandler(log, commentSvc, tokenManager)
 	disclosureHandler := disclosurehttp.NewHandler(disclosureSvc, tokenManager, idemStore, auditSvc)
 	workflowOpts := []workflowapp.ServiceOption{
 		workflowapp.WithFlags(workflowapp.Flags{
@@ -764,7 +808,7 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 		}
 	}
 
-	return muxRegisterHealthAndIAM(mux, log, cfg, sqlDB, iamHandler, meHandler, authHandler, disclosureHandler, workflowHandler, notificationHandler, reminderHandler, adminHandler, platformCMSHandler, wdtHandler, adhocHandler, deadlineAlertsHandler, fulfillmentHandler, evidenceHandler, portalDashboardHandler, personalOpsHandler)
+	return muxRegisterHealthAndIAM(mux, log, cfg, sqlDB, iamHandler, meHandler, authHandler, disclosureHandler, workflowHandler, notificationHandler, reminderHandler, adminHandler, platformCMSHandler, wdtHandler, adhocHandler, deadlineAlertsHandler, fulfillmentHandler, evidenceHandler, commentHandler, portalDashboardHandler, personalOpsHandler)
 }
 
 func validateSecurityCriticalConfig(cfg config.Config) error {
@@ -813,6 +857,7 @@ func muxRegisterHealthAndIAM(
 	deadlineAlertsHandler *deadlinealertshttp.Handler,
 	fulfillmentHandler *wffhttp.Handler,
 	evidenceHandler *wsehttp.Handler,
+	commentHandler *wschttp.Handler,
 	portalDashboardHandler *portaldashboardhttp.Handler,
 	personalOpsHandler *personalopshttp.Handler,
 ) error {
@@ -854,6 +899,9 @@ func muxRegisterHealthAndIAM(
 	}
 	if evidenceHandler != nil {
 		evidenceHandler.Register(mux)
+	}
+	if commentHandler != nil {
+		commentHandler.Register(mux)
 	}
 	portalDashboardHandler.Register(mux)
 	personalOpsHandler.Register(mux)
