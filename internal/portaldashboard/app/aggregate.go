@@ -173,6 +173,7 @@ func buildOverview(
 
 	openAlerts := append(append(deadlines.dueSoon, deadlines.pendingConfirm...), deadlines.upcoming...)
 	immediate := buildImmediateActions(deadlines.overdue, deadlines.dueSoon, deadlines.pendingConfirm, append(adHoc.pendingFocal, adHoc.pendingAdmin...), 10, ref)
+	titleByRecord := deadlineRecordTitleIndex(deadlines.overdue, deadlines.dueSoon, deadlines.pendingConfirm, deadlines.upcoming, deadlines.done)
 
 	meta := domain.MetaBlock{
 		Sources:  []string{SourceDeadlineAlerts},
@@ -216,7 +217,7 @@ func buildOverview(
 		ImmediateActions:  immediate,
 		FrequentLateFlows: buildWorkflowRiskRows(overdueItems, openAlerts, 10),
 		DepartmentRisks:   buildDepartmentRiskRows(overdueItems, openAlerts, ref, 10),
-		RecentActivities:  buildRecentActivities(inApp.items, 8),
+		RecentActivities:  buildRecentActivities(inApp.items, titleByRecord, 8),
 		Exceptions:        buildExceptions(adHoc.rejected, inApp.items, 5),
 		Meta:              meta,
 	}
@@ -595,6 +596,8 @@ type wfAcc struct {
 func buildWorkflowRiskRows(overdue, open []deadlinealertsapp.DeadlineAlertDTO, maxRows int) []domain.WorkflowRiskRow {
 	acc := map[string]*wfAcc{}
 	touch := func(a deadlinealertsapp.DeadlineAlertDTO, isOverdue bool) {
+		// Aggregate by disclosure type (TypeID). TemplateCategory ("periodic") is an
+		// enum, not a display name — prefer Title (type-level DisplayAlertTitle).
 		key := a.TypeID
 		if key == "" {
 			key = a.TemplateCategory
@@ -604,9 +607,12 @@ func buildWorkflowRiskRows(overdue, open []deadlinealertsapp.DeadlineAlertDTO, m
 		}
 		row, ok := acc[key]
 		if !ok {
-			name := a.TemplateCategory
+			name := strings.TrimSpace(a.Title)
 			if name == "" {
-				name = a.Title
+				name = strings.TrimSpace(a.TemplateCategory)
+			}
+			if name == "" {
+				name = key
 			}
 			row = &wfAcc{key: key, name: name, stepCounts: map[string]int{}, deptCounts: map[string]int{}}
 			acc[key] = row
@@ -779,33 +785,136 @@ func countEscalationNotifications(items []inappapp.InAppNotification) int {
 	return n
 }
 
-func buildRecentActivities(items []inappapp.InAppNotification, limit int) []domain.RecentActivityItem {
+func buildRecentActivities(items []inappapp.InAppNotification, titleByRecord map[string]string, limit int) []domain.RecentActivityItem {
 	out := make([]domain.RecentActivityItem, 0, limit)
 	for _, n := range items {
 		if len(out) >= limit {
 			break
 		}
-		url := ""
-		if n.ResourceType != nil && n.ResourceID != nil {
-			switch *n.ResourceType {
-			case inappapp.ResourceTypeDisclosure:
-				url = "/app/deadlines/" + *n.ResourceID
-			case inappapp.ResourceTypeAdHocProposal:
-				url = "/app/ad-hoc-proposals/" + *n.ResourceID
-			}
-		}
-		out = append(out, domain.RecentActivityItem{
-			ID:         n.ID,
-			Kind:       n.Kind,
-			Title:      n.Title,
-			Summary:    n.Body,
-			OccurredAt: n.CreatedAt.UTC().Format(time.RFC3339),
-			TargetURL:  url,
-			Source:     SourceInApp,
-			Accuracy:   AccuracyEstimate,
-		})
+		out = append(out, mapRecentActivityItem(n, titleByRecord))
 	}
 	return out
+}
+
+func deadlineRecordTitleIndex(lists ...[]deadlinealertsapp.DeadlineAlertDTO) map[string]string {
+	out := map[string]string{}
+	for _, list := range lists {
+		for _, a := range list {
+			id := strings.TrimSpace(a.RecordID)
+			title := strings.TrimSpace(a.Title)
+			if id == "" || title == "" {
+				continue
+			}
+			if _, ok := out[id]; !ok {
+				out[id] = title
+			}
+		}
+	}
+	return out
+}
+
+func mapRecentActivityItem(n inappapp.InAppNotification, titleByRecord map[string]string) domain.RecentActivityItem {
+	rtype := strings.TrimSpace(derefStr(n.ResourceType))
+	rid := strings.TrimSpace(derefStr(n.ResourceID))
+	title := strings.TrimSpace(n.Title)
+	summary := strings.TrimSpace(n.Body)
+	url := ""
+	detailAvailable := false
+	isLegacy := false
+
+	if rid != "" {
+		switch rtype {
+		case inappapp.ResourceTypeDisclosure:
+			url = "/app/deadlines/" + rid
+			detailAvailable = true
+		case inappapp.ResourceTypeAdHocProposal:
+			url = "/app/ad-hoc-proposals/" + rid
+			detailAvailable = true
+		}
+	}
+
+	// Case A: resource_id present + generic legacy title → enrich from deadline index (tenant-scoped lists only).
+	if detailAvailable && rtype == inappapp.ResourceTypeDisclosure && isGenericReminderTitle(title) {
+		isLegacy = true
+		if enriched := strings.TrimSpace(titleByRecord[rid]); enriched != "" {
+			title = enriched
+			if summary == "" || isLegacyDeadlineBody(summary) {
+				summary = legacyStepSummaryFromTitle(n.Title, n.Body)
+			}
+		}
+	}
+
+	// Case B: no usable detail link for reminder/generic copy → explicit unavailable (never invent a record).
+	if !detailAvailable && (isReminderActivityKind(n.Kind) || isGenericReminderTitle(title)) {
+		isLegacy = true
+		detailAvailable = false
+		url = ""
+		title = "Thông báo lịch sử — không còn đủ dữ liệu để mở chi tiết"
+		summary = legacyUnavailableSummary(n.Title, n.Body)
+		rtype = ""
+		rid = ""
+	}
+
+	return domain.RecentActivityItem{
+		ID:              n.ID,
+		Kind:            n.Kind,
+		Title:           title,
+		Summary:         summary,
+		OccurredAt:      n.CreatedAt.UTC().Format(time.RFC3339),
+		TargetURL:       url,
+		Source:          SourceInApp,
+		Accuracy:        AccuracyEstimate,
+		ResourceType:    rtype,
+		ResourceID:      rid,
+		IsLegacy:        isLegacy,
+		DetailAvailable: detailAvailable,
+	}
+}
+
+func derefStr(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
+}
+
+func isReminderActivityKind(kind string) bool {
+	k := strings.ToLower(strings.TrimSpace(kind))
+	return strings.HasPrefix(k, "reminder") || strings.Contains(k, "reminder.")
+}
+
+func isGenericReminderTitle(title string) bool {
+	t := strings.TrimSpace(title)
+	return strings.HasPrefix(t, "Bước phê duyệt đến hạn:") ||
+		t == "Nhắc nhở CBTT" ||
+		strings.HasPrefix(t, "Sắp đến hạn CBTT:")
+}
+
+func isLegacyDeadlineBody(body string) bool {
+	b := strings.TrimSpace(body)
+	return strings.HasPrefix(b, "Deadline:") || b == ""
+}
+
+func legacyStepSummaryFromTitle(rawTitle, rawBody string) string {
+	title := strings.TrimSpace(rawTitle)
+	body := strings.TrimSpace(rawBody)
+	step := strings.TrimSpace(strings.TrimPrefix(title, "Bước phê duyệt đến hạn:"))
+	due := strings.TrimSpace(strings.TrimPrefix(body, "Deadline:"))
+	parts := make([]string, 0, 2)
+	if step != "" && step != title {
+		parts = append(parts, "Bước: "+step)
+	}
+	if due != "" && due != body {
+		parts = append(parts, "Hạn: "+due)
+	}
+	return strings.Join(parts, " · ")
+}
+
+func legacyUnavailableSummary(rawTitle, rawBody string) string {
+	if s := legacyStepSummaryFromTitle(rawTitle, rawBody); s != "" {
+		return "Hoạt động cũ chưa có liên kết đến cảnh báo cụ thể · " + s
+	}
+	return "Hoạt động cũ chưa có liên kết đến cảnh báo cụ thể"
 }
 
 func buildExceptions(rejected []adhocapp.ProposalDTO, notifications []inappapp.InAppNotification, limit int) []domain.ExceptionItem {

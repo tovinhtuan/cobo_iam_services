@@ -1,10 +1,12 @@
 package app
 
 import (
+	"strings"
 	"testing"
 	"time"
 
 	deadlinealertsapp "github.com/cobo/cobo_iam_services/internal/deadlinealerts/app"
+	inappapp "github.com/cobo/cobo_iam_services/internal/inappnotification/app"
 	"github.com/cobo/cobo_iam_services/internal/portaldashboard/domain"
 )
 
@@ -210,6 +212,176 @@ func TestBuildOverview_noDoubleCountCompletedVsIncomplete(t *testing.T) {
 	}
 	if incomplete != 5 || completedLate != 3 {
 		t.Fatalf("incomplete=%v completedLate=%v", incomplete, completedLate)
+	}
+}
+
+func TestBuildWorkflowRiskRows_prefersTypeTitleOverPeriodicCategory(t *testing.T) {
+	rows := buildWorkflowRiskRows(
+		[]deadlinealertsapp.DeadlineAlertDTO{
+			{
+				RecordID:         "r1",
+				TypeID:           "type-bctc",
+				Title:            "Báo cáo tài chính quý",
+				TemplateCategory: "periodic",
+				Status:           "OVERDUE",
+				CurrentStepName:  "Soát xét",
+				ActiveDepartments: []string{"TC"},
+			},
+			{
+				RecordID:         "r2",
+				TypeID:           "type-bctc",
+				Title:            "Báo cáo tài chính quý",
+				TemplateCategory: "periodic",
+				Status:           "OVERDUE",
+				CurrentStepName:  "Phê duyệt",
+			},
+		},
+		nil,
+		10,
+	)
+	if len(rows) != 1 {
+		t.Fatalf("want 1 aggregate row, got %d", len(rows))
+	}
+	if rows[0].Key != "type-bctc" {
+		t.Fatalf("key=%q", rows[0].Key)
+	}
+	if rows[0].WorkflowName != "Báo cáo tài chính quý" {
+		t.Fatalf("workflow_name=%q (must not be periodic enum)", rows[0].WorkflowName)
+	}
+	if rows[0].WorkflowName == "periodic" {
+		t.Fatal("aggregate must not display TemplateCategory enum as name")
+	}
+	if rows[0].OverdueCount != 2 {
+		t.Fatalf("overdue_count=%d", rows[0].OverdueCount)
+	}
+}
+
+func TestBuildRecentActivities_preservesTitleBodyAndDeadlineURL(t *testing.T) {
+	rid := "52698f3f-53c0-53e7-9e40-d99f90774f41"
+	rt := "disclosure"
+	title := "QA DEF006 Milestones 20260904213636"
+	body := "Bước: Xác định nghĩa vụ · Hạn: 17/09/2026"
+	items := buildRecentActivities([]inappapp.InAppNotification{
+		{
+			ID:           "n1",
+			Kind:         "reminder.workflow_step_due",
+			Title:        title,
+			Body:         body,
+			ResourceType: &rt,
+			ResourceID:   &rid,
+			CreatedAt:    time.Date(2026, 9, 17, 10, 0, 0, 0, time.UTC),
+		},
+	}, nil, 8)
+	if len(items) != 1 {
+		t.Fatalf("len=%d", len(items))
+	}
+	if items[0].Title != title {
+		t.Fatalf("title=%q", items[0].Title)
+	}
+	if items[0].Summary != body {
+		t.Fatalf("summary=%q", items[0].Summary)
+	}
+	if items[0].TargetURL != "/app/deadlines/"+rid {
+		t.Fatalf("target_url=%q", items[0].TargetURL)
+	}
+	if !items[0].DetailAvailable {
+		t.Fatal("detail_available want true")
+	}
+	if items[0].IsLegacy {
+		t.Fatal("is_legacy want false for specific title")
+	}
+	if items[0].ResourceID != rid {
+		t.Fatalf("resource_id=%q", items[0].ResourceID)
+	}
+}
+
+func TestBuildRecentActivities_legacyWithoutResourceIDUnavailable(t *testing.T) {
+	rt := "disclosure"
+	empty := ""
+	items := buildRecentActivities([]inappapp.InAppNotification{
+		{
+			ID:           "legacy-1",
+			Kind:         "reminder.workflow_step_due",
+			Title:        "Bước phê duyệt đến hạn: Xác định nghĩa vụ",
+			Body:         "Deadline: 17/09/2026",
+			ResourceType: &rt,
+			ResourceID:   &empty,
+			CreatedAt:    time.Date(2026, 9, 16, 0, 1, 39, 0, time.UTC),
+		},
+	}, nil, 8)
+	if len(items) != 1 {
+		t.Fatalf("len=%d", len(items))
+	}
+	got := items[0]
+	if got.DetailAvailable {
+		t.Fatal("detail_available must be false")
+	}
+	if !got.IsLegacy {
+		t.Fatal("is_legacy want true")
+	}
+	if got.TargetURL != "" {
+		t.Fatalf("target_url must be empty, got %q", got.TargetURL)
+	}
+	if got.Title != "Thông báo lịch sử — không còn đủ dữ liệu để mở chi tiết" {
+		t.Fatalf("title=%q", got.Title)
+	}
+	if !strings.Contains(got.Summary, "Hoạt động cũ chưa có liên kết") {
+		t.Fatalf("summary=%q", got.Summary)
+	}
+	if strings.Contains(got.Title, "Bước phê duyệt đến hạn") {
+		t.Fatal("must not keep generic title as primary")
+	}
+}
+
+func TestBuildRecentActivities_legacyWithResourceIDEnrichedFromIndex(t *testing.T) {
+	rt := "disclosure"
+	rid := "rec-enrich-1"
+	items := buildRecentActivities([]inappapp.InAppNotification{
+		{
+			ID:           "legacy-res",
+			Kind:         "reminder.workflow_step_due",
+			Title:        "Bước phê duyệt đến hạn: Xác định nghĩa vụ",
+			Body:         "Deadline: 17/09/2026",
+			ResourceType: &rt,
+			ResourceID:   &rid,
+			CreatedAt:    time.Date(2026, 9, 16, 0, 1, 39, 0, time.UTC),
+		},
+	}, map[string]string{rid: "QA DEF006 Milestones 20260904213636"}, 8)
+	got := items[0]
+	if !got.DetailAvailable {
+		t.Fatal("detail_available want true")
+	}
+	if got.TargetURL != "/app/deadlines/"+rid {
+		t.Fatalf("target_url=%q", got.TargetURL)
+	}
+	if got.Title != "QA DEF006 Milestones 20260904213636" {
+		t.Fatalf("title=%q", got.Title)
+	}
+	if !strings.Contains(got.Summary, "Bước:") || !strings.Contains(got.Summary, "Hạn:") {
+		t.Fatalf("summary=%q", got.Summary)
+	}
+}
+
+func TestBuildRecentActivities_doesNotEnrichUnknownRecordID(t *testing.T) {
+	rt := "disclosure"
+	rid := "missing-rec"
+	items := buildRecentActivities([]inappapp.InAppNotification{
+		{
+			ID:           "legacy-miss",
+			Kind:         "reminder.workflow_step_due",
+			Title:        "Bước phê duyệt đến hạn: Soát xét",
+			Body:         "Deadline: 01/01/2026",
+			ResourceType: &rt,
+			ResourceID:   &rid,
+			CreatedAt:    time.Now().UTC(),
+		},
+	}, map[string]string{"other": "Other Title"}, 8)
+	got := items[0]
+	if !got.DetailAvailable {
+		t.Fatal("still detail available via resource_id")
+	}
+	if got.Title != "Bước phê duyệt đến hạn: Soát xét" {
+		t.Fatalf("title unchanged when index miss: %q", got.Title)
 	}
 }
 

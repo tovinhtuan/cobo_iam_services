@@ -40,6 +40,10 @@ func (r *Repository) HasDisclosureRecord(_ context.Context, _, _ string) (bool, 
 	return true, nil
 }
 
+func (r *Repository) GetAlertRowByRecordID(_ context.Context, _, _, _ string) (*deadlinealertsapp.AlertRow, error) {
+	return &deadlinealertsapp.AlertRow{RecordID: "inmem", CompanyID: "c"}, nil
+}
+
 func (r *Repository) ConfirmDeadlineAlert(
 	_ context.Context,
 	_,

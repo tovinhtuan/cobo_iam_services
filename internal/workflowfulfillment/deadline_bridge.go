@@ -101,20 +101,16 @@ func (b *DeadlineBridge) LoadWorkflowForRecord(ctx context.Context, sub Subject,
 		return WorkflowContext{}, fmt.Errorf("resolve effective access: %w", err)
 	}
 	scope := deadlinealertsapp.ResolveDeadlineAlertAccessScope(eff)
-	rows, err := b.Repo.ListRows(ctx, sub.CompanyID, scope)
+	// Detail authz must not reuse ListRows obligation filters (see deadlinealerts loadWorkflowForRecord).
+	loaded, err := b.Repo.GetAlertRowByRecordID(ctx, sub.CompanyID, recordID, sub.MembershipID)
 	if err != nil {
 		return WorkflowContext{}, err
 	}
-	var row deadlinealertsapp.AlertRow
-	found := false
-	for _, r := range rows {
-		if r.RecordID == recordID {
-			row = r
-			found = true
-			break
-		}
+	if loaded == nil {
+		return WorkflowContext{}, perr.NewHTTPError(http.StatusNotFound, perr.CodeNotFound, "record not found", nil)
 	}
-	if !found || !scope.AllowsRow(row) {
+	row := *loaded
+	if !scope.AllowsRow(row) {
 		return WorkflowContext{}, perr.NewHTTPError(http.StatusForbidden, perr.CodeDataScopeDenied, "record outside data scope", nil)
 	}
 	wfRow, err := b.Repo.GetWorkflowInstanceByRecord(ctx, sub.CompanyID, recordID)

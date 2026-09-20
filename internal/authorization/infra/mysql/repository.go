@@ -216,7 +216,9 @@ func legacyPolicy(action string) *authapp.ActionPolicy {
 	case "disclosure.update", "disclosure.edit":
 		required = "disclosure.edit"
 	case "disclosure.submit":
-		required = "disclosure.publish"
+		// Tenant internal start-of-processing (Draft→PendingReview/In Progress).
+		// Does NOT legally publish; do not require disclosure.publish.
+		required = "disclosure.create"
 	case "workflow.create":
 		required = "deadline.create"
 	case "workflow.read":

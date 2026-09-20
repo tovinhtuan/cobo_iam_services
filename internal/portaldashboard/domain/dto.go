@@ -98,14 +98,18 @@ type DepartmentRiskRow struct {
 }
 
 type RecentActivityItem struct {
-	ID          string `json:"id"`
-	Kind        string `json:"kind"`
-	Title       string `json:"title"`
-	Summary     string `json:"summary,omitempty"`
-	OccurredAt  string `json:"occurred_at"`
-	TargetURL   string `json:"target_url,omitempty"`
-	Source      string `json:"source"`
-	Accuracy    string `json:"accuracy"`
+	ID              string `json:"id"`
+	Kind            string `json:"kind"`
+	Title           string `json:"title"`
+	Summary         string `json:"summary,omitempty"`
+	OccurredAt      string `json:"occurred_at"`
+	TargetURL       string `json:"target_url,omitempty"`
+	Source          string `json:"source"`
+	Accuracy        string `json:"accuracy"`
+	ResourceType    string `json:"resource_type,omitempty"`
+	ResourceID      string `json:"resource_id,omitempty"`
+	IsLegacy        bool   `json:"is_legacy"`
+	DetailAvailable bool   `json:"detail_available"`
 }
 
 type ExceptionItem struct {

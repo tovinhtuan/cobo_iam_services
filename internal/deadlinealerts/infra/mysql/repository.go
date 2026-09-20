@@ -372,6 +372,99 @@ func (r *Repository) HasDisclosureRecord(ctx context.Context, companyID, recordI
 	return true, nil
 }
 
+// GetAlertRowByRecordID loads one company record for detail/authz without ListRows
+// V1 obligation membership filters (draft + OpenAt window). Used so materialized
+// ad-hoc alerts remain reachable when they fall outside the list membership set.
+func (r *Repository) GetAlertRowByRecordID(ctx context.Context, companyID, recordID, membershipID string) (*deadlinealertsapp.AlertRow, error) {
+	companyID = strings.TrimSpace(companyID)
+	recordID = strings.TrimSpace(recordID)
+	if companyID == "" || recordID == "" {
+		return nil, nil
+	}
+	deptByRecord, err := r.listCurrentStepMeta(ctx, companyID)
+	if err != nil {
+		return nil, err
+	}
+	adHocByRecord, err := r.listLatestAdHocMeta(ctx, companyID)
+	if err != nil {
+		return nil, err
+	}
+	taskAssigneeRecords, err := r.listTaskAssigneeRecords(ctx, companyID, membershipID)
+	if err != nil {
+		return nil, err
+	}
+
+	query := `
+		SELECT
+			dr.company_id,
+			dr.record_id,
+			COALESCE(dr.type_id, ''),
+			dr.title,
+			'',
+			dr.status,
+			COALESCE(dr.department_id, ''),
+			COALESCE(DATE_FORMAT(dr.planned_date, '%Y-%m-%d'), ''),
+			COALESCE(wi.workflow_instance_id, ''),
+			COALESCE(wi.current_step_code, ''),
+			'',
+			COALESCE(dac.confirmed_by, ''),
+			dac.confirmed_at
+		FROM disclosure_records dr
+		LEFT JOIN workflow_instances wi ON wi.company_id = dr.company_id
+			AND wi.workflow_instance_id = (
+				SELECT wi2.workflow_instance_id
+				FROM workflow_instances wi2
+				WHERE wi2.company_id = dr.company_id AND wi2.record_id = dr.record_id
+				ORDER BY wi2.workflow_instance_id ASC
+				LIMIT 1
+			)
+		LEFT JOIN deadline_alert_confirmations dac ON dac.company_id = dr.company_id
+			AND dac.record_id = dr.record_id
+		WHERE dr.company_id = ? AND dr.record_id = ?
+		LIMIT 1
+	`
+	var row deadlinealertsapp.AlertRow
+	var confirmedBy sql.NullString
+	var confirmedAt sql.NullTime
+	err = r.db.QueryRowContext(ctx, query, companyID, recordID).Scan(
+		&row.CompanyID,
+		&row.RecordID,
+		&row.TypeID,
+		&row.Title,
+		&row.TypeName,
+		&row.RecordStatus,
+		&row.RecordDepartmentID,
+		&row.PlannedDate,
+		&row.WorkflowInstanceID,
+		&row.CurrentStepCode,
+		&row.TemplateCategory,
+		&confirmedBy,
+		&confirmedAt,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	meta := deptByRecord[row.RecordID]
+	row.CurrentStepDepartment = meta.department
+	row.CurrentStepName = meta.stepName
+	row.HasTaskAssignee = taskAssigneeRecords[row.RecordID]
+	if meta, ok := adHocByRecord[row.RecordID]; ok {
+		row.AdHocTitleLine = meta.titleLine
+		row.AdHocDeadlineDate = meta.dueDate
+	}
+	if confirmedBy.Valid {
+		row.ConfirmedBy = strings.TrimSpace(confirmedBy.String)
+	}
+	if confirmedAt.Valid {
+		ts := confirmedAt.Time.UTC()
+		row.ConfirmedAt = &ts
+	}
+	return &row, nil
+}
+
 func (r *Repository) ConfirmDeadlineAlert(
 	ctx context.Context,
 	companyID,

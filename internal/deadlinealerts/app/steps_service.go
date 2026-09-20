@@ -141,20 +141,18 @@ func (s *service) loadWorkflowForRecord(ctx context.Context, sub Subject, record
 		return nil, AlertRow{}, fmt.Errorf("resolve effective access: %w", err)
 	}
 	scope := ResolveDeadlineAlertAccessScope(eff)
-	rows, err := s.repo.ListRows(ctx, sub.CompanyID, scope)
+	// Detail authz must NOT reuse ListRows (draft/OpenAt membership filters). A
+	// materialized ad-hoc record can exist outside the alert list window while
+	// still being in-tenant and in data scope.
+	loaded, err := s.repo.GetAlertRowByRecordID(ctx, sub.CompanyID, recordID, sub.MembershipID)
 	if err != nil {
 		return nil, AlertRow{}, err
 	}
-	var row AlertRow
-	found := false
-	for _, r := range rows {
-		if r.RecordID == recordID {
-			row = r
-			found = true
-			break
-		}
+	if loaded == nil {
+		return nil, AlertRow{}, perr.NewHTTPError(http.StatusNotFound, perr.CodeNotFound, "record not found", nil)
 	}
-	if !found || !scope.AllowsRow(row) {
+	row := *loaded
+	if !scope.AllowsRow(row) {
 		return nil, AlertRow{}, perr.NewHTTPError(http.StatusForbidden, perr.CodeDataScopeDenied, "record outside data scope", nil)
 	}
 	wfRow, err := s.repo.GetWorkflowInstanceByRecord(ctx, sub.CompanyID, recordID)

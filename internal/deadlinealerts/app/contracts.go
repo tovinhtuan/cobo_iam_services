@@ -151,6 +151,9 @@ type Repository interface {
 	GetCompanyTypeDeadlineContext(ctx context.Context, companyID, typeID string) (disclosureapp.CompanyDeadlineContext, error)
 	GetTypeDeadlineConfig(ctx context.Context, companyID, typeID string) (*disclosureapp.TemplateDeadlineConfig, error)
 	HasDisclosureRecord(ctx context.Context, companyID, recordID string) (bool, error)
+	// GetAlertRowByRecordID loads one record for detail/authz without ListRows V1
+	// obligation filters (draft window). Callers must still enforce AllowsRow.
+	GetAlertRowByRecordID(ctx context.Context, companyID, recordID, membershipID string) (*AlertRow, error)
 	ConfirmDeadlineAlert(ctx context.Context, companyID, recordID, confirmedBy, note, idempotencyKey string, at time.Time) error
 	GetWorkflowInstanceByRecord(ctx context.Context, companyID, recordID string) (*WorkflowInstanceRow, error)
 	GetEffectiveWorkflowSnapshot(ctx context.Context, companyID, typeID string) ([]workflowapp.StepSnapshot, error)

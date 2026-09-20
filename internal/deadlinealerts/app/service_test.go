@@ -74,8 +74,26 @@ func (s *stubRepo) GetTypeDeadlineConfig(_ context.Context, _, _ string) (*discl
 	return nil, nil
 }
 
-func (s *stubRepo) HasDisclosureRecord(_ context.Context, _, _ string) (bool, error) {
-	return true, nil
+func (s *stubRepo) HasDisclosureRecord(_ context.Context, _, recordID string) (bool, error) {
+	if len(s.rows) == 0 {
+		return true, nil
+	}
+	for _, row := range s.rows {
+		if row.RecordID == recordID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (s *stubRepo) GetAlertRowByRecordID(_ context.Context, _, recordID, _ string) (*AlertRow, error) {
+	for i := range s.rows {
+		if s.rows[i].RecordID == recordID {
+			row := s.rows[i]
+			return &row, nil
+		}
+	}
+	return nil, nil
 }
 
 func (s *stubRepo) ConfirmDeadlineAlert(_ context.Context, _, _, _, _, _ string, _ time.Time) error {

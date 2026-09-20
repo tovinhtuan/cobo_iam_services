@@ -306,7 +306,7 @@ func (s *service) SubmitRecord(ctx context.Context, req SubmitRecordRequest) (*R
 	if err != nil {
 		return nil, err
 	}
-	if err := s.authorize(ctx, req.Subject, "disclosure.submit", authapp.ResourceRef{
+	ref := authapp.ResourceRef{
 		Type: "disclosure_record",
 		ID:   req.RecordID,
 		Attributes: map[string]any{
@@ -314,8 +314,12 @@ func (s *service) SubmitRecord(ctx context.Context, req SubmitRecordRequest) (*R
 			"owner_membership_id": req.Subject.MembershipID,
 			"workflow_state":      strings.ToLower(cur.Status),
 		},
-	}); err != nil {
-		return nil, err
+	}
+	// Internal submit: create OR edit. Never require disclosure.publish (no external publication).
+	if err := s.authorize(ctx, req.Subject, "disclosure.submit", ref); err != nil {
+		if editErr := s.authorize(ctx, req.Subject, "disclosure.update", ref); editErr != nil {
+			return nil, err
+		}
 	}
 	if strings.EqualFold(cur.Status, "Draft") {
 		cur.Status = "PendingReview"
@@ -1672,6 +1676,11 @@ func (s *service) UpdateTemplateDeadlineConfig(ctx context.Context, req UpdateTe
 }
 
 func (s *service) requireDisclosureCatalogRead(ctx context.Context, sub Subject) error {
+	// Ad-hoc proposers need irregular type catalog + effective-workflow metadata to
+	// create proposals. This does not grant disclosure.view / record CRUD.
+	if s.hasPermission(ctx, sub, "ad_hoc_alert.propose") {
+		return nil
+	}
 	if err := s.authorize(ctx, sub, "disclosure.create", authapp.ResourceRef{
 		Type: "disclosure_record",
 		ID:   "",

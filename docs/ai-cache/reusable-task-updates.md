@@ -1,4 +1,75 @@
-## Tenant Deadline Detail action UX — DEV browser smoke PASS (2026-09-19)
+## Tenant alert complete residual close-out PASS (2026-09-20)
+
+- Pack (FE sibling): `tenant-alert-complete-action-plan-2026-09-20/` (`04`-`06`)
+- BE unchanged this residual cycle; confirm semantics already covered by tenant_complete_semantics_test
+- DEV browser: confirm click PASS; no Published; Draft save PASS
+- LOCAL_DOCKER_BUILD=BLOCKED; STAGED/COMMITTED/PUSHED/PROD=false; READY_FOR_USER_COMMIT=true
+
+## Tenant alert complete ? publish (2026-09-20)
+
+- Pack: `tenant-alert-complete-action-plan-2026-09-20/`
+- Case B: SubmitRecord does not set Published; ConfirmDeadlineAlert ? DONE without Published
+- Tests: `submit_record_no_publish_test.go`, `tenant_complete_semantics_test.go` PASS
+- FE sibling removes Tenant publish modal/labels; calls confirm for complete
+- DEV be+fe deploy PASS (sibling FE smoke); STAGED/COMMITTED/PUSHED/PROD=false; READY_FOR_USER_COMMIT=true
+
+## Tenant Dashboard recent activity ? legacy unavailable read-time DEV PASS (2026-09-20)
+
+- task type: portaldashboard read-time mapping for legacy in-app rows
+- `mapRecentActivityItem`: no resource_id ? unavailable title/summary; with resource_id + generic title ? enrich from deadline title index
+- DTO additive: `resource_type`, `resource_id`, `is_legacy`, `detail_available`
+- DEV smoke: 6/8 recent cards unavailable; 0 generic primary titles; no migration/backfill
+- pack FE: `tenant-dashboard-specific-activity-2026-09-20-dev-smoke-result.md`
+- STAGED/COMMITTED/PUSHED/PROD=false; READY_FOR_USER_COMMIT=true
+
+## Tenant Dashboard specific activity ? DEV be+worker smoke PASS (2026-09-20)
+
+- task type: DEV deploy + verify new in-app payload
+- deploy: `deploy-dev.ps1 -Mode be -SkipTests` (api+worker) + sibling FE deploy
+- evidence: seed occurrence `idem-smoke-dash-act-44ea74908499` SENT ? Bridge created `uin_0f2ed90c3bf94a25a09fc4f047d74b3d`
+- title=`QA Resmoke Irregular Alert 20260904A`; body=`B??c: ? ? H?n: ?`; resource_id=`52698f3f-53c0-53e7-9e40-d99f90774f41`
+- pack (FE): `tenant-dashboard-specific-activity-2026-09-20-dev-smoke-result.md`
+- LOCAL_DOCKER_BUILD=BLOCKED; STAGED/COMMITTED/PUSHED/PROD=false; READY_FOR_USER_COMMIT=true
+
+## Tenant Dashboard specific activity titles + workflow risk name (2026-09-20)
+
+- task type: BE notification bridge + portaldashboard aggregate naming
+- objective: in-app reminder title = disclosure/report name; body = step + due; ResourceID = record; workflow risk row name = type Title not TemplateCategory `periodic`
+- files: `internal/reminder/infra/inapp/bridge.go`, `bridge_test.go`, `internal/portaldashboard/app/aggregate.go`, `aggregate_test.go`
+- DRILLDOWN_DEFERRED: DeadlineList has no type_id query filter; aggregate DTO has no record_id list
+- verification: go test ./internal/reminder/... ./internal/inappnotification/... ./internal/portaldashboard/... ./internal/deadlinealerts/... PASS; go build ./... PASS
+- BLOCKED: docker compose build api (daemon down)
+- DEV smoke BLOCKED until BE+worker deploy; legacy notifications unchanged until next dispatch
+- MIGRATION=false; STAGED/COMMITTED/PUSHED/PROD=false; READY_FOR_USER_COMMIT=true
+
+## Tenant alerts unified - blocker fix + DEV smoke PASS (2026-09-20)
+
+- task type: BE authz + catalog gate + sibling FE isolation
+- implemented: deadlinealerts GetAlertRowByRecordID; disclosure requireDisclosureCatalogRead OR propose
+- verification: go test adhoc/deadlinealerts/disclosure/app PASS; go build PASS; DEV be+fe deploy PASS
+- BLOCKED: local docker compose build api (daemon down)
+- READY_FOR_USER_COMMIT=true; STAGED/COMMITTED/PUSHED/PROD=false
+
+## Tenant alerts + ad-hoc proposals unified - DEV smoke PARTIAL (2026-09-20)
+
+- task type: DEV FE deploy + browser smoke (sibling FE); BE unchanged
+- BE_UNIFIED_FEED=DEFERRED; FE asset index-DTptuQ7l.js
+- pack: sibling `03-dev-smoke-result.md`
+- CODE_MODIFIED=false (this repo); READY_FOR_USER_COMMIT=true; NO agent commit
+## Tenant alerts + ad-hoc proposals unified screen - Phase 1 FE (2026-09-20)
+
+- task type: FE Phase 1 (sibling cobo_web_design); BE unchanged
+- BE_UNIFIED_FEED=DEFERRED; FE_PHASE_1=PARALLEL_EXISTING_APIS
+- regression: go test ./internal/adhoc/... ./internal/deadlinealerts/... PASS; go build ./... PASS
+- pack pointer: `tenant-alerts-unified-proposals-plan-2026-09-19/`
+- CODE_MODIFIED=false (this repo); READY_FOR_USER_COMMIT=true (FE); NO agent commit
+## Tenant alerts + ad-hoc proposals unified screen - PLAN (2026-09-19)
+
+- task type: PLAN ONLY (cross-repo)
+- BE Phase 1: regression only; link field `record_id` already exists; no migration
+- pack pointer: `tenant-alerts-unified-proposals-plan-2026-09-19/`
+- CODE_MODIFIED=false; READY_FOR_IMPLEMENTATION=true
+## Tenant Deadline Detail action UX - DEV browser smoke PASS (2026-09-19)
 
 - task type: DEV FE deploy + browser smoke
 - FE-only; pack `10-action-ux-dev-smoke-result.md` (full in FE sibling)
@@ -8,7 +79,7 @@
 - task type: FE UX (sibling cobo_web_design)
 - BE unchanged; READY_FOR_USER_COMMIT=true; NO agent commit
 
-## Tenant step sequential unlock — DEV smoke PASS (2026-09-19)
+## Tenant step sequential unlock - DEV smoke PASS (2026-09-19)
 
 - task type: DEV deploy + smoke
 - objective: prove sequential unlock + rename button on DEV
@@ -16,7 +87,7 @@
 - pack: `09-dev-smoke-result.md` (full in FE sibling)
 - READY_FOR_USER_COMMIT=true; STAGED/COMMITTED/PUSHED/PROD=false
 
-## Tenant step sequential unlock — implemented (2026-09-19)
+## Tenant step sequential unlock - implemented (2026-09-19)
 
 - task type: cross-repo implement
 - objective: sequential successor unlock after predecessor complete; first step still calendar-gated; rename alert button to disclosure edit
@@ -27,17 +98,17 @@
 - remaining: DEV smoke when requested; user commit
 - pack: tenant-step-sequential-unlock-plan-2026-09-19/
 
-## Tenant step sequential unlock + alert button — solution/plan (2026-09-19)
+## Tenant step sequential unlock + alert button - solution/plan (2026-09-19)
 
 - task type: analysis + implementation plan only (no code/migration/deploy)
 - root cause unlock: resolveCurrentStepIndex calendar-only ? currentIdx=-1 when Step1 done early; FE mirrors is_future
-- root cause button: navigate to disclosures/:id/edit (DisclosureForm title Ch?nh s?a tin công b?) — label mismatch
+- root cause button: navigate to disclosures/:id/edit (DisclosureForm title Ch?nh s?a tin c-ng b?) - label mismatch
 - recommend: Option A sequential unlock; Option 1 rename button; DB_MIGRATION=false; CROSS_REPO=true
 - pack: tenant-step-sequential-unlock-plan-2026-09-19/
 - STAGED=false; CODE_MODIFIED=false
 ## Tenant step discussion V1.1 Phase 6 DEV migrate+deploy+smoke (2026-09-19)
 
-- T6.1–T6.2: 0140 applied on DEV; BE/FE deploy; flag OFF/ON + mentions/notify + V1 regression PASS
+- T6.1-T6.2: 0140 applied on DEV; BE/FE deploy; flag OFF/ON + mentions/notify + V1 regression PASS
 - Evidence: `06-v1-1-dev-verification-result.md`; LOCAL_DOCKER_BUILD=BLOCKED; STAGED=false; NO Production
 ## Tenant step discussion V1.1 Phase 5 in-app mention notify (2026-09-19)
 
