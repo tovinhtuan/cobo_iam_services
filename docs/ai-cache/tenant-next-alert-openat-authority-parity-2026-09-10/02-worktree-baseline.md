@@ -1,3 +1,0 @@
-# Worktree
-Branch recovery/lost-changes-audit-20260717-153324 @ ad7abc5c...
-Preexisting Phase A/B source preserved; this phase only deadlinealerts Next Alert OpenAt.

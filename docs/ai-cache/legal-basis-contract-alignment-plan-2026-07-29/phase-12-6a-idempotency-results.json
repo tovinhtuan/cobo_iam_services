@@ -1,7 +1,0 @@
-{
-  "idempotent": true,
-  "note": "Run2 proposed WRAP/PROJECT must be 0; C/D/E/MANUAL/BLOCKED stable",
-  "records": 6,
-  "secondPassAutoMutations": 0,
-  "stableHashCount": 6
-}

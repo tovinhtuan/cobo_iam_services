@@ -1,2 +1,0 @@
-# make deploy-be PASS; FE_DEV_DEPLOY=NOT_RUN
-API/FE/WORKER health PASS

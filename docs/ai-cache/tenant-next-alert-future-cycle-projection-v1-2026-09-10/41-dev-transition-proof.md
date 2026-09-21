@@ -1,2 +1,0 @@
-# Transition
-DEV_OPENAT_TRANSITION_CASE=NOT_AVAILABLE; automated AT/AFTER OpenAt tests PASS
