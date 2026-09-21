@@ -46,3 +46,44 @@ func TestValidateChannelsAndFormatBusinessRules_acceptsDOCX(t *testing.T) {
 		t.Fatalf("expected DOCX/XLSX free-text to pass, got %v", fieldErrors)
 	}
 }
+
+func TestValidateOptionalDisclosureMethodLabels_acceptsCustomAndLegacyAbsent(t *testing.T) {
+	fieldErrors := map[string]string{}
+	config := map[string]any{
+		"channels": []any{
+			map[string]any{
+				"name":                      "Web",
+				"disclosure_methods":        []any{"EMAIL", "ONLINE"},
+				"disclosure_method":         "ONLINE",
+				"disclosure_method_labels":  []any{"Email", "Cổng thông tin điện tử", "Trực tuyến"},
+				"file_types":                []any{"PDF"},
+				"attachment_requirement":    "REQUIRED",
+			},
+			map[string]any{
+				"name":                   "Legacy",
+				"disclosure_method":      "EMAIL",
+				"file_types":             []any{"PDF"},
+				"attachment_requirement": "REQUIRED",
+			},
+		},
+		"file_types": []any{"PDF"},
+	}
+	validateChannelsAndFormatBusinessRules("blocks.0", config, fieldErrors)
+	if len(fieldErrors) != 0 {
+		t.Fatalf("expected disclosure_method_labels additive payload to pass, got %v", fieldErrors)
+	}
+}
+
+func TestValidateOptionalDisclosureMethodLabels_rejectsEmptyOrTooLong(t *testing.T) {
+	fieldErrors := map[string]string{}
+	validateOptionalDisclosureMethodLabels([]any{"Email", "  "}, "labels", fieldErrors)
+	if fieldErrors["labels"] == "" {
+		t.Fatal("expected empty label rejection")
+	}
+	fieldErrors = map[string]string{}
+	tooLong := strings.Repeat("A", maxChannelFileTypeLen+1)
+	validateOptionalDisclosureMethodLabels([]any{tooLong}, "labels", fieldErrors)
+	if fieldErrors["labels"] == "" {
+		t.Fatal("expected too-long rejection")
+	}
+}

@@ -571,6 +571,7 @@ func (s *service) ListTypes(ctx context.Context, req ListTypesRequest) (*ListTyp
 	}
 	for i := range ordered {
 		enrichDeadlineRuleDisplaySummary(&ordered[i], catalog)
+		enrichTypeDisplayNameSummary(&ordered[i])
 		ApplyDerivedApplicabilityState(&ordered[i].ApplicabilityState, ordered[i].DeadlineConfig, ordered[i].Periodicity, now)
 		ordered[i].DeadlineConfig = nil
 	}
@@ -657,6 +658,7 @@ func (s *service) GetTypeDetail(ctx context.Context, req GetTypeDetailRequest) (
 	}
 	ApplyLegalBasisReadCompat(ctx, item, s.legalBasisLegacyFallbackEnabled, s.legalBasisDivergenceWarningEnabled)
 	enrichDeadlineRuleDisplay(item, s.loadDeadlineRuleCatalog(ctx))
+	enrichTypeDisplayNameDetail(item)
 	coercePeriodicDeadlineEngineMode(item)
 
 	var companyProfile applicability.CompanyApplicabilityProfile

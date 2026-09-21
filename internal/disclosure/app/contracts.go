@@ -873,6 +873,8 @@ type DisclosureTypeSummaryDTO struct {
 	Scope                         string                                    `json:"scope"`
 	OwnerCompanyID                string                                    `json:"owner_company_id"`
 	Name                          string                                    `json:"name"`
+	// DisplayName is tenant-facing label (curated / normalized). Name stays the stored technical value.
+	DisplayName                   string                                    `json:"display_name,omitempty"`
 	Category                      string                                    `json:"category"`
 	TemplateCategory              string                                    `json:"template_category"`
 	Periodicity                   string                                    `json:"periodicity"`
@@ -918,6 +920,8 @@ type DisclosureTypeDTO struct {
 	Scope                 string `json:"scope"`
 	OwnerCompanyID        string `json:"owner_company_id"`
 	Name                  string `json:"name"`
+	// DisplayName is tenant-facing label (curated / normalized). Name stays the stored technical value.
+	DisplayName           string `json:"display_name,omitempty"`
 	Category              string `json:"category"`
 	TemplateCategory      string `json:"template_category"`
 	DeadlineStrategy      string `json:"deadline_strategy"`

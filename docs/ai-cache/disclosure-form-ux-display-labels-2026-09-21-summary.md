@@ -1,0 +1,26 @@
+# Disclosure Form UX labels — display mapping (2026-09-21)
+
+- **task type:** implement / UX fix (cross-repo)
+- **objective:** On `/app/disclosures/:id/edit`, stop showing raw technical type names / `department_id` / `assignee_role_ids`; keep technical IDs in payloads; never overwrite saved title.
+- **implemented:**
+  - BE: additive `display_name` on list/detail DTOs via curated map + seed-name normalization (`ResolveTypeDisplayName`); raw `name` unchanged.
+  - FE: prefer `display_name` in type normalizer; DisclosureForm resolves dept/role labels at render via sample catalog + fail-soft catalog APIs; labels `Phòng ban` / `Vai trò phụ trách` / `Thời gian xử lý`.
+  - Gate: `template-departments` only when `platform.cms.view`; assignee-roles auth-only + soft-fail 403 (no hard redirect).
+- **affected repos/files:**
+  - `cobo_iam_services`: `internal/disclosure/app/type_display_name.go`, `type_display_name_test.go`, `contracts.go`, `service.go`
+  - `cobo_web_design`: `DisclosureForm.tsx`, `disclosureFormDisplay.ts(+test)`, `normalizers.ts`, `types.ts`, `authApi.ts`, regression + disclosureTypes normalizer tests
+- **contracts/behaviors:**
+  - Dropdown value = `type_id`; label = `display_name` || name
+  - Preview keeps raw ids in `step.department` / `assigneeRoleIds`; display maps separately
+  - Save payload still `{ type_id, title, ... }` — no workflow dept/role fields
+- **verification:**
+  - FE: focused vitest → **45 PASS** (DisclosureForm.regression + disclosureFormDisplay + normalizers.disclosureTypes)
+  - FE: `npm run build` → **PASS** (`index-BkQd4ikM.js` — matches DEV)
+  - FE: `npm run lint` → FAIL repo-wide pre-existing; our hunk only adds `displayName` (~L533); TS2677 at normalizers L917 is **pre-existing** (untouched by this diff)
+  - BE: `go test ./internal/disclosure/app/` → **PASS**; `./internal/disclosure/...` fails only `legal_basis_backfill` Windows mode `0600` (**pre-existing**)
+  - Local Docker: `BLOCKED:` daemon not running
+  - Remote DEV: healthz/readyz 200; browser smoke PASS — evidence `docs/ai-cache/smoke-evidence-disclosure-edit-display-2026-09-21/`
+  - Save intercept: `type_id` remains technical ID; title not overwritten on edit load
+- **remaining gaps/risks:** curated map covers known QA seeds only; browser resilience for forced 403/empty catalog not exercised (unit covered); create flow does not auto-generate title today (no overwrite path)
+- **READY TO MERGE:** yes (product AC + remote smoke); LOCAL_DOCKER still blocked
+- **READY_FOR_USER_COMMIT:** true (NO agent commit/push)

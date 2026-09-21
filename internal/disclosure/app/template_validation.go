@@ -330,6 +330,42 @@ func validateFreeTextFileTypes(raw []any, fieldKey string, fieldErrors map[strin
 	}
 }
 
+// validateOptionalDisclosureMethodLabels validates additive disclosure_method_labels when present.
+// Absent/null is allowed for backward compatibility with older channel payloads.
+func validateOptionalDisclosureMethodLabels(raw any, fieldKey string, fieldErrors map[string]string) {
+	if raw == nil {
+		return
+	}
+	arr, ok := raw.([]any)
+	if !ok {
+		fieldErrors[fieldKey] = "disclosure_method_labels must be an array of strings when present"
+		return
+	}
+	if len(arr) == 0 {
+		return
+	}
+	if len(arr) > maxChannelFileTypeCount {
+		fieldErrors[fieldKey] = "disclosure_method_labels must have at most 20 items"
+		return
+	}
+	for i := range arr {
+		label, ok := arr[i].(string)
+		if !ok {
+			fieldErrors[fieldKey] = "disclosure_method_labels values must be non-empty strings"
+			return
+		}
+		trimmed := strings.TrimSpace(label)
+		if trimmed == "" {
+			fieldErrors[fieldKey] = "disclosure_method_labels values must be non-empty strings"
+			return
+		}
+		if len([]rune(trimmed)) > maxChannelFileTypeLen {
+			fieldErrors[fieldKey] = "disclosure_method_labels values must be at most 64 characters"
+			return
+		}
+	}
+}
+
 func validateChannelsAndFormatBusinessRules(prefix string, config map[string]any, fieldErrors map[string]string) {
 	channels, ok := config["channels"].([]any)
 	if !ok || len(channels) == 0 {
@@ -345,6 +381,11 @@ func validateChannelsAndFormatBusinessRules(prefix string, config map[string]any
 			if name == "" {
 				fieldErrors[prefix+".config.channels."+strconv.Itoa(idx)+".name"] = "channel name is required"
 			}
+			validateOptionalDisclosureMethodLabels(
+				row["disclosure_method_labels"],
+				prefix+".config.channels."+strconv.Itoa(idx)+".disclosure_method_labels",
+				fieldErrors,
+			)
 			rowFileTypes, ok := row["file_types"].([]any)
 			if !ok || len(rowFileTypes) == 0 {
 				fieldErrors[prefix+".config.channels."+strconv.Itoa(idx)+".file_types"] = "channel file_types must be a non-empty array"

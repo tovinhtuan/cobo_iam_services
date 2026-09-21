@@ -1,3 +1,27 @@
+﻿## CMS disclosure_method_labels additive (2026-09-21)
+
+- Optional validate `disclosure_method_labels` in channels JSON; no DB migration
+- Paired FE free-text chips; DEV smoke PASS; LOCAL_DOCKER_BUILD=BLOCKED
+- READY TO MERGE WITH LOCAL INFRA BLOCKER; NO agent commit
+## Disclosure Form UX display_name — DEV smoke PASS (2026-09-21)
+
+- BE: additive `display_name` enrichment; raw `name` unchanged; curated QA DEF map
+- Remote DEV healthz/readyz 200; FE asset index-BkQd4ikM.js; browser edit smoke PASS
+- `go test ./internal/disclosure/app/` PASS; LOCAL_DOCKER_BUILD=BLOCKED
+- READY TO MERGE; NO agent commit/push/prod
+
+## Disclosure Form UX display_name — DEV smoke PASS (2026-09-21)
+
+- Summary: `disclosure-form-ux-display-labels-2026-09-21-summary.md` (+ FE sibling smoke pack)
+- Additive `display_name`; remote DEV healthz/readyz 200; browser edit smoke PASS (`index-BkQd4ikM.js`)
+- `go test ./internal/disclosure/app/` PASS; LOCAL_DOCKER_BUILD=BLOCKED; READY TO MERGE; NO agent commit
+
+## Disclosure Form UX display_name (2026-09-21)
+
+- Summary: `disclosure-form-ux-display-labels-2026-09-21-summary.md` (+ FE sibling)
+- Additive `display_name` on disclosure type list/detail; curated QA seed map + name normalize
+- Unit tests PASS; Docker build api BLOCKED (daemon down); READY_FOR_USER_COMMIT=true; NO agent commit
+
 ## Tenant alert complete residual close-out PASS (2026-09-20)
 
 - Pack (FE sibling): `tenant-alert-complete-action-plan-2026-09-20/` (`04`-`06`)
@@ -4336,3 +4360,5 @@
 - verification: targeted/disclosure PASS; full suite pre-existing unrelated fails; vet/build PASS; DEV writes=0
 - verdict: TOOL_READY_FOR_CONTROLLED_EXECUTION
 - next: Phase 12.6B-E after explicit mutate approval + SQL wiring
+
+
