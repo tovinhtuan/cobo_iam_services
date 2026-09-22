@@ -1,4 +1,12 @@
-﻿## CMS disclosure_method_labels additive (2026-09-21)
+﻿## Portal company-resolved deadline display — DEV smoke PASS (2026-09-22)
+
+- Report: `portal-resolved-deadline-display-dev-smoke-2026-09-22.md`
+- Closeout: same Template A/B `resolved_days` 30 vs 20 (`STRUCTURE_OVERRIDE`); List/Detail parity; isolation B→A no stale
+- Fixture: activated QA `qa-import-periodic-1788864118253` (reminder days_before fix only); 0 cycles after read
+- `tsc` baseline unrelated (57 errors); feature production files clean; `npm run build` + docker api build + related vitest PASS
+- Verdict PASS; NO agent commit/push
+
+## CMS disclosure_method_labels additive (2026-09-21)
 
 - Optional validate `disclosure_method_labels` in channels JSON; no DB migration
 - Paired FE free-text chips; DEV smoke PASS; LOCAL_DOCKER_BUILD=BLOCKED

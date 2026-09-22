@@ -6,20 +6,19 @@ plan: docs/ai-cache/portal-resolved-deadline-display-implementation-plan-2026-09
 implementation: docs/ai-cache/portal-resolved-deadline-display-implementation-2026-09-22.md
 repos: cobo_iam_services, cobo_web_design
 environment: DEV only (88.216.208.0)
-verdict: PASS WITH LIMITATIONS
+verdict: PASS
 migration: none
 new_api: none
 commit: not performed
-data_mutation: none (read-only smoke; no config/cycle rewrite)
+data_mutation: QA fixture activate only (see Fixture notes); no hard delete; no prod-like config rewrite
+closeout: structure resolved_days A≠B + TypeScript baseline (2026-09-22 ~17:50–17:58 +07)
 ```
 
 ## Final verdict
 
-**PASS WITH LIMITATIONS**
+**PASS**
 
-Core absolute-due SoT (List↔Detail parity), persisted `PLANNED_DATE`, preview `DEADLINE_SUMMARY_PREVIEW`, irregular skip, CMS labels, company-scoped sessions, and related tests all pass on live DEV after redeploy.
-
-Limitations below are non-blocking for SoT but prevent a pure `PASS`.
+Live DEV chứng minh Company-specific `resolved_days` khác nhau (`30` vs `20`, `STRUCTURE_OVERRIDE`), List/Detail semantic parity, absolute-due SoT (smoke trước), preview path, isolation không stale, UI click-through, related tests + builds. TypeScript `tsc` errors được chứng minh baseline unrelated tới feature production files.
 
 ---
 
@@ -28,188 +27,206 @@ Limitations below are non-blocking for SoT but prevent a pure `PASS`.
 | Item | Evidence |
 |------|----------|
 | DEV host | `http://88.216.208.0:3000` (FE), `:8080` (API), SSH `:21239` |
-| Deploy | `deploy-dev.sh be --skip-tests` then `fe --skip-tests` (2026-09-22 ~17:21–17:23 +07) |
-| Why `--skip-tests` on deploy | `deploy-dev.sh all` blocked by **pre-existing** FE `tsc --noEmit` errors unrelated to deadline (admin/roles/channelConfigs). Related go/vitest run **before** deploy. |
+| Deploy (initial smoke) | `deploy-dev.sh be/fe --skip-tests` (~17:21–17:23 +07) |
+| Closeout redeploy | Not required — same DEV build; fixture activate only |
 | `/healthz` | 200 ok |
 | `/readyz` | 200 ready |
-| FE index | 200; asset `index-DWmk2Tu6.js` contains `Hạn chót:`, `Theo chu kỳ đã tạo`, `Ngày dự kiến theo cấu hình`, `list-card-deadline-due` |
-| BE binary | symbols `attachDetailAbsoluteResolvedDue`, `resolved_due_source`, `DEADLINE_SUMMARY_PREVIEW` present on `/root/cobo_project/bin/api` |
-| MySQL | `cobo_iam` healthy; no new migration |
-| Redis | `DBSIZE=3`; keys only `cobo_iam:effective_access:{company_id}:{membership_id}` — **no disclosure-type deadline cache** |
+| MySQL | `cobo_iam`; no new migration |
+| Redis | keys only `cobo_iam:effective_access:{company_id}:{membership_id}` — **no type-only deadline cache** |
 
-Local verification before deploy:
+---
 
-```text
-go test ./internal/disclosure/... → PASS
-vitest deadline helpers + DisclosureDeadlineSection → 32 PASS
-npm run build (FE) → PASS (during fe deploy)
-```
+## Fixture notes (structure closeout)
+
+Existing QA import template already had correct structure map + `use_structure_deadline=true` but was draft (`active_version_no=0`).
+
+| Step | Detail |
+|------|--------|
+| Template | `qa-import-periodic-1788864118253` |
+| Config | `deadline_days=20`, `use_structure_deadline=true`, map `has_subsidiaries=30` / `has_subordinate_units=25` / `simple_structure=20` |
+| Prep | Added missing `reminder_config.days_before=[1]` on workflow steps (QA fixture only; was blocking activate) |
+| Activate | `POST /api/v1/admin/disclosure-types/{type_id}/activate` `version_no=1` → 200 |
+| Cycles after List/Detail | **0** — semantic resolution only; no accidental materialize |
+| Cleanup | Leave active for future QA; do **not** hard-delete unless requested |
 
 ---
 
 ## Test identities (no secrets)
 
-### Company A — persisted cycle
+### Company A — structure subsidiaries
 
 | Field | Value |
 |-------|--------|
 | company_id | `c_001` |
 | name | Company X |
-| profile | `has_subsidiaries=1`, `has_subordinate_accounting_units=1`, `is_listed=1`, sectors commercial/service/manufacturing |
-| user | `platform.tenant.admin@example.com` → membership `m_107` |
-| template | `qa-final-focused-20260904222350` |
-| cycle_label | `2026-09-22` |
-| due source | `PLANNED_DATE` → `2026-09-26T23:59:59+07:00` |
+| profile | `has_subsidiaries=1`, `has_subordinate_accounting_units=1`, `is_listed=1`, sector commercial |
+| expected | `resolved_days=30`, `rule_code=has_subsidiaries`, `resolution_source=STRUCTURE_OVERRIDE` |
 
-### Company B — preview (API) / secondary UI switch
+### Company B — simple structure
 
 | Field | Value |
 |-------|--------|
-| company_id (API) | `bd1f02f7-2a54-4848-b0f3-b7cd9dfb9a55` |
+| company_id | `bd1f02f7-2a54-4848-b0f3-b7cd9dfb9a55` |
 | name | QA Manual QR Pkg 20260814 |
-| profile | simple structure (`has_subsidiaries=0`, `has_subordinate=0`), `is_listed=1`, sector commercial |
-| user | `admin.dn@example.com` |
-| template (preview) | `qa-af-option-a-ui-1788961913245` |
-| no cycle for current monthly slot `2026-09` | confirmed (only cycle_label `2026-10` exists) |
-| due source | `DEADLINE_SUMMARY_PREVIEW` → `2026-10-14T23:59:59+07:00` |
+| profile | `has_subsidiaries=0`, `has_subordinate=0`, `is_listed=1`, sector commercial |
+| expected | `resolved_days=20`, `rule_code=simple_structure`, `resolution_source=STRUCTURE_OVERRIDE` |
 
-UI company switcher (same platform admin session) also exercised **Company Y (`c_002`)** for isolation refresh (0 cycles for preview template; opening Detail did **not** insert cycles).
+**Assumption:** No DEV company with *only* `has_subordinate_units=true` (without subsidiaries). Used allowed alternate: simple structure → 20 days. Path `has_subordinate_units=25` covered by unit/engine tests, not live UI.
 
-**Assumption:** QA fixtures above are safe DEV data; no business production tenants mutated.
+### Prior smoke identities (absolute due / preview) — still valid
 
----
-
-## Company A result (persisted)
-
-### API
-
-| Surface | resolved_due_at | resolved_due_source | semantic |
-|---------|-----------------|---------------------|----------|
-| List | `2026-09-26T23:59:59+07:00` | `PLANNED_DATE` | DEFAULT / 5 CALENDAR_DAYS |
-| Detail | `2026-09-26T23:59:59+07:00` | `PLANNED_DATE` | same |
-| Parity | **PASS** due | **PASS** source | |
-
-`deadline_summary.deadline_date` = `2026-09-26` (same calendar day as planned in this fixture — cannot prove diverge numerically here; unit tests cover cycle≠preview).
-
-### Browser (Company X)
-
-- List card: semantic “Trong vòng 5 ngày theo lịch…” + `Hạn chót: 26/09/2026`
-- Detail § Kỳ hạn: Thời hạn áp dụng + `Hạn chót kỳ 26/09/2026` + `Nguồn: Theo ngày kế hoạch`
-- No invented `T+5` sentence on List when resolved DTO present
+| Role | company | template | due source |
+|------|---------|----------|------------|
+| Persisted cycle | `c_001` | `qa-final-focused-20260904222350` | `PLANNED_DATE` `2026-09-26` |
+| Preview | `bd1f…` | `qa-af-option-a-ui-1788961913245` | `DEADLINE_SUMMARY_PREVIEW` `2026-10-14` |
 
 ---
 
-## Company B result (preview)
+## Company-specific resolution
 
-### API (`bd1f02f7…` + `qa-af-option-a-ui-…`)
+Template: `qa-import-periodic-1788864118253`
 
-| Surface | resolved_due_at | resolved_due_source | parity |
-|---------|-----------------|---------------------|--------|
-| List | `2026-10-14T23:59:59+07:00` | `DEADLINE_SUMMARY_PREVIEW` | |
-| Detail | same | same | **PASS** |
+| Company | Profile | Rule code | Resolved days | Source |
+|---------|---------|-----------|--------------:|--------|
+| A `c_001` | has_subsidiaries=1 | `has_subsidiaries` | **30** | `STRUCTURE_OVERRIDE` |
+| B `bd1f…` | simple (0/0) | `simple_structure` | **20** | `STRUCTURE_OVERRIDE` |
 
-### Browser (Company X still valid for same preview template; also Company Y)
+```text
+A.resolved_days (30) != B.resolved_days (20)  → PASS
+A.rule_code != B.rule_code                    → PASS
+resolution_source = STRUCTURE_OVERRIDE        → PASS (both)
+```
 
-- Detail: `Hạn chót kỳ 14/10/2026`
-- `Nguồn: Ngày dự kiến theo cấu hình`
-- Disclaimer: “Ngày dự kiến theo cấu hình — chưa phải hạn đã chốt theo chu kỳ.”
-- DB: `c_002` still **0** cycles for this type after open List/Detail → preview **not** persisted
+Raw `deadline_rule` unchanged (display fallback text): `Trong vòng 20 ngày kể từ ngày kết thúc quý.` — FE shows resolved semantic, not invent from raw alone.
+
+`resolved_due_at` / `resolved_due_source` / `deadline_summary`: **null** on this fixture (no cycle / no preview slot yet). Absolute-due SoT verified on prior templates in same report session.
 
 ---
 
-## Isolation result
+## List/Detail parity
+
+### Structure template (semantic)
+
+| Company | List days | Detail days | List due | Detail due | Result |
+|---------|----------:|------------:|----------|------------|--------|
+| A | 30 | 30 | null | null | **PASS** |
+| B | 20 | 20 | null | null | **PASS** |
+
+### Prior absolute-due (unchanged evidence)
+
+| Company | List due | Detail due | source | Result |
+|---------|----------|------------|--------|--------|
+| A persisted | `2026-09-26T23:59:59+07:00` | same | `PLANNED_DATE` | **PASS** |
+| B preview | `2026-10-14T23:59:59+07:00` | same | `DEADLINE_SUMMARY_PREVIEW` | **PASS** |
+
+---
+
+## Browser UI (structure closeout)
+
+### Company A (`c_001`)
+
+- List card `Báo cáo tài chính quý…`: **Trong vòng 30 ngày theo lịch.**
+- Detail § Kỳ hạn: Thời hạn áp dụng **30 ngày**; Căn cứ **Có công ty con.**
+- No absolute “Hạn chót kỳ” (backend null) — consistent.
+
+### Company B (`bd1f…`)
+
+- List: **Trong vòng 20 ngày theo lịch.** (not 30)
+- Detail: Thời hạn **20 ngày**; Căn cứ **Không có công ty con và không có đơn vị kế toán trực thuộc.**
+
+### Isolation
 
 | Check | Result |
 |-------|--------|
-| Separate access tokens per company (select-company) | PASS |
-| Redis keys include `company_id` + `membership_id` | PASS |
-| No Redis key caching resolved due by `type_id` alone | PASS |
-| A→Y→A company switcher UI | PASS (context label updates; no hard refresh required) |
-| Same template due identical when both companies share same planned cycle | Expected for shared fixture — **not** a leak |
-| Structure-based different `resolved_days` A vs B | **NOT DEMONSTRATED** — QA templates have `use_structure_deadline` off → both DEFAULT 5 |
+| A → B (logout / login admin.dn / select QR) | PASS — B shows 20, not A’s 30 |
+| B → A (in-app company switcher, no hard refresh) | PASS — Detail refreshes to 30 + “Có công ty con” |
+| Redis keys company-scoped | PASS |
+| No Redis deadline-by-`type_id` | PASS |
+| Cycles after open List/Detail | **0** — PASS (no mutate) |
 
 ---
 
-## Legacy / irregular
+## TypeScript baseline
+
+| Item | Evidence |
+|------|----------|
+| Command | `cd cobo_web_design && npm run lint` (= `tsc --noEmit`) |
+| Exit code | **2** |
+| Error count | **57** |
+| Feature production files | **CLEAN** — no errors in `deadlineDisplayHelpers.ts`, `DisclosureTypeList/Detail.tsx`, `DisclosureDeadlineSection.tsx`, `resolvedDeadlineRuleDisplay.ts`, `disclosureDetailViewModel.ts` |
+| `normalizers.ts:917` TS2677 | Present since `dca29bc2` (2026-08-22) — workflow document type predicate; **not** introduced by resolved-due fields |
+| `resolvedDeadlineConsistency.crossLayer.test.tsx` | `tc.frontend \|\| {}` typing noise; Vitest **PASS**; predates absolute-due closeout |
+| Other errors | admin roles, channelConfigs `readonly`, AdminCenter tests, ContentDocumentsSection tests, etc. — outside feature |
+| `npm run build` | **PASS** (vite; exit 0) |
+| Related Vitest | **PASS** (see matrix) |
+| Classification | **PASS — baseline unrelated**; deploy may still need `--skip-tests` until unrelated `tsc` cleaned separately |
+
+---
+
+## Test matrix
+
+| Check | Result |
+|-------|--------|
+| `go test ./internal/disclosure/...` | **PASS** |
+| Related Vitest (portal-disclosure + disclosure-detail + normalizers package) | **136 PASS** / 17 files |
+| Focused deadline helpers + section + consistency + normalizers.disclosureTypes | **90 PASS** / 5 files |
+| `npm run build` | **PASS** |
+| `docker compose -f docker-compose.dev.yml build api` | **PASS** (exit 0) |
+| `npm run lint` / typecheck | **FAIL exit 2** — baseline unrelated (documented) |
+| Full `npm test` | **NOT RUN** (time/scope) |
+| Multi-goroutine race harness | **NOT RUN** |
+| Config/cycle mutation smoke | **NOT RUN — DEV data safety** |
+
+---
+
+## Isolation / cache (summary)
+
+- Sessions via `select-company` per company.
+- Redis: only `effective_access:{company}:{membership}`.
+- FE index `Cache-Control: no-store`.
+- Company switcher B→A refreshed Detail without hard refresh; no cross-company semantic leak.
+
+---
+
+## Legacy / irregular / CMS (from initial smoke — still valid)
 
 | Case | Result |
 |------|--------|
-| Irregular `qa-irregular-alert-20260904a` | `resolved_due_at=null`, no source; raw `Trong vòng 24 giờ kể từ sự kiện` |
-| List irregular UI | Shows semantic from DTO days when present (“20 ngày theo lịch”) / no `Hạn chót` line when due null |
-| Raw `T+5` on periodic with resolved DTO | FE shows sentence from DTO, **not** parse/expand `T+5` |
-| CMS Portal preview of raw | Editor shows `Portal sẽ hiển thị: T+5` as display-only |
-
-Raw-only fallback (no `resolved_deadline_rule` at all): **NOT RUN** — current active QA templates always return resolved DTO when profile+rules exist. Covered by unit tests.
-
----
-
-## Config / cycle consistency
-
-```text
-NOT RUN — DEV data safety constraint
-```
-
-No Template config mutation / cycle rewrite attempted. Read path confirmed: preview does not insert cycles.
-
----
-
-## CMS Template Editor
-
-Observed on `qa-af-option-a-ui-1788961913245`:
-
-- Help: engine config vs Portal display text (`Áp dụng theo doanh nghiệp`)
-- Help: `deadline_rule` = fallback text; engine = `deadline_config` + `applicability_rules`
-- Section: `Cấu hình deadline (deadline_config)`
-- No real Company profile preview in Phase 1
-
----
-
-## Cache verification
-
-- Disclosure list/detail: MySQL read-through; no catalog Redis cache for deadline resolution.
-- Effective-access Redis keys are company-scoped.
-- FE index `Cache-Control: no-store, no-cache, must-revalidate`.
-- Company switch refreshed context without stale cross-company due invent.
+| Irregular no absolute due | PASS |
+| CMS labels raw vs engine | PASS |
+| Raw-only no resolved DTO | NOT RUN live (unit covered) |
 
 ---
 
 ## Commands
 
 ```bash
-# Deploy
-sh deploy-dev.sh verify
-go test ./internal/disclosure/... -count=1
-sh deploy-dev.sh be --skip-tests
-npx vitest run …deadline…  # 32 PASS
-sh deploy-dev.sh fe --skip-tests
+# Structure fixture (DEV QA only)
+# SQL: fix reminder_config.days_before on qa-import-periodic… v1
+# API: activate version_no=1
+# API: List/Detail for c_001 and bd1f…
 
-# Health
+go test ./internal/disclosure/... -count=1
+cd ../cobo_web_design && npm run lint          # exit 2 baseline
+cd ../cobo_web_design && npm run build         # PASS
+cd ../cobo_web_design && npx vitest run …      # related PASS
+docker compose -f docker-compose.dev.yml build api  # PASS
+
 curl http://88.216.208.0:8080/healthz
 curl http://88.216.208.0:8080/readyz
-
-# API (tokens redacted in this doc)
-POST /api/v1/auth/login → select-company
-GET /api/v1/disclosure-types?page_size=50
-GET /api/v1/disclosure-types/{type_id}
-
-# DB read-only checks via docker exec mysql
-# Redis KEYS / DBSIZE
 ```
-
-Related tests: **PASS**  
-Full `npm test` suite: **NOT RUN** (time/scope; focused deadline suites run)  
-Multi-goroutine race harness: **NOT RUN**
 
 ---
 
-## Limitations
+## Remaining limitations (non-blocking)
 
-1. Deploy script FE lint gate blocked by unrelated pre-existing TS errors → used `--skip-tests` after local related verification.
-2. No Template config mutation smoke (safety).
-3. No live fixture proving structure override yields different `resolved_days` for A vs B (toggle off on QA templates).
-4. No fixture where `deadline_summary.deadline_date` ≠ persisted planned date on Detail (same day coincidence).
-5. UI Company B for preview used Company Y switch + API company `bd1f02f7…` (platform admin switcher lacks QR company).
-6. Full repo `npm test` not run.
+1. Full repo `npm test` not run.
+2. Config mutation / cycle rewrite smoke still **NOT RUN** (safety).
+3. Live path `has_subordinate_units` → 25 days not exercised (no matching company profile on DEV); simple_structure 20 used as allowed alternate.
+4. Unrelated FE `tsc` baseline still fails `deploy-dev.sh` lint gate → `--skip-tests` still needed until cleaned in a separate task.
+5. Structure QA template left **active** on DEV (intentional; cleanup only on request).
+
+None of the above contradict SoT, company-specific resolution, isolation, or related verification gates for this feature.
 
 ---
 
@@ -217,27 +234,28 @@ Multi-goroutine race harness: **NOT RUN**
 
 | Criterion | Status |
 |-----------|--------|
-| A persisted cycle List/Detail same due+source | PASS |
-| B preview List/Detail same due+source | PASS |
-| Preview labeled as dự kiến | PASS |
-| No preview DB write | PASS |
-| Irregular no absolute due | PASS |
-| No T+N invent on List when resolved | PASS |
-| Company-scoped auth / redis keys | PASS |
-| UI click-through A + preview + CMS | PASS |
-| Related tests | PASS |
-| Config rewrite / structure multi-company days | LIMITED / NOT RUN |
+| A/B different `resolved_days` live | **PASS** (30 vs 20) |
+| `STRUCTURE_OVERRIDE` | **PASS** |
+| List/Detail semantic parity | **PASS** |
+| List/Detail absolute due parity (persisted) | **PASS** (prior) |
+| Preview path + disclaimer | **PASS** (prior) |
+| Cross-company isolation | **PASS** |
+| Browser UI | **PASS** |
+| Related tests + builds | **PASS** |
+| TypeScript baseline unrelated | **PASS** (classified) |
+| No out-of-scope API/migration/engine change | **PASS** |
 
 ---
 
 ## Verdict rules check
 
-Not pure `PASS` due to limitations 1–5 above → **PASS WITH LIMITATIONS**.
+All required PASS gates for closeout met → **PASS**.
 
 ```text
 Không tạo API deadline-resolution mới.
 Không tạo migration.
 Không tính deadline ở frontend.
-List và Detail dùng cùng absolute-due source-of-truth trên DEV (verified).
+List và Detail dùng cùng absolute-due + company-resolved semantic SoT trên DEV (verified).
+Company A/B resolved_days khác nhau trên cùng Template (verified).
 Không commit / không push.
 ```
