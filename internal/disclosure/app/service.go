@@ -688,7 +688,9 @@ func (s *service) GetTypeDetail(ctx context.Context, req GetTypeDetailRequest) (
 			RuleDescription: ptrString("Không lấy được ngữ cảnh doanh nghiệp để tính deadline."),
 			Timezone:        ptrString("Asia/Ho_Chi_Minh"),
 		}
-		ApplyDerivedApplicabilityState(&item.ApplicabilityState, item.DeadlineConfig, item.Periodicity, time.Now())
+		now := time.Now()
+		s.attachDetailAbsoluteResolvedDue(ctx, req.Subject.CompanyID, item, now, nil)
+		ApplyDerivedApplicabilityState(&item.ApplicabilityState, item.DeadlineConfig, item.Periodicity, now)
 		return item, nil
 	}
 	now := time.Now()
@@ -711,11 +713,15 @@ func (s *service) GetTypeDetail(ctx context.Context, req GetTypeDetailRequest) (
 			RuleDescription: ptrString("Không thể tính deadline từ cấu hình hiện tại."),
 			Timezone:        ptrString("Asia/Ho_Chi_Minh"),
 		}
+		s.attachDetailAbsoluteResolvedDue(ctx, req.Subject.CompanyID, item, now, nil)
 		ApplyDerivedApplicabilityState(&item.ApplicabilityState, item.DeadlineConfig, item.Periodicity, now)
 		return item, nil
 	}
 	item.DeadlineSummary = summary
+	// Attach preview due onto semantic DTO first; attachDetailAbsoluteResolvedDue may
+	// overwrite due_date when persisted cycle wins (same SoT as portal list).
 	attachResolvedDueDate(item.ResolvedDeadlineRule, summary)
+	s.attachDetailAbsoluteResolvedDue(ctx, req.Subject.CompanyID, item, now, summary)
 	// Batch 5B Phase A (shadow only, see deadlineengine_shadow.go): does not
 	// modify item/summary or the API response. Guarded so the default
 	// (DEADLINE_ENGINE_V2_SHADOW=false) issues zero extra repo calls.

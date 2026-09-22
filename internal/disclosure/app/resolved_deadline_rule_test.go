@@ -112,6 +112,13 @@ func TestGetTypeDetail_ResolvedDeadlineRule_ToggleOffQA(t *testing.T) {
 	if rule.DueDate == nil || *rule.DueDate != *got.DeadlineSummary.DeadlineDate {
 		t.Fatalf("due_date=%v summary=%v", rule.DueDate, got.DeadlineSummary.DeadlineDate)
 	}
+	// Absolute SoT: no cycle → preview via resolved_due_at
+	if got.ResolvedDueAt == nil {
+		t.Fatal("expected resolved_due_at from preview")
+	}
+	if got.ResolvedDueSource != "DEADLINE_SUMMARY_PREVIEW" {
+		t.Fatalf("resolved_due_source=%q", got.ResolvedDueSource)
+	}
 	// Existing fields preserved
 	if got.ApplicabilityRules == nil || got.DeadlineSummary == nil {
 		t.Fatal("existing fields missing")

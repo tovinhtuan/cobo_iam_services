@@ -974,6 +974,11 @@ type DisclosureTypeDTO struct {
 	// ResolvedDeadlineRule is the live semantic outcome of production ResolveStructure /
 	// ResolveDeadlineDays for the authenticated company (additive; omit when unavailable).
 	ResolvedDeadlineRule *ResolvedDeadlineRuleDTO `json:"resolved_deadline_rule,omitempty"`
+	// ResolvedDueAt is company-scoped absolute due (RFC3339 Asia/Ho_Chi_Minh EOD).
+	// Same source-of-truth as portal list: persisted cycle due wins over calculator preview.
+	ResolvedDueAt *string `json:"resolved_due_at,omitempty"`
+	// ResolvedDueSource is additive provenance (CYCLE_DUE|PLANNED_DATE|DEADLINE_SUMMARY_PREVIEW).
+	ResolvedDueSource string `json:"resolved_due_source,omitempty"`
 	// Internal publication metadata used for activation race checks and
 	// compatibility facades. Deliberately excluded from existing API shapes.
 	WorkflowAuthorityMode    string                       `json:"-"`
