@@ -76,8 +76,8 @@ func TestGlobalWorkflowChain(t *testing.T) {
 	if err == nil {
 		t.Fatal("SAVE_DRAFT_DOES_NOT_PUBLISH: portal create must fail before template activate")
 	}
-	if herr, ok := err.(*perr.HTTPError); !ok || herr.Code != "TEMPLATE_NO_WORKFLOW" {
-		t.Fatalf("before activate want TEMPLATE_NO_WORKFLOW, got %v", err)
+	if herr, ok := err.(*perr.HTTPError); !ok || herr.Code != "TEMPLATE_NOT_ACTIVE" {
+		t.Fatalf("before activate want TEMPLATE_NOT_ACTIVE, got %v", err)
 	}
 
 	if _, err := svc.ActivateTypeVersion(ctx, disclosureapp.ActivateTypeVersionRequest{

@@ -2158,6 +2158,7 @@ func (s *service) enforceTemplateEligibleForNewRecord(ctx context.Context, typeI
 	if life == nil {
 		return nil
 	}
+	// Company-scoped templates keep existing create eligibility (not CMS global lifecycle).
 	if strings.TrimSpace(life.CompanyID) != "" {
 		return nil
 	}
@@ -2167,6 +2168,19 @@ func (s *service) enforceTemplateEligibleForNewRecord(ctx context.Context, typeI
 			Code:       "TEMPLATE_ARCHIVED",
 			Message:    "template is archived and cannot be used to create new disclosures",
 			Details:    map[string]any{"type_id": typeID},
+		}
+	}
+	// Draft / not_active (including after draft restore): published pointer required.
+	if life.ActiveVersionNo <= 0 {
+		return &perr.HTTPError{
+			HTTPStatus: http.StatusConflict,
+			Code:       "TEMPLATE_NOT_ACTIVE",
+			Message:    "template is not published and cannot be used to create new disclosures",
+			Details: map[string]any{
+				"type_id":           typeID,
+				"status":            life.Status,
+				"active_version_no": life.ActiveVersionNo,
+			},
 		}
 	}
 	return nil

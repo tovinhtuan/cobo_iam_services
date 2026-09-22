@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -896,7 +897,7 @@ func (h *Handler) auditLog(r *http.Request, sub disclosureapp.Subject, action, r
 	if h.audit == nil {
 		return
 	}
-	_ = h.audit.AppendAuditLog(r.Context(), auditapp.AppendAuditLogRequest{
+	if err := h.audit.AppendAuditLog(r.Context(), auditapp.AppendAuditLogRequest{
 		ActorUserID:       sub.UserID,
 		ActorMembershipID: sub.MembershipID,
 		CompanyID:         sub.CompanyID,
@@ -908,7 +909,14 @@ func (h *Handler) auditLog(r *http.Request, sub disclosureapp.Subject, action, r
 		IP:                r.RemoteAddr,
 		UserAgent:         r.UserAgent(),
 		Metadata:          metadata,
-	})
+	}); err != nil {
+		slog.Error("audit append failed",
+			"action", action,
+			"resource_type", resourceType,
+			"resource_id", resourceID,
+			"err", err.Error(),
+		)
+	}
 }
 
 func (h *Handler) subjectFromToken(r *http.Request) (disclosureapp.Subject, error) {
