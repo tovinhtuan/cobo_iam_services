@@ -140,6 +140,7 @@ seed_dev_identity_authorization.sql
 0138_deadline_comment_permission.up.sql
 0139_workflow_step_comments.up.sql
 0140_workflow_step_comment_mentions.up.sql
+0141_disclosure_type_archive_metadata.up.sql
 seed_dev_company_subscriptions.sql
 "
 

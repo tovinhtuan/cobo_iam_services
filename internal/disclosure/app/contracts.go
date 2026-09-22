@@ -68,6 +68,7 @@ type Service interface {
 
 	// CMS system template management (Sprint 2).
 	CmsArchiveTemplate(ctx context.Context, req CmsArchiveTemplateRequest) (*CmsArchiveTemplateResponse, error)
+	CmsRestoreTemplate(ctx context.Context, req CmsRestoreTemplateRequest) (*CmsRestoreTemplateResponse, error)
 	CmsGetGlobalWorkflow(ctx context.Context, req CmsGetGlobalWorkflowRequest) (*CmsGetGlobalWorkflowResponse, error)
 	CmsUpsertGlobalWorkflow(ctx context.Context, req CmsUpsertGlobalWorkflowRequest) (*GlobalWorkflowDTO, error)
 	CmsDeleteGlobalWorkflow(ctx context.Context, req CmsDeleteGlobalWorkflowRequest) error
@@ -182,7 +183,8 @@ type Repository interface {
 	// CMS catalog management (Sprint 2).
 	ListActiveDeadlineRuleCatalog(ctx context.Context) ([]DeadlineRuleCatalogDTO, error)
 	ListCmsDeadlineRules(ctx context.Context) ([]CmsDeadlineRuleDTO, error)
-	ArchiveGlobalTemplate(ctx context.Context, typeID, updatedBy string) error
+	ArchiveGlobalTemplate(ctx context.Context, params ArchiveGlobalTemplateParams) (*ArchiveGlobalTemplateResult, error)
+	RestoreGlobalTemplate(ctx context.Context, params RestoreGlobalTemplateParams) (*RestoreGlobalTemplateResult, error)
 	CountGlobalWorkflowsByTypeId(ctx context.Context, typeID string) (int, error)
 	GetGlobalWorkflow(ctx context.Context, typeID string) (*GlobalWorkflowDTO, error)
 	UpsertGlobalWorkflow(ctx context.Context, req CmsUpsertGlobalWorkflowRequest, workflowID string) (*GlobalWorkflowDTO, error)
@@ -1349,8 +1351,80 @@ type CmsArchiveTemplateRequest struct {
 }
 
 type CmsArchiveTemplateResponse struct {
-	TypeID string `json:"type_id"`
-	Status string `json:"status"`
+	TypeID                string `json:"type_id"`
+	Status                string `json:"status"`
+	AlreadyArchived       bool   `json:"already_archived,omitempty"`
+	ArchivedFromVersionNo *int   `json:"archived_from_version_no,omitempty"`
+	ActiveVersionNo       int    `json:"active_version_no"`
+	BeforeStatus          string `json:"-"`
+	BeforeActiveVersionNo int    `json:"-"`
+}
+
+type CmsRestoreTemplateRequest struct {
+	Subject Subject
+	TypeID  string `json:"type_id"`
+	Reason  string `json:"reason"`
+}
+
+type CmsRestoreTemplateResponse struct {
+	TypeID                string `json:"type_id"`
+	Status                string `json:"status"`
+	ActiveVersionNo       int    `json:"active_version_no"`
+	RestoredMode          string `json:"restored_mode"` // "active" | "draft"
+	BeforeStatus          string `json:"-"`
+	BeforeActiveVersionNo int    `json:"-"`
+	ArchivedFromVersionNo *int   `json:"-"`
+}
+
+// ArchiveGlobalTemplateParams is the repository input for soft-archiving a global template.
+type ArchiveGlobalTemplateParams struct {
+	TypeID    string
+	UpdatedBy string
+	Reason    string
+}
+
+// ArchiveGlobalTemplateResult carries before/after for audit + idempotency.
+type ArchiveGlobalTemplateResult struct {
+	TypeID                string
+	AlreadyArchived       bool
+	BeforeStatus          string
+	AfterStatus           string
+	BeforeActiveVersionNo int
+	AfterActiveVersionNo  int
+	ArchivedFromVersionNo *int
+	ArchivedAt            *time.Time
+	ArchivedBy            string
+	ArchiveReason         string
+}
+
+// RestoreGlobalTemplateParams is the repository input for restoring a global template.
+type RestoreGlobalTemplateParams struct {
+	TypeID                 string
+	UpdatedBy              string
+	// ExpectedFromVersionNo is nil for draft restore; non-nil must match locked metadata.
+	ExpectedFromVersionNo  *int
+	RestoreActiveVersionNo int // 0 for draft restore
+}
+
+// RestoreGlobalTemplateResult carries before/after for audit.
+type RestoreGlobalTemplateResult struct {
+	TypeID                string
+	BeforeStatus          string
+	AfterStatus           string
+	BeforeActiveVersionNo int
+	AfterActiveVersionNo  int
+	ArchivedFromVersionNo *int
+	RestoredMode          string // "active" | "draft"
+}
+
+// TypeLifecycleDTO is the disclosure_types root row used for eligibility guards.
+type TypeLifecycleDTO struct {
+	TypeID                string
+	CompanyID             string // empty = global
+	Status                string
+	ActiveVersionNo       int
+	ArchivedFromVersionNo *int
+	ArchiveReason         string
 }
 
 // ─── Global Workflow ─────────────────────────────────────────────────────────

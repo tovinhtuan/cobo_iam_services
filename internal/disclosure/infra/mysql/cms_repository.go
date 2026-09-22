@@ -323,24 +323,294 @@ func (r *Repository) DeleteGlobalWorkflow(ctx context.Context, typeID string) er
 	return nil
 }
 
-// ─── System Template Archive ──────────────────────────────────────────────────
+// ─── System Template Archive / Restore ────────────────────────────────────────
 
-func (r *Repository) ArchiveGlobalTemplate(ctx context.Context, typeID, _ string) error {
-	// company_id IS NULL identifies global (platform-managed) templates.
-	// active_version_no = 0 ensures the template is hidden from Portal's ListTypes JOIN.
-	res, err := r.db.ExecContext(ctx, `
-		UPDATE disclosure_types
-		SET status = 'archived', active_version_no = 0, updated_at = NOW()
-		WHERE type_id = ? AND company_id IS NULL
+func (r *Repository) GetTypeLifecycle(ctx context.Context, typeID string) (*disclosureapp.TypeLifecycleDTO, error) {
+	row := r.db.QueryRowContext(ctx, `
+		SELECT type_id, COALESCE(company_id, ''), COALESCE(status, ''), active_version_no,
+		       archived_from_version_no, COALESCE(archive_reason, '')
+		FROM disclosure_types
+		WHERE type_id = ?
 	`, typeID)
+	var out disclosureapp.TypeLifecycleDTO
+	var archivedFrom sql.NullInt64
+	if err := row.Scan(
+		&out.TypeID, &out.CompanyID, &out.Status, &out.ActiveVersionNo,
+		&archivedFrom, &out.ArchiveReason,
+	); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "disclosure type not found", nil)
+		}
+		return nil, fmt.Errorf("get type lifecycle: %w", err)
+	}
+	if archivedFrom.Valid {
+		v := int(archivedFrom.Int64)
+		out.ArchivedFromVersionNo = &v
+	}
+	return &out, nil
+}
+
+func (r *Repository) ArchiveGlobalTemplate(ctx context.Context, params disclosureapp.ArchiveGlobalTemplateParams) (*disclosureapp.ArchiveGlobalTemplateResult, error) {
+	typeID := strings.TrimSpace(params.TypeID)
+	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("archive global template: %w", err)
+		return nil, fmt.Errorf("begin archive tx: %w", err)
 	}
-	n, _ := res.RowsAffected()
-	if n == 0 {
-		return perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "global template not found", nil)
+	defer func() { _ = tx.Rollback() }()
+
+	var status string
+	var activeVersionNo int
+	var archivedFrom sql.NullInt64
+	var archivedAt sql.NullTime
+	var archivedBy sql.NullString
+	var archiveReason sql.NullString
+	err = tx.QueryRowContext(ctx, `
+		SELECT COALESCE(status, ''), active_version_no,
+		       archived_from_version_no, archived_at, archived_by, archive_reason
+		FROM disclosure_types
+		WHERE type_id = ? AND company_id IS NULL
+		FOR UPDATE
+	`, typeID).Scan(&status, &activeVersionNo, &archivedFrom, &archivedAt, &archivedBy, &archiveReason)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "global template not found", nil)
+		}
+		return nil, fmt.Errorf("lock global template for archive: %w", err)
 	}
-	return nil
+
+	result := &disclosureapp.ArchiveGlobalTemplateResult{
+		TypeID:                typeID,
+		BeforeStatus:          status,
+		BeforeActiveVersionNo: activeVersionNo,
+		AfterStatus:           "archived",
+		AfterActiveVersionNo:  0,
+		ArchivedBy:            strings.TrimSpace(params.UpdatedBy),
+		ArchiveReason:         strings.TrimSpace(params.Reason),
+	}
+	if archivedFrom.Valid {
+		v := int(archivedFrom.Int64)
+		result.ArchivedFromVersionNo = &v
+	}
+
+	if strings.EqualFold(strings.TrimSpace(status), "archived") {
+		result.AlreadyArchived = true
+		result.AfterStatus = "archived"
+		result.AfterActiveVersionNo = 0
+		if archivedAt.Valid {
+			t := archivedAt.Time.UTC()
+			result.ArchivedAt = &t
+		}
+		if archivedBy.Valid {
+			result.ArchivedBy = archivedBy.String
+		}
+		if archiveReason.Valid {
+			result.ArchiveReason = archiveReason.String
+		}
+		if err := tx.Commit(); err != nil {
+			return nil, fmt.Errorf("commit archive noop: %w", err)
+		}
+		return result, nil
+	}
+
+	var fromPtr *int
+	if activeVersionNo > 0 {
+		v := activeVersionNo
+		fromPtr = &v
+		result.ArchivedFromVersionNo = fromPtr
+	} else {
+		result.ArchivedFromVersionNo = nil
+	}
+
+	now := time.Now().UTC()
+	result.ArchivedAt = &now
+	_, err = tx.ExecContext(ctx, `
+		UPDATE disclosure_types
+		SET status = 'archived',
+		    active_version_no = 0,
+		    archived_from_version_no = ?,
+		    archived_at = ?,
+		    archived_by = ?,
+		    archive_reason = ?,
+		    updated_at = CURRENT_TIMESTAMP
+		WHERE type_id = ? AND company_id IS NULL
+	`, nullableInt(fromPtr), now, nullIfBlank(params.UpdatedBy), nullIfBlank(params.Reason), typeID)
+	if err != nil {
+		return nil, fmt.Errorf("archive global template: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit archive: %w", err)
+	}
+	return result, nil
+}
+
+func (r *Repository) RestoreGlobalTemplate(ctx context.Context, params disclosureapp.RestoreGlobalTemplateParams) (*disclosureapp.RestoreGlobalTemplateResult, error) {
+	typeID := strings.TrimSpace(params.TypeID)
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("begin restore tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var status string
+	var activeVersionNo int
+	var archivedFrom sql.NullInt64
+	err = tx.QueryRowContext(ctx, `
+		SELECT COALESCE(status, ''), active_version_no, archived_from_version_no
+		FROM disclosure_types
+		WHERE type_id = ? AND company_id IS NULL
+		FOR UPDATE
+	`, typeID).Scan(&status, &activeVersionNo, &archivedFrom)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "global template not found", nil)
+		}
+		return nil, fmt.Errorf("lock global template for restore: %w", err)
+	}
+	if !strings.EqualFold(strings.TrimSpace(status), "archived") {
+		return nil, &perr.HTTPError{
+			HTTPStatus: http.StatusConflict,
+			Code:       perr.CodeStateConflict,
+			Message:    "template is not archived; restore is not applicable",
+			Details:    map[string]any{"type_id": typeID, "status": status},
+		}
+	}
+
+	var metaFrom *int
+	if archivedFrom.Valid {
+		v := int(archivedFrom.Int64)
+		metaFrom = &v
+	}
+
+	// Draft restore path: metadata NULL and expected nil, restore av=0.
+	if params.ExpectedFromVersionNo == nil {
+		if metaFrom != nil {
+			return nil, &perr.HTTPError{
+				HTTPStatus: http.StatusConflict,
+				Code:       "TEMPLATE_RESTORE_METADATA_MISMATCH",
+				Message:    "archived template has prior active version metadata; use published restore path",
+				Details:    map[string]any{"type_id": typeID, "archived_from_version_no": *metaFrom},
+			}
+		}
+		_, err = tx.ExecContext(ctx, `
+			UPDATE disclosure_types
+			SET status = 'active',
+			    active_version_no = 0,
+			    archived_from_version_no = NULL,
+			    archived_at = NULL,
+			    archived_by = NULL,
+			    archive_reason = NULL,
+			    updated_at = CURRENT_TIMESTAMP
+			WHERE type_id = ? AND company_id IS NULL
+		`, typeID)
+		if err != nil {
+			return nil, fmt.Errorf("restore draft global template: %w", err)
+		}
+		if err := tx.Commit(); err != nil {
+			return nil, fmt.Errorf("commit restore draft: %w", err)
+		}
+		return &disclosureapp.RestoreGlobalTemplateResult{
+			TypeID:                typeID,
+			BeforeStatus:          "archived",
+			AfterStatus:           "active",
+			BeforeActiveVersionNo: activeVersionNo,
+			AfterActiveVersionNo:  0,
+			ArchivedFromVersionNo: nil,
+			RestoredMode:          "draft",
+		}, nil
+	}
+
+	// Published restore path.
+	if metaFrom == nil {
+		return nil, &perr.HTTPError{
+			HTTPStatus: http.StatusConflict,
+			Code:       "TEMPLATE_RESTORE_METADATA_MISSING",
+			Message:    "cannot restore published template: archived_from_version_no is missing; activate a version manually after review",
+			Details:    map[string]any{"type_id": typeID},
+		}
+	}
+	if *metaFrom != *params.ExpectedFromVersionNo {
+		return nil, &perr.HTTPError{
+			HTTPStatus: http.StatusConflict,
+			Code:       "TEMPLATE_RESTORE_METADATA_MISMATCH",
+			Message:    "archived_from_version_no changed; reload and retry",
+			Details: map[string]any{
+				"type_id":                  typeID,
+				"archived_from_version_no": *metaFrom,
+				"expected":                 *params.ExpectedFromVersionNo,
+			},
+		}
+	}
+	restoreVer := params.RestoreActiveVersionNo
+	if restoreVer <= 0 || restoreVer != *metaFrom {
+		return nil, &perr.HTTPError{
+			HTTPStatus: http.StatusConflict,
+			Code:       perr.CodeStateConflict,
+			Message:    "restore version must match archived_from_version_no",
+			Details: map[string]any{
+				"type_id":                  typeID,
+				"archived_from_version_no": *metaFrom,
+				"restore_version_no":       restoreVer,
+			},
+		}
+	}
+
+	var exists int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COUNT(1) FROM disclosure_type_versions WHERE type_id = ? AND version_no = ?
+	`, typeID, restoreVer).Scan(&exists); err != nil {
+		return nil, fmt.Errorf("check restore version: %w", err)
+	}
+	if exists == 0 {
+		return nil, &perr.HTTPError{
+			HTTPStatus: http.StatusConflict,
+			Code:       "TEMPLATE_RESTORE_VERSION_MISSING",
+			Message:    "archived version no longer exists; cannot restore automatically",
+			Details:    map[string]any{"type_id": typeID, "version_no": restoreVer},
+		}
+	}
+
+	now := time.Now().UTC()
+	_, err = tx.ExecContext(ctx, `
+		UPDATE disclosure_type_versions
+		SET is_released = 1, activated_at = ?, updated_by = CASE WHEN ? <> '' THEN ? ELSE updated_by END
+		WHERE type_id = ? AND version_no = ?
+	`, now, strings.TrimSpace(params.UpdatedBy), strings.TrimSpace(params.UpdatedBy), typeID, restoreVer)
+	if err != nil {
+		return nil, fmt.Errorf("mark restored version released: %w", err)
+	}
+	_, err = tx.ExecContext(ctx, `
+		UPDATE disclosure_types
+		SET status = 'active',
+		    active_version_no = ?,
+		    archived_from_version_no = NULL,
+		    archived_at = NULL,
+		    archived_by = NULL,
+		    archive_reason = NULL,
+		    updated_at = CURRENT_TIMESTAMP
+		WHERE type_id = ? AND company_id IS NULL
+	`, restoreVer, typeID)
+	if err != nil {
+		return nil, fmt.Errorf("restore active global template: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit restore active: %w", err)
+	}
+	return &disclosureapp.RestoreGlobalTemplateResult{
+		TypeID:                typeID,
+		BeforeStatus:          "archived",
+		AfterStatus:           "active",
+		BeforeActiveVersionNo: activeVersionNo,
+		AfterActiveVersionNo:  restoreVer,
+		ArchivedFromVersionNo: metaFrom,
+		RestoredMode:          "active",
+	}, nil
+}
+
+func nullableInt(v *int) any {
+	if v == nil {
+		return nil
+	}
+	return *v
 }
 
 // ─── Display Group CRUD ────────────────────────────────────────────────────────

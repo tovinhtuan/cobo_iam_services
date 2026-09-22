@@ -1267,7 +1267,8 @@ func (r *Repository) ActivateTypeVersion(ctx context.Context, req disclosureapp.
 	defer func() { _ = tx.Rollback() }()
 
 	var currentCompany sql.NullString
-	if err := tx.QueryRowContext(ctx, `SELECT company_id FROM disclosure_types WHERE type_id = ? FOR UPDATE`, req.TypeID).Scan(&currentCompany); err != nil {
+	var rootStatus string
+	if err := tx.QueryRowContext(ctx, `SELECT company_id, COALESCE(status, '') FROM disclosure_types WHERE type_id = ? FOR UPDATE`, req.TypeID).Scan(&currentCompany, &rootStatus); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "disclosure type not found", nil)
 		}
@@ -1275,6 +1276,14 @@ func (r *Repository) ActivateTypeVersion(ctx context.Context, req disclosureapp.
 	}
 	if currentCompany.Valid && currentCompany.String != "" && currentCompany.String != req.Subject.CompanyID {
 		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "cannot modify type from another company", nil)
+	}
+	if strings.EqualFold(strings.TrimSpace(rootStatus), "archived") {
+		return nil, &perr.HTTPError{
+			HTTPStatus: http.StatusConflict,
+			Code:       "TEMPLATE_ARCHIVED",
+			Message:    "template is archived; restore it before activating a version",
+			Details:    map[string]any{"type_id": req.TypeID},
+		}
 	}
 
 	var authorityMode string
@@ -1329,7 +1338,7 @@ func (r *Repository) ActivateTypeVersion(ctx context.Context, req disclosureapp.
 	}
 	_, err = tx.ExecContext(ctx, `
 		UPDATE disclosure_types
-		SET active_version_no = ?, updated_at = CURRENT_TIMESTAMP
+		SET active_version_no = ?, status = 'active', updated_at = CURRENT_TIMESTAMP
 		WHERE type_id = ?
 	`, req.VersionNo, req.TypeID)
 	if err != nil {

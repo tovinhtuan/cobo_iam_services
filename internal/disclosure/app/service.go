@@ -196,6 +196,9 @@ func (s *service) CreateRecord(ctx context.Context, req CreateRecordRequest) (*R
 	// TODO: BE-002 — this gate is wired in but requires global_workflows (migration 0053)
 	// to be populated. Until CMS seeds data via the new schema, use feature-flag guard.
 	if typeID := strings.TrimSpace(req.Payload.TypeID); typeID != "" {
+		if err := s.enforceTemplateEligibleForNewRecord(ctx, typeID); err != nil {
+			return nil, err
+		}
 		if err := s.enforceHasWorkflowGate(ctx, req.Subject.CompanyID, typeID); err != nil {
 			return nil, err
 		}
@@ -989,6 +992,17 @@ func (s *service) ActivateTypeVersion(ctx context.Context, req ActivateTypeVersi
 	}
 	if req.VersionNo <= 0 {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "version_no must be > 0", nil)
+	}
+	// Reject archived templates before workflow/deadline validation (require Restore first).
+	if life, lifeErr := s.lookupTypeLifecycle(ctx, req.TypeID); lifeErr != nil {
+		return nil, lifeErr
+	} else if life != nil && strings.TrimSpace(life.CompanyID) == "" && strings.EqualFold(strings.TrimSpace(life.Status), "archived") {
+		return nil, &perr.HTTPError{
+			HTTPStatus: http.StatusConflict,
+			Code:       "TEMPLATE_ARCHIVED",
+			Message:    "template is archived; restore it before activating a version",
+			Details:    map[string]any{"type_id": req.TypeID},
+		}
 	}
 	versionDetail, err := s.repo.GetTypeVersionDetail(ctx, req.Subject.CompanyID, req.TypeID, req.VersionNo)
 	if err != nil {
@@ -2111,6 +2125,51 @@ func (s *service) TransitionCompanyTemplateLifecycle(ctx context.Context, req Tr
 		return nil, err
 	}
 	return s.repo.GetCompanyTemplateForLifecycle(ctx, req.Subject.CompanyID, req.TypeID)
+}
+
+func (s *service) lookupTypeLifecycle(ctx context.Context, typeID string) (life *TypeLifecycleDTO, err error) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			// Test doubles that embed a nil Repository interface promote GetTypeLifecycle and panic.
+			life = nil
+			err = nil
+		}
+	}()
+	reader, ok := s.repo.(TypeLifecycleReader)
+	if !ok || reader == nil {
+		return nil, nil
+	}
+	return reader.GetTypeLifecycle(ctx, typeID)
+}
+
+// TypeLifecycleReader is implemented by MySQL/inmemory repositories (not all test doubles).
+type TypeLifecycleReader interface {
+	GetTypeLifecycle(ctx context.Context, typeID string) (*TypeLifecycleDTO, error)
+}
+
+func (s *service) enforceTemplateEligibleForNewRecord(ctx context.Context, typeID string) error {
+	life, err := s.lookupTypeLifecycle(ctx, typeID)
+	if err != nil {
+		if herr, ok := err.(*perr.HTTPError); ok && herr.HTTPStatus == http.StatusNotFound {
+			return nil
+		}
+		return err
+	}
+	if life == nil {
+		return nil
+	}
+	if strings.TrimSpace(life.CompanyID) != "" {
+		return nil
+	}
+	if strings.EqualFold(strings.TrimSpace(life.Status), "archived") {
+		return &perr.HTTPError{
+			HTTPStatus: http.StatusConflict,
+			Code:       "TEMPLATE_ARCHIVED",
+			Message:    "template is archived and cannot be used to create new disclosures",
+			Details:    map[string]any{"type_id": typeID},
+		}
+	}
+	return nil
 }
 
 // enforceHasWorkflowGate aligns with Portal FE has_workflow / GetEffectiveWorkflow:

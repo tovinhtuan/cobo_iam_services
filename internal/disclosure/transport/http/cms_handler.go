@@ -31,9 +31,59 @@ func (h *Handler) cmsArchiveTemplate(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, nil, err)
 		return
 	}
-	h.auditLog(r, sub, "cms_template.archive", "disclosure_type", typeID, map[string]any{
-		"reason": body.Reason,
+	if resp != nil && !resp.AlreadyArchived {
+		meta := map[string]any{
+			"reason":                   body.Reason,
+			"before_status":            resp.BeforeStatus,
+			"after_status":             resp.Status,
+			"before_active_version_no": resp.BeforeActiveVersionNo,
+			"after_active_version_no":  resp.ActiveVersionNo,
+			"already_archived":         false,
+		}
+		if resp.ArchivedFromVersionNo != nil {
+			meta["archived_from_version_no"] = *resp.ArchivedFromVersionNo
+		} else {
+			meta["archived_from_version_no"] = nil
+		}
+		h.auditLog(r, sub, "cms_template.archive", "disclosure_type", typeID, meta)
+	}
+	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) cmsRestoreTemplate(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subjectFromToken(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	typeID := strings.TrimSpace(r.PathValue("type_id"))
+	var body struct {
+		Reason string `json:"reason"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	resp, err := h.svc.CmsRestoreTemplate(r.Context(), disclosureapp.CmsRestoreTemplateRequest{
+		Subject: sub,
+		TypeID:  typeID,
+		Reason:  body.Reason,
 	})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	meta := map[string]any{
+		"reason":                   body.Reason,
+		"before_status":            resp.BeforeStatus,
+		"after_status":             resp.Status,
+		"before_active_version_no": resp.BeforeActiveVersionNo,
+		"after_active_version_no":  resp.ActiveVersionNo,
+		"restored_mode":            resp.RestoredMode,
+	}
+	if resp.ArchivedFromVersionNo != nil {
+		meta["archived_from_version_no"] = *resp.ArchivedFromVersionNo
+	} else {
+		meta["archived_from_version_no"] = nil
+	}
+	h.auditLog(r, sub, "cms_template.restore", "disclosure_type", typeID, meta)
 	httpx.WriteJSON(w, http.StatusOK, resp)
 }
 

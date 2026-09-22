@@ -60,8 +60,10 @@ func TestListTypes_PortalState_ActiveNotActiveArchived(t *testing.T) {
 
 	seedGlobalDraft(t, r, "dt-archived", "Archived One")
 	activateVersion(t, r, "dt-archived", 1)
-	if err := r.ArchiveGlobalTemplate(context.Background(), "dt-archived", "u1"); err != nil {
-		t.Fatal(err)
+	if _, err := r.ArchiveGlobalTemplate(context.Background(), disclosureapp.ArchiveGlobalTemplateParams{
+		TypeID: "dt-archived", UpdatedBy: "u1",
+	}); err != nil {
+		t.Fatalf("archive: %v", err)
 	}
 
 	active := typeIDs(listMgmt(t, r, disclosureapp.PortalStateActive, nil))

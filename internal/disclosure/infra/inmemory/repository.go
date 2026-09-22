@@ -27,6 +27,8 @@ type Repository struct {
 	catalogByVer              map[string]map[int]disclosureapp.DisclosureTypeDTO
 	versions                  map[string][]disclosureapp.DisclosureTypeVersionDTO
 	catalogScope              map[string]string
+	// typeRoots tracks disclosure_types.status / archive metadata (parity with MySQL).
+	typeRoots                 map[string]*typeRootState
 	overrideByCompanyType     map[string]*overrideState
 	globalWorkflows           map[string]*disclosureapp.GlobalWorkflowDTO
 	// globalWorkflowVersions backs Sprint 3 / Batch 3's GetGlobalWorkflowVersionManifest — keyed
@@ -35,6 +37,16 @@ type Repository struct {
 	globalWorkflowVersions map[string]map[int][]disclosureapp.GlobalWorkflowStepInput
 	// workflowOverrideConflicts backs Sprint 3 / Batch 4 — keyed by conflict id (== conflict_key).
 	workflowOverrideConflicts map[string]disclosureapp.PersistedConflictDTO
+}
+
+type typeRootState struct {
+	CompanyID             string
+	Status                string
+	ActiveVersionNo       int
+	ArchivedFromVersionNo *int
+	ArchivedAt            *time.Time
+	ArchivedBy            string
+	ArchiveReason         string
 }
 
 type overrideState struct {
@@ -54,6 +66,7 @@ func NewRepository() *Repository {
 		catalogByVer:              map[string]map[int]disclosureapp.DisclosureTypeDTO{},
 		versions:                  map[string][]disclosureapp.DisclosureTypeVersionDTO{},
 		catalogScope:              map[string]string{},
+		typeRoots:                 map[string]*typeRootState{},
 		overrideByCompanyType:     map[string]*overrideState{},
 		globalWorkflowVersions:    map[string]map[int][]disclosureapp.GlobalWorkflowStepInput{},
 		workflowOverrideConflicts: map[string]disclosureapp.PersistedConflictDTO{},
@@ -96,6 +109,10 @@ func NewRepository() *Repository {
 		repo.catalog[item.TypeID] = item
 		repo.catalogByVer[item.TypeID] = map[int]disclosureapp.DisclosureTypeDTO{1: item}
 		repo.catalogScope[item.TypeID] = "global"
+		repo.typeRoots[item.TypeID] = &typeRootState{
+			Status:          "active",
+			ActiveVersionNo: 1,
+		}
 		repo.displayGroupCodes[item.TypeID] = item.DisplayGroupCode
 		if len(item.DisplayGroupCodes) > 0 {
 			repo.templateDisplayGroupCodes[item.TypeID] = slices.Clone(item.DisplayGroupCodes)
@@ -312,8 +329,16 @@ func (r *Repository) ListTypes(_ context.Context, params disclosureapp.ListTypes
 			}
 		}
 
-		archived := strings.EqualFold(strings.TrimSpace(listItem.ReviewStatus), "archived") ||
-			strings.EqualFold(strings.TrimSpace(r.catalog[item.TypeID].ReviewStatus), "archived")
+		archived := false
+		if root := r.typeRoots[item.TypeID]; root != nil && strings.EqualFold(root.Status, "archived") {
+			archived = true
+		} else {
+			archived = strings.EqualFold(strings.TrimSpace(listItem.ReviewStatus), "archived") ||
+				strings.EqualFold(strings.TrimSpace(r.catalog[item.TypeID].ReviewStatus), "archived")
+		}
+		if root := r.typeRoots[item.TypeID]; root != nil {
+			activeVersionNo = root.ActiveVersionNo
+		}
 		switch strings.ToLower(strings.TrimSpace(params.PortalState)) {
 		case disclosureapp.PortalStateActive:
 			if archived || activeVersionNo <= 0 {
@@ -821,6 +846,14 @@ func (r *Repository) ActivateTypeVersion(_ context.Context, req disclosureapp.Ac
 	if scope := r.catalogScope[req.TypeID]; scope != "global" && scope != req.Subject.CompanyID {
 		return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "disclosure type not found", nil)
 	}
+	if root := r.ensureTypeRoot(req.TypeID); strings.EqualFold(root.Status, "archived") {
+		return nil, &perr.HTTPError{
+			HTTPStatus: http.StatusConflict,
+			Code:       "TEMPLATE_ARCHIVED",
+			Message:    "template is archived; restore it before activating a version",
+			Details:    map[string]any{"type_id": req.TypeID},
+		}
+	}
 	vs := r.versions[req.TypeID]
 	target := -1
 	for i := range vs {
@@ -873,6 +906,13 @@ func (r *Repository) ActivateTypeVersion(_ context.Context, req disclosureapp.Ac
 	} else {
 		r.catalog[req.TypeID] = current
 	}
+	root := r.ensureTypeRoot(req.TypeID)
+	root.Status = "active"
+	root.ActiveVersionNo = req.VersionNo
+	root.ArchivedFromVersionNo = nil
+	root.ArchivedAt = nil
+	root.ArchivedBy = ""
+	root.ArchiveReason = ""
 	return &disclosureapp.ActivateTypeVersionResponse{
 		TypeID:      req.TypeID,
 		VersionNo:   req.VersionNo,

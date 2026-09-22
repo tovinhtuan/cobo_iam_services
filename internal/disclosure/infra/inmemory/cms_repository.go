@@ -146,16 +146,96 @@ func (r *Repository) DeleteGlobalWorkflow(_ context.Context, typeID string) erro
 	return nil
 }
 
-// ─── System Template Archive ──────────────────────────────────────────────────
+// ─── System Template Archive / Restore ────────────────────────────────────────
 
-func (r *Repository) ArchiveGlobalTemplate(_ context.Context, typeID, _ string) error {
+func (r *Repository) ensureTypeRoot(typeID string) *typeRootState {
+	if r.typeRoots == nil {
+		r.typeRoots = map[string]*typeRootState{}
+	}
+	root, ok := r.typeRoots[typeID]
+	if ok && root != nil {
+		return root
+	}
+	activeNo := 0
+	for _, ver := range r.versions[typeID] {
+		if ver.IsActive {
+			activeNo = ver.VersionNo
+			break
+		}
+	}
+	root = &typeRootState{Status: "active", ActiveVersionNo: activeNo}
+	if scope := r.catalogScope[typeID]; scope != "" && scope != "global" {
+		root.CompanyID = scope
+	}
+	r.typeRoots[typeID] = root
+	return root
+}
+
+func (r *Repository) GetTypeLifecycle(_ context.Context, typeID string) (*disclosureapp.TypeLifecycleDTO, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, ok := r.catalog[typeID]; !ok {
-		return perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "global template not found", nil)
+		return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "disclosure type not found", nil)
 	}
+	root := r.ensureTypeRoot(typeID)
+	out := &disclosureapp.TypeLifecycleDTO{
+		TypeID:          typeID,
+		CompanyID:       root.CompanyID,
+		Status:          root.Status,
+		ActiveVersionNo: root.ActiveVersionNo,
+		ArchiveReason:   root.ArchiveReason,
+	}
+	if root.ArchivedFromVersionNo != nil {
+		v := *root.ArchivedFromVersionNo
+		out.ArchivedFromVersionNo = &v
+	}
+	return out, nil
+}
+
+func (r *Repository) ArchiveGlobalTemplate(_ context.Context, params disclosureapp.ArchiveGlobalTemplateParams) (*disclosureapp.ArchiveGlobalTemplateResult, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	typeID := strings.TrimSpace(params.TypeID)
+	if _, ok := r.catalog[typeID]; !ok {
+		return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "global template not found", nil)
+	}
+	if scope := r.catalogScope[typeID]; scope != "" && scope != "global" {
+		return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "global template not found", nil)
+	}
+	root := r.ensureTypeRoot(typeID)
+	result := &disclosureapp.ArchiveGlobalTemplateResult{
+		TypeID:                typeID,
+		BeforeStatus:          root.Status,
+		BeforeActiveVersionNo: root.ActiveVersionNo,
+		AfterStatus:           "archived",
+		AfterActiveVersionNo:  0,
+		ArchivedBy:            strings.TrimSpace(params.UpdatedBy),
+		ArchiveReason:         strings.TrimSpace(params.Reason),
+	}
+	if strings.EqualFold(root.Status, "archived") {
+		result.AlreadyArchived = true
+		result.ArchivedFromVersionNo = cloneIntPtr(root.ArchivedFromVersionNo)
+		result.ArchivedAt = root.ArchivedAt
+		result.ArchivedBy = root.ArchivedBy
+		result.ArchiveReason = root.ArchiveReason
+		return result, nil
+	}
+	if root.ActiveVersionNo > 0 {
+		v := root.ActiveVersionNo
+		result.ArchivedFromVersionNo = &v
+		root.ArchivedFromVersionNo = &v
+	} else {
+		root.ArchivedFromVersionNo = nil
+		result.ArchivedFromVersionNo = nil
+	}
+	now := time.Now().UTC()
+	root.Status = "archived"
+	root.ActiveVersionNo = 0
+	root.ArchivedAt = &now
+	root.ArchivedBy = strings.TrimSpace(params.UpdatedBy)
+	root.ArchiveReason = strings.TrimSpace(params.Reason)
+	result.ArchivedAt = &now
 	item := r.catalog[typeID]
-	// Align with mysql ArchiveGlobalTemplate: status archived + clear portal pointer.
 	item.ReviewStatus = "archived"
 	r.catalog[typeID] = item
 	vs := r.versions[typeID]
@@ -163,7 +243,124 @@ func (r *Repository) ArchiveGlobalTemplate(_ context.Context, typeID, _ string) 
 		vs[i].IsActive = false
 	}
 	r.versions[typeID] = vs
-	return nil
+	return result, nil
+}
+
+func (r *Repository) RestoreGlobalTemplate(_ context.Context, params disclosureapp.RestoreGlobalTemplateParams) (*disclosureapp.RestoreGlobalTemplateResult, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	typeID := strings.TrimSpace(params.TypeID)
+	if _, ok := r.catalog[typeID]; !ok {
+		return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "global template not found", nil)
+	}
+	if scope := r.catalogScope[typeID]; scope != "" && scope != "global" {
+		return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "global template not found", nil)
+	}
+	root := r.ensureTypeRoot(typeID)
+	if !strings.EqualFold(root.Status, "archived") {
+		return nil, &perr.HTTPError{
+			HTTPStatus: http.StatusConflict,
+			Code:       perr.CodeStateConflict,
+			Message:    "template is not archived; restore is not applicable",
+			Details:    map[string]any{"type_id": typeID, "status": root.Status},
+		}
+	}
+	beforeAV := root.ActiveVersionNo
+	metaFrom := cloneIntPtr(root.ArchivedFromVersionNo)
+
+	if params.ExpectedFromVersionNo == nil {
+		if metaFrom != nil {
+			return nil, &perr.HTTPError{
+				HTTPStatus: http.StatusConflict,
+				Code:       "TEMPLATE_RESTORE_METADATA_MISMATCH",
+				Message:    "archived template has prior active version metadata; use published restore path",
+				Details:    map[string]any{"type_id": typeID, "archived_from_version_no": *metaFrom},
+			}
+		}
+		root.Status = "active"
+		root.ActiveVersionNo = 0
+		root.ArchivedFromVersionNo = nil
+		root.ArchivedAt = nil
+		root.ArchivedBy = ""
+		root.ArchiveReason = ""
+		item := r.catalog[typeID]
+		item.ReviewStatus = ""
+		r.catalog[typeID] = item
+		return &disclosureapp.RestoreGlobalTemplateResult{
+			TypeID: typeID, BeforeStatus: "archived", AfterStatus: "active",
+			BeforeActiveVersionNo: beforeAV, AfterActiveVersionNo: 0, RestoredMode: "draft",
+		}, nil
+	}
+
+	if metaFrom == nil {
+		return nil, &perr.HTTPError{
+			HTTPStatus: http.StatusConflict,
+			Code:       "TEMPLATE_RESTORE_METADATA_MISSING",
+			Message:    "cannot restore published template: archived_from_version_no is missing; activate a version manually after review",
+			Details:    map[string]any{"type_id": typeID},
+		}
+	}
+	if *metaFrom != *params.ExpectedFromVersionNo || params.RestoreActiveVersionNo != *metaFrom {
+		return nil, &perr.HTTPError{
+			HTTPStatus: http.StatusConflict,
+			Code:       "TEMPLATE_RESTORE_METADATA_MISMATCH",
+			Message:    "archived_from_version_no changed or restore version mismatch",
+			Details: map[string]any{
+				"type_id": typeID, "archived_from_version_no": *metaFrom,
+				"expected": *params.ExpectedFromVersionNo, "restore_version_no": params.RestoreActiveVersionNo,
+			},
+		}
+	}
+	restoreVer := params.RestoreActiveVersionNo
+	found := false
+	vs := r.versions[typeID]
+	for i := range vs {
+		vs[i].IsActive = vs[i].VersionNo == restoreVer
+		if vs[i].VersionNo == restoreVer {
+			found = true
+			vs[i].IsReleased = true
+			vs[i].ActivatedAt = time.Now().UTC()
+			if strings.TrimSpace(params.UpdatedBy) != "" {
+				vs[i].UpdatedBy = params.UpdatedBy
+			}
+		}
+	}
+	if !found {
+		if _, ok := r.catalogByVer[typeID][restoreVer]; !ok {
+			return nil, &perr.HTTPError{
+				HTTPStatus: http.StatusConflict,
+				Code:       "TEMPLATE_RESTORE_VERSION_MISSING",
+				Message:    "archived version no longer exists; cannot restore automatically",
+				Details:    map[string]any{"type_id": typeID, "version_no": restoreVer},
+			}
+		}
+	}
+	r.versions[typeID] = vs
+	if snap, ok := r.catalogByVer[typeID][restoreVer]; ok {
+		r.catalog[typeID] = snap
+	}
+	root.Status = "active"
+	root.ActiveVersionNo = restoreVer
+	root.ArchivedFromVersionNo = nil
+	root.ArchivedAt = nil
+	root.ArchivedBy = ""
+	root.ArchiveReason = ""
+	item := r.catalog[typeID]
+	item.ReviewStatus = ""
+	r.catalog[typeID] = item
+	return &disclosureapp.RestoreGlobalTemplateResult{
+		TypeID: typeID, BeforeStatus: "archived", AfterStatus: "active",
+		BeforeActiveVersionNo: beforeAV, AfterActiveVersionNo: restoreVer,
+		ArchivedFromVersionNo: metaFrom, RestoredMode: "active",
+	}, nil
+}
+
+func cloneIntPtr(v *int) *int {
+	if v == nil {
+		return nil
+	}
+	x := *v
+	return &x
 }
 
 // ─── Display Group CRUD ────────────────────────────────────────────────────────

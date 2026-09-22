@@ -11,23 +11,6 @@ import (
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 )
 
-// CmsArchiveTemplate soft-archives a global system template (OQ-004=A, OQ-006=A).
-// In-flight disclosure records are unaffected; the template simply stops appearing
-// in the portal list (which filters published only).
-func (s *service) CmsArchiveTemplate(ctx context.Context, req CmsArchiveTemplateRequest) (*CmsArchiveTemplateResponse, error) {
-	if err := s.requireCMSTemplateArchive(ctx, req.Subject); err != nil {
-		return nil, err
-	}
-	req.TypeID = strings.TrimSpace(req.TypeID)
-	if req.TypeID == "" {
-		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "type_id is required", nil)
-	}
-	if err := s.repo.ArchiveGlobalTemplate(ctx, req.TypeID, req.Subject.UserID); err != nil {
-		return nil, err
-	}
-	return &CmsArchiveTemplateResponse{TypeID: req.TypeID, Status: "archived"}, nil
-}
-
 // CmsGetGlobalWorkflow is a wire-compatible projection of the template-owned
 // draft (when present) or active publication. Global tables are history only.
 func (s *service) CmsGetGlobalWorkflow(ctx context.Context, req CmsGetGlobalWorkflowRequest) (*CmsGetGlobalWorkflowResponse, error) {

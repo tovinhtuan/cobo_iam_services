@@ -55,9 +55,9 @@ func (s *zeroDBWriteSpyRepo) UpsertTypeVersion(ctx context.Context, req disclosu
 	return s.Repository.UpsertTypeVersion(ctx, req)
 }
 
-func (s *zeroDBWriteSpyRepo) ArchiveGlobalTemplate(ctx context.Context, typeID, userID string) error {
+func (s *zeroDBWriteSpyRepo) ArchiveGlobalTemplate(ctx context.Context, params disclosureapp.ArchiveGlobalTemplateParams) (*disclosureapp.ArchiveGlobalTemplateResult, error) {
 	s.writeCount++
-	return s.Repository.ArchiveGlobalTemplate(ctx, typeID, userID)
+	return s.Repository.ArchiveGlobalTemplate(ctx, params)
 }
 
 func (s *zeroDBWriteSpyRepo) CreateDisplayGroup(ctx context.Context, req disclosureapp.CmsDisplayGroupCreateRequest) (*disclosureapp.DisplayGroupDTO, error) {
