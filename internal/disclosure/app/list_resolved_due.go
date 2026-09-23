@@ -209,10 +209,14 @@ func (s *service) enrichPortalListResolvedDue(
 
 	for i := range items {
 		item := &items[i]
-		if item.ApplicabilityRules != nil && haveProfile {
-			item.ResolvedDeadlineRule = buildResolvedDeadlineRuleDTO(
-				item.ApplicabilityRules, profile, item.Periodicity, item.DeadlineConfig,
-			)
+		if item.ApplicabilityRules != nil {
+			if haveProfile {
+				item.ResolvedDeadlineRule = buildResolvedDeadlineRuleDTO(
+					item.ApplicabilityRules, profile, item.Periodicity, item.DeadlineConfig,
+				)
+			} else {
+				item.ResolvedDeadlineRule = buildResolvedDeadlineRulePendingProfileDTO(item.Periodicity, item.DeadlineConfig)
+			}
 		}
 		cfg := item.DeadlineConfig
 		if skipsAbsoluteDueResolution(item.TemplateCategory, cfg) {

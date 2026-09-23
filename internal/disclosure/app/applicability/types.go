@@ -34,6 +34,9 @@ const (
 	ResolutionSourceStructureOverride        = "STRUCTURE_OVERRIDE"
 	ResolutionSourceStructureFallbackDefault = "STRUCTURE_FALLBACK_DEFAULT"
 	ResolutionSourceNoRule                   = "NO_RULE"
+	// ResolutionSourceCompanyProfileRequired: applicability rules exist but company
+	// profile is unavailable — Portal must not guess structure or show T+N compatibility.
+	ResolutionSourceCompanyProfileRequired = "COMPANY_PROFILE_REQUIRED"
 )
 
 var (

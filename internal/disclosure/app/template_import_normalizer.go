@@ -159,6 +159,9 @@ func NormalizeTemplateImportV1(raw TemplateImportDefinitionV1) *TemplateImportDe
 		out.ApplicabilityRules = normRules
 	}
 
+	// 14. Periodic compatibility deadline_rule from applicability (before domain validation).
+	DeriveImportCompatibilityDeadlineRule(&out)
+
 	return &out
 }
 

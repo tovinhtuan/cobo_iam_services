@@ -38,6 +38,22 @@ func buildResolvedDeadlineRuleDTO(
 	return dto
 }
 
+// buildResolvedDeadlineRulePendingProfileDTO signals applicability is present but
+// company profile could not be loaded — Portal shows company-config fallback.
+func buildResolvedDeadlineRulePendingProfileDTO(
+	periodicity string,
+	deadlineConfig *TemplateDeadlineConfig,
+) *ResolvedDeadlineRuleDTO {
+	dto := &ResolvedDeadlineRuleDTO{
+		ResolutionSource: applicability.ResolutionSourceCompanyProfileRequired,
+		Periodicity:      strings.TrimSpace(periodicity),
+	}
+	if deadlineConfig != nil && deadlineConfig.DeadlineMode == DeadlineModePeriodic {
+		dto.BaseDateSource = BaseDateSourceCycleStart
+	}
+	return dto
+}
+
 func attachResolvedDueDate(rule *ResolvedDeadlineRuleDTO, summary *DeadlineSummaryDTO) {
 	if rule == nil || summary == nil || summary.DeadlineDate == nil {
 		return

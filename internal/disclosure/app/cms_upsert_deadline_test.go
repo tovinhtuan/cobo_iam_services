@@ -13,7 +13,8 @@ import (
 // upsertDeadlineRepo stubs the minimal Repository methods needed for UpsertTypeVersion.
 type upsertDeadlineRepo struct {
 	Repository
-	upsertCalled bool
+	upsertCalled   bool
+	lastDeadlineRule string
 }
 
 func (r *upsertDeadlineRepo) ListActiveDeadlineRuleCatalog(_ context.Context) ([]DeadlineRuleCatalogDTO, error) {
@@ -26,6 +27,7 @@ func (r *upsertDeadlineRepo) ListDisplayGroups(_ context.Context) ([]DisplayGrou
 
 func (r *upsertDeadlineRepo) UpsertTypeVersion(_ context.Context, req UpsertTypeVersionRequest) (*UpsertTypeVersionResponse, error) {
 	r.upsertCalled = true
+	r.lastDeadlineRule = req.DeadlineRule
 	return &UpsertTypeVersionResponse{TypeID: req.TypeID, VersionNo: 1, IsActive: true, UpdatedBy: req.Subject.UserID}, nil
 }
 
@@ -79,34 +81,43 @@ func baseUpsertRequest() UpsertTypeVersionRequest {
 	}
 }
 
-// TestUpsertTypeVersion_AcceptsFreeTextDeadlineRule verifies display-only free text is allowed.
-func TestUpsertTypeVersion_AcceptsFreeTextDeadlineRule(t *testing.T) {
+// TestUpsertTypeVersion_PeriodicDerivesCompatibilityFromApplicability verifies
+// free-text / stale deadline_rule is overwritten by T+{deadline_days}.
+func TestUpsertTypeVersion_PeriodicDerivesCompatibilityFromApplicability(t *testing.T) {
 	repo := &upsertDeadlineRepo{}
 	svc := newCMSUpsertDeadlineService(repo)
 
 	req := baseUpsertRequest()
 	req.DeadlineRule = "Trong vòng tối đa 20 ngày kể từ ngày kết thúc quý"
+	req.ApplicabilityRules.DeadlineDays = 20
 
 	resp, err := svc.UpsertTypeVersion(context.Background(), req)
 	if err != nil {
-		t.Fatalf("unexpected error for free-text deadline_rule: %v", err)
+		t.Fatalf("unexpected error: %v", err)
 	}
 	if resp.TypeID != req.TypeID {
 		t.Errorf("type_id=%s want %s", resp.TypeID, req.TypeID)
 	}
+	if repo.lastDeadlineRule != "T+20" {
+		t.Fatalf("expected derived compatibility T+20 persisted, got %q", repo.lastDeadlineRule)
+	}
 	if !repo.upsertCalled {
-		t.Error("UpsertTypeVersion should be called for free-text display deadline_rule")
+		t.Error("UpsertTypeVersion should be called")
 	}
 }
 
 // TestUpsertTypeVersion_RejectsInvalidDeadlineRuleFormat is retained as legacy name;
-// free-form text that previously failed catalog match must now be accepted.
+// free-form text that previously failed catalog match must now be accepted for irregular.
 func TestUpsertTypeVersion_RejectsInvalidDeadlineRuleFormat(t *testing.T) {
 	repo := &upsertDeadlineRepo{}
 	svc := newCMSUpsertDeadlineService(repo)
 
 	req := baseUpsertRequest()
 	req.DeadlineRule = "5 ngay khong hop le"
+	req.TemplateCategory = TemplateCategoryIrregular
+	req.Periodicity = PeriodicityEventBased
+	req.DeadlineStrategy = DeadlineStrategyEventHours
+	req.ApplicabilityRules = applicability.DefaultGlobalRules(false)
 
 	_, err := svc.UpsertTypeVersion(context.Background(), req)
 	if err != nil {

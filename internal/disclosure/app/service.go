@@ -673,6 +673,8 @@ func (s *service) GetTypeDetail(ctx context.Context, req GetTypeDetailRequest) (
 			item.ResolvedDeadlineRule = buildResolvedDeadlineRuleDTO(
 				item.ApplicabilityRules, companyProfile, item.Periodicity, item.DeadlineConfig,
 			)
+		} else {
+			item.ResolvedDeadlineRule = buildResolvedDeadlineRulePendingProfileDTO(item.Periodicity, item.DeadlineConfig)
 		}
 	}
 
@@ -857,6 +859,8 @@ func (s *service) UpsertTypeVersion(ctx context.Context, req UpsertTypeVersionRe
 		return nil, err
 	}
 	req.DisplayGroupCodes = normalizeDisplayGroupCodes(req.DisplayGroupCodes)
+	// Periodic CMS upsert: derive deadline_rule from applicability before matrix requires it.
+	EnsureCompatibilityDeadlineRule(&req)
 	if !req.SkipPublicationMatrix {
 		validateFn := validateTemplateMatrix
 		if req.Scope == templateScopeGlobal {

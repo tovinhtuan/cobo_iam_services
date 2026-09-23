@@ -74,13 +74,27 @@ func ValidateImportTemplate(
 		})
 	}
 
-	if template.DeadlineRule == "" {
+	if template.TemplateCategory == TemplateCategoryIrregular && template.DeadlineRule == "" {
 		errors = append(errors, TemplateImportValidationIssueDTO{
-			Code:      "DEADLINE_RULE_REQUIRED",
-			FieldPath: "template.deadline_rule",
-			Severity:  ValidationSeverityBlocker,
-			Message:   "Quy tắc thời hạn (deadline_rule) là bắt buộc.",
-			SuggestedAction: "Nhập quy tắc thời hạn (ví dụ: 'T+5' hoặc 'Trong vòng 20 ngày kể từ khi kết thúc quý.').",
+			Code:            "DEADLINE_RULE_REQUIRED",
+			FieldPath:       "template.deadline_rule",
+			Severity:        ValidationSeverityBlocker,
+			Message:         "Quy tắc thời hạn (deadline_rule) là bắt buộc đối với template bất thường.",
+			SuggestedAction: "Nhập mô tả kỳ hạn sự kiện (ví dụ: 'Trong vòng 24 giờ kể từ sự kiện').",
+		})
+	}
+	// Periodic: deadline_rule is optional at input; derived from applicability.deadline_days in normalize.
+	// When applicability_rules is present but deadline_days missing/zero → fail at applicability (do not invent from raw).
+	// When applicability_rules omitted, confirm injects DefaultGlobalRules (must carry deadline_days > 0).
+	if template.TemplateCategory == TemplateCategoryPeriodic &&
+		template.ApplicabilityRules != nil &&
+		template.ApplicabilityRules.DeadlineDays <= 0 {
+		errors = append(errors, TemplateImportValidationIssueDTO{
+			Code:            "APPLICABILITY_DEADLINE_DAYS_REQUIRED",
+			FieldPath:       "template.applicability_rules.deadline_days",
+			Severity:        ValidationSeverityBlocker,
+			Message:         "Số ngày thời hạn (applicability_rules.deadline_days) phải lớn hơn 0 đối với template định kỳ.",
+			SuggestedAction: "Cấu hình deadline_days trong phạm vi áp dụng; hệ thống sẽ derive deadline_rule = T+{deadline_days}.",
 		})
 	}
 

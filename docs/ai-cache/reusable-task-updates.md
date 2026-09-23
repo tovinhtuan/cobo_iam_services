@@ -1,4 +1,45 @@
-﻿## Portal company-resolved deadline display — DEV smoke PASS (2026-09-22)
+﻿## Re-smoke DEV — CMS remove Deadline Rules (2026-09-23)
+
+- Pack: `cms-deadline-rules-dev-smoke-2026-09-23/README.md` + `re-smoke-report.md`
+- FE artifact: `index-D5jI2hEe.js` (commit `e75212ca`); Platform CMS OK
+- CMS UI: no Deadline Rules tab; periodic applicability editor PASS
+- Import validate A–E live PASS (derive T+20; reject days≤0; legacy soft; irregular no T+N)
+- Portal Company X 30d PASS; Company B / missing-profile BLOCKED (fixture)
+- Verdict: **CONDITIONAL GO**; NO commit/push; app source untouched in QA cycle
+
+## Smoke QA DEV — CMS Deadline Rules (2026-09-23)
+
+- Pack: `cms-deadline-rules-dev-smoke-2026-09-23/README.md`
+- Account: Company Admin → CMS **forbidden**; FE bundle `index-DWmk2Tu6.js` (22/09) still has `Deadline Rules`
+- Portal structure A PASS (30d + Có công ty con); irregular PASS; Import/CMS/structure B BLOCKED
+- Verdict: **NO-GO production**; NO commit/push/deploy
+
+## CMS remove Deadline Rules — post-verify + import boundary (2026-09-23)
+
+- Report: `cms-remove-deadline-rules-postverify-2026-09-23.md`
+- Phase 0 audit: no MISMATCH vs implementation summary; company-template/catalog DB untouched
+- Import soft boundary locked + expanded tests PASS; legacy omit rules kept
+- Browser: Portal structure resolve PASS on DEV; CMS UI/Import smoke BLOCKED (FE not deployed; no CMS session)
+- Full `npm test` 21 fail pre-existing (adhoc); focused deadline/CMS 108 PASS; BE + docker api PASS
+- Verdict: CONDITIONAL GO; NO commit/push/deploy
+
+## CMS remove Deadline Rules — implementation (2026-09-23)
+
+- Summary: `cms-remove-deadline-rules-implementation-2026-09-23.md`
+- Slices 1–5: CMS UI tab/textarea removed; FE/BE derive `T+{deadline_days}`; Portal company-config fallback; import derive-before-validate
+- Soft import: days required only when `applicability_rules` present; omit-rules path unchanged
+- Verify: FE vitest focused PASS; `npm run build` PASS; `go test ./internal/disclosure/...` PASS; docker api build PASS
+- NO commit/push/deploy
+
+## CMS remove Deadline Rules UI — implementation plan (2026-09-23)
+
+- Plan only (no code): `cms-remove-deadline-rules-ui-implementation-plan-2026-09-23.md`
+- Remove CMS tab + template `deadline_rule` textarea; Portal SoT = applicability → `resolved_deadline_rule`
+- Phases: FE UI → BE compatibility derive → optional matrix → catalog drop later
+- PO locks needed: irregular textarea policy; FE-only Phase 1 vs BE Ensure timing
+- NO commit/push
+
+## Portal company-resolved deadline display — DEV smoke PASS (2026-09-22)
 
 - Report: `portal-resolved-deadline-display-dev-smoke-2026-09-22.md`
 - Closeout: same Template A/B `resolved_days` 30 vs 20 (`STRUCTURE_OVERRIDE`); List/Detail parity; isolation B→A no stale

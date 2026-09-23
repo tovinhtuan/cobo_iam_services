@@ -43,7 +43,7 @@
     "TemplateDefinitionV1": {
       "type": "object",
       "description": "Core template business specification.",
-      "required": ["name", "template_category", "deadline_rule"],
+      "required": ["name", "template_category"],
       "additionalProperties": false,
       "properties": {
         "type_id": {
@@ -83,8 +83,7 @@
         },
         "deadline_rule": {
           "type": "string",
-          "minLength": 1,
-          "description": "Human-readable deadline rule string (e.g. 'Trong vòng 20 ngày kể từ khi kết thúc quý.', 'T+5')."
+          "description": "Optional for periodic (server derives T+{applicability_rules.deadline_days}). Required for irregular free-text event description."
         },
         "periodicity": {
           "type": "string",

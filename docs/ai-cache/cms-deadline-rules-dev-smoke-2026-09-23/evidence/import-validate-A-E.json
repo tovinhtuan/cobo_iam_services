@@ -1,0 +1,48 @@
+[
+  {
+    "case": "A",
+    "verdict": "PASS",
+    "http": 200,
+    "parse_valid": true,
+    "domain_valid": true,
+    "deadline_rule": "T+20",
+    "notes": "derive from days=20; mapping warnings only"
+  },
+  {
+    "case": "B",
+    "verdict": "PASS",
+    "http": 200,
+    "parse_valid": true,
+    "domain_valid": true,
+    "deadline_rule": "T+20",
+    "notes": "raw T+99 overwritten to T+20"
+  },
+  {
+    "case": "C",
+    "verdict": "PASS",
+    "http": 200,
+    "parse_valid": true,
+    "domain_valid": false,
+    "error": "APPLICABILITY_DEADLINE_DAYS_REQUIRED",
+    "field": "template.applicability_rules.deadline_days",
+    "notes": "reject; no confirm"
+  },
+  {
+    "case": "D",
+    "verdict": "PASS",
+    "http": 200,
+    "parse_valid": true,
+    "domain_valid": true,
+    "deadline_rule": "T+20",
+    "notes": "legacy soft compat omit applicability; keep raw rule"
+  },
+  {
+    "case": "E",
+    "verdict": "PASS",
+    "http": 200,
+    "parse_valid": true,
+    "domain_valid": true,
+    "deadline_rule": "Trong vòng 24 giờ kể từ sự kiện",
+    "notes": "irregular no T+N derive"
+  }
+]
