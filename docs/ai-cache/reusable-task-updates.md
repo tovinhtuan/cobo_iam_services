@@ -1,4 +1,14 @@
-﻿## CMS Publishing nav removal (2026-09-24)
+﻿## DisclosureTypeList responsive card layout (2026-09-24)
+
+- FE only (`cobo_web_design`): quick-filter breakpoint `lg` → `xl` (<1280 chips / ≥1280 sidebar)
+- Card: `xl` 3-col `[1fr_280px_32px]`; tablet `md` 2-row (`content` col-span-2 + deadline+action); mobile 1-col
+- CTA: outer Link `aria-label`; “Xem chi tiết” text `xl:inline-block`; chevron always
+- Focused vitest DisclosureTypeList*: **31 PASS**; build PASS; lint: no DisclosureTypeList errors
+- Full FE: 70 fail / 2385 pass — pre-existing, none in DisclosureTypeList*
+- DEV FE deploy PASS; Visual QA DOM metrics 1440/1280/1024/768/390 PASS (1024 contentW≈668px; screenshot tool timeout)
+- NO commit/push/PR
+
+## CMS Publishing nav removal (2026-09-24)
 
 - FE: hide sidebar group “Xuất bản” by default (`VITE_CMS_LEGACY_PUBLISHING_NAV=false`)
 - Legacy routes `/cms/publishing/{review,schedule,releases}` kept with deprecation banner
