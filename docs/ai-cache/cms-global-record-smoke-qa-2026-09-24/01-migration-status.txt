@@ -1,0 +1,17 @@
+mysql: [Warning] Using a password on the command line interface can be insecure.
+file_name	executed_at
+0142_cms_global_records.up.sql	2026-09-24 07:14:09
+0143_cms_global_record_id_width.up.sql	2026-09-24 07:30:34
+COLUMN_NAME	CHARACTER_MAXIMUM_LENGTH
+id	64
+cms_record_id	64
+permission_code
+cms.record.materialize
+cms.record.publish
+cms.record.read
+cms.record.write
+smoke_children
+4
+status	c
+NotStarted	3
+PendingReview	1

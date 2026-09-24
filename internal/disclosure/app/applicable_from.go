@@ -235,6 +235,18 @@ func slotStartDate(frequencyUnit, slot string) (time.Time, error) {
 	}
 }
 
+// SlotStartDateForEligibility exposes slot→T mapping for Global CMS materialize eligibility.
+func SlotStartDateForEligibility(frequencyUnit, slot string, loc *time.Location) (time.Time, error) {
+	t, err := slotStartDate(frequencyUnit, slot)
+	if err != nil {
+		return time.Time{}, err
+	}
+	if loc == nil {
+		return t, nil
+	}
+	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, loc), nil
+}
+
 // PrepareApplicableFromForDraftWrite normalizes authoring fields for Upsert/Save Draft.
 // Does NOT freeze CURRENT/NEXT. Legacy untouched stays empty.
 // Frozen-relative (CURRENT/NEXT + concrete slot after Activate) is a first-class state:

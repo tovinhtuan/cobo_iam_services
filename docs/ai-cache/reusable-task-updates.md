@@ -1,4 +1,41 @@
-﻿## Re-smoke DEV — CMS remove Deadline Rules (2026-09-23)
+﻿## CMS Global Record — gaps closed + DEV smoke (2026-09-24)
+
+- Summary: `cms-global-record-implementation-summary-2026-09-24.md`
+- Contract: `cms-global-record-api-contract-2026-09-24.md` (eligibility + NotStarted + 0143)
+- DEV: migration **0142** + **0143** applied; BE/FE redeployed
+- Status: materialized company storage=`NotStarted`; legacy Draft unchanged; Submit accepts both
+- Eligibility: active + entitlement + applicability + auto_create + applicable_from/to; shared preview/actual
+- Smoke evidence: `cms-global-record-smoke-qa-2026-09-24/` — **PASS** (create/publish/preview/materialize/idempotent/submit→queue; global not in queue)
+- Verify: platformcms+disclosure+authorization tests PASS; docker api build PASS; FE focused vitest PASS (8)
+- NO commit/push/PR
+
+## CMS Global Record — implement v3 slices T1–T15 (2026-09-24)
+
+- Summary: `cms-global-record-implementation-summary-2026-09-24.md`
+- BE: migration 0142 + Global Record service/handlers; reviews = company PendingReview only
+- FE: Template history tab + `/cms/records/:id` + materialize UI; legacy entries nav flag
+- Verify: docker api build PASS; platformcms tests PASS; FE build PASS; focused vitest PASS
+- NO commit/push/PR
+
+## CMS Global Record — plan v3 direct-publish (2026-09-24)
+
+- Rewrote: `cms-template-record-history-implementation-plan-2026-09-24.md` → **v3**
+- Global lifecycle: `Draft → Published → Archived` (no PendingReview / submit / approve / global queue)
+- Admin CMS **Phát hành** = direct publish; company workflow duyệt riêng
+- Perms: `cms.record.publish` / `materialize`; not `disclosure.approve`
+- cycle_key prefix + HCM; materialize manual when Published; tasks T0–T12
+- NO code / migration / commit
+
+## CMS Global Record + Company Processing — plan v2 (2026-09-24) — SUPERSEDED by v3
+
+- v2 assumed Global PendingReview + approve APIs — replaced by direct-publish in v3
+
+## CMS Template → Record history — implementation plan (2026-09-24) — SUPERSEDED by v2 above
+
+- Original v1 assumptions (company-scoped history by type_id) **replaced** by Global CMS Record model in same file
+- Keep for history only; do not implement v1 as written
+
+## Re-smoke DEV — CMS remove Deadline Rules (2026-09-23)
 
 - Pack: `cms-deadline-rules-dev-smoke-2026-09-23/README.md` + `re-smoke-report.md`
 - FE artifact: `index-D5jI2hEe.js` (commit `e75212ca`); Platform CMS OK

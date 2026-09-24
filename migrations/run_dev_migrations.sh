@@ -141,6 +141,8 @@ seed_dev_identity_authorization.sql
 0139_workflow_step_comments.up.sql
 0140_workflow_step_comment_mentions.up.sql
 0141_disclosure_type_archive_metadata.up.sql
+0142_cms_global_records.up.sql
+0143_cms_global_record_id_width.up.sql
 seed_dev_company_subscriptions.sql
 "
 

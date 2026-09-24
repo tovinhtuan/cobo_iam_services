@@ -20,6 +20,7 @@ import (
 	marketapp "github.com/cobo/cobo_iam_services/internal/marketreference/app"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 	"github.com/cobo/cobo_iam_services/internal/platform/httpx"
+	"github.com/cobo/cobo_iam_services/internal/platform/idgen"
 	platformcmsapp "github.com/cobo/cobo_iam_services/internal/platformcms/app"
 	"github.com/cobo/cobo_iam_services/internal/subscription/companyplan"
 )
@@ -37,6 +38,7 @@ type Handler struct {
 	listedCompanies        *marketapp.Service
 	alertConfigSvc         platformcmsapp.AlertConfigService
 	subscriptionUpgradeSvc platformcmsapp.SubscriptionUpgradePaymentService
+	globalRecordsSvc       *platformcmsapp.Service
 	upgradePaymentDB       *sql.DB
 	companyPlanRepo        companyplan.Repository
 	mediaRepo              cmsMediaRepository
@@ -83,8 +85,38 @@ func NewHandler(inspector iamapp.TokenInspector, authorizer authapp.Service, adm
 			platformcmsapp.NewMySQLSubscriptionUpgradePaymentRepository(mediaOpts.DB),
 			mediaStorage,
 		)
+		h.globalRecordsSvc = platformcmsapp.NewGlobalRecordsService(
+			platformcmsapp.NewMySQLGlobalRecordsRepository(mediaOpts.DB, nil),
+			uuidIDGen{},
+			nil,
+			h.permissionChecker(),
+		)
 	}
 	return h
+}
+
+type uuidIDGen struct{}
+
+func (uuidIDGen) NewID(prefix string) string {
+	return prefix + "_" + idgen.UUIDv7Generator{}.NewUUID()
+}
+
+func (h *Handler) permissionChecker() platformcmsapp.PermissionChecker {
+	return func(ctx context.Context, membershipID, companyID string, permissions ...string) error {
+		if len(permissions) == 0 {
+			return nil
+		}
+		eff, err := h.authorizer.GetEffectiveAccess(ctx, membershipID, companyID)
+		if err != nil {
+			return err
+		}
+		for _, need := range permissions {
+			if !hasAnyPermission(eff.Permissions, need) {
+				return perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "access denied", nil)
+			}
+		}
+		return nil
+	}
 }
 
 // WithCompanyPlanRepository wires Case C writer/reader for CMS company-plan activation.
@@ -152,6 +184,14 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/platform/cms/market/listed-companies/{symbol}", h.observe("cms.market.listed_companies.get", h.getListedCompany))
 	mux.HandleFunc("GET /api/v1/platform/cms/templates/{typeId}/alert-config", h.observe("cms.templates.alert_config.get", h.getAlertConfig))
 	mux.HandleFunc("PUT /api/v1/platform/cms/templates/{typeId}/alert-config", h.observe("cms.templates.alert_config.put", h.putAlertConfig))
+	mux.HandleFunc("GET /api/v1/platform/cms/templates/{template_id}/records", h.observe("cms.global_records.list", h.listTemplateGlobalRecords))
+	mux.HandleFunc("POST /api/v1/platform/cms/templates/{template_id}/records", h.observe("cms.global_records.create", h.createTemplateGlobalRecord))
+	mux.HandleFunc("GET /api/v1/platform/cms/records/{record_id}", h.observe("cms.global_records.get", h.getGlobalRecord))
+	mux.HandleFunc("PUT /api/v1/platform/cms/records/{record_id}", h.observe("cms.global_records.update", h.updateGlobalRecord))
+	mux.HandleFunc("POST /api/v1/platform/cms/records/{record_id}/publish", h.observe("cms.global_records.publish", h.publishGlobalRecord))
+	mux.HandleFunc("POST /api/v1/platform/cms/records/{record_id}/archive", h.observe("cms.global_records.archive", h.archiveGlobalRecord))
+	mux.HandleFunc("GET /api/v1/platform/cms/records/{record_id}/company-records", h.observe("cms.global_records.company_records", h.listGlobalRecordCompanyRecords))
+	mux.HandleFunc("POST /api/v1/platform/cms/records/{record_id}/materialize", h.observe("cms.global_records.materialize", h.materializeGlobalRecord))
 }
 
 func ensureListedCompaniesService(svc *marketapp.Service) *marketapp.Service {
@@ -520,9 +560,10 @@ func (h *Handler) reviews(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := make([]map[string]any, 0)
+	// Company Workflow Queue only: PendingReview (and legacy Submitted). Never Global CMS Records.
 	for _, item := range items {
 		state := strings.ToLower(strings.TrimSpace(item.Status))
-		if state != "published" && state != "submitted" {
+		if state != "pendingreview" && state != "submitted" {
 			continue
 		}
 		out = append(out, map[string]any{
@@ -531,6 +572,7 @@ func (h *Handler) reviews(w http.ResponseWriter, r *http.Request) {
 			"status":     item.Status,
 			"type_id":    item.TypeID,
 			"updated_at": item.UpdatedAt.UTC().Format(timeLayout),
+			"queue":      "company_workflow",
 		})
 	}
 	writeEnvelope(w, http.StatusOK, map[string]any{"items": out}, map[string]any{"total": len(out)})

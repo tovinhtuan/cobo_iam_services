@@ -1,0 +1,18 @@
+{
+  "status": 201,
+  "body": {
+    "data": {
+      "id": "cms_rec_01a0d256-ecfc-7974-8063-c2cfe96f3cf1",
+      "template_id": "bang-tinh-luong-nhan-vien-ban-sao-2",
+      "cycle_key": "monthly:2026-09",
+      "title": "SMOKE-GLOBAL-CMS-2026-09-24",
+      "summary": "smoke global cms",
+      "content": "<p>SMOKE-GLOBAL-CMS-2026-09-24 content</p>",
+      "status": "Draft",
+      "created_by": "u_platform_tenant_admin",
+      "updated_by": "u_platform_tenant_admin",
+      "created_at": "2026-09-24T07:35:07.260616712Z",
+      "updated_at": "2026-09-24T07:35:07.260616712Z"
+    }
+  }
+}

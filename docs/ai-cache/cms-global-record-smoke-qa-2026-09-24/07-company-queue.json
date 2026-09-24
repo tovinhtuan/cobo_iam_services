@@ -1,0 +1,126 @@
+{
+  "status": 200,
+  "body": {
+    "data": {
+      "items": [
+        {
+          "entry_id": "01a0d256-f03b-7c94-b327-ffcf60c1848a",
+          "queue": "company_workflow",
+          "status": "PendingReview",
+          "title": "SMOKE-GLOBAL-CMS-2026-09-24",
+          "type_id": "bang-tinh-luong-nhan-vien-ban-sao-2",
+          "updated_at": "2026-09-24T07:35:08Z"
+        },
+        {
+          "entry_id": "52698f3f-53c0-53e7-9e40-d99f90774f41",
+          "queue": "company_workflow",
+          "status": "PendingReview",
+          "title": "QA Resmoke Irregular Alert 20260904A",
+          "type_id": "qa-irregular-alert-20260904a",
+          "updated_at": "2026-09-20T02:03:41Z"
+        },
+        {
+          "entry_id": "01a0ba9c-5ced-76ec-9c5f-165a21c744b4",
+          "queue": "company_workflow",
+          "status": "PendingReview",
+          "title": "QA DEF006 Milestones 20260904213636 — 2026-09-20",
+          "type_id": "qa-def006-ms-20260904213636",
+          "updated_at": "2026-09-20T08:52:04Z"
+        },
+        {
+          "entry_id": "01a0b41c-425c-7b36-bfe4-9e0b53082e78",
+          "queue": "company_workflow",
+          "status": "PendingReview",
+          "title": "",
+          "type_id": "",
+          "updated_at": "2026-09-18T10:44:25Z"
+        },
+        {
+          "entry_id": "01a0b250-bf29-75a9-8fa9-5c4af94fada1",
+          "queue": "company_workflow",
+          "status": "PendingReview",
+          "title": "QA Evidence Recovery E2E 20260918 — precommit-1789698031368",
+          "type_id": "qa-evidence-recovery-e2e-20260918",
+          "updated_at": "2026-09-18T02:20:31Z"
+        },
+        {
+          "entry_id": "01a0b22c-bad3-7cb3-b3f6-a4491db648e3",
+          "queue": "company_workflow",
+          "status": "PendingReview",
+          "title": "QA Evidence Recovery scoped 1789695670956",
+          "type_id": "qa-evidence-recovery-e2e-20260918",
+          "updated_at": "2026-09-18T01:41:11Z"
+        },
+        {
+          "entry_id": "01a0b22c-3647-7dde-9564-234f1f420aaa",
+          "queue": "company_workflow",
+          "status": "PendingReview",
+          "title": "QA Evidence Recovery 1789695637030",
+          "type_id": "qa-evidence-recovery-e2e-20260918",
+          "updated_at": "2026-09-18T01:40:37Z"
+        },
+        {
+          "entry_id": "01a0b22b-8a5a-7c71-a705-66ef7faacf4b",
+          "queue": "company_workflow",
+          "status": "PendingReview",
+          "title": "QA Evidence Recovery materialize 2026-09-18T01:39:52.999Z",
+          "type_id": "qa-evidence-recovery-e2e-20260918",
+          "updated_at": "2026-09-18T01:39:53Z"
+        },
+        {
+          "entry_id": "01a09ba0-4d81-7381-8924-43a32233519e",
+          "queue": "company_workflow",
+          "status": "PendingReview",
+          "title": "B2 fulfillment smoke 2026-09-13T16:36:09.114Z",
+          "type_id": "bang-tinh-luong-nhan-vien-thang",
+          "updated_at": "2026-09-13T16:36:09Z"
+        },
+        {
+          "entry_id": "01a09b6a-2dec-75b8-b931-7c640e4b76f3",
+          "queue": "company_workflow",
+          "status": "PendingReview",
+          "title": "B1 snapshot smoke 2026-09-13T15:37:02.107Z",
+          "type_id": "bang-tinh-luong-nhan-vien-thang",
+          "updated_at": "2026-09-13T15:37:02Z"
+        },
+        {
+          "entry_id": "01a06d09-6ec8-738f-9bf6-704c654bd14e",
+          "queue": "company_workflow",
+          "status": "PendingReview",
+          "title": "QA Final Focused 20260904222350 — 2026-09-04",
+          "type_id": "qa-final-focused-20260904222350",
+          "updated_at": "2026-09-04T15:36:57Z"
+        },
+        {
+          "entry_id": "01a06cb0-e3bf-7068-bedf-c429f3d98aa2",
+          "queue": "company_workflow",
+          "status": "PendingReview",
+          "title": "QA Resmoke Periodic 20260904A — 2026-09-04",
+          "type_id": "qa-resmoke-periodic-20260904a",
+          "updated_at": "2026-09-04T14:02:46Z"
+        }
+      ]
+    },
+    "meta": {
+      "total": 12
+    }
+  },
+  "submit_status": 200,
+  "submit_body": {
+    "record_id": "01a0d256-f03b-7c94-b327-ffcf60c1848a",
+    "company_id": "c_001",
+    "type_id": "bang-tinh-luong-nhan-vien-ban-sao-2",
+    "department_id": "general",
+    "title": "SMOKE-GLOBAL-CMS-2026-09-24",
+    "summary": "smoke global cms",
+    "content": "<p>SMOKE-GLOBAL-CMS-2026-09-24 content</p>",
+    "status": "PendingReview",
+    "attachments": [],
+    "workflow_instance_id": "01a0d256-f22f-78e9-8fe8-ed3345b98d3f",
+    "created_by": "u_platform_tenant_admin",
+    "updated_by": "u_platform_tenant_admin",
+    "created_at": "2026-09-24T07:35:08Z",
+    "updated_at": "2026-09-24T07:35:08Z",
+    "submitted_at": "2026-09-24T07:35:08.583Z"
+  }
+}

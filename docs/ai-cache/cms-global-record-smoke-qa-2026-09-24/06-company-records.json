@@ -1,0 +1,42 @@
+{
+  "status": 200,
+  "body": {
+    "data": {
+      "items": [
+        {
+          "company_id": "08f59da2-252c-47b3-a873-266aeb14f6dd",
+          "record_id": "01a0d256-f036-762b-a354-a6585a89bb1c",
+          "title": "SMOKE-GLOBAL-CMS-2026-09-24",
+          "status": "NotStarted",
+          "updated_at": "2026-09-24T07:35:08Z"
+        },
+        {
+          "company_id": "144ca32b-cd59-467b-aba9-9576d3b148ad",
+          "record_id": "01a0d256-f038-7670-a9a3-c162adba542d",
+          "title": "SMOKE-GLOBAL-CMS-2026-09-24",
+          "status": "NotStarted",
+          "updated_at": "2026-09-24T07:35:08Z"
+        },
+        {
+          "company_id": "bd1f02f7-2a54-4848-b0f3-b7cd9dfb9a55",
+          "record_id": "01a0d256-f03a-7504-ad98-8bf36946ab23",
+          "title": "SMOKE-GLOBAL-CMS-2026-09-24",
+          "status": "NotStarted",
+          "updated_at": "2026-09-24T07:35:08Z"
+        },
+        {
+          "company_id": "c_001",
+          "record_id": "01a0d256-f03b-7c94-b327-ffcf60c1848a",
+          "title": "SMOKE-GLOBAL-CMS-2026-09-24",
+          "status": "NotStarted",
+          "updated_at": "2026-09-24T07:35:08Z"
+        }
+      ]
+    },
+    "meta": {
+      "page": 1,
+      "page_size": 50,
+      "total": 4
+    }
+  }
+}

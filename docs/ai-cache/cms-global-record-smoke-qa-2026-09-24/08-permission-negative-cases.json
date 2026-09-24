@@ -1,0 +1,32 @@
+{
+  "update_published_status": 409,
+  "update_published_body": {
+    "error": {
+      "code": "STATE_CONFLICT",
+      "message": "only Draft global records can be updated"
+    }
+  },
+  "duplicate_create_status": 409,
+  "archive_after_smoke": 200,
+  "archive_body": {
+    "data": {
+      "id": "cms_rec_01a0d256-ecfc-7974-8063-c2cfe96f3cf1",
+      "template_id": "bang-tinh-luong-nhan-vien-ban-sao-2",
+      "cycle_key": "monthly:2026-09#archived:cms_rec_01a0d256-ecfc-7974-8063-c2cfe96f3cf1",
+      "title": "SMOKE-GLOBAL-CMS-2026-09-24",
+      "summary": "smoke global cms",
+      "content": "<p>SMOKE-GLOBAL-CMS-2026-09-24 content</p>",
+      "status": "Archived",
+      "template_version_no": 2,
+      "created_by": "u_platform_tenant_admin",
+      "updated_by": "u_platform_tenant_admin",
+      "published_by": "u_platform_tenant_admin",
+      "archived_by": "u_platform_tenant_admin",
+      "created_at": "2026-09-24T07:35:07.261Z",
+      "updated_at": "2026-09-24T07:35:08.934900336Z",
+      "published_at": "2026-09-24T07:35:07.594Z",
+      "archived_at": "2026-09-24T07:35:08.934900336Z"
+    }
+  },
+  "note": "Platform admin has cms.record.*; negatives are Published immutability + duplicate cycle_key."
+}

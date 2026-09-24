@@ -24,6 +24,12 @@ const (
 	cmsActionSubscriptionUpgradeQRUpload   = "cms.subscription_upgrade.qr.upload"
 	cmsActionSubscriptionUpgradeQRDelete   = "cms.subscription_upgrade.qr.delete"
 	cmsActionCompanyPlanActivate           = "cms.company_plan.activate"
+	cmsActionGlobalRecordCreate            = "cms_global_record.create"
+	cmsActionGlobalRecordUpdate            = "cms_global_record.update"
+	cmsActionGlobalRecordPublish           = "cms_global_record.publish"
+	cmsActionGlobalRecordArchive           = "cms_global_record.archive"
+	cmsActionMaterializationPreview        = "cms_materialization.preview"
+	cmsActionMaterializationRun            = "cms_materialization.run"
 )
 
 var cmsKnownActions = map[string]struct{}{
@@ -50,4 +56,10 @@ var cmsKnownActions = map[string]struct{}{
 	cmsActionSubscriptionUpgradeQRUpload:   {},
 	cmsActionSubscriptionUpgradeQRDelete:   {},
 	cmsActionCompanyPlanActivate:           {},
+	cmsActionGlobalRecordCreate:            {},
+	cmsActionGlobalRecordUpdate:            {},
+	cmsActionGlobalRecordPublish:           {},
+	cmsActionGlobalRecordArchive:           {},
+	cmsActionMaterializationPreview:        {},
+	cmsActionMaterializationRun:            {},
 }

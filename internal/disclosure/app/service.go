@@ -324,7 +324,7 @@ func (s *service) SubmitRecord(ctx context.Context, req SubmitRecordRequest) (*R
 			return nil, err
 		}
 	}
-	if strings.EqualFold(cur.Status, "Draft") {
+	if strings.EqualFold(cur.Status, "Draft") || strings.EqualFold(cur.Status, "NotStarted") {
 		cur.Status = "PendingReview"
 	} else {
 		cur.Status = "In Progress"
