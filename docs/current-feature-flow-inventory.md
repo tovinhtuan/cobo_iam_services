@@ -450,11 +450,12 @@ The following CMS screens are explicitly wired in FE and mapped to BE endpoints:
 | `/cms/content/entries` | entries list |
 | `/cms/content/entries/:entryId` | entry editor |
 | `/cms/content/media` | media library |
-| `/cms/publishing/review` | review queue |
-| `/cms/publishing/schedule` | schedule manager |
-| `/cms/publishing/releases` | release history |
+| `/cms/records/:recordId` | Global CMS Record detail (direct publish / materialize) |
+| `/cms/publishing/review` | **legacy** company review queue (sidebar removed 2026-09-24) |
+| `/cms/publishing/schedule` | **legacy** company schedule (sidebar removed) |
+| `/cms/publishing/releases` | **legacy** company releases (sidebar removed) |
 | `/cms/taxonomy` | taxonomy management |
-| `/cms/templates` | disclosure template management |
+| `/cms/templates` | disclosure template management + Global CMS record history |
 | `/cms/admin/companies` | companies list |
 | `/cms/admin/companies/:companyId` | company detail |
 | `/cms/admin/users` | platform users and memberships |

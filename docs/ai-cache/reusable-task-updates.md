@@ -1,4 +1,14 @@
-﻿## CMS Global Record — gaps closed + DEV smoke (2026-09-24)
+﻿## CMS Publishing nav removal (2026-09-24)
+
+- FE: hide sidebar group “Xuất bản” by default (`VITE_CMS_LEGACY_PUBLISHING_NAV=false`)
+- Legacy routes `/cms/publishing/{review,schedule,releases}` kept with deprecation banner
+- BE APIs reviews/schedules/releases unchanged (company-scoped)
+- Global publish remains on Template History / Global CMS Record detail
+- Smoke: `cms-publishing-nav-removal-smoke-qa-2026-09-24/` — **PASS** (A–F)
+- DEV FE deploy PASS; healthz/readyz PASS
+- NO commit/push/PR
+
+## CMS Global Record — gaps closed + DEV smoke (2026-09-24)
 
 - Summary: `cms-global-record-implementation-summary-2026-09-24.md`
 - Contract: `cms-global-record-api-contract-2026-09-24.md` (eligibility + NotStarted + 0143)

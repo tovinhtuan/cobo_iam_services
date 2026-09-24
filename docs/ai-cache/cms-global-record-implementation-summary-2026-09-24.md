@@ -1,14 +1,27 @@
 # Global CMS Record — implementation summary (2026-09-24)
 
 ```text
-task type: cross-repo implement + gap close + DEV smoke
+task type: cross-repo implement + gap close + publishing-nav removal + DEV smoke
 skill: integration-cross-repo + backend-api-contract + backend-db-migration-safe + premerge-system-review
-status: gaps closed; DEV smoke PASS (API)
+status: gaps closed; publishing CMS nav hidden; DEV smoke PASS
 ```
 
 ## Objective
 
 Independent Global CMS Record (`Draft → Published → Archived`) with history-by-template, direct publish, manual materialize to Company Processing Records. Preserve legacy `/entries` company semantics.
+
+## Publishing nav removal (2026-09-24 follow-up)
+
+| Thành phần | Quyết định |
+|---|---|
+| Sidebar group “Xuất bản” | **Bỏ khỏi CMS nav** (default) |
+| Review / schedule / releases routes | **Giữ** deep-link + deprecation banner |
+| Backend APIs reviews/schedules/releases | **Giữ** (company-scoped semantics unchanged) |
+| Legacy flag | `VITE_CMS_LEGACY_PUBLISHING_NAV=true` hiện lại nav (DEV only) |
+| Global publish UX | Template History + Global Record detail |
+| Smoke | `docs/ai-cache/cms-publishing-nav-removal-smoke-qa-2026-09-24/` **PASS** |
+
+Invariant: Admin CMS publish Global CMS Record ≠ Company approve/publish Company Processing Record.
 
 ## Current → target (gap close)
 
@@ -19,6 +32,7 @@ Independent Global CMS Record (`Draft → Published → Archived`) with history-
 | Legacy Portal create | `Draft` | Unchanged `Draft` |
 | Eligibility | `companies.status=active` only | active + entitlement ACTIVE/TRIAL + applicability + auto_create_enabled + applicable_from/to (HCM) |
 | Preview reasons | active/inactive only | Stable reason codes + VI labels |
+| CMS “Xuất bản” nav | Visible | **Hidden by default** |
 
 ## Status policy (final)
 
