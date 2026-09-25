@@ -9,6 +9,7 @@ import (
 	authinmem "github.com/cobo/cobo_iam_services/internal/authorization/infra/inmemory"
 	disclosureapp "github.com/cobo/cobo_iam_services/internal/disclosure/app"
 	workflowapp "github.com/cobo/cobo_iam_services/internal/workflow/app"
+	"github.com/cobo/cobo_iam_services/internal/workflowdept"
 )
 
 type stubRepo struct {
@@ -19,6 +20,7 @@ type stubRepo struct {
 	reportGroups      []DeadlineAlertFilterOptionDTO
 	adminAvailable    bool
 	adminAvailableSet bool
+	openMappings      []workflowdept.OpenMapping
 	nextAlertCycles   []NextAlertCycleRow
 	listNextCalls     int
 }
@@ -46,6 +48,10 @@ func (s *stubRepo) HasActiveEnterpriseAdmin(_ context.Context, _ string) (bool, 
 		return s.adminAvailable, nil
 	}
 	return false, nil
+}
+
+func (s *stubRepo) ListOpenDepartmentMappings(_ context.Context, _ string, _ time.Time) ([]workflowdept.OpenMapping, error) {
+	return s.openMappings, nil
 }
 
 func (s *stubRepo) ListTemplateDepartments(_ context.Context) ([]DeadlineAlertFilterOptionDTO, error) {
@@ -290,14 +296,14 @@ func TestListDeadlineAlerts_confirmedRecordBecomesDone(t *testing.T) {
 func TestListDeadlineAlerts_populatesActiveDepartmentsFromRow(t *testing.T) {
 	repo := &stubRepo{rows: []AlertRow{
 		{
-			CompanyID:               "c1",
-			RecordID:                "r-live",
-			Title:                   "Live",
-			RecordStatus:            "submitted",
-			PlannedDate:             "2026-06-10",
-			CurrentStepCode:         "focal_confirm",
-			CurrentStepDepartment:   "Phòng CBTT",
-			CurrentStepName:         "Phòng ban lập hồ sơ",
+			CompanyID:             "c1",
+			RecordID:              "r-live",
+			Title:                 "Live",
+			RecordStatus:          "submitted",
+			PlannedDate:           "2026-06-10",
+			CurrentStepCode:       "focal_confirm",
+			CurrentStepDepartment: "Phòng CBTT",
+			CurrentStepName:       "Phòng ban lập hồ sơ",
 		},
 	}}
 	svc := NewService(repo, allowAuthSvc(), disclosureapp.NewDeadlineCalculator(disclosureapp.NewHolidayCalendarFileProvider("configs/non_trading_days")))
@@ -483,4 +489,3 @@ func TestListDeadlineAlertFilterOptions(t *testing.T) {
 		t.Fatalf("report groups %+v", resp.ReportGroups)
 	}
 }
-

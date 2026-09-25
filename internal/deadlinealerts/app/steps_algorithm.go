@@ -10,30 +10,31 @@ import (
 
 // StepRuntimeState is persisted per workflow instance step.
 type StepRuntimeState struct {
-	StepCode                    string
-	CompletedAt                 *time.Time
-	CompletedByMembershipID     string
-	MarkedIncompleteAt          *time.Time
+	StepCode                       string
+	CompletedAt                    *time.Time
+	CompletedByMembershipID        string
+	MarkedIncompleteAt             *time.Time
 	MarkedIncompleteByMembershipID string
-	IncompleteReason            string
-	DelayDaysApplied            int
+	IncompleteReason               string
+	DelayDaysApplied               int
 }
 
 // Company department resolution for Tenant presentation (reminder fallback facts).
 // Display-only — does not block alerts/workflow.
 const (
-	CompanyDepartmentResolutionNoConfig = "NO_CONFIG"
-	CompanyDepartmentResolutionMatched  = "MATCHED"
-	CompanyDepartmentResolutionMissing  = "MISSING"
+	CompanyDepartmentResolutionNoConfig       = "NO_CONFIG"
+	CompanyDepartmentResolutionMatched        = "MATCHED"
+	CompanyDepartmentResolutionMissing        = "MISSING"
+	CompanyDepartmentResolutionMappedInactive = "MAPPED_INACTIVE"
 
 	ReminderFallbackRecipientTypeCompanyAdmin = "COMPANY_ADMIN"
 )
 
 // DeadlineStepDTO is the API view for one workflow step on deadline detail.
 type DeadlineStepDTO struct {
-	StepCode           string   `json:"step_code"`
-	StepName           string   `json:"step_name"`
-	Order              int      `json:"order"`
+	StepCode string `json:"step_code"`
+	StepName string `json:"step_name"`
+	Order    int    `json:"order"`
 	// DepartmentID is the configured/snapshot department token (id or code).
 	DepartmentID   string `json:"department_id,omitempty"`
 	DepartmentName string `json:"department_name,omitempty"`
@@ -42,7 +43,7 @@ type DeadlineStepDTO struct {
 	// ReminderFallbackRecipientType is COMPANY_ADMIN when MISSING; empty when MATCHED/NO_CONFIG.
 	ReminderFallbackRecipientType string `json:"reminder_fallback_recipient_type,omitempty"`
 	// CompanyAdminRecipientAvailable is set when MISSING: whether ≥1 eligible admin_doanh_nghiep exists.
-	CompanyAdminRecipientAvailable *bool `json:"company_admin_recipient_available,omitempty"`
+	CompanyAdminRecipientAvailable *bool    `json:"company_admin_recipient_available,omitempty"`
 	PlannedStartDate               string   `json:"planned_start_date"`
 	PlannedEndDate                 string   `json:"planned_end_date"`
 	DurationDays                   int      `json:"duration_days"`
@@ -76,11 +77,11 @@ type ListDeadlineStepsResponse struct {
 }
 
 type MarkIncompleteStepRequest struct {
-	Subject    Subject
-	RecordID   string
-	StepCode   string
-	Reason     string
-	DelayDays  int
+	Subject   Subject
+	RecordID  string
+	StepCode  string
+	Reason    string
+	DelayDays int
 }
 
 type CompleteStepRequest struct {
@@ -100,9 +101,10 @@ type WorkflowInstanceContext struct {
 
 // ComputeDeadlineSteps builds step DTOs with sequential-unlock current detection.
 // Product contract (2026-09-19):
-//   EARLY_START_FIRST_STEP=false — step 0 stays locked until planned_start
-//   SUCCESSOR_UNLOCK_AFTER_PREDECESSOR_COMPLETION=true — after step N completes,
-//   step N+1 becomes current immediately (planned_start still used for SLA/display).
+//
+//	EARLY_START_FIRST_STEP=false — step 0 stays locked until planned_start
+//	SUCCESSOR_UNLOCK_AFTER_PREDECESSOR_COMPLETION=true — after step N completes,
+//	step N+1 becomes current immediately (planned_start still used for SLA/display).
 func ComputeDeadlineSteps(
 	ctx WorkflowInstanceContext,
 	states map[string]StepRuntimeState,

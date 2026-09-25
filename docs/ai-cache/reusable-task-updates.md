@@ -1,4 +1,21 @@
-﻿## DisclosureTypeList responsive card layout (2026-09-24)
+﻿## Workflow department binding A–C (2026-09-25)
+
+- 0144: fix unapplied ambiguous ON DUPLICATE so the file can apply; not previously in schema_migrations.
+- 0145: snapshot code backfill, trigger blocks code UPDATE and retired INSERT. DELETE remains 0144 trigger. Name updates allowed. Re-applied successfully on throwaway MySQL 8.0.
+- Mapping MySQL store + admin routes registered only when DB pool exists. Actor from access token + active admin_doanh_nghiep membership, not the body.
+- Suggestions and preflight are read-only. Auto-write stays behind WORKFLOW_DEPARTMENT_BACKFILL_WRITE_ENABLED default false.
+- Email and task flags stay off. Dispatch and task assignment untouched.
+- NO commit/push
+
+## Workflow department binding — slice started (2026-09-25)
+
+- Package `internal/workflowdept`: classify, resolve, scope hash, AES-GCM, send state helpers. Tests PASS.
+- Migration `0144`: mappings, code registry, dispatch resolutions, delete trigger on catalog codes.
+- Deadline enrich uses binding only when `WORKFLOW_DEPARTMENT_BINDING_ENABLED` is on. Default off keeps exact id/code.
+- Email flag and task flag stay off. SMTP still has no idempotency. `SEND_UNKNOWN` watchdog is a function, not wired into the reaper.
+- NO commit/push
+
+## DisclosureTypeList responsive card layout (2026-09-24)
 
 - FE only (`cobo_web_design`): quick-filter breakpoint `lg` → `xl` (<1280 chips / ≥1280 sidebar)
 - Card: `xl` 3-col `[1fr_280px_32px]`; tablet `md` 2-row (`content` col-span-2 + deadline+action); mobile 1-col

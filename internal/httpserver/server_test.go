@@ -91,6 +91,25 @@ func TestIntegration_healthz(t *testing.T) {
 	}
 }
 
+func TestMappingRoutes_NotRegisteredWithoutDB(t *testing.T) {
+	srv := httptest.NewServer(newTestHandler(t, nil))
+	defer srv.Close()
+	for _, path := range []string{
+		"/api/v1/admin/workflow-department-mappings",
+		"/api/v1/admin/workflow-department-mappings/preflight",
+		"/api/v1/admin/workflow-department-mapping-suggestions",
+	} {
+		res, err := http.Get(srv.URL + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		if res.StatusCode != http.StatusNotFound {
+			t.Fatalf("%s status=%d, want 404 when DB pool is nil", path, res.StatusCode)
+		}
+	}
+}
+
 func TestIntegration_internalReminderDispatch_requiresToken(t *testing.T) {
 	cfg := testAPIConfig()
 	cfg.InternalReminderToken = "test-internal-token"

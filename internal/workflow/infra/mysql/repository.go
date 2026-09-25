@@ -10,6 +10,7 @@ import (
 
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 	workflowapp "github.com/cobo/cobo_iam_services/internal/workflow/app"
+	"github.com/cobo/cobo_iam_services/internal/workflowdept"
 )
 
 type Repository struct {
@@ -52,12 +53,37 @@ func (r *Repository) CreateInstance(ctx context.Context, in workflowapp.Workflow
 	if err := insertDocumentRequirementSnapshotsTx(ctx, tx, in.DocumentRequirements); err != nil {
 		return nil, err
 	}
+	if err := registerSnapshotCatalogCodesTx(ctx, tx, in.Snapshot); err != nil {
+		return nil, err
+	}
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("commit create workflow instance: %w", err)
 	}
 	cp := in
 	cp.DocumentRequirements = nil
 	return &cp, nil
+}
+
+func registerSnapshotCatalogCodesTx(ctx context.Context, tx *sql.Tx, snapshot []workflowapp.StepSnapshot) error {
+	tokens := make([]string, 0, len(snapshot))
+	for _, step := range snapshot {
+		tokens = append(tokens, step.Department)
+	}
+	for _, token := range workflowdept.SnapshotCatalogTokens(tokens) {
+		_, err := tx.ExecContext(ctx, `
+			INSERT INTO workflow_template_department_code_registry (department_code)
+			SELECT department_code FROM workflow_template_departments WHERE department_code = ?
+			ON DUPLICATE KEY UPDATE department_code = department_code
+		`, token)
+		if err != nil {
+			msg := strings.ToLower(err.Error())
+			if strings.Contains(msg, "1146") || strings.Contains(msg, "doesn't exist") {
+				return nil
+			}
+			return fmt.Errorf("register snapshot catalog code: %w", err)
+		}
+	}
+	return nil
 }
 
 func (r *Repository) FindInstance(ctx context.Context, companyID, workflowInstanceID string) (*workflowapp.WorkflowInstanceDTO, error) {

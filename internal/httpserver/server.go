@@ -100,6 +100,9 @@ import (
 	wfcapp "github.com/cobo/cobo_iam_services/internal/workflowconfig/app"
 	wfcmysql "github.com/cobo/cobo_iam_services/internal/workflowconfig/infra/mysql"
 	wfchttp "github.com/cobo/cobo_iam_services/internal/workflowconfig/transport/http"
+	"github.com/cobo/cobo_iam_services/internal/workflowdept"
+	wfmysql "github.com/cobo/cobo_iam_services/internal/workflowdept/infra/mysql"
+	wfhttp "github.com/cobo/cobo_iam_services/internal/workflowdept/transport/http"
 	"github.com/cobo/cobo_iam_services/internal/workflowdoctemplate"
 	wdtinmem "github.com/cobo/cobo_iam_services/internal/workflowdoctemplate/infra/inmemory"
 	wdtmysql "github.com/cobo/cobo_iam_services/internal/workflowdoctemplate/infra/mysql"
@@ -108,12 +111,12 @@ import (
 	wffmemory "github.com/cobo/cobo_iam_services/internal/workflowfulfillment/memory"
 	wffmysql "github.com/cobo/cobo_iam_services/internal/workflowfulfillment/mysql"
 	wffhttp "github.com/cobo/cobo_iam_services/internal/workflowfulfillment/transport/http"
+	wsc "github.com/cobo/cobo_iam_services/internal/workflowstepcomments"
+	wschttp "github.com/cobo/cobo_iam_services/internal/workflowstepcomments/transport/http"
 	wse "github.com/cobo/cobo_iam_services/internal/workflowstepevidence"
 	wsememory "github.com/cobo/cobo_iam_services/internal/workflowstepevidence/memory"
 	wsemysql "github.com/cobo/cobo_iam_services/internal/workflowstepevidence/mysql"
 	wsehttp "github.com/cobo/cobo_iam_services/internal/workflowstepevidence/transport/http"
-	wsc "github.com/cobo/cobo_iam_services/internal/workflowstepcomments"
-	wschttp "github.com/cobo/cobo_iam_services/internal/workflowstepcomments/transport/http"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -808,6 +811,48 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 		}
 	}
 
+	if pool != nil {
+		mapStore := wfmysql.NewStore(pool)
+		wfhttp.Handler{
+			Session: func(r *http.Request) (wfhttp.Actor, error) {
+				raw := strings.TrimSpace(r.Header.Get("Authorization"))
+				raw = strings.TrimPrefix(raw, "Bearer ")
+				claims, err := tokenManager.InspectAccessToken(r.Context(), raw)
+				if err != nil || claims == nil || claims.CompanyID == "" || claims.MembershipID == "" {
+					if err == nil {
+						err = fmt.Errorf("missing company session")
+					}
+					return wfhttp.Actor{}, err
+				}
+				roles, err := mapStore.AdminRoles(r.Context(), claims.CompanyID, claims.MembershipID)
+				if err != nil {
+					return wfhttp.Actor{}, err
+				}
+				return wfhttp.Actor{CompanyID: claims.CompanyID, MembershipID: claims.MembershipID, Roles: roles}, nil
+			},
+			Dept: mapStore.CheckDept,
+			Code: mapStore.CodeUsable,
+			StepMatch: func(ctx context.Context, companyID, typeID, stepCode, templateCode string) error {
+				dto, err := disclosureRepo.GetEffectiveWorkflow(ctx, companyID, typeID)
+				if err != nil {
+					return err
+				}
+				for _, step := range dto.Workflow {
+					if strings.TrimSpace(stepCode) != "" && strings.TrimSpace(step.StepID) != strings.TrimSpace(stepCode) {
+						continue
+					}
+					if strings.TrimSpace(step.DepartmentID) == strings.TrimSpace(templateCode) {
+						return nil
+					}
+					if strings.TrimSpace(stepCode) != "" {
+						return workflowdept.ErrStepTokenMismatch
+					}
+				}
+				return workflowdept.ErrStepTokenMismatch
+			},
+			Store: mapStore,
+		}.Register(mux)
+	}
 	return muxRegisterHealthAndIAM(mux, log, cfg, sqlDB, iamHandler, meHandler, authHandler, disclosureHandler, workflowHandler, notificationHandler, reminderHandler, adminHandler, platformCMSHandler, wdtHandler, adhocHandler, deadlineAlertsHandler, fulfillmentHandler, evidenceHandler, commentHandler, portalDashboardHandler, personalOpsHandler)
 }
 

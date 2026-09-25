@@ -46,7 +46,8 @@ UPDATE global_workflow_steps SET
   due_rule          = step_deadline,
   processing_days   = 0;
 
--- Drop indexes on type_id before dropping the column.
+-- Drop the type foreign key before indexes that support it.
+ALTER TABLE global_workflow_steps DROP FOREIGN KEY fk_gws_type;
 ALTER TABLE global_workflow_steps DROP INDEX idx_gws_type;
 ALTER TABLE global_workflow_steps DROP INDEX idx_gws_has_workflow_check;
 

@@ -15,6 +15,7 @@ import (
 	"github.com/cobo/cobo_iam_services/internal/disclosure/app/deadlineengine"
 	disclosuremysql "github.com/cobo/cobo_iam_services/internal/disclosure/infra/mysql"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
+	"github.com/cobo/cobo_iam_services/internal/workflowdept"
 )
 
 type Repository struct {
@@ -576,6 +577,36 @@ func (r *Repository) ListCompanyDepartments(ctx context.Context, companyID strin
 
 func (r *Repository) HasActiveEnterpriseAdmin(ctx context.Context, companyID string) (bool, error) {
 	return companyorg.HasActiveEnterpriseAdmin(ctx, r.db, companyID)
+}
+
+func (r *Repository) ListOpenDepartmentMappings(ctx context.Context, companyID string, asOf time.Time) ([]workflowdept.OpenMapping, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT m.mapping_id, m.version, m.template_department_code, m.disclosure_type_id, m.step_code,
+		       m.company_department_id, COALESCE(d.department_name, ''),
+		       CASE WHEN d.department_id IS NOT NULL AND d.company_id = m.company_id AND d.status = 'active' THEN 1 ELSE 0 END,
+		       CASE WHEN d.department_id IS NOT NULL AND d.company_id = m.company_id THEN 1 ELSE 0 END
+		FROM company_workflow_department_mappings m
+		LEFT JOIN departments d ON d.department_id = m.company_department_id
+		WHERE m.company_id = ?
+		  AND m.effective_to IS NULL
+		  AND m.effective_from <= ?
+	`, companyID, asOf.UTC())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []workflowdept.OpenMapping
+	for rows.Next() {
+		var m workflowdept.OpenMapping
+		var active, same int
+		if err := rows.Scan(&m.MappingID, &m.Version, &m.TemplateDepartmentCode, &m.DisclosureTypeID, &m.StepCode, &m.CompanyDepartmentID, &m.DepartmentName, &active, &same); err != nil {
+			return nil, err
+		}
+		m.TargetActive = active == 1
+		m.TargetSameCompany = same == 1
+		out = append(out, m)
+	}
+	return out, rows.Err()
 }
 
 func (r *Repository) ListTemplateDepartments(ctx context.Context) ([]deadlinealertsapp.DeadlineAlertFilterOptionDTO, error) {

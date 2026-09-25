@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"testing"
+
+	"github.com/cobo/cobo_iam_services/internal/workflowdept"
 )
 
 func TestEnrichStepDepartmentResolution_Matched(t *testing.T) {
@@ -20,7 +22,7 @@ func TestEnrichStepDepartmentResolution_Matched(t *testing.T) {
 	resp := &ListDeadlineStepsResponse{Steps: []DeadlineStepDTO{
 		{StepCode: "s1", DepartmentID: "dept-hr", DepartmentName: "dept-hr"},
 	}}
-	if err := svc.enrichStepDepartmentNames(context.Background(), "c1", resp); err != nil {
+	if err := svc.enrichStepDepartmentNames(context.Background(), "c1", "", resp); err != nil {
 		t.Fatal(err)
 	}
 	step := resp.Steps[0]
@@ -48,7 +50,7 @@ func TestEnrichStepDepartmentResolution_MatchedByCode(t *testing.T) {
 	resp := &ListDeadlineStepsResponse{Steps: []DeadlineStepDTO{
 		{StepCode: "s1", DepartmentID: "tpl_dept_phong_nhan_su", DepartmentName: "tpl_dept_phong_nhan_su"},
 	}}
-	if err := svc.enrichStepDepartmentNames(context.Background(), "c1", resp); err != nil {
+	if err := svc.enrichStepDepartmentNames(context.Background(), "c1", "", resp); err != nil {
 		t.Fatal(err)
 	}
 	if resp.Steps[0].CompanyDepartmentResolution != CompanyDepartmentResolutionMatched {
@@ -69,7 +71,7 @@ func TestEnrichStepDepartmentResolution_MissingWithAdmin(t *testing.T) {
 	resp := &ListDeadlineStepsResponse{Steps: []DeadlineStepDTO{
 		{StepCode: "s1", DepartmentID: "tpl_dept_phong_nhan_su", DepartmentName: "tpl_dept_phong_nhan_su"},
 	}}
-	if err := svc.enrichStepDepartmentNames(context.Background(), "c1", resp); err != nil {
+	if err := svc.enrichStepDepartmentNames(context.Background(), "c1", "", resp); err != nil {
 		t.Fatal(err)
 	}
 	step := resp.Steps[0]
@@ -99,7 +101,7 @@ func TestEnrichStepDepartmentResolution_MissingZeroAdmin(t *testing.T) {
 	resp := &ListDeadlineStepsResponse{Steps: []DeadlineStepDTO{
 		{StepCode: "s1", DepartmentID: "tpl_dept_phong_nhan_su", DepartmentName: "tpl_dept_phong_nhan_su"},
 	}}
-	if err := svc.enrichStepDepartmentNames(context.Background(), "c1", resp); err != nil {
+	if err := svc.enrichStepDepartmentNames(context.Background(), "c1", "", resp); err != nil {
 		t.Fatal(err)
 	}
 	step := resp.Steps[0]
@@ -125,7 +127,7 @@ func TestEnrichStepDepartmentResolution_InactiveTreatedAsMissing(t *testing.T) {
 	resp := &ListDeadlineStepsResponse{Steps: []DeadlineStepDTO{
 		{StepCode: "s1", DepartmentID: "dept-inactive", DepartmentName: "dept-inactive"},
 	}}
-	if err := svc.enrichStepDepartmentNames(context.Background(), "c1", resp); err != nil {
+	if err := svc.enrichStepDepartmentNames(context.Background(), "c1", "", resp); err != nil {
 		t.Fatal(err)
 	}
 	if resp.Steps[0].CompanyDepartmentResolution != CompanyDepartmentResolutionMissing {
@@ -148,7 +150,7 @@ func TestEnrichStepDepartmentResolution_CatalogLabelNotCompanyMatch(t *testing.T
 	resp := &ListDeadlineStepsResponse{Steps: []DeadlineStepDTO{
 		{StepCode: "s1", DepartmentID: "tpl_dept_phong_nhan_su", DepartmentName: "tpl_dept_phong_nhan_su"},
 	}}
-	if err := svc.enrichStepDepartmentNames(context.Background(), "c1", resp); err != nil {
+	if err := svc.enrichStepDepartmentNames(context.Background(), "c1", "", resp); err != nil {
 		t.Fatal(err)
 	}
 	step := resp.Steps[0]
@@ -166,7 +168,7 @@ func TestEnrichStepDepartmentResolution_NoConfig(t *testing.T) {
 	resp := &ListDeadlineStepsResponse{Steps: []DeadlineStepDTO{
 		{StepCode: "s1", DepartmentID: "", DepartmentName: ""},
 	}}
-	if err := svc.enrichStepDepartmentNames(context.Background(), "c1", resp); err != nil {
+	if err := svc.enrichStepDepartmentNames(context.Background(), "c1", "", resp); err != nil {
 		t.Fatal(err)
 	}
 	step := resp.Steps[0]
@@ -196,5 +198,43 @@ func TestCompanyDepartmentTokenMatched(t *testing.T) {
 	}
 	if companyDepartmentTokenMatched(depts, "") {
 		t.Fatal("empty")
+	}
+}
+
+func TestEnrichBindingOn_CatalogCodeDoesNotExactMatchCompanyCode(t *testing.T) {
+	t.Setenv(workflowdept.EnvBindingEnabled, "true")
+	repo := &stubRepo{
+		departments: []DeadlineAlertFilterOptionDTO{
+			{ID: "uuid-legal", Code: "dept-001", Name: "Pháp chế"},
+		},
+		templateDepts: []DeadlineAlertFilterOptionDTO{
+			{ID: "dept-001", Code: "dept-001", Name: "Phòng Pháp chế"},
+		},
+		adminAvailable: true, adminAvailableSet: true,
+	}
+	svc := &service{repo: repo}
+	resp := &ListDeadlineStepsResponse{Steps: []DeadlineStepDTO{
+		{StepCode: "s1", DepartmentID: "dept-001", DepartmentName: "dept-001"},
+	}}
+	if err := svc.enrichStepDepartmentNames(context.Background(), "c1", "type-a", resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.Steps[0].CompanyDepartmentResolution != CompanyDepartmentResolutionMissing {
+		t.Fatalf("got %s", resp.Steps[0].CompanyDepartmentResolution)
+	}
+
+	repo.openMappings = []workflowdept.OpenMapping{{
+		MappingID: "m1", Version: 1, TemplateDepartmentCode: "dept-001",
+		CompanyDepartmentID: "uuid-legal", DepartmentName: "Pháp chế",
+		TargetActive: true, TargetSameCompany: true,
+	}}
+	if err := svc.enrichStepDepartmentNames(context.Background(), "c1", "type-a", resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.Steps[0].CompanyDepartmentResolution != CompanyDepartmentResolutionMatched {
+		t.Fatalf("mapped got %s", resp.Steps[0].CompanyDepartmentResolution)
+	}
+	if resp.Steps[0].DepartmentName != "Pháp chế" {
+		t.Fatalf("name %q", resp.Steps[0].DepartmentName)
 	}
 }

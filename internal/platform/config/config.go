@@ -204,6 +204,12 @@ type Config struct {
 	LegalBasisStructuredWriteEnabled   bool
 	LegalBasisLegacyFallbackEnabled    bool
 	LegalBasisDivergenceWarningEnabled bool
+
+	// Live workflow department binding. Defaults off: exact id/code behavior stays.
+	WorkflowDepartmentBindingEnabled       bool
+	WorkflowDepartmentEmailBindingEnabled  bool
+	WorkflowDepartmentTaskRoutingEnabled   bool
+	WorkflowDepartmentBackfillWriteEnabled bool
 }
 
 // Load reads configuration from the environment with safe defaults for local dev.
@@ -267,28 +273,32 @@ func Load() (Config, error) {
 		UserAvatarUploadSigningSecret: resolveUserAvatarSigningSecret(os.Getenv("USER_AVATAR_UPLOAD_SIGNING_SECRET"), getenv("ENV", "development")),
 		UserAvatarSignedURLTTL:        userAvatarSignedURLTTL(),
 
-		WorkflowGroupsEnabled:               boolEnv("WORKFLOW_GROUPS_ENABLED", false),
-		WorkflowDraftEtagMode:               getenv("WORKFLOW_DRAFT_ETAG_MODE", "off"),
-		WorkflowSnapshotEnabled:             boolEnv("WORKFLOW_SNAPSHOT_ENABLED", false),
-		WorkflowTimelineEnabled:             boolEnv("WORKFLOW_TIMELINE_ENABLED", false),
-		WorkflowAssigneeResolutionEnabled:   boolEnv("WORKFLOW_ASSIGNEE_RESOLUTION_ENABLED", false),
-		WorkflowVersioningEnabled:           boolEnv("WORKFLOW_VERSIONING_ENABLED", false),
-		WorkflowRemindersEnabled:            boolEnv("WORKFLOW_REMINDERS_ENABLED", false),
-		WorkflowAdhocEnabled:                devAwareBoolEnv("WORKFLOW_ADHOC_ENABLED", false, true),
-		WorkflowAdhocAutoApproveEnabled:     boolEnv("WORKFLOW_ADHOC_AUTOAPPROVE_ENABLED", false),
-		WorkflowStepCommentMentionsEnabled:  boolEnv("WORKFLOW_STEP_COMMENT_MENTIONS_ENABLED", false),
-		AdhocEmailMetricsEnabled:            boolEnv("ADHOC_EMAIL_METRICS_ENABLED", true),
-		PeriodicSeedingEnabled:              boolEnv("PERIODIC_SEEDING_ENABLED", false),
-		CompanyProvisionIdempotencyRequired: boolEnv("COMPANY_PROVISION_IDEMPOTENCY_REQUIRED", false),
-		CompanySelfCreateEnabled:            boolEnv("COMPANY_SELF_CREATE_ENABLED", false),
-		TemplateApplicabilityStrictFilter:   boolEnv("TEMPLATE_APPLICABILITY_STRICT_FILTER", false),
-		DeadlineEngineV2:                    boolEnv("DEADLINE_ENGINE_V2", false),
-		DeadlineEngineV2Shadow:              boolEnv("DEADLINE_ENGINE_V2_SHADOW", false),
-		NotificationRulesConsumerEnabled:    ParseNotificationRulesConsumerEnabled(os.Getenv("NOTIFICATION_RULES_CONSUMER_ENABLED")),
-		SubscriptionTierEnforcementEnabled:  ParseSubscriptionTierEnforcementEnabled(os.Getenv("SUBSCRIPTION_TIER_ENFORCEMENT_ENABLED")),
-		LegalBasisStructuredWriteEnabled:    boolEnv("LEGAL_BASIS_STRUCTURED_WRITE_ENABLED", false),
-		LegalBasisLegacyFallbackEnabled:     boolEnv("LEGAL_BASIS_LEGACY_FALLBACK_ENABLED", true),
-		LegalBasisDivergenceWarningEnabled:  boolEnv("LEGAL_BASIS_DIVERGENCE_WARNING_ENABLED", true),
+		WorkflowGroupsEnabled:                  boolEnv("WORKFLOW_GROUPS_ENABLED", false),
+		WorkflowDraftEtagMode:                  getenv("WORKFLOW_DRAFT_ETAG_MODE", "off"),
+		WorkflowSnapshotEnabled:                boolEnv("WORKFLOW_SNAPSHOT_ENABLED", false),
+		WorkflowTimelineEnabled:                boolEnv("WORKFLOW_TIMELINE_ENABLED", false),
+		WorkflowAssigneeResolutionEnabled:      boolEnv("WORKFLOW_ASSIGNEE_RESOLUTION_ENABLED", false),
+		WorkflowVersioningEnabled:              boolEnv("WORKFLOW_VERSIONING_ENABLED", false),
+		WorkflowRemindersEnabled:               boolEnv("WORKFLOW_REMINDERS_ENABLED", false),
+		WorkflowAdhocEnabled:                   devAwareBoolEnv("WORKFLOW_ADHOC_ENABLED", false, true),
+		WorkflowAdhocAutoApproveEnabled:        boolEnv("WORKFLOW_ADHOC_AUTOAPPROVE_ENABLED", false),
+		WorkflowStepCommentMentionsEnabled:     boolEnv("WORKFLOW_STEP_COMMENT_MENTIONS_ENABLED", false),
+		AdhocEmailMetricsEnabled:               boolEnv("ADHOC_EMAIL_METRICS_ENABLED", true),
+		PeriodicSeedingEnabled:                 boolEnv("PERIODIC_SEEDING_ENABLED", false),
+		CompanyProvisionIdempotencyRequired:    boolEnv("COMPANY_PROVISION_IDEMPOTENCY_REQUIRED", false),
+		CompanySelfCreateEnabled:               boolEnv("COMPANY_SELF_CREATE_ENABLED", false),
+		TemplateApplicabilityStrictFilter:      boolEnv("TEMPLATE_APPLICABILITY_STRICT_FILTER", false),
+		DeadlineEngineV2:                       boolEnv("DEADLINE_ENGINE_V2", false),
+		DeadlineEngineV2Shadow:                 boolEnv("DEADLINE_ENGINE_V2_SHADOW", false),
+		NotificationRulesConsumerEnabled:       ParseNotificationRulesConsumerEnabled(os.Getenv("NOTIFICATION_RULES_CONSUMER_ENABLED")),
+		SubscriptionTierEnforcementEnabled:     ParseSubscriptionTierEnforcementEnabled(os.Getenv("SUBSCRIPTION_TIER_ENFORCEMENT_ENABLED")),
+		LegalBasisStructuredWriteEnabled:       boolEnv("LEGAL_BASIS_STRUCTURED_WRITE_ENABLED", false),
+		LegalBasisLegacyFallbackEnabled:        boolEnv("LEGAL_BASIS_LEGACY_FALLBACK_ENABLED", true),
+		LegalBasisDivergenceWarningEnabled:     boolEnv("LEGAL_BASIS_DIVERGENCE_WARNING_ENABLED", true),
+		WorkflowDepartmentBindingEnabled:       boolEnv("WORKFLOW_DEPARTMENT_BINDING_ENABLED", false),
+		WorkflowDepartmentEmailBindingEnabled:  boolEnv("WORKFLOW_DEPARTMENT_EMAIL_BINDING_ENABLED", false),
+		WorkflowDepartmentTaskRoutingEnabled:   boolEnv("WORKFLOW_DEPARTMENT_TASK_ROUTING_ENABLED", false),
+		WorkflowDepartmentBackfillWriteEnabled: boolEnv("WORKFLOW_DEPARTMENT_BACKFILL_WRITE_ENABLED", false),
 	}
 	if cfg.WorkerTickInterval < time.Second {
 		return Config{}, fmt.Errorf("WORKER_TICK_INTERVAL too small")

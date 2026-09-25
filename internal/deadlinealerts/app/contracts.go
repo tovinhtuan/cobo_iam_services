@@ -7,6 +7,7 @@ import (
 	authapp "github.com/cobo/cobo_iam_services/internal/authorization/app"
 	disclosureapp "github.com/cobo/cobo_iam_services/internal/disclosure/app"
 	workflowapp "github.com/cobo/cobo_iam_services/internal/workflow/app"
+	"github.com/cobo/cobo_iam_services/internal/workflowdept"
 )
 
 type Subject struct {
@@ -108,26 +109,26 @@ type ConfirmDeadlineAlertResponse struct {
 
 // AlertRow is a DB read model before due-date enrichment.
 type AlertRow struct {
-	CompanyID          string
-	RecordID           string
-	TypeID             string
-	Title              string
-	TypeName           string
-	AdHocTitleLine     string
-	RecordStatus       string
-	RecordDepartmentID string
-	PlannedDate        string
-	HasTaskAssignee    bool
-	WorkflowInstanceID string
-	CurrentStepCode        string
-	CurrentStepDepartment  string
-	CurrentStepName        string
-	SnapshotJSON           []byte // populated only when full snapshot is required (not list query)
-	AdHocDeadlineDate  string
-	TemplateCategory   string
-	DeadlineConfigJSON []byte
-	ConfirmedBy        string
-	ConfirmedAt        *time.Time
+	CompanyID             string
+	RecordID              string
+	TypeID                string
+	Title                 string
+	TypeName              string
+	AdHocTitleLine        string
+	RecordStatus          string
+	RecordDepartmentID    string
+	PlannedDate           string
+	HasTaskAssignee       bool
+	WorkflowInstanceID    string
+	CurrentStepCode       string
+	CurrentStepDepartment string
+	CurrentStepName       string
+	SnapshotJSON          []byte // populated only when full snapshot is required (not list query)
+	AdHocDeadlineDate     string
+	TemplateCategory      string
+	DeadlineConfigJSON    []byte
+	ConfirmedBy           string
+	ConfirmedAt           *time.Time
 }
 
 type WorkflowInstanceRow struct {
@@ -142,6 +143,8 @@ type Repository interface {
 	ListDisplayGroupCodesByTypeIDs(ctx context.Context, typeIDs []string) (map[string][]string, error)
 	ListCompanyDepartments(ctx context.Context, companyID string) ([]DeadlineAlertFilterOptionDTO, error)
 	ListTemplateDepartments(ctx context.Context) ([]DeadlineAlertFilterOptionDTO, error)
+	// ListOpenDepartmentMappings returns live bindings. Empty when the feature flag is off.
+	ListOpenDepartmentMappings(ctx context.Context, companyID string, asOf time.Time) ([]workflowdept.OpenMapping, error)
 	// HasActiveEnterpriseAdmin reports ≥1 eligible admin_doanh_nghiep (same eligibility as reminder AdminEmailsByCompany).
 	HasActiveEnterpriseAdmin(ctx context.Context, companyID string) (bool, error)
 	ListReportGroupOptions(ctx context.Context) ([]DeadlineAlertFilterOptionDTO, error)

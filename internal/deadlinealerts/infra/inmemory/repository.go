@@ -8,6 +8,7 @@ import (
 	disclosureapp "github.com/cobo/cobo_iam_services/internal/disclosure/app"
 	disclosureinmem "github.com/cobo/cobo_iam_services/internal/disclosure/infra/inmemory"
 	workflowapp "github.com/cobo/cobo_iam_services/internal/workflow/app"
+	"github.com/cobo/cobo_iam_services/internal/workflowdept"
 )
 
 type Repository struct {
@@ -90,6 +91,10 @@ func (r *Repository) HasActiveEnterpriseAdmin(_ context.Context, _ string) (bool
 
 func (r *Repository) ListTemplateDepartments(_ context.Context) ([]deadlinealertsapp.DeadlineAlertFilterOptionDTO, error) {
 	return []deadlinealertsapp.DeadlineAlertFilterOptionDTO{}, nil
+}
+
+func (r *Repository) ListOpenDepartmentMappings(_ context.Context, _ string, _ time.Time) ([]workflowdept.OpenMapping, error) {
+	return nil, nil
 }
 
 func (r *Repository) ListReportGroupOptions(_ context.Context) ([]deadlinealertsapp.DeadlineAlertFilterOptionDTO, error) {

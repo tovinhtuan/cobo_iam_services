@@ -43,6 +43,7 @@ seed_dev_identity_authorization.sql
 0035_disclosure_display_groups.up.sql
 0036_fix_unicode_mojibake.up.sql
 0037_adhoc_admin_approve_final_fields.up.sql
+0039_periodic_cycles.up.sql
 0040_company_type_preferences.up.sql
 0041_adhoc_admin_approve_progress.up.sql
 0042_adhoc_process_controller.up.sql
@@ -122,6 +123,7 @@ seed_dev_identity_authorization.sql
 0119_workflow_tasks_assignee_status_index.up.sql
 0120_disclosure_records_completed_at.up.sql
 0121_workflow_step_description.up.sql
+0122_disclosure_type_version_is_released.up.sql
 0123_roles_classification.up.sql
 0124_company_business_sectors_multi.up.sql
 0125_company_subscriptions.up.sql
@@ -143,6 +145,8 @@ seed_dev_identity_authorization.sql
 0141_disclosure_type_archive_metadata.up.sql
 0142_cms_global_records.up.sql
 0143_cms_global_record_id_width.up.sql
+0144_workflow_department_binding.up.sql
+0145_catalog_department_code_guard.up.sql
 seed_dev_company_subscriptions.sql
 "
 

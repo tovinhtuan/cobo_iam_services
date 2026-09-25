@@ -11,6 +11,7 @@ import (
 	authapp "github.com/cobo/cobo_iam_services/internal/authorization/app"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 	workflowapp "github.com/cobo/cobo_iam_services/internal/workflow/app"
+	"github.com/cobo/cobo_iam_services/internal/workflowdept"
 )
 
 func (s *service) ListDeadlineSteps(ctx context.Context, sub Subject, recordID string) (*ListDeadlineStepsResponse, error) {
@@ -38,10 +39,9 @@ func (s *service) ListDeadlineSteps(ctx context.Context, sub Subject, recordID s
 	if err != nil {
 		return nil, err
 	}
-	if err := s.enrichStepDepartmentNames(ctx, sub.CompanyID, &resp); err != nil {
+	if err := s.enrichStepDepartmentNames(ctx, sub.CompanyID, row.TypeID, &resp); err != nil {
 		return nil, err
 	}
-	_ = row
 	return &resp, nil
 }
 
@@ -243,8 +243,7 @@ func snapshotHasStep(snapshot []workflowapp.StepSnapshot, stepCode string) bool 
 	return false
 }
 
-
-func (s *service) enrichStepDepartmentNames(ctx context.Context, companyID string, resp *ListDeadlineStepsResponse) error {
+func (s *service) enrichStepDepartmentNames(ctx context.Context, companyID, disclosureTypeID string, resp *ListDeadlineStepsResponse) error {
 	if resp == nil || len(resp.Steps) == 0 {
 		return nil
 	}
@@ -257,6 +256,24 @@ func (s *service) enrichStepDepartmentNames(ctx context.Context, companyID strin
 		return err
 	}
 	dict := NewDepartmentDict(companyDepts, templateDepts)
+	bindingOn := workflowdept.BindingEnabled()
+	var openMaps []workflowdept.OpenMapping
+	if bindingOn {
+		loaded, err := s.repo.ListOpenDepartmentMappings(ctx, companyID, time.Now().UTC())
+		if err != nil {
+			return err
+		}
+		openMaps = loaded
+	}
+	catalogCodes := map[string]struct{}{}
+	for _, d := range templateDepts {
+		if code := strings.TrimSpace(d.Code); code != "" {
+			catalogCodes[code] = struct{}{}
+		}
+		if id := strings.TrimSpace(d.ID); id != "" {
+			catalogCodes[id] = struct{}{}
+		}
+	}
 
 	needsAdminAvailability := false
 	for i := range resp.Steps {
@@ -281,6 +298,49 @@ func (s *service) enrichStepDepartmentNames(ctx context.Context, companyID strin
 			resp.Steps[i].DepartmentName = token
 		}
 
+		if bindingOn {
+			refs := make([]workflowdept.DeptRef, 0, len(companyDepts))
+			for _, d := range companyDepts {
+				refs = append(refs, workflowdept.DeptRef{ID: d.ID, Code: d.Code})
+			}
+			kind := workflowdept.Classify(token, catalogCodes, refs, LooksLikeTechnicalDepartmentRef)
+			exactID, exactName, byCode := "", "", false
+			if kind == workflowdept.TokenCompanyDepartmentID || kind == workflowdept.TokenCompanyDepartmentCode {
+				for _, d := range companyDepts {
+					if strings.TrimSpace(d.ID) == token || strings.EqualFold(strings.TrimSpace(d.Code), token) {
+						exactID = d.ID
+						exactName = d.Name
+						byCode = strings.TrimSpace(d.ID) != token
+						break
+					}
+				}
+			}
+			res := workflowdept.Resolve(workflowdept.ResolveInput{
+				Token: token, Kind: kind, BindingMode: true,
+				DisclosureTypeID: disclosureTypeID, StepCode: resp.Steps[i].StepCode,
+				Mappings: openMaps, ExactDepartmentID: exactID, ExactName: exactName, ExactByCode: byCode,
+			})
+			switch res.Status {
+			case workflowdept.StatusNoConfig:
+				resp.Steps[i].CompanyDepartmentResolution = CompanyDepartmentResolutionNoConfig
+			case workflowdept.StatusMatched:
+				resp.Steps[i].CompanyDepartmentResolution = CompanyDepartmentResolutionMatched
+				resp.Steps[i].ReminderFallbackRecipientType = ""
+				resp.Steps[i].CompanyAdminRecipientAvailable = nil
+				if name := strings.TrimSpace(res.CompanyDepartmentName); name != "" {
+					resp.Steps[i].DepartmentName = name
+				}
+			case workflowdept.StatusMappedInactive:
+				resp.Steps[i].CompanyDepartmentResolution = CompanyDepartmentResolutionMappedInactive
+				resp.Steps[i].ReminderFallbackRecipientType = ReminderFallbackRecipientTypeCompanyAdmin
+				needsAdminAvailability = true
+			default:
+				resp.Steps[i].CompanyDepartmentResolution = CompanyDepartmentResolutionMissing
+				resp.Steps[i].ReminderFallbackRecipientType = ReminderFallbackRecipientTypeCompanyAdmin
+				needsAdminAvailability = true
+			}
+			continue
+		}
 		if companyDepartmentTokenMatched(companyDepts, token) {
 			resp.Steps[i].CompanyDepartmentResolution = CompanyDepartmentResolutionMatched
 			resp.Steps[i].ReminderFallbackRecipientType = ""
@@ -300,7 +360,8 @@ func (s *service) enrichStepDepartmentNames(ctx context.Context, companyID strin
 		return err
 	}
 	for i := range resp.Steps {
-		if resp.Steps[i].CompanyDepartmentResolution != CompanyDepartmentResolutionMissing {
+		status := resp.Steps[i].CompanyDepartmentResolution
+		if status != CompanyDepartmentResolutionMissing && status != CompanyDepartmentResolutionMappedInactive {
 			continue
 		}
 		v := adminAvailable

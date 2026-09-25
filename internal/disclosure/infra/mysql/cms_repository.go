@@ -704,6 +704,9 @@ func (r *Repository) ListTemplateDepartments(ctx context.Context) ([]disclosurea
 }
 
 func (r *Repository) CreateTemplateDepartment(ctx context.Context, req disclosureapp.CmsTemplateDepartmentCreateRequest) (*disclosureapp.TemplateDepartmentDTO, error) {
+	if err := r.rejectRetiredTemplateDepartmentCode(ctx, req.Code); err != nil {
+		return nil, err
+	}
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO workflow_template_departments (department_code, department_name, description, display_order, is_system)
 		VALUES (?, ?, ?, ?, 0)
@@ -714,7 +717,33 @@ func (r *Repository) CreateTemplateDepartment(ctx context.Context, req disclosur
 		}
 		return nil, fmt.Errorf("create template department: %w", err)
 	}
+	_, _ = r.db.ExecContext(ctx, `
+		INSERT INTO workflow_template_department_code_registry (department_code)
+		VALUES (?)
+		ON DUPLICATE KEY UPDATE department_code = department_code
+	`, req.Code)
 	return r.getTemplateDepartmentByCode(ctx, req.Code)
+}
+
+func (r *Repository) rejectRetiredTemplateDepartmentCode(ctx context.Context, code string) error {
+	var retired sql.NullTime
+	err := r.db.QueryRowContext(ctx, `
+		SELECT retired_at FROM workflow_template_department_code_registry WHERE department_code = ?
+	`, code).Scan(&retired)
+	if err == sql.ErrNoRows {
+		return nil
+	}
+	if err != nil {
+		msg := strings.ToLower(err.Error())
+		if strings.Contains(msg, "1146") || strings.Contains(msg, "doesn't exist") {
+			return nil
+		}
+		return fmt.Errorf("catalog code registry: %w", err)
+	}
+	if retired.Valid {
+		return perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "catalog department code cannot be reused", nil)
+	}
+	return nil
 }
 
 func (r *Repository) getTemplateDepartmentByCode(ctx context.Context, code string) (*disclosureapp.TemplateDepartmentDTO, error) {
