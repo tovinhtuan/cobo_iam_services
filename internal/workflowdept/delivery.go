@@ -11,9 +11,9 @@ const (
 )
 
 // ClaimToSending reports whether this worker may call SMTP.
-// Only PENDING → SENDING is allowed. A lost race stays on the committed state.
+// Only PENDING and RETRYABLE_FAILED may become SENDING. A lost race stays committed.
 func ClaimToSending(current string) (next string, owned bool) {
-	if current == SendPending {
+	if current == SendPending || current == SendRetryableFailed {
 		return SendSending, true
 	}
 	return current, false

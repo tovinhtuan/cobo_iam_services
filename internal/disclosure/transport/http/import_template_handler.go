@@ -39,6 +39,27 @@ func (h *Handler) cmsDownloadTemplateImportExample(w http.ResponseWriter, r *htt
 	_, _ = w.Write(resp.Payload)
 }
 
+// cmsDownloadTemplateImportGuide handles GET /api/v1/platform/cms/templates/import/guide.
+// Zero DB writes. Filename is server-owned.
+func (h *Handler) cmsDownloadTemplateImportGuide(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subjectFromToken(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	resp, err := h.svc.GetTemplateImportGuide(r.Context(), disclosureapp.GetTemplateImportGuideRequest{Subject: sub})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	w.Header().Set("Content-Type", resp.ContentType)
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, resp.Filename))
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Cache-Control", "private, no-store")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(resp.Payload)
+}
+
 // cmsValidateTemplateImport handles POST /api/v1/platform/cms/templates/import/validate.
 // It parses the uploaded multipart .json file with strict transport and file size guards,
 // runs the normalization and domain validation engine, and returns stateless preview and HMAC token.

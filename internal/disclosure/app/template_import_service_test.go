@@ -91,6 +91,7 @@ func newImportService(repo disclosureapp.Repository, perms []string) disclosurea
 }
 
 func TestTemplateImportService_ZeroDBWriteAssertion(t *testing.T) {
+	t.Setenv("CMS_TEMPLATE_IMPORT_HISTORY_ENABLED", "false")
 	rawRepo := inmemory.NewRepository()
 	spy := &zeroDBWriteSpyRepo{Repository: rawRepo}
 	svc := newImportService(spy, []string{"platform.cms.view", "cms.template.write"})

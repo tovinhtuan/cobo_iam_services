@@ -32,6 +32,11 @@ func (s *service) ConfirmTemplateImport(ctx context.Context, req ConfirmTemplate
 	req.TargetTypeID = strings.TrimSpace(req.TargetTypeID)
 	req.TargetName = strings.TrimSpace(req.TargetName)
 	req.ValidationToken = strings.TrimSpace(req.ValidationToken)
+	req.ImportAttemptID = strings.TrimSpace(req.ImportAttemptID)
+
+	if ImportHistoryEnabled() && req.ImportAttemptID == "" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeImportAttemptRequired, "import_attempt_id is required", nil)
+	}
 
 	if req.TargetTypeID == "" {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "target_type_id is required", nil)
@@ -81,6 +86,11 @@ func (s *service) ConfirmTemplateImport(ctx context.Context, req ConfirmTemplate
 				"actual_payload_hash":   actualHash,
 			},
 		}
+	}
+
+	bound, err := s.prepareConfirmAttempt(ctx, req, claims.PayloadHash, actualHash)
+	if err != nil {
+		return nil, err
 	}
 
 	// 5. Mutable Target References Revalidation
@@ -277,7 +287,7 @@ func (s *service) ConfirmTemplateImport(ctx context.Context, req ConfirmTemplate
 	}
 	if exists {
 		return nil, &perr.HTTPError{
-			Code:       perr.CodeStateConflict,
+			Code:       perr.CodeTargetTypeConflict,
 			Message:    "target_type_id already exists",
 			HTTPStatus: http.StatusConflict,
 			Details:    map[string]any{"target_type_id": req.TargetTypeID},
@@ -290,21 +300,28 @@ func (s *service) ConfirmTemplateImport(ctx context.Context, req ConfirmTemplate
 		return nil, err
 	}
 
+	if err := s.claimConfirmAttempt(ctx, bound); err != nil {
+		return nil, err
+	}
+
 	// 8. Execute Authoritative Persistence Call (CreateOnly=true)
 	resp, err := s.UpsertTypeVersion(ctx, upsert)
 	if err != nil {
 		if isDuplicateKeyConflictError(err) {
+			_ = s.failConfirmAttempt(ctx, bound, perr.CodeTargetTypeConflict, req.TargetTypeID)
 			return nil, &perr.HTTPError{
-				Code:       perr.CodeStateConflict,
+				Code:       perr.CodeTargetTypeConflict,
 				Message:    "target_type_id already exists",
 				HTTPStatus: http.StatusConflict,
 				Details:    map[string]any{"target_type_id": req.TargetTypeID},
 			}
 		}
+		_ = s.failConfirmAttempt(ctx, bound, perr.CodeInternal, req.TargetTypeID)
 		return nil, err
 	}
 
 	if resp.VersionNo != 1 || resp.IsActive {
+		_ = s.failConfirmAttempt(ctx, bound, perr.CodeStateConflict, req.TargetTypeID)
 		return nil, &perr.HTTPError{
 			Code:       perr.CodeStateConflict,
 			Message:    "imported template must be draft v1 and not active",
@@ -317,6 +334,8 @@ func (s *service) ConfirmTemplateImport(ctx context.Context, req ConfirmTemplate
 			},
 		}
 	}
+
+	_ = s.finishConfirmAttempt(ctx, bound, resp.TypeID, req.TargetTypeID)
 
 	return &ConfirmTemplateImportResponse{
 		TypeID:      resp.TypeID,

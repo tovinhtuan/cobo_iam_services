@@ -1494,7 +1494,7 @@ func TestTemplateImportConfirm_TokenHTTPContract(t *testing.T) {
 			TargetName:         norm.Name,
 			NormalizedTemplate: *norm,
 		})
-		assertHTTPError(t, err, http.StatusConflict, perr.CodeStateConflict, "")
+		assertHTTPError(t, err, http.StatusConflict, perr.CodeTargetTypeConflict, "")
 	})
 }
 

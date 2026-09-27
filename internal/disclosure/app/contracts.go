@@ -91,6 +91,9 @@ type Service interface {
 
 	// CMS Template Import Example Download (Phase F) — canonical reference JSON, zero DB writes.
 	GetTemplateImportExample(ctx context.Context, req GetTemplateImportExampleRequest) (*GetTemplateImportExampleResponse, error)
+	GetTemplateImportGuide(ctx context.Context, req GetTemplateImportGuideRequest) (*GetTemplateImportGuideResponse, error)
+	ListTemplateImportHistory(ctx context.Context, req ListTemplateImportHistoryRequest) (*ListTemplateImportHistoryResponse, error)
+	GetTemplateImportHistory(ctx context.Context, req GetTemplateImportHistoryRequest) (*TemplateImportHistoryDetail, error)
 }
 
 type Repository interface {

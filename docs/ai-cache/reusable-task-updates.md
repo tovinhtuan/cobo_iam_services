@@ -1,4 +1,58 @@
-﻿## Workflow department binding A–C (2026-09-25)
+﻿## CMS import history + JSON guide implementation (2026-09-27)
+
+- Guide download, conditional schema, migration `0148` (not applied), history API, and `/cms/templates?tab=import-history`.
+- Flag `CMS_TEMPLATE_IMPORT_HISTORY_ENABLED` default off. No raw JSON or raw token. Purge job not built.
+- Targeted Go and Vitest PASS. `go build` PASS. `npm run build` PASS. Docker build BLOCKED (daemon). MySQL 8 isolated NOT_RUN. DEV not touched.
+- Report: `docs/ai-cache/cms-template-import-history-and-json-guide-implementation-2026-09-27.md`.
+
+## CMS import history + JSON guide plan (2026-09-27)
+
+- Plan only: `docs/ai-cache/cms-template-import-history-and-json-guide-implementation-plan-2026-09-27.md`.
+- Next migration number if still free: 0148. History writes stay behind `CMS_TEMPLATE_IMPORT_HISTORY_ENABLED` default false.
+- `activation_ready` is not the confirm gate. Import history is `?tab=import-history`, not `Lịch sử bản ghi CMS`.
+- IMPLEMENTATION_STARTED=false. No migration, no DEV, no frontend code.
+
+## CMS annual report template JSON (2026-09-26)
+
+- Fixed JSON domain check PASS (`yearly`, `non_large_public`, NEXT_SLOT without slot). 3 department mappings required on an empty catalog.
+- DEV health 200. Browser import BLOCKED: CMS session 401. No draft import, publish, or FE change.
+
+## Email delivery safety SMTP wiring (2026-09-26)
+
+- Binding uses notification SMTP `BindingMailer`; empty host is `smtp_config_missing`, not mock-no-smtp.
+- Legacy dispatch skips only when both binding flags are on and a resolution owns the occurrence.
+- DEV worker redeployed with flags unset. SMTP_TEST_SENT=NOT_RUN (no approved recipient). Production NO-GO.
+- GO FOR PRE-MERGE REVIEW. Not GO FOR DEV SMTP SMOKE. No frontend change.
+
+## Email delivery safety DEV MySQL 8 (2026-09-26)
+
+- Isolated schema on documented DEV MySQL 8.0.46: 0146/0147 success, duplicate SIGNAL 45000, rerun, and down PASS. Shared cobo_iam not migrated (ledger ends at 0143, resolution table absent). Schema dropped after proof.
+- Concurrent claim -count=20 PASS. Worker redeployed with flags unset. healthz/readyz 200. No binding log. FE unchanged.
+- GO FOR PRE-MERGE REVIEW. No merge, push, flag enable, or production deploy.
+
+## Email delivery safety MySQL runtime (2026-09-26)
+
+- Case C: no MYSQL_TEST_DSN, no MYSQL_DSN, Docker daemon pipe missing. `.env` not loaded.
+- MYSQL_MIGRATION_VALIDATION=BLOCKED; MYSQL_CLAIM_RACE_VALIDATION=BLOCKED; LIVE_PREFLIGHT=NOT_RUN
+- reason=No safe MySQL 8 test database available
+- FLAGS_ENABLED=false; SMTP_BINDING_WIRED=false; FRONTEND_CHANGED=false
+- NO-GO — verification incomplete. No merge, push, flag enable, or deploy
+
+## Email delivery safety verification (2026-09-26)
+
+- 0147 rewritten: SIGNAL is a procedure statement, not PREPARE. Not executed on MySQL 8.
+- MYSQL_MIGRATION_VALIDATION=BLOCKED (docker_engine pipe missing). LIVE_PREFLIGHT=NOT_RUN. Concurrent claim test SKIP.
+- Unit claim/transition tests PASS. Flags remain default false. FE unchanged.
+- NO-GO — verification incomplete. NO agent commit
+
+## Email delivery safety scaffold (2026-09-26)
+
+- Contract + static preflight: `email-delivery-safety-contract-2026-09-26.md`, `email-delivery-safety-preflight-2026-09-26.md`
+- 0146/0147 expand-only, not applied. Flags stay off. LIVE_PREFLIGHT=NOT_RUN. LOCAL_DOCKER_BUILD=BLOCKED
+- `go test ./internal/workflowdept/...` PASS; `go build ./...` PASS; full `go test ./...` FAIL pre-existing packages outside this diff
+- NO-GO for flag enable / production migration. NO agent commit
+
+## Workflow department binding A–C (2026-09-25)
 
 - 0144: fix unapplied ambiguous ON DUPLICATE so the file can apply; not previously in schema_migrations.
 - 0145: snapshot code backfill, trigger blocks code UPDATE and retired INSERT. DELETE remains 0144 trigger. Name updates allowed. Re-applied successfully on throwaway MySQL 8.0.

@@ -40,7 +40,7 @@ func (s *service) ValidateTemplateImport(ctx context.Context, req ValidateTempla
 
 	var env TemplateImportEnvelopeV1
 	if err := dec.Decode(&env); err != nil {
-		return &ValidateTemplateImportResponse{
+		invalid := &ValidateTemplateImportResponse{
 			ParseValid:  false,
 			DomainValid: false,
 			CanConfirm:  false,
@@ -51,13 +51,14 @@ func (s *service) ValidateTemplateImport(ctx context.Context, req ValidateTempla
 				Message:         fmt.Sprintf("Không thể phân tích cú pháp JSON hoặc phát hiện trường không được hỗ trợ: %v", err),
 				SuggestedAction: "Kiểm tra lại cú pháp JSON và loại bỏ các trường không thuộc đặc tả schema v1.0.",
 			}},
-		}, nil
+		}
+		return s.attachImportAttempt(ctx, req, invalid, "", "", "")
 	}
 
 	// Reject concatenated multiple JSON documents
 	var extra any
 	if err := dec.Decode(&extra); err != io.EOF {
-		return &ValidateTemplateImportResponse{
+		invalid := &ValidateTemplateImportResponse{
 			ParseValid:  false,
 			DomainValid: false,
 			CanConfirm:  false,
@@ -68,17 +69,19 @@ func (s *service) ValidateTemplateImport(ctx context.Context, req ValidateTempla
 				Message:         "Tập tin chứa nhiều khối JSON nối tiếp; chỉ chấp nhận đúng một đối tượng JSON duy nhất.",
 				SuggestedAction: "Đảm bảo tập tin chỉ chứa duy nhất một đối tượng JSON gốc.",
 			}},
-		}, nil
+		}
+		return s.attachImportAttempt(ctx, req, invalid, strings.TrimSpace(env.SchemaVersion), "", "")
 	}
 
 	// 4. Schema version validation
 	if strings.TrimSpace(env.SchemaVersion) != TemplateImportSchemaVersion {
-		return nil, perr.NewHTTPError(
+		herr := perr.NewHTTPError(
 			http.StatusUnprocessableEntity,
 			perr.CodeInvalidRequest,
 			fmt.Sprintf("unsupported schema_version %q (hệ thống chỉ hỗ trợ phiên bản %q)", env.SchemaVersion, TemplateImportSchemaVersion),
 			nil,
 		)
+		return nil, s.attachImportAttemptError(ctx, req, strings.TrimSpace(env.SchemaVersion), herr)
 	}
 
 	// 5. Normalization pipeline (pure in-memory)
@@ -164,9 +167,11 @@ func (s *service) ValidateTemplateImport(ctx context.Context, req ValidateTempla
 	// 12. Token issuance (when domain is valid)
 	var validationToken string
 	var tokenExpiresAt string
+	var payloadHash string
 	if domainValid {
-		payloadHash, err := ComputeCanonicalTemplatePayloadHash(normalized)
+		hash, err := ComputeCanonicalTemplatePayloadHash(normalized)
 		if err == nil {
+			payloadHash = hash
 			signer := NewTemplateImportSigner("", 0)
 			now := time.Now()
 			exp := now.Add(signer.ttl).Unix()
@@ -184,7 +189,7 @@ func (s *service) ValidateTemplateImport(ctx context.Context, req ValidateTempla
 		}
 	}
 
-	return &ValidateTemplateImportResponse{
+	return s.attachImportAttempt(ctx, req, &ValidateTemplateImportResponse{
 		ParseValid:         parseValid,
 		DomainValid:        domainValid,
 		MappingRequired:    mappingRequired,
@@ -198,7 +203,7 @@ func (s *service) ValidateTemplateImport(ctx context.Context, req ValidateTempla
 		RequiredMappings:   requiredMappings,
 		ActivationBlockers: activationBlockers,
 		Preview:            preview,
-	}, nil
+	}, strings.TrimSpace(env.SchemaVersion), payloadHash, validationToken)
 }
 
 func slugifyTypeID(name string) string {

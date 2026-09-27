@@ -45,6 +45,33 @@
       "description": "Core template business specification.",
       "required": ["name", "template_category"],
       "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": { "template_category": { "const": "periodic" } },
+            "required": ["template_category"]
+          },
+          "then": {
+            "required": ["periodicity"],
+            "properties": {
+              "periodicity": { "enum": ["daily", "weekly", "monthly", "quarterly", "yearly"] }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "template_category": { "const": "irregular" } },
+            "required": ["template_category"]
+          },
+          "then": {
+            "required": ["deadline_rule"],
+            "properties": {
+              "deadline_rule": { "type": "string", "minLength": 1 },
+              "periodicity": { "enum": ["event_based", "ad_hoc"] }
+            }
+          }
+        }
+      ],
       "properties": {
         "type_id": {
           "type": "string",
@@ -83,12 +110,11 @@
         },
         "deadline_rule": {
           "type": "string",
-          "description": "Optional for periodic (server derives T+{applicability_rules.deadline_days}). Required for irregular free-text event description."
+          "description": "Optional for periodic. If applicability_rules.deadline_days is greater than 0 the server overwrites this field with T+{deadline_days}. Required for irregular."
         },
         "periodicity": {
           "type": "string",
-          "enum": ["daily", "weekly", "monthly", "quarterly", "yearly", "event_based", "ad_hoc"],
-          "description": "Cycle frequency. Required if template_category is periodic."
+          "description": "Periodic: required, one of daily, weekly, monthly, quarterly, yearly. Irregular: omit it; if present only event_based or ad_hoc."
         },
         "display_group_codes": {
           "type": "array",

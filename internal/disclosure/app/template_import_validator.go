@@ -417,6 +417,16 @@ func validatePeriodicConfiguration(template *TemplateImportDefinitionV1, errors 
 }
 
 func validateIrregularConfiguration(template *TemplateImportDefinitionV1, errors *[]TemplateImportValidationIssueDTO) {
+	periodicity := strings.TrimSpace(template.Periodicity)
+	if periodicity != "" && periodicity != "event_based" && periodicity != "ad_hoc" {
+		*errors = append(*errors, TemplateImportValidationIssueDTO{
+			Code:      "INVALID_PERIODICITY",
+			FieldPath: "template.periodicity",
+			Severity:  ValidationSeverityBlocker,
+			Message:   fmt.Sprintf("Chu kỳ %q không hợp lệ cho template bất thường (chỉ chấp nhận event_based hoặc ad_hoc khi trường được gửi).", periodicity),
+			SuggestedAction: "Bỏ periodicity và dùng deadline_rule, hoặc chỉ ghi event_based / ad_hoc.",
+		})
+	}
 	cfg := template.DeadlineConfig
 	if cfg == nil {
 		return

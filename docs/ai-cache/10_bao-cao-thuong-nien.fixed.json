@@ -1,0 +1,178 @@
+{
+  "schema_version": "1.0",
+  "metadata": {
+    "exported_at": "2026-09-14T00:00:00Z",
+    "exported_by": "cobo.template.library@cobo.vn",
+    "source_system": "cobo-standard-template-library",
+    "notes": "Generated from CoBo human-authorable schema_version 1.0. Import as Draft; map portable department code+name to tenant CMS catalog and validate legal/effective-date settings before release."
+  },
+  "template": {
+    "type_id": "bao-cao-thuong-nien",
+    "name": "Báo cáo thường niên",
+    "description": "Template chuẩn CoBo cho Báo cáo thường niên: thông tin thường niên về hoạt động, tài chính, quản trị và phát triển bền vững.",
+    "category": "Định kỳ",
+    "template_category": "periodic",
+    "deadline_strategy": "fixed_cycle_days",
+    "deadline_rule": "Trong 20 ngày từ ngày công bố BCTC năm đã kiểm toán và không quá T+110 ngày dương lịch kể từ cuối năm tài chính.",
+    "periodicity": "yearly",
+    "legal_basis": "Văn bản hợp nhất 10/VBHN-BTC năm 2026 và các quy định kế toán/công bố thông tin có liên quan; cần resolve theo effective date khi áp dụng.",
+    "applicability": "Công ty đại chúng; các điều kiện bổ sung về ngôn ngữ, kênh công bố và phạm vi báo cáo được resolve theo loại hình doanh nghiệp và thời điểm áp dụng.",
+    "implementation_content": "Thư ký Công ty / Văn phòng HĐQT điều phối dữ liệu, lập hồ sơ Báo cáo thường niên; bộ phận Pháp chế & Tuân thủ rà soát applicability/deadline; cấp có thẩm quyền phê duyệt và người được ủy quyền thực hiện công bố, lưu receipt/evidence.",
+    "implementation_notes": "Cần kiểm tra effective date và applicability pháp lý tại thời điểm phát sinh nghĩa vụ. Mọi dữ liệu đầu vào phải có kỳ, nguồn, version và người chịu trách nhiệm. Không coi trạng thái 'đã gửi' là 'đã hoàn tất' nếu còn yêu cầu xác nhận/receipt. Các thay đổi sau phê duyệt phải tạo version mới hoặc correction workflow.",
+    "special_cases": "Deadline hiệu lực là mốc đến trước giữa ngày công bố BCTC năm đã kiểm toán +20 ngày và T+110; số liệu tài chính phải khớp BCTC đã kiểm toán.",
+    "report_content": "1. Báo cáo thường niên\n2. BCTC năm đã kiểm toán\n3. Governance & ESG Data Pack",
+    "required_docs": "Tối thiểu gồm: Báo cáo thường niên; BCTC năm đã kiểm toán; Governance & ESG Data Pack. Hồ sơ phải được gắn đúng kỳ, version và người phê duyệt.",
+    "channels_text": "Hệ thống công bố thông tin UBCKNN, hệ thống công bố thông tin của Sở Giao dịch Chứng khoán nếu áp dụng, website doanh nghiệp và CoBo Evidence Vault.",
+    "beneficiaries": "Ban Điều hành, cấp quản trị, đơn vị thực hiện và các bên liên quan theo phạm vi của template.",
+    "receiving_authorities": "Ủy ban Chứng khoán Nhà nước, Sở Giao dịch Chứng khoán nếu áp dụng, cổ đông và nhà đầu tư.",
+    "format": "PDF/định dạng điện tử theo yêu cầu kênh công bố; lưu version, hash, receipt và bản tiếng Anh khi thuộc phạm vi áp dụng.",
+    "legal_risks_text": "Rủi ro công bố chậm, không đầy đủ, sai version/sai số liệu, thiếu kênh hoặc thiếu bản ngôn ngữ bắt buộc có thể dẫn đến vi phạm pháp luật chứng khoán và xử phạt; mức phạt phải resolve theo quy định có hiệu lực tại thời điểm vi phạm.",
+    "general_info": "Template mẫu thuộc nhóm Portal: Tuân thủ, Quản trị & Quản lý rủi ro. Loại: Công bố/Báo cáo pháp lý. Chu kỳ: Hàng năm. Import ở trạng thái Draft và rà soát mapping phòng ban/quyền trước khi phát hành.",
+    "tags": [
+      "Tuân thủ, Quản trị & Quản lý rủi ro",
+      "Công bố/Báo cáo pháp lý",
+      "Định kỳ",
+      "Hàng năm",
+      "Báo cáo thường niên"
+    ],
+    "legal_bases": [
+      {
+        "title": "Văn bản hợp nhất hướng dẫn công bố thông tin trên thị trường chứng khoán",
+        "code": "10/VBHN-BTC",
+        "authority": "Bộ Tài chính",
+        "issue_date": "2026-04-20",
+        "summary": "Văn bản hợp nhất quy định nghĩa vụ công bố thông tin của công ty đại chúng và tổ chức niêm yết.",
+        "link": "https://vanban.chinhphu.vn/?classid=0&docid=217889&pageid=27160"
+      }
+    ],
+    "checklist": [
+      {
+        "title": "Thu thập & khóa dữ liệu nguồn",
+        "owner": "Thư ký Công ty / Văn phòng HĐQT",
+        "due_date": "T+22",
+        "status": "pending"
+      },
+      {
+        "title": "Lập dự thảo & đối soát",
+        "owner": "Thư ký Công ty / Văn phòng HĐQT",
+        "due_date": "T+44",
+        "status": "pending"
+      },
+      {
+        "title": "Rà soát pháp lý & tuân thủ",
+        "owner": "Phòng Pháp chế & Tuân thủ",
+        "due_date": "T+66",
+        "status": "pending"
+      }
+    ],
+    "deadline_config": {
+      "frequency_unit": "ANNUALLY",
+      "cycle_anchor_day": 31,
+      "month_in_quarter": 3,
+      "applicable_from_mode": "NEXT_SLOT",
+      "duration_type": "CALENDAR_DAYS",
+      "deadline_duration_type": "CALENDAR_DAYS",
+      "deadline_days": 110,
+      "open_days_before": 30
+    },
+    "applicability_rules": {
+      "applicable_company_classes": [
+        "listed",
+        "large_public",
+        "non_large_public"
+      ],
+      "applicable_sectors": [
+        "commercial",
+        "service",
+        "manufacturing"
+      ],
+      "deadline_days": 110,
+      "deadline_day_type": "calendar",
+      "use_structure_deadline": false,
+      "deadline_by_structure": {
+        "simple_structure": {
+          "days": 110
+        },
+        "has_subsidiaries": {
+          "days": 110
+        },
+        "has_subordinate_units": {
+          "days": 110
+        }
+      }
+    },
+    "workflow": {
+      "steps": [
+        {
+          "stage": "Thu thập & khóa dữ liệu nguồn",
+          "description": "Thu thập và khóa dữ liệu nguồn cho Báo cáo thường niên.",
+          "instructions": "Đối soát completeness, kỳ báo cáo, reporting scope và nguồn dữ liệu trước khi chuyển bước.",
+          "department": {
+            "code": "corporate_secretary",
+            "name": "Thư ký Công ty / Văn phòng HĐQT"
+          },
+          "assignee_roles": ["REVIEWER"],
+          "processing_days": 22,
+          "due_rule": "T+22",
+          "display_order": 1,
+          "reminder_config": {"enabled": true, "offsets_days": [-2, -1]},
+          "documents": [{"name": "Báo cáo thường niên", "required": true, "template_file_name": "bao_cao_thuong_nien.xlsx"}]
+        },
+        {
+          "stage": "Lập dự thảo & đối soát",
+          "description": "Lập dự thảo Báo cáo thường niên và đối soát các chỉ tiêu/trường bắt buộc.",
+          "instructions": "Sử dụng canonical source; các ngoại lệ phải có lý do và evidence.",
+          "department": {
+            "code": "corporate_secretary",
+            "name": "Thư ký Công ty / Văn phòng HĐQT"
+          },
+          "assignee_roles": ["REVIEWER"],
+          "processing_days": 22,
+          "due_rule": "T+44",
+          "display_order": 2,
+          "reminder_config": {"enabled": true, "offsets_days": [-2, -1]},
+          "documents": [{"name": "BCTC năm đã kiểm toán", "required": false, "template_file_name": "bctc_nam_da_kiem_toan.xlsx"}]
+        },
+        {
+          "stage": "Rà soát pháp lý & tuân thủ",
+          "description": "Kiểm tra applicability, deadline, completeness, version, ngôn ngữ và kênh công bố.",
+          "instructions": "Không cho qua bước nếu còn mandatory field/document hoặc exception mức cao chưa xử lý.",
+          "department": {"code": "legal", "name": "Phòng Pháp chế & Tuân thủ"},
+          "assignee_roles": ["REVIEWER"],
+          "processing_days": 22,
+          "due_rule": "T+66",
+          "display_order": 3,
+          "reminder_config": {"enabled": true, "offsets_days": [-2, -1]},
+          "documents": [{"name": "Governance & ESG Data Pack", "required": false, "template_file_name": "governance_esg_data_pack.xlsx"}]
+        },
+        {
+          "stage": "Phê duyệt hồ sơ chính thức",
+          "description": "Phê duyệt version chính thức của Báo cáo thường niên.",
+          "instructions": "Khóa artifact/version/hash và xác nhận người có thẩm quyền.",
+          "department": {"code": "bod", "name": "Ban Giám đốc"},
+          "assignee_roles": ["APPROVER"],
+          "processing_days": 22,
+          "due_rule": "T+88",
+          "display_order": 4,
+          "reminder_config": {"enabled": true, "offsets_days": [-2, -1]},
+          "documents": [{"name": "Governance & ESG Data Pack", "required": true, "template_file_name": "governance_esg_data_pack.xlsx"}]
+        },
+        {
+          "stage": "Công bố & lưu bằng chứng",
+          "description": "Thực hiện công bố trên các kênh áp dụng, xác minh kết quả và lưu receipt/evidence.",
+          "instructions": "Xác minh artifact công khai khớp artifact đã phê duyệt trước khi đóng nghĩa vụ.",
+          "department": {
+            "code": "corporate_secretary",
+            "name": "Thư ký Công ty / Văn phòng HĐQT"
+          },
+          "assignee_roles": ["APPROVER"],
+          "processing_days": 22,
+          "due_rule": "T+110",
+          "display_order": 5,
+          "reminder_config": {"enabled": true, "offsets_days": [-2, -1]},
+          "documents": [{"name": "Governance & ESG Data Pack", "required": true, "template_file_name": "governance_esg_data_pack.xlsx"}]
+        }
+      ]
+    }
+  }
+}

@@ -37,6 +37,7 @@ type Repository struct {
 	globalWorkflowVersions map[string]map[int][]disclosureapp.GlobalWorkflowStepInput
 	// workflowOverrideConflicts backs Sprint 3 / Batch 4 — keyed by conflict id (== conflict_key).
 	workflowOverrideConflicts map[string]disclosureapp.PersistedConflictDTO
+	importAttempts            map[string]*disclosureapp.TemplateImportAttempt
 }
 
 type typeRootState struct {
@@ -70,6 +71,7 @@ func NewRepository() *Repository {
 		overrideByCompanyType:     map[string]*overrideState{},
 		globalWorkflowVersions:    map[string]map[int][]disclosureapp.GlobalWorkflowStepInput{},
 		workflowOverrideConflicts: map[string]disclosureapp.PersistedConflictDTO{},
+		importAttempts:            map[string]*disclosureapp.TemplateImportAttempt{},
 	}
 	for _, item := range disclosureapp.SeedDisclosureTypeCatalog() {
 		item.VersionNo = 1

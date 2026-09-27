@@ -1084,3 +1084,80 @@ func TestCmsDownloadTemplateImportExample(t *testing.T) {
 	})
 }
 
+func TestCmsDownloadTemplateImportGuide(t *testing.T) {
+	handler, auditSpy := setupImportTestServer()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/platform/cms/templates/import/guide", nil)
+	req.Header.Set("Authorization", "Bearer valid-token")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if rec.Header().Get("Content-Type") != "text/markdown; charset=utf-8" {
+		t.Fatalf("content-type=%q", rec.Header().Get("Content-Type"))
+	}
+	if rec.Header().Get("Content-Disposition") != `attachment; filename="cobo-template-import-guide-v1.0.md"` {
+		t.Fatalf("disposition=%q", rec.Header().Get("Content-Disposition"))
+	}
+	if !strings.Contains(rec.Body.String(), "schema_version") {
+		t.Fatal("guide body missing schema_version")
+	}
+	if len(auditSpy.events) != 0 {
+		t.Fatalf("guide must not write audit, got %d", len(auditSpy.events))
+	}
+}
+
+func TestFlagOnConfirmAuditOnceOnReplay(t *testing.T) {
+	t.Setenv("CMS_TEMPLATE_IMPORT_HISTORY_ENABLED", "true")
+	handler, auditSpy := setupImportTestServer()
+	payload := []byte(`{
+		"schema_version":"1.0",
+		"template":{
+			"name":"Audit once",
+			"template_category":"irregular",
+			"deadline_rule":"Trong vòng 24 giờ",
+			"workflow":{"steps":[{"stage":"Soạn","department_id":"dept-002","assignee_role_ids":["approver"],"processing_days":1}]}
+		}
+	}`)
+	valReq := makeMultipartFileReq("file", "audit.json", payload)
+	valRec := httptest.NewRecorder()
+	handler.ServeHTTP(valRec, valReq)
+	if valRec.Code != http.StatusOK {
+		t.Fatalf("validate %d %s", valRec.Code, valRec.Body.String())
+	}
+	var validated disclosureapp.ValidateTemplateImportResponse
+	if err := json.Unmarshal(valRec.Body.Bytes(), &validated); err != nil {
+		t.Fatal(err)
+	}
+	body := map[string]any{
+		"import_attempt_id":   validated.ImportAttemptID,
+		"validation_token":    validated.ValidationToken,
+		"target_type_id":      "audit-once-type",
+		"target_name":         validated.Preview.NormalizedTemplate.Name,
+		"normalized_template": validated.Preview.NormalizedTemplate,
+	}
+	raw, _ := json.Marshal(body)
+	for i := 0; i < 2; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/platform/cms/templates/import/confirm", bytes.NewReader(raw))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer valid-token")
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if i == 0 && rec.Code != http.StatusCreated {
+			t.Fatalf("first confirm %d %s", rec.Code, rec.Body.String())
+		}
+		if i == 1 && rec.Code != http.StatusConflict {
+			t.Fatalf("replay %d %s", rec.Code, rec.Body.String())
+		}
+	}
+	imports := 0
+	for _, ev := range auditSpy.events {
+		if ev.Action == "disclosure.type.import" {
+			imports++
+		}
+	}
+	if imports != 1 {
+		t.Fatalf("audit events=%d", imports)
+	}
+}
+

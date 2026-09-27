@@ -147,6 +147,9 @@ seed_dev_identity_authorization.sql
 0143_cms_global_record_id_width.up.sql
 0144_workflow_department_binding.up.sql
 0145_catalog_department_code_guard.up.sql
+0146_workflow_department_email_delivery_safety.up.sql
+0147_workflow_department_email_recipient_backfill.up.sql
+0148_cms_template_import_attempts.up.sql
 seed_dev_company_subscriptions.sql
 "
 

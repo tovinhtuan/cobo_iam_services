@@ -39,6 +39,8 @@ import (
 	"github.com/cobo/cobo_iam_services/internal/subscription/entitlement"
 	workflowapp "github.com/cobo/cobo_iam_services/internal/workflow/app"
 	workflowmysql "github.com/cobo/cobo_iam_services/internal/workflow/infra/mysql"
+	"github.com/cobo/cobo_iam_services/internal/workflowdept"
+	wdmysql "github.com/cobo/cobo_iam_services/internal/workflowdept/infra/mysql"
 )
 
 func main() {
@@ -193,6 +195,7 @@ func main() {
 			reminderapp.WithDispatchLogger(log),
 			reminderapp.WithNotificationRulesFoundation(rulesReader, rulesEvaluator),
 			reminderapp.WithTierEnforcement(tierChecker),
+			reminderapp.WithBindingOwnership(wdmysql.NewDeliveryStore(sqlDB)),
 		}
 		if cfg.WorkflowRemindersEnabled {
 			inAppRepo := inappmysql.NewRepository(sqlDB)
@@ -218,7 +221,13 @@ func main() {
 			case <-runCtx.Done():
 				return
 			case <-t.C:
-				tick(runCtx, log, sqlDB, processor, reminderScheduler, disclosureSvc, periodicCreator, cfg.OutboxVisibilityTimeout, cfg.ReminderDispatchEnabled, cfg.ReminderVisibilityTimeout)
+				tick(runCtx, log, sqlDB, processor, reminderScheduler, disclosureSvc, periodicCreator, cfg.OutboxVisibilityTimeout, cfg.ReminderDispatchEnabled, cfg.ReminderVisibilityTimeout, notificationsmtp.Config{
+					Host: cfg.SMTPHost,
+					Port: cfg.SMTPPort,
+					User: cfg.SMTPUser,
+					Pass: cfg.SMTPPassword,
+					From: cfg.SMTPFrom,
+				})
 			}
 		}
 	}()
@@ -229,7 +238,7 @@ func main() {
 	log.Info("worker stopped")
 }
 
-func tick(ctx context.Context, log *slog.Logger, sqlDB *sql.DB, processor *platformoutbox.Processor, reminderScheduler reminderapp.Service, disclosureSvc disclosureapp.Service, periodicCreator disclosureapp.PeriodicRecordCreator, outboxVisibilityTimeout time.Duration, reminderDispatchEnabled bool, reminderVisibilityTimeout time.Duration) {
+func tick(ctx context.Context, log *slog.Logger, sqlDB *sql.DB, processor *platformoutbox.Processor, reminderScheduler reminderapp.Service, disclosureSvc disclosureapp.Service, periodicCreator disclosureapp.PeriodicRecordCreator, outboxVisibilityTimeout time.Duration, reminderDispatchEnabled bool, reminderVisibilityTimeout time.Duration, smtpCfg notificationsmtp.Config) {
 	if sqlDB != nil {
 		if err := sqlDB.PingContext(ctx); err != nil {
 			log.Warn("worker tick ping failed", slog.String("err", err.Error()))
@@ -309,6 +318,23 @@ func tick(ctx context.Context, log *slog.Logger, sqlDB *sql.DB, processor *platf
 					)
 				}
 			}
+		}
+	}
+	// Binding email runs only when both workflow-department flags are on.
+	// Flags default off, so this does not touch reminder_dispatch_resolutions
+	// and does not call the legacy reminder sender.
+	if sqlDB != nil && workflowdept.EmailBindingEnabled() {
+		mailer := notificationsmtp.NewBindingMailer(smtpCfg, nil)
+		bindCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+		err := workflowdept.RunBindingTick(bindCtx, workflowdept.BindingDeps{
+			Store:    wdmysql.NewDeliveryStore(sqlDB),
+			Sender:   workflowdept.NewSMTPBindingSender(mailer),
+			SMTPHost: smtpCfg.Host,
+			Log:      log,
+		})
+		cancel()
+		if err != nil {
+			log.Warn("workflow department email binding tick failed", slog.String("err", err.Error()))
 		}
 	}
 	if err := processor.Tick(ctx); err != nil {

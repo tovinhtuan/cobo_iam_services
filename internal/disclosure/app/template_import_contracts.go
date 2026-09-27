@@ -187,6 +187,7 @@ type ValidateTemplateImportResponse struct {
 	CanConfirm         bool                               `json:"can_confirm"`
 	ActivationReady    bool                               `json:"activation_ready"`
 	SuggestedTypeID    string                             `json:"suggested_type_id"`
+	ImportAttemptID    string                             `json:"import_attempt_id,omitempty"`
 	ValidationToken    string                             `json:"validation_token,omitempty"`
 	TokenExpiresAt     string                             `json:"token_expires_at,omitempty"`
 	Errors             []TemplateImportValidationIssueDTO `json:"errors"`
@@ -232,6 +233,7 @@ type TemplateImportPreviewDTO struct {
 // ConfirmTemplateImportRequest is the request body for POST .../import/confirm.
 type ConfirmTemplateImportRequest struct {
 	Subject            Subject                    `json:"-"`
+	ImportAttemptID    string                     `json:"import_attempt_id,omitempty"`
 	ValidationToken    string                     `json:"validation_token"`
 	TargetTypeID       string                     `json:"target_type_id"`
 	TargetName         string                     `json:"target_name"`

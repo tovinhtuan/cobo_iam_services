@@ -11,7 +11,12 @@ import (
 
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 	"github.com/cobo/cobo_iam_services/internal/subscription/entitlement"
+	"github.com/cobo/cobo_iam_services/internal/workflowdept"
 )
+
+type BindingOwnershipLookup interface {
+	BindingOwnsOccurrence(ctx context.Context, occurrenceID string) (bool, error)
+}
 
 type service struct {
 	configRepo                 ConfigRepository
@@ -35,6 +40,7 @@ type service struct {
 	stepTaskStateReader        WorkflowStepTaskStateReader
 	dispatchLogger             *slog.Logger
 	tierEnforcement            *entitlement.Checker
+	bindingOwnership           BindingOwnershipLookup
 }
 
 type EmailSender interface {
@@ -42,6 +48,12 @@ type EmailSender interface {
 }
 
 type ServiceOption func(*service)
+
+func WithBindingOwnership(lookup BindingOwnershipLookup) ServiceOption {
+	return func(s *service) {
+		s.bindingOwnership = lookup
+	}
+}
 
 func WithEmailSender(sender EmailSender) ServiceOption {
 	return func(s *service) {
@@ -335,6 +347,14 @@ func (s *service) DispatchDueOccurrences(ctx context.Context, now time.Time, lim
 			s.recordDispatchSkipped(ctx, c, out.skipReason, out.ruleCode)
 			result.Skipped++
 			continue
+		}
+		if workflowdept.EmailBindingEnabled() && s.bindingOwnership != nil {
+			owns, ownErr := s.bindingOwnership.BindingOwnsOccurrence(ctx, c.OccurrenceID)
+			if ownErr == nil && owns {
+				s.recordDispatchSkipped(ctx, c, "BINDING_RESOLUTION_OWNS", "")
+				result.Skipped++
+				continue
+			}
 		}
 
 		resp, dispatchErr := s.DispatchOccurrence(ctx, DispatchOccurrenceRequest{
