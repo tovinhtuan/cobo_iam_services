@@ -18,7 +18,24 @@ const (
 	ImportAttemptStatusConfirmed        = "CONFIRMED"
 	ImportAttemptStatusConfirmFailed    = "CONFIRM_FAILED"
 	ImportAttemptStatusConfirming       = "CONFIRMING"
+
+	// ImportConfirmLeaseDuration is how long a CONFIRMING claim blocks another request.
+	ImportConfirmLeaseDuration = 10 * time.Minute
 )
+
+// importConfirmNow is the clock for confirm leases. Tests replace it.
+var importConfirmNow = time.Now
+
+// SetImportConfirmClockForTest replaces the confirm lease clock and returns a restore func.
+func SetImportConfirmClockForTest(now func() time.Time) func() {
+	prev := importConfirmNow
+	if now == nil {
+		importConfirmNow = time.Now
+	} else {
+		importConfirmNow = now
+	}
+	return func() { importConfirmNow = prev }
+}
 
 // ImportHistoryEnabled reports whether attempt rows are written and history reads are served.
 // Unset and any value other than true, 1, or yes is off.

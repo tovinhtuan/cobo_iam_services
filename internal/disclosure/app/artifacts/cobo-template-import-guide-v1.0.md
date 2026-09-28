@@ -32,7 +32,7 @@ Ví dụ không hợp lệ (có chữ bọc ngoài JSON) sẽ gặp `INVALID_JSO
 - Periodic: `deadline_rule` không bắt buộc. Nếu `applicability_rules.deadline_days` lớn hơn 0, hệ thống ghi đè `deadline_rule` thành `T+{deadline_days}`, kể cả khi file đang ghi một giá trị khác.
 - Periodic thiếu cả `deadline_rule` lẫn `deadline_days` dương thì không đạt.
 - Irregular: `deadline_rule` không được rỗng. Hệ thống không suy ra rule từ `deadline_days`.
-- Ngày dùng `YYYY-MM-DD`.
+- `format` nếu có thì là một giá trị `file_types`, tối đa 64 ký tự. Bỏ trống thì hệ thống dùng `PDF`. Đoạn mô tả dài hơn 64 ký tự không phải một loại file.
 - `NEXT` và `NEXT_SLOT` không cần `applicable_from_slot`.
 
 ## Phạm vi và phòng ban

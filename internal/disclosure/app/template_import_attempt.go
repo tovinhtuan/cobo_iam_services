@@ -36,14 +36,17 @@ type TemplateImportAttempt struct {
 	ValidatedAt            time.Time
 	ConfirmedAt            time.Time
 	UpdatedAt              time.Time
+	ConfirmingAt           time.Time
+	LeaseExpiresAt         time.Time
 }
 
 // ImportAttemptStore persists redacted import attempts.
 type ImportAttemptStore interface {
 	CreateImportAttempt(ctx context.Context, row *TemplateImportAttempt) error
 	GetImportAttemptByID(ctx context.Context, id string) (*TemplateImportAttempt, error)
-	ClaimImportAttempt(ctx context.Context, id, companyID, actorUserID string, rowVersion int64, cutoff time.Time) (int64, error)
+	ClaimImportAttempt(ctx context.Context, id, companyID, actorUserID, targetTypeID string, rowVersion int64, cutoff, now time.Time) (int64, error)
 	MarkImportAttemptConfirmed(ctx context.Context, id string, rowVersion int64, createdTypeID, targetTypeID string, at time.Time) error
+	ReconcileExpiredImportAttempt(ctx context.Context, id string, rowVersion int64, createdTypeID string, now time.Time) error
 	MarkImportAttemptFailed(ctx context.Context, id string, rowVersion int64, errorCode, targetTypeID string, at time.Time) error
 	ListImportAttempts(ctx context.Context, q ListTemplateImportHistoryRequest) ([]TemplateImportAttempt, error)
 }

@@ -290,15 +290,17 @@ func (h *Handler) cmsConfirmTemplateImport(w http.ResponseWriter, r *http.Reques
 
 	// Post-commit best-effort audit log (AUDIT_ATOMICITY_MODEL=POST_COMMIT)
 	// Never audits raw validation token, HMAC secret, auth token, or full imported template JSON.
-	payloadHash, _ := disclosureapp.ComputeCanonicalTemplatePayloadHash(&req.NormalizedTemplate)
-	h.auditLog(r, sub, "disclosure.type.import", "disclosure_type", resp.TypeID, map[string]any{
-		"creation_mode":  "TEMPLATE_IMPORT",
-		"target_type_id": resp.TypeID,
-		"version_no":     resp.VersionNo,
-		"schema_version": disclosureapp.TemplateImportSchemaVersion,
-		"payload_hash":   payloadHash,
-		"actor_id":       sub.UserID,
-	})
+	if !resp.HistoryReconciled {
+		payloadHash, _ := disclosureapp.ComputeCanonicalTemplatePayloadHash(&req.NormalizedTemplate)
+		h.auditLog(r, sub, "disclosure.type.import", "disclosure_type", resp.TypeID, map[string]any{
+			"creation_mode":  "TEMPLATE_IMPORT",
+			"target_type_id": resp.TypeID,
+			"version_no":     resp.VersionNo,
+			"schema_version": disclosureapp.TemplateImportSchemaVersion,
+			"payload_hash":   payloadHash,
+			"actor_id":       sub.UserID,
+		})
+	}
 
 	httpx.WriteJSON(w, http.StatusCreated, resp)
 }

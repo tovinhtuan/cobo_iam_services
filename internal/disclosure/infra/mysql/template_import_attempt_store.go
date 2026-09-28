@@ -47,18 +47,24 @@ func (r *Repository) GetImportAttemptByID(ctx context.Context, id string) (*disc
 			parse_valid, domain_valid, activation_ready, can_confirm, mapping_required,
 			required_mapping_count, resolved_mapping_count, unresolved_mapping_count,
 			error_codes, mapping_summary, COALESCE(target_type_id, ''), COALESCE(created_type_id, ''), COALESCE(confirm_error_code, ''),
-			row_version, created_at, validated_at, confirmed_at, updated_at
+			row_version, created_at, validated_at, confirmed_at, updated_at, confirming_at, lease_expires_at
 		FROM cms_template_import_attempts WHERE id = ?`, id)
 	return scanImportAttempt(row)
 }
 
-func (r *Repository) ClaimImportAttempt(ctx context.Context, id, companyID, actorUserID string, rowVersion int64, cutoff time.Time) (int64, error) {
+func (r *Repository) ClaimImportAttempt(ctx context.Context, id, companyID, actorUserID, targetTypeID string, rowVersion int64, cutoff, now time.Time) (int64, error) {
+	leaseUntil := now.UTC().Add(disclosureapp.ImportConfirmLeaseDuration)
 	res, err := r.db.ExecContext(ctx, `
 		UPDATE cms_template_import_attempts
-		SET row_version = row_version + 1, status = 'CONFIRMING', updated_at = CURRENT_TIMESTAMP(3)
+		SET row_version = row_version + 1, status = 'CONFIRMING', target_type_id = ?,
+		    confirming_at = ?, lease_expires_at = ?, updated_at = ?
 		WHERE id = ? AND company_id = ? AND actor_user_id = ? AND row_version = ?
-		  AND status IN ('VALIDATED', 'MAPPING_REQUIRED') AND created_at >= ?`,
-		id, companyID, actorUserID, rowVersion, cutoff)
+		  AND created_at >= ?
+		  AND (
+		    status IN ('VALIDATED', 'MAPPING_REQUIRED')
+		    OR (status = 'CONFIRMING' AND (lease_expires_at IS NULL OR lease_expires_at < ?))
+		  )`,
+		targetTypeID, now.UTC(), leaseUntil, now.UTC(), id, companyID, actorUserID, rowVersion, cutoff, now.UTC())
 	if err != nil {
 		return 0, err
 	}
@@ -75,9 +81,29 @@ func (r *Repository) ClaimImportAttempt(ctx context.Context, id, companyID, acto
 func (r *Repository) MarkImportAttemptConfirmed(ctx context.Context, id string, rowVersion int64, createdTypeID, targetTypeID string, at time.Time) error {
 	res, err := r.db.ExecContext(ctx, `
 		UPDATE cms_template_import_attempts
-		SET status = 'CONFIRMED', created_type_id = ?, target_type_id = ?, confirmed_at = ?, updated_at = ?
+		SET status = 'CONFIRMED', created_type_id = IF(created_type_id IS NULL OR created_type_id = '', ?, created_type_id),
+		    target_type_id = ?, confirmed_at = ?, updated_at = ?, lease_expires_at = NULL
 		WHERE id = ? AND row_version = ? AND status = 'CONFIRMING'`,
 		createdTypeID, targetTypeID, at, at, id, rowVersion)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return perr.NewHTTPError(http.StatusConflict, perr.CodeImportAttemptAlreadyConfirmed, "import attempt version mismatch", nil)
+	}
+	return nil
+}
+
+func (r *Repository) ReconcileExpiredImportAttempt(ctx context.Context, id string, rowVersion int64, createdTypeID string, now time.Time) error {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE cms_template_import_attempts
+		SET status = 'CONFIRMED',
+		    created_type_id = IF(created_type_id IS NULL OR created_type_id = '', ?, created_type_id),
+		    confirmed_at = ?, updated_at = ?, lease_expires_at = NULL
+		WHERE id = ? AND row_version = ? AND status = 'CONFIRMING'
+		  AND (lease_expires_at IS NULL OR lease_expires_at < ?)`,
+		createdTypeID, now.UTC(), now.UTC(), id, rowVersion, now.UTC())
 	if err != nil {
 		return err
 	}
@@ -91,7 +117,7 @@ func (r *Repository) MarkImportAttemptConfirmed(ctx context.Context, id string, 
 func (r *Repository) MarkImportAttemptFailed(ctx context.Context, id string, rowVersion int64, errorCode, targetTypeID string, at time.Time) error {
 	_, err := r.db.ExecContext(ctx, `
 		UPDATE cms_template_import_attempts
-		SET status = 'CONFIRM_FAILED', confirm_error_code = ?, target_type_id = NULLIF(?, ''), confirmed_at = ?, updated_at = ?
+		SET status = 'CONFIRM_FAILED', confirm_error_code = ?, target_type_id = NULLIF(?, ''), confirmed_at = ?, updated_at = ?, lease_expires_at = NULL
 		WHERE id = ? AND row_version = ? AND status = 'CONFIRMING'`,
 		errorCode, targetTypeID, at, at, id, rowVersion)
 	return err
@@ -140,7 +166,7 @@ func (r *Repository) ListImportAttempts(ctx context.Context, q disclosureapp.Lis
 			parse_valid, domain_valid, activation_ready, can_confirm, mapping_required,
 			required_mapping_count, resolved_mapping_count, unresolved_mapping_count,
 			error_codes, mapping_summary, COALESCE(target_type_id, ''), COALESCE(created_type_id, ''), COALESCE(confirm_error_code, ''),
-			row_version, created_at, validated_at, confirmed_at, updated_at
+			row_version, created_at, validated_at, confirmed_at, updated_at, confirming_at, lease_expires_at
 		FROM cms_template_import_attempts `+where+` ORDER BY created_at DESC, id DESC LIMIT ?`, args...)
 	if err != nil {
 		return nil, err
@@ -163,14 +189,14 @@ func scanImportAttempt(row rowScanner) (*disclosureapp.TemplateImportAttempt, er
 	var item disclosureapp.TemplateImportAttempt
 	var parseValid, domainValid, activationReady, canConfirm, mappingRequired int
 	var errorsJSON, mappingsJSON []byte
-	var confirmed sql.NullTime
+	var confirmed, confirmingAt, leaseExpires sql.NullTime
 	err := row.Scan(
 		&item.ID, &item.CompanyID, &item.ActorUserID, &item.ActorMembershipID, &item.Filename, &item.FileSizeBytes,
 		&item.FileSHA256, &item.CanonicalPayloadSHA256, &item.ValidationTokenSHA256, &item.SchemaVersion, &item.Status,
 		&parseValid, &domainValid, &activationReady, &canConfirm, &mappingRequired,
 		&item.RequiredMappingCount, &item.ResolvedMappingCount, &item.UnresolvedMappingCount,
 		&errorsJSON, &mappingsJSON, &item.TargetTypeID, &item.CreatedTypeID, &item.ConfirmErrorCode,
-		&item.RowVersion, &item.CreatedAt, &item.ValidatedAt, &confirmed, &item.UpdatedAt,
+		&item.RowVersion, &item.CreatedAt, &item.ValidatedAt, &confirmed, &item.UpdatedAt, &confirmingAt, &leaseExpires,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -185,6 +211,12 @@ func scanImportAttempt(row rowScanner) (*disclosureapp.TemplateImportAttempt, er
 	item.MappingRequired = mappingRequired == 1
 	if confirmed.Valid {
 		item.ConfirmedAt = confirmed.Time
+	}
+	if confirmingAt.Valid {
+		item.ConfirmingAt = confirmingAt.Time
+	}
+	if leaseExpires.Valid {
+		item.LeaseExpiresAt = leaseExpires.Time
 	}
 	_ = json.Unmarshal(errorsJSON, &item.ErrorCodes)
 	_ = json.Unmarshal(mappingsJSON, &item.MappingSummary)

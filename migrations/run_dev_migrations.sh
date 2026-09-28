@@ -150,6 +150,7 @@ seed_dev_identity_authorization.sql
 0146_workflow_department_email_delivery_safety.up.sql
 0147_workflow_department_email_recipient_backfill.up.sql
 0148_cms_template_import_attempts.up.sql
+0149_cms_template_import_attempt_lease.up.sql
 seed_dev_company_subscriptions.sql
 "
 

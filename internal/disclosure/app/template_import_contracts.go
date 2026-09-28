@@ -252,6 +252,9 @@ type ConfirmTemplateImportResponse struct {
 	RootStatus  string    `json:"root_status"`  // strictly "active"
 	Name        string    `json:"name"`
 	CreatedAt   time.Time `json:"created_at"`
+	// HistoryReconciled is true when an expired claim found an existing draft.
+	// The HTTP handler must not write a second disclosure.type.import audit.
+	HistoryReconciled bool `json:"-"`
 }
 
 // TemplateImportTokenClaims represents the payload bound into the stateless HMAC validation token.

@@ -33,19 +33,24 @@ func (r *Repository) GetImportAttemptByID(_ context.Context, id string) (*disclo
 	return &cp, nil
 }
 
-func (r *Repository) ClaimImportAttempt(_ context.Context, id, companyID, actorUserID string, rowVersion int64, cutoff time.Time) (int64, error) {
+func (r *Repository) ClaimImportAttempt(_ context.Context, id, companyID, actorUserID, targetTypeID string, rowVersion int64, cutoff, now time.Time) (int64, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	row := r.importAttempts[id]
 	if row == nil || row.CompanyID != companyID || row.ActorUserID != actorUserID || row.RowVersion != rowVersion || row.CreatedAt.Before(cutoff) {
 		return 0, nil
 	}
-	if row.Status != disclosureapp.ImportAttemptStatusValidated && row.Status != disclosureapp.ImportAttemptStatusMappingRequired {
+	expired := row.Status == disclosureapp.ImportAttemptStatusConfirming && !disclosureapp.ConfirmLeaseActive(row.LeaseExpiresAt, now)
+	open := row.Status == disclosureapp.ImportAttemptStatusValidated || row.Status == disclosureapp.ImportAttemptStatusMappingRequired
+	if !open && !expired {
 		return 0, nil
 	}
 	row.Status = disclosureapp.ImportAttemptStatusConfirming
+	row.TargetTypeID = strings.TrimSpace(targetTypeID)
+	row.ConfirmingAt = now.UTC()
+	row.LeaseExpiresAt = now.UTC().Add(disclosureapp.ImportConfirmLeaseDuration)
 	row.RowVersion++
-	row.UpdatedAt = time.Now().UTC()
+	row.UpdatedAt = now.UTC()
 	return row.RowVersion, nil
 }
 
@@ -61,6 +66,27 @@ func (r *Repository) MarkImportAttemptConfirmed(_ context.Context, id string, ro
 	row.TargetTypeID = targetTypeID
 	row.ConfirmedAt = at.UTC()
 	row.UpdatedAt = at.UTC()
+	row.LeaseExpiresAt = time.Time{}
+	return nil
+}
+
+func (r *Repository) ReconcileExpiredImportAttempt(_ context.Context, id string, rowVersion int64, createdTypeID string, now time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	row := r.importAttempts[id]
+	if row == nil || row.RowVersion != rowVersion || row.Status != disclosureapp.ImportAttemptStatusConfirming {
+		return perr.NewHTTPError(http.StatusConflict, perr.CodeImportAttemptAlreadyConfirmed, "import attempt version mismatch", nil)
+	}
+	if disclosureapp.ConfirmLeaseActive(row.LeaseExpiresAt, now) {
+		return perr.NewHTTPError(http.StatusConflict, perr.CodeImportAttemptAlreadyConfirmed, "import attempt confirm is in progress", nil)
+	}
+	if strings.TrimSpace(row.CreatedTypeID) == "" {
+		row.CreatedTypeID = createdTypeID
+	}
+	row.Status = disclosureapp.ImportAttemptStatusConfirmed
+	row.ConfirmedAt = now.UTC()
+	row.UpdatedAt = now.UTC()
+	row.LeaseExpiresAt = time.Time{}
 	return nil
 }
 
@@ -79,6 +105,7 @@ func (r *Repository) MarkImportAttemptFailed(_ context.Context, id string, rowVe
 	row.TargetTypeID = targetTypeID
 	row.ConfirmedAt = at.UTC()
 	row.UpdatedAt = at.UTC()
+	row.LeaseExpiresAt = time.Time{}
 	return nil
 }
 

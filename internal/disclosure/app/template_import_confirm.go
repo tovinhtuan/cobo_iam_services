@@ -92,6 +92,9 @@ func (s *service) ConfirmTemplateImport(ctx context.Context, req ConfirmTemplate
 	if err != nil {
 		return nil, err
 	}
+	if recovered, done, err := s.recoverExpiredConfirm(ctx, req, bound); err != nil || done {
+		return recovered, err
+	}
 
 	// 5. Mutable Target References Revalidation
 	// Target catalogs may change during the token TTL, so we must re-query current state.
@@ -300,7 +303,7 @@ func (s *service) ConfirmTemplateImport(ctx context.Context, req ConfirmTemplate
 		return nil, err
 	}
 
-	if err := s.claimConfirmAttempt(ctx, bound); err != nil {
+	if err := s.claimConfirmAttempt(ctx, bound, req.TargetTypeID); err != nil {
 		return nil, err
 	}
 
@@ -436,12 +439,7 @@ func (s *service) materializeImportUpsert(
 						"attachment_requirement": "REQUIRED",
 					},
 				},
-				"file_types": func() []any {
-					if norm.Format != "" {
-						return []any{norm.Format}
-					}
-					return []any{"PDF"}
-				}(),
+				"file_types": importMaterializedFileTypes(norm.Format),
 			},
 			Validation:   map[string]any{},
 			DisplayOrder: 4,

@@ -330,6 +330,17 @@ func validateFreeTextFileTypes(raw []any, fieldKey string, fieldErrors map[strin
 	}
 }
 
+// importMaterializedFileTypes is the file_types array confirm writes onto the
+// channels_and_format block. A blank format becomes PDF. A non-blank format is
+// one token and must satisfy the same 64-rune limit as template validation.
+func importMaterializedFileTypes(format string) []any {
+	trimmed := strings.TrimSpace(format)
+	if trimmed == "" {
+		return []any{"PDF"}
+	}
+	return []any{trimmed}
+}
+
 // validateOptionalDisclosureMethodLabels validates additive disclosure_method_labels when present.
 // Absent/null is allowed for backward compatibility with older channel payloads.
 func validateOptionalDisclosureMethodLabels(raw any, fieldKey string, fieldErrors map[string]string) {

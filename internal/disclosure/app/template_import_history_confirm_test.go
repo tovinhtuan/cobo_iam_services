@@ -6,6 +6,7 @@ import (
 	"os"
 	"sync"
 	"testing"
+	"time"
 
 	disclosureapp "github.com/cobo/cobo_iam_services/internal/disclosure/app"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
@@ -305,6 +306,105 @@ func TestHistoryRetentionHidesOldRowWithoutDeletingIt(t *testing.T) {
 	kept, err := repo.GetImportAttemptByID(context.Background(), old.ImportAttemptID)
 	if err != nil || kept == nil {
 		t.Fatal("retention must not delete the row before the purge job exists")
+	}
+}
+
+func TestConfirmLeaseStillActiveConflicts(t *testing.T) {
+	t.Setenv("CMS_TEMPLATE_IMPORT_HISTORY_ENABLED", "true")
+	svc, repo, sub := setupConfirmTestService()
+	validated := validateSample(t, svc, sub, *samplePeriodicNormalizedTemplate(), "lease.json")
+	row, err := repo.GetImportAttemptByID(context.Background(), validated.ImportAttemptID)
+	if err != nil || row == nil {
+		t.Fatal(err)
+	}
+	row.Status = disclosureapp.ImportAttemptStatusConfirming
+	row.TargetTypeID = "lease-held"
+	row.LeaseExpiresAt = time.Now().Add(10 * time.Minute)
+	if err := repo.CreateImportAttempt(context.Background(), row); err != nil {
+		t.Fatal(err)
+	}
+	norm := validated.Preview.NormalizedTemplate
+	_, err = svc.ConfirmTemplateImport(context.Background(), disclosureapp.ConfirmTemplateImportRequest{
+		Subject: sub, ImportAttemptID: validated.ImportAttemptID, ValidationToken: validated.ValidationToken,
+		TargetTypeID: "lease-held", TargetName: norm.Name, NormalizedTemplate: *norm,
+	})
+	he, ok := perr.AsHTTPError(err)
+	if !ok || he.HTTPStatus != 409 {
+		t.Fatalf("active lease: %+v", err)
+	}
+	exists, _ := repo.TypeExists(context.Background(), "lease-held")
+	if exists {
+		t.Fatal("active lease must not create a draft")
+	}
+}
+
+func TestExpiredLeaseReclaimsWhenDraftMissing(t *testing.T) {
+	t.Setenv("CMS_TEMPLATE_IMPORT_HISTORY_ENABLED", "true")
+	svc, repo, sub := setupConfirmTestService()
+	validated := validateSample(t, svc, sub, *samplePeriodicNormalizedTemplate(), "expired.json")
+	row, err := repo.GetImportAttemptByID(context.Background(), validated.ImportAttemptID)
+	if err != nil || row == nil {
+		t.Fatal(err)
+	}
+	row.Status = disclosureapp.ImportAttemptStatusConfirming
+	row.TargetTypeID = "lease-expired"
+	row.LeaseExpiresAt = time.Now().Add(-time.Minute)
+	if err := repo.CreateImportAttempt(context.Background(), row); err != nil {
+		t.Fatal(err)
+	}
+	norm := validated.Preview.NormalizedTemplate
+	resp, err := svc.ConfirmTemplateImport(context.Background(), disclosureapp.ConfirmTemplateImportRequest{
+		Subject: sub, ImportAttemptID: validated.ImportAttemptID, ValidationToken: validated.ValidationToken,
+		TargetTypeID: "lease-expired", TargetName: norm.Name, NormalizedTemplate: *norm,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.HistoryReconciled || resp.TypeID != "lease-expired" || resp.IsActive {
+		t.Fatalf("reclaim: %+v", resp)
+	}
+	stored, err := repo.GetImportAttemptByID(context.Background(), validated.ImportAttemptID)
+	if err != nil || stored == nil || stored.Status != disclosureapp.ImportAttemptStatusConfirmed || stored.CreatedTypeID != "lease-expired" {
+		t.Fatalf("row=%+v err=%v", stored, err)
+	}
+}
+
+func TestExpiredLeaseReconcilesExistingDraftWithoutDuplicate(t *testing.T) {
+	t.Setenv("CMS_TEMPLATE_IMPORT_HISTORY_ENABLED", "true")
+	svc, repo, sub := setupConfirmTestService()
+	validated := validateSample(t, svc, sub, *samplePeriodicNormalizedTemplate(), "reconcile.json")
+	norm := validated.Preview.NormalizedTemplate
+	first, err := svc.ConfirmTemplateImport(context.Background(), disclosureapp.ConfirmTemplateImportRequest{
+		Subject: sub, ImportAttemptID: validated.ImportAttemptID, ValidationToken: validated.ValidationToken,
+		TargetTypeID: "lease-reconcile", TargetName: norm.Name, NormalizedTemplate: *norm,
+	})
+	if err != nil || first.HistoryReconciled {
+		t.Fatalf("first confirm: %+v %v", first, err)
+	}
+	row, err := repo.GetImportAttemptByID(context.Background(), validated.ImportAttemptID)
+	if err != nil || row == nil {
+		t.Fatal(err)
+	}
+	row.Status = disclosureapp.ImportAttemptStatusConfirming
+	row.CreatedTypeID = "lease-reconcile"
+	row.TargetTypeID = "lease-reconcile"
+	row.LeaseExpiresAt = time.Now().Add(-time.Minute)
+	if err := repo.CreateImportAttempt(context.Background(), row); err != nil {
+		t.Fatal(err)
+	}
+	second, err := svc.ConfirmTemplateImport(context.Background(), disclosureapp.ConfirmTemplateImportRequest{
+		Subject: sub, ImportAttemptID: validated.ImportAttemptID, ValidationToken: validated.ValidationToken,
+		TargetTypeID: "lease-reconcile", TargetName: norm.Name, NormalizedTemplate: *norm,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !second.HistoryReconciled || second.TypeID != "lease-reconcile" {
+		t.Fatalf("reconcile: %+v", second)
+	}
+	stored, err := repo.GetImportAttemptByID(context.Background(), validated.ImportAttemptID)
+	if err != nil || stored == nil || stored.Status != disclosureapp.ImportAttemptStatusConfirmed || stored.CreatedTypeID != "lease-reconcile" {
+		t.Fatalf("row=%+v err=%v", stored, err)
 	}
 }
 

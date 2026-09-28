@@ -64,6 +64,18 @@ func ValidateImportTemplate(
 		})
 	}
 
+	fileTypeErrors := map[string]string{}
+	validateFreeTextFileTypes(importMaterializedFileTypes(template.Format), "template.workflow.blocks[3].config.file_types", fileTypeErrors)
+	for path, msg := range fileTypeErrors {
+		errors = append(errors, TemplateImportValidationIssueDTO{
+			Code:            "WORKFLOW_DOCUMENT_FILE_TYPES_TOO_LONG",
+			FieldPath:       path,
+			Severity:        ValidationSeverityBlocker,
+			Message:         msg,
+			SuggestedAction: "Mỗi giá trị file_types tối đa 64 ký tự. Ví dụ: PDF.",
+		})
+	}
+
 	if template.TemplateCategory != TemplateCategoryPeriodic && template.TemplateCategory != TemplateCategoryIrregular {
 		errors = append(errors, TemplateImportValidationIssueDTO{
 			Code:      "INVALID_TEMPLATE_CATEGORY",
