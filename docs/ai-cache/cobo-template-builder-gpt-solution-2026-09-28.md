@@ -2,7 +2,7 @@
 
 Created: 2026-09-28
 Scope: raw report description -> CMS Template Import JSON
-Status: Proposed
+Status: Source implementation complete; deployment and Custom GPT setup pending
 
 ## Recommendation
 
@@ -153,3 +153,46 @@ directly.
 
 **Cached for:** Product design, API contract review, security review, and GPT
 configuration.
+
+## Implementation update — 2026-09-28
+
+The offline Custom GPT package is available at
+`docs/chatgpt-template-builder/`:
+
+- `instructions.md` is the paste-ready Custom GPT instruction set.
+- `knowledge-manifest.md` identifies the safe knowledge assets.
+- `cobo-template-builder-action.openapi.yaml` is a draft validate-only Action
+  contract using OAuth and deliberately has placeholder gateway URLs.
+
+The Action is intentionally not connected to the existing
+`/api/v1/platform/cms/templates/import/validate` endpoint. That endpoint is
+for the CMS UI: it requires an existing CMS session, can write import-attempt
+history when the feature flag is enabled, and returns a short-lived validation
+token. A GPT Action needs a dedicated zero-write gateway that redacts those
+fields and has its own user-delegated authentication.
+
+## OAuth implementation update — 2026-09-28
+
+Implemented source slices:
+
+- Migration `0150_template_builder_oauth_authorization_codes` persists only
+  short-lived SHA-256 authorization-code hashes. It is created but not applied.
+- OAuth authorization-code flow requires PKCE S256. Codes expire after five
+  minutes and are consumed atomically; replay fails.
+- Action bearer tokens are HS256-signed with a dedicated environment secret,
+  contain only the `cms.template.import.validate` scope and expire after ten
+  minutes. There is intentionally no refresh token.
+- `POST /api/v1/template-builder/validate` accepts the action bearer, rechecks
+  the real actor's CMS template-write permission through the existing validator,
+  and returns the redacted builder response. It cannot return confirmation
+  material or create import history.
+- The Cobo web route `/oauth/template-builder/authorize` shows an explicit
+  consent screen; it does not auto-approve merely by opening the URL.
+
+Feature flag: `TEMPLATE_BUILDER_OAUTH_ENABLED=false` by default. Enabling it
+requires MySQL plus `TEMPLATE_BUILDER_OAUTH_CLIENT_ID`, an exact HTTPS redirect
+URI allowlist, and a dedicated signing secret of at least 32 characters. The
+API fails closed when the flag is true and configuration is incomplete.
+
+Not performed: migration apply, DEV deployment, Custom GPT creation, Action
+configuration, template confirmation, publish, activation, or email sending.

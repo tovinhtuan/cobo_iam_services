@@ -85,6 +85,10 @@ type Service interface {
 
 	// CMS Template Import (Phase B).
 	ValidateTemplateImport(ctx context.Context, req ValidateTemplateImportRequest) (*ValidateTemplateImportResponse, error)
+	// ValidateTemplateImportForBuilder reuses the CMS parser, normalizer, catalog lookup,
+	// and domain rules for the external authoring integration. It never creates an import
+	// attempt and never returns a confirmation token or normalized payload.
+	ValidateTemplateImportForBuilder(ctx context.Context, req ValidateTemplateImportForBuilderRequest) (*TemplateBuilderValidationResponse, error)
 
 	// CMS Template Import Confirm (Phase C).
 	ConfirmTemplateImport(ctx context.Context, req ConfirmTemplateImportRequest) (*ConfirmTemplateImportResponse, error)
@@ -415,8 +419,8 @@ type UpsertTypeVersionRequest struct {
 	// block is persisted instead of being treated as "omitted, preserve pinned".
 	ClearWorkflow bool `json:"-"`
 	// CreateOnly rejects the upsert when type_id already exists (clone target race guard).
-	CreateOnly bool `json:"-"`
-	Checklist  []ChecklistItemDTO `json:"checklist"`
+	CreateOnly         bool                                      `json:"-"`
+	Checklist          []ChecklistItemDTO                        `json:"checklist"`
 	Tags               []string                                  `json:"tags"`
 	DeadlineConfig     *TemplateDeadlineConfig                   `json:"deadline_config,omitempty"`
 	Blocks             []TemplateBlockDTO                        `json:"blocks"`
@@ -552,9 +556,9 @@ type WorkflowStepReminderConfig struct {
 }
 
 type WorkflowStepDTO struct {
-	StepID          string   `json:"step_id"`
-	Stage           string   `json:"stage"`
-	Description     string   `json:"description,omitempty"`
+	StepID      string `json:"step_id"`
+	Stage       string `json:"stage"`
+	Description string `json:"description,omitempty"`
 	// DescriptionFormat is presentation-only for description: "plain_text" | "safe_html".
 	// Missing/empty on read → plain_text. Does not affect workflow routing/SLA/activation.
 	DescriptionFormat string   `json:"description_format,omitempty"`
@@ -873,11 +877,11 @@ type DisclosureTypeSummaryDTO struct {
 	TypeID  string `json:"type_id"`
 	GroupID string `json:"group_id"`
 	// Deprecated: use DisplayGroupCodes. Kept for compatibility window (BE-008).
-	DisplayGroupCode              string                                    `json:"display_group_code,omitempty"`
-	DisplayGroupCodes             []string                                  `json:"display_group_codes"`
-	Scope                         string                                    `json:"scope"`
-	OwnerCompanyID                string                                    `json:"owner_company_id"`
-	Name                          string                                    `json:"name"`
+	DisplayGroupCode  string   `json:"display_group_code,omitempty"`
+	DisplayGroupCodes []string `json:"display_group_codes"`
+	Scope             string   `json:"scope"`
+	OwnerCompanyID    string   `json:"owner_company_id"`
+	Name              string   `json:"name"`
 	// DisplayName is tenant-facing label (curated / normalized). Name stays the stored technical value.
 	DisplayName                   string                                    `json:"display_name,omitempty"`
 	Category                      string                                    `json:"category"`
@@ -919,12 +923,12 @@ type PortalListCycleDueRow struct {
 }
 
 type DisclosureTypeDTO struct {
-	VersionNo             int    `json:"version_no"`
-	TypeID                string `json:"type_id"`
-	GroupID               string `json:"group_id"`
-	Scope                 string `json:"scope"`
-	OwnerCompanyID        string `json:"owner_company_id"`
-	Name                  string `json:"name"`
+	VersionNo      int    `json:"version_no"`
+	TypeID         string `json:"type_id"`
+	GroupID        string `json:"group_id"`
+	Scope          string `json:"scope"`
+	OwnerCompanyID string `json:"owner_company_id"`
+	Name           string `json:"name"`
 	// DisplayName is tenant-facing label (curated / normalized). Name stays the stored technical value.
 	DisplayName           string `json:"display_name,omitempty"`
 	Category              string `json:"category"`
@@ -956,10 +960,10 @@ type DisclosureTypeDTO struct {
 	Tags                 []string                `json:"tags"`
 	Blocks               []TemplateBlockDTO      `json:"blocks"`
 	// Deprecated: use DisplayGroupCodes. Kept for compatibility window (BE-008).
-	DisplayGroupCode   string                                    `json:"display_group_code,omitempty"`
-	DisplayGroupCodes  []string                                  `json:"display_group_codes"`
-	IsMandatory        bool                                      `json:"is_mandatory"`
-	HasWorkflow        bool                                      `json:"has_workflow"`
+	DisplayGroupCode  string   `json:"display_group_code,omitempty"`
+	DisplayGroupCodes []string `json:"display_group_codes"`
+	IsMandatory       bool     `json:"is_mandatory"`
+	HasWorkflow       bool     `json:"has_workflow"`
 	// ActivationReady is computed from the unredacted version publication candidate
 	// (same predicates as ActivateTypeVersion). Safe to expose after CMS editor redact.
 	ActivationReady bool `json:"activation_ready"`
@@ -1247,16 +1251,16 @@ type PeriodicRecordCreator interface {
 
 // PeriodicTypeRow is returned by ListActivePeriodicTypes.
 type PeriodicTypeRow struct {
-	TypeID             string
-	FrequencyUnit      string // "daily" | "weekly" | "monthly" | "quarterly" | "yearly" (+ day/week/month/quarter/year)
-	FrequencyInterval  int
-	DeadlineDays       int
-	CycleAnchorDay     int // 0 = unset → defaults to 1
-	CycleAnchorMonth   int // 0 = unset → defaults to 1
+	TypeID            string
+	FrequencyUnit     string // "daily" | "weekly" | "monthly" | "quarterly" | "yearly" (+ day/week/month/quarter/year)
+	FrequencyInterval int
+	DeadlineDays      int
+	CycleAnchorDay    int // 0 = unset → defaults to 1
+	CycleAnchorMonth  int // 0 = unset → defaults to 1
 	// CycleAnchorWeekday nil = legacy Sunday; 0..6 when set (Go weekday).
 	CycleAnchorWeekday *int
 	// MonthInQuarter nil = legacy 1; 1..3 when set.
-	MonthInQuarter *int
+	MonthInQuarter     *int
 	OpenDaysBeforeT    int // CMS open_days_before_t; 0 = OpenAt=T
 	IsGlobal           bool
 	ApplicabilityRules *applicability.TemplateApplicabilityRules
@@ -1324,11 +1328,11 @@ type CompanyTypePreferenceDTO struct {
 	// OverrideFrequency is the binding frequency (may differ from current CMS after change).
 	OverrideFrequency string `json:"cycle_anchor_override_frequency,omitempty"`
 	// CMS active-version schedule context (read-only; Company cannot change frequency).
-	CMSFrequencyUnit       string `json:"cms_frequency_unit,omitempty"`
-	CMSCycleAnchorMonth    int    `json:"cms_cycle_anchor_month,omitempty"`
-	CMSCycleAnchorDay      int    `json:"cms_cycle_anchor_day,omitempty"`
-	CMSCycleAnchorWeekday  *int   `json:"cms_cycle_anchor_weekday,omitempty"`
-	CMSMonthInQuarter      *int   `json:"cms_month_in_quarter,omitempty"`
+	CMSFrequencyUnit      string `json:"cms_frequency_unit,omitempty"`
+	CMSCycleAnchorMonth   int    `json:"cms_cycle_anchor_month,omitempty"`
+	CMSCycleAnchorDay     int    `json:"cms_cycle_anchor_day,omitempty"`
+	CMSCycleAnchorWeekday *int   `json:"cms_cycle_anchor_weekday,omitempty"`
+	CMSMonthInQuarter     *int   `json:"cms_month_in_quarter,omitempty"`
 }
 
 type GetCompanyTypePreferenceRequest struct {
@@ -1407,8 +1411,8 @@ type ArchiveGlobalTemplateResult struct {
 
 // RestoreGlobalTemplateParams is the repository input for restoring a global template.
 type RestoreGlobalTemplateParams struct {
-	TypeID                 string
-	UpdatedBy              string
+	TypeID    string
+	UpdatedBy string
 	// ExpectedFromVersionNo is nil for draft restore; non-nil must match locked metadata.
 	ExpectedFromVersionNo  *int
 	RestoreActiveVersionNo int // 0 for draft restore
@@ -1443,9 +1447,9 @@ type GlobalWorkflowStepInput struct {
 	// Additive + backward compatible: legacy clients may omit it. On upsert the server
 	// preserves it (match by step_key, then by step_id) and mints a new one for genuinely
 	// new steps. Never reused once retired. See Phase 13 STEP_KEY_SPECIFICATION.
-	StepKey         string   `json:"step_key,omitempty"`
-	Stage           string   `json:"stage"`
-	Description     string   `json:"description,omitempty"`
+	StepKey     string `json:"step_key,omitempty"`
+	Stage       string `json:"stage"`
+	Description string `json:"description,omitempty"`
 	// DescriptionFormat: "plain_text" | "safe_html". Additive JSON; missing → plain_text on read.
 	DescriptionFormat string   `json:"description_format,omitempty"`
 	Instructions      string   `json:"instructions,omitempty"`

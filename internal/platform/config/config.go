@@ -210,6 +210,13 @@ type Config struct {
 	WorkflowDepartmentEmailBindingEnabled  bool
 	WorkflowDepartmentTaskRoutingEnabled   bool
 	WorkflowDepartmentBackfillWriteEnabled bool
+
+	// Template Builder OAuth is a dedicated, validate-only OAuth client surface.
+	// It is disabled unless every client/redirect/signing setting is supplied.
+	TemplateBuilderOAuthEnabled       bool
+	TemplateBuilderOAuthClientID      string
+	TemplateBuilderOAuthRedirectURIs  []string
+	TemplateBuilderOAuthSigningSecret string
 }
 
 // Load reads configuration from the environment with safe defaults for local dev.
@@ -299,6 +306,10 @@ func Load() (Config, error) {
 		WorkflowDepartmentEmailBindingEnabled:  boolEnv("WORKFLOW_DEPARTMENT_EMAIL_BINDING_ENABLED", false),
 		WorkflowDepartmentTaskRoutingEnabled:   boolEnv("WORKFLOW_DEPARTMENT_TASK_ROUTING_ENABLED", false),
 		WorkflowDepartmentBackfillWriteEnabled: boolEnv("WORKFLOW_DEPARTMENT_BACKFILL_WRITE_ENABLED", false),
+		TemplateBuilderOAuthEnabled:            boolEnv("TEMPLATE_BUILDER_OAUTH_ENABLED", false),
+		TemplateBuilderOAuthClientID:           strings.TrimSpace(os.Getenv("TEMPLATE_BUILDER_OAUTH_CLIENT_ID")),
+		TemplateBuilderOAuthRedirectURIs:       parseCommaSeparatedList(os.Getenv("TEMPLATE_BUILDER_OAUTH_REDIRECT_URIS")),
+		TemplateBuilderOAuthSigningSecret:      strings.TrimSpace(os.Getenv("TEMPLATE_BUILDER_OAUTH_SIGNING_SECRET")),
 	}
 	if cfg.WorkerTickInterval < time.Second {
 		return Config{}, fmt.Errorf("WORKER_TICK_INTERVAL too small")
@@ -357,6 +368,11 @@ func Load() (Config, error) {
 	}
 	if err := validatePublicWebBaseURL(cfg.Env, cfg.PublicWebBaseURL); err != nil {
 		return Config{}, err
+	}
+	if cfg.TemplateBuilderOAuthEnabled {
+		if cfg.TemplateBuilderOAuthClientID == "" || len(cfg.TemplateBuilderOAuthRedirectURIs) == 0 || len(cfg.TemplateBuilderOAuthSigningSecret) < 32 {
+			return Config{}, fmt.Errorf("template builder OAuth is enabled but client, redirect URI, or signing secret is missing")
+		}
 	}
 	pem, err := loadLoginPasswordRSAPEM()
 	if err != nil {

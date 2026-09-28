@@ -23,9 +23,9 @@ const (
 	TemplateImportTokenTTLMinutes = 15
 
 	// Canonical target taxonomy defaults when omitted in input file.
-	DefaultPeriodicGroupID         = "group-001" // "Định kỳ"
-	DefaultIrregularGroupID        = "group-002" // "Bất thường"
-	DefaultPeriodicDisplayGroupCode = "display_groups_003" // "Tài chính, Kinh doanh"
+	DefaultPeriodicGroupID           = "group-001"          // "Định kỳ"
+	DefaultIrregularGroupID          = "group-002"          // "Bất thường"
+	DefaultPeriodicDisplayGroupCode  = "display_groups_003" // "Tài chính, Kinh doanh"
 	DefaultIrregularDisplayGroupCode = "display_groups_001" // "Tuân thủ, Quản trị & Quản lý Rủi ro"
 
 	// Target catalog table and key for department references.
@@ -52,9 +52,9 @@ const (
 
 // TemplateImportEnvelopeV1 represents the root structure of the uploaded .json file.
 type TemplateImportEnvelopeV1 struct {
-	SchemaVersion string                       `json:"schema_version"`
-	Metadata      *TemplateImportMetadataV1    `json:"metadata,omitempty"`
-	Template      TemplateImportDefinitionV1   `json:"template"`
+	SchemaVersion string                     `json:"schema_version"`
+	Metadata      *TemplateImportMetadataV1  `json:"metadata,omitempty"`
+	Template      TemplateImportDefinitionV1 `json:"template"`
 }
 
 // TemplateImportMetadataV1 captures optional authoring provenance.
@@ -67,35 +67,35 @@ type TemplateImportMetadataV1 struct {
 
 // TemplateImportDefinitionV1 represents the core template configuration within the import file.
 type TemplateImportDefinitionV1 struct {
-	TypeID                string                           `json:"type_id,omitempty"`
-	Name                  string                           `json:"name"`
-	Description           string                           `json:"description,omitempty"`
-	Category              string                           `json:"category,omitempty"`
-	TemplateCategory      string                           `json:"template_category"`
-	GroupID               string                           `json:"group_id,omitempty"`
-	DeadlineStrategy      string                           `json:"deadline_strategy,omitempty"`
-	DeadlineRule          string                           `json:"deadline_rule"`
-	Periodicity           string                           `json:"periodicity,omitempty"`
-	DisplayGroupCodes     []string                         `json:"display_group_codes,omitempty"`
-	LegalBasis            string                           `json:"legal_basis,omitempty"`
-	Applicability         string                           `json:"applicability,omitempty"`
-	ImplementationContent string                           `json:"implementation_content,omitempty"`
-	ImplementationNotes   string                           `json:"implementation_notes,omitempty"`
-	SpecialCases          string                           `json:"special_cases,omitempty"`
-	ReportContent         string                           `json:"report_content,omitempty"`
-	RequiredDocs          string                           `json:"required_docs,omitempty"`
-	ChannelsText          string                           `json:"channels_text,omitempty"`
-	Beneficiaries         string                           `json:"beneficiaries,omitempty"`
-	ReceivingAuthorities  string                           `json:"receiving_authorities,omitempty"`
-	Format                string                           `json:"format,omitempty"`
-	LegalRisksText        string                           `json:"legal_risks_text,omitempty"`
-	GeneralInfo           string                           `json:"general_info,omitempty"`
-	Tags                  []string                         `json:"tags,omitempty"`
-	LegalBases            []LegalBasisDTO                  `json:"legal_bases,omitempty"`
-	Checklist             []ChecklistItemDTO               `json:"checklist,omitempty"`
-	DeadlineConfig        *TemplateImportDeadlineConfigV1  `json:"deadline_config,omitempty"`
+	TypeID                string                                    `json:"type_id,omitempty"`
+	Name                  string                                    `json:"name"`
+	Description           string                                    `json:"description,omitempty"`
+	Category              string                                    `json:"category,omitempty"`
+	TemplateCategory      string                                    `json:"template_category"`
+	GroupID               string                                    `json:"group_id,omitempty"`
+	DeadlineStrategy      string                                    `json:"deadline_strategy,omitempty"`
+	DeadlineRule          string                                    `json:"deadline_rule"`
+	Periodicity           string                                    `json:"periodicity,omitempty"`
+	DisplayGroupCodes     []string                                  `json:"display_group_codes,omitempty"`
+	LegalBasis            string                                    `json:"legal_basis,omitempty"`
+	Applicability         string                                    `json:"applicability,omitempty"`
+	ImplementationContent string                                    `json:"implementation_content,omitempty"`
+	ImplementationNotes   string                                    `json:"implementation_notes,omitempty"`
+	SpecialCases          string                                    `json:"special_cases,omitempty"`
+	ReportContent         string                                    `json:"report_content,omitempty"`
+	RequiredDocs          string                                    `json:"required_docs,omitempty"`
+	ChannelsText          string                                    `json:"channels_text,omitempty"`
+	Beneficiaries         string                                    `json:"beneficiaries,omitempty"`
+	ReceivingAuthorities  string                                    `json:"receiving_authorities,omitempty"`
+	Format                string                                    `json:"format,omitempty"`
+	LegalRisksText        string                                    `json:"legal_risks_text,omitempty"`
+	GeneralInfo           string                                    `json:"general_info,omitempty"`
+	Tags                  []string                                  `json:"tags,omitempty"`
+	LegalBases            []LegalBasisDTO                           `json:"legal_bases,omitempty"`
+	Checklist             []ChecklistItemDTO                        `json:"checklist,omitempty"`
+	DeadlineConfig        *TemplateImportDeadlineConfigV1           `json:"deadline_config,omitempty"`
 	ApplicabilityRules    *applicability.TemplateApplicabilityRules `json:"applicability_rules,omitempty"`
-	Workflow              *TemplateImportWorkflowV1        `json:"workflow,omitempty"`
+	Workflow              *TemplateImportWorkflowV1                 `json:"workflow,omitempty"`
 }
 
 // TemplateImportDeadlineConfigV1 represents Periodicity V2 authoring configuration.
@@ -128,20 +128,20 @@ type TemplateImportDepartmentRefV1 struct {
 
 // TemplateImportWorkflowStepV1 represents a single workflow step in the import file.
 type TemplateImportWorkflowStepV1 struct {
-	StepID          string                               `json:"step_id,omitempty"` // Optional file-local; stripped; Confirm generates server UUID
-	Stage           string                               `json:"stage"`
-	Description     string                               `json:"description,omitempty"`
-	Instructions    string                               `json:"instructions,omitempty"`
-	Department      *TemplateImportDepartmentRefV1       `json:"department,omitempty"` // Preferred portable ref
-	DepartmentID    string                               `json:"department_id,omitempty"` // Legacy portable source code (not DB UUID)
-	DepartmentName  string                               `json:"department_name,omitempty"` // Legacy / display name
-	AssigneeRoles   []string                             `json:"assignee_roles,omitempty"` // Preferred static role codes
-	AssigneeRoleIDs []string                             `json:"assignee_role_ids,omitempty"` // Legacy alias for assignee_roles
-	ProcessingDays  int                                  `json:"processing_days,omitempty"`
-	DueRule         string                               `json:"due_rule,omitempty"`
-	DisplayOrder    int                                  `json:"display_order,omitempty"`
-	ReminderConfig  *TemplateImportStepReminderConfigV1  `json:"reminder_config,omitempty"`
-	Documents       []TemplateImportWorkflowDocumentV1   `json:"documents,omitempty"`
+	StepID          string                              `json:"step_id,omitempty"` // Optional file-local; stripped; Confirm generates server UUID
+	Stage           string                              `json:"stage"`
+	Description     string                              `json:"description,omitempty"`
+	Instructions    string                              `json:"instructions,omitempty"`
+	Department      *TemplateImportDepartmentRefV1      `json:"department,omitempty"`        // Preferred portable ref
+	DepartmentID    string                              `json:"department_id,omitempty"`     // Legacy portable source code (not DB UUID)
+	DepartmentName  string                              `json:"department_name,omitempty"`   // Legacy / display name
+	AssigneeRoles   []string                            `json:"assignee_roles,omitempty"`    // Preferred static role codes
+	AssigneeRoleIDs []string                            `json:"assignee_role_ids,omitempty"` // Legacy alias for assignee_roles
+	ProcessingDays  int                                 `json:"processing_days,omitempty"`
+	DueRule         string                              `json:"due_rule,omitempty"`
+	DisplayOrder    int                                 `json:"display_order,omitempty"`
+	ReminderConfig  *TemplateImportStepReminderConfigV1 `json:"reminder_config,omitempty"`
+	Documents       []TemplateImportWorkflowDocumentV1  `json:"documents,omitempty"`
 }
 
 // DepartmentMappingSourceKey returns a stable non-empty mapping key for Confirm/FE.
@@ -159,9 +159,9 @@ func DepartmentMappingSourceKey(departmentID, departmentName string) string {
 
 // TemplateImportStepReminderConfigV1 represents automated reminder settings for a step.
 type TemplateImportStepReminderConfigV1 struct {
-	Enabled      bool   `json:"enabled,omitempty"`
-	OffsetsDays  []int  `json:"offsets_days,omitempty"`
-	TemplateKey  string `json:"template_key,omitempty"`
+	Enabled     bool   `json:"enabled,omitempty"`
+	OffsetsDays []int  `json:"offsets_days,omitempty"`
+	TemplateKey string `json:"template_key,omitempty"`
 }
 
 // TemplateImportWorkflowDocumentV1 represents a document requirement for a step.
@@ -174,6 +174,15 @@ type TemplateImportWorkflowDocumentV1 struct {
 
 // ValidateTemplateImportRequest represents the input to ValidateTemplateImport service method.
 type ValidateTemplateImportRequest struct {
+	Subject   Subject
+	Filename  string
+	FileBytes []byte
+}
+
+// ValidateTemplateImportForBuilderRequest is the internal request used by the
+// OAuth-protected Template Builder gateway. Subject is always derived from the
+// OAuth grant, never from the Action request body.
+type ValidateTemplateImportForBuilderRequest struct {
 	Subject   Subject
 	Filename  string
 	FileBytes []byte
@@ -197,6 +206,43 @@ type ValidateTemplateImportResponse struct {
 	Preview            *TemplateImportPreviewDTO          `json:"preview,omitempty"`
 }
 
+// TemplateBuilderValidationResponse is a deliberately narrow response for an
+// external authoring client. It contains no confirmation capability: no import
+// attempt id, validation token, token expiry, canonical payload, or normalized
+// template is exposed.
+type TemplateBuilderValidationResponse struct {
+	ParseValid       bool                                 `json:"parse_valid"`
+	DomainValid      bool                                 `json:"domain_valid"`
+	MappingRequired  bool                                 `json:"mapping_required"`
+	ActivationReady  bool                                 `json:"activation_ready"`
+	Errors           []TemplateImportValidationIssueDTO   `json:"errors"`
+	Warnings         []TemplateImportValidationIssueDTO   `json:"warnings"`
+	RequiredMappings []TemplateBuilderRequiredMappingDTO  `json:"required_mappings"`
+	Preview          *TemplateBuilderValidationPreviewDTO `json:"preview,omitempty"`
+}
+
+// TemplateBuilderRequiredMapping omits the CMS catalog target id. Mapping is
+// resolved by a human in the CMS UI, not by the external authoring client.
+type TemplateBuilderRequiredMappingDTO struct {
+	Type          string `json:"type"`
+	SourceID      string `json:"source_id"`
+	SourceName    string `json:"source_name"`
+	IsAutoMatched bool   `json:"is_auto_matched"`
+}
+
+// TemplateBuilderValidationPreview excludes NormalizedTemplate so the gateway
+// does not reflect a server-owned payload representation to the Action.
+type TemplateBuilderValidationPreviewDTO struct {
+	Name                     string `json:"name"`
+	TemplateCategory         string `json:"template_category"`
+	Periodicity              string `json:"periodicity,omitempty"`
+	DeadlineRule             string `json:"deadline_rule"`
+	ApplicableFromMode       string `json:"applicable_from_mode,omitempty"`
+	ApplicableTo             string `json:"applicable_to,omitempty"`
+	WorkflowStepCount        int    `json:"workflow_step_count"`
+	DocumentRequirementCount int    `json:"document_requirement_count"`
+}
+
 // TemplateImportValidationIssueDTO represents a blocker or warning finding.
 type TemplateImportValidationIssueDTO struct {
 	Code            string `json:"code"`
@@ -217,17 +263,17 @@ type TemplateImportRequiredMappingDTO struct {
 
 // TemplateImportPreviewDTO summarizes the template attributes for the user preview screen.
 type TemplateImportPreviewDTO struct {
-	Name                     string                      `json:"name"`
-	TemplateCategory         string                      `json:"template_category"`
-	Periodicity              string                      `json:"periodicity,omitempty"`
-	DeadlineRule             string                      `json:"deadline_rule"`
-	ResolvedGroupID          string                      `json:"resolved_group_id"`
+	Name                      string                      `json:"name"`
+	TemplateCategory          string                      `json:"template_category"`
+	Periodicity               string                      `json:"periodicity,omitempty"`
+	DeadlineRule              string                      `json:"deadline_rule"`
+	ResolvedGroupID           string                      `json:"resolved_group_id"`
 	ResolvedDisplayGroupCodes []string                    `json:"resolved_display_group_codes"`
-	ApplicableFromMode       string                      `json:"applicable_from_mode,omitempty"`
-	ApplicableTo             string                      `json:"applicable_to,omitempty"`
-	WorkflowStepCount        int                         `json:"workflow_step_count"`
-	DocumentRequirementCount int                         `json:"document_requirement_count"`
-	NormalizedTemplate       *TemplateImportDefinitionV1 `json:"normalized_template,omitempty"`
+	ApplicableFromMode        string                      `json:"applicable_from_mode,omitempty"`
+	ApplicableTo              string                      `json:"applicable_to,omitempty"`
+	WorkflowStepCount         int                         `json:"workflow_step_count"`
+	DocumentRequirementCount  int                         `json:"document_requirement_count"`
+	NormalizedTemplate        *TemplateImportDefinitionV1 `json:"normalized_template,omitempty"`
 }
 
 // ConfirmTemplateImportRequest is the request body for POST .../import/confirm.

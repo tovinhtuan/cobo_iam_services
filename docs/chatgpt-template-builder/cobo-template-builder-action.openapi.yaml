@@ -1,0 +1,113 @@
+openapi: 3.1.0
+info:
+  title: CoBo Template Builder Validation Gateway
+  version: 1.0.0-draft
+  description: |
+    A validation-only gateway for CoBo Template Builder. It must use the same
+    Cobo normalizer and validator as CMS import, but it never issues an import
+    confirmation token, creates import history, creates a draft, or changes
+    catalog/lifecycle/email state.
+servers:
+  - url: https://REPLACE_WITH_DEV_API_HTTPS_ORIGIN
+paths:
+  /api/v1/template-builder/validate:
+    post:
+      operationId: validate_template
+      summary: Validate a proposed CoBo CMS template import JSON file
+      description: |
+        Use this only to validate a user-authored candidate. Never use it to
+        confirm, publish, activate, or create a CMS template.
+      security:
+        - coboBuilderOAuth: [cms.template.import.validate]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [filename, json]
+              properties:
+                filename:
+                  type: string
+                  pattern: '^[^\\/]+\\.json$'
+                  maxLength: 255
+                json:
+                  type: string
+                  maxLength: 2097152
+      responses:
+        '200':
+          description: Validation result; this never creates or confirms a template.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationResult'
+        '400':
+          description: Invalid request shape or oversized payload.
+        '401':
+          description: Missing or invalid authentication.
+        '403':
+          description: The authenticated user lacks CMS template-import validation access.
+components:
+  securitySchemes:
+    coboBuilderOAuth:
+      type: oauth2
+      flows:
+        authorizationCode:
+          authorizationUrl: https://REPLACE_WITH_DEV_API_HTTPS_ORIGIN/api/v1/oauth/template-builder/authorize
+          tokenUrl: https://REPLACE_WITH_DEV_API_HTTPS_ORIGIN/api/v1/oauth/template-builder/token
+          scopes:
+            cms.template.import.validate: Validate template-import JSON without CMS side effects
+  schemas:
+    ValidationIssue:
+      type: object
+      additionalProperties: false
+      required: [code, field_path, severity, message]
+      properties:
+        code: { type: string }
+        field_path: { type: string }
+        severity: { type: string, enum: [BLOCKER, WARNING] }
+        message: { type: string }
+        suggested_action: { type: string }
+    DepartmentMapping:
+      type: object
+      additionalProperties: false
+      required: [type, source_id, source_name, is_auto_matched]
+      properties:
+        type: { type: string, enum: [department] }
+        source_id: { type: string }
+        source_name: { type: string }
+        is_auto_matched: { type: boolean }
+    Preview:
+      type: object
+      additionalProperties: false
+      required: [name, template_category, deadline_rule, workflow_step_count, document_requirement_count]
+      properties:
+        name: { type: string }
+        template_category: { type: string, enum: [periodic, irregular] }
+        periodicity: { type: string }
+        deadline_rule: { type: string }
+        applicable_from_mode: { type: string }
+        applicable_to: { type: string }
+        workflow_step_count: { type: integer }
+        document_requirement_count: { type: integer }
+    ValidationResult:
+      type: object
+      additionalProperties: false
+      required: [parse_valid, domain_valid, activation_ready, mapping_required, errors, warnings, required_mappings]
+      properties:
+        parse_valid: { type: boolean }
+        domain_valid: { type: boolean }
+        activation_ready: { type: boolean }
+        mapping_required: { type: boolean }
+        errors:
+          type: array
+          items: { $ref: '#/components/schemas/ValidationIssue' }
+        warnings:
+          type: array
+          items: { $ref: '#/components/schemas/ValidationIssue' }
+        required_mappings:
+          type: array
+          items: { $ref: '#/components/schemas/DepartmentMapping' }
+        preview:
+          $ref: '#/components/schemas/Preview'

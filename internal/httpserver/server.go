@@ -92,6 +92,8 @@ import (
 	reminderhttp "github.com/cobo/cobo_iam_services/internal/reminder/transport/http"
 	"github.com/cobo/cobo_iam_services/internal/subscription/companyplan"
 	"github.com/cobo/cobo_iam_services/internal/subscription/entitlement"
+	templatebuilderoauth "github.com/cobo/cobo_iam_services/internal/templatebuilderoauth"
+	templatebuilderoauthhttp "github.com/cobo/cobo_iam_services/internal/templatebuilderoauth/transport/http"
 	workflowapp "github.com/cobo/cobo_iam_services/internal/workflow/app"
 	workflowinmem "github.com/cobo/cobo_iam_services/internal/workflow/infra/inmemory"
 	workflowmysql "github.com/cobo/cobo_iam_services/internal/workflow/infra/mysql"
@@ -516,6 +518,20 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 	}
 	commentHandler := wschttp.NewHandler(log, commentSvc, tokenManager)
 	disclosureHandler := disclosurehttp.NewHandler(disclosureSvc, tokenManager, idemStore, auditSvc)
+	if cfg.TemplateBuilderOAuthEnabled {
+		if pool == nil {
+			return fmt.Errorf("TEMPLATE_BUILDER_OAUTH_ENABLED requires MySQL")
+		}
+		oauthSvc, err := templatebuilderoauth.NewService(templatebuilderoauth.NewMySQLStore(pool), templatebuilderoauth.ClientConfig{
+			ClientID: cfg.TemplateBuilderOAuthClientID, RedirectURIs: cfg.TemplateBuilderOAuthRedirectURIs,
+			SigningKey: []byte(cfg.TemplateBuilderOAuthSigningSecret),
+		})
+		if err != nil {
+			return fmt.Errorf("template builder OAuth: %w", err)
+		}
+		templatebuilderoauthhttp.NewHandler(oauthSvc, disclosureSvc, tokenManager, cfg.PublicWebBaseURL).Register(mux)
+		log.Info("template builder OAuth validate-only gateway enabled")
+	}
 	workflowOpts := []workflowapp.ServiceOption{
 		workflowapp.WithFlags(workflowapp.Flags{
 			SnapshotEnabled:           cfg.WorkflowSnapshotEnabled,

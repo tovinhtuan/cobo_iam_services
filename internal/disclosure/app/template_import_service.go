@@ -17,10 +17,35 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
-// ValidateTemplateImport executes the complete read-only parsing, normalization,
-// catalog lookup, domain validation, preview construction, and stateless HMAC token issuance.
-// It executes ZERO DB WRITES.
+// ValidateTemplateImport executes the CMS UI validation flow. When import history
+// is enabled it persists an attempt and returns the short-lived confirmation token.
 func (s *service) ValidateTemplateImport(ctx context.Context, req ValidateTemplateImportRequest) (*ValidateTemplateImportResponse, error) {
+	return s.validateTemplateImport(ctx, req, templateImportValidationOptions{
+		issueConfirmationToken: true,
+		recordImportAttempt:    true,
+	})
+}
+
+// ValidateTemplateImportForBuilder executes exactly the same parser, normalizer,
+// catalog lookup, permission check, and domain validation as the CMS UI. Its
+// response is deliberately non-confirmable and it has zero database writes even
+// when CMS_TEMPLATE_IMPORT_HISTORY_ENABLED=true.
+func (s *service) ValidateTemplateImportForBuilder(ctx context.Context, req ValidateTemplateImportForBuilderRequest) (*TemplateBuilderValidationResponse, error) {
+	full, err := s.validateTemplateImport(ctx, ValidateTemplateImportRequest{
+		Subject: req.Subject, Filename: req.Filename, FileBytes: req.FileBytes,
+	}, templateImportValidationOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return toTemplateBuilderValidationResponse(full), nil
+}
+
+type templateImportValidationOptions struct {
+	issueConfirmationToken bool
+	recordImportAttempt    bool
+}
+
+func (s *service) validateTemplateImport(ctx context.Context, req ValidateTemplateImportRequest, opts templateImportValidationOptions) (*ValidateTemplateImportResponse, error) {
 	// 1. Authorization: exact CMS template write permission gate
 	if err := s.requireCMSTemplateWrite(ctx, req.Subject); err != nil {
 		return nil, err
@@ -52,7 +77,7 @@ func (s *service) ValidateTemplateImport(ctx context.Context, req ValidateTempla
 				SuggestedAction: "Kiểm tra lại cú pháp JSON và loại bỏ các trường không thuộc đặc tả schema v1.0.",
 			}},
 		}
-		return s.attachImportAttempt(ctx, req, invalid, "", "", "")
+		return s.finishTemplateImportValidation(ctx, req, invalid, "", "", "", opts)
 	}
 
 	// Reject concatenated multiple JSON documents
@@ -70,7 +95,7 @@ func (s *service) ValidateTemplateImport(ctx context.Context, req ValidateTempla
 				SuggestedAction: "Đảm bảo tập tin chỉ chứa duy nhất một đối tượng JSON gốc.",
 			}},
 		}
-		return s.attachImportAttempt(ctx, req, invalid, strings.TrimSpace(env.SchemaVersion), "", "")
+		return s.finishTemplateImportValidation(ctx, req, invalid, strings.TrimSpace(env.SchemaVersion), "", "", opts)
 	}
 
 	// 4. Schema version validation
@@ -81,7 +106,7 @@ func (s *service) ValidateTemplateImport(ctx context.Context, req ValidateTempla
 			fmt.Sprintf("unsupported schema_version %q (hệ thống chỉ hỗ trợ phiên bản %q)", env.SchemaVersion, TemplateImportSchemaVersion),
 			nil,
 		)
-		return nil, s.attachImportAttemptError(ctx, req, strings.TrimSpace(env.SchemaVersion), herr)
+		return nil, s.finishTemplateImportValidationError(ctx, req, strings.TrimSpace(env.SchemaVersion), herr, opts)
 	}
 
 	// 5. Normalization pipeline (pure in-memory)
@@ -168,7 +193,7 @@ func (s *service) ValidateTemplateImport(ctx context.Context, req ValidateTempla
 	var validationToken string
 	var tokenExpiresAt string
 	var payloadHash string
-	if domainValid {
+	if domainValid && opts.issueConfirmationToken {
 		hash, err := ComputeCanonicalTemplatePayloadHash(normalized)
 		if err == nil {
 			payloadHash = hash
@@ -189,7 +214,7 @@ func (s *service) ValidateTemplateImport(ctx context.Context, req ValidateTempla
 		}
 	}
 
-	return s.attachImportAttempt(ctx, req, &ValidateTemplateImportResponse{
+	return s.finishTemplateImportValidation(ctx, req, &ValidateTemplateImportResponse{
 		ParseValid:         parseValid,
 		DomainValid:        domainValid,
 		MappingRequired:    mappingRequired,
@@ -203,7 +228,60 @@ func (s *service) ValidateTemplateImport(ctx context.Context, req ValidateTempla
 		RequiredMappings:   requiredMappings,
 		ActivationBlockers: activationBlockers,
 		Preview:            preview,
-	}, strings.TrimSpace(env.SchemaVersion), payloadHash, validationToken)
+	}, strings.TrimSpace(env.SchemaVersion), payloadHash, validationToken, opts)
+}
+
+func (s *service) finishTemplateImportValidation(ctx context.Context, req ValidateTemplateImportRequest, resp *ValidateTemplateImportResponse, schemaVersion, canonicalHash, token string, opts templateImportValidationOptions) (*ValidateTemplateImportResponse, error) {
+	if !opts.recordImportAttempt {
+		return resp, nil
+	}
+	return s.attachImportAttempt(ctx, req, resp, schemaVersion, canonicalHash, token)
+}
+
+func (s *service) finishTemplateImportValidationError(ctx context.Context, req ValidateTemplateImportRequest, schemaVersion string, herr error, opts templateImportValidationOptions) error {
+	if !opts.recordImportAttempt {
+		return herr
+	}
+	return s.attachImportAttemptError(ctx, req, schemaVersion, herr)
+}
+
+func toTemplateBuilderValidationResponse(full *ValidateTemplateImportResponse) *TemplateBuilderValidationResponse {
+	if full == nil {
+		return nil
+	}
+	out := &TemplateBuilderValidationResponse{
+		ParseValid:      full.ParseValid,
+		DomainValid:     full.DomainValid,
+		MappingRequired: full.MappingRequired,
+		ActivationReady: full.ActivationReady,
+		Errors:          append([]TemplateImportValidationIssueDTO(nil), full.Errors...),
+		Warnings:        append([]TemplateImportValidationIssueDTO(nil), full.Warnings...),
+	}
+	if out.Errors == nil {
+		out.Errors = []TemplateImportValidationIssueDTO{}
+	}
+	if out.Warnings == nil {
+		out.Warnings = []TemplateImportValidationIssueDTO{}
+	}
+	if len(full.RequiredMappings) > 0 {
+		out.RequiredMappings = make([]TemplateBuilderRequiredMappingDTO, 0, len(full.RequiredMappings))
+		for _, mapping := range full.RequiredMappings {
+			out.RequiredMappings = append(out.RequiredMappings, TemplateBuilderRequiredMappingDTO{
+				Type: mapping.Type, SourceID: mapping.SourceID, SourceName: mapping.SourceName, IsAutoMatched: mapping.IsAutoMatched,
+			})
+		}
+	} else {
+		out.RequiredMappings = []TemplateBuilderRequiredMappingDTO{}
+	}
+	if full.Preview != nil {
+		out.Preview = &TemplateBuilderValidationPreviewDTO{
+			Name: full.Preview.Name, TemplateCategory: full.Preview.TemplateCategory,
+			Periodicity: full.Preview.Periodicity, DeadlineRule: full.Preview.DeadlineRule,
+			ApplicableFromMode: full.Preview.ApplicableFromMode, ApplicableTo: full.Preview.ApplicableTo,
+			WorkflowStepCount: full.Preview.WorkflowStepCount, DocumentRequirementCount: full.Preview.DocumentRequirementCount,
+		}
+	}
+	return out
 }
 
 func slugifyTypeID(name string) string {
