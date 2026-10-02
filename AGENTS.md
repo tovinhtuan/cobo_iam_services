@@ -20,3 +20,11 @@ Snippet trên và **lệnh Docker/build sau implement** (hoặc `BLOCKED:`) nằ
 Task chạm cả frontend và IAM: skill **`integration-cross-repo`** + đọc `docs/ai-cache/` ở cả hai repo.
 
 Không coi task implement là “xong” nếu chưa qua **`premerge-system-review`** và chưa báo verify (Docker/build/`BLOCKED:`) theo **`.cursor/rules/ai-cache-read-first.mdc`**.
+
+## Cobo workflow orchestration
+
+For every non-trivial task, start with the repo-local
+`.cursor/skills/cobo-task-workflow/SKILL.md`. It selects the smallest applicable
+skill chain and then delegates to the narrower API, authz, migration, worker,
+security, cross-repository, testing, and pre-merge skills. Do not load every
+skill by default.
