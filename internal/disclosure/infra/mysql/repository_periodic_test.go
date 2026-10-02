@@ -70,3 +70,25 @@ func TestListActivePeriodicTypesSQLIncludesPeriodicCycleGenerationLeadDays(t *te
 		t.Fatal("periodic type listing must extract periodic_cycle_generation_lead_days from ACTIVE deadline_config_json")
 	}
 }
+
+func TestPeriodicMaterializationSQLPersistsRetryState(t *testing.T) {
+	data, err := os.ReadFile("repository.go")
+	if err != nil {
+		t.Fatalf("read repository.go: %v", err)
+	}
+	src := string(data)
+	for _, want := range []string{
+		"materialization_state = 'PENDING' AND pc.materialized_at IS NULL",
+		"materialization_state = 'RETRY' AND pc.next_attempt_at <= NOW(3)",
+		"materialization_state = 'CLAIMED'",
+		"func (r *Repository) MarkPeriodicCycleRetry",
+		"func (r *Repository) MarkPeriodicCycleFailed",
+		"Keep the legacy claim marker",
+		"attempt_record_id = ?",
+		"materialization_state = 'COMPLETED'",
+	} {
+		if !strings.Contains(src, want) {
+			t.Fatalf("periodic retry state SQL missing %q", want)
+		}
+	}
+}

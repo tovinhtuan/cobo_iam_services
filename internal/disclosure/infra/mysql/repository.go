@@ -2452,7 +2452,11 @@ func (r *Repository) ListPendingCycles(ctx context.Context, asOf time.Time, buff
 		FROM periodic_cycles pc
 		INNER JOIN disclosure_types dt ON dt.type_id = pc.type_id
 		INNER JOIN disclosure_type_versions dtv ON dtv.type_id = dt.type_id AND dtv.version_no = dt.active_version_no
-		WHERE pc.record_id IS NULL AND pc.materialized_at IS NULL
+		WHERE pc.record_id IS NULL
+		  AND (
+			(pc.materialization_state = 'PENDING' AND pc.materialized_at IS NULL)
+			OR (pc.materialization_state = 'RETRY' AND pc.next_attempt_at <= NOW(3))
+		  )
 		  AND COALESCE(pc.open_at, pc.cycle_start, pc.due_date) <= ?
 		ORDER BY COALESCE(pc.open_at, pc.cycle_start, pc.due_date) ASC
 		LIMIT 200`
@@ -2486,8 +2490,15 @@ func (r *Repository) ListPendingCycles(ctx context.Context, asOf time.Time, buff
 func (r *Repository) TryClaimPeriodicCycle(ctx context.Context, cycleID string) (bool, error) {
 	const q = `
 		UPDATE periodic_cycles
-		SET materialized_at = NOW(3)
-		WHERE cycle_id = ? AND record_id IS NULL AND materialized_at IS NULL`
+		SET materialized_at = NOW(3),
+		    materialization_state = 'CLAIMED',
+		    attempt_count = attempt_count + 1,
+		    next_attempt_at = NULL
+		WHERE cycle_id = ? AND record_id IS NULL
+		  AND (
+			(materialization_state = 'PENDING' AND materialized_at IS NULL)
+			OR (materialization_state = 'RETRY' AND next_attempt_at <= NOW(3))
+		  )`
 	res, err := r.db.ExecContext(ctx, q, cycleID)
 	if err != nil {
 		return false, fmt.Errorf("claim periodic cycle: %w", err)
@@ -2503,8 +2514,12 @@ func (r *Repository) TryClaimPeriodicCycle(ctx context.Context, cycleID string) 
 func (r *Repository) ReleasePeriodicCycleClaim(ctx context.Context, cycleID string) error {
 	const q = `
 		UPDATE periodic_cycles
-		SET materialized_at = NULL
-		WHERE cycle_id = ? AND record_id IS NULL`
+		-- Keep the legacy claim marker so an old worker binary (which does not
+		-- understand materialization_state) cannot re-run this retry early.
+		SET materialized_at = NOW(3),
+		    materialization_state = 'PENDING',
+		    next_attempt_at = NULL
+		WHERE cycle_id = ? AND record_id IS NULL AND materialization_state = 'CLAIMED'`
 	_, err := r.db.ExecContext(ctx, q, cycleID)
 	if err != nil {
 		return fmt.Errorf("release periodic cycle claim: %w", err)
@@ -2512,12 +2527,68 @@ func (r *Repository) ReleasePeriodicCycleClaim(ctx context.Context, cycleID stri
 	return nil
 }
 
+func (r *Repository) MarkPeriodicCycleRetry(ctx context.Context, cycleID, attemptRecordID, failureCode, failureMessage string) error {
+	const q = `
+		UPDATE periodic_cycles
+		-- See MarkPeriodicCycleRetry: this is a compatibility fence for an
+		-- older worker during a code rollback.
+		SET materialized_at = NOW(3),
+		    materialization_state = 'RETRY',
+		    attempt_record_id = COALESCE(NULLIF(?, ''), attempt_record_id),
+		    next_attempt_at = DATE_ADD(NOW(3), INTERVAL 1 MINUTE),
+		    last_error_code = NULLIF(?, ''),
+		    last_error_message = NULLIF(?, '')
+		WHERE cycle_id = ? AND record_id IS NULL AND materialization_state = 'CLAIMED'`
+	res, err := r.db.ExecContext(ctx, q, attemptRecordID, failureCode, failureMessage, cycleID)
+	if err != nil {
+		return fmt.Errorf("mark periodic cycle retry: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("mark periodic cycle retry rows affected: %w", err)
+	}
+	if n != 1 {
+		return fmt.Errorf("mark periodic cycle retry: expected one claimed cycle, got %d", n)
+	}
+	return nil
+}
+
+func (r *Repository) MarkPeriodicCycleFailed(ctx context.Context, cycleID, attemptRecordID, failureCode, failureMessage string) error {
+	const q = `
+		UPDATE periodic_cycles
+		SET materialized_at = NULL,
+		    materialization_state = 'FAILED',
+		    attempt_record_id = COALESCE(NULLIF(?, ''), attempt_record_id),
+		    next_attempt_at = NULL,
+		    last_error_code = NULLIF(?, ''),
+		    last_error_message = NULLIF(?, '')
+		WHERE cycle_id = ? AND record_id IS NULL AND materialization_state = 'CLAIMED'`
+	res, err := r.db.ExecContext(ctx, q, attemptRecordID, failureCode, failureMessage, cycleID)
+	if err != nil {
+		return fmt.Errorf("mark periodic cycle failed: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("mark periodic cycle failed rows affected: %w", err)
+	}
+	if n != 1 {
+		return fmt.Errorf("mark periodic cycle failed: expected one claimed cycle, got %d", n)
+	}
+	return nil
+}
+
 func (r *Repository) UpdateCycleRecord(ctx context.Context, cycleID, recordID string) error {
 	const q = `
 		UPDATE periodic_cycles
-		SET record_id = ?, materialized_at = NOW(3)
-		WHERE cycle_id = ? AND record_id IS NULL`
-	res, err := r.db.ExecContext(ctx, q, recordID, cycleID)
+		SET record_id = ?,
+		    attempt_record_id = ?,
+		    materialized_at = NOW(3),
+		    materialization_state = 'COMPLETED',
+		    next_attempt_at = NULL,
+		    last_error_code = NULL,
+		    last_error_message = NULL
+		WHERE cycle_id = ? AND record_id IS NULL AND materialization_state = 'CLAIMED'`
+	res, err := r.db.ExecContext(ctx, q, recordID, recordID, cycleID)
 	if err != nil {
 		return fmt.Errorf("update cycle record: %w", err)
 	}

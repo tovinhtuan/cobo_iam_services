@@ -114,15 +114,10 @@ func (s *service) createWorkflowInstance(ctx context.Context, req CreateWorkflow
 		s.idg,
 	)
 
-	created, err := s.repo.CreateInstance(ctx, inst)
-	if err != nil {
-		return nil, err
-	}
-
 	firstTask := TaskDTO{
 		TaskID:             s.idg.NewUUID(),
 		CompanyID:          req.Subject.CompanyID,
-		WorkflowInstanceID: created.WorkflowInstanceID,
+		WorkflowInstanceID: inst.WorkflowInstanceID,
 		StepCode:           firstStepCode,
 		Status:             "pending",
 	}
@@ -140,7 +135,8 @@ func (s *service) createWorkflowInstance(ctx context.Context, req CreateWorkflow
 		}
 		firstTask.AssigneeMembershipID = assignee
 	}
-	if _, err := s.repo.CreateTask(ctx, firstTask); err != nil {
+	created, _, err := s.repo.CreateInstanceWithFirstTask(ctx, inst, firstTask)
+	if err != nil {
 		return nil, err
 	}
 

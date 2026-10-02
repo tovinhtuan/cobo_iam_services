@@ -4538,4 +4538,27 @@
 - verdict: TOOL_READY_FOR_CONTROLLED_EXECUTION
 - next: Phase 12.6B-E after explicit mutate approval + SQL wiring
 
+## 2026-10-03 - Periodic materialization retry/idempotency root-cause fix (no deploy)
+
+- task type: backend worker bug fix; no frontend, deployment, restart, commit, or DEV data mutation.
+- root cause: periodic materialization inserted a disclosure record before calling workflow creation. A later workflow error returned the new record ID, but the cycle claim was released and the ID was discarded; the next worker tick created another random Draft. DEV evidence before worker stop showed repeated `m_system_worker` QA Drafts and cycles without `record_id`.
+- implemented:
+  - deterministic UUIDv5-like record ID derived from `cycle_id`; duplicate retries fetch the same record and resume workflow materialization rather than insert another Draft;
+  - additive migration `0151_periodic_cycle_materialization_state` adds attempt ID/count, PENDING/CLAIMED/RETRY/FAILED/COMPLETED state, error fields, retry schedule, and retry index. `record_id` remains completion-only; the explicit DEV migration allowlist now includes 0151;
+  - invalid/empty effective workflows become durable FAILED cycles; transient creation/completion failures become rate-limited RETRY cycles with structured logs and non-secret state;
+  - workflow instance plus initial task now share one MySQL transaction, preventing an instance-without-task partial write;
+  - worker does not initialize the periodic creator when workflow snapshots are disabled, preventing a configuration-induced Draft leak.
+- contracts/invariants: no HTTP route/request/response change; auth, company scope, deadline semantics, `record_id` completion semantics, and existing audit conventions unchanged.
+- regression coverage: partial record retry, invalid workflow failure, happy path, two concurrent ticks/single winner, duplicate record workflow resume, missing workflow guard, atomic instance+first-task rollback, retry SQL source guard, and deterministic dashboard snapshot fixture clock.
+- verification: targeted worker/disclosure/workflow/deadline/dashboard tests PASS; `go test -race ./internal/disclosure/app ./internal/workflow/app -count=1` PASS. Full `go test ./...` remains blocked by unrelated existing failures in companyaccess, HTTP integration, legal-basis file mode, notification template parity, and Windows config path. `go vet ./...` remains blocked only by two existing `workflowfulfillment` test lock-copy warnings. Docker API build BLOCKED because the local Docker daemon is unavailable.
+- rollout: expand-migrate `0151` before the new worker/API binary. Retry/failed rows retain the legacy claim marker, so an old worker ignores them during a code rollback; new code selects them by state/retry time. Do not run the destructive down migration on a live release. Keep worker stopped until deploy authorization, then validate cycle states and QA templates with read-only queries before enabling.
+
+## 2026-10-03 - DEV deploy: periodic materialization remediation (working tree)
+
+- authorization: user explicitly authorized deployment from the uncommitted working tree; provenance was recorded as `HEAD=71e2fc3cc43de683db0b249a9095b82a344f5058` plus final diff fingerprint `4c38e11c5396e1aeba5c0bcd310244b04d44c432`.
+- migration: `0151_periodic_cycle_materialization_state.up.sql` applied and verified in `schema_migrations`; required state columns exist. The migration Compose invocation recreated the MySQL container but retained the volume; immediately after, MySQL/API were healthy and Draft count remained zero.
+- runtime finding and correction: the first worker start created 132 deterministic Draft attempts and marked their cycles `RETRY`; structured worker logs identified the exact pre-existing SQL failure: `register snapshot catalog code: Error 1052 ... department_code ... ambiguous`. Worker was stopped immediately. Fixed `registerSnapshotCatalogCodesTx` to use `INSERT IGNORE ... SELECT wtd.department_code ...`, added a regression guard, rebuilt and redeployed API/worker.
+- final DEV verification: API SHA-256 `dde4e86062933a42455f9b427cd4d60d21c0767881fb4f28ebfe5f7a3c8ac618`; worker SHA-256 `538c4fde4a5aaa8afc3e3cc06a5cdca840e7f5c76c7c094af32b640e5942aab8`. Worker resumed exactly the 132 deterministic record attempts: `COMPLETED=132`, `RETRY=0`, `draft_without_workflow=0`, duplicate cycle record count `0`. API `/healthz` and `/readyz` returned 200. Proxy calls to both protected endpoints returned immediate 401 (no 504), but authenticated browser smoke was blocked because no DEV browser session was available in the deployment runtime.
+- rollback: backups retained at `bin/api.rollback.20261002T180641Z` and `bin/worker.rollback.20261002T180641Z` on DEV. Do not run worker rollback without stopping it first. No commit or push was performed.
+
 

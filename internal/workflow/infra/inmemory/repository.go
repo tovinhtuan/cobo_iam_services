@@ -34,6 +34,23 @@ func (r *Repository) CreateInstance(_ context.Context, in workflowapp.WorkflowIn
 	return &cp, nil
 }
 
+func (r *Repository) CreateInstanceWithFirstTask(_ context.Context, in workflowapp.WorkflowInstanceDTO, firstTask workflowapp.TaskDTO) (*workflowapp.WorkflowInstanceDTO, *workflowapp.TaskDTO, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	instance := in
+	if len(in.DocumentRequirements) > 0 {
+		r.docReqs = append(r.docReqs, in.DocumentRequirements...)
+	}
+	instance.DocumentRequirements = nil
+	task := firstTask
+	if len(task.AssigneeMembershipIDs) > 0 {
+		task.AssigneeMembershipID = ""
+	}
+	r.instances[ikey(in.CompanyID, in.WorkflowInstanceID)] = instance
+	r.tasks[ikey(task.CompanyID, task.TaskID)] = task
+	return &instance, &task, nil
+}
+
 func (r *Repository) FindInstance(_ context.Context, companyID, workflowInstanceID string) (*workflowapp.WorkflowInstanceDTO, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

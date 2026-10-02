@@ -174,6 +174,8 @@ type Repository interface {
 	ListPendingCycles(ctx context.Context, asOf time.Time, bufferDays int) ([]PeriodicCycleRow, error)
 	TryClaimPeriodicCycle(ctx context.Context, cycleID string) (bool, error)
 	ReleasePeriodicCycleClaim(ctx context.Context, cycleID string) error
+	MarkPeriodicCycleRetry(ctx context.Context, cycleID, attemptRecordID, failureCode, failureMessage string) error
+	MarkPeriodicCycleFailed(ctx context.Context, cycleID, attemptRecordID, failureCode, failureMessage string) error
 	UpdateCycleRecord(ctx context.Context, cycleID, recordID string) error
 	ListAllActiveCompanyIDs(ctx context.Context) ([]string, error)
 	GetCompanyTypePreference(ctx context.Context, companyID, typeID string) (*CompanyTypePreference, error)
@@ -1235,6 +1237,8 @@ type PeriodicMaterializeRepository interface {
 	ListPendingCycles(ctx context.Context, asOf time.Time, bufferDays int) ([]PeriodicCycleRow, error)
 	TryClaimPeriodicCycle(ctx context.Context, cycleID string) (bool, error)
 	ReleasePeriodicCycleClaim(ctx context.Context, cycleID string) error
+	MarkPeriodicCycleRetry(ctx context.Context, cycleID, attemptRecordID, failureCode, failureMessage string) error
+	MarkPeriodicCycleFailed(ctx context.Context, cycleID, attemptRecordID, failureCode, failureMessage string) error
 	UpdateCycleRecord(ctx context.Context, cycleID, recordID string) error
 }
 
@@ -1243,6 +1247,9 @@ type PeriodicMaterializeRepository interface {
 // to allow worker to pass a system-actor creator without circular imports.
 type PeriodicRecordCreator interface {
 	CreateAndSubmitRecord(ctx context.Context, companyID, typeID, createdByMembershipID, title string, t0Date *time.Time) (recordID, workflowInstanceID string, err error)
+	// CreateAndSubmitPeriodicRecord creates or resumes the deterministic record for cycleID.
+	// A retry for the same cycle must never allocate a second disclosure record.
+	CreateAndSubmitPeriodicRecord(ctx context.Context, cycleID, companyID, typeID, createdByMembershipID, title string, t0Date *time.Time, plannedDate string) (recordID, workflowInstanceID string, err error)
 	// CreateAndSubmitRecordWithPlannedDate is the periodic materialize path that also sets
 	// disclosure_records.planned_date from the cycle's due_date.
 	// plannedDate must be YYYY-MM-DD (from periodic_cycles.due_date) or empty string (no-op).

@@ -155,8 +155,15 @@ func main() {
 				workflowOpts = append(workflowOpts, workflowapp.WithMilestoneRepository(workflowmysql.NewMilestoneRepository(sqlDB)))
 			}
 			workflowSvc = workflowapp.NewService(workflowRepo, nil, idgen.UUIDv7Generator{}, workflowOpts...)
+		} else {
+			// A periodic disclosure is only valid with its frozen workflow. Leave the
+			// creator unset so tick continues to seed cycles but cannot leak Draft
+			// records when this deployment is misconfigured.
+			log.Error("periodic materialization disabled: WORKFLOW_SNAPSHOT_ENABLED is required")
 		}
-		periodicCreator = adhocrecord.NewRecordCreatorAdapter(disclosureSvc, workflowSvc, workflowSvc != nil)
+		if workflowSvc != nil {
+			periodicCreator = adhocrecord.NewRecordCreatorAdapter(disclosureSvc, workflowSvc, true)
+		}
 	}
 
 	var reminderScheduler reminderapp.Service

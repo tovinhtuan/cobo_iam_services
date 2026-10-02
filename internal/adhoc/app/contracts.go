@@ -108,6 +108,9 @@ type CreateRecordOpts struct {
 	// caller pre-allocated; passed through to disclosureapp.CreateRecordRequest
 	// so retries are idempotent instead of creating orphaned/duplicate records.
 	RecordID string
+	// ResumeWorkflowOnDuplicate lets a periodic retry resume workflow creation for its
+	// deterministic record rather than returning a record with no workflow instance.
+	ResumeWorkflowOnDuplicate bool
 	// ProposalWorkflow, when schema_version=2, is the frozen proposal-owned snapshot authority.
 	// RecordCreator must materialize from this blob and MUST NOT call GetEffectiveWorkflow.
 	ProposalWorkflow *ProposalWorkflowSnapshot

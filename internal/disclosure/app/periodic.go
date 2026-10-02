@@ -237,6 +237,9 @@ func seedOneCompanySlot(
 // materializePeriodicDisclosures picks pending cycles whose OpenAt <= TodayHCM
 // (bufferDays=0; asOf = HCM date-only) and creates disclosure records with workflow.
 func materializePeriodicDisclosures(ctx context.Context, now time.Time, repo PeriodicMaterializeRepository, creator PeriodicRecordCreator) (int, error) {
+	if creator == nil {
+		return 0, fmt.Errorf("periodic record creator is unavailable")
+	}
 	const bufferDays = 0 // no lookahead — require TodayHCM >= COALESCE(open_at, cycle_start)
 	asOf := stripTime(now.In(asiaHoChiMinh()))
 	cycles, err := repo.ListPendingCycles(ctx, asOf, bufferDays)
@@ -262,27 +265,43 @@ func materializePeriodicDisclosures(ctx context.Context, now time.Time, repo Per
 		if !c.DueDate.IsZero() {
 			plannedDate = c.DueDate.Format("2006-01-02")
 		}
-		recordID, workflowInstanceID, err := creator.CreateAndSubmitRecordWithPlannedDate(ctx, c.CompanyID, c.TypeID, "m_system_worker", autoRecordTitle(c), &t0, plannedDate)
+		recordID, workflowInstanceID, err := creator.CreateAndSubmitPeriodicRecord(ctx, c.CycleID, c.CompanyID, c.TypeID, "m_system_worker", autoRecordTitle(c), &t0, plannedDate)
 		if err != nil {
-			_ = repo.ReleasePeriodicCycleClaim(ctx, c.CycleID)
 			if workflowerrs.IsEmptyEffectiveWorkflow(err) {
-				slog.WarnContext(ctx, "periodic materialize skipped: empty effective workflow",
+				if markErr := repo.MarkPeriodicCycleFailed(ctx, c.CycleID, recordID, "EMPTY_EFFECTIVE_WORKFLOW", "effective workflow has no materializable steps"); markErr != nil {
+					return materialized, fmt.Errorf("mark periodic cycle %s failed: %w", c.CycleID, markErr)
+				}
+				slog.ErrorContext(ctx, "periodic materialization failed permanently: empty effective workflow",
 					slog.String("cycle_id", c.CycleID),
 					slog.String("type_id", c.TypeID),
 					slog.String("company_id", c.CompanyID))
+				continue
 			}
+			if markErr := repo.MarkPeriodicCycleRetry(ctx, c.CycleID, recordID, "MATERIALIZATION_ERROR", "periodic materialization failed; see structured worker log"); markErr != nil {
+				return materialized, fmt.Errorf("mark periodic cycle %s retry: %w", c.CycleID, markErr)
+			}
+			slog.WarnContext(ctx, "periodic materialization will retry",
+				slog.String("cycle_id", c.CycleID),
+				slog.String("type_id", c.TypeID),
+				slog.String("company_id", c.CompanyID),
+				slog.String("record_id", recordID),
+				slog.String("err", err.Error()))
 			continue
 		}
 		if recordID == "" || workflowInstanceID == "" {
-			_ = repo.ReleasePeriodicCycleClaim(ctx, c.CycleID)
-			slog.WarnContext(ctx, "periodic materialize failed: missing record or workflow instance",
+			if markErr := repo.MarkPeriodicCycleFailed(ctx, c.CycleID, recordID, "INCOMPLETE_MATERIALIZATION", "record and workflow instance are both required"); markErr != nil {
+				return materialized, fmt.Errorf("mark periodic cycle %s failed: %w", c.CycleID, markErr)
+			}
+			slog.ErrorContext(ctx, "periodic materialization failed permanently: missing record or workflow instance",
 				slog.String("cycle_id", c.CycleID),
 				slog.String("record_id", recordID),
 				slog.String("workflow_instance_id", workflowInstanceID))
 			continue
 		}
 		if err := repo.UpdateCycleRecord(ctx, c.CycleID, recordID); err != nil {
-			_ = repo.ReleasePeriodicCycleClaim(ctx, c.CycleID)
+			if markErr := repo.MarkPeriodicCycleRetry(ctx, c.CycleID, recordID, "CYCLE_COMPLETION_ERROR", "record and workflow are ready but cycle completion failed"); markErr != nil {
+				return materialized, fmt.Errorf("complete periodic cycle %s: %w; mark retry: %v", c.CycleID, err, markErr)
+			}
 			return materialized, fmt.Errorf("complete periodic cycle %s: %w", c.CycleID, err)
 		}
 		materialized++

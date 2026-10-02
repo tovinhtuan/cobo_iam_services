@@ -28,9 +28,9 @@ type Repository struct {
 	versions                  map[string][]disclosureapp.DisclosureTypeVersionDTO
 	catalogScope              map[string]string
 	// typeRoots tracks disclosure_types.status / archive metadata (parity with MySQL).
-	typeRoots                 map[string]*typeRootState
-	overrideByCompanyType     map[string]*overrideState
-	globalWorkflows           map[string]*disclosureapp.GlobalWorkflowDTO
+	typeRoots             map[string]*typeRootState
+	overrideByCompanyType map[string]*overrideState
+	globalWorkflows       map[string]*disclosureapp.GlobalWorkflowDTO
 	// globalWorkflowVersions backs Sprint 3 / Batch 3's GetGlobalWorkflowVersionManifest — keyed
 	// by typeID then versionNo. Test-only seeding via SetGlobalWorkflowVersionManifestForTest;
 	// no production code path writes this map (mirrors globalWorkflows' own test-fixture nature).
@@ -1564,6 +1564,14 @@ func (r *Repository) TryClaimPeriodicCycle(_ context.Context, _ string) (bool, e
 }
 
 func (r *Repository) ReleasePeriodicCycleClaim(_ context.Context, _ string) error {
+	return nil
+}
+
+func (r *Repository) MarkPeriodicCycleRetry(_ context.Context, _, _, _, _ string) error {
+	return nil
+}
+
+func (r *Repository) MarkPeriodicCycleFailed(_ context.Context, _, _, _, _ string) error {
 	return nil
 }
 

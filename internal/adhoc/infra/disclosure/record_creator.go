@@ -12,14 +12,28 @@ import (
 	disclosureapp "github.com/cobo/cobo_iam_services/internal/disclosure/app"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 	workflowapp "github.com/cobo/cobo_iam_services/internal/workflow/app"
+	"github.com/google/uuid"
 )
 
 // RecordCreatorAdapter wraps disclosure and workflow services for ad-hoc approval.
 type RecordCreatorAdapter struct {
-	svc        disclosureapp.Service
-	workflow   workflowapp.Service
+	svc        disclosureRecordService
+	workflow   workflowMaterializer
 	workflowOn bool
 }
+
+type disclosureRecordService interface {
+	CreateRecord(ctx context.Context, req disclosureapp.CreateRecordRequest) (*disclosureapp.RecordDTO, error)
+	GetRecord(ctx context.Context, req disclosureapp.GetRecordRequest) (*disclosureapp.RecordDTO, error)
+	SubmitRecord(ctx context.Context, req disclosureapp.SubmitRecordRequest) (*disclosureapp.RecordDTO, error)
+	GetEffectiveWorkflow(ctx context.Context, req disclosureapp.GetEffectiveWorkflowRequest) (*disclosureapp.GetEffectiveWorkflowResponse, error)
+}
+
+type workflowMaterializer interface {
+	CreateWorkflowInstanceInternal(ctx context.Context, req workflowapp.CreateWorkflowInstanceRequest) (*workflowapp.WorkflowInstanceDTO, error)
+}
+
+var errPeriodicWorkflowUnavailable = errors.New("periodic materialization requires workflow service")
 
 // NewRecordCreatorAdapter returns *RecordCreatorAdapter, which satisfies both
 // adhocapp.RecordCreator and disclosureapp.PeriodicRecordCreator interfaces.
@@ -40,6 +54,25 @@ func (a *RecordCreatorAdapter) CreateAndSubmitRecordWithPlannedDate(ctx context.
 		PlannedDate:       plannedDate,
 		SkipCompanySubmit: true, // Effective T V1: materialize ≠ company submission
 	})
+}
+
+// CreateAndSubmitPeriodicRecord binds periodic materialization to a stable record ID
+// derived from cycleID. A retry therefore resumes the same record instead of inserting
+// another Draft when workflow creation failed after the record insert.
+func (a *RecordCreatorAdapter) CreateAndSubmitPeriodicRecord(ctx context.Context, cycleID, companyID, typeID, createdByMembershipID, title string, t0Date *time.Time, plannedDate string) (string, string, error) {
+	if !a.workflowOn {
+		return "", "", errPeriodicWorkflowUnavailable
+	}
+	return a.CreateAndSubmitRecordWithOpts(ctx, companyID, typeID, createdByMembershipID, title, t0Date, adhocapp.CreateRecordOpts{
+		RecordID:                  periodicRecordID(cycleID),
+		PlannedDate:               plannedDate,
+		SkipCompanySubmit:         true,
+		ResumeWorkflowOnDuplicate: true,
+	})
+}
+
+func periodicRecordID(cycleID string) string {
+	return uuid.NewSHA1(uuid.NameSpaceURL, []byte("cobo.periodic-cycle:"+cycleID)).String()
 }
 
 func (a *RecordCreatorAdapter) CreateAndSubmitRecordWithOpts(ctx context.Context, companyID, typeID, createdByMembershipID, title string, t0Date *time.Time, opts adhocapp.CreateRecordOpts) (string, string, error) {
@@ -92,9 +125,13 @@ func (a *RecordCreatorAdapter) CreateAndSubmitRecordWithOpts(ctx context.Context
 			if getErr != nil {
 				return "", "", fmt.Errorf("fetch existing record after duplicate id: %w", getErr)
 			}
-			return existing.RecordID, existing.WorkflowInstanceID, nil
+			if !opts.ResumeWorkflowOnDuplicate || existing.WorkflowInstanceID != "" {
+				return existing.RecordID, existing.WorkflowInstanceID, nil
+			}
+			rec = existing
+		} else {
+			return "", "", fmt.Errorf("create record: %w", err)
 		}
-		return "", "", fmt.Errorf("create record: %w", err)
 	}
 	if !opts.SkipCompanySubmit {
 		if _, err := a.svc.SubmitRecord(ctx, disclosureapp.SubmitRecordRequest{
@@ -156,7 +193,7 @@ type resolvedWorkflowMaterialization struct {
 
 func resolveWorkflowSnapshotForMaterialize(
 	ctx context.Context,
-	svc disclosureapp.Service,
+	svc disclosureRecordService,
 	sub disclosureapp.Subject,
 	typeID string,
 	opts adhocapp.CreateRecordOpts,

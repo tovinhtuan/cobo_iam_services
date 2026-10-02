@@ -15,6 +15,8 @@ type fakePeriodicRepo struct {
 	cycles          []PeriodicCycleRow
 	claimed         map[string]bool
 	completed       map[string]string
+	retries         map[string]string
+	failed          map[string]string
 	claimAttempts   map[string]int
 	mu              sync.Mutex
 	tryClaimReturns map[string]bool
@@ -25,6 +27,8 @@ func newFakePeriodicRepo(cycles []PeriodicCycleRow) *fakePeriodicRepo {
 		cycles:          cycles,
 		claimed:         map[string]bool{},
 		completed:       map[string]string{},
+		retries:         map[string]string{},
+		failed:          map[string]string{},
 		claimAttempts:   map[string]int{},
 		tryClaimReturns: map[string]bool{},
 	}
@@ -42,6 +46,9 @@ func (r *fakePeriodicRepo) ListPendingCycles(_ context.Context, asOf time.Time, 
 	cutoff := asOf.AddDate(0, 0, bufferDays)
 	out := make([]PeriodicCycleRow, 0, len(r.cycles))
 	for _, c := range r.cycles {
+		if _, failed := r.failed[c.CycleID]; failed {
+			continue
+		}
 		gate := c.OpenAt
 		if gate.IsZero() {
 			gate = c.CycleStart
@@ -83,6 +90,22 @@ func (r *fakePeriodicRepo) ReleasePeriodicCycleClaim(_ context.Context, cycleID 
 	return nil
 }
 
+func (r *fakePeriodicRepo) MarkPeriodicCycleRetry(_ context.Context, cycleID, attemptRecordID, _, _ string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.retries[cycleID] = attemptRecordID
+	delete(r.claimed, cycleID)
+	return nil
+}
+
+func (r *fakePeriodicRepo) MarkPeriodicCycleFailed(_ context.Context, cycleID, attemptRecordID, _, _ string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.failed[cycleID] = attemptRecordID
+	delete(r.claimed, cycleID)
+	return nil
+}
+
 func (r *fakePeriodicRepo) UpdateCycleRecord(_ context.Context, cycleID, recordID string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -115,6 +138,7 @@ func (r *fakePeriodicRepo) DeactivateIncompatibleCompanyCycleOverrides(context.C
 }
 
 type fakePeriodicCreator struct {
+	mu                 sync.Mutex
 	recordID           string
 	workflowInstanceID string
 	err                error
@@ -124,6 +148,8 @@ type fakePeriodicCreator struct {
 }
 
 func (f *fakePeriodicCreator) CreateAndSubmitRecord(_ context.Context, _, _, _, _ string, t0Date *time.Time) (string, string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.calls++
 	f.lastT0 = t0Date
 	f.lastPlannedDate = ""
@@ -134,11 +160,25 @@ func (f *fakePeriodicCreator) CreateAndSubmitRecord(_ context.Context, _, _, _, 
 }
 
 func (f *fakePeriodicCreator) CreateAndSubmitRecordWithPlannedDate(_ context.Context, _, _, _, _ string, t0Date *time.Time, plannedDate string) (string, string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.calls++
 	f.lastT0 = t0Date
 	f.lastPlannedDate = plannedDate
 	if f.err != nil {
 		return "", "", f.err
+	}
+	return f.recordID, f.workflowInstanceID, nil
+}
+
+func (f *fakePeriodicCreator) CreateAndSubmitPeriodicRecord(_ context.Context, _ string, _, _, _, _ string, t0Date *time.Time, plannedDate string) (string, string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls++
+	f.lastT0 = t0Date
+	f.lastPlannedDate = plannedDate
+	if f.err != nil {
+		return f.recordID, f.workflowInstanceID, f.err
 	}
 	return f.recordID, f.workflowInstanceID, nil
 }
@@ -275,8 +315,88 @@ func TestMaterializePeriodicEmptyEffectiveLeavesNoRecordID(t *testing.T) {
 	if _, ok := repo.completed["cycle-1"]; ok {
 		t.Fatal("cycle should not be completed")
 	}
-	if repo.claimed["cycle-1"] {
-		t.Fatal("claim should be released after empty effective workflow")
+	if _, ok := repo.failed["cycle-1"]; !ok {
+		t.Fatal("empty effective workflow must mark the cycle FAILED")
+	}
+}
+
+func TestMaterializePeriodic_RetriesPartialRecordWithoutDuplicateCycleCompletion(t *testing.T) {
+	cycleStart := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+	repo := newFakePeriodicRepo([]PeriodicCycleRow{{
+		CycleID: "cycle-retry", TypeID: "type-1", CompanyID: "co-1", CycleStart: cycleStart,
+		DueDate: cycleStart.AddDate(0, 0, 7),
+	}})
+	creator := &fakePeriodicCreator{recordID: "rec-deterministic", err: context.DeadlineExceeded}
+
+	n, err := materializePeriodicDisclosures(context.Background(), time.Now(), repo, creator)
+	if err != nil || n != 0 {
+		t.Fatalf("first materialize n=%d err=%v", n, err)
+	}
+	if got := repo.retries["cycle-retry"]; got != "rec-deterministic" {
+		t.Fatalf("retry attempt record=%q want deterministic record", got)
+	}
+	if repo.claimed["cycle-retry"] {
+		t.Fatal("retry must release the claim")
+	}
+
+	creator.err = nil
+	creator.workflowInstanceID = "wf-1"
+	n, err = materializePeriodicDisclosures(context.Background(), time.Now(), repo, creator)
+	if err != nil || n != 1 {
+		t.Fatalf("retry materialize n=%d err=%v", n, err)
+	}
+	if got := repo.completed["cycle-retry"]; got != "rec-deterministic" {
+		t.Fatalf("completed record=%q want deterministic record", got)
+	}
+	if creator.calls != 2 {
+		t.Fatalf("creator calls=%d want 2", creator.calls)
+	}
+}
+
+func TestMaterializePeriodic_ConcurrentTicksHaveSingleWinner(t *testing.T) {
+	cycleStart := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+	repo := newFakePeriodicRepo([]PeriodicCycleRow{{
+		CycleID: "cycle-race", TypeID: "type-1", CompanyID: "co-1", CycleStart: cycleStart,
+		DueDate: cycleStart.AddDate(0, 0, 7),
+	}})
+	creator := &fakePeriodicCreator{recordID: "rec-race", workflowInstanceID: "wf-race"}
+
+	start := make(chan struct{})
+	results := make(chan int, 2)
+	errs := make(chan error, 2)
+	var wg sync.WaitGroup
+	for range 2 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			n, err := materializePeriodicDisclosures(context.Background(), time.Now(), repo, creator)
+			results <- n
+			errs <- err
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+	close(errs)
+
+	total := 0
+	for n := range results {
+		total += n
+	}
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("concurrent materialize: %v", err)
+		}
+	}
+	creator.mu.Lock()
+	calls := creator.calls
+	creator.mu.Unlock()
+	if total != 1 || calls != 1 {
+		t.Fatalf("materialized=%d creator_calls=%d; want a single winner", total, calls)
+	}
+	if got := repo.completed["cycle-race"]; got != "rec-race" {
+		t.Fatalf("completed record=%q", got)
 	}
 }
 

@@ -59,6 +59,43 @@ func (f *fakeWorkflowRepository) CreateInstance(_ context.Context, in WorkflowIn
 	return &cp, nil
 }
 
+func (f *fakeWorkflowRepository) CreateInstanceWithFirstTask(_ context.Context, in WorkflowInstanceDTO, task TaskDTO) (*WorkflowInstanceDTO, *TaskDTO, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.ensure()
+	if f.failNextCreateInstance != nil {
+		err := f.failNextCreateInstance
+		f.failNextCreateInstance = nil
+		return nil, nil, err
+	}
+	if f.failDocRequirementInsert != nil && len(in.DocumentRequirements) > 0 {
+		err := f.failDocRequirementInsert
+		f.failDocRequirementInsert = nil
+		return nil, nil, err
+	}
+	f.createTaskCalls++
+	if f.failNextCreateTask != nil {
+		err := f.failNextCreateTask
+		f.failNextCreateTask = nil
+		return nil, nil, err
+	}
+
+	instance := in
+	instance.DocumentRequirements = nil
+	createdTask := task
+	if len(createdTask.AssigneeMembershipIDs) > 0 {
+		createdTask.AssigneeMembershipID = ""
+	}
+	f.createdInstance = in
+	f.createdTask = createdTask
+	f.instances[in.CompanyID+":"+in.WorkflowInstanceID] = instance
+	f.tasks[task.CompanyID+":"+task.TaskID] = createdTask
+	if len(in.DocumentRequirements) > 0 {
+		f.docReqs = append(f.docReqs, in.DocumentRequirements...)
+	}
+	return &instance, &createdTask, nil
+}
+
 func (f *fakeWorkflowRepository) FindInstance(_ context.Context, companyID, workflowInstanceID string) (*WorkflowInstanceDTO, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -378,6 +415,24 @@ func TestCreateWorkflowInstanceInternal_SnapshotInsertFailureCreatesNoRow(t *tes
 	}
 	if repo.createTaskCalls != 0 {
 		t.Fatalf("task must not be created after snapshot insert failure, calls=%d", repo.createTaskCalls)
+	}
+}
+
+func TestCreateWorkflowInstanceInternal_FirstTaskFailureRollsBackInstance(t *testing.T) {
+	repo := &fakeWorkflowRepository{failNextCreateTask: fmt.Errorf("task insert failed")}
+	svc := NewService(repo, nil, fakeWorkflowIDGen{}, WithFlags(Flags{SnapshotEnabled: true}))
+
+	_, err := svc.CreateWorkflowInstanceInternal(context.Background(), CreateWorkflowInstanceRequest{
+		Subject:        Subject{UserID: "u", MembershipID: "m", CompanyID: "c"},
+		RecordID:       "rec-atomic",
+		Snapshot:       []StepSnapshot{{StepID: "s1", StepCode: "review", DisplayOrder: 1}},
+		WorkflowSource: "global_template",
+	})
+	if err == nil {
+		t.Fatal("first task failure must fail materialization")
+	}
+	if len(repo.instances) != 0 || len(repo.tasks) != 0 {
+		t.Fatalf("atomic materialization left rows: instances=%d tasks=%d", len(repo.instances), len(repo.tasks))
 	}
 }
 

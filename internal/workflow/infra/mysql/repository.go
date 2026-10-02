@@ -22,6 +22,47 @@ func NewRepository(db *sql.DB) *Repository {
 }
 
 func (r *Repository) CreateInstance(ctx context.Context, in workflowapp.WorkflowInstanceDTO) (*workflowapp.WorkflowInstanceDTO, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("begin create workflow instance: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	created, err := createInstanceTx(ctx, tx, in)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit create workflow instance: %w", err)
+	}
+	return created, nil
+}
+
+// CreateInstanceWithFirstTask keeps a workflow instance from becoming visible
+// without its first actionable task when task materialization fails.
+func (r *Repository) CreateInstanceWithFirstTask(ctx context.Context, in workflowapp.WorkflowInstanceDTO, firstTask workflowapp.TaskDTO) (*workflowapp.WorkflowInstanceDTO, *workflowapp.TaskDTO, error) {
+	if len(in.Snapshot) == 0 {
+		return nil, nil, perr.NewHTTPError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, "frozen workflow snapshot is required", nil)
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, nil, fmt.Errorf("begin create workflow instance with first task: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	created, err := createInstanceTx(ctx, tx, in)
+	if err != nil {
+		return nil, nil, err
+	}
+	createdTask, err := createTaskTx(ctx, tx, firstTask)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, nil, fmt.Errorf("commit create workflow instance with first task: %w", err)
+	}
+	return created, createdTask, nil
+}
+
+func createInstanceTx(ctx context.Context, tx *sql.Tx, in workflowapp.WorkflowInstanceDTO) (*workflowapp.WorkflowInstanceDTO, error) {
 	if len(in.Snapshot) == 0 {
 		return nil, perr.NewHTTPError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, "frozen workflow snapshot is required", nil)
 	}
@@ -33,13 +74,6 @@ func (r *Repository) CreateInstance(ctx context.Context, in workflowapp.Workflow
 	if in.T0Date != nil {
 		t0Date = in.T0Date.Format("2006-01-02")
 	}
-
-	tx, err := r.db.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, fmt.Errorf("begin create workflow instance: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO workflow_instances (
 			workflow_instance_id, company_id, record_id, status, current_step_code, created_by,
@@ -56,9 +90,6 @@ func (r *Repository) CreateInstance(ctx context.Context, in workflowapp.Workflow
 	if err := registerSnapshotCatalogCodesTx(ctx, tx, in.Snapshot); err != nil {
 		return nil, err
 	}
-	if err := tx.Commit(); err != nil {
-		return nil, fmt.Errorf("commit create workflow instance: %w", err)
-	}
 	cp := in
 	cp.DocumentRequirements = nil
 	return &cp, nil
@@ -71,9 +102,10 @@ func registerSnapshotCatalogCodesTx(ctx context.Context, tx *sql.Tx, snapshot []
 	}
 	for _, token := range workflowdept.SnapshotCatalogTokens(tokens) {
 		_, err := tx.ExecContext(ctx, `
-			INSERT INTO workflow_template_department_code_registry (department_code)
-			SELECT department_code FROM workflow_template_departments WHERE department_code = ?
-			ON DUPLICATE KEY UPDATE department_code = department_code
+			INSERT IGNORE INTO workflow_template_department_code_registry (department_code)
+			SELECT wtd.department_code
+			FROM workflow_template_departments AS wtd
+			WHERE wtd.department_code = ?
 		`, token)
 		if err != nil {
 			msg := strings.ToLower(err.Error())
@@ -149,6 +181,22 @@ func (r *Repository) UpdateInstance(ctx context.Context, in workflowapp.Workflow
 }
 
 func (r *Repository) CreateTask(ctx context.Context, task workflowapp.TaskDTO) (*workflowapp.TaskDTO, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("begin create task: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	created, err := createTaskTx(ctx, tx, task)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit create task: %w", err)
+	}
+	return created, nil
+}
+
+func createTaskTx(ctx context.Context, tx *sql.Tx, task workflowapp.TaskDTO) (*workflowapp.TaskDTO, error) {
 	relationIDs := normalizeAssigneeIDs(task.AssigneeMembershipIDs)
 	singular := strings.TrimSpace(task.AssigneeMembershipID)
 	if len(relationIDs) > 0 && singular != "" {
@@ -160,7 +208,7 @@ func (r *Repository) CreateTask(ctx context.Context, task workflowapp.TaskDTO) (
 	}
 
 	if len(relationIDs) == 0 {
-		_, err := r.db.ExecContext(ctx, `
+		_, err := tx.ExecContext(ctx, `
 			INSERT INTO workflow_tasks (
 				task_id, company_id, workflow_instance_id, step_code, assignee_membership_id, status
 			) VALUES (?, ?, ?, ?, ?, ?)
@@ -173,13 +221,6 @@ func (r *Repository) CreateTask(ctx context.Context, task workflowapp.TaskDTO) (
 		cp.AssigneeMembershipIDs = nil
 		return &cp, nil
 	}
-
-	tx, err := r.db.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, fmt.Errorf("begin create task: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO workflow_tasks (
 			task_id, company_id, workflow_instance_id, step_code, assignee_membership_id, status
@@ -189,9 +230,6 @@ func (r *Repository) CreateTask(ctx context.Context, task workflowapp.TaskDTO) (
 	}
 	if err := insertTaskAssigneesTx(ctx, tx, task.TaskID, relationIDs); err != nil {
 		return nil, err
-	}
-	if err := tx.Commit(); err != nil {
-		return nil, fmt.Errorf("commit create task: %w", err)
 	}
 	cp := task
 	cp.AssigneeMembershipID = ""

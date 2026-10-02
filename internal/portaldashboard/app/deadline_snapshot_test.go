@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"testing"
+	"time"
 
 	deadlinealertsapp "github.com/cobo/cobo_iam_services/internal/deadlinealerts/app"
 	"github.com/cobo/cobo_iam_services/internal/portaldashboard/domain"
@@ -37,6 +38,7 @@ func TestFetchDeadlines_usesOneSnapshotInsteadOfRepeatedListPipeline(t *testing.
 	svc := &service{deadlines: deadlines}
 	dr, err := domain.ParseRange(domain.ParseRangeInput{
 		Range: "30d", From: "2026-09-03", To: "2026-10-02", Timezone: "Asia/Ho_Chi_Minh",
+		Now: time.Date(2026, 9, 8, 8, 0, 0, 0, time.UTC),
 	})
 	if err != nil {
 		t.Fatal(err)

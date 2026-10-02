@@ -33,6 +33,9 @@ type WorkflowNotifier interface {
 
 type Repository interface {
 	CreateInstance(ctx context.Context, in WorkflowInstanceDTO) (*WorkflowInstanceDTO, error)
+	// CreateInstanceWithFirstTask persists a materialized workflow and its first
+	// actionable task atomically. Callers must not expose an instance without a task.
+	CreateInstanceWithFirstTask(ctx context.Context, in WorkflowInstanceDTO, firstTask TaskDTO) (*WorkflowInstanceDTO, *TaskDTO, error)
 	FindInstance(ctx context.Context, companyID, workflowInstanceID string) (*WorkflowInstanceDTO, error)
 	UpdateInstance(ctx context.Context, in WorkflowInstanceDTO) (*WorkflowInstanceDTO, error)
 	CreateTask(ctx context.Context, task TaskDTO) (*TaskDTO, error)
