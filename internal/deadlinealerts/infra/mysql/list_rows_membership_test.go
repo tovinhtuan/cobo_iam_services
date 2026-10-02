@@ -201,8 +201,14 @@ func TestListRows_preservesCompanyOrderScopeWiring(t *testing.T) {
 	if !strings.Contains(src, "ORDER BY dr.created_at DESC") {
 		t.Fatal("ORDER BY must remain created_at DESC")
 	}
-	if strings.Contains(strings.ToLower(src), "limit ?") || strings.Contains(src, "OFFSET") {
-		t.Fatal("pagination must not move into SQL in Phase 1")
+	if !strings.Contains(src, "func (r *Repository) ListRowsPage") || !strings.Contains(src, "LIMIT ? OFFSET ?") {
+		t.Fatal("paged list must apply LIMIT/OFFSET in the MySQL boundary")
+	}
+	if !strings.Contains(src, "countListRows") {
+		t.Fatal("paged list must preserve the total through a bounded SQL count")
+	}
+	if !strings.Contains(src, "enrichListRows") || !strings.Contains(src, "sqlRecordIDClause") {
+		t.Fatal("paged list must enrich only the selected record IDs")
 	}
 	if !strings.Contains(src, "ListRowsActiveTemplateSQLJoin") {
 		t.Fatal("ACTIVE_TEMPLATE filter must remain")

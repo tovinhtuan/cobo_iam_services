@@ -3,6 +3,7 @@ package http
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -80,5 +81,28 @@ func TestGetOverview_OK(t *testing.T) {
 	}
 	if _, ok := body["kpis"]; !ok {
 		t.Fatalf("missing kpis: %v", body)
+	}
+}
+
+func TestGetOverview_keepsErrorEnvelopeOnDeadlineDependencyFailure(t *testing.T) {
+	svc := &fakeOverviewSvc{err: errors.New("deadline source timeout")}
+	h := NewHandler(slog.New(slog.NewTextHandler(io.Discard, nil)), svc, fakeInspector{})
+	mux := http.NewServeMux()
+	h.Register(mux)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/company/dashboard/overview?range=30d", nil)
+	req.Header.Set("Authorization", "Bearer test-token")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status %d body %s", w.Code, w.Body.String())
+	}
+	var body map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body["error"] == nil {
+		t.Fatalf("expected error envelope, got %v", body)
 	}
 }

@@ -3,6 +3,7 @@ package http
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -23,6 +24,12 @@ func (fakeInspector) InspectPreCompanyToken(context.Context, string) (*iamapp.Pr
 
 type fakeSvc struct{}
 
+type failingDeadlineSvc struct{ fakeSvc }
+
+func (failingDeadlineSvc) ListDeadlineAlerts(_ context.Context, _ deadlinealertsapp.ListDeadlineAlertsRequest) (*deadlinealertsapp.ListDeadlineAlertsResponse, error) {
+	return nil, errors.New("deadline source timeout")
+}
+
 func (fakeSvc) ListDeadlineAlerts(_ context.Context, _ deadlinealertsapp.ListDeadlineAlertsRequest) (*deadlinealertsapp.ListDeadlineAlertsResponse, error) {
 	return &deadlinealertsapp.ListDeadlineAlertsResponse{
 		Items: []deadlinealertsapp.DeadlineAlertDTO{
@@ -30,6 +37,10 @@ func (fakeSvc) ListDeadlineAlerts(_ context.Context, _ deadlinealertsapp.ListDea
 		},
 		Page: 1, PageSize: 20, Total: 1,
 	}, nil
+}
+
+func (fakeSvc) ListDeadlineAlertSnapshot(_ context.Context, _ deadlinealertsapp.Subject) ([]deadlinealertsapp.DeadlineAlertDTO, error) {
+	return []deadlinealertsapp.DeadlineAlertDTO{}, nil
 }
 
 func (fakeSvc) ListDeadlineAlertFilterOptions(_ context.Context, _ deadlinealertsapp.Subject) (*deadlinealertsapp.DeadlineAlertFilterOptionsResponse, error) {
@@ -83,6 +94,28 @@ func TestListDeadlineAlerts_route(t *testing.T) {
 	}
 	if resp.Total != 1 || resp.Items[0].RecordID != "r1" {
 		t.Fatalf("got %+v", resp)
+	}
+}
+
+func TestListDeadlineAlerts_routeKeepsErrorEnvelopeOnDependencyFailure(t *testing.T) {
+	mux := http.NewServeMux()
+	h := NewHandler(nil, failingDeadlineSvc{}, fakeInspector{})
+	h.Register(mux)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/company/deadline-alerts?page=1&page_size=100", nil)
+	req.Header.Set("Authorization", "Bearer test-token")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status %d body %s", w.Code, w.Body.String())
+	}
+	var body map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body["error"] == nil {
+		t.Fatalf("expected error envelope, got %v", body)
 	}
 }
 

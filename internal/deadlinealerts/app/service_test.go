@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -23,6 +24,27 @@ type stubRepo struct {
 	openMappings      []workflowdept.OpenMapping
 	nextAlertCycles   []NextAlertCycleRow
 	listNextCalls     int
+}
+
+type pagedStubRepo struct {
+	stubRepo
+	pageRows       []AlertRow
+	pageTotal      int
+	pageCalls      int
+	legacyRowCalls int
+}
+
+func (s *pagedStubRepo) ListRows(_ context.Context, _ string, _ DeadlineAlertAccessScope) ([]AlertRow, error) {
+	s.legacyRowCalls++
+	return s.rows, nil
+}
+
+func (s *pagedStubRepo) ListRowsPage(_ context.Context, _ string, _ DeadlineAlertAccessScope, page, pageSize int) ([]AlertRow, int, error) {
+	s.pageCalls++
+	if page != 1 || pageSize != 100 {
+		return nil, 0, fmt.Errorf("page=%d page_size=%d", page, pageSize)
+	}
+	return s.pageRows, s.pageTotal, nil
 }
 
 func (s *stubRepo) ListRows(_ context.Context, _ string, _ DeadlineAlertAccessScope) ([]AlertRow, error) {
@@ -167,6 +189,30 @@ func TestListDeadlineAlerts_actionableDraftSurvivesAndPaginates(t *testing.T) {
 	}
 	if resp.Items[0].Status != "UPCOMING" {
 		t.Fatalf("status %s", resp.Items[0].Status)
+	}
+}
+
+func TestListDeadlineAlerts_largeUnfilteredPageUsesBoundedRepositoryRead(t *testing.T) {
+	repo := &pagedStubRepo{
+		pageRows:  []AlertRow{{CompanyID: "c_001", RecordID: "page-1", Title: "Page row", RecordStatus: "Draft", PlannedDate: "2026-09-10"}},
+		pageTotal: 10000,
+	}
+	svc := NewService(repo, allowAuthSvc(), disclosureapp.NewDeadlineCalculator(disclosureapp.NewHolidayCalendarFileProvider("configs/non_trading_days")))
+	svc.(*service).now = func() time.Time { return time.Date(2026, 9, 3, 0, 0, 0, 0, time.UTC) }
+
+	resp, err := svc.ListDeadlineAlerts(context.Background(), ListDeadlineAlertsRequest{
+		Subject:  Subject{UserID: "u1", MembershipID: "m_admin_001", CompanyID: "c_001"},
+		Page:     1,
+		PageSize: 100,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if repo.pageCalls != 1 || repo.legacyRowCalls != 0 {
+		t.Fatalf("page_calls=%d legacy_calls=%d", repo.pageCalls, repo.legacyRowCalls)
+	}
+	if resp.Total != 10000 || len(resp.Items) != 1 || resp.Items[0].RecordID != "page-1" {
+		t.Fatalf("unexpected paged response: %+v", resp)
 	}
 }
 

@@ -33,7 +33,7 @@ type service struct {
 	deadlines   deadlinealertsapp.Service
 	adHoc       adhocapp.Service // nil when ad-hoc feature disabled
 	inApp       inappapp.Service
-	company     CompanyReader // optional
+	company     CompanyReader     // optional
 	completedAt CompletedAtReader // optional; when nil completion KPIs unavailable
 }
 
@@ -123,100 +123,58 @@ func (s *service) authorizeDashboard(ctx context.Context, sub Subject) error {
 
 func (s *service) fetchDeadlines(ctx context.Context, sub deadlinealertsapp.Subject, dr domain.DateRange) (deadlineFetch, error) {
 	out := deadlineFetch{}
-	list := func(status string) (*deadlinealertsapp.ListDeadlineAlertsResponse, error) {
-		return s.deadlines.ListDeadlineAlerts(ctx, deadlinealertsapp.ListDeadlineAlertsRequest{
-			Subject:   sub,
-			Status:    status,
-			StartDate: dr.From,
-			EndDate:   dr.To,
-			Page:      1,
-			PageSize:  100,
-		})
-	}
-
-	overdueResp, err := list("OVERDUE")
-	if err != nil {
-		return out, err
-	}
-	dueSoonResp, err := list("DUE_SOON")
-	if err != nil {
-		return out, err
-	}
-	pendingResp, err := list("PENDING_CONFIRM")
-	if err != nil {
-		return out, err
-	}
-	upcomingResp, err := list("UPCOMING")
+	items, err := s.deadlines.ListDeadlineAlertSnapshot(ctx, sub)
 	if err != nil {
 		return out, err
 	}
 
 	start7, end7 := domain.Next7DaysWindow(dr)
-	dueIn7 := 0
-	// Non-terminal upcoming window only (exclude OVERDUE / PENDING_CONFIRM).
-	for _, st := range []string{"DUE_SOON", "UPCOMING"} {
-		r, err := s.deadlines.ListDeadlineAlerts(ctx, deadlinealertsapp.ListDeadlineAlertsRequest{
-			Subject:   sub,
-			Status:    st,
-			StartDate: start7,
-			EndDate:   end7,
-			Page:      1,
-			PageSize:  1,
-		})
-		if err != nil {
-			return out, err
+	for _, item := range items {
+		if dashboardDateInRange(item.DueDate, start7, end7) && (item.Status == "DUE_SOON" || item.Status == "UPCOMING") {
+			out.dueIn7Days++
 		}
-		dueIn7 += r.Total
+		if !dashboardDateInRange(item.DueDate, dr.From, dr.To) {
+			continue
+		}
+		switch item.Status {
+		case "OVERDUE":
+			out.overdueTotal++
+			out.overdue = appendDashboardListItem(out.overdue, item)
+		case "DUE_SOON":
+			out.dueSoonTotal++
+			out.dueSoon = appendDashboardListItem(out.dueSoon, item)
+		case "PENDING_CONFIRM":
+			out.pendingConfirmTotal++
+			out.pendingConfirm = appendDashboardListItem(out.pendingConfirm, item)
+		case "UPCOMING":
+			out.upcomingTotal++
+			out.upcoming = appendDashboardListItem(out.upcoming, item)
+		case "DONE":
+			// The legacy implementation loaded all DONE pages for completion KPIs.
+			out.done = append(out.done, item)
+		}
 	}
-
-	doneItems, err := s.listAllDeadlineAlerts(ctx, sub, "DONE", dr.From, dr.To)
-	if err != nil {
-		return out, err
-	}
-
-	out.overdue = overdueResp.Items
-	out.dueSoon = dueSoonResp.Items
-	out.pendingConfirm = pendingResp.Items
-	out.upcoming = upcomingResp.Items
-	out.done = doneItems
-	out.overdueTotal = overdueResp.Total
-	out.dueSoonTotal = dueSoonResp.Total
-	out.pendingConfirmTotal = pendingResp.Total
-	out.upcomingTotal = upcomingResp.Total
-	out.dueIn7Days = dueIn7
 	return out, nil
 }
 
-func (s *service) listAllDeadlineAlerts(
-	ctx context.Context,
-	sub deadlinealertsapp.Subject,
-	status, start, end string,
-) ([]deadlinealertsapp.DeadlineAlertDTO, error) {
-	const pageSize = 100
-	var all []deadlinealertsapp.DeadlineAlertDTO
-	page := 1
-	for {
-		resp, err := s.deadlines.ListDeadlineAlerts(ctx, deadlinealertsapp.ListDeadlineAlertsRequest{
-			Subject:   sub,
-			Status:    status,
-			StartDate: start,
-			EndDate:   end,
-			Page:      page,
-			PageSize:  pageSize,
-		})
-		if err != nil {
-			return nil, err
-		}
-		all = append(all, resp.Items...)
-		if len(resp.Items) < pageSize || len(all) >= resp.Total {
-			break
-		}
-		page++
-		if page > 50 {
-			break
-		}
+const dashboardListPageSize = 100
+
+func appendDashboardListItem(items []deadlinealertsapp.DeadlineAlertDTO, item deadlinealertsapp.DeadlineAlertDTO) []deadlinealertsapp.DeadlineAlertDTO {
+	if len(items) >= dashboardListPageSize {
+		return items
 	}
-	return all, nil
+	return append(items, item)
+}
+
+func dashboardDateInRange(dueDate, startDate, endDate string) bool {
+	dueDate = strings.TrimSpace(dueDate)
+	if dueDate == "" {
+		return startDate == "" && endDate == ""
+	}
+	if startDate != "" && dueDate < startDate {
+		return false
+	}
+	return endDate == "" || dueDate <= endDate
 }
 
 func (s *service) fetchCompletion(

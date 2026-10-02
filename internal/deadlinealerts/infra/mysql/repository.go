@@ -55,18 +55,34 @@ func NewRepository(db *sql.DB, opts ...Option) *Repository {
 }
 
 func (r *Repository) ListRows(ctx context.Context, companyID string, scope deadlinealertsapp.DeadlineAlertAccessScope) ([]deadlinealertsapp.AlertRow, error) {
-	deptByRecord, err := r.listCurrentStepMeta(ctx, companyID)
-	if err != nil {
-		return nil, err
+	return r.listRows(ctx, companyID, scope, 0, 0)
+}
+
+// ListRowsPage keeps the public page boundary in MySQL. It fetches and enriches
+// only the requested record IDs; it never builds workflow/ad-hoc/task metadata
+// for the whole company before applying the page limit.
+func (r *Repository) ListRowsPage(ctx context.Context, companyID string, scope deadlinealertsapp.DeadlineAlertAccessScope, page, pageSize int) ([]deadlinealertsapp.AlertRow, int, error) {
+	if page <= 0 {
+		page = 1
 	}
-	adHocByRecord, err := r.listLatestAdHocMeta(ctx, companyID)
-	if err != nil {
-		return nil, err
+	if pageSize <= 0 {
+		pageSize = 20
 	}
-	taskAssigneeRecords, err := r.listTaskAssigneeRecords(ctx, companyID, scope.MembershipID)
-	if err != nil {
-		return nil, err
+	if pageSize > 100 {
+		pageSize = 100
 	}
+	total, err := r.countListRows(ctx, companyID, scope)
+	if err != nil {
+		return nil, 0, err
+	}
+	rows, err := r.listRows(ctx, companyID, scope, pageSize, (page-1)*pageSize)
+	if err != nil {
+		return nil, 0, err
+	}
+	return rows, total, nil
+}
+
+func (r *Repository) listRows(ctx context.Context, companyID string, scope deadlinealertsapp.DeadlineAlertAccessScope, limit, offset int) ([]deadlinealertsapp.AlertRow, error) {
 
 	scopeClause, scopeArgs := deadlinealertsapp.BuildListRowsScopeSQL(scope)
 	nowFn := r.now
@@ -106,6 +122,10 @@ func (r *Repository) ListRows(ctx context.Context, companyID string, scope deadl
 		ORDER BY dr.created_at DESC
 	`
 	args := append([]any{companyID, todayHCM}, scopeArgs...)
+	if limit > 0 {
+		query += " LIMIT ? OFFSET ?"
+		args = append(args, limit, offset)
+	}
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
@@ -134,14 +154,6 @@ func (r *Repository) ListRows(ctx context.Context, companyID string, scope deadl
 		); err != nil {
 			return nil, err
 		}
-		meta := deptByRecord[row.RecordID]
-		row.CurrentStepDepartment = meta.department
-		row.CurrentStepName = meta.stepName
-		row.HasTaskAssignee = taskAssigneeRecords[row.RecordID]
-		if meta, ok := adHocByRecord[row.RecordID]; ok {
-			row.AdHocTitleLine = meta.titleLine
-			row.AdHocDeadlineDate = meta.dueDate
-		}
 		if confirmedBy.Valid {
 			row.ConfirmedBy = strings.TrimSpace(confirmedBy.String)
 		}
@@ -151,15 +163,72 @@ func (r *Repository) ListRows(ctx context.Context, companyID string, scope deadl
 		}
 		out = append(out, row)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return r.enrichListRows(ctx, companyID, scope.MembershipID, out)
 }
 
-func (r *Repository) listTaskAssigneeRecords(ctx context.Context, companyID, membershipID string) (map[string]bool, error) {
+func (r *Repository) countListRows(ctx context.Context, companyID string, scope deadlinealertsapp.DeadlineAlertAccessScope) (int, error) {
+	scopeClause, scopeArgs := deadlinealertsapp.BuildListRowsScopeSQL(scope)
+	nowFn := r.now
+	if nowFn == nil {
+		nowFn = time.Now
+	}
+	query := `
+		SELECT COUNT(*)
+		FROM disclosure_records dr
+` + deadlinealertsapp.ListRowsActiveTemplateSQLJoin + `
+		WHERE dr.company_id = ?
+` + listRowsV1ObligationMembershipSQL + scopeClause
+	args := append([]any{companyID, businessDateHCM(nowFn())}, scopeArgs...)
+	var total int
+	if err := r.db.QueryRowContext(ctx, query, args...).Scan(&total); err != nil {
+		return 0, err
+	}
+	return total, nil
+}
+
+func (r *Repository) enrichListRows(ctx context.Context, companyID, membershipID string, rows []deadlinealertsapp.AlertRow) ([]deadlinealertsapp.AlertRow, error) {
+	if len(rows) == 0 {
+		return rows, nil
+	}
+	recordIDs := make([]string, 0, len(rows))
+	for _, row := range rows {
+		recordIDs = append(recordIDs, row.RecordID)
+	}
+	deptByRecord, err := r.listCurrentStepMeta(ctx, companyID, recordIDs)
+	if err != nil {
+		return nil, err
+	}
+	adHocByRecord, err := r.listLatestAdHocMeta(ctx, companyID, recordIDs)
+	if err != nil {
+		return nil, err
+	}
+	taskAssigneeRecords, err := r.listTaskAssigneeRecords(ctx, companyID, membershipID, recordIDs)
+	if err != nil {
+		return nil, err
+	}
+	for i := range rows {
+		meta := deptByRecord[rows[i].RecordID]
+		rows[i].CurrentStepDepartment = meta.department
+		rows[i].CurrentStepName = meta.stepName
+		rows[i].HasTaskAssignee = taskAssigneeRecords[rows[i].RecordID]
+		if meta, ok := adHocByRecord[rows[i].RecordID]; ok {
+			rows[i].AdHocTitleLine = meta.titleLine
+			rows[i].AdHocDeadlineDate = meta.dueDate
+		}
+	}
+	return rows, nil
+}
+
+func (r *Repository) listTaskAssigneeRecords(ctx context.Context, companyID, membershipID string, recordIDGroups ...[]string) (map[string]bool, error) {
 	out := map[string]bool{}
 	membershipID = strings.TrimSpace(membershipID)
 	if membershipID == "" {
 		return out, nil
 	}
+	recordClause, recordArgs := sqlRecordIDClause("wi.record_id", firstRecordIDGroup(recordIDGroups))
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT DISTINCT wi.record_id
 		FROM workflow_tasks wt
@@ -182,7 +251,7 @@ func (r *Repository) listTaskAssigneeRecords(ctx context.Context, companyID, mem
 		  )
 		  AND LOWER(TRIM(dr.status)) <> 'draft'
 		  AND LOWER(TRIM(wt.status)) NOT IN ('completed', 'done', 'cancelled', 'skipped')
-	`, companyID, membershipID, membershipID)
+	`+recordClause, append([]any{companyID, membershipID, membershipID}, recordArgs...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -202,7 +271,7 @@ type adHocMeta struct {
 	dueDate   string
 }
 
-func (r *Repository) listLatestAdHocMeta(ctx context.Context, companyID string) (map[string]adHocMeta, error) {
+func (r *Repository) listLatestAdHocMeta(ctx context.Context, companyID string, recordIDGroups ...[]string) (map[string]adHocMeta, error) {
 	includeDayType, err := r.hasProposedDeadlineDayTypeColumn(ctx)
 	if err != nil {
 		return nil, err
@@ -220,12 +289,14 @@ func (r *Repository) listLatestAdHocMeta(ctx context.Context, companyID string) 
 	}
 	cols += `,
 			updated_at`
+	recordClause, recordArgs := sqlRecordIDClause("record_id", firstRecordIDGroup(recordIDGroups))
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT `+cols+`
 		FROM ad_hoc_proposals
 		WHERE company_id = ? AND status = 'approved'
+		`+recordClause+`
 		ORDER BY updated_at DESC
-	`, companyID)
+	`, append([]any{companyID}, recordArgs...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -308,7 +379,8 @@ type currentStepMeta struct {
 	stepName   string
 }
 
-func (r *Repository) listCurrentStepMeta(ctx context.Context, companyID string) (map[string]currentStepMeta, error) {
+func (r *Repository) listCurrentStepMeta(ctx context.Context, companyID string, recordIDGroups ...[]string) (map[string]currentStepMeta, error) {
+	recordClause, recordArgs := sqlRecordIDClause("wi.record_id", firstRecordIDGroup(recordIDGroups))
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT wi.record_id, wi.current_step_code, wi.snapshot_json
 		FROM workflow_instances wi
@@ -316,7 +388,7 @@ func (r *Repository) listCurrentStepMeta(ctx context.Context, companyID string) 
 			AND dr.record_id = wi.record_id
 		WHERE wi.company_id = ?
 		  AND LOWER(TRIM(dr.status)) <> 'draft'
-	`, companyID)
+	`+recordClause, append([]any{companyID}, recordArgs...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -341,6 +413,33 @@ func (r *Repository) listCurrentStepMeta(ctx context.Context, companyID string) 
 		out[recordID] = currentStepMeta{department: dept, stepName: stepName}
 	}
 	return out, rows.Err()
+}
+
+func firstRecordIDGroup(groups [][]string) []string {
+	if len(groups) == 0 {
+		return nil
+	}
+	return groups[0]
+}
+
+func sqlRecordIDClause(column string, recordIDs []string) (string, []any) {
+	if len(recordIDs) == 0 {
+		return "", nil
+	}
+	placeholders := make([]string, 0, len(recordIDs))
+	args := make([]any, 0, len(recordIDs))
+	for _, recordID := range recordIDs {
+		recordID = strings.TrimSpace(recordID)
+		if recordID == "" {
+			continue
+		}
+		placeholders = append(placeholders, "?")
+		args = append(args, recordID)
+	}
+	if len(placeholders) == 0 {
+		return "", nil
+	}
+	return " AND " + column + " IN (" + strings.Join(placeholders, ",") + ")", args
 }
 
 func (r *Repository) GetCompanyDeadlineContext(ctx context.Context, companyID string) (disclosureapp.CompanyDeadlineContext, error) {

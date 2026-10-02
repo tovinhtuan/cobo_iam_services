@@ -14,13 +14,6 @@ import (
 )
 
 func (s *service) ListDeadlineAlerts(ctx context.Context, req ListDeadlineAlertsRequest) (*ListDeadlineAlertsResponse, error) {
-	if strings.TrimSpace(req.Subject.CompanyID) == "" {
-		return nil, perr.NewHTTPError(http.StatusUnprocessableEntity, perr.CodeCompanyContextRequired, "company_id is required", nil)
-	}
-	if err := s.authorizeView(ctx, req.Subject); err != nil {
-		return nil, err
-	}
-
 	page := req.Page
 	if page <= 0 {
 		page = 1
@@ -32,16 +25,109 @@ func (s *service) ListDeadlineAlerts(ctx context.Context, req ListDeadlineAlerts
 	if pageSize > 100 {
 		pageSize = 100
 	}
-
-	eff, err := s.auth.GetEffectiveAccess(ctx, req.Subject.MembershipID, req.Subject.CompanyID)
-	if err != nil {
-		return nil, fmt.Errorf("resolve effective access: %w", err)
+	if hasNoListFilters(req) {
+		if repo, ok := s.repo.(PagedRowsRepository); ok {
+			return s.listUnfilteredDeadlineAlertPage(ctx, req, page, pageSize, repo)
+		}
 	}
-	accessScope := ResolveDeadlineAlertAccessScope(eff)
+	enriched, err := s.listDeadlineAlertItems(ctx, req)
+	if err != nil {
+		return nil, err
+	}
 
+	total := len(enriched)
+	start := (page - 1) * pageSize
+	if start > total {
+		start = total
+	}
+	end := start + pageSize
+	if end > total {
+		end = total
+	}
+	items := enriched[start:end]
+	if items == nil {
+		items = []DeadlineAlertDTO{}
+	}
+
+	return &ListDeadlineAlertsResponse{
+		Items:    items,
+		Page:     page,
+		PageSize: pageSize,
+		Total:    total,
+	}, nil
+}
+
+// ListDeadlineAlertSnapshot resolves the accessible alert set once for
+// internal aggregate readers. It preserves the same authorization, tenant
+// scope, due-date resolution, and alert status semantics as the list endpoint.
+func (s *service) ListDeadlineAlertSnapshot(ctx context.Context, sub Subject) ([]DeadlineAlertDTO, error) {
+	return s.listDeadlineAlertItems(ctx, ListDeadlineAlertsRequest{Subject: sub})
+}
+
+func hasNoListFilters(req ListDeadlineAlertsRequest) bool {
+	return strings.TrimSpace(req.Status) == "" &&
+		strings.TrimSpace(req.Query) == "" &&
+		strings.TrimSpace(req.StartDate) == "" &&
+		strings.TrimSpace(req.EndDate) == "" &&
+		strings.TrimSpace(req.DepartmentID) == "" &&
+		strings.TrimSpace(req.DisplayGroupCode) == ""
+}
+
+func (s *service) listUnfilteredDeadlineAlertPage(
+	ctx context.Context,
+	req ListDeadlineAlertsRequest,
+	page, pageSize int,
+	repo PagedRowsRepository,
+) (*ListDeadlineAlertsResponse, error) {
+	scope, err := s.resolveListAccessScope(ctx, req.Subject)
+	if err != nil {
+		return nil, err
+	}
+	rows, total, err := repo.ListRowsPage(ctx, req.Subject.CompanyID, scope, page, pageSize)
+	if err != nil {
+		return nil, err
+	}
+	items, err := s.enrichDeadlineAlertRows(ctx, req, scope, rows)
+	if err != nil {
+		return nil, err
+	}
+	return &ListDeadlineAlertsResponse{Items: items, Page: page, PageSize: pageSize, Total: total}, nil
+}
+
+func (s *service) listDeadlineAlertItems(ctx context.Context, req ListDeadlineAlertsRequest) ([]DeadlineAlertDTO, error) {
+	accessScope, err := s.resolveListAccessScope(ctx, req.Subject)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := s.repo.ListRows(ctx, req.Subject.CompanyID, accessScope)
 	if err != nil {
 		return nil, err
+	}
+	return s.enrichDeadlineAlertRows(ctx, req, accessScope, rows)
+}
+
+func (s *service) resolveListAccessScope(ctx context.Context, sub Subject) (DeadlineAlertAccessScope, error) {
+	if strings.TrimSpace(sub.CompanyID) == "" {
+		return DeadlineAlertAccessScope{}, perr.NewHTTPError(http.StatusUnprocessableEntity, perr.CodeCompanyContextRequired, "company_id is required", nil)
+	}
+	if err := s.authorizeView(ctx, sub); err != nil {
+		return DeadlineAlertAccessScope{}, err
+	}
+	eff, err := s.auth.GetEffectiveAccess(ctx, sub.MembershipID, sub.CompanyID)
+	if err != nil {
+		return DeadlineAlertAccessScope{}, fmt.Errorf("resolve effective access: %w", err)
+	}
+	return ResolveDeadlineAlertAccessScope(eff), nil
+}
+
+func (s *service) enrichDeadlineAlertRows(
+	ctx context.Context,
+	req ListDeadlineAlertsRequest,
+	accessScope DeadlineAlertAccessScope,
+	rows []AlertRow,
+) ([]DeadlineAlertDTO, error) {
+	if strings.TrimSpace(req.Subject.CompanyID) == "" {
+		return nil, perr.NewHTTPError(http.StatusUnprocessableEntity, perr.CodeCompanyContextRequired, "company_id is required", nil)
 	}
 
 	companyCtx, err := s.repo.GetCompanyDeadlineContext(ctx, req.Subject.CompanyID)
@@ -138,26 +224,10 @@ func (s *service) ListDeadlineAlerts(ctx context.Context, req ListDeadlineAlerts
 		})
 	}
 
-	total := len(enriched)
-	start := (page - 1) * pageSize
-	if start > total {
-		start = total
+	if enriched == nil {
+		enriched = []DeadlineAlertDTO{}
 	}
-	end := start + pageSize
-	if end > total {
-		end = total
-	}
-	items := enriched[start:end]
-	if items == nil {
-		items = []DeadlineAlertDTO{}
-	}
-
-	return &ListDeadlineAlertsResponse{
-		Items:    items,
-		Page:     page,
-		PageSize: pageSize,
-		Total:    total,
-	}, nil
+	return enriched, nil
 }
 
 func (s *service) ListDeadlineAlertFilterOptions(ctx context.Context, sub Subject) (*DeadlineAlertFilterOptionsResponse, error) {

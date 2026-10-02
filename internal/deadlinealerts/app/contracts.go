@@ -169,8 +169,18 @@ type Repository interface {
 	ListNextAlertCycles(ctx context.Context, companyID, todayHCM string) ([]NextAlertCycleRow, error)
 }
 
+// PagedRowsRepository is an optional optimized read boundary. The legacy
+// Repository.ListRows remains available to preserve all filter semantics while
+// older in-memory/test repositories migrate independently.
+type PagedRowsRepository interface {
+	ListRowsPage(ctx context.Context, companyID string, scope DeadlineAlertAccessScope, page, pageSize int) (rows []AlertRow, total int, err error)
+}
+
 type Service interface {
 	ListDeadlineAlerts(ctx context.Context, req ListDeadlineAlertsRequest) (*ListDeadlineAlertsResponse, error)
+	// ListDeadlineAlertSnapshot is an internal, fully-resolved read used by
+	// aggregate consumers. It intentionally has no HTTP transport contract.
+	ListDeadlineAlertSnapshot(ctx context.Context, sub Subject) ([]DeadlineAlertDTO, error)
 	ListDeadlineAlertFilterOptions(ctx context.Context, sub Subject) (*DeadlineAlertFilterOptionsResponse, error)
 	ListNextDeadlineAlerts(ctx context.Context, sub Subject) (*ListNextDeadlineAlertsResponse, error)
 	ConfirmDeadlineAlert(ctx context.Context, req ConfirmDeadlineAlertRequest) (*ConfirmDeadlineAlertResponse, error)
