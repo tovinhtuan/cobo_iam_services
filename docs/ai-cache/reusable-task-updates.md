@@ -4562,3 +4562,11 @@
 - rollback: backups retained at `bin/api.rollback.20261002T180641Z` and `bin/worker.rollback.20261002T180641Z` on DEV. Do not run worker rollback without stopping it first. No commit or push was performed.
 
 
+## DEV portal theme cache-delivery correction (2026-10-05)
+
+- Task type: cross-repository deployment configuration correction; no API, authorization, tenant, worker, database, migration, or business-data change.
+- Objective: ensure ordinary SPA deep-link navigation receives the newly deployed portal theme instead of retaining an older cached entry document.
+- Implemented: `deploy-artifacts/web/nginx.conf` applies `Cache-Control: no-store, no-cache, must-revalidate` in the SPA fallback `location /`; hashed JS/CSS retain their existing immutable one-year cache policy.
+- Verification: `npm run build` passed in the frontend sibling. DEV `deploy-dev.ps1 -Mode fe -SkipTests` passed and restarted only `web`; API/worker were untouched. Remote `nginx -t` passed, web is healthy, `/app/dashboard` returned 200 plus the no-cache header, and the CSS asset retained immutable caching. Browser smoke on the normal dashboard URL showed the dark unified portal with no console warning/error.
+- BLOCKED: `docker compose -f docker-compose.dev.yml build api` and frontend Docker parity cannot connect because the local Docker daemon pipe is unavailable.
+- Rollback: `/root/cobo_project/web/releases/pre-spa-entry-cache-policy-20261005.tar.gz` (SHA-256 `43aa1f28770ad8158bd7e0a7ccf6e654d1b7279835a16529d14bb06be85bddd9`); restore it to `/root/cobo_project/web/` and restart only `web`. No commit or push.
