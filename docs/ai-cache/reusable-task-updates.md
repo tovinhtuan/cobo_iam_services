@@ -4570,3 +4570,11 @@
 - Verification: `npm run build` passed in the frontend sibling. DEV `deploy-dev.ps1 -Mode fe -SkipTests` passed and restarted only `web`; API/worker were untouched. Remote `nginx -t` passed, web is healthy, `/app/dashboard` returned 200 plus the no-cache header, and the CSS asset retained immutable caching. Browser smoke on the normal dashboard URL showed the dark unified portal with no console warning/error.
 - BLOCKED: `docker compose -f docker-compose.dev.yml build api` and frontend Docker parity cannot connect because the local Docker daemon pipe is unavailable.
 - Rollback: `/root/cobo_project/web/releases/pre-spa-entry-cache-policy-20261005.tar.gz` (SHA-256 `43aa1f28770ad8158bd7e0a7ccf6e654d1b7279835a16529d14bb06be85bddd9`); restore it to `/root/cobo_project/web/` and restart only `web`. No commit or push.
+
+## DEV deploy — SPA entry cache policy (2026-10-06)
+
+- task type: authorized DEV deployment; web-only, no API/worker/migration/data mutation.
+- objective: deploy current `84c43f6` web/Nginx logic to DEV.
+- deployment: `make deploy-fe` completed successfully; Vite build passed with required DEV flags, web assets and `nginx.conf` copied, only `cobo-web-design` restarted.
+- verification: `nginx -t` passed; `/healthz` and `/login-key` returned 200; frontend returned 200; Personal Ops V2 smoke passed; `/index.html` and `/app/dashboard` returned `Cache-Control: no-store, no-cache, must-revalidate`; hashed CSS retained `public, max-age=31536000, immutable`; API and worker uptime remained unchanged.
+- remaining: Vite emitted the existing large-chunk warning (>500 kB); no functional failure observed. No commit or push performed.
