@@ -26,7 +26,7 @@ func ValidateRules(rules *TemplateApplicabilityRules, isPeriodic bool) error {
 			return fmt.Errorf("invalid sector")
 		}
 	}
-	if isPeriodic {
+	if isPeriodic && rules.UseStructureDeadline {
 		if rules.DeadlineByStructure == nil {
 			return fmt.Errorf("deadline_by_structure incomplete for periodic template")
 		}

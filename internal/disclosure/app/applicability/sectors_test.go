@@ -12,6 +12,22 @@ func TestNormalizeBusinessSectors_Single(t *testing.T) {
 	}
 }
 
+func TestNormalizeBusinessSectors_AcceptsDisplayLabels(t *testing.T) {
+	out, err := NormalizeBusinessSectors([]string{"Thương mại", "Dịch vụ", "Sản xuất"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []BusinessSector{BusinessSectorCommercial, BusinessSectorService, BusinessSectorManufacturing}
+	if len(out) != len(want) {
+		t.Fatalf("got %#v want %#v", out, want)
+	}
+	for i := range want {
+		if out[i] != want[i] {
+			t.Fatalf("out[%d]=%s want %s", i, out[i], want[i])
+		}
+	}
+}
+
 func TestNormalizeBusinessSectors_MultipleCanonicalOrder(t *testing.T) {
 	out, err := NormalizeBusinessSectors([]string{"manufacturing", "commercial", "service"})
 	if err != nil {

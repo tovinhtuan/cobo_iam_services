@@ -1,6 +1,9 @@
 package applicability
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 // CompanyLabels returns active company class labels from profile checkboxes.
 func CompanyLabels(p CompanyApplicabilityProfile) []CompanyClass {
@@ -157,6 +160,53 @@ func ResolveDeadlineDurationType(rules *TemplateApplicabilityRules) string {
 
 // ParseBusinessSector validates and parses sector string from API/DB.
 func ParseBusinessSector(raw string) (BusinessSector, bool) {
-	s := BusinessSector(raw)
-	return s, validBusinessSectors[s]
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case string(BusinessSectorCommercial), "thương mại":
+		return BusinessSectorCommercial, true
+	case string(BusinessSectorService), "dịch vụ":
+		return BusinessSectorService, true
+	case string(BusinessSectorManufacturing), "sản xuất":
+		return BusinessSectorManufacturing, true
+	default:
+		return "", false
+	}
+}
+
+// ParseCompanyClass accepts both the persisted enum and the display label used
+// by CMS authors when they prepare an import file.
+func ParseCompanyClass(raw string) (CompanyClass, bool) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case string(CompanyClassListed), "công ty niêm yết":
+		return CompanyClassListed, true
+	case string(CompanyClassLargePublic), "công ty đại chúng quy mô lớn":
+		return CompanyClassLargePublic, true
+	case string(CompanyClassNonLargePublic), "công ty đại chúng không phải quy mô lớn":
+		return CompanyClassNonLargePublic, true
+	default:
+		return "", false
+	}
+}
+
+// NormalizeCompanyClasses trims, deduplicates, and converts display labels to
+// the canonical values persisted by the disclosure domain.
+func NormalizeCompanyClasses(input []string) ([]CompanyClass, error) {
+	seen := make(map[CompanyClass]bool, len(input))
+	for _, raw := range input {
+		v := strings.TrimSpace(raw)
+		if v == "" {
+			continue
+		}
+		class, ok := ParseCompanyClass(v)
+		if !ok {
+			return nil, fmt.Errorf("invalid company_class %q", v)
+		}
+		seen[class] = true
+	}
+	out := make([]CompanyClass, 0, len(seen))
+	for _, class := range []CompanyClass{CompanyClassListed, CompanyClassLargePublic, CompanyClassNonLargePublic} {
+		if seen[class] {
+			out = append(out, class)
+		}
+	}
+	return out, nil
 }

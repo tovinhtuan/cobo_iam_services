@@ -14,10 +14,10 @@ func TestValidateImportTemplate_PeriodicDeadlineRuleOptionalWithDays(t *testing.
 	day := 31
 	month := 3
 	tpl := disclosureapp.TemplateImportDefinitionV1{
-		Name:             "Periodic no deadline_rule input",
-		TemplateCategory: "periodic",
-		Periodicity:      "quarterly",
-		DeadlineRule:     "", // missing — derive in normalize
+		Name:              "Periodic no deadline_rule input",
+		TemplateCategory:  "periodic",
+		Periodicity:       "quarterly",
+		DeadlineRule:      "", // missing — derive in normalize
 		DisplayGroupCodes: []string{"display_groups_003"},
 		ApplicabilityRules: &applicability.TemplateApplicabilityRules{
 			ApplicableCompanyClasses: []applicability.CompanyClass{applicability.CompanyClassListed},
@@ -62,6 +62,94 @@ func TestValidateImportTemplate_PeriodicDeadlineRuleOptionalWithDays(t *testing.
 	for _, e := range errs {
 		if e.Code == "DEADLINE_RULE_REQUIRED" {
 			t.Fatalf("periodic with days must not require deadline_rule: %+v", e)
+		}
+	}
+}
+
+func TestValidateImportTemplate_PeriodicFixedDeadlineDoesNotRequireStructureMap(t *testing.T) {
+	tpl := disclosureapp.NormalizeTemplateImportV1(disclosureapp.TemplateImportDefinitionV1{
+		Name:             "Periodic fixed deadline",
+		TemplateCategory: "periodic",
+		Periodicity:      "monthly",
+		ApplicabilityRules: &applicability.TemplateApplicabilityRules{
+			ApplicableCompanyClasses: []applicability.CompanyClass{applicability.CompanyClassListed},
+			ApplicableSectors:        []applicability.BusinessSector{applicability.BusinessSectorCommercial},
+			DeadlineDays:             20,
+			UseStructureDeadline:     false,
+		},
+	})
+	errs, _, _, _ := disclosureapp.ValidateImportTemplate(tpl, time.Now(), nil, nil, nil)
+	for _, err := range errs {
+		if err.Code == "INVALID_APPLICABILITY_RULES" && strings.Contains(err.Message, "deadline_by_structure") {
+			t.Fatalf("fixed deadline must not require structure map: %+v", err)
+		}
+	}
+}
+
+func TestNormalizeTemplateImport_AcceptsApplicabilityDisplayLabels(t *testing.T) {
+	norm := disclosureapp.NormalizeTemplateImportV1(disclosureapp.TemplateImportDefinitionV1{
+		TemplateCategory: "periodic",
+		ApplicabilityRules: &applicability.TemplateApplicabilityRules{
+			ApplicableCompanyClasses: []applicability.CompanyClass{"Công ty niêm yết"},
+			ApplicableSectors: []applicability.BusinessSector{
+				"Thương mại", "Dịch vụ", "Sản xuất",
+			},
+			DeadlineDays: 20,
+		},
+	})
+	if got := norm.ApplicabilityRules.ApplicableCompanyClasses; len(got) != 1 || got[0] != applicability.CompanyClassListed {
+		t.Fatalf("company class was not normalized: %#v", got)
+	}
+	want := []applicability.BusinessSector{
+		applicability.BusinessSectorCommercial,
+		applicability.BusinessSectorService,
+		applicability.BusinessSectorManufacturing,
+	}
+	if got := norm.ApplicabilityRules.ApplicableSectors; len(got) != len(want) {
+		t.Fatalf("sectors were not normalized: %#v", got)
+	} else {
+		for i := range want {
+			if got[i] != want[i] {
+				t.Fatalf("sector[%d]=%s want %s", i, got[i], want[i])
+			}
+		}
+	}
+}
+
+func TestNormalizeTemplateImport_ConvertsRelativeReminderOffsets(t *testing.T) {
+	norm := disclosureapp.NormalizeTemplateImportV1(disclosureapp.TemplateImportDefinitionV1{
+		Workflow: &disclosureapp.TemplateImportWorkflowV1{
+			Steps: []disclosureapp.TemplateImportWorkflowStepV1{{
+				Stage: "Review",
+				ReminderConfig: &disclosureapp.TemplateImportStepReminderConfigV1{
+					Enabled:     true,
+					OffsetsDays: []int{-2, -1},
+				},
+			}},
+		},
+	})
+	got := norm.Workflow.Steps[0].ReminderConfig.OffsetsDays
+	if len(got) != 2 || got[0] != 2 || got[1] != 1 {
+		t.Fatalf("relative offsets were not converted to days_before distances: %#v", got)
+	}
+}
+
+func TestNormalizeTemplateImport_DefaultsOmittedSectorsToAll(t *testing.T) {
+	norm := disclosureapp.NormalizeTemplateImportV1(disclosureapp.TemplateImportDefinitionV1{
+		TemplateCategory: "periodic",
+		ApplicabilityRules: &applicability.TemplateApplicabilityRules{
+			ApplicableCompanyClasses: []applicability.CompanyClass{applicability.CompanyClassListed},
+			DeadlineDays:             7,
+		},
+	})
+	got := norm.ApplicabilityRules.ApplicableSectors
+	want := applicability.CanonicalBusinessSectorOrder
+	if len(got) != len(want) {
+		t.Fatalf("got sectors %#v want all sectors %#v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("sector[%d]=%s want %s", i, got[i], want[i])
 		}
 	}
 }

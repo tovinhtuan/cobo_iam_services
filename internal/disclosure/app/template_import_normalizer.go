@@ -143,9 +143,9 @@ func NormalizeTemplateImportV1(raw TemplateImportDefinitionV1) *TemplateImportDe
 		normRules := &applicability.TemplateApplicabilityRules{
 			ApplicableCompanyClasses: append([]applicability.CompanyClass(nil), out.ApplicabilityRules.ApplicableCompanyClasses...),
 			ApplicableSectors:        append([]applicability.BusinessSector(nil), out.ApplicabilityRules.ApplicableSectors...),
-			DeadlineDays:            out.ApplicabilityRules.DeadlineDays,
-			DeadlineDayType:         strings.ToLower(strings.TrimSpace(out.ApplicabilityRules.DeadlineDayType)),
-			UseStructureDeadline:    out.ApplicabilityRules.UseStructureDeadline,
+			DeadlineDays:             out.ApplicabilityRules.DeadlineDays,
+			DeadlineDayType:          strings.ToLower(strings.TrimSpace(out.ApplicabilityRules.DeadlineDayType)),
+			UseStructureDeadline:     out.ApplicabilityRules.UseStructureDeadline,
 		}
 		if normRules.DeadlineDayType == "" {
 			normRules.DeadlineDayType = "calendar"
@@ -156,6 +156,22 @@ func NormalizeTemplateImportV1(raw TemplateImportDefinitionV1) *TemplateImportDe
 				normRules.DeadlineByStructure[k] = v
 			}
 		}
+		// Omitted applicable_sectors means the template applies to every
+		// supported business sector in the import authoring contract. An
+		// explicitly supplied empty array remains invalid, so authors can still
+		// detect an accidental empty selection.
+		if out.ApplicabilityRules.ApplicableSectors == nil {
+			normRules.ApplicableSectors = append([]applicability.BusinessSector(nil), applicability.CanonicalBusinessSectorOrder...)
+		}
+		// Import authors may use CMS display labels instead of internal enum
+		// codes. Normalize known values here; unknown values remain untouched so
+		// domain validation can return the existing actionable import error.
+		if classes, err := applicability.NormalizeCompanyClasses(companyClassesToStrings(normRules.ApplicableCompanyClasses)); err == nil {
+			normRules.ApplicableCompanyClasses = classes
+		}
+		if sectors, err := applicability.NormalizeBusinessSectors(applicability.BusinessSectorsToStrings(normRules.ApplicableSectors)); err == nil {
+			normRules.ApplicableSectors = sectors
+		}
 		out.ApplicabilityRules = normRules
 	}
 
@@ -163,6 +179,17 @@ func NormalizeTemplateImportV1(raw TemplateImportDefinitionV1) *TemplateImportDe
 	DeriveImportCompatibilityDeadlineRule(&out)
 
 	return &out
+}
+
+func companyClassesToStrings(classes []applicability.CompanyClass) []string {
+	if len(classes) == 0 {
+		return []string{}
+	}
+	out := make([]string, len(classes))
+	for i, class := range classes {
+		out[i] = string(class)
+	}
+	return out
 }
 
 func normalizePeriodicDeadlineConfig(cfg *TemplateImportDeadlineConfigV1, periodicity string) {
@@ -275,6 +302,19 @@ func normalizeWorkflow(wf *TemplateImportWorkflowV1) {
 
 		// Reminder template_key is non-portable / not persisted on Confirm — clear.
 		if s.ReminderConfig != nil {
+			reminder := *s.ReminderConfig
+			reminder.OffsetsDays = append([]int(nil), s.ReminderConfig.OffsetsDays...)
+			s.ReminderConfig = &reminder
+			// Import schema expresses reminders as offsets relative to the
+			// deadline (for example -2 means two days before). The persisted
+			// workflow contract stores the distance as a positive days_before
+			// value. Keep invalid values visible for validation, but normalize
+			// supported negative offsets before Confirm materializes the DTO.
+			for i, offset := range s.ReminderConfig.OffsetsDays {
+				if offset < 0 {
+					s.ReminderConfig.OffsetsDays[i] = -offset
+				}
+			}
 			s.ReminderConfig.TemplateKey = ""
 		}
 

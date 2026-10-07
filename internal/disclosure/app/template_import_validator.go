@@ -40,10 +40,10 @@ func ValidateImportTemplate(
 	// 1. Mandatory base fields
 	if template.Name == "" {
 		errors = append(errors, TemplateImportValidationIssueDTO{
-			Code:      "TEMPLATE_NAME_REQUIRED",
-			FieldPath: "template.name",
-			Severity:  ValidationSeverityBlocker,
-			Message:   "Tên mẫu template là bắt buộc.",
+			Code:            "TEMPLATE_NAME_REQUIRED",
+			FieldPath:       "template.name",
+			Severity:        ValidationSeverityBlocker,
+			Message:         "Tên mẫu template là bắt buộc.",
 			SuggestedAction: "Nhập tên mẫu template (1-255 ký tự).",
 		})
 	} else if len([]rune(template.Name)) > 255 {
@@ -78,10 +78,10 @@ func ValidateImportTemplate(
 
 	if template.TemplateCategory != TemplateCategoryPeriodic && template.TemplateCategory != TemplateCategoryIrregular {
 		errors = append(errors, TemplateImportValidationIssueDTO{
-			Code:      "INVALID_TEMPLATE_CATEGORY",
-			FieldPath: "template.template_category",
-			Severity:  ValidationSeverityBlocker,
-			Message:   "Loại template không hợp lệ (chỉ chấp nhận 'periodic' hoặc 'irregular').",
+			Code:            "INVALID_TEMPLATE_CATEGORY",
+			FieldPath:       "template.template_category",
+			Severity:        ValidationSeverityBlocker,
+			Message:         "Loại template không hợp lệ (chỉ chấp nhận 'periodic' hoặc 'irregular').",
 			SuggestedAction: "Chọn 'periodic' cho định kỳ hoặc 'irregular' cho bất thường.",
 		})
 	}
@@ -122,10 +122,10 @@ func ValidateImportTemplate(
 		parsedTo, err := time.Parse("2006-01-02", template.DeadlineConfig.ApplicableTo)
 		if err != nil {
 			errors = append(errors, TemplateImportValidationIssueDTO{
-				Code:      "INVALID_APPLICABLE_TO_FORMAT",
-				FieldPath: "template.deadline_config.applicable_to",
-				Severity:  ValidationSeverityBlocker,
-				Message:   "Định dạng ngày kết thúc hiệu lực không hợp lệ (yêu cầu định dạng YYYY-MM-DD).",
+				Code:            "INVALID_APPLICABLE_TO_FORMAT",
+				FieldPath:       "template.deadline_config.applicable_to",
+				Severity:        ValidationSeverityBlocker,
+				Message:         "Định dạng ngày kết thúc hiệu lực không hợp lệ (yêu cầu định dạng YYYY-MM-DD).",
 				SuggestedAction: "Cung cấp ngày theo định dạng YYYY-MM-DD.",
 			})
 		} else {
@@ -134,10 +134,10 @@ func ValidateImportTemplate(
 			if parsedTo.Before(today) {
 				// Draft warning, NOT import blocker!
 				warnings = append(warnings, TemplateImportValidationIssueDTO{
-					Code:      "APPLICABLE_TO_IN_PAST",
-					FieldPath: "template.deadline_config.applicable_to",
-					Severity:  ValidationSeverityWarning,
-					Message:   fmt.Sprintf("Ngày kết thúc hiệu lực (%s) nằm trong quá khứ.", template.DeadlineConfig.ApplicableTo),
+					Code:            "APPLICABLE_TO_IN_PAST",
+					FieldPath:       "template.deadline_config.applicable_to",
+					Severity:        ValidationSeverityWarning,
+					Message:         fmt.Sprintf("Ngày kết thúc hiệu lực (%s) nằm trong quá khứ.", template.DeadlineConfig.ApplicableTo),
 					SuggestedAction: "Cập nhật ngày kết thúc hiệu lực trong CMS Editor trước khi kích hoạt template.",
 				})
 				// Recorded as activation blocker
@@ -168,10 +168,10 @@ func ValidateImportTemplate(
 		for _, code := range template.DisplayGroupCodes {
 			if _, ok := validDisplayGroups[code]; !ok {
 				errors = append(errors, TemplateImportValidationIssueDTO{
-					Code:      "UNKNOWN_DISPLAY_GROUP_CODE",
-					FieldPath: "template.display_group_codes",
-					Severity:  ValidationSeverityBlocker,
-					Message:   "Nhóm hiển thị Portal không tồn tại trong hệ thống: " + code,
+					Code:            "UNKNOWN_DISPLAY_GROUP_CODE",
+					FieldPath:       "template.display_group_codes",
+					Severity:        ValidationSeverityBlocker,
+					Message:         "Nhóm hiển thị Portal không tồn tại trong hệ thống: " + code,
 					SuggestedAction: "Chọn nhóm hiển thị hợp lệ từ danh mục Portal.",
 				})
 			}
@@ -201,12 +201,29 @@ func ValidateImportTemplate(
 
 			if step.ProcessingDays < 1 {
 				errors = append(errors, TemplateImportValidationIssueDTO{
-					Code:      "WORKFLOW_STEP_SLA_INVALID",
-					FieldPath: stepPath + ".processing_days",
-					Severity:  ValidationSeverityBlocker,
-					Message:   fmt.Sprintf("%s: Số ngày xử lý (processing_days) phải lớn hơn hoặc bằng 1.", stepLabel),
+					Code:            "WORKFLOW_STEP_SLA_INVALID",
+					FieldPath:       stepPath + ".processing_days",
+					Severity:        ValidationSeverityBlocker,
+					Message:         fmt.Sprintf("%s: Số ngày xử lý (processing_days) phải lớn hơn hoặc bằng 1.", stepLabel),
 					SuggestedAction: "Nhập số ngày xử lý SLA tối thiểu là 1.",
 				})
+			}
+
+			if step.ReminderConfig != nil {
+				reminder := &WorkflowStepReminderConfig{
+					Enabled:    step.ReminderConfig.Enabled,
+					Mode:       WorkflowStepReminderModeDaysBefore,
+					DaysBefore: append([]int(nil), step.ReminderConfig.OffsetsDays...),
+				}
+				if err := ValidateWorkflowStepReminderConfigForPersist(reminder); err != nil {
+					errors = append(errors, TemplateImportValidationIssueDTO{
+						Code:            "INVALID_WORKFLOW_REMINDER_CONFIG",
+						FieldPath:       stepPath + ".reminder_config",
+						Severity:        ValidationSeverityBlocker,
+						Message:         fmt.Sprintf("%s: cấu hình nhắc nhở không hợp lệ: %v", stepLabel, err),
+						SuggestedAction: "Dùng offsets_days là số ngày nhắc trước hạn, trong khoảng 1-90 ngày và tối đa 8 mốc.",
+					})
+				}
 			}
 
 			// Role validation
@@ -220,10 +237,10 @@ func ValidateImportTemplate(
 					normRole := strings.ToLower(strings.TrimSpace(roleID))
 					if _, ok := roleReg.GetRole(normRole); !ok && !isAllowedStandardRole(normRole) {
 						errors = append(errors, TemplateImportValidationIssueDTO{
-							Code:      "UNKNOWN_WORKFLOW_ROLE",
-							FieldPath: stepPath + ".assignee_role_ids",
-							Severity:  ValidationSeverityBlocker,
-							Message:   fmt.Sprintf("%s: Vai trò người xử lý không tồn tại trong hệ thống: %q.", stepLabel, roleID),
+							Code:            "UNKNOWN_WORKFLOW_ROLE",
+							FieldPath:       stepPath + ".assignee_role_ids",
+							Severity:        ValidationSeverityBlocker,
+							Message:         fmt.Sprintf("%s: Vai trò người xử lý không tồn tại trong hệ thống: %q.", stepLabel, roleID),
 							SuggestedAction: "Chọn vai trò hợp lệ từ danh mục vai trò.",
 						})
 					}
@@ -272,10 +289,10 @@ func ValidateImportTemplate(
 							IsAutoMatched: false,
 						})
 						warnings = append(warnings, TemplateImportValidationIssueDTO{
-							Code:      "UNRESOLVED_DEPARTMENT_MAPPING",
-							FieldPath: stepPath + ".department",
-							Severity:  ValidationSeverityWarning,
-							Message:   fmt.Sprintf("%s: Phòng/ban nguồn (%s) chưa được gán vào phòng/ban nào của hệ thống.", stepLabel, displayDepartmentRef(deptID, deptName)),
+							Code:            "UNRESOLVED_DEPARTMENT_MAPPING",
+							FieldPath:       stepPath + ".department",
+							Severity:        ValidationSeverityWarning,
+							Message:         fmt.Sprintf("%s: Phòng/ban nguồn (%s) chưa được gán vào phòng/ban nào của hệ thống.", stepLabel, displayDepartmentRef(deptID, deptName)),
 							SuggestedAction: "Chọn phòng/ban tương ứng từ danh mục hệ thống trước khi xác nhận.",
 						})
 					}
@@ -296,10 +313,10 @@ func ValidateImportTemplate(
 							IsAutoMatched: false,
 						})
 						warnings = append(warnings, TemplateImportValidationIssueDTO{
-							Code:      "UNRESOLVED_DEPARTMENT_MAPPING",
-							FieldPath: stepPath + ".department",
-							Severity:  ValidationSeverityWarning,
-							Message:   fmt.Sprintf("%s: Phòng/ban %q chưa có trong hệ thống.", stepLabel, deptName),
+							Code:            "UNRESOLVED_DEPARTMENT_MAPPING",
+							FieldPath:       stepPath + ".department",
+							Severity:        ValidationSeverityWarning,
+							Message:         fmt.Sprintf("%s: Phòng/ban %q chưa có trong hệ thống.", stepLabel, deptName),
 							SuggestedAction: "Gán phòng/ban hệ thống tương ứng.",
 						})
 					}
@@ -366,10 +383,10 @@ func validatePeriodicConfiguration(template *TemplateImportDefinitionV1, errors 
 	if cfg.CycleAnchorDay != nil {
 		if *cfg.CycleAnchorDay < 1 || *cfg.CycleAnchorDay > 31 {
 			*errors = append(*errors, TemplateImportValidationIssueDTO{
-				Code:      "INVALID_CYCLE_ANCHOR_DAY",
-				FieldPath: "template.deadline_config.cycle_anchor_day",
-				Severity:  ValidationSeverityBlocker,
-				Message:   "Ngày neo chu kỳ (cycle_anchor_day) phải từ 1 đến 31.",
+				Code:            "INVALID_CYCLE_ANCHOR_DAY",
+				FieldPath:       "template.deadline_config.cycle_anchor_day",
+				Severity:        ValidationSeverityBlocker,
+				Message:         "Ngày neo chu kỳ (cycle_anchor_day) phải từ 1 đến 31.",
 				SuggestedAction: "Nhập ngày neo chu kỳ trong khoảng 1-31.",
 			})
 		}
@@ -378,10 +395,10 @@ func validatePeriodicConfiguration(template *TemplateImportDefinitionV1, errors 
 	if cfg.MonthInQuarter != nil {
 		if *cfg.MonthInQuarter < 1 || *cfg.MonthInQuarter > 3 {
 			*errors = append(*errors, TemplateImportValidationIssueDTO{
-				Code:      "INVALID_MONTH_IN_QUARTER",
-				FieldPath: "template.deadline_config.month_in_quarter",
-				Severity:  ValidationSeverityBlocker,
-				Message:   "Tháng trong quý (month_in_quarter) phải là 1, 2 hoặc 3.",
+				Code:            "INVALID_MONTH_IN_QUARTER",
+				FieldPath:       "template.deadline_config.month_in_quarter",
+				Severity:        ValidationSeverityBlocker,
+				Message:         "Tháng trong quý (month_in_quarter) phải là 1, 2 hoặc 3.",
 				SuggestedAction: "Nhập tháng trong quý trong khoảng 1-3.",
 			})
 		}
@@ -393,10 +410,10 @@ func validatePeriodicConfiguration(template *TemplateImportDefinitionV1, errors 
 		}
 		if _, ok := validDays[cfg.CycleAnchorWeekday]; !ok {
 			*errors = append(*errors, TemplateImportValidationIssueDTO{
-				Code:      "INVALID_CYCLE_ANCHOR_WEEKDAY",
-				FieldPath: "template.deadline_config.cycle_anchor_weekday",
-				Severity:  ValidationSeverityBlocker,
-				Message:   fmt.Sprintf("Thứ neo chu kỳ %q không hợp lệ.", cfg.CycleAnchorWeekday),
+				Code:            "INVALID_CYCLE_ANCHOR_WEEKDAY",
+				FieldPath:       "template.deadline_config.cycle_anchor_weekday",
+				Severity:        ValidationSeverityBlocker,
+				Message:         fmt.Sprintf("Thứ neo chu kỳ %q không hợp lệ.", cfg.CycleAnchorWeekday),
 				SuggestedAction: "Chọn một trong các thứ: monday, tuesday, wednesday, thursday, friday, saturday, sunday.",
 			})
 		}
@@ -432,10 +449,10 @@ func validateIrregularConfiguration(template *TemplateImportDefinitionV1, errors
 	periodicity := strings.TrimSpace(template.Periodicity)
 	if periodicity != "" && periodicity != "event_based" && periodicity != "ad_hoc" {
 		*errors = append(*errors, TemplateImportValidationIssueDTO{
-			Code:      "INVALID_PERIODICITY",
-			FieldPath: "template.periodicity",
-			Severity:  ValidationSeverityBlocker,
-			Message:   fmt.Sprintf("Chu kỳ %q không hợp lệ cho template bất thường (chỉ chấp nhận event_based hoặc ad_hoc khi trường được gửi).", periodicity),
+			Code:            "INVALID_PERIODICITY",
+			FieldPath:       "template.periodicity",
+			Severity:        ValidationSeverityBlocker,
+			Message:         fmt.Sprintf("Chu kỳ %q không hợp lệ cho template bất thường (chỉ chấp nhận event_based hoặc ad_hoc khi trường được gửi).", periodicity),
 			SuggestedAction: "Bỏ periodicity và dùng deadline_rule, hoặc chỉ ghi event_based / ad_hoc.",
 		})
 	}
@@ -445,10 +462,10 @@ func validateIrregularConfiguration(template *TemplateImportDefinitionV1, errors
 	}
 	if cfg.FrequencyUnit != "" || cfg.CycleAnchorDay != nil || cfg.CycleAnchorWeekday != "" || cfg.MonthInQuarter != nil {
 		*errors = append(*errors, TemplateImportValidationIssueDTO{
-			Code:      "IRREGULAR_HAS_PERIODIC_ANCHORS",
-			FieldPath: "template.deadline_config",
-			Severity:  ValidationSeverityBlocker,
-			Message:   "Template bất thường không được chứa cấu hình neo chu kỳ định kỳ.",
+			Code:            "IRREGULAR_HAS_PERIODIC_ANCHORS",
+			FieldPath:       "template.deadline_config",
+			Severity:        ValidationSeverityBlocker,
+			Message:         "Template bất thường không được chứa cấu hình neo chu kỳ định kỳ.",
 			SuggestedAction: "Xóa các trường frequency_unit, cycle_anchor_day, cycle_anchor_weekday đối với template bất thường.",
 		})
 	}
