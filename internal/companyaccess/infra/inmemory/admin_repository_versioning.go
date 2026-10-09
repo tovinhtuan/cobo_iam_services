@@ -206,54 +206,42 @@ func (r *AdminRepository) RestoreRBACMatrixFromSnapshot(ctx context.Context, com
 	if err := json.Unmarshal(raw, &snap); err != nil {
 		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "invalid snapshot_json", nil)
 	}
-	roles, err := r.ListRoles(ctx, companyID)
+	// Only tenant_custom roles of this company and enterprise-scope permissions may change.
+	plan, err := caapp.BuildRBACRestorePlan(ctx, r, companyID, raw)
 	if err != nil {
 		return err
 	}
-	roleSet := map[string]struct{}{}
-	for _, role := range roles {
-		roleSet[role.RoleID] = struct{}{}
-	}
-	target := map[string]map[string]struct{}{}
-	for _, e := range snap.RolePermissions {
-		if _, ok := roleSet[e.RoleID]; !ok {
-			continue
-		}
-		if target[e.RoleID] == nil {
-			target[e.RoleID] = map[string]struct{}{}
-		}
-		target[e.RoleID][e.PermissionID] = struct{}{}
-	}
-	for roleID := range roleSet {
-		current, err := r.ListRolePermissions(ctx, companyID, roleID)
-		if err != nil {
-			return err
-		}
-		cur := map[string]struct{}{}
-		for _, p := range current.Permissions {
-			cur[p.PermissionID] = struct{}{}
-		}
-		want := target[roleID]
-		for pid := range cur {
-			if _, ok := want[pid]; !ok {
-				_ = r.RemoveRolePermission(ctx, roleID, pid)
-			}
-		}
-		for pid := range want {
-			if _, ok := cur[pid]; !ok {
-				_ = r.AddRolePermission(ctx, roleID, pid)
-			}
+	for _, op := range plan.Ops {
+		if op.Add {
+			_ = r.AddRolePermission(ctx, op.RoleID, op.PermissionID)
+		} else {
+			_ = r.RemoveRolePermission(ctx, op.RoleID, op.PermissionID)
 		}
 	}
+	// Direct grants: only those a tenant admin may manage, and only for memberships of this company.
+	r.mu.RLock()
+	var current []configversion.DirectPermissionEntry
 	for key := range r.directPermissions {
 		parts := strings.SplitN(key, ":", 2)
 		if len(parts) != 2 {
 			continue
 		}
-		mid, code := parts[0], parts[1]
-		_ = r.RevokeDirectPermission(ctx, mid, code, actorUserID)
+		if m, ok := r.memberships[parts[0]]; ok && m.CompanyID == companyID {
+			current = append(current, configversion.DirectPermissionEntry{MembershipID: parts[0], PermissionCode: parts[1]})
+		}
 	}
-	for _, d := range snap.DirectPermissions {
+	r.mu.RUnlock()
+	directPlan := caapp.ComputeRBACDirectRestorePlan(current, snap.DirectPermissions)
+	for _, d := range directPlan.Revoke {
+		_ = r.RevokeDirectPermission(ctx, d.MembershipID, d.PermissionCode, actorUserID)
+	}
+	for _, d := range directPlan.Grant {
+		r.mu.RLock()
+		m, ok := r.memberships[d.MembershipID]
+		r.mu.RUnlock()
+		if !ok || m.CompanyID != companyID {
+			continue
+		}
 		_ = r.InsertDirectPermission(ctx, d.MembershipID, companyID, d.PermissionCode, actorUserID)
 	}
 	return nil

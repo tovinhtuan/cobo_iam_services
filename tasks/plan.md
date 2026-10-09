@@ -584,3 +584,151 @@ T0 artefact + đính chính doc
 - FE hiện tại không bị ảnh hưởng; rủi ro duy nhất là tab cũ sau khi đổi company nhận 404.
 - Không có migration; đổi chữ ký repo chỉ trong tiến trình. Rollback bằng binary cũ sẽ mở lại khoảng trống.
 - Rủi ro kỹ thuật chính: hàm đếm đổi chữ ký và SQL MySQL mới không có test tự động (không có `sqlmock`); giảm rủi ro bằng review kỹ SQL và smoke DEV.
+
+---
+
+# Plan (ROLE-01, CRITICAL): rollback / apply ma trận RBAC chỉ thay đổi role `tenant_custom` của company
+
+## Context
+- Nguồn: risk review lần 2 (`docs/ai-cache/risk-review-2026-10-09-2/10-risk-report.md`); phân tích `docs/ai-cache/bug-rbac-rollback-global-roles-2026-10-09/{00-report,01-root-cause-solution,02-data-audit}.md`.
+- Vấn đề:
+  - `RestoreRBACMatrixFromSnapshot` và `restoreRBACMatrixInTx` reconcile mọi role do `ListRoles` trả về, kể cả role global và role protected, và xoá quyền `cms`/`platform` vì `want` đã lọc còn `current` thì chưa.
+  - Dữ liệu DEV: rollback ở c_001 sẽ gỡ `platform.cms.view` của cả 3 operator CMS; một tenant tự đăng ký rollback sẽ đổi quyền role chủ sở hữu dùng chung của 5 company.
+- Quyết định đã chốt:
+  1. Chỉ `tenant_custom` của company.
+  2. Rollback có thay đổi đụng quyền critical thì đi qua approval.
+  3. Đã audit DEV.
+  4. CRITICAL.
+- Quy trình: `wf-bugfix`, test fail trước (Gate R) rồi mới sửa; Gate V; reviewer.
+- Phạm vi: chỉ `cobo_iam_services`. Không migration. FE không gọi route rollback.
+
+## Dependency graph
+```
+T0 artefact
+ └─ T1 in-memory: role có company + fixture (chưa đổi logic restore)
+     └─ T2 test Gate R (service + hàm thuần): FAIL trên code hiện tại
+         └─ T3 hàm thuần ComputeRBACMatrixRestorePlan
+             ├─ T4 nối plan vào restore (MySQL + in-memory) + SQL phòng thủ
+             ├─ T5 SubmitConfigApproval kiểm role
+             └─ T6 rollback có quyền critical → approval (change_type rbac.matrix.rollback)
+                 └─ T7 hợp đồng + test cũ
+                     └─ T8 verify (Gate V, revert-check)
+                         └─ T9 review + ai-cache (+ deploy/smoke khi được yêu cầu)
+```
+
+## Quy ước test
+- Package `app_test`, repo `cainmem`, `fakeAuthService` persona (mẫu C4/C5).
+- Fixture `newRollbackFixture(t)`:
+  - Company `c_001`.
+  - Persona: `ownerAdmin` có `rbac.manage` (người rollback hoặc submit); `approver` có `system.settings` (membership khác).
+  - Catalog: `perm_ent_a` (enterprise, thường), `perm_ent_b` (thường), `perm_crit` = `rbac.manage` (critical), `perm_cms_view` = `platform.cms.view` (module `platform`), `perm_cms_write` = `cms.template.write` (module `cms`).
+  - Role:
+    - `g_owner`: `system_global`, protected, company rỗng.
+    - `cms_op`: `tenant_default`, protected, c_001, giữ `perm_cms_view` + `perm_cms_write`.
+    - `admin_dn`: `tenant_default`, protected, c_001.
+    - `custom_a`: `tenant_custom`, c_001.
+    - `custom_other`: `tenant_custom`, c_002.
+- Khẳng định chung: đọc lại `rolePermissions` qua repo (không qua service đã lọc) sau rollback hoặc approval.
+
+## Tasks
+
+### T0: Artefact
+- Append plan vào `tasks/plan.md`, việc vào `tasks/todo.md` (không ghi đè C2–C5).
+- AC: tài liệu `00`/`01`/`02` có trong `docs/ai-cache/bug-rbac-rollback-global-roles-2026-10-09/`.
+
+### T1: In-memory repo có company cho role (chưa đổi logic restore)
+- `infra/inmemory/admin_repository.go`:
+  - Thêm `roleCompany map[string]string` và `SeedRoleForCompany(item, companyID)`. `SeedRole` cũ giữ nguyên, tương đương role global.
+  - `ListRoles`/`RoleAccessibleByCompany` lọc `company == "" || company == companyID`.
+- AC: `go test ./internal/companyaccess/...` không có fail mới (chỉ 2 fail có sẵn).
+
+### T2: Test Gate R (viết trước, phải FAIL trên code hiện tại)
+File mới `app/rbac_rollback_scope_test.go`. Mỗi test tạo snapshot bằng một mutation hợp lệ trên `custom_a`, rồi đổi trạng thái DB trực tiếp qua repo cho role ngoài phạm vi.
+- `TestRBACRollback_KeepsGlobalRolePermissions`: thêm `perm_ent_b` vào `g_owner` sau snapshot, rollback → `g_owner` vẫn có `perm_ent_b`. **FAIL hiện tại.**
+- `TestRBACRollback_KeepsPlatformPermsOnTenantDefault`: rollback → `cms_op` vẫn có `perm_cms_view` + `perm_cms_write`. **FAIL hiện tại.**
+- `TestRBACRollback_DoesNotModifyProtectedTenantDefault`: thêm `perm_ent_b` vào `admin_dn` sau snapshot → còn nguyên. **FAIL hiện tại.**
+- `TestRBACRollback_RestoresTenantCustom` (giữ hành vi): `custom_a` về đúng snapshot. PASS hiện tại.
+- `TestRBACRollback_DoesNotTouchOtherCompanyRoles`: `custom_other` và direct permission của c_002 không đổi. In-memory hiện thu hồi direct permission mọi company. **FAIL hiện tại.**
+- `TestRBACApprovalApply_KeepsOutOfScopeRoles`: `RemoveRolePermission` critical trên `custom_a` → approval → `approver` duyệt → `cms_op`, `g_owner`, `admin_dn` không đổi; `custom_a` mất đúng quyền đó. **FAIL hiện tại.**
+- `TestSubmitConfigApproval_RBACPermRemove_RejectsProtectedAndGlobal`: `role_id` = `cms_op` → 403 `PROTECTED_ROLE_READ_ONLY`; `g_owner` → 403; `custom_other` → 404. **FAIL hiện tại** (đang xếp hàng được).
+- `TestRBACRollback_CriticalChange_RoutesToApproval`: snapshot có `perm_crit` trên `custom_a`, sau đó gỡ (qua approval đã duyệt), rollback → 202 `APPROVAL_ROUTED`, không đổi dữ liệu, pending `rbac.matrix.rollback`. Người rollback tự duyệt → 403 `SELF_APPROVAL_NOT_ALLOWED`. `approver` duyệt → `custom_a` có lại `perm_crit`, role ngoài phạm vi không đổi. **FAIL hiện tại** (đang áp dụng ngay).
+- `TestRBACRollback_NonCritical_AppliesDirectly`: chỉ đụng `perm_ent_a` → áp dụng ngay, tạo version `source=rollback`. PASS hiện tại (giữ hành vi).
+- `TestRBACRollback_CriticalApproval_StaleAfterMutation`: sau khi xếp hàng, một mutation khác tạo version mới → duyệt trả 409 `STALE_PROPOSAL`.
+- Ghi output vào `docs/ai-cache/bug-rbac-rollback-global-roles-2026-10-09/03-repro.md`.
+- AC: test biên dịch được (dùng hằng hoặc hàm mới qua stub tối thiểu nếu cần); các test đánh dấu FAIL thì fail đúng lý do; test giữ hành vi thì PASS.
+
+### T3: Hàm thuần `ComputeRBACMatrixRestorePlan` (file mới `app/rbac_restore_plan.go`)
+- Input: `companyID`, `roles []RoleListItem`, `current map[roleID][]PermissionListItem`, `snap configversion.RBACMatrixSnapshot`, `catalog map[permissionID]PermissionListItem`.
+- Luật: chỉ role `tenant_custom` && `!IsProtected`; chỉ quyền `IsEnterprisePermission`; bỏ qua mục snapshot của role ngoài phạm vi hoặc quyền không có trong catalog.
+- Output: `[]RBACRestoreOp{RoleID, PermissionID, PermissionCode, Op}` + `TouchesCritical`.
+- **Test bảng** `app/rbac_restore_plan_test.go` (Gate R viết cùng lúc, FAIL vì hàm chưa có):
+  - global, `tenant_default` và `is_protected` bị bỏ qua;
+  - quyền `cms`/`platform` trong `current` không bao giờ bị gỡ, trong snapshot không bao giờ được thêm;
+  - quyền lạ bị bỏ qua;
+  - thêm/gỡ đúng cho custom;
+  - `TouchesCritical` đúng khi thêm hoặc gỡ quyền critical;
+  - snapshot cũ có mục role global bị bỏ qua.
+- AC: test bảng PASS.
+
+### T4: Nối plan vào restore + SQL phòng thủ
+- **MySQL:**
+  - `RestoreRBACMatrixFromSnapshot` và `restoreRBACMatrixInTx` dựng input (`ListRoles`, `ListRolePermissions` của role custom, `ListPermissions`), gọi plan, rồi thực thi op.
+  - Câu gỡ và thêm có điều kiện `roles.company_id = ? AND role_type = 'tenant_custom' AND is_protected = 0` (xem `01-root-cause-solution.md` §2).
+  - Direct permission giữ nguyên (đã theo company).
+- **In-memory:** dùng cùng plan; chỉ thu hồi direct permission của `companyID`.
+- AC: T2 (trừ T5/T6) PASS; `go build ./...` xanh.
+- **Checkpoint CP-1:** `go test ./internal/companyaccess/...` chỉ còn 2 fail có sẵn và các test T5/T6.
+
+### T5: `SubmitConfigApproval` kiểm role
+- `config_approval.go`, nhánh `ChangeTypeRBACPermissionRemove`: `roleForRBACMutation` → `IsRoleProtectedForMutation` → quyền phải `IsEnterprisePermission`, rồi mới `submitRBACRolePermRemoveApproval`.
+- AC: `TestSubmitConfigApproval_RBACPermRemove_RejectsProtectedAndGlobal` PASS.
+
+### T6: Rollback có quyền critical → approval
+- `configversion/types.go`: thêm `ChangeTypeRBACMatrixRollback = "rbac.matrix.rollback"`.
+- `RollbackRBACMatrixVersion`:
+  - Sau khi lọc snapshot, tính plan (không ghi). Nếu `TouchesCritical`, gọi `queueConfigApproval` (`AggregateRBACMatrix`, `proposed` = snapshot đã lọc, `BaseLiveVersionNo` = live) và trả `routeApprovalRouted`. Ngược lại giữ luồng cũ.
+  - Audit: `appendVersionAudit(..., "admin.version.rbac.rollback_routed", ...)`, hoặc dùng audit approval có sẵn; chọn khi implement và ghi lại.
+- Kiểm `checkStaleProposal`/`currentLiveVersionNo` hoạt động với change type mới (cùng aggregate).
+- AC: `TestRBACRollback_CriticalChange_RoutesToApproval`, `..._NonCritical_AppliesDirectly`, `..._StaleAfterMutation` PASS.
+
+### T7: Hợp đồng và test cũ
+- Chạy `go test ./internal/companyaccess/...`. Sửa fixture test cũ dựa trên role không company hoặc rollback đụng role protected (ví dụ `TestRBACRollback_DoesNotReintroduceCMSPermission`, `config_approval_test.go`), không nới khẳng định.
+- `docs/api-contracts-json.md`:
+  - rollback có thể trả 202 `APPROVAL_ROUTED`;
+  - chỉ áp dụng role tùy chỉnh;
+  - `rbac.permission.remove` trên role protected → 403;
+  - change type mới.
+- `docs/qa-test-matrix.csv`: thêm dòng cho các case T2.
+- AC: chỉ còn 2 fail có sẵn.
+
+### T8: Verify (Gate V)
+- `go build ./...`; `go test ./... -count=1` so với baseline HEAD (worktree tạm), không có fail mới; `go vet ./...`; `go test -race -count=1 ./internal/companyaccess/...`; `docker compose -f docker-compose.dev.yml build api`.
+- **Revert-check:**
+  - bỏ điều kiện `tenant_custom` trong plan → các test global/`tenant_default` FAIL;
+  - bỏ guard ở T5 → test submit FAIL;
+  - bỏ nhánh approval ở T6 → test critical FAIL.
+- Grep: mọi chỗ ghi `role_permissions` trong `infra/mysql` đi qua đường có guard hoặc có lý do ghi rõ (Assign/Remove trực tiếp đã có guard ở service).
+- Ghi `04-verify.md`.
+
+### T9: Review và đóng
+- Song song `be-security-reviewer`, `admin-role-reviewer`, `api-compat-reviewer` trên diff; `premerge-system-review` bản ngắn.
+- ai-cache: `05-completion.md`; đánh dấu ROLE-01 "fixed in branch" trong `risk-review-2026-10-09-2/10-risk-report.md`.
+- Không commit/push khi chưa được yêu cầu.
+- Deploy/smoke **chỉ khi được yêu cầu**. Rollback là thao tác ghi, nên đề xuất:
+  1. backup binary;
+  2. query read-only trước (đếm quyền của `cms_operator`, `admin_web`, `self_reg_company_owner`);
+  3. rollback có quyền critical ở c_001 → kỳ vọng 202 và không đổi dữ liệu;
+  4. rollback không critical **chỉ khi user duyệt ghi DEV**;
+  5. query lại: role ngoài `tenant_custom` không đổi.
+
+## File chính
+- **Mới:** `app/rbac_restore_plan.go`, `app/rbac_restore_plan_test.go`, `app/rbac_rollback_scope_test.go`.
+- **Sửa:** `app/config_versioning.go`, `app/config_approval.go`, `configversion/types.go`, `infra/mysql/admin_repository_versioning.go`, `infra/mysql/admin_repository_approval.go`, `infra/inmemory/admin_repository.go`, `infra/inmemory/admin_repository_versioning.go`.
+- **Docs:** `tasks/*`, `docs/api-contracts-json.md`, `docs/qa-test-matrix.csv`, `docs/ai-cache/bug-rbac-rollback-global-roles-2026-10-09/*`.
+- **Không đổi:** FE (nhãn change type mới là follow-up), migration, interface `AdminRepository`.
+
+## Tương thích và rollback
+- Old FE ↔ new BE: FE không gọi route rollback. Màn Approvals hiển thị mã `rbac.matrix.rollback` thô (follow-up nhãn).
+- Snapshot cũ có mục role global vẫn đọc được; plan bỏ qua các mục đó.
+- Rollback binary sẽ mở lại lỗi. Không có thay đổi schema.
+- Lưu ý: approver cần `system.settings`. Company không ai có quyền này sẽ không duyệt được rollback critical (liên quan ROLE-04).

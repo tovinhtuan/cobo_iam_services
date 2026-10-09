@@ -966,6 +966,51 @@ Tao tai khoan user truc tiep (admin flow). Endpoint nay tao ban ghi `users` + `c
 }
 ```
 
+> **Phạm vi role (cập nhật 2026-10-09, risk review ROLE-01):** chỉ role `tenant_custom` của company trong token được sửa quyền. Role mặc định/dùng chung (`tenant_default`, `system_global`, `is_protected`) trả 403 `protected_role_read_only` (nhân bản thành role tùy chỉnh trước). Gỡ quyền critical vẫn đi qua approval (202 `APPROVAL_ROUTED`).
+
+---
+
+### POST /api/v1/admin/rbac/matrix/versions/{version_no}/rollback
+
+Khôi phục ma trận RBAC của company về một phiên bản đã lưu. Body (tuỳ chọn): `{"reason": "..."}`.
+
+> **Phạm vi (cập nhật 2026-10-09, risk review ROLE-01):**
+> - **Role:** chỉ thay đổi quyền của role `tenant_custom` (không protected) của company trong token. Role `system_global`, `tenant_default`, protected và role của company khác **không bao giờ** bị thay đổi. Quyền ngoài phạm vi doanh nghiệp (module `cms`/`platform`, `platform.cms.view`, `cms.*`, ...) không bao giờ bị thêm hoặc gỡ.
+> - **Thêm quyền** vào role chỉ khi `AssignRolePermission` cũng cho phép (grant tier `grantable` và cho role tùy chỉnh); quyền khác trong snapshot bị bỏ qua. Gỡ quyền thì luôn được phép.
+> - **Quyền trực tiếp:** chỉ thu hồi/cấp lại các mã trong `GrantablePermissions` (mã admin tenant được quản lý qua `/memberships/{id}/permissions`) và chỉ cho membership của company. Quyền trực tiếp khác (ví dụ `platform.cms.view`, `ad_hoc_alert.process_control`) không bị đụng.
+> - **Quyền hạn:** token cần `rbac.manage` hoặc `system.settings` để gọi; nếu rollback thực sự thay đổi role hoặc quyền trực tiếp thì cần `rbac.manage` (giống các route sửa quyền trực tiếp), thiếu thì 403 `PERMISSION_DENIED` và không thay đổi gì.
+> - **Approval:** nếu rollback thêm hoặc gỡ một quyền **critical**, thay đổi **chưa được áp dụng**: response **202** (body phẳng như các route approval khác, xem dưới); bản ghi `pending_admin_changes` có `change_type = "rbac.matrix.rollback"`. "Critical" gồm: `rbac.manage`, `system.settings`, `admin.membership.invite`, `disclosure.publish`, `disclosure.auto_create.manage`, `company.profile.manage` và mọi quyền có grant tier `tenant_admin_only` hoặc `high_risk`. Người khác có `system.settings` duyệt qua `POST /api/v1/admin/config-approvals/{id}/approve`; người yêu cầu không tự duyệt (403 `SELF_APPROVAL_NOT_ALLOWED`); ma trận đã có phiên bản mới thì 409 `STALE_PROPOSAL`. Công ty không có ai giữ `system.settings` sẽ không duyệt được và yêu cầu ở trạng thái `pending` tới khi người yêu cầu huỷ.
+> - Rollback không có quyền critical áp dụng ngay và tạo phiên bản mới `source = "rollback"`.
+
+**Response 200 (áp dụng ngay)**
+
+```json
+{
+  "rolled_back_from": 3,
+  "new_version": {
+    "id": "…",
+    "aggregate_type": "rbac_matrix",
+    "version_no": 5,
+    "source": "rollback"
+  }
+}
+```
+
+**Response 202 (cần approval)** — cùng dạng với `DELETE /api/v1/admin/roles/{role_id}/permissions/{permission_id}` khi được chuyển sang approval
+
+```json
+{
+  "approval_id": "…",
+  "status": "pending"
+}
+```
+
+---
+
+### POST /api/v1/admin/config-approvals (change_type `rbac.permission.remove`)
+
+Đề xuất gỡ quyền khỏi role qua approval. `role_id` phải là role `tenant_custom` của company (role protected hoặc dùng chung → 403 `protected_role_read_only`; role company khác → 404 `NOT_FOUND`) và `permission_id` phải thuộc phạm vi doanh nghiệp (ngược lại 400 `PERMISSION_OUT_OF_ENTERPRISE_SCOPE`).
+
 ---
 
 ### POST /api/v1/admin/resource-scope-rules

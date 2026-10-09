@@ -20,9 +20,12 @@ const (
 	ApprovalStatusRejected  = "rejected"
 	ApprovalStatusCancelled = "cancelled"
 
-	ChangeTypeNotificationPatch       = "notification_rule.patch"
-	ChangeTypeRBACPermissionRemove    = "rbac.permission.remove"
-	ChangeTypeRBACDirectPermRemove    = "rbac.direct_permission.remove"
+	ChangeTypeNotificationPatch    = "notification_rule.patch"
+	ChangeTypeRBACPermissionRemove = "rbac.permission.remove"
+	ChangeTypeRBACDirectPermRemove = "rbac.direct_permission.remove"
+	// ChangeTypeRBACMatrixRollback is a rollback of the RBAC matrix that touches a critical
+	// permission and therefore waits for a second person to approve it.
+	ChangeTypeRBACMatrixRollback = "rbac.matrix.rollback"
 )
 
 // NotificationRuleSnapshot is the immutable post-mutation state for one notification rule.

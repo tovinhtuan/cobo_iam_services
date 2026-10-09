@@ -262,14 +262,30 @@ func (s *adminService) RollbackRBACMatrixVersion(ctx context.Context, req Rollba
 	if err != nil {
 		return nil, err
 	}
-	if err := s.repo.RestoreRBACMatrixFromSnapshot(ctx, req.Subject.CompanyID, req.Subject.UserID, sanitized); err != nil {
-		return nil, err
-	}
-	s.invalidateEffectiveAccessForCompany(ctx, req.Subject.CompanyID)
 	reason := strings.TrimSpace(req.Reason)
 	if reason == "" {
 		reason = "rollback"
 	}
+	// A rollback that adds or removes a critical permission needs a second person, like
+	// RemoveRolePermission does for the same permissions.
+	impact, err := s.rbacRestoreImpact(ctx, req.Subject.CompanyID, sanitized)
+	if err != nil {
+		return nil, err
+	}
+	// The role-permission and direct-permission routes need rbac.manage, so a rollback that
+	// changes either needs it too (system.settings alone is enough only to read versions).
+	if impact.Changes {
+		if err := s.requireRbacManage(ctx, req.Subject); err != nil {
+			return nil, err
+		}
+	}
+	if impact.Critical {
+		return nil, s.routeRBACRollbackToApproval(ctx, req.Subject, req.VersionNo, reason, sanitized)
+	}
+	if err := s.repo.RestoreRBACMatrixFromSnapshot(ctx, req.Subject.CompanyID, req.Subject.UserID, sanitized); err != nil {
+		return nil, err
+	}
+	s.invalidateEffectiveAccessForCompany(ctx, req.Subject.CompanyID)
 	if err := s.captureRBACMatrixVersion(ctx, req.Subject, configversion.SourceRollback, reason); err != nil {
 		return nil, err
 	}

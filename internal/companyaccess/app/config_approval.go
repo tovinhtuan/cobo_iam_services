@@ -297,6 +297,23 @@ func (s *adminService) SubmitConfigApproval(ctx context.Context, req SubmitConfi
 		if roleID == "" || permID == "" {
 			return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "role_id and permission_id required", nil)
 		}
+		// Same boundary as a direct RemoveRolePermission: the role must be visible to the
+		// company and editable (tenant_custom), and the permission must be enterprise-scope.
+		role, err := s.roleForRBACMutation(ctx, req.Subject, roleID)
+		if err != nil {
+			return nil, err
+		}
+		if IsRoleProtectedForMutation(role) {
+			return nil, ErrProtectedRoleReadOnly()
+		}
+		perm, err := s.permissionItemByID(ctx, permID)
+		if err != nil {
+			return nil, err
+		}
+		if !IsEnterprisePermission(perm.PermissionCode, perm.ModuleName) {
+			return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodePermissionOutOfEnterpriseScope,
+				"permission is not configurable in enterprise RBAC scope", nil)
+		}
 		return s.submitRBACRolePermRemoveApproval(ctx, req.Subject, roleID, permID, req.Reason)
 	case configversion.ChangeTypeRBACDirectPermRemove:
 		if err := s.requireRbacManage(ctx, req.Subject); err != nil {

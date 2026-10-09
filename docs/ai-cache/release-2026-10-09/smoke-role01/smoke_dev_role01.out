@@ -1,0 +1,44 @@
+tenant admin logged in company=c_001 membership=m_102
+temp role 01a12000-4dd2-771c-8d8a-ff2a866e5fc9
+
+PASS  403  NEG submit rbac.permission.remove on protected cms_operator role -> 403  [POST /api/v1/admin/config-approvals] protected_role_read_only
+PASS  404  NEG submit rbac.permission.remove on other company role -> 404  [POST /api/v1/admin/config-approvals] NOT_FOUND
+PASS  200  read m_102 direct permissions  [GET /api/v1/admin/memberships/m_102/permissions] 
+PASS  200  list permissions  [GET /api/v1/admin/permissions] 
+PASS  201  create temp custom role  [POST /api/v1/admin/roles] 
+PASS  200  assign dashboard.view (snapshot vA)  [POST /api/v1/admin/roles/01a12000-4dd2-771c-8d8a-ff2a866e5fc9/permissions] 
+PASS  200  list rbac versions  [GET /api/v1/admin/rbac/matrix/versions?limit=1] 
+PASS  200  assign deadline.view (snapshot vB)  [POST /api/v1/admin/roles/01a12000-4dd2-771c-8d8a-ff2a866e5fc9/permissions] 
+PASS  200  ROLLBACK to vA=5 (role DELETE SQL)  [POST /api/v1/admin/rbac/matrix/versions/5/rollback] 
+PASS  0  rollback 200 body has rolled_back_from/new_version.source=rollback  [- -] {'new_version': {'id': '01a12000-5105-76fc-bb29-8f1145cd1ddd', 'company_id': 'c_001', 'aggregate_type': 'rbac_matrix', 'version_no': 7, 'created_by': 'm_102', 'created_at': '2026-10-09T09:30:54Z', 'reason': 'ROLE-01 smoke delete path', 'source': 'rollback'}, 'rolled_back_from': 5}
+PASS  200  read role permissions  [GET /api/v1/admin/roles/01a12000-4dd2-771c-8d8a-ff2a866e5fc9/permissions] 
+PASS  0  after DELETE path: role = [dashboard.view]  [- -] ['dashboard.view']
+PASS  200  remove dashboard.view (snapshot vC)  [DELETE /api/v1/admin/roles/01a12000-4dd2-771c-8d8a-ff2a866e5fc9/permissions/10000000-0001-4000-8000-000000000003] 
+PASS  200  read role permissions  [GET /api/v1/admin/roles/01a12000-4dd2-771c-8d8a-ff2a866e5fc9/permissions] 
+PASS  0  role empty before INSERT path  [- -] 
+PASS  200  ROLLBACK to vA=5 again (role INSERT SQL)  [POST /api/v1/admin/rbac/matrix/versions/5/rollback] 
+PASS  200  read role permissions  [GET /api/v1/admin/roles/01a12000-4dd2-771c-8d8a-ff2a866e5fc9/permissions] 
+PASS  0  after INSERT path: role = [dashboard.view]  [- -] ['dashboard.view']
+PASS  200  grant direct template.workflow.override.approve to m_102 (snapshot vD)  [POST /api/v1/admin/memberships/m_102/permissions] 
+PASS  200  list rbac versions  [GET /api/v1/admin/rbac/matrix/versions?limit=1] 
+PASS  200  revoke direct template.workflow.override.approve (snapshot vE)  [DELETE /api/v1/admin/memberships/m_102/permissions/template.workflow.override.approve] 
+PASS  200  list rbac versions  [GET /api/v1/admin/rbac/matrix/versions?limit=1] 
+PASS  200  read m_102 direct permissions  [GET /api/v1/admin/memberships/m_102/permissions] 
+PASS  0  direct revoked before INSERT path  [- -] 
+PASS  200  ROLLBACK to vD=10 (direct INSERT SQL)  [POST /api/v1/admin/rbac/matrix/versions/10/rollback] 
+PASS  200  read m_102 direct permissions  [GET /api/v1/admin/memberships/m_102/permissions] 
+PASS  200  read m_102 direct permissions  [GET /api/v1/admin/memberships/m_102/permissions] 
+PASS  0  after direct INSERT path: m_102 holds the grant  [- -] ['ad_hoc_alert.propose', 'ad_hoc_alert.read', 'template.workflow.override.approve', 'template.workflow.override.read']
+PASS  200  ROLLBACK to vE=11 (direct UPDATE SQL)  [POST /api/v1/admin/rbac/matrix/versions/11/rollback] 
+PASS  200  read m_102 direct permissions  [GET /api/v1/admin/memberships/m_102/permissions] 
+PASS  200  read m_102 direct permissions  [GET /api/v1/admin/memberships/m_102/permissions] 
+PASS  0  after direct UPDATE path: grant revoked again  [- -] ['ad_hoc_alert.propose', 'ad_hoc_alert.read', 'template.workflow.override.read']
+PASS  200  read role permissions  [GET /api/v1/admin/roles/01a12000-4dd2-771c-8d8a-ff2a866e5fc9/permissions] 
+PASS  200  read role permissions  [GET /api/v1/admin/roles/01a12000-4dd2-771c-8d8a-ff2a866e5fc9/permissions] 
+PASS  0  temp role unchanged by direct rollbacks  [- -] ['dashboard.view']
+PASS  200  cleanup: remove dashboard.view  [DELETE /api/v1/admin/roles/01a12000-4dd2-771c-8d8a-ff2a866e5fc9/permissions/10000000-0001-4000-8000-000000000003] 
+PASS  200  cleanup: inactivate temp role  [DELETE /api/v1/admin/roles/01a12000-4dd2-771c-8d8a-ff2a866e5fc9] 
+PASS  200  CMS operator lists companies -> 200  [GET /api/v1/platform/cms/admin/companies] 
+
+38/38 passed
+temp role: 01a12000-4dd2-771c-8d8a-ff2a866e5fc9; versions vA=5 vD=10 vE=11

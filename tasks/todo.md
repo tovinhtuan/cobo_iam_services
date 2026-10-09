@@ -228,3 +228,46 @@
 - [x] be-security + admin-role + api-compat; premerge
 - [x] `05-completion.md`; đánh dấu C5 trong `10-risk-report.md`
 - [ ] (khi được yêu cầu) deploy DEV + smoke
+
+---
+
+# Todo (ROLE-01, CRITICAL): rollback/apply RBAC chỉ `tenant_custom`
+
+## T0 — Artefact [x]
+- [x] `00-report.md`, `01-root-cause-solution.md`, `02-data-audit.md`; append plan/todo
+
+## T1 — In-memory: role có company [x]
+- [x] `roleCompany`, `SeedRoleForCompany`; `ListRoles`/`RoleAccessibleByCompany` lọc theo company
+- [x] Không có fail mới
+
+## T2 — Test Gate R (FAIL trước) [x]
+- [x] `rbac_rollback_scope_test.go`: global, platform perms trên tenant_default, protected, custom (giữ), company khác, approval apply, submit protected/global, critical→approval, non-critical, stale (+ 2 test quyền trực tiếp)
+- [x] Ghi `03-repro.md`
+
+## T3 — Hàm thuần `ComputeRBACMatrixRestorePlan` [x]
+- [x] Test bảng `rbac_restore_plan_test.go` (FAIL trước) → implement → PASS
+
+## T4 — Nối plan vào restore + SQL phòng thủ [x]
+- [x] MySQL `RestoreRBACMatrixFromSnapshot` + `restoreRBACMatrixInTx` (hàm chung `applyRBACRestorePlanTx`); DELETE/INSERT có điều kiện `company_id`/`tenant_custom`/`is_protected=0`
+- [x] In-memory dùng plan; direct permission chỉ của company
+- [x] CP-1
+
+## T5 — `SubmitConfigApproval` kiểm role [x]
+- [x] `roleForRBACMutation` + `IsRoleProtectedForMutation` + enterprise scope
+
+## T6 — Rollback critical → approval [x]
+- [x] `ChangeTypeRBACMatrixRollback`; tính plan trước; `TouchesCritical` (role + quyền trực tiếp) → 202 `APPROVAL_ROUTED`
+- [x] stale/self-approval hoạt động
+
+## T7 — Hợp đồng & test cũ [x]
+- [x] Viết lại `TestRBACRollback_DoesNotReintroduceCMSPermission` (snapshot cũ chứa quyền CMS trên role custom); đổi ví dụ direct `rbac.manage` → `deadline.view` trong `TestFilterEnterpriseRBACSnapshotJSON_DirectPermissions`; chỉ còn 2 fail có sẵn ở companyaccess
+- [x] `api-contracts-json.md`, `qa-test-matrix.csv`
+
+## T8 — Verify (Gate V) [x]
+- [x] build, test vs baseline, vet, `-race`, Docker build; revert-check 5 guard; grep `role_permissions`; `04-verify.md`
+- [x] (user đã duyệt) deploy DEV + smoke có ghi: 4 câu SQL mới chạy thật, 38/38 PASS (`release-2026-10-09/09-role01-post-deploy.md`)
+
+## T9 — Review & đóng [x]
+- [x] be-security + admin-role + api-compat; các phát hiện đã xử lý hoặc ghi follow-up (xem `05-completion.md`)
+- [x] `05-completion.md`; cập nhật `10-risk-report.md`
+- [x] deploy DEV + smoke theo plan (nhánh approval chưa kiểm được trên DEV: c_001 không có người duyệt `system.settings`)

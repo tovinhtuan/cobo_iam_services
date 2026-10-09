@@ -236,7 +236,9 @@ func (h *AdminHandler) rollbackRBACMatrixVersion(w http.ResponseWriter, r *http.
 		Subject: sub, VersionNo: versionNo, Reason: body.Reason,
 	})
 	if err != nil {
-		httpx.WriteError(w, nil, err)
+		// A rollback that touches a critical permission is queued: answer with the same flat 202
+		// body as the other approval-routed endpoints.
+		writeApprovalRoutedOrError(w, err)
 		return
 	}
 	h.auditVersionLog(r, sub, "admin.version.rbac.rollback", "rbac_matrix", sub.CompanyID, map[string]any{

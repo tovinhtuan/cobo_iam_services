@@ -266,84 +266,17 @@ func (r *AdminRepository) restoreRBACMatrixInTx(ctx context.Context, tx *sql.Tx,
 	if err := json.Unmarshal(raw, &snap); err != nil {
 		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "invalid snapshot_json", nil)
 	}
-	roles, err := r.ListRoles(ctx, companyID)
+	// Only tenant_custom roles of this company and enterprise-scope permissions may change.
+	plan, err := caapp.BuildRBACRestorePlan(ctx, r, companyID, raw)
 	if err != nil {
 		return err
 	}
-	roleSet := map[string]struct{}{}
-	for _, role := range roles {
-		roleSet[role.RoleID] = struct{}{}
-	}
-	targetRP := map[string]map[string]struct{}{}
-	for _, e := range snap.RolePermissions {
-		if _, ok := roleSet[e.RoleID]; !ok {
-			continue
-		}
-		if targetRP[e.RoleID] == nil {
-			targetRP[e.RoleID] = map[string]struct{}{}
-		}
-		targetRP[e.RoleID][e.PermissionID] = struct{}{}
-	}
-	for roleID := range roleSet {
-		current, err := r.ListRolePermissions(ctx, companyID, roleID)
-		if err != nil {
-			return err
-		}
-		currentSet := map[string]struct{}{}
-		for _, p := range current.Permissions {
-			currentSet[p.PermissionID] = struct{}{}
-		}
-		want := targetRP[roleID]
-		for pid := range currentSet {
-			if _, ok := want[pid]; !ok {
-				if err := r.removeRolePermissionTx(ctx, tx, roleID, pid); err != nil {
-					return err
-				}
-			}
-		}
-		for pid := range want {
-			if _, ok := currentSet[pid]; !ok {
-				if _, err := tx.ExecContext(ctx, `
-					INSERT INTO role_permissions (role_id, permission_id, status)
-					VALUES (?, ?, 'active')
-					ON DUPLICATE KEY UPDATE status = 'active'
-				`, roleID, pid); err != nil {
-					return err
-				}
-			}
-		}
-	}
-	currentDirect, err := r.ListActiveDirectPermissionsByCompany(ctx, companyID)
-	if err != nil {
+	if err := r.applyRBACRestorePlanTx(ctx, tx, companyID, plan); err != nil {
 		return err
 	}
-	targetDirect := map[string]map[string]struct{}{}
-	for _, d := range snap.DirectPermissions {
-		if targetDirect[d.MembershipID] == nil {
-			targetDirect[d.MembershipID] = map[string]struct{}{}
-		}
-		targetDirect[d.MembershipID][d.PermissionCode] = struct{}{}
-	}
-	for _, row := range currentDirect {
-		if _, ok := targetDirect[row.MembershipID][row.PermissionCode]; ok {
-			continue
-		}
-		if _, err := tx.ExecContext(ctx, `
-			UPDATE membership_direct_permissions
-			SET revoked_at = CURRENT_TIMESTAMP, revoked_by = ?
-			WHERE membership_id = ? AND permission_code = ? AND revoked_at IS NULL
-		`, actorUserID, row.MembershipID, row.PermissionCode); err != nil {
-			return err
-		}
-	}
-	for _, d := range snap.DirectPermissions {
-		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO membership_direct_permissions (membership_id, company_id, permission_code, granted_by)
-			VALUES (?, ?, ?, ?)
-			ON DUPLICATE KEY UPDATE revoked_at = NULL, revoked_by = NULL, granted_by = VALUES(granted_by), granted_at = CURRENT_TIMESTAMP
-		`, d.MembershipID, companyID, d.PermissionCode, actorUserID); err != nil {
-			return err
-		}
+	// Direct grants: only those a tenant admin may manage, and only for memberships of this company.
+	if err := r.restoreDirectGrantsTx(ctx, tx, companyID, actorUserID, snap.DirectPermissions); err != nil {
+		return err
 	}
 	return nil
 }

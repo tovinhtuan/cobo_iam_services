@@ -160,43 +160,48 @@ func TestRBACRollback_DoesNotReintroduceCMSPermission(t *testing.T) {
 	repo := cainmem.NewAdminRepository()
 	sub, enterprisePermID, cmsPermID := seedSnapshotFilterAdmin(t, repo)
 	svc := newSnapshotFilterSvc(t, repo)
+	ctx := context.Background()
 
-	// Step 1: Capture a snapshot while cms perm is "in DB" (legacy state).
-	// We do this by first triggering via AssignRolePermission on the enterprise perm.
-	if err := svc.AssignRolePermission(context.Background(), caapp.AssignRolePermissionRequest{
-		Subject: sub, RoleID: "custom_sf_role", PermissionID: enterprisePermID,
-	}); err != nil {
-		t.Fatalf("assign: %v", err)
-	}
-
-	// Step 2: Remove the enterprise perm from the role so state changes.
-	if err := svc.RemoveRolePermission(context.Background(), caapp.RemoveRolePermissionRequest{
-		Subject: sub, RoleID: "custom_sf_role", PermissionID: enterprisePermID,
-	}); err != nil {
-		t.Fatalf("remove: %v", err)
-	}
-
-	// Step 3: Rollback to version 1.
-	_, err := svc.RollbackRBACMatrixVersion(context.Background(), caapp.RollbackRBACMatrixVersionRequest{
-		Subject: sub, VersionNo: 1, Reason: "test rollback",
+	// A snapshot taken before the scope fix still lists a blocked cms permission on a custom
+	// role. Rolling back to it must restore the enterprise permission and never add the cms one.
+	legacy, err := json.Marshal(configversion.RBACMatrixSnapshot{
+		SchemaVersion: configversion.RBACMatrixSnapshotSchema,
+		RolePermissions: []configversion.RolePermissionEntry{
+			{RoleID: "custom_sf_role", PermissionID: enterprisePermID},
+			{RoleID: "custom_sf_role", PermissionID: cmsPermID},
+		},
 	})
 	if err != nil {
+		t.Fatalf("marshal legacy snapshot: %v", err)
+	}
+	if _, err := repo.InsertRBACMatrixSnapshot(ctx, caapp.InsertRBACMatrixSnapshotInput{
+		ID: "legacy-v1", CompanyID: sub.CompanyID, SnapshotJSON: legacy,
+		CreatedBy: sub.MembershipID, Source: configversion.SourceMutationAPI,
+	}); err != nil {
+		t.Fatalf("insert legacy snapshot: %v", err)
+	}
+
+	if _, err := svc.RollbackRBACMatrixVersion(ctx, caapp.RollbackRBACMatrixVersionRequest{
+		Subject: sub, VersionNo: 1, Reason: "test rollback",
+	}); err != nil {
 		t.Fatalf("rollback: %v", err)
 	}
 
-	// Step 4: Read the restored role permissions via the service (filtered) and repo (raw).
-	// The key assertion: cms perm should not be in the role after rollback.
-	view, err := svc.ListRolePermissions(context.Background(), caapp.ListRolePermissionsRequest{
-		Subject: sub, RoleID: "company_admin",
-	})
+	view, err := repo.ListRolePermissions(ctx, sub.CompanyID, "custom_sf_role")
 	if err != nil {
 		t.Fatalf("list role perms after rollback: %v", err)
 	}
-
+	hasEnterprise := false
 	for _, p := range view.Permissions {
 		if p.PermissionID == cmsPermID || p.PermissionCode == "cms.template.read" {
-			t.Errorf("rollback re-introduced blocked permission cms.template.read in service view")
+			t.Errorf("rollback re-introduced blocked permission cms.template.read on the custom role")
 		}
+		if p.PermissionID == enterprisePermID {
+			hasEnterprise = true
+		}
+	}
+	if !hasEnterprise {
+		t.Errorf("rollback did not restore the enterprise permission on the custom role")
 	}
 }
 
@@ -210,7 +215,10 @@ func TestFilterEnterpriseRBACSnapshotJSON_DirectPermissions(t *testing.T) {
 			{RoleID: "role1", PermissionID: "perm_rbac_manage"},
 		},
 		DirectPermissions: []configversion.DirectPermissionEntry{
-			{MembershipID: "m1", PermissionCode: "rbac.manage"},
+			// A non-critical enterprise permission: restoring a critical direct grant (for
+			// example rbac.manage) is routed to approval, which TestRBACRollback_Direct*
+			// covers. This test is about the blocked-permission filter only.
+			{MembershipID: "m1", PermissionCode: "deadline.view"},
 			{MembershipID: "m1", PermissionCode: "cms.template.read"},
 			{MembershipID: "m1", PermissionCode: "platform.cms.view"},
 			{MembershipID: "m1", PermissionCode: "disclosure_type.config.read"},

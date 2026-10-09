@@ -31,6 +31,7 @@ type AdminRepository struct {
 	permissionMeta  map[string]caapp.PermissionListItem // code → full metadata (for tests)
 	roles           map[string]struct{}
 	roleMeta        map[string]caapp.RoleListItem // role_id → metadata (for tests)
+	roleCompany     map[string]string             // role_id → owning company; absent/empty = global (visible to every company)
 	rolePermissions map[string]map[string]struct{}
 
 	resourceScopeRules    []map[string]any
@@ -77,6 +78,7 @@ func NewAdminRepository() *AdminRepository {
 		permissionMeta:               map[string]caapp.PermissionListItem{},
 		roles:                        map[string]struct{}{"company_admin": {}, "disclosure_approver": {}, "department_staff": {}},
 		roleMeta:                     map[string]caapp.RoleListItem{},
+		roleCompany:                  map[string]string{},
 		rolePermissions:              map[string]map[string]struct{}{},
 		resourceScopeRules:           []map[string]any{},
 		workflowAssigneeRules:        []map[string]any{},
@@ -820,6 +822,16 @@ func (r *AdminRepository) SeedRole(item caapp.RoleListItem) {
 	r.roleMeta[roleID] = item
 }
 
+// SeedRoleForCompany registers a role owned by one company. Other companies do not see it
+// (ListRoles) and cannot access it (RoleAccessibleByCompany), like roles.company_id in MySQL.
+// SeedRole keeps registering a global role (company_id NULL).
+func (r *AdminRepository) SeedRoleForCompany(item caapp.RoleListItem, companyID string) {
+	r.SeedRole(item)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.roleCompany[strings.TrimSpace(item.RoleID)] = strings.TrimSpace(companyID)
+}
+
 func (r *AdminRepository) ListPermissions(_ context.Context) ([]caapp.PermissionListItem, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -848,6 +860,9 @@ func (r *AdminRepository) ListRoles(_ context.Context, companyID string) ([]caap
 	out := make([]caapp.RoleListItem, 0, len(r.roles))
 	now := time.Now().UTC()
 	for roleID := range r.roles {
+		if owner := r.roleCompany[roleID]; owner != "" && owner != strings.TrimSpace(companyID) {
+			continue
+		}
 		memberCount := 0
 		for _, roleSet := range r.rolesByMembership {
 			if _, ok := roleSet[roleID]; ok {
@@ -897,15 +912,19 @@ func (r *AdminRepository) ListRoles(_ context.Context, companyID string) ([]caap
 	for i := range out {
 		caapp.FinalizeRoleListItem(&out[i])
 	}
-	_ = companyID
 	return out, nil
 }
 
-func (r *AdminRepository) RoleAccessibleByCompany(_ context.Context, _, roleID string) (bool, error) {
+func (r *AdminRepository) RoleAccessibleByCompany(_ context.Context, companyID, roleID string) (bool, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	_, ok := r.roles[roleID]
-	return ok, nil
+	if _, ok := r.roles[roleID]; !ok {
+		return false, nil
+	}
+	if owner := r.roleCompany[roleID]; owner != "" && owner != strings.TrimSpace(companyID) {
+		return false, nil
+	}
+	return true, nil
 }
 
 func (r *AdminRepository) ListRolePermissions(_ context.Context, _, roleID string) (*caapp.RolePermissionsView, error) {
@@ -1008,6 +1027,7 @@ func (r *AdminRepository) CreateTenantCustomRole(_ context.Context, in caapp.Cre
 	}
 	r.roles[roleID] = struct{}{}
 	r.roleMeta[roleID] = item
+	r.roleCompany[roleID] = strings.TrimSpace(in.CompanyID)
 	caapp.FinalizeRoleListItem(&item)
 	return &item, nil
 }
