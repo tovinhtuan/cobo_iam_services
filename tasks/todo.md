@@ -139,3 +139,45 @@
 - [ ] Báo tenant còn dòng pending (người tạo rút / controller duyệt)
 - [ ] Follow-up: nút FE duyệt legacy; proposal mồ côi; `companyaccess` authorize("rbac.manage"); authorizer bỏ qua Resource
 - [x] Follow-up đã làm: `json:"-"` cho Subject (adhoc), PERF-10 rendezvous
+
+---
+
+# C4 + H2 cross-company scope — Task List (plan: `tasks/plan.md`, section "Plan (C4 + H2)")
+
+## T0 — Artefact [x]
+- [x] Append plan C4 vào `tasks/plan.md`; append section này vào `tasks/todo.md`
+
+## T1 — Helper [x]
+- [x] `admin_service_company_scope.go`: `isPlatformCompanyOperator`, `resolveTargetCompany`
+- [x] Test bảng persona × {own, other, empty} × allowNoCompany
+
+## T2 — CreateUser [x]
+- [x] Test trước (FAIL ở code cũ): tenant với company khác → 403; company rỗng → ép về company mình; ghi `02-repro.md`
+- [x] Fix bằng `resolveTargetCompany(..., true)`; platformOp giữ hành vi
+
+## T3 — CreateMembership + AssignUserToCompany [x]
+- [x] Test trước; fix `resolveTargetCompany(..., false)` đầu hàm
+
+## T4 — H2: ListCompanyMemberships + authorizeMembershipInvite [x]
+- [x] Test trước; fix bỏ bypass `rbac.manage`, kiểm company == token cho non-operator
+
+## T5 — InviteUser / ListInviteRoles / ResendUserInvitation [x]
+- [x] Test trước; thay `isWebAdmin` bằng `isPlatformCompanyOperator` / `resolveTargetCompany`
+
+## T6 — Handler tenant [x]
+- [x] `createUser`, `createMembership`, `listMemberships`: company khác token → 403 `COMPANY_SCOPE_MISMATCH`
+- [x] Test bảng route + assert đếm route
+
+## T7 — Test cũ & luồng CMS [x]
+- [x] Đổi persona các test WebAdmin sang `platformOp`; rà `rbac_phase_e_*`, `invite_focal_*`
+- [x] Giữ xanh `TestIntegration_platformCMSPrefix_adminUsersCreateAndList`
+
+## T8 — Verify [x]
+- [x] build, `go test ./...` so với baseline, vet, `-race` companyaccess, Docker build, grep; ghi `03-verify.md`
+- [x] Mở rộng (ngoài plan gốc): `authorizePlatformCompanyAdmin` dùng `isPlatformCompanyOperator`
+
+## T9 — Review & đóng [x]
+- [x] be-security + admin-role + api-compat; premerge
+- [x] `04-completion.md`; đánh dấu C4/H2 trong `10-risk-report.md`
+- [ ] (khi được yêu cầu) deploy DEV + smoke; follow-up C5, authorizer Resource, 9 user mồ côi
+- [x] ROLE-01 (AssignRole nhận role mang quyền platform) đã sửa trong cùng PR

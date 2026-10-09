@@ -335,10 +335,10 @@ func TestAdminService_CreateUser_EnterpriseAdminCannotCreateOtherCompany(t *test
 	}
 }
 
-func TestAdminService_CreateUser_WebAdminCanCreateOtherCompany(t *testing.T) {
+func TestAdminService_CreateUser_PlatformOperatorCanCreateOtherCompany(t *testing.T) {
 	svc := caapp.NewAdminService(
 		cainmem.NewAdminRepository(),
-		fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{"system.settings", "rbac.manage"}},
+		fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{"platform.cms.view", "system.settings", "rbac.manage"}},
 		fixedIDGen("fixed-id"),
 	)
 
@@ -357,10 +357,10 @@ func TestAdminService_CreateUser_WebAdminCanCreateOtherCompany(t *testing.T) {
 	}
 }
 
-func TestAdminService_CreateUser_WebAdmin_NoMembershipWhenCompanyOmitted(t *testing.T) {
+func TestAdminService_CreateUser_PlatformOperator_NoMembershipWhenCompanyOmitted(t *testing.T) {
 	svc := caapp.NewAdminService(
 		cainmem.NewAdminRepository(),
-		fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{"system.settings", "rbac.manage"}},
+		fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{"platform.cms.view", "system.settings", "rbac.manage"}},
 		fixedIDGen("web-user-no-co"),
 	)
 
@@ -389,7 +389,7 @@ func TestAdminService_ListCompanyMemberships_ListWithoutCompany(t *testing.T) {
 	repo := cainmem.NewAdminRepository()
 	svc := caapp.NewAdminService(
 		repo,
-		fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{"system.settings", "rbac.manage"}},
+		fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{"platform.cms.view", "system.settings", "rbac.manage"}},
 		fixedIDGen("orphan-user"),
 	)
 	_, err := svc.CreateUser(context.Background(), caapp.CreateUserRequest{
@@ -438,7 +438,7 @@ func TestAdminService_ResendUserInvitation_NoCompanyScope(t *testing.T) {
 	repo := cainmem.NewAdminRepository()
 	svc := caapp.NewAdminService(
 		repo,
-		fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{"system.settings", "rbac.manage"}},
+		fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{"platform.cms.view", "system.settings", "rbac.manage"}},
 		fixedIDGen("inv-orphan"),
 	)
 	out, err := svc.InviteUser(context.Background(), caapp.InviteUserRequest{
@@ -495,7 +495,7 @@ func TestAdminService_InviteUser_ActiveUserNewCompanyMembership(t *testing.T) {
 	repo := cainmem.NewAdminRepository()
 	svc := caapp.NewAdminService(
 		repo,
-		fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{"system.settings", "rbac.manage"}},
+		fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{"platform.cms.view", "system.settings", "rbac.manage"}},
 		fixedIDGen("invite-second-co"),
 	)
 

@@ -200,7 +200,7 @@ func TestGetPlatformCompany_EnrichesCompanyPlan(t *testing.T) {
 	plans := companyplan.NewMemoryRepository()
 	seedPlan(t, plans, "p1", "c-own", companyplan.PlanCodePremium, companyplan.PlanStatusActive)
 	reader := &orderedPlanReader{inner: companyplan.NewService(plans)}
-	svc := caapp.NewAdminService(base, fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{"rbac.manage"}}, fixedIDGen("x"),
+	svc := caapp.NewAdminService(base, fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{"platform.cms.view", "rbac.manage"}}, fixedIDGen("x"),
 		caapp.WithCompanyPlanReader(reader),
 		caapp.WithCompanyPlanNow(fixedPlanAt),
 	)

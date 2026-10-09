@@ -1,0 +1,19 @@
+tenant admin (admin_doanh_nghiep) logged in, company=c_001
+platform CMS operator logged in, company=c_001
+
+PASS  403  H2 tenant list other company -> 403 COMPANY_SCOPE_MISMATCH  [GET /api/v1/admin/companies/c_002/memberships] COMPANY_SCOPE_MISMATCH
+PASS  403  C4 tenant create user in other company -> 403  [POST /api/v1/admin/users] COMPANY_SCOPE_MISMATCH
+PASS  403  C4 tenant create membership in other company -> 403  [POST /api/v1/admin/memberships] COMPANY_SCOPE_MISMATCH
+PASS  403  ROLE-01 tenant assigns platform-capable role -> 403  [POST /api/v1/admin/memberships/m_102/roles] PERMISSION_DENIED
+PASS  200  tenant list own company -> 200  [GET /api/v1/admin/companies/c_001/memberships?page=1&page_size=5] 
+PASS  200  tenant own company list returns members (5)  [GET ...] 
+PASS  200  tenant invite-roles (token company) -> 200  [GET /api/v1/admin/invite-roles] 
+PASS  200  tenant invite-scope -> 200  [GET /api/v1/admin/users/invite-scope] 
+PASS  200  CMS operator list users of other company -> 200  [GET /api/v1/platform/cms/admin/users?company_id=c_002] 
+PASS  200  CMS operator list users without company -> 200  [GET /api/v1/platform/cms/admin/users?company_id=] 
+PASS  200  CMS operator list companies -> 200  [GET /api/v1/platform/cms/admin/companies] 
+PASS  403  operator on tenant route with other company -> 403  [GET /api/v1/admin/companies/c_002/memberships] COMPANY_SCOPE_MISMATCH
+PASS  403  tenant on CMS users route -> 403  [GET /api/v1/platform/cms/admin/users?company_id=c_002] PERMISSION_DENIED
+PASS  403  tenant on CMS companies route -> 403  [GET /api/v1/platform/cms/admin/companies] PERMISSION_DENIED
+
+14/14 passed

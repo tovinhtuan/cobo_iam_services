@@ -76,10 +76,6 @@ func (s *adminService) CreateUser(ctx context.Context, req CreateUserRequest) (*
 	if err := s.authorize(ctx, req.Subject, "admin.membership.create", req.Subject.CompanyID); err != nil {
 		return nil, err
 	}
-	isWebAdmin, err := s.hasPermission(ctx, req.Subject, "rbac.manage")
-	if err != nil {
-		return nil, err
-	}
 
 	req.LoginID = strings.ToLower(strings.TrimSpace(req.LoginID))
 	req.FullName = strings.TrimSpace(req.FullName)
@@ -95,13 +91,13 @@ func (s *adminService) CreateUser(ctx context.Context, req CreateUserRequest) (*
 	if req.AccountStatus == "" {
 		req.AccountStatus = "active"
 	}
-	// Enterprise admin can only add users into current company.
-	if !isWebAdmin {
-		if req.CompanyID != "" && req.CompanyID != req.Subject.CompanyID {
-			return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "enterprise admin can only create users for current company", nil)
-		}
-		req.CompanyID = req.Subject.CompanyID
+	// Only a platform operator may create users in another company or without a company;
+	// everyone else is pinned to the company of the access token.
+	targetCompany, err := s.resolveTargetCompany(ctx, req.Subject, req.CompanyID, true)
+	if err != nil {
+		return nil, err
 	}
+	req.CompanyID = targetCompany
 	if req.CompanyID != "" {
 		if err := rejectEnterpriseRoleIDsPayload(req.RoleIDs); err != nil {
 			return nil, err
@@ -261,15 +257,11 @@ func (s *adminService) authorizePlatformCompanyAdmin(ctx context.Context, sub Ad
 	if err := s.authorize(ctx, sub, "admin.membership.create", sub.CompanyID); err != nil {
 		return err
 	}
-	canRbac, err := s.hasPermission(ctx, sub, "rbac.manage")
+	operator, err := s.isPlatformCompanyOperator(ctx, sub)
 	if err != nil {
 		return err
 	}
-	canSettings, err := s.hasPermission(ctx, sub, "system.settings")
-	if err != nil {
-		return err
-	}
-	if !canRbac && !canSettings {
+	if !operator {
 		return perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "only platform administrators can manage companies", nil)
 	}
 	return nil
@@ -340,10 +332,6 @@ func (s *adminService) InviteUser(ctx context.Context, req InviteUserRequest) (*
 	req.DepartmentID = deptID
 	req.FocalDepartmentIDs = focalIDs
 	req.IsDepartmentFocal = isFocal
-	isWebAdmin, err := s.hasPermission(ctx, req.Subject, "rbac.manage")
-	if err != nil {
-		return nil, err
-	}
 	req.Email = strings.TrimSpace(strings.ToLower(req.Email))
 	req.FullName = strings.TrimSpace(req.FullName)
 	req.CompanyID = strings.TrimSpace(req.CompanyID)
@@ -355,19 +343,20 @@ func (s *adminService) InviteUser(ctx context.Context, req InviteUserRequest) (*
 	if req.FullName == "" {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "full_name is required", nil)
 	}
-	if !isWebAdmin {
-		if req.CompanyID != "" && req.CompanyID != req.Subject.CompanyID {
-			return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "enterprise admin can only create users for current company", nil)
-		}
-		req.CompanyID = req.Subject.CompanyID
+	// Only a platform operator may invite into another company or without a company;
+	// everyone else is pinned to the company of the access token.
+	inviteCompany, err := s.resolveTargetCompany(ctx, req.Subject, req.CompanyID, true)
+	if err != nil {
+		return nil, err
 	}
+	req.CompanyID = inviteCompany
 	if req.CompanyID != "" {
 		if err := rejectEnterpriseRoleIDsPayload(req.RoleIDs); err != nil {
 			return nil, err
 		}
 	}
-	// Platform web admin (rbac.manage) may invite without a company; enterprise admin is always
-	// scoped to their own company (forced above), so empty CompanyID is only possible for web admin.
+	// Only a platform operator may invite without a company; everyone else is pinned to their own
+	// company (resolved above), so an empty CompanyID is only possible for a platform operator.
 	if req.CompanyID == "" {
 		return s.inviteUserWithoutCompany(ctx, req)
 	}
@@ -375,7 +364,7 @@ func (s *adminService) InviteUser(ctx context.Context, req InviteUserRequest) (*
 }
 
 // inviteUserWithoutCompany creates a user + invitation with no membership.
-// Only reachable for platform web admins (rbac.manage) when CompanyID is omitted.
+// Only reachable for platform operators when CompanyID is omitted.
 func (s *adminService) inviteUserWithoutCompany(ctx context.Context, req InviteUserRequest) (*InviteUserResponse, error) {
 	existingUserID, existingStatus, found, err := s.repo.LookupUserByLoginID(ctx, req.Email)
 	if err != nil {
@@ -633,7 +622,7 @@ func (s *adminService) ListInviteRoles(ctx context.Context, req ListInviteRolesR
 	if err := s.authorizeMembershipInvite(ctx, req.Subject, req.Subject.CompanyID); err != nil {
 		return nil, err
 	}
-	isWebAdmin, err := s.hasPermission(ctx, req.Subject, "rbac.manage")
+	operator, err := s.isPlatformCompanyOperator(ctx, req.Subject)
 	if err != nil {
 		return nil, err
 	}
@@ -642,9 +631,9 @@ func (s *adminService) ListInviteRoles(ctx context.Context, req ListInviteRolesR
 		return nil, err
 	}
 	target := strings.TrimSpace(req.CompanyID)
-	if !isWebAdmin {
+	if !operator {
 		if target != "" && target != req.Subject.CompanyID {
-			return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "enterprise admin can only list invite roles for current company", nil)
+			return nil, errCompanyScopeMismatch()
 		}
 		target = req.Subject.CompanyID
 	}
@@ -675,12 +664,12 @@ func (s *adminService) ResendUserInvitation(ctx context.Context, req ResendUserI
 		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "user_id is required", nil)
 	}
 	if req.ResendNoCompanyScope {
-		isWebAdmin, err := s.hasPermission(ctx, req.Subject, "rbac.manage")
+		operator, err := s.isPlatformCompanyOperator(ctx, req.Subject)
 		if err != nil {
 			return err
 		}
-		if !isWebAdmin {
-			return perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "resend without company requires rbac.manage", nil)
+		if !operator {
+			return perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "resend without company requires platform access", nil)
 		}
 		n, err := s.repo.CountMembershipsForUser(ctx, userID)
 		if err != nil {
@@ -719,6 +708,10 @@ func (s *adminService) ResendUserInvitation(ctx context.Context, req ResendUserI
 	cid := strings.TrimSpace(req.CompanyID)
 	if cid == "" {
 		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "user_id and company_id are required", nil)
+	}
+	// Checked before any lookup so another company's membership data is never probed.
+	if _, err := s.resolveTargetCompany(ctx, req.Subject, cid, false); err != nil {
+		return err
 	}
 	ok, err := s.repo.MembershipExistsForUserCompany(ctx, userID, cid)
 	if err != nil {
@@ -779,6 +772,13 @@ func (s *adminService) hasPermission(ctx context.Context, sub AdminSubject, perm
 // it also creates membership + re-issues the invitation email with company context.
 // If the user is already active it creates the membership directly.
 func (s *adminService) AssignUserToCompany(ctx context.Context, req AssignUserToCompanyRequest) (*AssignUserToCompanyResponse, error) {
+	// An explicit company must be the token's company unless the caller is a platform operator.
+	// An empty company keeps the existing 400 below.
+	if strings.TrimSpace(req.CompanyID) != "" {
+		if _, err := s.resolveTargetCompany(ctx, req.Subject, req.CompanyID, false); err != nil {
+			return nil, err
+		}
+	}
 	if err := s.authorize(ctx, req.Subject, "admin.membership.create", req.CompanyID); err != nil {
 		return nil, err
 	}
@@ -871,6 +871,12 @@ func (s *adminService) AssignUserToCompany(ctx context.Context, req AssignUserTo
 }
 
 func (s *adminService) CreateMembership(ctx context.Context, req CreateMembershipRequest) (*MembershipView, error) {
+	// Non-operators are pinned to the company of the access token (empty = own company).
+	targetCompany, err := s.resolveTargetCompany(ctx, req.Subject, req.CompanyID, false)
+	if err != nil {
+		return nil, err
+	}
+	req.CompanyID = targetCompany
 	if err := s.authorize(ctx, req.Subject, "admin.membership.create", req.CompanyID); err != nil {
 		return nil, err
 	}
@@ -1060,12 +1066,12 @@ func (s *adminService) ListCompanyMemberships(ctx context.Context, req ListCompa
 
 	var all []MembershipView
 	if req.ListWithoutCompany {
-		isWebAdmin, err := s.hasPermission(ctx, req.Subject, "rbac.manage")
+		operator, err := s.isPlatformCompanyOperator(ctx, req.Subject)
 		if err != nil {
 			return ListCompanyMembershipsResult{}, err
 		}
-		if !isWebAdmin {
-			return ListCompanyMembershipsResult{}, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "listing users without company requires rbac.manage", nil)
+		if !operator {
+			return ListCompanyMembershipsResult{}, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "listing users without company requires platform access", nil)
 		}
 		if err := s.authorizeMembershipInvite(ctx, req.Subject, req.Subject.CompanyID); err != nil {
 			return ListCompanyMembershipsResult{}, err
@@ -1076,7 +1082,10 @@ func (s *adminService) ListCompanyMemberships(ctx context.Context, req ListCompa
 		}
 		all = items
 	} else {
-		cid := strings.TrimSpace(req.CompanyID)
+		cid, err := s.resolveTargetCompany(ctx, req.Subject, req.CompanyID, false)
+		if err != nil {
+			return ListCompanyMembershipsResult{}, err
+		}
 		if err := s.authorizeMembershipInvite(ctx, req.Subject, cid); err != nil {
 			return ListCompanyMembershipsResult{}, err
 		}
@@ -1109,6 +1118,15 @@ func (s *adminService) ListCompanyMemberships(ctx context.Context, req ListCompa
 func (s *adminService) AssignRole(ctx context.Context, req AssignRoleRequest) error {
 	if err := s.authorize(ctx, req.Subject, "admin.membership.role.assign", req.MembershipID); err != nil {
 		return err
+	}
+	operator, err := s.isPlatformCompanyOperator(ctx, req.Subject)
+	if err != nil {
+		return err
+	}
+	if !operator {
+		if err := s.assertRoleHasNoPlatformPermissions(ctx, req.Subject.CompanyID, req.RoleID); err != nil {
+			return err
+		}
 	}
 	isPlatformCMS, err := s.isPlatformCMSOperator(ctx, req.Subject)
 	if err != nil {

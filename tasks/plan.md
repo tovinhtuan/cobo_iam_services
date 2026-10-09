@@ -317,3 +317,145 @@ Các thay đổi:
 3. `docker compose -f docker-compose.dev.yml build api`.
 4. Grep không còn symbol legacy trong `internal/` và `cmd/`.
 5. Ba reviewer không báo CRITICAL/HIGH mới trên diff.
+
+
+---
+
+# Plan (C4 + H2): giới hạn thao tác cross-company trong companyaccess cho platform operator
+
+## Context
+- Nguồn: risk review 2026-10-09 (C4, H2); tài liệu `docs/ai-cache/bug-cross-tenant-membership-create-2026-10-09/{00-report,01-root-cause-solution}.md`.
+- Vấn đề: một số route và service trong `internal/companyaccess` cho phép thao tác trên company khác company của token. Lý do là service dùng `rbac.manage` (quyền tenant) làm tín hiệu "platform admin", và route tenant nhận `company_id` từ client.
+- Mục tiêu: chỉ **platform operator** mới thao tác cross-company hoặc no-company. Route tenant `/api/v1/admin/*` luôn dùng company của token.
+- Quyết định đã chốt:
+  1. Platform operator = `platform.cms.view` **và** (`rbac.manage` | `system.settings`).
+  2. Route tenant nhận company khác token → 403 `COMPANY_SCOPE_MISMATCH`.
+  3. Giữ `POST /api/v1/admin/memberships`, ép company theo token.
+  4. Gộp sửa H2.
+- Phạm vi: chỉ backend `cobo_iam_services`. FE không đổi: caller tenant luôn gửi company của token, CMS dùng `/api/v1/platform/cms/*`.
+- Quy trình: `wf-bugfix`, viết test fail trước rồi mới sửa.
+
+## Dependency graph
+```
+T0 artefact
+ └─ T1 helper isPlatformCompanyOperator + resolveTargetCompany
+     ├─ T2 CreateUser
+     ├─ T3 CreateMembership + AssignUserToCompany
+     ├─ T4 H2: ListCompanyMemberships + authorizeMembershipInvite
+     └─ T5 InviteUser / ListInviteRoles / ResendUserInvitation
+         └─ T6 handler tenant: kiểm company ở biên + test quét route
+             └─ T7 cập nhật test cũ, giữ luồng CMS xanh
+                 └─ T8 verify (Gate V)
+                     └─ T9 review + ai-cache (+ deploy DEV khi được duyệt)
+```
+
+## Personas cho test
+Dùng `fakeAuthService{decision, permissions}` có sẵn ở `internal/companyaccess/app/admin_service_test.go:19-46`. Subject mặc định thuộc `c_001`.
+
+| Persona | Permissions |
+|---|---|
+| `tenantAdmin` | `rbac.manage`, `admin.membership.invite` |
+| `tenantAdminSys` | `system.settings`, `admin.membership.invite` |
+| `cmsViewOnly` | `platform.cms.view`, `admin.membership.invite` (không đủ điều kiện operator) |
+| `platformOp` | `platform.cms.view`, `rbac.manage`, `admin.membership.invite` |
+
+Kỳ vọng chung:
+- `platformOp` được dùng company khác và no-company.
+- Các persona còn lại: company khác → 403 `COMPANY_SCOPE_MISMATCH`; rỗng → ép về `c_001` (hoặc 403 nếu hàm không có nghĩa "ép về").
+
+## Tasks
+
+### T0: Artefact
+- Append plan này vào `tasks/plan.md` và task list vào `tasks/todo.md`. Không ghi đè nội dung cũ (C2, C3, adhoc notifications).
+
+### T1: Helper (file mới `internal/companyaccess/app/admin_service_company_scope.go`)
+- `isPlatformCompanyOperator(ctx, sub) (bool, error)`:
+  - Đọc `GetEffectiveAccess` một lần.
+  - Trả `platform.cms.view && (rbac.manage || system.settings)`.
+  - Quyền nào thiếu trong eff thì xét qua overlay break-glass, giống `hasPermission` (`admin_service.go:765-776`, dùng lại `hasBreakGlassPermissionOverlay`).
+- `resolveTargetCompany(ctx, sub, requested string, allowNoCompany bool) (string, error)`:
+  - Operator: giữ `requested`. Rỗng chỉ hợp lệ khi `allowNoCompany`, ngược lại dùng `sub.CompanyID`.
+  - Không phải operator: `""` hoặc `== sub.CompanyID` → `sub.CompanyID`; khác → `perr.NewHTTPError(403, perr.CodeCompanyScopeMismatch, ...)`.
+- Test `admin_service_company_scope_test.go`: bảng persona × {own, other, empty} × allowNoCompany.
+- AC: test helper pass.
+
+### T2: CreateUser (`admin_service.go:74-104`)
+- **Test trước** (phải FAIL trên code hiện tại):
+  - `tenantAdmin` và `tenantAdminSys` với company khác → 403, repo không thêm user.
+  - Company rỗng → membership thuộc `c_001`.
+- **Test giữ hành vi:** `platformOp` tạo được ở company khác và tạo user no-company.
+- Ghi output FAIL vào `docs/ai-cache/bug-cross-tenant-membership-create-2026-10-09/02-repro.md`.
+- **Fix:** thay khối `isWebAdmin` bằng `req.CompanyID, err = s.resolveTargetCompany(ctx, req.Subject, req.CompanyID, true)`. Phần validate role phía sau giữ nguyên.
+- AC: test pass; revert fix → test FAIL lại.
+
+### T3: CreateMembership (`:873-889`) và AssignUserToCompany (`:781-871`)
+- **Test trước:** `tenantAdmin` với company khác → 403, không có membership mới. Cùng company → tạo được.
+- **Test giữ hành vi:** `platformOp` với company khác → tạo được (luồng CMS `assign-company`, `companies/{id}/members`).
+- **Fix:** gọi `resolveTargetCompany(..., allowNoCompany=false)` ngay đầu hàm, trước `authorize`, rồi dùng company đã resolve cho mọi bước ghi.
+- AC: như T2.
+
+### T4: H2, ListCompanyMemberships (`:1048-1090`) và authorizeMembershipInvite (`admin_service_invite_scope.go:25-34`)
+- **Test trước:**
+  - `tenantAdmin` liệt kê company khác → 403.
+  - `ListWithoutCompany` với tenant → 403.
+  - Liệt kê company của mình → OK.
+- **Test giữ hành vi:** `platformOp` liệt kê company khác và no-company → OK.
+- **Fix:**
+  - `authorizeMembershipInvite`: operator → nil. Còn lại: `companyID` phải == `sub.CompanyID` (403 nếu khác), rồi `authorize`.
+  - `ListWithoutCompany`: thay check `rbac.manage` bằng `isPlatformCompanyOperator`.
+- AC: như T2.
+
+### T5: InviteUser (`:325-380`), ListInviteRoles (`:632-660`), ResendUserInvitation (`:664-700`)
+- **Test trước:** `tenantAdmin` với company khác hoặc no-company → 403 (hoặc ép về company mình, theo semantics từng hàm). Không gửi email hoặc invite mới khi bị từ chối.
+- **Test giữ hành vi:** `platformOp` → như cũ (luồng CMS invite, roles, resend).
+- **Fix:** thay `isWebAdmin = hasPermission("rbac.manage")` bằng `isPlatformCompanyOperator` hoặc `resolveTargetCompany`. Sửa comment nói "web admin (rbac.manage)".
+- AC: như T2.
+
+### T6: Handler tenant (`internal/companyaccess/transport/http/admin_handler.go`)
+- `createUser` (`:160-217`), `createMembership` (`:235-254`): body `company_id` khác rỗng và khác `sub.CompanyID` → 403 `COMPANY_SCOPE_MISMATCH`; rỗng → dùng `sub.CompanyID`.
+- `listMemberships` (`:345`): path `company_id` khác `sub.CompanyID` → 403.
+- Handler CMS (`internal/platformcms`) **không đổi**.
+- Test handler (theo mẫu `admin_handler_memberships_test.go`): bảng các route tenant nhận company → company khác token trả 403, company của token trả 2xx.
+- Thêm assert đếm route để route mới nhận `company_id` phải được thêm vào bảng.
+- AC: test pass; bỏ check ở một handler → test FAIL.
+
+### T7: Cập nhật test cũ và giữ luồng CMS
+- `TestAdminService_CreateUser_WebAdminCanCreateOtherCompany` (`admin_service_test.go:338`): đổi tên thành `..._PlatformOperatorCanCreateOtherCompany`, permissions thêm `platform.cms.view`.
+- `TestAdminService_CreateUser_WebAdmin_NoMembershipWhenCompanyOmitted` và `TestAdminService_ListCompanyMemberships_ListWithoutCompany`: đổi sang persona `platformOp`, thêm case tenant → 403.
+- Rà `rbac_phase_e_assign_invite_test.go` và `admin_service_invite_focal_test.go`: test nào dựa vào `rbac.manage` để thao tác cross-company hoặc no-company thì đổi persona; test cùng company giữ nguyên.
+- Giữ xanh `TestIntegration_platformCMSPrefix_adminUsersCreateAndList` (`internal/httpserver/server_test.go:984`).
+- AC: `go test ./internal/companyaccess/... ./internal/platformcms/...` xanh. Danh sách FAIL của `httpserver` giống baseline (5 test có sẵn).
+
+### T8: Verify (Gate V)
+- `go build ./...`; `go test ./... -count=1` so với baseline HEAD (worktree tạm), không có fail mới.
+- `go vet ./...` (chỉ còn lỗi copylocks có sẵn); `go test -race -count=1 ./internal/companyaccess/...`.
+- `docker compose -f docker-compose.dev.yml build api`.
+- Grep: không còn `hasPermission(ctx, .*"rbac.manage")` dùng làm tín hiệu cross-company trong `internal/companyaccess/app`. Ghi lại các chỗ còn lại là quyền tenant hợp lệ.
+- Ghi `03-verify.md`.
+
+### T9: Review và đóng
+- Chạy song song `be-security-reviewer`, `admin-role-reviewer`, `api-compat-reviewer` (vì có mã lỗi 403 mới) trên diff `internal/companyaccess`. Sau đó `premerge-system-review` bản ngắn.
+- ai-cache: `04-completion.md`; đánh dấu C4 và H2 "fixed in branch" trong `risk-review-2026-10-09/10-risk-report.md`.
+- Không commit hay push khi chưa được yêu cầu.
+- Deploy DEV và smoke chỉ khi user yêu cầu, theo `wf-release`:
+  - Tenant gửi company khác → 403.
+  - Tenant tạo user trong company mình → 201.
+  - CMS tạo, mời, liệt kê cho company khác → OK.
+- Follow-up (ngoài PR): C5 (IDOR theo membership id, gán global role); authorizer bỏ qua `Resource` company; xử lý 9 user mồ côi trên DEV (thao tác ghi, cần duyệt riêng).
+
+## File chính
+- **Mới:** `internal/companyaccess/app/admin_service_company_scope.go`, `admin_service_company_scope_test.go`.
+- **Sửa:** `internal/companyaccess/app/admin_service.go`, `admin_service_invite_scope.go`, `internal/companyaccess/transport/http/admin_handler.go`, các test liên quan trong `internal/companyaccess/{app,transport/http}`.
+- **Không đổi:** schema/migration, FE, `internal/platformcms` handler, cờ cấu hình.
+
+## Code dùng lại
+- `hasPermission`, `hasBreakGlassPermissionOverlay` (`admin_service.go:765+`).
+- `isPlatformCMSOperator` (`admin_service.go:628`): dùng cho validate role, giữ nguyên.
+- `perr.CodeCompanyScopeMismatch` (`internal/platform/errors`).
+- `fakeAuthService` (`admin_service_test.go:19-46`).
+- Mẫu test quét route: `internal/workflowconfig/transport/http/authz_test.go` (C2).
+
+## Tương thích và rollback
+- FE hiện tại không bị ảnh hưởng.
+- Các role có `rbac.manage` nhưng thiếu `platform.cms.view` (22 role trên DEV) mất khả năng thao tác cross-company hoặc no-company qua route tenant. Đây là hành vi mong muốn.
+- Không có migration. Rollback bằng binary backup sẽ mở lại lỗ hổng.

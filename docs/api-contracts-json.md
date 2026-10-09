@@ -688,8 +688,11 @@ Tao tai khoan user truc tiep (admin flow). Endpoint nay tao ban ghi `users` + `c
 
 **Authorization boundary**
 
-- Admin doanh nghiep: chi duoc tao nhan vien thuoc company hien tai; backend se ep `company_id = current_context.company_id`.
-- Admin web (co quyen `rbac.manage`): co the tao user bat ky, bao gom cross-company hoac tao user khong gan membership ngay.
+- Route tenant `/api/v1/admin/*` luon thao tac tren company cua access token (cap nhat 2026-10-09, risk review C4):
+  - `company_id` bo trong -> backend dung `current_context.company_id`. Route nay khong tao user "khong gan membership".
+  - `company_id` khac company cua token -> **403 `COMPANY_SCOPE_MISMATCH`**, bat ke nguoi goi la ai.
+- Thao tac cross-company hoac tao user khong gan company chi danh cho **platform operator** (`platform.cms.view` va (`rbac.manage` hoac `system.settings`)) qua `/api/v1/platform/cms/admin/*`.
+  Quyen `rbac.manage` don le la quyen cua tenant, khong du de thao tac sang company khac.
 
 **Response (201)**
 
@@ -711,6 +714,8 @@ Tao tai khoan user truc tiep (admin flow). Endpoint nay tao ban ghi `users` + `c
 ---
 
 ### POST /api/v1/admin/memberships
+
+`company_id` bo trong -> company cua token. Khac company cua token -> 403 `COMPANY_SCOPE_MISMATCH`.
 
 **Request**
 
@@ -769,6 +774,8 @@ Tao tai khoan user truc tiep (admin flow). Endpoint nay tao ban ghi `users` + `c
 ---
 
 ### GET /api/v1/admin/companies/{company_id}/memberships
+
+`company_id` phai bang company cua token, nguoc lai 403 `COMPANY_SCOPE_MISMATCH`. Liet ke cross-company hoac "user khong co membership" chi qua `/api/v1/platform/cms/admin/users` (platform operator).
 
 **Response**
 

@@ -22,7 +22,21 @@ type inviteScope struct {
 	DepartmentIDs []string
 }
 
+// authorizeMembershipInvite gates invite/list style operations on companyID.
+// A non-operator may only target the company of the access token (403 COMPANY_SCOPE_MISMATCH
+// otherwise); a platform operator may target any company. Within the own company, rbac.manage
+// keeps its existing shortcut for tenant admins.
 func (s *adminService) authorizeMembershipInvite(ctx context.Context, sub AdminSubject, companyID string) error {
+	if c := strings.TrimSpace(companyID); c != "" && c != sub.CompanyID {
+		operator, err := s.isPlatformCompanyOperator(ctx, sub)
+		if err != nil {
+			return err
+		}
+		if !operator {
+			return errCompanyScopeMismatch()
+		}
+		return nil
+	}
 	ok, err := s.hasPermission(ctx, sub, "rbac.manage")
 	if err != nil {
 		return err

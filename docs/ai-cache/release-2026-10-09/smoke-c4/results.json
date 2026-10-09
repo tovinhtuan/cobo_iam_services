@@ -1,0 +1,61 @@
+{
+  "baseUrl": "http://88.216.208.0:3000",
+  "scenarios": [
+    {
+      "name": "tenant-users",
+      "finalPath": "/app/admin/users",
+      "results": [
+        {
+          "name": "login",
+          "ok": true,
+          "ms": 1907
+        },
+        {
+          "name": "select-company-c_001",
+          "ok": true,
+          "ms": 99
+        },
+        {
+          "name": "open-users-memberships",
+          "ok": true,
+          "ms": 1286
+        }
+      ],
+      "api": [
+        "200 GET /api/v1/admin/companies/c_001/memberships?page=1&page_size=200",
+        "200 GET /api/v1/admin/companies/c_001/memberships?page=1&page_size=50",
+        "200 GET /api/v1/admin/companies/c_001/memberships?page=1&page_size=200"
+      ],
+      "bad": [],
+      "consoleErrors": []
+    },
+    {
+      "name": "cms-users",
+      "finalPath": "/cms/admin/users",
+      "results": [
+        {
+          "name": "login",
+          "ok": true,
+          "ms": 1701
+        },
+        {
+          "name": "select-company-c_001",
+          "ok": true,
+          "ms": 84
+        },
+        {
+          "name": "open-cms-users",
+          "ok": true,
+          "ms": 1147
+        }
+      ],
+      "api": [
+        "200 GET /api/v1/platform/cms/admin/companies?page=1&limit=100&sort_by=company_name&sort_order=asc",
+        "200 GET /api/v1/platform/cms/admin/users?company_id=ca8d120d-c691-4ca9-9d40-9fd38e6b4535&page=1&page_size=20",
+        "200 GET /api/v1/platform/cms/admin/roles?company_id=ca8d120d-c691-4ca9-9d40-9fd38e6b4535"
+      ],
+      "bad": [],
+      "consoleErrors": []
+    }
+  ]
+}

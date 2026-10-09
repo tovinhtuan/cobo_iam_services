@@ -85,7 +85,7 @@ func newActivateTestHandler(t *testing.T, handlerPerms []string, inspectorFail b
 	})
 	adminSvc := caapp.NewAdminService(
 		adminRepo,
-		stubAdminAuth{permissions: []string{"rbac.manage"}},
+		stubAdminAuth{permissions: []string{"platform.cms.view", "rbac.manage"}},
 		idgen.UUIDv7Generator{},
 		caapp.WithCompanyPlanReader(companyplan.NewService(plans)),
 	)

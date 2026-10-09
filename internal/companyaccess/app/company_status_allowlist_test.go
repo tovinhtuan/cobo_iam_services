@@ -14,7 +14,7 @@ import (
 func platformAdminSvc(repo *cainmem.AdminRepository) caapp.AdminService {
 	return caapp.NewAdminService(
 		repo,
-		fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{"rbac.manage", "system.settings", "admin.membership.create"}},
+		fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{"platform.cms.view", "rbac.manage", "system.settings", "admin.membership.create"}},
 		fixedIDGen("x"),
 	)
 }

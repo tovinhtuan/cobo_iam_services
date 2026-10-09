@@ -157,6 +157,18 @@ func (h *AdminHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/company/listed-lookup", h.listedLookupByBusinessCode)
 }
 
+// tenantRouteCompany pins a company id received on a tenant route (/api/v1/admin/*) to the company
+// of the access token. Empty means the token's company; any other value is rejected with
+// 403 COMPANY_SCOPE_MISMATCH, whoever the caller is. Cross-company administration belongs to the
+// platform routes (/api/v1/platform/cms/admin/*).
+func tenantRouteCompany(sub caapp.AdminSubject, requested string) (string, error) {
+	requested = strings.TrimSpace(requested)
+	if requested != "" && requested != sub.CompanyID {
+		return "", perr.NewHTTPError(http.StatusForbidden, perr.CodeCompanyScopeMismatch, "company_id must match the current company", nil)
+	}
+	return sub.CompanyID, nil
+}
+
 func (h *AdminHandler) createUser(w http.ResponseWriter, r *http.Request) {
 	sub, err := h.subject(r)
 	if err != nil {
@@ -170,7 +182,7 @@ func (h *AdminHandler) createUser(w http.ResponseWriter, r *http.Request) {
 		Email            string   `json:"email"`
 		Phone            string   `json:"phone"`
 		AccountStatus    string   `json:"account_status"`
-		CompanyID        string   `json:"company_id"`        // optional: empty = user without membership (when caller has rbac.manage)
+		CompanyID        string   `json:"company_id"`        // optional: empty = company of the access token; any other value is rejected (403)
 		MembershipStatus string   `json:"membership_status"` // when company_id set
 		RoleID           string   `json:"role_id"`
 		RoleCode         string   `json:"role_code"`
@@ -184,6 +196,11 @@ func (h *AdminHandler) createUser(w http.ResponseWriter, r *http.Request) {
 		FocalDepartmentIDs []string `json:"focal_department_ids"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&p)
+	companyID, err := tenantRouteCompany(sub, p.CompanyID)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
 	resp, err := h.svc.CreateUser(r.Context(), caapp.CreateUserRequest{
 		Subject:            sub,
 		LoginID:            p.LoginID,
@@ -192,7 +209,7 @@ func (h *AdminHandler) createUser(w http.ResponseWriter, r *http.Request) {
 		Email:              p.Email,
 		Phone:              p.Phone,
 		AccountStatus:      p.AccountStatus,
-		CompanyID:          p.CompanyID,
+		CompanyID:          companyID,
 		MembershipStatus:   p.MembershipStatus,
 		RoleID:             p.RoleID,
 		RoleCode:           p.RoleCode,
@@ -244,7 +261,12 @@ func (h *AdminHandler) createMembership(w http.ResponseWriter, r *http.Request) 
 		Status    string `json:"status"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&p)
-	resp, err := h.svc.CreateMembership(r.Context(), caapp.CreateMembershipRequest{Subject: sub, UserID: p.UserID, CompanyID: p.CompanyID, Status: p.Status})
+	companyID, err := tenantRouteCompany(sub, p.CompanyID)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	resp, err := h.svc.CreateMembership(r.Context(), caapp.CreateMembershipRequest{Subject: sub, UserID: p.UserID, CompanyID: companyID, Status: p.Status})
 	if err != nil {
 		httpx.WriteError(w, nil, err)
 		return
@@ -342,7 +364,11 @@ func (h *AdminHandler) listMemberships(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, nil, err)
 		return
 	}
-	cid := r.PathValue("company_id")
+	cid, err := tenantRouteCompany(sub, r.PathValue("company_id"))
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
 	page, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("page")))
 	pageSize, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("page_size")))
 	items, err := h.svc.ListCompanyMemberships(r.Context(), caapp.ListCompanyMembershipsRequest{

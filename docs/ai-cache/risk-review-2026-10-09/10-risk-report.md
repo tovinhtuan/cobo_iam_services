@@ -55,6 +55,7 @@ Không có secret value nào trong file này.
 - Fix: yêu cầu `platform.cms.view` + `system.settings`, hoặc gỡ endpoint.
 
 **C4 ✔ Chiếm quyền tenant khác: `CreateMembership` / `CreateUser`** — Security Backend
+- **Trạng thái (2026-10-09): FIXED IN BRANCH (chưa commit, chưa deploy).** Gộp cùng H2. Xem `../bug-cross-tenant-membership-create-2026-10-09/`. Còn lại ở C5: mutation theo `membership_id`.
 - `admin_handler.go:243-247`: `company_id` lấy từ body.
 - `authorization/app/service.go:22-38`: `Authorize` bỏ qua `Resource.ID`.
 - `admin_service.go:79,343,636,678,1063`: `isWebAdmin = hasPermission("rbac.manage")`.
