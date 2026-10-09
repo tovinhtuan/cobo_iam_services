@@ -1,0 +1,25 @@
+tenant admin logged in, company=ca8d120d-c691-4ca9-9d40-9fd38e6b4535
+platform CMS admin logged in, company=c_001
+
+PASS  404  C3 migrate route removed (no token)  [POST /api/v1/platform/cms/admin/ops/adhoc-migrate-legacy-approvals] 404 page not found
+PASS  401  C2 catalog GET needs token  [GET /api/v1/platform/cms/workflow/assignee-roles] SESSION_EXPIRED
+PASS  403  C2 tenant read versions -> 403  [GET /api/v1/platform/cms/templates/qa-resmoke-periodic-20260904a/workflow/versions] PERMISSION_DENIED
+PASS  403  C2 tenant read configuration -> 403  [GET /api/v1/platform/cms/templates/qa-resmoke-periodic-20260904a/workflow/configuration] PERMISSION_DENIED
+PASS  403  C2 tenant validate -> 403  [POST /api/v1/platform/cms/templates/qa-resmoke-periodic-20260904a/workflow/validate] PERMISSION_DENIED
+PASS  403  C2 tenant publish -> 403  [POST /api/v1/platform/cms/templates/qa-resmoke-periodic-20260904a/workflow/publish] PERMISSION_DENIED
+PASS  403  C2 tenant activate -> 403  [POST /api/v1/platform/cms/templates/qa-resmoke-periodic-20260904a/workflow/versions/1/activate] PERMISSION_DENIED
+PASS  403  C2 tenant create assignee role -> 403  [POST /api/v1/platform/cms/workflow/assignee-roles] PERMISSION_DENIED
+PASS  200  C2 tenant GET assignee-roles stays 200  [GET /api/v1/platform/cms/workflow/assignee-roles] 
+PASS  404  C3 migrate route removed (tenant token)  [POST /api/v1/platform/cms/admin/ops/adhoc-migrate-legacy-approvals] 404 page not found
+PASS  403  C3 tenant adhoc list still works  [GET /api/v1/company/ad-hoc-proposals?page=1&page_size=5] PERMISSION_DENIED
+PASS  200  C2 CMS configuration -> 200  [GET /api/v1/platform/cms/templates/qa-resmoke-periodic-20260904a/workflow/configuration] 
+PASS  200  C2 CMS readiness -> 200  [GET /api/v1/platform/cms/templates/qa-resmoke-periodic-20260904a/workflow/readiness] 
+PASS  200  C2 CMS lifecycle -> 200  [GET /api/v1/platform/cms/templates/qa-resmoke-periodic-20260904a/workflow/lifecycle] 
+PASS  200  C2 CMS versions -> 200  [GET /api/v1/platform/cms/templates/qa-resmoke-periodic-20260904a/workflow/versions] 
+PASS  200  C2 CMS validate (read-only) -> 200  [POST /api/v1/platform/cms/templates/qa-resmoke-periodic-20260904a/workflow/validate] 
+PASS  200  C2 CMS GET assignee-roles -> 200  [GET /api/v1/platform/cms/workflow/assignee-roles] 
+
+17/17 passed
+logged in company c_001
+PASS  200  C3 tenant adhoc list (c_001 admin) -> 200  [GET /api/v1/company/ad-hoc-proposals?page=1&page_size=5] 
+PASS  404  C3 admin-approve route still registered (business error, not mux 404)  [POST .../smoke-nonexistent-proposal/admin-approve] INVALID_REQUEST

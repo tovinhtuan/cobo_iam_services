@@ -24,34 +24,20 @@ type Service interface {
 	Approve(ctx context.Context, req ApproveRequest) (*ApproveResponse, error)
 	// AdminApprove is kept unchanged for the legacy two-round flow.
 	//
-	// @deprecated: serves only (1) legacy clients still calling POST .../admin-approve
-	// directly, and (2) FinalizeLegacyApproval's internal reuse for the one-time
-	// migration endpoint. Do not call from any new code path. Removed only once
-	// both conditions in the migration runbook (§12.5) are satisfied.
+	// @deprecated: serves only legacy clients still calling POST .../admin-approve
+	// directly (tenant-scoped: company from the token, caller must be the proposal's
+	// process controller). Do not call from any new code path. The cross-tenant
+	// migration endpoint that reused it was removed (risk review 2026-10-09, C3).
 	AdminApprove(ctx context.Context, req AdminApproveRequest) (*AdminApproveResponse, error)
 	Reject(ctx context.Context, req RejectRequest) (*ProposalDTO, error)
 	Cancel(ctx context.Context, req ProposalActionRequest) (*ProposalDTO, error)
 	GetProposal(ctx context.Context, req GetProposalRequest) (*ProposalDTO, error)
 	ListProposals(ctx context.Context, req ListProposalsRequest) (*ListProposalsResponse, error)
 	ListEligibleReviewers(ctx context.Context, req ListEligibleReviewersRequest) ([]EligibleController, error)
-	// FinalizeLegacyApproval is a thin wrapper around AdminApprove (field-mapped per
-	// §5.3) used by the temporary migration endpoint to auto-finalize proposals stuck
-	// at pending_admin_approval. Gated internally on rbac.manage.
-	FinalizeLegacyApproval(ctx context.Context, sub Subject, companyID, proposalID string) error
-	// ListPendingLegacyApprovals is gated on rbac.manage (platform admin only) since
-	// it scans across all companies.
-	ListPendingLegacyApprovals(ctx context.Context, sub Subject) ([]PendingApprovalRow, error)
 }
 
 type ListEligibleReviewersRequest struct {
-	Subject Subject
-}
-
-// PendingApprovalRow identifies a proposal still stuck at pending_admin_approval,
-// for the one-time legacy migration endpoint (§6.7/A1).
-type PendingApprovalRow struct {
-	ProposalID string
-	CompanyID  string
+	Subject Subject `json:"-"` // from the access token only, never the request body
 }
 
 type Repository interface {
@@ -83,9 +69,6 @@ type Repository interface {
 	IsAssignedReviewer(ctx context.Context, companyID, proposalID, membershipID string) (bool, error)
 	ListReviewers(ctx context.Context, companyID, proposalID string) ([]ReviewerDTO, error)
 	ListApprovals(ctx context.Context, companyID, proposalID string) ([]ApprovalDTO, error)
-	// ListPendingAdminApproval scans across all companies (no tenant scoping) for
-	// the one-time legacy migration endpoint (§6.7/A1).
-	ListPendingAdminApproval(ctx context.Context) ([]PendingApprovalRow, error)
 }
 
 type TypeCatalog interface {
@@ -232,7 +215,7 @@ type WorkflowStepOverride struct {
 }
 
 type CreateProposalRequest struct {
-	Subject       Subject
+	Subject       Subject                     `json:"-"` // from the access token only, never the request body
 	TypeID        string                      `json:"type_id"`
 	StepOverrides []WorkflowStepOverride      `json:"step_overrides"`
 	WorkflowSteps []ProposalWorkflowStepInput `json:"workflow_steps,omitempty"`
@@ -254,7 +237,7 @@ type CreateProposalRequest struct {
 // PatchDraftProposalRequest updates an editable draft. WorkflowSteps, when non-nil,
 // replaces the entire workflow snapshot atomically (even if empty slice — empty is rejected by normalize).
 type PatchDraftProposalRequest struct {
-	Subject              Subject
+	Subject              Subject `json:"-"` // from the access token only, never the request body
 	ProposalID           string
 	TypeID               *string `json:"type_id,omitempty"`
 	ChangeNote           *string `json:"change_note,omitempty"`
@@ -289,7 +272,7 @@ type DraftUpdate struct {
 
 // ApproveRequest is the wire body for POST .../approve (replaces focal-approve).
 type ApproveRequest struct {
-	Subject           Subject
+	Subject           Subject `json:"-"` // from the access token only, never the request body
 	ProposalID        string
 	FinalT0Date       string `json:"final_t0_date,omitempty"`       // YYYY-MM-DD
 	FinalDeadlineDate string `json:"final_deadline_date,omitempty"` // YYYY-MM-DD
@@ -362,13 +345,13 @@ type FinalizeResult struct {
 }
 
 type ProposalActionRequest struct {
-	Subject    Subject
+	Subject    Subject `json:"-"` // from the access token only, never the request body
 	ProposalID string
 	Comment    string `json:"comment,omitempty"`
 }
 
 type AdminApproveRequest struct {
-	Subject           Subject
+	Subject           Subject `json:"-"` // from the access token only, never the request body
 	ProposalID        string
 	IdempotencyKey    string `json:"-"`
 	Comment           string `json:"comment,omitempty"`
@@ -398,13 +381,13 @@ type AdminApproveResponse struct {
 }
 
 type RejectRequest struct {
-	Subject      Subject
+	Subject      Subject `json:"-"` // from the access token only, never the request body
 	ProposalID   string
 	RejectReason string `json:"reject_reason"`
 }
 
 type GetProposalRequest struct {
-	Subject    Subject
+	Subject    Subject `json:"-"` // from the access token only, never the request body
 	ProposalID string
 }
 
@@ -412,7 +395,7 @@ type GetProposalRequest struct {
 const ListScopeMy = "my"
 
 type ListProposalsRequest struct {
-	Subject      Subject
+	Subject      Subject `json:"-"` // from the access token only, never the request body
 	StatusFilter []string
 	// Scope: empty = company-wide (requires ad_hoc_alert.read);
 	// "my" = creator self-list (requires propose OR read; filter from auth membership).

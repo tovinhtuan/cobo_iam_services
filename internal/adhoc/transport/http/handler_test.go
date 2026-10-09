@@ -25,13 +25,16 @@ type fakeService struct {
 	listReq           adhocapp.ListProposalsRequest
 	lastAdminApprove  adhocapp.AdminApproveRequest
 	adminApproveCalls int
+	lastSubject       adhocapp.Subject // subject seen by the most recent mutating call
 }
 
-func (f *fakeService) CreateProposal(context.Context, adhocapp.CreateProposalRequest) (*adhocapp.ProposalDTO, error) {
+func (f *fakeService) CreateProposal(_ context.Context, req adhocapp.CreateProposalRequest) (*adhocapp.ProposalDTO, error) {
+	f.lastSubject = req.Subject
 	return nil, nil
 }
 
-func (f *fakeService) PatchDraftProposal(context.Context, adhocapp.PatchDraftProposalRequest) (*adhocapp.ProposalDTO, error) {
+func (f *fakeService) PatchDraftProposal(_ context.Context, req adhocapp.PatchDraftProposalRequest) (*adhocapp.ProposalDTO, error) {
+	f.lastSubject = req.Subject
 	return nil, nil
 }
 
@@ -39,15 +42,18 @@ func (f *fakeService) SubmitProposal(context.Context, adhocapp.ProposalActionReq
 	return nil, nil
 }
 
-func (f *fakeService) Approve(context.Context, adhocapp.ApproveRequest) (*adhocapp.ApproveResponse, error) {
+func (f *fakeService) Approve(_ context.Context, req adhocapp.ApproveRequest) (*adhocapp.ApproveResponse, error) {
+	f.lastSubject = req.Subject
 	return nil, nil
 }
 
-func (f *fakeService) Reject(context.Context, adhocapp.RejectRequest) (*adhocapp.ProposalDTO, error) {
+func (f *fakeService) Reject(_ context.Context, req adhocapp.RejectRequest) (*adhocapp.ProposalDTO, error) {
+	f.lastSubject = req.Subject
 	return nil, nil
 }
 
-func (f *fakeService) Cancel(context.Context, adhocapp.ProposalActionRequest) (*adhocapp.ProposalDTO, error) {
+func (f *fakeService) Cancel(_ context.Context, req adhocapp.ProposalActionRequest) (*adhocapp.ProposalDTO, error) {
+	f.lastSubject = req.Subject
 	return nil, nil
 }
 
@@ -62,14 +68,6 @@ func (f *fakeService) ListProposals(_ context.Context, req adhocapp.ListProposal
 
 func (f *fakeService) ListEligibleReviewers(_ context.Context, _ adhocapp.ListEligibleReviewersRequest) ([]adhocapp.EligibleController, error) {
 	return []adhocapp.EligibleController{}, nil
-}
-
-func (f *fakeService) FinalizeLegacyApproval(context.Context, adhocapp.Subject, string, string) error {
-	return nil
-}
-
-func (f *fakeService) ListPendingLegacyApprovals(context.Context, adhocapp.Subject) ([]adhocapp.PendingApprovalRow, error) {
-	return nil, nil
 }
 
 type fakeInspector struct{}

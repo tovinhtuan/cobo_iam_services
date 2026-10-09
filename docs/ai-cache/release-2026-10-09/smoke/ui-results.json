@@ -1,0 +1,35 @@
+{
+  "baseUrl": "http://88.216.208.0:3000",
+  "typeId": "qa-resmoke-periodic-20260904a",
+  "finalPath": "/cms/templates",
+  "results": [
+    {
+      "name": "login",
+      "ok": true,
+      "ms": 1822
+    },
+    {
+      "name": "select-company-c_001",
+      "ok": true,
+      "ms": 91
+    },
+    {
+      "name": "open-template-workflow-tab",
+      "ok": true,
+      "ms": 1216
+    },
+    {
+      "name": "release-tab-actions-visible",
+      "ok": true,
+      "ms": 146
+    }
+  ],
+  "apiStatuses": [
+    "200 GET /api/v1/platform/cms/templates/qa-resmoke-periodic-20260904a/workflow/configuration",
+    "200 GET /api/v1/platform/cms/workflow/template-departments",
+    "200 GET /api/v1/platform/cms/workflow/assignee-roles",
+    "200 GET /api/v1/platform/cms/workflow/assignee-roles"
+  ],
+  "badResponses": [],
+  "consoleErrors": []
+}

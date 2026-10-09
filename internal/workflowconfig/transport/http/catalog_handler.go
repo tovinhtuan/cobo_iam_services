@@ -28,15 +28,21 @@ func preferredRoleID(d wfcapp.RoleDefinition) string {
 	return d.RoleID
 }
 
+// GET is token-only (tenant portal reads role labels); POST mutates the global catalog and needs
+// the CMS template write capability.
 func (h *Handler) assigneeRoles(w http.ResponseWriter, r *http.Request) {
-	if _, err := h.actor(r); err != nil {
-		httpx.WriteError(w, nil, err)
-		return
-	}
 	switch r.Method {
 	case http.MethodGet:
+		if _, err := h.subject(r); err != nil {
+			httpx.WriteError(w, nil, err)
+			return
+		}
 		h.listAssigneeRoles(w, r)
 	case http.MethodPost:
+		if _, err := h.requireTemplateWrite(r); err != nil {
+			httpx.WriteError(w, nil, err)
+			return
+		}
 		h.createAssigneeRole(w, r)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

@@ -43,9 +43,6 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/company/ad-hoc-proposals/{proposal_id}/admin-approve", h.adminApprove)
 	mux.HandleFunc("POST /api/v1/company/ad-hoc-proposals/{proposal_id}/reject", h.reject)
 	mux.HandleFunc("POST /api/v1/company/ad-hoc-proposals/{proposal_id}/cancel", h.cancel)
-	// One-time legacy migration endpoint (§6.7/A1) — platform admin only,
-	// self-gated on rbac.manage inside the service layer.
-	mux.HandleFunc("POST /api/v1/platform/cms/admin/ops/adhoc-migrate-legacy-approvals", h.migrateLegacyApprovals)
 }
 
 func (h *Handler) listEligibleReviewers(w http.ResponseWriter, r *http.Request) {
@@ -291,45 +288,6 @@ func (h *Handler) cancel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, resp)
-}
-
-// migrateLegacyApprovals is the one-time migration endpoint (§6.7/A1, A2):
-// finds every proposal stuck at pending_admin_approval (cross-company) and
-// auto-finalizes each via the legacy AdminApprove path. Per plan §6.7/A1 and
-// §12.3: stops immediately at the first error — does NOT continue remaining rows.
-// The endpoint is idempotent (deterministic IdempotencyKey per §5.3), so it
-// is safe to call again after fixing the failure.
-func (h *Handler) migrateLegacyApprovals(w http.ResponseWriter, r *http.Request) {
-	sub, err := h.subjectFromToken(r)
-	if err != nil {
-		httpx.WriteError(w, h.log, err)
-		return
-	}
-	rows, err := h.svc.ListPendingLegacyApprovals(r.Context(), sub)
-	if err != nil {
-		httpx.WriteError(w, h.log, err)
-		return
-	}
-	processed := 0
-	for _, row := range rows {
-		if err := h.svc.FinalizeLegacyApproval(r.Context(), sub, row.CompanyID, row.ProposalID); err != nil {
-			h.log.Error("adhoc_migrate_legacy_approval_failed",
-				slog.String("proposal_id", row.ProposalID),
-				slog.String("company_id", row.CompanyID),
-				slog.Any("error", err))
-			httpx.WriteJSON(w, http.StatusOK, map[string]any{
-				"processed":              processed,
-				"stopped_at_proposal_id": row.ProposalID,
-				"error":                  err.Error(),
-			})
-			return
-		}
-		processed++
-	}
-	httpx.WriteJSON(w, http.StatusOK, map[string]any{
-		"processed":              processed,
-		"stopped_at_proposal_id": nil,
-	})
 }
 
 func (h *Handler) subjectFromToken(r *http.Request) (adhocapp.Subject, error) {

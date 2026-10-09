@@ -16,19 +16,20 @@ import (
 )
 
 type Handler struct {
-	svc       *wfcapp.VersionService
-	cfg       *wfcapp.ConfigService
-	catalog   *wfcapp.AssigneeRoleCatalogService
-	inspector iamapp.TokenInspector
+	svc        *wfcapp.VersionService
+	cfg        *wfcapp.ConfigService
+	catalog    *wfcapp.AssigneeRoleCatalogService
+	inspector  iamapp.TokenInspector
+	authorizer AccessResolver
 }
 
-func NewHandler(svc *wfcapp.VersionService, cfg *wfcapp.ConfigService, catalog *wfcapp.AssigneeRoleCatalogService, inspector iamapp.TokenInspector) *Handler {
-	return &Handler{svc: svc, cfg: cfg, catalog: catalog, inspector: inspector}
+func NewHandler(svc *wfcapp.VersionService, cfg *wfcapp.ConfigService, catalog *wfcapp.AssigneeRoleCatalogService, inspector iamapp.TokenInspector, authorizer AccessResolver) *Handler {
+	return &Handler{svc: svc, cfg: cfg, catalog: catalog, inspector: inspector, authorizer: authorizer}
 }
 
 // RegisterAssigneeRoleCatalog wires GET/POST assignee role catalog routes (independent of workflow versioning).
-func RegisterAssigneeRoleCatalog(mux *http.ServeMux, catalog *wfcapp.AssigneeRoleCatalogService, inspector iamapp.TokenInspector) {
-	h := &Handler{catalog: catalog, inspector: inspector}
+func RegisterAssigneeRoleCatalog(mux *http.ServeMux, catalog *wfcapp.AssigneeRoleCatalogService, inspector iamapp.TokenInspector, authorizer AccessResolver) {
+	h := &Handler{catalog: catalog, inspector: inspector, authorizer: authorizer}
 	mux.HandleFunc("GET /api/v1/platform/cms/workflow/assignee-roles", h.assigneeRoles)
 	mux.HandleFunc("POST /api/v1/platform/cms/workflow/assignee-roles", h.assigneeRoles)
 }
@@ -45,7 +46,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 }
 
 func (h *Handler) configuration(w http.ResponseWriter, r *http.Request) {
-	if _, err := h.actor(r); err != nil {
+	if _, err := h.requireTemplateRead(r); err != nil {
 		httpx.WriteError(w, nil, err)
 		return
 	}
@@ -58,7 +59,7 @@ func (h *Handler) configuration(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) readiness(w http.ResponseWriter, r *http.Request) {
-	if _, err := h.actor(r); err != nil {
+	if _, err := h.requireTemplateRead(r); err != nil {
 		httpx.WriteError(w, nil, err)
 		return
 	}
@@ -71,7 +72,7 @@ func (h *Handler) readiness(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) validate(w http.ResponseWriter, r *http.Request) {
-	if _, err := h.actor(r); err != nil {
+	if _, err := h.requireTemplateRead(r); err != nil {
 		httpx.WriteError(w, nil, err)
 		return
 	}
@@ -84,7 +85,7 @@ func (h *Handler) validate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) lifecycle(w http.ResponseWriter, r *http.Request) {
-	if _, err := h.actor(r); err != nil {
+	if _, err := h.requireTemplateRead(r); err != nil {
 		httpx.WriteError(w, nil, err)
 		return
 	}
@@ -97,7 +98,7 @@ func (h *Handler) lifecycle(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) versionDetail(w http.ResponseWriter, r *http.Request) {
-	if _, err := h.actor(r); err != nil {
+	if _, err := h.requireTemplateRead(r); err != nil {
 		httpx.WriteError(w, nil, err)
 		return
 	}
@@ -118,17 +119,8 @@ func (h *Handler) versionDetail(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": rec})
 }
 
-func (h *Handler) actor(r *http.Request) (string, error) {
-	tok := bearer(r.Header.Get("Authorization"))
-	claims, err := h.inspector.InspectAccessToken(r.Context(), tok)
-	if err != nil {
-		return "", err
-	}
-	return claims.Sub, nil
-}
-
 func (h *Handler) listVersions(w http.ResponseWriter, r *http.Request) {
-	if _, err := h.actor(r); err != nil {
+	if _, err := h.requireTemplateRead(r); err != nil {
 		httpx.WriteError(w, nil, err)
 		return
 	}
@@ -141,7 +133,7 @@ func (h *Handler) listVersions(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) publish(w http.ResponseWriter, r *http.Request) {
-	actor, err := h.actor(r)
+	sub, err := h.requireTemplateWrite(r)
 	if err != nil {
 		httpx.WriteError(w, nil, err)
 		return
@@ -152,7 +144,7 @@ func (h *Handler) publish(w http.ResponseWriter, r *http.Request) {
 	if r.Body != nil && r.ContentLength != 0 {
 		_ = json.NewDecoder(r.Body).Decode(&payload)
 	}
-	info, err := h.svc.PublishVersion(r.Context(), r.PathValue("type_id"), payload.ChangeNote, actor)
+	info, err := h.svc.PublishVersion(r.Context(), r.PathValue("type_id"), payload.ChangeNote, sub.UserID)
 	if err != nil {
 		httpx.WriteError(w, nil, perr.NewHTTPError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, err.Error(), nil))
 		return
@@ -161,7 +153,7 @@ func (h *Handler) publish(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) activate(w http.ResponseWriter, r *http.Request) {
-	actor, err := h.actor(r)
+	sub, err := h.requireTemplateActivate(r)
 	if err != nil {
 		httpx.WriteError(w, nil, err)
 		return
@@ -171,7 +163,7 @@ func (h *Handler) activate(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "version_no must be an integer", nil))
 		return
 	}
-	info, err := h.svc.ActivateVersion(r.Context(), r.PathValue("type_id"), versionNo, actor)
+	info, err := h.svc.ActivateVersion(r.Context(), r.PathValue("type_id"), versionNo, sub.UserID)
 	if err != nil {
 		httpx.WriteError(w, nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, err.Error(), nil))
 		return

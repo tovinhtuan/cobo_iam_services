@@ -635,28 +635,6 @@ func (r *Repository) ListApprovals(ctx context.Context, companyID, proposalID st
 	return out, rows.Err()
 }
 
-// ListPendingAdminApproval scans across all companies (no tenant scoping) for
-// the one-time legacy migration endpoint (§6.7/A1).
-func (r *Repository) ListPendingAdminApproval(ctx context.Context) ([]adhocapp.PendingApprovalRow, error) {
-	rows, err := r.db.QueryContext(ctx, `
-		SELECT proposal_id, company_id FROM ad_hoc_proposals WHERE status = ?
-	`, adhocapp.StatusPendingAdminApproval)
-	if err != nil {
-		return nil, fmt.Errorf("list pending admin approval: %w", err)
-	}
-	defer rows.Close()
-
-	var out []adhocapp.PendingApprovalRow
-	for rows.Next() {
-		var row adhocapp.PendingApprovalRow
-		if err := rows.Scan(&row.ProposalID, &row.CompanyID); err != nil {
-			return nil, fmt.Errorf("scan pending approval row: %w", err)
-		}
-		out = append(out, row)
-	}
-	return out, rows.Err()
-}
-
 func (r *Repository) List(ctx context.Context, companyID string, statusFilter []string, createdByMembershipID string, page, pageSize int) ([]adhocapp.ProposalDTO, int, error) {
 	var whereExtra string
 	var extraArgs []any

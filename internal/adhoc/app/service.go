@@ -604,10 +604,10 @@ func (s *service) finalizeApprovedProposal(ctx context.Context, r *VoteReservati
 
 // AdminApprove is kept unchanged for the legacy two-round flow.
 //
-// @deprecated: serves only (1) legacy clients still calling POST .../admin-approve
-// directly, and (2) FinalizeLegacyApproval's internal reuse for the one-time
-// migration endpoint. Do not call from any new code path. Removed only once
-// both conditions in the migration runbook (§12.5) are satisfied.
+// @deprecated: serves only legacy clients still calling POST .../admin-approve
+// directly (tenant-scoped: company from the token, caller must be the proposal's
+// process controller). Do not call from any new code path. The cross-tenant
+// migration endpoint that reused it was removed (risk review 2026-10-09, C3).
 func (s *service) AdminApprove(ctx context.Context, req AdminApproveRequest) (*AdminApproveResponse, error) {
 	// ADR-2: identity check — only the designated process controller may approve.
 	// Permission-based check (ad_hoc_alert.admin_review) is deprecated and no longer the gate.
@@ -615,7 +615,10 @@ func (s *service) AdminApprove(ctx context.Context, req AdminApproveRequest) (*A
 	if err != nil {
 		return nil, err
 	}
-	if cur0.ProcessControllerID != req.Subject.MembershipID {
+	// Empty identities never match: a legacy proposal without a designated controller
+	// (process_controller_id NULL) must not be approvable by a membership-less token.
+	controllerID := strings.TrimSpace(cur0.ProcessControllerID)
+	if controllerID == "" || controllerID != strings.TrimSpace(req.Subject.MembershipID) {
 		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "only the designated process controller can approve this proposal", nil)
 	}
 	reservation, err := s.repo.ReserveAdminApproval(ctx, ReserveAdminApprovalInput{
@@ -1002,50 +1005,6 @@ func (s *service) embedRuntimeTracking(ctx context.Context, p *ProposalDTO) *Pro
 	out := *p
 	out.Tracking = tracking
 	return &out
-}
-
-// FinalizeLegacyApproval is a thin wrapper around AdminApprove (field-mapped
-// per §5.3) for the one-time migration endpoint that auto-finalizes proposals
-// stuck at pending_admin_approval. Gated on rbac.manage (platform admin only).
-func (s *service) FinalizeLegacyApproval(ctx context.Context, sub Subject, companyID, proposalID string) error {
-	if err := s.authorize(ctx, sub, "rbac.manage", authapp.ResourceRef{Type: "platform"}); err != nil {
-		return err
-	}
-	cur, err := s.repo.FindByID(ctx, companyID, proposalID)
-	if err != nil {
-		return err
-	}
-	// §5.3 field mapping: use proposed dates as final dates (no human override
-	// in migration path), fixed adjustment note for audit trail, and a
-	// deterministic idempotency key so a repeated call is a safe no-op.
-	var finalT0, finalDeadline string
-	if cur.ProposedT0Date != nil {
-		finalT0 = *cur.ProposedT0Date
-	}
-	if cur.ProposedDeadlineDate != nil {
-		finalDeadline = *cur.ProposedDeadlineDate
-	}
-	// AdminApprove's identity check requires Subject.MembershipID == the
-	// designated process controller; ActorUserID still records the real actor
-	// (the platform admin running this migration) for audit purposes.
-	_, err = s.AdminApprove(ctx, AdminApproveRequest{
-		Subject:           Subject{UserID: sub.UserID, MembershipID: cur.ProcessControllerID, CompanyID: companyID},
-		ProposalID:        proposalID,
-		IdempotencyKey:    "migration-0098:" + proposalID,
-		FinalT0Date:       finalT0,
-		FinalDeadlineDate: finalDeadline,
-		AdjustmentNote:    "Auto-approved by migration 0098 (D9)",
-	})
-	return err
-}
-
-// ListPendingLegacyApprovals is gated on rbac.manage (platform admin only)
-// since it scans across all companies (§6.7/A1).
-func (s *service) ListPendingLegacyApprovals(ctx context.Context, sub Subject) ([]PendingApprovalRow, error) {
-	if err := s.authorize(ctx, sub, "rbac.manage", authapp.ResourceRef{Type: "platform"}); err != nil {
-		return nil, err
-	}
-	return s.repo.ListPendingAdminApproval(ctx)
 }
 
 func (s *service) authorize(ctx context.Context, sub Subject, action string, resource authapp.ResourceRef) error {

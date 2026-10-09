@@ -12,7 +12,7 @@ import (
 // Documents the route set registered when WORKFLOW_VERSIONING_ENABLED wires Handler.Register.
 func TestHandlerRegister_ConfigurationRoutePatterns(t *testing.T) {
 	mux := http.NewServeMux()
-	h := wfchttp.NewHandler(nil, nil, nil, nil)
+	h := wfchttp.NewHandler(nil, nil, nil, nil, nil)
 	h.Register(mux)
 
 	paths := []string{

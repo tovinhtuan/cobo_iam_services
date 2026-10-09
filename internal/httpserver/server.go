@@ -577,7 +577,7 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 	var assigneeRoleCatalogSvc *wfcapp.AssigneeRoleCatalogService
 	if pool != nil {
 		assigneeRoleCatalogSvc = wfcapp.NewAssigneeRoleCatalogService(wfcmysql.NewAssigneeRoleCatalogRepository(pool))
-		wfchttp.RegisterAssigneeRoleCatalog(mux, assigneeRoleCatalogSvc, tokenManager)
+		wfchttp.RegisterAssigneeRoleCatalog(mux, assigneeRoleCatalogSvc, tokenManager, authSvc)
 	}
 	// Global workflow versioning lifecycle (publish ≠ activate). Registered ONLY when the flag is ON
 	// and a SQL pool exists; existing GET/PUT workflow APIs are unaffected. Versioning touches global
@@ -592,7 +592,7 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 			readinessSvc = readinessSvc.WithCatalog(assigneeRoleCatalogSvc)
 		}
 		configSvc := wfcapp.NewConfigService(versionSvc, readinessSvc)
-		wfchttp.NewHandler(versionSvc, configSvc, assigneeRoleCatalogSvc, tokenManager).Register(mux)
+		wfchttp.NewHandler(versionSvc, configSvc, assigneeRoleCatalogSvc, tokenManager, authSvc).Register(mux)
 	}
 	notificationSvc := notificationapp.NewService(notificationRepo, authSvc, id, outboxPublisher, notifOpts...)
 	notificationHandler := notificationhttp.NewHandler(notificationSvc, tokenManager)

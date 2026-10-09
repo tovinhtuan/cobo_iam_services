@@ -176,10 +176,6 @@ func (f *fakeRepository) ListApprovals(ctx context.Context, companyID, proposalI
 	return f.approvals, nil
 }
 
-func (f *fakeRepository) ListPendingAdminApproval(ctx context.Context) ([]PendingApprovalRow, error) {
-	return nil, nil
-}
-
 func (f *fakeRepository) FindByID(ctx context.Context, companyID, proposalID string) (*ProposalDTO, error) {
 	return f.proposal, nil
 }
@@ -738,24 +734,6 @@ func TestReject_CannotRejectAtPendingAdminApproval(t *testing.T) {
 	}
 }
 
-func TestFinalizeLegacyApproval_DelegatesToAdminApprove(t *testing.T) {
-	repo := &fakeRepository{proposal: &ProposalDTO{
-		ProposalID: "prop-001", CompanyID: "company-001", TypeID: "dt-001",
-		Status: StatusPendingAdminApproval, ProcessControllerID: "member-ctrl", CreatedBy: "member-creator",
-	}}
-	recordCreator := &fakeRecordCreator{recordID: "record-001", workflowID: "wf-001"}
-	auth := &fakeAuthService{decision: authapp.DecisionAllow}
-	svc := newTestService(repo, recordCreator, &fakeTypeCatalog{category: "irregular"}, auth)
-
-	err := svc.FinalizeLegacyApproval(context.Background(), Subject{UserID: "admin-user", CompanyID: "company-001"}, "company-001", "prop-001")
-	if err != nil {
-		t.Fatalf("FinalizeLegacyApproval() error = %v", err)
-	}
-	if repo.completeCalls != 1 {
-		t.Fatalf("expected legacy AdminApprove completion once, got %d", repo.completeCalls)
-	}
-}
-
 func TestAdminApprovePersistsFinalOverrideFields(t *testing.T) {
 	repo := &fakeRepository{proposal: &ProposalDTO{
 		ProposalID:          "prop-001",
@@ -1227,6 +1205,44 @@ func TestCreateProposal_LegacyProcessControllerAlias_StoresAsSoleReviewer(t *tes
 	}
 }
 
+// A legacy proposal without a designated process controller must not be approvable
+// by a caller whose token has no membership (empty == empty identity match).
+func TestAdminApprove_EmptyControllerOrMembership_Returns403(t *testing.T) {
+	cases := []struct {
+		name       string
+		controller string
+		membership string
+	}{
+		{"both empty", "", ""},
+		{"controller empty", "  ", "member-001"},
+		{"membership empty", "member-controller", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := &fakeRepository{proposal: &ProposalDTO{
+				ProposalID:          "prop-001",
+				CompanyID:           "company-001",
+				TypeID:              "dt-001",
+				Status:              StatusPendingAdminApproval,
+				ProcessControllerID: tc.controller,
+			}}
+			svc := newTestService(repo, &fakeRecordCreator{}, &fakeTypeCatalog{category: "irregular"}, &fakeAuthService{decision: authapp.DecisionAllow})
+			_, err := svc.AdminApprove(context.Background(), AdminApproveRequest{
+				Subject:        Subject{CompanyID: "company-001", MembershipID: tc.membership, UserID: "user-001"},
+				ProposalID:     "prop-001",
+				IdempotencyKey: "idem-001",
+			})
+			httpErr, ok := err.(*perr.HTTPError)
+			if !ok || httpErr.HTTPStatus != http.StatusForbidden {
+				t.Fatalf("expected 403, got %#v", err)
+			}
+			if repo.completeCalls != 0 || repo.updateCalls != 0 {
+				t.Fatalf("expected no state change, got complete=%d update=%d", repo.completeCalls, repo.updateCalls)
+			}
+		})
+	}
+}
+
 func TestAdminApprove_ByNonController_Returns403(t *testing.T) {
 	repo := &fakeRepository{proposal: &ProposalDTO{
 		ProposalID:          "prop-001",
@@ -1395,8 +1411,8 @@ func (f *concurrencyFakeRepo) List(ctx context.Context, companyID string, status
 	return nil, 0, nil
 }
 
-// ReserveVote/CompleteFinalize/IsAssignedReviewer/ListReviewers/ListApprovals/
-// ListPendingAdminApproval are unused by the AdminApprove-only tests in this
+// ReserveVote/CompleteFinalize/IsAssignedReviewer/ListReviewers/ListApprovals
+// are unused by the AdminApprove-only tests in this
 // file â€” simple stubs satisfy the Repository interface.
 func (f *concurrencyFakeRepo) ReserveVote(ctx context.Context, in ReserveVoteInput) (*VoteReservation, error) {
 	return nil, errors.New("not used in this test")
@@ -1415,10 +1431,6 @@ func (f *concurrencyFakeRepo) ListReviewers(ctx context.Context, companyID, prop
 }
 
 func (f *concurrencyFakeRepo) ListApprovals(ctx context.Context, companyID, proposalID string) ([]ApprovalDTO, error) {
-	return nil, nil
-}
-
-func (f *concurrencyFakeRepo) ListPendingAdminApproval(ctx context.Context) ([]PendingApprovalRow, error) {
 	return nil, nil
 }
 
@@ -1681,12 +1693,17 @@ func (f *raceFakeRepo) Insert(ctx context.Context, p ProposalDTO) (*ProposalDTO,
 func (f *raceFakeRepo) rendezvous() {
 	f.gateMu.Lock()
 	f.gateCount++
-	if f.gateCount == 1 {
+	switch f.gateCount {
+	case 1:
 		ch := f.gateCh
 		f.gateMu.Unlock()
 		<-ch
-	} else {
+	case 2:
 		close(f.gateCh)
+		f.gateMu.Unlock()
+	default:
+		// Later calls (e.g. Approve re-reading the proposal after the race window)
+		// must not close the already-closed gate again.
 		f.gateMu.Unlock()
 	}
 }
@@ -1805,10 +1822,6 @@ func (f *raceFakeRepo) ListReviewers(ctx context.Context, companyID, proposalID 
 }
 
 func (f *raceFakeRepo) ListApprovals(ctx context.Context, companyID, proposalID string) ([]ApprovalDTO, error) {
-	return nil, nil
-}
-
-func (f *raceFakeRepo) ListPendingAdminApproval(ctx context.Context) ([]PendingApprovalRow, error) {
 	return nil, nil
 }
 
