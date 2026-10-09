@@ -252,6 +252,10 @@ func (s *adminService) submitRBACRolePermRemoveApproval(ctx context.Context, sub
 }
 
 func (s *adminService) submitRBACDirectPermRemoveApproval(ctx context.Context, sub AdminSubject, membershipID, permissionCode, reason string) (*PendingAdminChangeSummary, error) {
+	// The approval would act on this membership: it must belong to the caller's company.
+	if err := s.requireTargetMembership(ctx, sub, membershipID); err != nil {
+		return nil, err
+	}
 	proposed, err := s.buildProposedRBACSnapshotAfterDirectPermRemove(ctx, sub.CompanyID, membershipID, permissionCode)
 	if err != nil {
 		return nil, err

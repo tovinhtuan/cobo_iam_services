@@ -179,8 +179,10 @@ type AdminRepository interface {
 	UpdateCompanyPlatform(ctx context.Context, req UpdatePlatformCompanyRequest) error
 	SetCompanyStatusPlatform(ctx context.Context, companyID, status string) error
 	CreateMembership(ctx context.Context, m MembershipView) (*MembershipView, error)
-	UpdateMembershipStatus(ctx context.Context, membershipID, status string) (*MembershipView, error)
-	DeleteMembership(ctx context.Context, membershipID string) error
+	// UpdateMembershipStatus and DeleteMembership only act on a membership of the given company
+	// (404 MEMBERSHIP_NOT_FOUND otherwise).
+	UpdateMembershipStatus(ctx context.Context, companyID, membershipID, status string) (*MembershipView, error)
+	DeleteMembership(ctx context.Context, companyID, membershipID string) error
 	ListMembershipsByCompany(ctx context.Context, companyID string) ([]MembershipView, error)
 	// ListUsersWithNoMembership returns users that have zero rows in memberships.
 	ListUsersWithNoMembership(ctx context.Context) ([]MembershipView, error)
@@ -244,21 +246,32 @@ type AdminRepository interface {
 	CreateDepartmentRow(ctx context.Context, companyID, deptID, deptCode, name string, headMembershipID *string, sortOrder int) (*DepartmentView, error)
 	PatchDepartmentRow(ctx context.Context, companyID, deptID string, name *string, headMembershipID *string, clearHead bool, sortOrder *int, status *string) (*DepartmentView, error)
 	SoftDeleteDepartment(ctx context.Context, deptID, companyID string) error
-	CountDepartmentMembers(ctx context.Context, deptID string) (int, error)
+	// CountDepartmentMembers counts active members of a department of the given company; a department
+	// of another company counts 0 so its existence is not revealed.
+	CountDepartmentMembers(ctx context.Context, companyID, deptID string) (int, error)
 
 	// Title CRUD repository methods
 	ListCompanyTitles(ctx context.Context, companyID string) ([]TitleView, error)
 	CreateTitleRow(ctx context.Context, companyID, titleID, titleCode, name string, sortOrder int) (*TitleView, error)
 	PatchTitleRow(ctx context.Context, companyID, titleID string, name *string, sortOrder *int, status *string) (*TitleView, error)
 	SoftDeleteTitle(ctx context.Context, titleID, companyID string) error
-	CountTitleMembers(ctx context.Context, titleID string) (int, error)
+	// CountTitleMembers counts active members of a title of the given company (0 for another company).
+	CountTitleMembers(ctx context.Context, companyID, titleID string) (int, error)
 
 	// Team CRUD repository methods (using org_units table)
 	ListDepartmentTeams(ctx context.Context, companyID, departmentID string) ([]TeamView, error)
 	CreateTeamRow(ctx context.Context, companyID, departmentID, teamID, name string) (*TeamView, error)
 	PatchTeamRow(ctx context.Context, companyID, teamID string, name *string, status *string) (*TeamView, error)
 	DeleteTeamRow(ctx context.Context, companyID, teamID string) error
-	CountTeamsInDepartment(ctx context.Context, departmentID string) (int, error)
+	// CountTeamsInDepartment counts active teams of a department of the given company.
+	CountTeamsInDepartment(ctx context.Context, companyID, departmentID string) (int, error)
+	// TeamBelongsToCompany reports whether the team exists in the company.
+	TeamBelongsToCompany(ctx context.Context, companyID, teamID string) (bool, error)
+	// DepartmentBelongsToCompany reports whether the department exists in the company, whatever its
+	// status. Storage errors are returned, never folded into "false".
+	DepartmentBelongsToCompany(ctx context.Context, companyID, departmentID string) (bool, error)
+	// TitleBelongsToCompany reports whether the title exists in the company, whatever its status.
+	TitleBelongsToCompany(ctx context.Context, companyID, titleID string) (bool, error)
 	AddTeamMember(ctx context.Context, companyID, teamID, membershipID string) error
 	RemoveTeamMember(ctx context.Context, companyID, teamID, membershipID string) error
 	MemberBelongsToDepartment(ctx context.Context, membershipID, departmentID string) (bool, error)

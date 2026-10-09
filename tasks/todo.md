@@ -181,3 +181,50 @@
 - [x] `04-completion.md`; đánh dấu C4/H2 trong `10-risk-report.md`
 - [ ] (khi được yêu cầu) deploy DEV + smoke; follow-up C5, authorizer Resource, 9 user mồ côi
 - [x] ROLE-01 (AssignRole nhận role mang quyền platform) đã sửa trong cùng PR
+
+---
+
+# C5 membership_id company scope — Task List (plan: `tasks/plan.md`, section "Plan (C5)")
+
+## T0 — Artefact và đính chính doc [x]
+- [x] Append plan C5 vào `tasks/plan.md`; append section này vào `tasks/todo.md`
+- [x] Sửa `01-root-cause-solution.md`: handler phá huỷ đã có `auditLog`, bỏ đề xuất bổ sung audit
+
+## T1 — Fixture, in-memory repo có state, test bảng cross-company (Gate R) [x]
+- [x] Nâng cấp in-memory repo: team, thành viên team, đếm thành viên department/title
+- [x] `admin_service_membership_scope_test.go`: fixture 2 company + bảng hàm (nhóm ngoài company → 404 và dữ liệu không đổi; nhóm cùng company → như cũ)
+- [x] Chạy trên code cũ: nhóm ngoài company FAIL; ghi `03-repro.md`
+
+## T2 — Guard tập trung [x]
+- [x] `requireTargetMembership` trong `admin_service_company_scope.go`
+- [x] Gọi ở đầu `authorizeScopedMembershipMutation`
+- [x] CP-1: `go test ./internal/companyaccess/...`
+
+## T3 — Guard tường minh + config approval [x]
+- [x] AssignRole, RemoveRole, AssignTitle, RemoveTitle, Add/Remove/ListDirectPermission(s), RevokeCompanyAdmin, AddTeamMember, RemoveTeamMember, RemoveTitleMember
+- [x] `SubmitConfigApproval` `RBAC_DIRECT_PERM_REMOVE`: validate `membership_id`
+
+## T4 — Team / department / title (lớp 2) [x]
+- [x] Test trước: DeleteTeam không xoá thành viên team ngoài company; CreateTeam, AddTeamMember, RemoveTeamMember, DeleteDepartment, DeleteTitle với id ngoài company → 404
+- [x] `DeleteTeamRow` trong transaction, kiểm company trước; `RemoveTeamMember` dùng company
+- [x] `TeamBelongsToCompany`; `CreateTeam` dùng `departmentInCompany`
+- [x] Hàm đếm department/title/team nhận company; kiểm tồn tại trước khi đếm
+
+## T5 — `UpdateMembershipStatus` / `DeleteMembership` có company_id ở SQL [x]
+- [x] Đổi chữ ký interface + MySQL + in-memory; test repo trước
+
+## T6 — Validate theo `sub.CompanyID` + test quét route handler [x]
+- [x] `ReplaceMembershipPrimaryRole`, `UpdateMembershipOrgAssignments`
+- [x] `admin_handler_membership_scope_test.go` (bảng route + assert đếm route)
+
+## T7 — Test cũ & hợp đồng [x]
+- [x] Sửa test dùng membership giả; chỉ còn 2 fail có sẵn
+- [x] Cập nhật `docs/api-contracts-json.md`
+
+## T8 — Verify (Gate V) [x]
+- [x] build, `go test ./...` so với baseline, vet, `-race`, Docker build, grep; ghi `04-verify.md`
+
+## T9 — Review & đóng [x]
+- [x] be-security + admin-role + api-compat; premerge
+- [x] `05-completion.md`; đánh dấu C5 trong `10-risk-report.md`
+- [ ] (khi được yêu cầu) deploy DEV + smoke

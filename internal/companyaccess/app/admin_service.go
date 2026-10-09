@@ -499,7 +499,7 @@ func (s *adminService) inviteUserWithCompany(
 			return nil, err
 		}
 		if err := s.repo.AddRole(ctx, m.MembershipID, roleID); err != nil {
-			_ = s.repo.DeleteMembership(ctx, m.MembershipID)
+			_ = s.repo.DeleteMembership(ctx, m.CompanyID, m.MembershipID)
 			return nil, err
 		}
 		for _, p := range req.Permissions {
@@ -816,7 +816,7 @@ func (s *adminService) AssignUserToCompany(ctx context.Context, req AssignUserTo
 	// Assign role if requested.
 	if roleID := strings.TrimSpace(req.RoleID); roleID != "" {
 		if err := s.repo.AddRole(ctx, m.MembershipID, roleID); err != nil {
-			_ = s.repo.DeleteMembership(ctx, m.MembershipID)
+			_ = s.repo.DeleteMembership(ctx, m.CompanyID, m.MembershipID)
 			return nil, err
 		}
 	} else if roleCode := strings.TrimSpace(req.RoleCode); roleCode != "" {
@@ -826,11 +826,11 @@ func (s *adminService) AssignUserToCompany(ctx context.Context, req AssignUserTo
 		}
 		resolvedRoleID, err := s.repo.LookupRoleIDForInvite(ctx, companyID, "", roleCode, defRoleCode)
 		if err != nil {
-			_ = s.repo.DeleteMembership(ctx, m.MembershipID)
+			_ = s.repo.DeleteMembership(ctx, m.CompanyID, m.MembershipID)
 			return nil, err
 		}
 		if err := s.repo.AddRole(ctx, m.MembershipID, resolvedRoleID); err != nil {
-			_ = s.repo.DeleteMembership(ctx, m.MembershipID)
+			_ = s.repo.DeleteMembership(ctx, m.CompanyID, m.MembershipID)
 			return nil, err
 		}
 	}
@@ -906,7 +906,7 @@ func (s *adminService) UpdateMembership(ctx context.Context, req UpdateMembershi
 			return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "CANNOT_DEACTIVATE_PRIMARY_ADMIN", nil)
 		}
 	}
-	return s.repo.UpdateMembershipStatus(ctx, req.MembershipID, req.Status)
+	return s.repo.UpdateMembershipStatus(ctx, req.Subject.CompanyID, req.MembershipID, req.Status)
 }
 
 func (s *adminService) DeleteMembership(ctx context.Context, req DeleteMembershipRequest) error {
@@ -920,7 +920,7 @@ func (s *adminService) DeleteMembership(ctx context.Context, req DeleteMembershi
 	if err == nil && m.IsPrimaryAdmin {
 		return perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "CANNOT_DELETE_PRIMARY_ADMIN", nil)
 	}
-	return s.repo.DeleteMembership(ctx, req.MembershipID)
+	return s.repo.DeleteMembership(ctx, req.Subject.CompanyID, req.MembershipID)
 }
 
 func (s *adminService) ListDepartmentTeams(ctx context.Context, req ListDepartmentTeamsRequest) ([]TeamView, error) {
@@ -938,7 +938,14 @@ func (s *adminService) CreateTeam(ctx context.Context, req CreateTeamRequest) (*
 	if name == "" {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "name is required", nil)
 	}
-	count, err := s.repo.CountTeamsInDepartment(ctx, req.DepartmentID)
+	inCompany, err := s.repo.DepartmentBelongsToCompany(ctx, req.Subject.CompanyID, strings.TrimSpace(req.DepartmentID))
+	if err != nil {
+		return nil, err
+	}
+	if !inCompany {
+		return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "department not found", nil)
+	}
+	count, err := s.repo.CountTeamsInDepartment(ctx, req.Subject.CompanyID, req.DepartmentID)
 	if err != nil {
 		return nil, err
 	}
@@ -953,6 +960,10 @@ func (s *adminService) UpdateTeam(ctx context.Context, req UpdateTeamRequest) (*
 	if err := s.requireRbacManage(ctx, req.Subject); err != nil {
 		return nil, err
 	}
+	// An empty patch only reads the team back, so ownership is checked up front.
+	if err := s.requireTeamInCompany(ctx, req.Subject.CompanyID, req.TeamID); err != nil {
+		return nil, err
+	}
 	return s.repo.PatchTeamRow(ctx, req.Subject.CompanyID, req.TeamID, req.Name, req.Status)
 }
 
@@ -965,6 +976,12 @@ func (s *adminService) DeleteTeam(ctx context.Context, req DeleteTeamRequest) er
 
 func (s *adminService) AddTeamMember(ctx context.Context, req AddTeamMemberRequest) error {
 	if err := s.requireRbacManage(ctx, req.Subject); err != nil {
+		return err
+	}
+	if err := s.requireTargetMembership(ctx, req.Subject, req.MembershipID); err != nil {
+		return err
+	}
+	if err := s.requireTeamInCompany(ctx, req.Subject.CompanyID, req.TeamID); err != nil {
 		return err
 	}
 	// Member must belong to the parent department
@@ -982,6 +999,12 @@ func (s *adminService) RemoveTeamMember(ctx context.Context, req RemoveTeamMembe
 	if err := s.requireRbacManage(ctx, req.Subject); err != nil {
 		return err
 	}
+	if err := s.requireTargetMembership(ctx, req.Subject, req.MembershipID); err != nil {
+		return err
+	}
+	if err := s.requireTeamInCompany(ctx, req.Subject.CompanyID, req.TeamID); err != nil {
+		return err
+	}
 	return s.repo.RemoveTeamMember(ctx, req.Subject.CompanyID, req.TeamID, req.MembershipID)
 }
 
@@ -989,12 +1012,8 @@ func (s *adminService) AssignCompanyAdmin(ctx context.Context, req AssignCompany
 	if err := s.authorize(ctx, req.Subject, "rbac.manage", ""); err != nil {
 		return err
 	}
-	ok, err := s.repo.MembershipBelongsToCompany(ctx, req.MembershipID, req.Subject.CompanyID)
-	if err != nil {
+	if err := s.requireTargetMembership(ctx, req.Subject, req.MembershipID); err != nil {
 		return err
-	}
-	if !ok {
-		return perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "membership not found in company", nil)
 	}
 	count, err := s.repo.CountAdminsInCompany(ctx, req.Subject.CompanyID)
 	if err != nil {
@@ -1012,6 +1031,9 @@ func (s *adminService) AssignCompanyAdmin(ctx context.Context, req AssignCompany
 
 func (s *adminService) RevokeCompanyAdmin(ctx context.Context, req RevokeCompanyAdminRequest) error {
 	if err := s.authorize(ctx, req.Subject, "rbac.manage", ""); err != nil {
+		return err
+	}
+	if err := s.requireTargetMembership(ctx, req.Subject, req.MembershipID); err != nil {
 		return err
 	}
 	m, err := s.repo.GetMembershipByID(ctx, req.MembershipID)
@@ -1039,12 +1061,8 @@ func (s *adminService) TransferOwnership(ctx context.Context, req TransferOwners
 	if !caller.IsPrimaryAdmin {
 		return perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "only the primary admin can transfer ownership", nil)
 	}
-	ok, err := s.repo.MembershipBelongsToCompany(ctx, req.TargetMembershipID, req.Subject.CompanyID)
-	if err != nil {
+	if err := s.requireTargetMembership(ctx, req.Subject, req.TargetMembershipID); err != nil {
 		return err
-	}
-	if !ok {
-		return perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "target membership not found in company", nil)
 	}
 	if err := s.repo.ClearMembershipPrimaryAdmin(ctx, req.Subject.MembershipID); err != nil {
 		return err
@@ -1119,6 +1137,9 @@ func (s *adminService) AssignRole(ctx context.Context, req AssignRoleRequest) er
 	if err := s.authorize(ctx, req.Subject, "admin.membership.role.assign", req.MembershipID); err != nil {
 		return err
 	}
+	if err := s.requireTargetMembership(ctx, req.Subject, req.MembershipID); err != nil {
+		return err
+	}
 	operator, err := s.isPlatformCompanyOperator(ctx, req.Subject)
 	if err != nil {
 		return err
@@ -1146,6 +1167,9 @@ func (s *adminService) AssignRole(ctx context.Context, req AssignRoleRequest) er
 }
 func (s *adminService) RemoveRole(ctx context.Context, req RemoveRoleRequest) error {
 	if err := s.authorize(ctx, req.Subject, "admin.membership.role.remove", req.MembershipID); err != nil {
+		return err
+	}
+	if err := s.requireTargetMembership(ctx, req.Subject, req.MembershipID); err != nil {
 		return err
 	}
 	return s.repo.RemoveRole(ctx, req.MembershipID, req.RoleID)
@@ -1178,10 +1202,16 @@ func (s *adminService) AssignTitle(ctx context.Context, req AssignTitleRequest) 
 	if err := s.authorize(ctx, req.Subject, "admin.membership.title.assign", req.MembershipID); err != nil {
 		return err
 	}
+	if err := s.requireTargetMembership(ctx, req.Subject, req.MembershipID); err != nil {
+		return err
+	}
 	return s.repo.AddTitle(ctx, req.MembershipID, req.TitleID)
 }
 func (s *adminService) RemoveTitle(ctx context.Context, req RemoveTitleRequest) error {
 	if err := s.authorize(ctx, req.Subject, "admin.membership.title.remove", req.MembershipID); err != nil {
+		return err
+	}
+	if err := s.requireTargetMembership(ctx, req.Subject, req.MembershipID); err != nil {
 		return err
 	}
 	return s.repo.RemoveTitle(ctx, req.MembershipID, req.TitleID)
@@ -1618,6 +1648,9 @@ func (s *adminService) AddDirectPermission(ctx context.Context, req AddDirectPer
 	} else if err := s.requireRbacManage(ctx, req.Subject); err != nil {
 		return err
 	}
+	if err := s.requireTargetMembership(ctx, req.Subject, req.MembershipID); err != nil {
+		return err
+	}
 	if !isGrantable(req.PermissionCode) {
 		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "permission_code is not grantable", nil)
 	}
@@ -1636,6 +1669,9 @@ func (s *adminService) RemoveDirectPermission(ctx context.Context, req RemoveDir
 	} else if err := s.requireRbacManage(ctx, req.Subject); err != nil {
 		return err
 	}
+	if err := s.requireTargetMembership(ctx, req.Subject, req.MembershipID); err != nil {
+		return err
+	}
 	if requiresApprovalForDirectRemove(req.PermissionCode) {
 		summary, qErr := s.submitRBACDirectPermRemoveApproval(ctx, req.Subject, req.MembershipID, req.PermissionCode, "")
 		if qErr != nil {
@@ -1652,6 +1688,9 @@ func (s *adminService) RemoveDirectPermission(ctx context.Context, req RemoveDir
 
 func (s *adminService) ListDirectPermissions(ctx context.Context, req ListDirectPermissionsRequest) ([]DirectPermissionView, error) {
 	if err := s.requireRbacManage(ctx, req.Subject); err != nil {
+		return nil, err
+	}
+	if err := s.requireTargetMembership(ctx, req.Subject, req.MembershipID); err != nil {
 		return nil, err
 	}
 	return s.repo.ListActiveDirectPermissions(ctx, req.MembershipID)

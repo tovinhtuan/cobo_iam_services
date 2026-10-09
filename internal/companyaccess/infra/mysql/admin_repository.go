@@ -120,26 +120,47 @@ func (r *AdminRepository) CreateMembership(ctx context.Context, m caapp.Membersh
 	return r.getMembershipView(ctx, m.MembershipID)
 }
 
-func (r *AdminRepository) UpdateMembershipStatus(ctx context.Context, membershipID, status string) (*caapp.MembershipView, error) {
+func (r *AdminRepository) UpdateMembershipStatus(ctx context.Context, companyID, membershipID, status string) (*caapp.MembershipView, error) {
 	res, err := r.db.ExecContext(ctx, `
-		UPDATE memberships SET membership_status = ? WHERE membership_id = ?
-	`, status, membershipID)
+		UPDATE memberships SET membership_status = ? WHERE membership_id = ? AND company_id = ?
+	`, status, membershipID, companyID)
 	if err != nil {
 		return nil, fmt.Errorf("update membership: %w", err)
 	}
 	n, _ := res.RowsAffected()
 	if n == 0 {
-		return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeMembershipNotFound, "membership not found", nil)
+		// MySQL reports 0 affected rows when the status is unchanged: only a membership that does
+		// not exist in the company is "not found".
+		var found int
+		if err := r.db.QueryRowContext(ctx,
+			`SELECT 1 FROM memberships WHERE membership_id = ? AND company_id = ? LIMIT 1`,
+			membershipID, companyID).Scan(&found); err != nil {
+			if err == sql.ErrNoRows {
+				return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeMembershipNotFound, "membership not found", nil)
+			}
+			return nil, err
+		}
 	}
 	return r.getMembershipView(ctx, membershipID)
 }
 
-func (r *AdminRepository) DeleteMembership(ctx context.Context, membershipID string) error {
+func (r *AdminRepository) DeleteMembership(ctx context.Context, companyID, membershipID string) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
+	// The membership must belong to the company before any dependent row is deleted.
+	var found int
+	err = tx.QueryRowContext(ctx,
+		`SELECT 1 FROM memberships WHERE membership_id = ? AND company_id = ? FOR UPDATE`,
+		membershipID, companyID).Scan(&found)
+	if err == sql.ErrNoRows {
+		return perr.NewHTTPError(http.StatusNotFound, perr.CodeMembershipNotFound, "membership not found", nil)
+	}
+	if err != nil {
+		return err
+	}
 	for _, q := range []string{
 		`DELETE FROM membership_roles WHERE membership_id = ?`,
 		`DELETE FROM department_memberships WHERE membership_id = ?`,
@@ -149,7 +170,7 @@ func (r *AdminRepository) DeleteMembership(ctx context.Context, membershipID str
 			return err
 		}
 	}
-	res, err := tx.ExecContext(ctx, `DELETE FROM memberships WHERE membership_id = ?`, membershipID)
+	res, err := tx.ExecContext(ctx, `DELETE FROM memberships WHERE membership_id = ? AND company_id = ?`, membershipID, companyID)
 	if err != nil {
 		return err
 	}
@@ -899,7 +920,7 @@ func (r *AdminRepository) ensureRoleForMembership(ctx context.Context, membershi
 		return err
 	}
 	if rCompany.Valid && rCompany.String != "" && rCompany.String != companyID {
-		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "role does not belong to membership company", nil)
+		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "role not found", nil)
 	}
 	return nil
 }
@@ -916,7 +937,7 @@ func (r *AdminRepository) ensureDepartmentForMembership(ctx context.Context, mem
 		return err
 	}
 	if mCompany != dCompany {
-		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "department company mismatch", nil)
+		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "department not found", nil)
 	}
 	return nil
 }
@@ -933,7 +954,7 @@ func (r *AdminRepository) ensureTitleForMembership(ctx context.Context, membersh
 		return err
 	}
 	if mCompany != tCompany {
-		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "title company mismatch", nil)
+		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "title not found", nil)
 	}
 	return nil
 }

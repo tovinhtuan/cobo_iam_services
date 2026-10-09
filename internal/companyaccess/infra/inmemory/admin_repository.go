@@ -44,6 +44,11 @@ type AdminRepository struct {
 	titles       map[string]caapp.TitleView      // title_id -> view
 	titleCompany map[string]string
 
+	// Teams (org units of type "team"). Modelled after the MySQL semantics so tests can observe
+	// team membership changes.
+	teams       map[string]teamRow
+	teamMembers map[string]map[string]string // team_id -> membership_id -> company_id of the row
+
 	companies map[string]*caapp.PlatformCompanyDetail
 
 	companyFounder    map[string]string
@@ -81,6 +86,8 @@ func NewAdminRepository() *AdminRepository {
 		departments:                  map[string]caapp.DepartmentView{},
 		titles:                       map[string]caapp.TitleView{},
 		titleCompany:                 map[string]string{},
+		teams:                        map[string]teamRow{},
+		teamMembers:                  map[string]map[string]string{},
 		companies:                    map[string]*caapp.PlatformCompanyDetail{},
 		companyFounder:               map[string]string{},
 		companyProvSource:            map[string]string{},
@@ -88,6 +95,40 @@ func NewAdminRepository() *AdminRepository {
 		delegatedGrants:              map[string]*delegationGrantRow{},
 		emergencyGrants:              map[string]*emergencyGrantRow{},
 	}
+}
+
+type teamRow struct {
+	CompanyID    string
+	DepartmentID string
+	Name         string
+	Status       string
+}
+
+// SeedTeam registers a team for tests.
+func (r *AdminRepository) SeedTeam(companyID, departmentID, teamID, name string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.teams[teamID] = teamRow{CompanyID: companyID, DepartmentID: departmentID, Name: name, Status: "active"}
+}
+
+// TeamMemberIDs returns the membership ids currently in a team (sorted), for test assertions.
+func (r *AdminRepository) TeamMemberIDs(teamID string) []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]string, 0, len(r.teamMembers[teamID]))
+	for id := range r.teamMembers[teamID] {
+		out = append(out, id)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// TeamExists reports whether a team row exists, for test assertions.
+func (r *AdminRepository) TeamExists(teamID string) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	_, ok := r.teams[teamID]
+	return ok
 }
 
 // SeedDepartment registers a department for invite-scope tests.
@@ -343,18 +384,25 @@ func (r *AdminRepository) CreateMembership(_ context.Context, m caapp.Membership
 	cp := m
 	return &cp, nil
 }
-func (r *AdminRepository) UpdateMembershipStatus(_ context.Context, membershipID, status string) (*caapp.MembershipView, error) {
+func (r *AdminRepository) UpdateMembershipStatus(_ context.Context, companyID, membershipID, status string) (*caapp.MembershipView, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	m := r.memberships[membershipID]
+	m, ok := r.memberships[membershipID]
+	if !ok || m.CompanyID != companyID {
+		return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeMembershipNotFound, "membership not found", nil)
+	}
 	m.Status = status
 	r.memberships[membershipID] = m
 	cp := m
 	return &cp, nil
 }
-func (r *AdminRepository) DeleteMembership(_ context.Context, membershipID string) error {
+func (r *AdminRepository) DeleteMembership(_ context.Context, companyID, membershipID string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	m, ok := r.memberships[membershipID]
+	if !ok || m.CompanyID != companyID {
+		return perr.NewHTTPError(http.StatusNotFound, perr.CodeMembershipNotFound, "membership not found", nil)
+	}
 	delete(r.memberships, membershipID)
 	return nil
 }
@@ -1496,22 +1544,62 @@ func (r *AdminRepository) MembershipBelongsToCompany(_ context.Context, membersh
 	return m.CompanyID == companyID, nil
 }
 
-func (r *AdminRepository) ListCompanyDepartments(_ context.Context, _ string) ([]caapp.DepartmentView, error) {
+// TitleBelongsToCompany reports whether the title exists in the company. A title seeded without an
+// owning company stays visible to every company (legacy tests).
+func (r *AdminRepository) TitleBelongsToCompany(_ context.Context, companyID, titleID string) (bool, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if _, ok := r.titles[titleID]; !ok {
+		return false, nil
+	}
+	owner := r.titleCompany[titleID]
+	return owner == "" || owner == companyID, nil
+}
+
+// DepartmentBelongsToCompany reports whether the department exists in the company. A department
+// seeded without an owning company stays visible to every company (legacy tests).
+func (r *AdminRepository) DepartmentBelongsToCompany(_ context.Context, companyID, departmentID string) (bool, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if _, ok := r.departments[departmentID]; !ok {
+		return false, nil
+	}
+	owner := r.departmentCompany[departmentID]
+	return owner == "" || owner == companyID, nil
+}
+
+func (r *AdminRepository) ListCompanyDepartments(_ context.Context, companyID string) ([]caapp.DepartmentView, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	out := make([]caapp.DepartmentView, 0, len(r.departments))
-	for _, d := range r.departments {
+	for id, d := range r.departments {
+		// Departments seeded without an owning company stay visible to every company (legacy tests).
+		if owner := r.departmentCompany[id]; owner != "" && owner != companyID {
+			continue
+		}
 		out = append(out, d)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].DepartmentID < out[j].DepartmentID })
 	return out, nil
 }
 
-func (r *AdminRepository) ListDepartmentTeams(_ context.Context, _, _ string) ([]caapp.TeamView, error) {
-	return []caapp.TeamView{}, nil
+func (r *AdminRepository) ListDepartmentTeams(_ context.Context, companyID, departmentID string) ([]caapp.TeamView, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := []caapp.TeamView{}
+	for id, t := range r.teams {
+		if t.CompanyID == companyID && t.DepartmentID == departmentID && t.Status == "active" {
+			out = append(out, caapp.TeamView{TeamID: id, DepartmentID: t.DepartmentID, Name: t.Name, Status: t.Status})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].TeamID < out[j].TeamID })
+	return out, nil
 }
 
 func (r *AdminRepository) CreateTeamRow(_ context.Context, companyID, departmentID, teamID, name string) (*caapp.TeamView, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.teams[teamID] = teamRow{CompanyID: companyID, DepartmentID: departmentID, Name: name, Status: "active"}
 	return &caapp.TeamView{TeamID: teamID, DepartmentID: departmentID, Name: name, Status: "active"}, nil
 }
 
@@ -1526,18 +1614,63 @@ func (r *AdminRepository) PatchTeamRow(_ context.Context, _, teamID string, name
 	return v, nil
 }
 
-func (r *AdminRepository) DeleteTeamRow(_ context.Context, _, _ string) error { return nil }
-
-func (r *AdminRepository) CountTeamsInDepartment(_ context.Context, _ string) (int, error) {
-	return 0, nil
+func (r *AdminRepository) DeleteTeamRow(_ context.Context, companyID, teamID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	// The team must belong to the company before anything is deleted.
+	t, ok := r.teams[teamID]
+	if !ok || t.CompanyID != companyID {
+		return perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "team not found", nil)
+	}
+	delete(r.teamMembers, teamID)
+	delete(r.teams, teamID)
+	return nil
 }
 
-func (r *AdminRepository) AddTeamMember(_ context.Context, _, _, _ string) error { return nil }
+func (r *AdminRepository) CountTeamsInDepartment(_ context.Context, companyID, departmentID string) (int, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	n := 0
+	for _, t := range r.teams {
+		if t.CompanyID == companyID && t.DepartmentID == departmentID && t.Status == "active" {
+			n++
+		}
+	}
+	return n, nil
+}
 
-func (r *AdminRepository) RemoveTeamMember(_ context.Context, _, _, _ string) error { return nil }
+func (r *AdminRepository) TeamBelongsToCompany(_ context.Context, companyID, teamID string) (bool, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	t, ok := r.teams[teamID]
+	return ok && t.CompanyID == companyID, nil
+}
 
-func (r *AdminRepository) MemberBelongsToDepartment(_ context.Context, _, _ string) (bool, error) {
-	return true, nil
+func (r *AdminRepository) AddTeamMember(_ context.Context, companyID, teamID, membershipID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.teamMembers[teamID] == nil {
+		r.teamMembers[teamID] = map[string]string{}
+	}
+	r.teamMembers[teamID][membershipID] = companyID
+	return nil
+}
+
+func (r *AdminRepository) RemoveTeamMember(_ context.Context, companyID, teamID, membershipID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if t, ok := r.teams[teamID]; !ok || t.CompanyID != companyID {
+		return perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "team member not found", nil)
+	}
+	delete(r.teamMembers[teamID], membershipID)
+	return nil
+}
+
+func (r *AdminRepository) MemberBelongsToDepartment(_ context.Context, membershipID, departmentID string) (bool, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	_, ok := r.departmentsByMembership[membershipID][departmentID]
+	return ok, nil
 }
 
 func (r *AdminRepository) CreateDepartmentRow(_ context.Context, companyID, deptID, _, name string, headMembershipID *string, sortOrder int) (*caapp.DepartmentView, error) {
@@ -1570,12 +1703,33 @@ func (r *AdminRepository) PatchDepartmentRow(_ context.Context, _, deptID string
 	return v, nil
 }
 
-func (r *AdminRepository) SoftDeleteDepartment(_ context.Context, _, _ string) error {
+func (r *AdminRepository) SoftDeleteDepartment(_ context.Context, deptID, companyID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	d, ok := r.departments[deptID]
+	if !ok || (r.departmentCompany[deptID] != "" && r.departmentCompany[deptID] != companyID) {
+		return perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "department not found", nil)
+	}
+	d.Status = "inactive"
+	r.departments[deptID] = d
 	return nil
 }
 
-func (r *AdminRepository) CountDepartmentMembers(_ context.Context, _ string) (int, error) {
-	return 0, nil
+// CountDepartmentMembers counts members of a department of the given company; a department of
+// another company counts 0 so its existence is not revealed.
+func (r *AdminRepository) CountDepartmentMembers(_ context.Context, companyID, deptID string) (int, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if owner := r.departmentCompany[deptID]; owner != "" && owner != companyID {
+		return 0, nil
+	}
+	n := 0
+	for _, depts := range r.departmentsByMembership {
+		if _, ok := depts[deptID]; ok {
+			n++
+		}
+	}
+	return n, nil
 }
 
 // Title CRUD — in-memory stubs (used by unit tests; MySQL impl is the production path).
@@ -1625,12 +1779,32 @@ func (r *AdminRepository) PatchTitleRow(_ context.Context, _, titleID string, na
 	return v, nil
 }
 
-func (r *AdminRepository) SoftDeleteTitle(_ context.Context, _, _ string) error {
+func (r *AdminRepository) SoftDeleteTitle(_ context.Context, titleID, companyID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	t, ok := r.titles[titleID]
+	if !ok || (r.titleCompany[titleID] != "" && r.titleCompany[titleID] != companyID) {
+		return perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "title not found", nil)
+	}
+	t.Status = "inactive"
+	r.titles[titleID] = t
 	return nil
 }
 
-func (r *AdminRepository) CountTitleMembers(_ context.Context, _ string) (int, error) {
-	return 0, nil
+// CountTitleMembers counts members of a title of the given company (0 for another company).
+func (r *AdminRepository) CountTitleMembers(_ context.Context, companyID, titleID string) (int, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if owner := r.titleCompany[titleID]; owner != "" && owner != companyID {
+		return 0, nil
+	}
+	n := 0
+	for _, titles := range r.titlesByMembership {
+		if _, ok := titles[titleID]; ok {
+			n++
+		}
+	}
+	return n, nil
 }
 
 func (r *AdminRepository) SetMembershipPrimaryAdmin(_ context.Context, membershipID string) error {

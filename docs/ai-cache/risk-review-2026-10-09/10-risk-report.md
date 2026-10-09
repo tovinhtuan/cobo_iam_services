@@ -66,6 +66,7 @@ Không có secret value nào trong file này.
   - Thay tín hiệu "web admin" bằng `platform.cms.view`.
 
 **C5 ✔ Sửa/xoá cấu trúc tổ chức của tenant khác theo ID** — Security Backend (gộp các finding cũ + BES-03, ROLE-04, ROLE-05)
+- **Trạng thái (2026-10-09): FIXED IN BRANCH (chưa commit, chưa deploy).** Xem `../bug-membership-id-company-scope-2026-10-09/`.
 - `admin_delegation_scope.go:125-136` trả nil cho company scope. Các SQL sau chỉ có `WHERE membership_id=?`:
   - `UpdateMembershipStatus` / `DeleteMembership` / `RemoveRole` / `AddTitle` / `RemoveTitle` (`admin_repository.go:125,137,375,527,536`).
   - `RevokeDirectPermission` / `ListActiveDirectPermissions` (`:839,851`).

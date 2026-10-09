@@ -159,11 +159,8 @@ func (s *adminService) UpdateMembershipOrgAssignments(ctx context.Context, req U
 		return err
 	}
 
-	member, err := s.repo.GetMembershipByID(ctx, req.MembershipID)
-	if err != nil {
-		return err
-	}
-
+	// The membership belongs to the caller's company (checked above); departments and titles are
+	// validated against that same company.
 	departmentIDs := normalizeOrgIDList("", req.DepartmentIDs)
 	titleIDs := normalizeOrgIDList("", req.TitleIDs)
 	focalDepartmentIDs := normalizeFocalDepartmentIDs(req.FocalDepartmentIDs)
@@ -172,7 +169,7 @@ func (s *adminService) UpdateMembershipOrgAssignments(ctx context.Context, req U
 		departmentIDs = mergeDepartmentIDsWithFocal(departmentIDs, focalDepartmentIDs)
 	}
 
-	if err := s.validateOrgAssignmentsForCompany(ctx, member.CompanyID, departmentIDs, titleIDs, focalDepartmentIDs); err != nil {
+	if err := s.validateOrgAssignmentsForCompany(ctx, req.Subject.CompanyID, departmentIDs, titleIDs, focalDepartmentIDs); err != nil {
 		return err
 	}
 

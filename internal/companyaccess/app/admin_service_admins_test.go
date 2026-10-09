@@ -20,7 +20,7 @@ type d1Repo struct {
 	memberInDept bool
 }
 
-func (r *d1Repo) CountTeamsInDepartment(_ context.Context, _ string) (int, error) {
+func (r *d1Repo) CountTeamsInDepartment(_ context.Context, _, _ string) (int, error) {
 	return r.teamCount, nil
 }
 
@@ -258,6 +258,7 @@ func TestUpdateMembership_CannotDeactivatePrimaryAdmin(t *testing.T) {
 
 func TestCreateTeam_OK(t *testing.T) {
 	repo := &d1Repo{AdminRepository: cainmem.NewAdminRepository(), teamCount: 0, memberInDept: true}
+	repo.SeedDepartmentForCompany("c-1", caapp.DepartmentView{DepartmentID: "dept-1", DepartmentName: "Dept 1", Status: "active"})
 	svc := allowedSvc(repo)
 
 	out, err := svc.CreateTeam(context.Background(), caapp.CreateTeamRequest{
@@ -275,6 +276,7 @@ func TestCreateTeam_OK(t *testing.T) {
 
 func TestCreateTeam_LimitReached(t *testing.T) {
 	repo := &d1Repo{AdminRepository: cainmem.NewAdminRepository(), teamCount: 5, memberInDept: true}
+	repo.SeedDepartmentForCompany("c-1", caapp.DepartmentView{DepartmentID: "dept-1", DepartmentName: "Dept 1", Status: "active"})
 	svc := allowedSvc(repo)
 
 	_, err := svc.CreateTeam(context.Background(), caapp.CreateTeamRequest{
@@ -293,6 +295,14 @@ func TestCreateTeam_LimitReached(t *testing.T) {
 
 func TestAddTeamMember_NotInDepartment(t *testing.T) {
 	repo := &d1Repo{AdminRepository: cainmem.NewAdminRepository(), teamCount: 0, memberInDept: false}
+	// The member must exist in the caller's company: an unknown membership is a 404 before the
+	// department rule is evaluated.
+	if _, err := repo.CreateUser(context.Background(), caapp.UserView{
+		UserID: "u-other", LoginID: "other@example.com", FullName: "Other", AccountStatus: "active",
+	}, "hash", caapp.CreateUserOptions{MembershipID: "m-other", CompanyID: "c-1", MembershipStatus: "active"}); err != nil {
+		t.Fatalf("seed member: %v", err)
+	}
+	repo.SeedTeam("c-1", "dept-1", "team-1", "Team 1")
 	svc := allowedSvc(repo)
 
 	err := svc.AddTeamMember(context.Background(), caapp.AddTeamMemberRequest{
@@ -312,6 +322,7 @@ func TestAddTeamMember_NotInDepartment(t *testing.T) {
 
 func TestDeleteTeam_OK(t *testing.T) {
 	repo := &d1Repo{AdminRepository: cainmem.NewAdminRepository(), teamCount: 0, memberInDept: true}
+	repo.SeedTeam("c-1", "dept-1", "team-1", "Team 1") // the in-memory repo now models team rows
 	svc := allowedSvc(repo)
 
 	err := svc.DeleteTeam(context.Background(), caapp.DeleteTeamRequest{

@@ -61,3 +61,15 @@ DELETE /api/v1/admin/roles/{role_id}/permissions/{permission_id},Remove role per
 POST /api/v1/admin/resource-scope-rules,Create resource scope rule success,"Authorization: Bearer <admin_access_token>, payload includes company_id/rule_code/resource_type/scope_type/subject_type/subject_ref_id",201,
 POST /api/v1/admin/workflow-assignee-rules,Create workflow assignee rule success,"Authorization: Bearer <admin_access_token>, payload includes company_id",201,
 POST /api/v1/admin/notification-rules,Create notification rule success,"Authorization: Bearer <admin_access_token>, payload includes company_id",201,
+POST /api/v1/admin/users,Create user in a company other than the token company,"Authorization: Bearer <tenant_admin_access_token>, {""company_id"":""<other_company_id>"",""login_id"":""x@example.com"",""password"":""..."",""full_name"":""X""}",403,COMPANY_SCOPE_MISMATCH
+POST /api/v1/admin/memberships,Create membership in a company other than the token company,"Authorization: Bearer <tenant_admin_access_token>, {""user_id"":""u_123"",""company_id"":""<other_company_id>""}",403,COMPANY_SCOPE_MISMATCH
+GET /api/v1/admin/companies/{company_id}/memberships,List memberships of a company other than the token company,"Authorization: Bearer <tenant_admin_access_token>",403,COMPANY_SCOPE_MISMATCH
+PATCH /api/v1/admin/memberships/{membership_id},Membership belongs to another company (no data change),"Authorization: Bearer <tenant_admin_access_token>, {""status"":""inactive""}",404,MEMBERSHIP_NOT_FOUND
+DELETE /api/v1/admin/memberships/{membership_id},Membership belongs to another company (no data change),"Authorization: Bearer <tenant_admin_access_token>",404,MEMBERSHIP_NOT_FOUND
+POST /api/v1/admin/memberships/{membership_id}/roles,Membership belongs to another company; or role carries platform permissions,"Authorization: Bearer <tenant_admin_access_token>, {""role_id"":""<role_uuid>""}",404 / 403,MEMBERSHIP_NOT_FOUND / PERMISSION_DENIED
+DELETE /api/v1/admin/memberships/{membership_id}/roles/{role_id},Membership belongs to another company (no data change),"Authorization: Bearer <tenant_admin_access_token>",404,MEMBERSHIP_NOT_FOUND
+GET /api/v1/admin/memberships/{membership_id}/permissions,Membership belongs to another company,"Authorization: Bearer <tenant_admin_access_token>",404,MEMBERSHIP_NOT_FOUND
+POST /api/v1/admin/company/admins,Membership belongs to another company,"Authorization: Bearer <tenant_admin_access_token>, {""membership_id"":""<other_company_membership>""}",404,MEMBERSHIP_NOT_FOUND
+POST /api/v1/admin/company/transfer-ownership,Target membership belongs to another company,"Authorization: Bearer <primary_admin_access_token>, {""target_membership_id"":""<other_company_membership>""}",404,MEMBERSHIP_NOT_FOUND
+DELETE /api/v1/admin/teams/{team_id},Team belongs to another company (team members unchanged),"Authorization: Bearer <tenant_admin_access_token>",404,INVALID_REQUEST
+DELETE /api/v1/admin/departments/{department_id},Department belongs to another company (no 409 DEPARTMENT_HAS_MEMBERS),"Authorization: Bearer <tenant_admin_access_token>",404,INVALID_REQUEST

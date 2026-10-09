@@ -88,31 +88,60 @@ func (r *AdminRepository) PatchTeamRow(ctx context.Context, companyID, teamID st
 }
 
 func (r *AdminRepository) DeleteTeamRow(ctx context.Context, companyID, teamID string) error {
-	// Cascade: delete all org_unit_memberships first
-	if _, err := r.db.ExecContext(ctx,
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	// The team must belong to the company before anything is deleted. The row is locked so the
+	// member cascade and the team delete act on the same team.
+	var found int
+	err = tx.QueryRowContext(ctx,
+		`SELECT 1 FROM org_units WHERE org_unit_id = ? AND company_id = ? AND unit_type = 'team' FOR UPDATE`,
+		teamID, companyID).Scan(&found)
+	if err == sql.ErrNoRows {
+		return perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "team not found", nil)
+	}
+	if err != nil {
+		return fmt.Errorf("lock team: %w", err)
+	}
+	// Cascade: delete the members of this team, then the team itself.
+	if _, err := tx.ExecContext(ctx,
 		`DELETE FROM org_unit_memberships WHERE org_unit_id = ?`, teamID); err != nil {
 		return fmt.Errorf("cascade delete team members: %w", err)
 	}
-	res, err := r.db.ExecContext(ctx,
+	if _, err := tx.ExecContext(ctx,
 		`DELETE FROM org_units WHERE org_unit_id = ? AND company_id = ? AND unit_type = 'team'`,
-		teamID, companyID)
-	if err != nil {
+		teamID, companyID); err != nil {
 		return fmt.Errorf("delete team: %w", err)
 	}
-	n, _ := res.RowsAffected()
-	if n == 0 {
-		return perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "team not found", nil)
+	if err := tx.Commit(); err != nil {
+		return err
 	}
 	return nil
 }
 
-func (r *AdminRepository) CountTeamsInDepartment(ctx context.Context, departmentID string) (int, error) {
+func (r *AdminRepository) CountTeamsInDepartment(ctx context.Context, companyID, departmentID string) (int, error) {
 	var n int
 	err := r.db.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM org_units WHERE department_id = ? AND unit_type = 'team' AND status = 'active'`,
-		departmentID,
+		`SELECT COUNT(*) FROM org_units WHERE department_id = ? AND company_id = ? AND unit_type = 'team' AND status = 'active'`,
+		departmentID, companyID,
 	).Scan(&n)
 	return n, err
+}
+
+func (r *AdminRepository) TeamBelongsToCompany(ctx context.Context, companyID, teamID string) (bool, error) {
+	var found int
+	err := r.db.QueryRowContext(ctx,
+		`SELECT 1 FROM org_units WHERE org_unit_id = ? AND company_id = ? AND unit_type = 'team' LIMIT 1`,
+		teamID, companyID).Scan(&found)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (r *AdminRepository) AddTeamMember(ctx context.Context, companyID, teamID, membershipID string) error {
@@ -127,10 +156,12 @@ func (r *AdminRepository) AddTeamMember(ctx context.Context, companyID, teamID, 
 	return nil
 }
 
-func (r *AdminRepository) RemoveTeamMember(ctx context.Context, _, teamID, membershipID string) error {
-	res, err := r.db.ExecContext(ctx,
-		`DELETE FROM org_unit_memberships WHERE org_unit_id = ? AND membership_id = ?`,
-		teamID, membershipID)
+func (r *AdminRepository) RemoveTeamMember(ctx context.Context, companyID, teamID, membershipID string) error {
+	res, err := r.db.ExecContext(ctx, `
+		DELETE oum FROM org_unit_memberships oum
+		INNER JOIN org_units ou ON ou.org_unit_id = oum.org_unit_id
+		WHERE oum.org_unit_id = ? AND oum.membership_id = ? AND ou.company_id = ?`,
+		teamID, membershipID, companyID)
 	if err != nil {
 		return fmt.Errorf("remove team member: %w", err)
 	}

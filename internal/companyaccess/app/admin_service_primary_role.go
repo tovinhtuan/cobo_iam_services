@@ -51,29 +51,26 @@ func (s *adminService) ReplaceMembershipPrimaryRole(ctx context.Context, req Rep
 		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "role_id is required", nil)
 	}
 
-	member, err := s.repo.GetMembershipByID(ctx, req.MembershipID)
-	if err != nil {
-		return err
-	}
-
+	// The membership belongs to the caller's company (checked above); roles are validated against
+	// that same company.
 	isPlatformCMS, err := s.isPlatformCMSOperator(ctx, req.Subject)
 	if err != nil {
 		return err
 	}
 	if !isPlatformCMS {
-		if _, err := s.validateEnterpriseInviteRole(ctx, member.CompanyID, roleID, "", "user_thuong", false); err != nil {
+		if _, err := s.validateEnterpriseInviteRole(ctx, req.Subject.CompanyID, roleID, "", "user_thuong", false); err != nil {
 			return err
 		}
 	} else {
 		// Platform CMS still must not assign inactive / cross-tenant roles.
-		if _, err := s.assertRoleAssignableForMembership(ctx, member.CompanyID, roleID); err != nil {
+		if _, err := s.assertRoleAssignableForMembership(ctx, req.Subject.CompanyID, roleID); err != nil {
 			return err
 		}
 	}
 
 	if err := s.assertPrimaryRoleChangeLockout(ctx, MembershipActor{
 		MembershipID: req.Subject.MembershipID,
-	}, req.MembershipID, member.CompanyID, roleID); err != nil {
+	}, req.MembershipID, req.Subject.CompanyID, roleID); err != nil {
 		return err
 	}
 

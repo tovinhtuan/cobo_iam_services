@@ -68,6 +68,10 @@ func (s *adminService) validateEnterpriseInviteRole(ctx context.Context, company
 	if _, err := s.assertRoleAssignableForMembership(ctx, companyID, roleIDResolved); err != nil {
 		return "", err
 	}
+	// A role carrying platform-tier permissions can only be handed out by a platform operator.
+	if err := s.assertRoleHasNoPlatformPermissions(ctx, companyID, roleIDResolved); err != nil {
+		return "", err
+	}
 	return roleIDResolved, nil
 }
 

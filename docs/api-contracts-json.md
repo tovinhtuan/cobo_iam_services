@@ -740,6 +740,8 @@ Tao tai khoan user truc tiep (admin flow). Endpoint nay tao ban ghi `users` + `c
 
 ---
 
+> **Phạm vi company (cập nhật 2026-10-09, risk review C5):** mọi route tenant `/api/v1/admin/**` nhận `membership_id` (path hoặc body) chỉ thao tác trên membership thuộc company của access token. Membership của company khác trả **404 `MEMBERSHIP_NOT_FOUND`** (giống membership không tồn tại, không lộ id có tồn tại hay không) và dữ liệu không bị thay đổi. Áp dụng cho cập nhật/xoá membership, gán/gỡ role, role chính, phòng ban, chức danh, org-assignments, quyền trực tiếp, thành viên team/title/department, company admin, transfer-ownership và config approval `rbac.direct_permission.remove`. Team, department, title của company khác trả **404** với `error.code` `INVALID_REQUEST` và message `team not found` / `department not found` / `title not found` (không còn 409 "có thành viên"). `POST /admin/company/admins` và `POST /admin/company/transfer-ownership` trả 404 `MEMBERSHIP_NOT_FOUND` (trước đây `INVALID_REQUEST`, status không đổi). `membership_id` rỗng vẫn là 400 `INVALID_REQUEST`. Token không có `company_id` trên các route này trả 422 `COMPANY_CONTEXT_REQUIRED`.
+
 ### PATCH /api/v1/admin/memberships/{membership_id}
 
 **Request**

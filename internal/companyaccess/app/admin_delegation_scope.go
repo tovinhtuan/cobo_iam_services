@@ -123,6 +123,10 @@ func (s *adminService) assertDepartmentInAdminScope(scope membershipAdminScope, 
 }
 
 func (s *adminService) authorizeScopedMembershipMutation(ctx context.Context, sub AdminSubject, permission, membershipID string) error {
+	// The target must belong to the caller's company whatever the delegation scope is.
+	if err := s.requireTargetMembership(ctx, sub, membershipID); err != nil {
+		return err
+	}
 	scope, err := s.resolveMembershipAdminScope(ctx, sub)
 	if err != nil {
 		return err

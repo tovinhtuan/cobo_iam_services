@@ -26,6 +26,20 @@ func (r *AdminRepository) MembershipBelongsToCompany(ctx context.Context, member
 	return cid == companyID, nil
 }
 
+func (r *AdminRepository) DepartmentBelongsToCompany(ctx context.Context, companyID, departmentID string) (bool, error) {
+	var found int
+	err := r.db.QueryRowContext(ctx,
+		`SELECT 1 FROM departments WHERE department_id = ? AND company_id = ? LIMIT 1`,
+		departmentID, companyID).Scan(&found)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 func (r *AdminRepository) ListCompanyDepartments(ctx context.Context, companyID string) ([]caapp.DepartmentView, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT d.department_id,
@@ -146,11 +160,14 @@ func (r *AdminRepository) SoftDeleteDepartment(ctx context.Context, deptID, comp
 	return nil
 }
 
-func (r *AdminRepository) CountDepartmentMembers(ctx context.Context, deptID string) (int, error) {
+func (r *AdminRepository) CountDepartmentMembers(ctx context.Context, companyID, deptID string) (int, error) {
 	var n int
-	err := r.db.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM department_memberships WHERE department_id = ? AND status = 'active'`,
-		deptID,
+	err := r.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM department_memberships dm
+		INNER JOIN departments d ON d.department_id = dm.department_id
+		WHERE dm.department_id = ? AND d.company_id = ? AND dm.status = 'active'`,
+		deptID, companyID,
 	).Scan(&n)
 	return n, err
 }

@@ -96,3 +96,54 @@ func (s *adminService) assertRoleHasNoPlatformPermissions(ctx context.Context, c
 	}
 	return nil
 }
+
+// requireTargetMembership makes sure the membership a tenant route acts on belongs to the
+// company of the access token. A membership of another company answers exactly like a missing
+// one (404 MEMBERSHIP_NOT_FOUND) so ids of other companies cannot be probed. Tenant routes never
+// act across companies, platform operators included; cross-company work goes through
+// /api/v1/platform/cms/*.
+func (s *adminService) requireTargetMembership(ctx context.Context, sub AdminSubject, membershipID string) error {
+	if strings.TrimSpace(sub.CompanyID) == "" {
+		return perr.NewHTTPError(http.StatusUnprocessableEntity, perr.CodeCompanyContextRequired,
+			"company context is required", nil)
+	}
+	return s.requireMembershipInCompany(ctx, membershipID, sub.CompanyID)
+}
+
+// requireDepartmentInCompany makes sure a department belongs to the caller's company (404
+// otherwise, the same answer as for a missing department). Storage errors are propagated.
+func (s *adminService) requireDepartmentInCompany(ctx context.Context, companyID, departmentID string) error {
+	ok, err := s.repo.DepartmentBelongsToCompany(ctx, companyID, strings.TrimSpace(departmentID))
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "department not found", nil)
+	}
+	return nil
+}
+
+// requireTitleInCompany makes sure a title belongs to the caller's company (404 otherwise).
+func (s *adminService) requireTitleInCompany(ctx context.Context, companyID, titleID string) error {
+	ok, err := s.repo.TitleBelongsToCompany(ctx, companyID, strings.TrimSpace(titleID))
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "title not found", nil)
+	}
+	return nil
+}
+
+// requireTeamInCompany makes sure a team belongs to the caller's company (404 otherwise, the same
+// answer as for a missing team).
+func (s *adminService) requireTeamInCompany(ctx context.Context, companyID, teamID string) error {
+	ok, err := s.repo.TeamBelongsToCompany(ctx, companyID, strings.TrimSpace(teamID))
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "team not found", nil)
+	}
+	return nil
+}

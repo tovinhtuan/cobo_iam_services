@@ -41,6 +41,10 @@ func (s *adminService) UpdateDepartment(ctx context.Context, req UpdateDepartmen
 	if req.DepartmentID == "" {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "department_id is required", nil)
 	}
+	// An empty patch only reads the department back, so ownership is checked up front.
+	if err := s.requireDepartmentInCompany(ctx, req.Subject.CompanyID, req.DepartmentID); err != nil {
+		return nil, err
+	}
 	if req.Name != nil {
 		trimmed, err := validateDepartmentName(*req.Name)
 		if err != nil {
@@ -69,7 +73,7 @@ func (s *adminService) DeleteDepartment(ctx context.Context, req DeleteDepartmen
 	if req.DepartmentID == "" {
 		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "department_id is required", nil)
 	}
-	n, err := s.repo.CountDepartmentMembers(ctx, req.DepartmentID)
+	n, err := s.repo.CountDepartmentMembers(ctx, req.Subject.CompanyID, req.DepartmentID)
 	if err != nil {
 		return err
 	}

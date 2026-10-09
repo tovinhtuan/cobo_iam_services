@@ -109,11 +109,28 @@ func (r *AdminRepository) SoftDeleteTitle(ctx context.Context, titleID, companyI
 	return nil
 }
 
-func (r *AdminRepository) CountTitleMembers(ctx context.Context, titleID string) (int, error) {
-	var n int
+func (r *AdminRepository) TitleBelongsToCompany(ctx context.Context, companyID, titleID string) (bool, error) {
+	var found int
 	err := r.db.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM membership_titles WHERE title_id = ? AND status = 'active'`,
-		titleID,
+		`SELECT 1 FROM titles WHERE title_id = ? AND company_id = ? LIMIT 1`,
+		titleID, companyID).Scan(&found)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (r *AdminRepository) CountTitleMembers(ctx context.Context, companyID, titleID string) (int, error) {
+	var n int
+	err := r.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM membership_titles mt
+		INNER JOIN titles t ON t.title_id = mt.title_id
+		WHERE mt.title_id = ? AND t.company_id = ? AND mt.status = 'active'`,
+		titleID, companyID,
 	).Scan(&n)
 	return n, err
 }

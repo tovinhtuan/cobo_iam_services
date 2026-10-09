@@ -36,6 +36,10 @@ func (s *adminService) UpdateTitle(ctx context.Context, req UpdateTitleRequest) 
 	if req.TitleID == "" {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "title_id is required", nil)
 	}
+	// An empty patch only reads the title back, so ownership is checked up front.
+	if err := s.requireTitleInCompany(ctx, req.Subject.CompanyID, req.TitleID); err != nil {
+		return nil, err
+	}
 	if req.Name != nil {
 		trimmed := strings.TrimSpace(*req.Name)
 		if trimmed == "" {
@@ -54,7 +58,7 @@ func (s *adminService) DeleteTitle(ctx context.Context, req DeleteTitleRequest) 
 	if req.TitleID == "" {
 		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "title_id is required", nil)
 	}
-	n, err := s.repo.CountTitleMembers(ctx, req.TitleID)
+	n, err := s.repo.CountTitleMembers(ctx, req.Subject.CompanyID, req.TitleID)
 	if err != nil {
 		return err
 	}
@@ -68,7 +72,7 @@ func (s *adminService) AddTitleMember(ctx context.Context, req AddTitleMemberReq
 	if err := s.requireRbacManage(ctx, req.Subject); err != nil {
 		return err
 	}
-	if err := s.requireMembershipInCompany(ctx, req.MembershipID, req.Subject.CompanyID); err != nil {
+	if err := s.requireTargetMembership(ctx, req.Subject, req.MembershipID); err != nil {
 		return err
 	}
 	// AddTitle validates title belongs to membership's company.
@@ -77,6 +81,9 @@ func (s *adminService) AddTitleMember(ctx context.Context, req AddTitleMemberReq
 
 func (s *adminService) RemoveTitleMember(ctx context.Context, req RemoveTitleMemberRequest) error {
 	if err := s.requireRbacManage(ctx, req.Subject); err != nil {
+		return err
+	}
+	if err := s.requireTargetMembership(ctx, req.Subject, req.MembershipID); err != nil {
 		return err
 	}
 	return s.repo.RemoveTitle(ctx, req.MembershipID, req.TitleID)

@@ -1,0 +1,39 @@
+tenant admin logged in company=c_001 membership=m_102
+
+PASS  404  READ foreign membership permissions -> 404  [GET /api/v1/admin/memberships/m_002/permissions] MEMBERSHIP_NOT_FOUND
+PASS  404  NEG PATCH foreign membership status (UpdateMembershipStatus)  [PATCH /api/v1/admin/memberships/m_002] MEMBERSHIP_NOT_FOUND
+PASS  404  NEG DELETE foreign membership (DeleteMembership tx)  [DELETE /api/v1/admin/memberships/m_002] MEMBERSHIP_NOT_FOUND
+PASS  404  NEG POST role on foreign membership  [POST /api/v1/admin/memberships/m_002/roles] MEMBERSHIP_NOT_FOUND
+PASS  404  NEG PUT primary-role on foreign  [PUT /api/v1/admin/memberships/m_002/primary-role] MEMBERSHIP_NOT_FOUND
+PASS  404  NEG POST direct permission on foreign  [POST /api/v1/admin/memberships/m_002/permissions] MEMBERSHIP_NOT_FOUND
+PASS  404  NEG DELETE direct permission on foreign  [DELETE /api/v1/admin/memberships/m_002/permissions/x] MEMBERSHIP_NOT_FOUND
+PASS  404  NEG PUT org-assignments on foreign  [PUT /api/v1/admin/memberships/m_002/org-assignments] MEMBERSHIP_NOT_FOUND
+PASS  404  NEG POST team member (foreign team, own member)  [POST /api/v1/admin/teams/ou_org_legal_tv_001/members] INVALID_REQUEST
+PASS  404  NEG POST team member (own team?, foreign member)  [POST /api/v1/admin/teams/ou_org_legal_tv_001/members] MEMBERSHIP_NOT_FOUND
+PASS  404  NEG DELETE team member on foreign team  [DELETE /api/v1/admin/teams/ou_org_legal_tv_001/members/m_002] MEMBERSHIP_NOT_FOUND
+PASS  404  NEG DELETE foreign team (DeleteTeamRow tx)  [DELETE /api/v1/admin/teams/ou_org_legal_tv_001] INVALID_REQUEST
+PASS  404  NEG PATCH foreign team  [PATCH /api/v1/admin/teams/ou_org_legal_tv_001] INVALID_REQUEST
+PASS  404  NEG PATCH foreign department  [PATCH /api/v1/admin/departments/01a00dff-045d-763d-b3e2-2c7ed7e6a4db] INVALID_REQUEST
+PASS  404  NEG DELETE foreign department (count SQL)  [DELETE /api/v1/admin/departments/01a00dff-045d-763d-b3e2-2c7ed7e6a4db] INVALID_REQUEST
+PASS  404  NEG POST team in foreign department  [POST /api/v1/admin/departments/01a00dff-045d-763d-b3e2-2c7ed7e6a4db/teams] INVALID_REQUEST
+PASS  404  NEG PATCH foreign title  [PATCH /api/v1/admin/titles/019e6c79-7231-72d9-95e6-a10283d4b22a] INVALID_REQUEST
+PASS  404  NEG DELETE foreign title (count SQL)  [DELETE /api/v1/admin/titles/019e6c79-7231-72d9-95e6-a10283d4b22a] INVALID_REQUEST
+PASS  400  NEG POST title member foreign title  [POST /api/v1/admin/titles/019e6c79-7231-72d9-95e6-a10283d4b22a/members] INVALID_REQUEST
+PASS  201  OWN create department  [POST /api/v1/admin/departments] 
+PASS  201  OWN create team (DepartmentBelongsToCompany + CountTeamsInDepartment)  [POST /api/v1/admin/departments/01a11fb9-cfa1-7370-a82f-bf87955cad77/teams] 
+PASS  200  OWN add dept member (own)  [POST /api/v1/admin/departments/01a11fb9-cfa1-7370-a82f-bf87955cad77/members] 
+PASS  200  OWN add team member (TeamBelongsToCompany)  [POST /api/v1/admin/teams/01a11fb9-d03b-74e9-94f7-cc9bfb3d8098/members] 
+PASS  200  OWN patch own team  [PATCH /api/v1/admin/teams/01a11fb9-d03b-74e9-94f7-cc9bfb3d8098] 
+PASS  200  OWN remove team member (JOIN delete SQL)  [DELETE /api/v1/admin/teams/01a11fb9-d03b-74e9-94f7-cc9bfb3d8098/members/m_102] 
+PASS  200  OWN add team member again  [POST /api/v1/admin/teams/01a11fb9-d03b-74e9-94f7-cc9bfb3d8098/members] 
+PASS  200  OWN delete team (tx lock + cascade)  [DELETE /api/v1/admin/teams/01a11fb9-d03b-74e9-94f7-cc9bfb3d8098] 
+PASS  200  OWN remove dept member  [DELETE /api/v1/admin/departments/01a11fb9-cfa1-7370-a82f-bf87955cad77/members/m_102] 
+PASS  200  OWN patch own department  [PATCH /api/v1/admin/departments/01a11fb9-cfa1-7370-a82f-bf87955cad77] 
+PASS  200  OWN delete department (CountDepartmentMembers/CountTeams)  [DELETE /api/v1/admin/departments/01a11fb9-cfa1-7370-a82f-bf87955cad77] 
+PASS  201  OWN create title  [POST /api/v1/admin/titles] 
+PASS  200  OWN delete title (CountTitleMembers)  [DELETE /api/v1/admin/titles/01a11fb9-d6b5-72ee-ac96-77b0e8b1215a] 
+PASS  200  OWN idempotent PATCH own membership status unchanged (UpdateMembershipStatus)  [PATCH /api/v1/admin/memberships/m_102] 
+PASS  200  own permissions list still works  [GET /api/v1/admin/memberships/m_102/permissions] 
+PASS  200  CMS operator lists users of other company  [GET /api/v1/platform/cms/admin/users?company_id=c_002] 
+
+35/35 passed; created ids: {'dept': '01a11fb9-cfa1-7370-a82f-bf87955cad77', 'team': '01a11fb9-d03b-74e9-94f7-cc9bfb3d8098', 'title': '01a11fb9-d6b5-72ee-ac96-77b0e8b1215a'}

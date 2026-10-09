@@ -459,3 +459,128 @@ Kỳ vọng chung:
 - FE hiện tại không bị ảnh hưởng.
 - Các role có `rbac.manage` nhưng thiếu `platform.cms.view` (22 role trên DEV) mất khả năng thao tác cross-company hoặc no-company qua route tenant. Đây là hành vi mong muốn.
 - Không có migration. Rollback bằng binary backup sẽ mở lại lỗ hổng.
+
+
+---
+
+# Plan (C5): ràng buộc company cho thao tác theo `membership_id` và khuyết điểm team/department/title
+
+## Context
+- Nguồn: risk review 2026-10-09 (C5, ROLE-04, BES-03, ROLE-05); tài liệu `docs/ai-cache/bug-membership-id-company-scope-2026-10-09/{00-report,01-root-cause-solution,02-data-audit}.md`. Tiếp nối C4.
+- Vấn đề: nhiều service trong `internal/companyaccess/app` nhận `membership_id` (hoặc id team/department/title) mà không kiểm tra đối tượng thuộc company của token. Authorizer bỏ qua resource, và `authorizeScopedMembershipMutation` trả `nil` ngay khi scope là "company". Phía SQL, nhiều câu `UPDATE/DELETE/SELECT` theo `membership_id` không có `company_id`.
+- Phạm vi tiếp cận (đã grep): chỉ `AdminHandler` tenant gọi các hàm này, nên **một quy tắc duy nhất**: đối tượng phải thuộc `Subject.CompanyID`, không cần ngoại lệ cho platform operator.
+- Quyết định đã chốt:
+  1. Đối tượng ngoài company → **404 `MEMBERSHIP_NOT_FOUND`** (không lộ id có tồn tại).
+  2. PR gồm **lớp 1** (service guard) và **lớp 2** (sửa SQL/repo cho thao tác phá huỷ và các lỗi riêng lẻ).
+  3. Gộp khuyết điểm team, department, title vào cùng PR.
+  4. Đã audit DEV read-only: toàn vẹn quan hệ sạch (0 dòng lệch), không có dấu vết thao tác chéo company.
+- **Đính chính so với tài liệu:** mục "bổ sung audit cho thao tác phá huỷ" trong `01-root-cause-solution.md` là không cần. Đã đọc code: mọi handler phá huỷ (`deleteMembership`, `removeRole`, `removeTitle`, `removeDepartment`, thành viên team/title…) **đã có `auditLog`**. DEV không có event vì chưa ai dùng. Sửa tài liệu ở T0.
+- Phạm vi code: chỉ `cobo_iam_services`; FE không đổi (mọi caller tenant gửi id lấy từ danh sách của company đang chọn). Không có migration.
+- Quy trình: `wf-bugfix`, viết test fail trước rồi mới sửa (Gate R, Gate V).
+
+## Dependency graph
+```
+T0 artefact + đính chính doc
+ └─ T1 fixture 2 company + test bảng cross-company (Gate R)  [nâng cấp in-memory repo: team/dept/title có state]
+     └─ T2 guard tập trung (requireTargetMembership + authorizeScopedMembershipMutation)
+         ├─ T3 guard tường minh cho các hàm còn lại + config approval
+         ├─ T4 team/department/title: validate, count, 404, DeleteTeamRow (lớp 2)
+         └─ T5 UpdateMembershipStatus / DeleteMembership ràng buộc company_id ở SQL (lớp 2)
+             └─ T6 validate theo sub.CompanyID (primary-role, org-assignments) + test quét route handler
+                 └─ T7 cập nhật test cũ dùng membership giả
+                     └─ T8 verify (Gate V)
+                         └─ T9 review + ai-cache (+ deploy DEV và smoke khi được yêu cầu)
+```
+
+## Quy ước test
+- Package `app_test`, dựng trên `fakeAuthService` và `newScopeSvc`/`seedInviteScopedSubject` của C4 (`admin_service_company_scope_test.go`).
+- **Fixture chung** `newTwoCompanyFixture(t, persona)`: người gọi ở `c_001`; một membership "đích" thật ở `c_002` (có role, phòng ban, chức danh, direct permission, thành viên team); một membership đối chứng ở `c_001`.
+- **Persona:** `tenantAdmin` (`rbac.manage`), `tenantAdminSys`, `delegated` (không có `rbac.manage`, có quyền theo delegation phòng ban, để đi qua nhánh scope phòng ban), `platformOp`.
+- **Khẳng định chung cho mỗi hàm bị ngoài company:** lỗi là 404 `MEMBERSHIP_NOT_FOUND` (hoặc 404 tương ứng với team/department/title) **và** dữ liệu của đối tượng đích giữ nguyên (đọc lại qua repo): trạng thái membership, `ListMembershipRoles`, department và title (`ListActiveMembership*IDs`), `ListActiveDirectPermissions`, thành viên team.
+
+## Tasks
+
+### T0: Artefact và đính chính tài liệu
+- Append plan này vào `tasks/plan.md` và task list vào `tasks/todo.md`. Không ghi đè C2/C3/C4/adhoc.
+- Sửa `01-root-cause-solution.md`: bỏ đề xuất bổ sung audit, ghi rõ handler đã có `auditLog`.
+- AC: nội dung cũ của hai file tasks còn nguyên.
+
+### T1: Fixture, nâng cấp in-memory repo, test bảng cross-company (Gate R)
+- Nâng cấp `internal/companyaccess/infra/inmemory/admin_repository.go`: các hàm team/department/title đang là stub (no-op, ví dụ `DeleteTeamRow`, `AddTeamMember`, `RemoveTeamMember`, `CountTeamsInDepartment`, `CountDepartmentMembers`, `CountTitleMembers`, `SoftDeleteDepartment`, `SoftDeleteTitle`). Thêm state tối thiểu để test khẳng định được dữ liệu đích không đổi: `teams` (id → company, department), `teamMembers`, và đếm thành viên theo department/title. Repo MySQL không có công cụ test SQL (không `sqlmock`), nên phần SQL được kiểm bằng đọc code và smoke DEV (T9).
+- Test mới `admin_service_membership_scope_test.go`, bảng theo hàm (mỗi dòng: tên hàm, hàm gọi, kỳ vọng):
+  - `UpdateMembership`, `DeleteMembership`, `AssignRole`, `RemoveRole`, `ReplaceMembershipPrimaryRole`, `AssignDepartment`, `RemoveDepartment`, `AssignTitle`, `RemoveTitle`, `UpdateMembershipOrgAssignments`, `AddDirectPermission`, `RemoveDirectPermission`, `ListDirectPermissions`, `RevokeCompanyAdmin`, `AddTeamMember`, `RemoveTeamMember`, `RemoveTitleMember`, `AddDeptMember`/`RemoveDeptMember` (nhánh `delegated`).
+  - Mỗi hàm: membership của `c_002` → 404 và dữ liệu không đổi; membership của `c_001` → chạy như cũ (một case đại diện mỗi hàm).
+- Chạy trên code hiện tại: nhóm "ngoài company" phải **FAIL**. Ghi output vào `docs/ai-cache/bug-membership-id-company-scope-2026-10-09/03-repro.md`.
+- AC: test biên dịch, FAIL đúng lý do; nhóm "cùng company" PASS.
+
+### T2: Guard tập trung
+- Thêm vào `admin_service_company_scope.go`: `requireTargetMembership(ctx, sub, membershipID)` = fail-closed khi `sub.CompanyID` rỗng + `requireMembershipInCompany(membershipID, sub.CompanyID)` (`admin_service_departments.go:129`, trả 404 `MEMBERSHIP_NOT_FOUND`).
+- Gọi helper ở **đầu** `authorizeScopedMembershipMutation` (`admin_delegation_scope.go:125`), trước nhánh scope. Một thay đổi phủ: `UpdateMembership`, `DeleteMembership`, `ReplaceMembershipPrimaryRole`, `AssignDepartment`, `RemoveDepartment`, `UpdateMembershipOrgAssignments`, và nhánh delegation của `AddDeptMember`/`RemoveDeptMember` (`authorizeDeptMemberMutation`).
+- AC: các dòng tương ứng trong test T1 chuyển PASS; bỏ lời gọi → FAIL lại.
+- **Checkpoint CP-1:** `go test ./internal/companyaccess/...` chỉ còn 2 fail có sẵn và các dòng T3 đến T5 chưa sửa.
+
+### T3: Guard tường minh cho các hàm còn lại và config approval
+- Thêm `requireTargetMembership` sau bước `authorize`/`requireRbacManage`, trước mọi lookup hoặc ghi, ở: `AssignRole`, `RemoveRole`, `AssignTitle`, `RemoveTitle`, `AddDirectPermission`, `RemoveDirectPermission`, `ListDirectPermissions`, `RevokeCompanyAdmin`, `AddTeamMember`, `RemoveTeamMember`, `RemoveTitleMember`.
+- `SubmitConfigApproval` loại `RBAC_DIRECT_PERM_REMOVE` (`config_approval.go:254`): validate `membership_id` trong body bằng `requireTargetMembership` ngay khi submit.
+- Kiểm tra `RevokeCompanyAdmin`, `TransferOwnership`: đích đã được kiểm tra; thêm test cho đủ.
+- AC: các dòng T3 trong test PASS; kiểm tra ngược (gỡ guard ở 2 hàm đại diện → FAIL).
+
+### T4: Team, department, title (lớp 2)
+- **Test trước** (FAIL trước):
+  - `DeleteTeam` với team của company khác: trả 404 **và** thành viên team đó còn nguyên.
+  - `CreateTeam` với department của company khác → 404, không tạo; `CountTeamsInDepartment` chỉ đếm trong company.
+  - `AddTeamMember`/`RemoveTeamMember` với team ngoài company → 404.
+  - `DeleteDepartment`/`DeleteTitle` với id ngoài company → 404 (không còn 409 "có thành viên").
+- **Fix:**
+  - `DeleteTeamRow` (`infra/mysql/admin_repository_teams.go:90`): trong một transaction, kiểm `org_units` thuộc company **trước**, rồi mới xoá `org_unit_memberships`.
+  - `RemoveTeamMember`: dùng tham số company đang bị bỏ qua (`_`) qua join với `org_units`.
+  - Repo thêm `TeamBelongsToCompany(ctx, companyID, teamID) (bool, error)` (MySQL: `org_units` với `unit_type='team'`; in-memory theo state mới). Service `AddTeamMember`/`RemoveTeamMember` gọi hàm này.
+  - `CreateTeam`: validate department bằng `departmentInCompany` (`config_delegation.go:238`, dùng lại).
+  - `CountDepartmentMembers`/`CountTitleMembers`/`CountTeamsInDepartment`: thêm tham số company (đổi chữ ký ở `app/admin.go:247,254,261`, hai implementer). Service kiểm tra tồn tại theo company **trước** khi đếm, để id ngoài company trả 404.
+- AC: test T4 PASS; `go build ./...` xanh với chữ ký mới.
+
+### T5: `UpdateMembershipStatus` và `DeleteMembership` ràng buộc `company_id` ở SQL (lớp 2)
+- Đổi chữ ký ở `app/admin.go:182-183` thành nhận `companyID`; cập nhật implementer MySQL (`admin_repository.go:123,137`) và in-memory (`:346,355`).
+  - MySQL: `UPDATE memberships SET … WHERE membership_id=? AND company_id=?`; `DeleteMembership` xoá bảng con qua membership thuộc company, trong cùng transaction.
+  - Không khớp company → trả lỗi không tìm thấy (map sang 404 ở service).
+- **Test trước:** gọi repo in-memory với company sai không thay đổi dữ liệu (test mức repo trong `infra/inmemory`).
+- AC: test PASS; `go build ./...` xanh.
+
+### T6: Validate theo company của token và test quét route handler
+- `ReplaceMembershipPrimaryRole` (`admin_service_primary_role.go:41`) và `UpdateMembershipOrgAssignments` (`admin_service_membership_org.go:154`): đổi `member.CompanyID` thành `sub.CompanyID` khi validate role, phòng ban, chức danh.
+- Test handler `admin_handler_membership_scope_test.go` (mẫu `admin_handler_company_scope_test.go` của C4): bảng mọi route tenant có `{membership_id}` hoặc `membership_id` trong body, gọi bằng token `c_001` với id của `c_002` → 404 `MEMBERSHIP_NOT_FOUND`; thêm assert đếm route để route mới phải khai báo vào bảng.
+- AC: PASS; bỏ guard ở một handler/service → FAIL.
+
+### T7: Cập nhật test cũ
+- Test dùng membership giả không tồn tại trong repo sẽ nhận 404 (guard đòi membership có thật trong company): chạy `go test ./internal/companyaccess/...`, sửa fixture seed membership thật. Ví dụ `TestAssignCompanyAdmin_MembershipNotInCompany` đã dùng "m-ghost" hợp lệ vì đích không tồn tại.
+- Cập nhật `docs/api-contracts-json.md`: các route theo `membership_id` trả 404 `MEMBERSHIP_NOT_FOUND` khi đối tượng ngoài company.
+- AC: chỉ còn 2 fail có sẵn (`TestUpdateNotificationRule_TierEnforcement_FlagOffAllowsPremium`, `TestCreateSelfServiceCompany_FeatureFlagOff`).
+
+### T8: Verify (Gate V)
+- `go build ./...`; `go test ./... -count=1` so với baseline HEAD (worktree tạm), không có fail mới; `go vet ./...` (chỉ lỗi copylocks có sẵn); `go test -race -count=1 ./internal/companyaccess/... ./internal/platformcms/...`; `docker compose -f docker-compose.dev.yml build api`.
+- Grep: mọi hàm trong `internal/companyaccess/app` nhận `MembershipID` có guard hoặc có chú thích ngoại lệ.
+- Ghi `04-verify.md`.
+
+### T9: Review và đóng
+- Chạy song song `be-security-reviewer`, `admin-role-reviewer`, `api-compat-reviewer` trên diff `internal/companyaccess` (có đổi chữ ký repo và mã lỗi 404 mới), rồi `premerge-system-review` bản ngắn.
+- ai-cache: `05-completion.md`; đánh dấu C5 "fixed in branch" trong `risk-review-2026-10-09/10-risk-report.md`.
+- Không commit hoặc push khi chưa được yêu cầu.
+- Deploy DEV và smoke chỉ khi được yêu cầu (theo `wf-release`): backup binary; lấy id membership thật của `c_002` qua route platform bằng tài khoản operator (read-only); dùng token tenant `c_001`: probe đọc `GET /memberships/{id c_002}/permissions` → 404 (chứng minh binary mới), sau đó các request ghi kỳ vọng bị từ chối → 404; luồng trong company mình vẫn chạy; Playwright chỉ đọc màn `/app/admin/users`. Với SQL MySQL mới (`DeleteTeamRow`, `RemoveTeamMember`, `TeamBelongsToCompany`, các hàm đếm) cần thao tác trên dữ liệu của chính company mình để xác nhận không lỗi cú pháp: dùng team/department tạm do smoke tự tạo và tự xoá trong `c_001`, chỉ khi user đồng ý ghi dữ liệu DEV.
+- Follow-up (ngoài PR): sửa authorizer để so company của resource; `CreateMembership` gắn user bất kỳ (BES-02); hợp nhất hai định nghĩa "platform operator" (ROLE-02); FE xử lý `COMPANY_SCOPE_MISMATCH`/404 do tab cũ; 9 user không có membership trên DEV (cần duyệt riêng).
+
+## File chính
+- **Mới:** `internal/companyaccess/app/admin_service_membership_scope_test.go`, `internal/companyaccess/transport/http/admin_handler_membership_scope_test.go`.
+- **Sửa (service):** `app/admin_service_company_scope.go`, `admin_delegation_scope.go`, `admin_service.go`, `admin_service_departments.go`, `admin_service_titles.go`, `admin_service_primary_role.go`, `admin_service_membership_org.go`, `config_approval.go`, `admin.go` (interface repo).
+- **Sửa (repo):** `infra/mysql/admin_repository.go`, `admin_repository_teams.go`, `admin_repository_departments.go`, `admin_repository_titles.go`; `infra/inmemory/admin_repository.go`.
+- **Docs:** `tasks/plan.md`, `tasks/todo.md`, `docs/api-contracts-json.md`, `docs/ai-cache/bug-membership-id-company-scope-2026-10-09/*`.
+- **Không đổi:** FE, migration, `internal/platformcms`, cờ cấu hình.
+
+## Code dùng lại
+- `requireMembershipInCompany` (`admin_service_departments.go:129`), `repo.MembershipBelongsToCompany` (MySQL `admin_repository_departments.go:14`, in-memory `:1489`).
+- `departmentInCompany` (`config_delegation.go:238`), `perr.CodeMembershipNotFound`.
+- Mẫu test: `admin_service_company_scope_test.go` và `admin_handler_company_scope_test.go` (C4), `fakeAuthService`, `seedInviteScopedSubject`.
+
+## Tương thích và rollback
+- FE hiện tại không bị ảnh hưởng; rủi ro duy nhất là tab cũ sau khi đổi company nhận 404.
+- Không có migration; đổi chữ ký repo chỉ trong tiến trình. Rollback bằng binary cũ sẽ mở lại khoảng trống.
+- Rủi ro kỹ thuật chính: hàm đếm đổi chữ ký và SQL MySQL mới không có test tự động (không có `sqlmock`); giảm rủi ro bằng review kỹ SQL và smoke DEV.
