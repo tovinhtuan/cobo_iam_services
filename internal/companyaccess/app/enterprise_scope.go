@@ -113,3 +113,9 @@ func filterEnterpriseRBACSnapshotJSON(
 
 	return json.Marshal(snap)
 }
+
+// FilterEnterpriseRBACSnapshot removes out-of-enterprise-scope permissions from a raw RBAC
+// snapshot. It is the exported form used by repositories that store a post-apply snapshot.
+func FilterEnterpriseRBACSnapshot(ctx context.Context, listPermsFn func(context.Context) ([]PermissionListItem, error), raw []byte) ([]byte, error) {
+	return filterEnterpriseRBACSnapshotJSON(ctx, listPermsFn, raw)
+}

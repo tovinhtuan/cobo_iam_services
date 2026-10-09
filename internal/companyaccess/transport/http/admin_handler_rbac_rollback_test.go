@@ -32,6 +32,10 @@ func seedDirectGrantSnapshot(t *testing.T, repo *cainmem.AdminRepository, id, me
 // ({approval_id,status}) when a critical permission is involved.
 func TestRollbackRBACMatrix_ResponseShapes(t *testing.T) {
 	mux, repo := newScopeHandlerMux(t, scopeTenantPerms)
+	// Granting or revoking admin.membership.invite is reserved to the primary admin.
+	if err := repo.SetMembershipPrimaryAdmin(context.Background(), "m-1"); err != nil {
+		t.Fatal(err)
+	}
 	seedDirectGrantSnapshot(t, repo, "v-critical", "m-1", "admin.membership.invite")      // version 1: critical
 	seedDirectGrantSnapshot(t, repo, "v-plain", "m-1", "template.workflow.override.read") // version 2: not critical
 

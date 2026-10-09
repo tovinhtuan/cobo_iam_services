@@ -108,7 +108,23 @@ type CompareConfigApprovalView struct {
 	BaseLiveVersionNo *int                  `json:"base_live_version_no,omitempty"`
 	CurrentVersionNo  int                   `json:"current_version_no"`
 	Compare           *CompareVersionsView  `json:"compare"`
-	Summary           map[string]any        `json:"summary,omitempty"`
+	// Changes lists what approving would really change (RBAC matrix only): the plan the restore
+	// would execute now, not the difference between the two stored snapshots.
+	// An RBAC approval always sends the list ([] when approving would change nothing); other
+	// aggregates send null.
+	Changes []ApprovalChange `json:"changes"`
+	Summary map[string]any   `json:"summary,omitempty"`
+}
+
+// ApprovalChange is one change an RBAC approval would apply.
+type ApprovalChange struct {
+	Kind           string `json:"kind"`   // role_permission | direct_permission
+	Action         string `json:"action"` // add | remove
+	RoleID         string `json:"role_id,omitempty"`
+	RoleCode       string `json:"role_code,omitempty"`
+	MembershipID   string `json:"membership_id,omitempty"`
+	PermissionCode string `json:"permission_code"`
+	Critical       bool   `json:"critical"`
 }
 
 type ApplyPendingApprovalInput struct {

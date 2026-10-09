@@ -201,7 +201,7 @@ func (r *AdminRepository) RestoreNotificationRuleFromSnapshot(ctx context.Contex
 	return r.UpdateNotificationRuleMerged(ctx, companyID, snap.NotificationRuleID, payload, &status)
 }
 
-func (r *AdminRepository) RestoreRBACMatrixFromSnapshot(ctx context.Context, companyID, actorUserID string, raw []byte) error {
+func (r *AdminRepository) RestoreRBACMatrixFromSnapshot(ctx context.Context, companyID, actorUserID string, raw []byte, opts caapp.RBACRestoreOptions) error {
 	var snap configversion.RBACMatrixSnapshot
 	if err := json.Unmarshal(raw, &snap); err != nil {
 		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "invalid snapshot_json", nil)
@@ -210,13 +210,6 @@ func (r *AdminRepository) RestoreRBACMatrixFromSnapshot(ctx context.Context, com
 	plan, err := caapp.BuildRBACRestorePlan(ctx, r, companyID, raw)
 	if err != nil {
 		return err
-	}
-	for _, op := range plan.Ops {
-		if op.Add {
-			_ = r.AddRolePermission(ctx, op.RoleID, op.PermissionID)
-		} else {
-			_ = r.RemoveRolePermission(ctx, op.RoleID, op.PermissionID)
-		}
 	}
 	// Direct grants: only those a tenant admin may manage, and only for memberships of this company.
 	r.mu.RLock()
@@ -231,7 +224,20 @@ func (r *AdminRepository) RestoreRBACMatrixFromSnapshot(ctx context.Context, com
 		}
 	}
 	r.mu.RUnlock()
-	directPlan := caapp.ComputeRBACDirectRestorePlan(current, snap.DirectPermissions)
+	directPlan := caapp.RBACDirectPlanFor(current, snap)
+	if snap.PlanDigest != "" && caapp.RBACRestorePlanDigest(plan, directPlan) != snap.PlanDigest {
+		return caapp.ErrRBACRestorePlanChanged
+	}
+	if !opts.AllowCritical && (plan.TouchesCritical || directPlan.TouchesCritical) {
+		return caapp.ErrRBACRestoreNeedsApproval
+	}
+	for _, op := range plan.Ops {
+		if op.Add {
+			_ = r.AddRolePermission(ctx, op.RoleID, op.PermissionID)
+		} else {
+			_ = r.RemoveRolePermission(ctx, op.RoleID, op.PermissionID)
+		}
+	}
 	for _, d := range directPlan.Revoke {
 		_ = r.RevokeDirectPermission(ctx, d.MembershipID, d.PermissionCode, actorUserID)
 	}

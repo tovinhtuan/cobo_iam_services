@@ -42,6 +42,17 @@ type RBACMatrixSnapshot struct {
 	SchemaVersion     string                  `json:"schema_version"`
 	RolePermissions   []RolePermissionEntry   `json:"role_permissions"`
 	DirectPermissions []DirectPermissionEntry `json:"direct_permissions"`
+	// DirectRevokes are explicit instructions carried by an approval to remove direct grants.
+	// A plain snapshot (version history, rollback) never has them.
+	DirectRevokes []DirectPermissionEntry `json:"direct_revokes,omitempty"`
+	// Explicit marks a single-change proposal (remove one role permission, remove one direct
+	// grant): applying it performs exactly RoleRevokes and DirectRevokes and nothing else, instead
+	// of converging the whole matrix to this snapshot.
+	Explicit    bool                  `json:"explicit,omitempty"`
+	RoleRevokes []RolePermissionEntry `json:"role_revokes,omitempty"`
+	// PlanDigest fingerprints the plan the approver reviewed when the request was queued. Apply
+	// refuses (STALE_PROPOSAL) when the plan computed from the live state differs.
+	PlanDigest string `json:"plan_digest,omitempty"`
 }
 
 type RolePermissionEntry struct {

@@ -1,0 +1,38 @@
+requester=m_102 approver=m_107 company=c_001
+out-of-scope fingerprint before: ['1086\t4d99f41f2b2dbdc2f45860b3bebc6530']
+
+PASS  200  list notification rules  [GET /api/v1/admin/notification-rules] 
+PASS  400  R17 invalid notification patch -> 400  [POST /api/v1/admin/config-approvals] INVALID_REQUEST
+PASS  403  R18 non-primary admin queues removal of admin.membership.invite -> 403  [POST /api/v1/admin/config-approvals] PERMISSION_DENIED
+PASS  200  list permissions  [GET /api/v1/admin/permissions] 
+PASS  201  create temp custom role  [POST /api/v1/admin/roles] 
+PASS  200  assign dashboard.view  [POST /api/v1/admin/roles/01a1203a-f688-733c-ac7d-c79c48221a69/permissions] 
+PASS  200  assign deadline.view (snapshot)  [POST /api/v1/admin/roles/01a1203a-f688-733c-ac7d-c79c48221a69/permissions] 
+PASS  202  queue removal of rbac.manage -> 202  [DELETE /api/v1/admin/roles/01a1203a-f688-733c-ac7d-c79c48221a69/permissions/10000000-0001-4000-8000-00000000000c] 
+PASS  200  approve -> 200  [POST /api/v1/admin/config-approvals/01a1203a-fd8d-79e6-b013-6a76f53dca8d/approve] 
+PASS  200  read role permissions  [GET /api/v1/admin/roles/01a1203a-f688-733c-ac7d-c79c48221a69/permissions] 
+PASS  200  read role permissions  [GET /api/v1/admin/roles/01a1203a-f688-733c-ac7d-c79c48221a69/permissions] 
+PASS  200  read role permissions  [GET /api/v1/admin/roles/01a1203a-f688-733c-ac7d-c79c48221a69/permissions] 
+PASS  0  role lost rbac.manage, kept the rest  [- -] ['dashboard.view', 'deadline.view']
+PASS  0  ROLE-19: the direct grant made later survived  [- -] 1
+PASS  200  latest rbac version  [GET /api/v1/admin/rbac/matrix/versions?limit=1] 
+PASS  202  critical rollback to v26 -> 202  [POST /api/v1/admin/rbac/matrix/versions/26/rollback] 
+PASS  409  approve after the plan changed -> 409 STALE_PROPOSAL  [POST /api/v1/admin/config-approvals/01a1203b-1d69-7edb-856c-804ef828a7b4/approve] STALE_PROPOSAL
+PASS  200  read role permissions  [GET /api/v1/admin/roles/01a1203a-f688-733c-ac7d-c79c48221a69/permissions] 
+PASS  200  read role permissions  [GET /api/v1/admin/roles/01a1203a-f688-733c-ac7d-c79c48221a69/permissions] 
+PASS  0  a stale approval changed nothing  [- -] [['dashboard.view', 'deadline.view', 'rbac.manage'], 1]
+PASS  200  reject the stale rollback -> 200  [POST /api/v1/admin/config-approvals/01a1203b-1d69-7edb-856c-804ef828a7b4/reject] 
+PASS  202  queue another removal -> 202  [DELETE /api/v1/admin/roles/01a1203a-f688-733c-ac7d-c79c48221a69/permissions/10000000-0001-4000-8000-00000000000c] 
+PASS  201  create a second custom role  [POST /api/v1/admin/roles] 
+PASS  409  approve after a role was created -> 409 STALE_PROPOSAL  [POST /api/v1/admin/config-approvals/01a1203b-359e-748a-a793-31b13b785f22/approve] STALE_PROPOSAL
+PASS  200  reject it -> 200  [POST /api/v1/admin/config-approvals/01a1203b-359e-748a-a793-31b13b785f22/reject] 
+PASS  200  cleanup: remove dashboard.view  [DELETE ...] 
+PASS  200  cleanup: remove deadline.view  [DELETE ...] 
+PASS  200  cleanup: inactivate temp role  [DELETE /api/v1/admin/roles/01a1203a-f688-733c-ac7d-c79c48221a69] 
+PASS  200  cleanup: inactivate temp role  [DELETE /api/v1/admin/roles/01a1203b-3647-7284-a1d7-c48f4c0a1c6d] 
+PASS  0  roles outside the company's custom roles unchanged  [- -] ['1086\t4d99f41f2b2dbdc2f45860b3bebc6530'] -> ['1086\t4d99f41f2b2dbdc2f45860b3bebc6530']
+PASS  200  no pending approvals left  [GET /api/v1/admin/config-approvals?status=pending] 
+PASS  0  no pending approval left over  [- -] []
+
+32/32 passed
+temp roles 01a1203a-f688-733c-ac7d-c79c48221a69 01a1203b-3647-7284-a1d7-c48f4c0a1c6d; approvals 01a1203a-fd8d-79e6-b013-6a76f53dca8d 01a1203b-1d69-7edb-856c-804ef828a7b4 01a1203b-359e-748a-a793-31b13b785f22

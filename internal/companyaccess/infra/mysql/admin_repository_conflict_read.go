@@ -111,11 +111,15 @@ func (r *AdminRepository) ListInactiveDepartmentsWithMembers(ctx context.Context
 
 // ListActiveDirectPermissionsByCompany returns non-revoked direct grants for a company.
 func (r *AdminRepository) ListActiveDirectPermissionsByCompany(ctx context.Context, companyID string) ([]conflict.DirectPermissionRow, error) {
+	return listActiveDirectPermissionsByCompanyQ(ctx, r.db, companyID)
+}
+
+func listActiveDirectPermissionsByCompanyQ(ctx context.Context, q queryer, companyID string) ([]conflict.DirectPermissionRow, error) {
 	companyID = strings.TrimSpace(companyID)
 	if companyID == "" {
 		return nil, nil
 	}
-	rows, err := r.db.QueryContext(ctx, `
+	rows, err := q.QueryContext(ctx, `
 		SELECT membership_id, permission_code
 		FROM membership_direct_permissions
 		WHERE company_id = ? AND revoked_at IS NULL

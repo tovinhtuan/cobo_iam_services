@@ -732,3 +732,40 @@ File mới `app/rbac_rollback_scope_test.go`. Mỗi test tạo snapshot bằng m
 - Snapshot cũ có mục role global vẫn đọc được; plan bỏ qua các mục đó.
 - Rollback binary sẽ mở lại lỗi. Không có thay đổi schema.
 - Lưu ý: approver cần `system.settings`. Company không ai có quyền này sẽ không duyệt được rollback critical (liên quan ROLE-04).
+
+---
+
+# Plan (ROLE-01 follow-up): người duyệt, transaction, test tích hợp, approval lỗi thời, FE
+
+Chi tiết đầy đủ: `docs/ai-cache/bug-rbac-rollback-global-roles-2026-10-09/06-followup-plan.md`.
+
+## Context
+- ROLE-01 đã sửa và deploy DEV (`09-role01-post-deploy.md`); còn 6 việc trong `05-completion.md`.
+- Phát hiện khi lập plan: 0/20 công ty trên DEV có người giữ `system.settings` → mọi approval cấu hình không ai duyệt được (cùng gốc với ROLE-04).
+
+## Dependency graph
+```
+C (test tích hợp MySQL) ──> B (transaction: queryer, khoá, recheck critical, snapshot thực, version khi tạo role) ──> D (approval lỗi thời, compare thật)
+A (người duyệt + ROLE-04)  [chờ quyết định]  ──> C-T4 smoke DEV nhánh duyệt
+E (FE nhãn + guard nút duyệt)  [PR web, độc lập; E-T2 theo A]
+```
+
+## Tasks (tóm tắt; AC chi tiết trong 06-followup-plan.md)
+- A-T1..T5: test → `authorizeConfigApprovalDecide` nhận `rbac.manage` (người khác người yêu cầu) → ROLE-04 `requireRbacManage` cho company admin/transfer → guard FE → hợp đồng.
+- B-T1 `queryer` (đọc qua tx, cũng xử lý PERF-15); B-T2 khoá `FOR UPDATE` + plan trong tx; B-T3 `RBACRestoreOptions{AllowCritical}` + chuyển approval khi mismatch; B-T4 lưu snapshot thực sau apply; B-T5 chụp version khi tạo/nhân bản/vô hiệu role.
+- C-T1..T3 test tích hợp `MYSQL_TEST_DSN` cho restore + `ApplyPendingApprovalInTx`; C-T4 smoke DEV nhánh duyệt sau A.
+- D-T1 409 `APPROVAL_NOTHING_TO_APPLY`; D-T2 compare trả danh sách thay đổi thật; D-T3 dọn approval pending lỗi thời (cần duyệt ghi); D-T4 hợp đồng.
+- E-T1 nhãn `rbac.matrix.rollback`; E-T2 guard nút duyệt; E-T3 hiển thị thay đổi.
+
+## Checkpoints
+- CP-1 sau C: test tích hợp chạy xanh trên MySQL local với code hiện tại (ghi lại hành vi hiện tại, kể cả snapshot sau apply = bản đề xuất).
+- CP-2 sau B: test tích hợp + in-memory xanh; revert-check guard B-T2/B-T3/B-T4.
+- CP-3 sau A (+C-T4): approval duyệt được bởi admin thứ hai trên DEV.
+- CP-4 sau D/E: premerge review (be-security, admin-role, api-compat, fe-security cho E).
+
+## Quyết định đã chốt (user, 2026-10-09)
+1. Người duyệt: **A1** (người khác người yêu cầu, có `rbac.manage` hoặc `system.settings`).
+2. Công ty 1 admin: **giữ nguyên** (mời thêm admin, không tự duyệt).
+3. **Gộp ROLE-04** vào WS-A.
+4. B-T3 mismatch: **tự chuyển sang approval 202**.
+5. DEV là dữ liệu mẫu: được phép ghi/dọn.

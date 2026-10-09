@@ -175,11 +175,24 @@ func (r *AdminRepository) ApplyPendingApprovalInTx(ctx context.Context, in caapp
 			return nil, err
 		}
 	case configversion.AggregateRBACMatrix:
-		if err := r.restoreRBACMatrixInTx(ctx, tx, in.CompanyID, in.ActorUserID, raw); err != nil {
+		if err := r.restoreRBACMatrixTx(ctx, tx, in.CompanyID, in.ActorUserID, raw, caapp.RBACRestoreOptions{AllowCritical: true}); err != nil {
 			return nil, err
 		}
 	default:
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "unsupported aggregate_type", nil)
+	}
+
+	// The version stored after an RBAC apply is the real state read inside this transaction, not
+	// the proposal: roles and permissions outside the restore's scope may differ from it.
+	if row.AggregateType == configversion.AggregateRBACMatrix {
+		postRaw, err := buildRBACMatrixSnapshotQ(ctx, tx, in.CompanyID)
+		if err != nil {
+			return nil, err
+		}
+		raw, err = caapp.FilterEnterpriseRBACSnapshot(ctx, txPlanReader{tx: tx}.ListPermissions, postRaw)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	var postVersionNo int
@@ -259,26 +272,6 @@ func (r *AdminRepository) restoreNotificationRuleInTx(ctx context.Context, tx *s
 		WHERE notification_rule_id = ? AND company_id = ?
 	`, payloadJSON, status, snap.NotificationRuleID, companyID)
 	return err
-}
-
-func (r *AdminRepository) restoreRBACMatrixInTx(ctx context.Context, tx *sql.Tx, companyID, actorUserID string, raw []byte) error {
-	var snap configversion.RBACMatrixSnapshot
-	if err := json.Unmarshal(raw, &snap); err != nil {
-		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "invalid snapshot_json", nil)
-	}
-	// Only tenant_custom roles of this company and enterprise-scope permissions may change.
-	plan, err := caapp.BuildRBACRestorePlan(ctx, r, companyID, raw)
-	if err != nil {
-		return err
-	}
-	if err := r.applyRBACRestorePlanTx(ctx, tx, companyID, plan); err != nil {
-		return err
-	}
-	// Direct grants: only those a tenant admin may manage, and only for memberships of this company.
-	if err := r.restoreDirectGrantsTx(ctx, tx, companyID, actorUserID, snap.DirectPermissions); err != nil {
-		return err
-	}
-	return nil
 }
 
 func scanPendingAdminChange(row *sql.Row) (*caapp.PendingAdminChange, error) {

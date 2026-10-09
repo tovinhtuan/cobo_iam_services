@@ -2,7 +2,10 @@ package app
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"sort"
 	"strings"
@@ -17,6 +20,24 @@ type RBACRestoreOp struct {
 	PermissionID   string
 	PermissionCode string
 	Add            bool // false = remove
+}
+
+// ErrRBACRestoreNeedsApproval is returned by a repository when, inside the restore transaction,
+// the plan turns out to touch a critical permission although the caller did not allow that
+// (RBACRestoreOptions.AllowCritical is false). The state changed between the service's pre-check
+// and the restore; the service then routes the rollback to the approval queue.
+var ErrRBACRestoreNeedsApproval = errors.New("rbac restore touches a critical permission and needs approval")
+
+// ErrRBACRestorePlanChanged is returned by a repository when the plan computed inside the apply
+// transaction differs from the one the approver reviewed (RBACMatrixSnapshot.PlanDigest). The
+// service answers 409 STALE_PROPOSAL; nothing was changed.
+var ErrRBACRestorePlanChanged = errors.New("rbac restore plan differs from the reviewed plan")
+
+// RBACRestoreOptions controls RestoreRBACMatrixFromSnapshot.
+type RBACRestoreOptions struct {
+	// AllowCritical lets the restore add or remove critical permissions. It is true only when
+	// an approver already accepted the change (approval apply).
+	AllowCritical bool
 }
 
 // RBACRestorePlan is the full set of changes a rollback or an approval apply may perform.
@@ -73,6 +94,9 @@ func ComputeRBACMatrixRestorePlan(
 	}
 
 	eligible := restorableRoles(roles)
+	if snap.Explicit {
+		return explicitRolePlan(eligible, current, snap, resolve)
+	}
 
 	plan := RBACRestorePlan{Ops: []RBACRestoreOp{}}
 	for _, role := range eligible {
@@ -155,7 +179,7 @@ type RBACDirectRestorePlan struct {
 // a restore never revokes or grants platform/cms permissions, non-grantable permissions
 // seeded by migrations, or anything else the direct-permission API cannot manage. Grants that
 // are already in place are not repeated.
-func ComputeRBACDirectRestorePlan(current, target []configversion.DirectPermissionEntry) RBACDirectRestorePlan {
+func ComputeRBACDirectRestorePlan(current, target, explicitRevokes []configversion.DirectPermissionEntry) RBACDirectRestorePlan {
 	managed := func(code string) bool {
 		if _, denied := EnterpriseDenyCodes[code]; denied {
 			return false
@@ -192,6 +216,22 @@ func ComputeRBACDirectRestorePlan(current, target []configversion.DirectPermissi
 			plan.Grant = append(plan.Grant, d)
 		}
 	}
+	// An approval to remove one direct grant carries it as an explicit revoke: the same removal the
+	// direct-permission API performs, so it applies to any code, not only the tenant-grantable ones.
+	for _, d := range explicitRevokes {
+		if _, dup := seen["r"+key(d)]; dup {
+			continue
+		}
+		if _, active := have[key(d)]; !active {
+			continue
+		}
+		seen["r"+key(d)] = struct{}{}
+		plan.Revoke = append(plan.Revoke, d)
+	}
+	explicit := make(map[string]struct{}, len(explicitRevokes))
+	for _, d := range explicitRevokes {
+		explicit[key(d)] = struct{}{}
+	}
 	order := func(list []configversion.DirectPermissionEntry) {
 		sort.Slice(list, func(i, j int) bool { return key(list[i]) < key(list[j]) })
 	}
@@ -199,6 +239,9 @@ func ComputeRBACDirectRestorePlan(current, target []configversion.DirectPermissi
 	order(plan.Grant)
 	for _, d := range append(append([]configversion.DirectPermissionEntry{}, plan.Revoke...), plan.Grant...) {
 		if isCriticalForRestore(d.PermissionCode) {
+			plan.TouchesCritical = true
+		}
+		if _, isExplicit := explicit[key(d)]; isExplicit && requiresApprovalForDirectRemove(d.PermissionCode) {
 			plan.TouchesCritical = true
 		}
 	}
@@ -252,4 +295,84 @@ func BuildRBACRestorePlan(ctx context.Context, r RBACRestorePlanReader, companyI
 		current[role.RoleID] = view.Permissions
 	}
 	return ComputeRBACMatrixRestorePlan(roles, current, snap, catalog), nil
+}
+
+// explicitRolePlan is the plan of a single-change proposal: it removes exactly the named role
+// permissions (from roles the restore may change, and only enterprise-scope permissions that the
+// role still holds) and nothing else.
+func explicitRolePlan(
+	eligible []RoleListItem,
+	current map[string][]PermissionListItem,
+	snap configversion.RBACMatrixSnapshot,
+	resolve func(string, *PermissionListItem) (PermissionListItem, bool),
+) RBACRestorePlan {
+	editable := make(map[string]struct{}, len(eligible))
+	for _, r := range eligible {
+		editable[r.RoleID] = struct{}{}
+	}
+	plan := RBACRestorePlan{Ops: []RBACRestoreOp{}}
+	seen := map[string]struct{}{}
+	for _, rv := range snap.RoleRevokes {
+		if _, ok := editable[rv.RoleID]; !ok {
+			continue
+		}
+		for i := range current[rv.RoleID] {
+			p := current[rv.RoleID][i]
+			if p.PermissionID != rv.PermissionID {
+				continue
+			}
+			item, _ := resolve(p.PermissionID, &p)
+			if !IsEnterprisePermission(item.PermissionCode, item.ModuleName) {
+				continue
+			}
+			if _, dup := seen[rv.RoleID+":"+rv.PermissionID]; dup {
+				continue
+			}
+			seen[rv.RoleID+":"+rv.PermissionID] = struct{}{}
+			plan.Ops = append(plan.Ops, RBACRestoreOp{RoleID: rv.RoleID, PermissionID: rv.PermissionID, PermissionCode: item.PermissionCode})
+			if isCriticalForRestore(item.PermissionCode) {
+				plan.TouchesCritical = true
+			}
+		}
+	}
+	sort.Slice(plan.Ops, func(i, j int) bool {
+		if plan.Ops[i].RoleID != plan.Ops[j].RoleID {
+			return plan.Ops[i].RoleID < plan.Ops[j].RoleID
+		}
+		return plan.Ops[i].PermissionID < plan.Ops[j].PermissionID
+	})
+	return plan
+}
+
+// RBACDirectPlanFor computes the direct grant part of restoring snap against the current grants:
+// converging to snap.DirectPermissions for a snapshot or rollback, and only the explicit revokes
+// for a single-change proposal.
+func RBACDirectPlanFor(current []configversion.DirectPermissionEntry, snap configversion.RBACMatrixSnapshot) RBACDirectRestorePlan {
+	target := snap.DirectPermissions
+	if snap.Explicit {
+		target = current // nothing to converge: only the explicit revokes apply
+	}
+	return ComputeRBACDirectRestorePlan(current, target, snap.DirectRevokes)
+}
+
+// RBACRestorePlanDigest fingerprints a restore plan (role operations and direct grants), independent
+// of ordering. The digest stored with an approval binds it to what the approver reviewed.
+func RBACRestorePlanDigest(plan RBACRestorePlan, direct RBACDirectRestorePlan) string {
+	lines := make([]string, 0, len(plan.Ops)+len(direct.Revoke)+len(direct.Grant))
+	for _, op := range plan.Ops {
+		action := "remove"
+		if op.Add {
+			action = "add"
+		}
+		lines = append(lines, "r|"+op.RoleID+"|"+op.PermissionID+"|"+action)
+	}
+	for _, d := range direct.Revoke {
+		lines = append(lines, "d|"+d.MembershipID+"|"+d.PermissionCode+"|revoke")
+	}
+	for _, d := range direct.Grant {
+		lines = append(lines, "d|"+d.MembershipID+"|"+d.PermissionCode+"|grant")
+	}
+	sort.Strings(lines)
+	sum := sha256.Sum256([]byte(strings.Join(lines, "\n")))
+	return hex.EncodeToString(sum[:])
 }

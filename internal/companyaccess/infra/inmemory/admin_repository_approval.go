@@ -171,13 +171,21 @@ func (r *AdminRepository) ApplyPendingApprovalInTx(ctx context.Context, in caapp
 			return nil, err
 		}
 	case configversion.AggregateRBACMatrix:
-		if err := r.RestoreRBACMatrixFromSnapshot(ctx, in.CompanyID, in.ActorUserID, raw); err != nil {
+		if err := r.RestoreRBACMatrixFromSnapshot(ctx, in.CompanyID, in.ActorUserID, raw, caapp.RBACRestoreOptions{AllowCritical: true}); err != nil {
 			return nil, err
 		}
 	default:
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "unsupported aggregate_type", nil)
 	}
 
+	// The version stored after an RBAC apply is the real state, not the proposal.
+	if aggType == configversion.AggregateRBACMatrix {
+		if post, err := r.BuildRBACMatrixSnapshotJSON(ctx, in.CompanyID); err == nil {
+			if filtered, err := caapp.FilterEnterpriseRBACSnapshot(ctx, r.ListPermissions, post); err == nil {
+				raw = filtered
+			}
+		}
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for i, p := range r.pendingApprovals {

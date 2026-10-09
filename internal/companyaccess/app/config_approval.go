@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -15,15 +16,21 @@ func (s *adminService) authorizeConfigApprovalRead(ctx context.Context, sub Admi
 	return s.authorizeConfigurationHealth(ctx, sub)
 }
 
+// authorizeConfigApprovalDecide gates approve, reject and cancel-by-another-member. Any member
+// who holds rbac.manage or system.settings may decide; the requester is excluded separately
+// (SELF_APPROVAL_NOT_ALLOWED). system.settings alone cannot be required: no company owner holds
+// it, so approvals would never be decidable.
+// errRBACPlanChanged is the answer when what approving would do is no longer what was reviewed.
+func errRBACPlanChanged() error {
+	return &perr.HTTPError{
+		Code:       perr.CodeStaleProposal,
+		Message:    "the changes this approval would apply differ from the ones that were reviewed; reject it and request again",
+		HTTPStatus: http.StatusConflict,
+	}
+}
+
 func (s *adminService) authorizeConfigApprovalDecide(ctx context.Context, sub AdminSubject) error {
-	ok, err := s.hasPermission(ctx, sub, "system.settings")
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "access denied", nil)
-	}
-	return nil
+	return s.authorizeConfigurationHealth(ctx, sub)
 }
 
 func isCriticalPermissionCode(code string) bool {
@@ -75,6 +82,13 @@ func (s *adminService) checkStaleProposal(ctx context.Context, row *PendingAdmin
 func (s *adminService) queueConfigApproval(ctx context.Context, sub AdminSubject, in InsertPendingAdminChangeInput) (*PendingAdminChangeSummary, error) {
 	if s.repo == nil {
 		return nil, perr.NewHTTPError(http.StatusServiceUnavailable, perr.CodeServiceUnavailable, "approval queue unavailable", nil)
+	}
+	if in.AggregateType == configversion.AggregateRBACMatrix {
+		stamped, err := s.stampRBACPlanDigest(ctx, in.CompanyID, in.ProposedSnapshotJSON)
+		if err != nil {
+			return nil, err
+		}
+		in.ProposedSnapshotJSON = stamped
 	}
 	row, err := s.repo.InsertPendingAdminChange(ctx, in)
 	if err != nil {
@@ -154,6 +168,9 @@ func (s *adminService) buildProposedRBACSnapshotAfterRolePermRemove(ctx context.
 		filtered = append(filtered, e)
 	}
 	snap.RolePermissions = filtered
+	// A single-change proposal applies exactly this removal, not a convergence to the snapshot.
+	snap.Explicit = true
+	snap.RoleRevokes = []configversion.RolePermissionEntry{{RoleID: roleID, PermissionID: permissionID}}
 	return json.Marshal(snap)
 }
 
@@ -178,6 +195,9 @@ func (s *adminService) buildProposedRBACSnapshotAfterDirectPermRemove(ctx contex
 		filtered = append(filtered, e)
 	}
 	snap.DirectPermissions = filtered
+	// The explicit instruction makes the apply revoke exactly this grant, whatever its code.
+	snap.DirectRevokes = []configversion.DirectPermissionEntry{{MembershipID: membershipID, PermissionCode: permissionCode}}
+	snap.Explicit = true
 	return json.Marshal(snap)
 }
 
@@ -287,6 +307,24 @@ func (s *adminService) SubmitConfigApproval(ctx context.Context, req SubmitConfi
 		if strings.TrimSpace(req.AggregateID) == "" {
 			return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "aggregate_id required", nil)
 		}
+		// Same checks as UpdateNotificationRule. Only the alert channel preferences wait for
+		// approval; every other rule is updated directly, so the queue is no way around that path.
+		rules, err := s.repo.ListNotificationRules(ctx, req.Subject.CompanyID)
+		if err != nil {
+			return nil, err
+		}
+		isPrefs := false
+		for _, item := range rules {
+			if item.NotificationRuleID == req.AggregateID && item.RuleCode == AlertChannelPrefsRuleCode {
+				isPrefs = true
+			}
+		}
+		if !isPrefs {
+			return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "only alert channel preferences can be changed through approval", nil)
+		}
+		if err := s.validateAlertChannelPrefsPatch(ctx, req.Subject, rules, req.AggregateID, req.Proposed); err != nil {
+			return nil, err
+		}
 		return s.submitNotificationPatchApproval(ctx, req.Subject, req.AggregateID, req.Proposed, nil, req.Reason)
 	case configversion.ChangeTypeRBACPermissionRemove:
 		roleID, _ := req.Proposed["role_id"].(string)
@@ -323,6 +361,13 @@ func (s *adminService) SubmitConfigApproval(ctx context.Context, req SubmitConfi
 		code, _ := req.Proposed["permission_code"].(string)
 		if memID == "" || code == "" {
 			return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "membership_id and permission_code required", nil)
+		}
+		// The direct-permission route lets only the primary admin revoke the invite permission;
+		// the approval queue is not a way around that.
+		if strings.TrimSpace(code) == permissionInvite {
+			if err := s.assertCanGrantInvitePermission(ctx, req.Subject); err != nil {
+				return nil, err
+			}
 		}
 		return s.submitRBACDirectPermRemoveApproval(ctx, req.Subject, memID, code, req.Reason)
 	default:
@@ -376,6 +421,46 @@ func (s *adminService) ApproveConfigApproval(ctx context.Context, req ApproveCon
 	if err := s.checkStaleProposal(ctx, row); err != nil {
 		return nil, err
 	}
+	// A notification proposal is validated again: what the approval writes is the stored payload,
+	// whatever the route that queued it.
+	if row.AggregateType == configversion.AggregateNotificationRule {
+		var snap configversion.NotificationRuleSnapshot
+		if err := json.Unmarshal(row.ProposedSnapshotJSON, &snap); err != nil {
+			return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "invalid proposed snapshot", nil)
+		}
+		if snap.RuleCode != AlertChannelPrefsRuleCode {
+			return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "only alert channel preferences can be changed through approval", nil)
+		}
+		if valid, issues := ValidateAlertChannelPrefsPayload(prefsDocumentFromRulePayload(deepCloneMap(snap.Payload))); !valid {
+			return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, strings.Join(issues, "; "), nil)
+		}
+	}
+	// An RBAC proposal that would change nothing the restore may change (for example one queued
+	// by an older binary for a protected role, or already applied outside the queue) is not
+	// approved: "approved" would claim a change that never happens.
+	if row.AggregateType == configversion.AggregateRBACMatrix {
+		var proposed configversion.RBACMatrixSnapshot
+		if err := json.Unmarshal(row.ProposedSnapshotJSON, &proposed); err != nil {
+			return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "invalid proposed snapshot", nil)
+		}
+		changes, err := s.rbacApprovalChanges(ctx, row.CompanyID, row.ProposedSnapshotJSON)
+		if err != nil {
+			return nil, err
+		}
+		if len(changes) == 0 {
+			return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeApprovalNothingToApply,
+				"approving would not change anything; reject or cancel this request", nil)
+		}
+		if proposed.PlanDigest != "" {
+			plan, direct, err := s.rbacRestorePlans(ctx, row.CompanyID, row.ProposedSnapshotJSON)
+			if err != nil {
+				return nil, err
+			}
+			if RBACRestorePlanDigest(plan, direct) != proposed.PlanDigest {
+				return nil, errRBACPlanChanged()
+			}
+		}
+	}
 	val, err := s.ValidateConfiguration(ctx, ValidateConfigurationRequest{Subject: req.Subject})
 	if err != nil {
 		return nil, err
@@ -399,6 +484,9 @@ func (s *adminService) ApproveConfigApproval(ctx context.Context, req ApproveCon
 		CreatedBy:    req.Subject.MembershipID,
 	}, *row)
 	if err != nil {
+		if errors.Is(err, ErrRBACRestorePlanChanged) {
+			return nil, errRBACPlanChanged()
+		}
 		return nil, err
 	}
 	if row.AggregateType == configversion.AggregateRBACMatrix {
@@ -542,7 +630,15 @@ func (s *adminService) CompareConfigApproval(ctx context.Context, req CompareCon
 	if err != nil {
 		return nil, err
 	}
+	var changes []ApprovalChange
+	if row.AggregateType == configversion.AggregateRBACMatrix {
+		changes, err = s.rbacApprovalChanges(ctx, row.CompanyID, row.ProposedSnapshotJSON)
+		if err != nil {
+			return nil, err
+		}
+	}
 	return &CompareConfigApprovalView{
+		Changes:           changes,
 		ApprovalID:        row.ID,
 		AggregateType:     row.AggregateType,
 		AggregateID:       row.AggregateID,
@@ -551,7 +647,7 @@ func (s *adminService) CompareConfigApproval(ctx context.Context, req CompareCon
 		Compare: &CompareVersionsView{
 			FromVersionNo: cmp.FromVersionNo,
 			ToVersionNo:   cmp.ToVersionNo,
-			ChangedKeys:   cmp.ChangedKeys,
+			ChangedKeys:   withoutInternalApprovalKeys(cmp.ChangedKeys),
 			Equal:         cmp.Equal,
 			Summary:       cmp.Details,
 		},
@@ -598,4 +694,18 @@ func (s *adminService) appendApprovalAudit(ctx context.Context, sub AdminSubject
 		Decision:          "allow",
 		Metadata:          meta,
 	})
+}
+
+// withoutInternalApprovalKeys drops the snapshot fields that only drive an approval's apply
+// (explicit revokes, plan digest) from the list of changed keys shown to the approver.
+func withoutInternalApprovalKeys(keys []string) []string {
+	out := make([]string, 0, len(keys))
+	for _, k := range keys {
+		switch k {
+		case "direct_revokes", "role_revokes", "explicit", "plan_digest":
+			continue
+		}
+		out = append(out, k)
+	}
+	return out
 }

@@ -1,0 +1,45 @@
+requester=m_102 approver=m_107 company=c_001
+out-of-scope role_permissions fingerprint before: ['1086\t4d99f41f2b2dbdc2f45860b3bebc6530']
+
+PASS  404  ROLE-04 assign admin to unknown member passes the gate -> 404  [POST /api/v1/admin/company/admins] MEMBERSHIP_NOT_FOUND
+PASS  200  list permissions  [GET /api/v1/admin/permissions] 
+PASS  201  create temp custom role  [POST /api/v1/admin/roles] 
+PASS  200  assign dashboard.view  [POST /api/v1/admin/roles/01a12020-fc3c-7a90-8791-892c318a1102/permissions] 
+PASS  200  assign deadline.view (snapshot with the legacy grant)  [POST /api/v1/admin/roles/01a12020-fc3c-7a90-8791-892c318a1102/permissions] 
+PASS  200  read role permissions  [GET /api/v1/admin/roles/01a12020-fc3c-7a90-8791-892c318a1102/permissions] 
+PASS  200  read role permissions  [GET /api/v1/admin/roles/01a12020-fc3c-7a90-8791-892c318a1102/permissions] 
+PASS  0  role holds the legacy critical permission  [- -] ['dashboard.view', 'deadline.view', 'rbac.manage']
+PASS  202  remove critical permission -> 202 flat body  [DELETE /api/v1/admin/roles/01a12020-fc3c-7a90-8791-892c318a1102/permissions/10000000-0001-4000-8000-00000000000c] 
+PASS  0  202 body is flat {approval_id,status}  [- -] {'approval_id': '01a12021-056c-7ead-8fbf-0a3e75c18dd2', 'status': 'pending'}
+PASS  200  compare approval lists real changes  [GET /api/v1/admin/config-approvals/01a12021-056c-7ead-8fbf-0a3e75c18dd2/compare] 
+PASS  0  compare lists exactly the removal of rbac.manage on the temp role  [- -] [{'kind': 'role_permission', 'action': 'remove', 'role_id': '01a12020-fc3c-7a90-8791-892c318a1102', 'role_code': 'custom_smoke_appr_1791540393_01a12020', 'permission_code': 'rbac.manage', 'critical': 
+PASS  403  requester cannot approve own request -> 403  [POST /api/v1/admin/config-approvals/01a12021-056c-7ead-8fbf-0a3e75c18dd2/approve] SELF_APPROVAL_NOT_ALLOWED
+PASS  200  read role permissions  [GET /api/v1/admin/roles/01a12020-fc3c-7a90-8791-892c318a1102/permissions] 
+PASS  200  read role permissions  [GET /api/v1/admin/roles/01a12020-fc3c-7a90-8791-892c318a1102/permissions] 
+PASS  0  nothing changed before approval  [- -] ['dashboard.view', 'deadline.view', 'rbac.manage']
+PASS  200  approver with rbac.manage approves -> 200  [POST /api/v1/admin/config-approvals/01a12021-056c-7ead-8fbf-0a3e75c18dd2/approve] 
+PASS  200  read role permissions  [GET /api/v1/admin/roles/01a12020-fc3c-7a90-8791-892c318a1102/permissions] 
+PASS  0  after approval: rbac.manage removed, other permissions kept  [- -] ['dashboard.view', 'deadline.view']
+PASS  200  list rbac versions  [GET /api/v1/admin/rbac/matrix/versions?limit=1] 
+PASS  0  latest version is the approval apply  [- -] [{'id': '01a12021-08ec-70b6-bb06-5fd0c75bcf2d', 'company_id': 'c_001', 'aggregate_type': 'rbac_matrix', 'version_no': 18, 'created_by': 'm_107', 'created_at': '2026-10-09T10:06:38Z', 'reason': 'approv
+PASS  202  rollback to v18 touches a critical permission -> 202  [POST /api/v1/admin/rbac/matrix/versions/18/rollback] 
+PASS  0  rollback 202 body is flat  [- -] {'approval_id': '01a12021-10cd-7b2a-88b3-7f54b5fbfc52', 'status': 'pending'}
+PASS  200  read role permissions  [GET /api/v1/admin/roles/01a12020-fc3c-7a90-8791-892c318a1102/permissions] 
+PASS  200  read role permissions  [GET /api/v1/admin/roles/01a12020-fc3c-7a90-8791-892c318a1102/permissions] 
+PASS  0  nothing changed before approval (rollback)  [- -] ['dashboard.view', 'deadline.view', 'rbac.manage']
+PASS  200  approver approves the rollback -> 200  [POST /api/v1/admin/config-approvals/01a12021-10cd-7b2a-88b3-7f54b5fbfc52/approve] 
+PASS  200  read role permissions  [GET /api/v1/admin/roles/01a12020-fc3c-7a90-8791-892c318a1102/permissions] 
+PASS  200  read role permissions  [GET /api/v1/admin/roles/01a12020-fc3c-7a90-8791-892c318a1102/permissions] 
+PASS  0  after rollback approval: rbac.manage removed  [- -] ['dashboard.view', 'deadline.view']
+PASS  202  queue another critical removal -> 202  [DELETE /api/v1/admin/roles/01a12020-fc3c-7a90-8791-892c318a1102/permissions/10000000-0001-4000-8000-00000000000c] 
+PASS  409  approve a no-op proposal -> 409  [POST /api/v1/admin/config-approvals/01a12021-1b04-7248-a92c-51c3cc12ccc5/approve] APPROVAL_NOTHING_TO_APPLY
+PASS  200  reject the no-op proposal -> 200  [POST /api/v1/admin/config-approvals/01a12021-1b04-7248-a92c-51c3cc12ccc5/reject] 
+PASS  0  roles outside the company's custom roles unchanged  [- -] ['1086\t4d99f41f2b2dbdc2f45860b3bebc6530'] -> ['1086\t4d99f41f2b2dbdc2f45860b3bebc6530']
+PASS  200  cleanup: remove dashboard.view  [DELETE /api/v1/admin/roles/01a12020-fc3c-7a90-8791-892c318a1102/permissions/10000000-0001-4000-8000-000000000003] 
+PASS  200  cleanup: remove deadline.view  [DELETE /api/v1/admin/roles/01a12020-fc3c-7a90-8791-892c318a1102/permissions/10000000-0001-4000-8000-000000000019] 
+PASS  200  cleanup: inactivate temp role  [DELETE /api/v1/admin/roles/01a12020-fc3c-7a90-8791-892c318a1102] 
+PASS  200  list pending approvals of c_001  [GET /api/v1/admin/config-approvals?status=pending] 
+PASS  200  reject stale pending notification_rule.patch (019f1b88)  [POST /api/v1/admin/config-approvals/019f1b88-58d1-76fb-a453-74d18c4c5214/reject] 
+
+39/39 passed
+temp role 01a12020-fc3c-7a90-8791-892c318a1102; approvals 01a12021-056c-7ead-8fbf-0a3e75c18dd2 01a12021-10cd-7b2a-88b3-7f54b5fbfc52 01a12021-1b04-7248-a92c-51c3cc12ccc5

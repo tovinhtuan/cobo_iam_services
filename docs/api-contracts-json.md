@@ -978,8 +978,9 @@ Khôi phục ma trận RBAC của company về một phiên bản đã lưu. Bod
 > - **Role:** chỉ thay đổi quyền của role `tenant_custom` (không protected) của company trong token. Role `system_global`, `tenant_default`, protected và role của company khác **không bao giờ** bị thay đổi. Quyền ngoài phạm vi doanh nghiệp (module `cms`/`platform`, `platform.cms.view`, `cms.*`, ...) không bao giờ bị thêm hoặc gỡ.
 > - **Thêm quyền** vào role chỉ khi `AssignRolePermission` cũng cho phép (grant tier `grantable` và cho role tùy chỉnh); quyền khác trong snapshot bị bỏ qua. Gỡ quyền thì luôn được phép.
 > - **Quyền trực tiếp:** chỉ thu hồi/cấp lại các mã trong `GrantablePermissions` (mã admin tenant được quản lý qua `/memberships/{id}/permissions`) và chỉ cho membership của company. Quyền trực tiếp khác (ví dụ `platform.cms.view`, `ad_hoc_alert.process_control`) không bị đụng.
-> - **Quyền hạn:** token cần `rbac.manage` hoặc `system.settings` để gọi; nếu rollback thực sự thay đổi role hoặc quyền trực tiếp thì cần `rbac.manage` (giống các route sửa quyền trực tiếp), thiếu thì 403 `PERMISSION_DENIED` và không thay đổi gì.
-> - **Approval:** nếu rollback thêm hoặc gỡ một quyền **critical**, thay đổi **chưa được áp dụng**: response **202** (body phẳng như các route approval khác, xem dưới); bản ghi `pending_admin_changes` có `change_type = "rbac.matrix.rollback"`. "Critical" gồm: `rbac.manage`, `system.settings`, `admin.membership.invite`, `disclosure.publish`, `disclosure.auto_create.manage`, `company.profile.manage` và mọi quyền có grant tier `tenant_admin_only` hoặc `high_risk`. Người khác có `system.settings` duyệt qua `POST /api/v1/admin/config-approvals/{id}/approve`; người yêu cầu không tự duyệt (403 `SELF_APPROVAL_NOT_ALLOWED`); ma trận đã có phiên bản mới thì 409 `STALE_PROPOSAL`. Công ty không có ai giữ `system.settings` sẽ không duyệt được và yêu cầu ở trạng thái `pending` tới khi người yêu cầu huỷ.
+> - **Quyền hạn:** luôn cần `rbac.manage` (giống các route sửa quyền trực tiếp); chỉ có `system.settings` thì 403 `PERMISSION_DENIED` và không thay đổi gì (`system.settings` chỉ đủ để đọc phiên bản). Rollback thêm hoặc gỡ quyền trực tiếp `admin.membership.invite` chỉ primary admin được yêu cầu (giống route quyền trực tiếp), ngược lại 403.
+> - **Approval:** nếu rollback thêm hoặc gỡ một quyền **critical**, thay đổi **chưa được áp dụng**: response **202** (body phẳng như các route approval khác, xem dưới); bản ghi `pending_admin_changes` có `change_type = "rbac.matrix.rollback"`. "Critical" gồm: `rbac.manage`, `system.settings`, `admin.membership.invite`, `disclosure.publish`, `disclosure.auto_create.manage`, `company.profile.manage` và mọi quyền có grant tier `tenant_admin_only` hoặc `high_risk`. Một thành viên **khác** người yêu cầu, cùng công ty, có `rbac.manage` hoặc `system.settings` duyệt qua `POST /api/v1/admin/config-approvals/{id}/approve` (xem mục "Quyền quyết định approval"); người yêu cầu không tự duyệt (403 `SELF_APPROVAL_NOT_ALLOWED`); ma trận đã có phiên bản mới thì 409 `STALE_PROPOSAL`. Công ty chỉ có một người quản trị không có đường tự duyệt: yêu cầu ở trạng thái `pending` tới khi có admin thứ hai hoặc người yêu cầu huỷ.
+> - **Trong transaction:** nếu giữa lúc kiểm tra và lúc ghi có thay đổi khiến rollback chạm quyền critical, rollback tự chuyển sang approval (202), không áp dụng gì.
 > - Rollback không có quyền critical áp dụng ngay và tạo phiên bản mới `source = "rollback"`.
 
 **Response 200 (áp dụng ngay)**
@@ -1004,6 +1005,35 @@ Khôi phục ma trận RBAC của company về một phiên bản đã lưu. Bod
   "status": "pending"
 }
 ```
+
+---
+
+### Quyền quyết định approval (cập nhật 2026-10-09, ROLE-01 follow-up)
+
+`POST /api/v1/admin/config-approvals/{id}/approve`, `/reject` và `/cancel` (khi người huỷ không phải người yêu cầu) cần **`rbac.manage` hoặc `system.settings`** (trước đây chỉ `system.settings`, mà không công ty nào có ai giữ quyền này). Luôn loại người yêu cầu (403 `SELF_APPROVAL_NOT_ALLOWED` khi duyệt/từ chối yêu cầu của chính mình). Người yêu cầu luôn huỷ được yêu cầu của mình. Đọc danh sách/chi tiết approval không đổi (`rbac.manage` hoặc `system.settings`).
+
+**Approval RBAC không còn gì để áp dụng:** `POST .../approve` trả **409** `APPROVAL_NOTHING_TO_APPLY` (yêu cầu giữ `pending`; từ chối hoặc huỷ được) khi bản đề xuất không làm thay đổi gì mà thao tác khôi phục được phép thay đổi (ví dụ yêu cầu do phiên bản cũ tạo cho role mặc định/dùng chung, hoặc đã được áp dụng ngoài hàng đợi).
+
+**`GET .../config-approvals/{id}/compare`** (aggregate `rbac_matrix`) trả thêm `changes`: danh sách thay đổi thật sẽ được áp dụng nếu duyệt (luôn có mặt, `[]` khi không còn gì để áp dụng; `null` với aggregate khác). `compare.changed_keys` không chứa các khoá nội bộ (`explicit`, `role_revokes`, `direct_revokes`, `plan_digest`):
+
+```json
+{
+  "changes": [
+    { "kind": "role_permission", "action": "remove", "role_id": "…", "role_code": "custom_x", "permission_code": "rbac.manage", "critical": true },
+    { "kind": "direct_permission", "action": "add", "membership_id": "…", "permission_code": "admin.membership.invite", "critical": true }
+  ]
+}
+```
+
+**Approval áp dụng đúng điều đã duyệt:**
+- `rbac.permission.remove` và `rbac.direct_permission.remove` là yêu cầu **một thay đổi**: khi duyệt chỉ thực hiện đúng việc gỡ được yêu cầu, không hội tụ cả ma trận về snapshot. Quyền trực tiếp cấp sau khi xếp hàng (mời người dùng, cấp mặc định) không bị thu hồi. Gỡ quyền trực tiếp áp dụng cho cả mã không thuộc danh sách tenant được cấp trực tiếp (giống route gỡ quyền trực tiếp). `rbac.direct_permission.remove` cho `admin.membership.invite` chỉ primary admin được yêu cầu.
+- `rbac.matrix.rollback` hội tụ về snapshot nhưng gắn với **dấu vân tay kế hoạch** lúc xếp hàng: nếu lúc duyệt kế hoạch thực tế khác (ví dụ có quyền trực tiếp mới) thì **409 `STALE_PROPOSAL`** (kiểm cả trước và bên trong transaction), không áp dụng gì; hãy từ chối và yêu cầu lại.
+- Tạo, nhân bản hoặc vô hiệu hoá role tùy chỉnh (`POST /roles`, `POST /roles/{id}/clone`, `DELETE /roles/{id}`) tạo phiên bản ma trận mới, nên mọi approval RBAC đang chờ trả 409 `STALE_PROPOSAL` khi duyệt.
+- `notification_rule.patch` qua `POST /config-approvals` chỉ dành cho `alert_channel_prefs`, kiểm tra hợp lệ và gói cước giống `PATCH` thông thường (400 `INVALID_REQUEST` nếu sai); khi duyệt payload được kiểm tra lại.
+
+### Route quản trị công ty cần `rbac.manage` (ROLE-04)
+
+`POST /api/v1/admin/company/admins`, `DELETE /api/v1/admin/company/admins/{membership_id}` và `POST /api/v1/admin/company/transfer-ownership` cần `rbac.manage` (trước đây vô tình cần `system.settings`, nên chủ công ty tự đăng ký bị 403). Chỉ primary admin được chuyển quyền sở hữu; các kiểm tra khác không đổi. Người chỉ có `system.settings` nhận 403 `PERMISSION_DENIED`.
 
 ---
 

@@ -40,7 +40,11 @@ func (r *AdminRepository) BuildNotificationRuleSnapshotJSON(ctx context.Context,
 }
 
 func (r *AdminRepository) BuildRBACMatrixSnapshotJSON(ctx context.Context, companyID string) ([]byte, error) {
-	roles, err := r.ListRoles(ctx, companyID)
+	return buildRBACMatrixSnapshotQ(ctx, r.db, companyID)
+}
+
+func buildRBACMatrixSnapshotQ(ctx context.Context, q queryer, companyID string) ([]byte, error) {
+	roles, err := listRolesQ(ctx, q, companyID)
 	if err != nil {
 		return nil, err
 	}
@@ -50,7 +54,7 @@ func (r *AdminRepository) BuildRBACMatrixSnapshotJSON(ctx context.Context, compa
 		DirectPermissions: []configversion.DirectPermissionEntry{},
 	}
 	for _, role := range roles {
-		perms, err := r.ListRolePermissions(ctx, companyID, role.RoleID)
+		perms, err := listRolePermissionsQ(ctx, q, companyID, role.RoleID)
 		if err != nil {
 			return nil, err
 		}
@@ -61,7 +65,7 @@ func (r *AdminRepository) BuildRBACMatrixSnapshotJSON(ctx context.Context, compa
 			})
 		}
 	}
-	directRows, err := r.ListActiveDirectPermissionsByCompany(ctx, companyID)
+	directRows, err := listActiveDirectPermissionsByCompanyQ(ctx, q, companyID)
 	if err != nil {
 		return nil, err
 	}
@@ -275,28 +279,13 @@ func (r *AdminRepository) RestoreNotificationRuleFromSnapshot(ctx context.Contex
 	return r.UpdateNotificationRuleMerged(ctx, companyID, snap.NotificationRuleID, payload, &status)
 }
 
-func (r *AdminRepository) RestoreRBACMatrixFromSnapshot(ctx context.Context, companyID, actorUserID string, raw []byte) error {
-	var snap configversion.RBACMatrixSnapshot
-	if err := json.Unmarshal(raw, &snap); err != nil {
-		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "invalid snapshot_json", nil)
-	}
+func (r *AdminRepository) RestoreRBACMatrixFromSnapshot(ctx context.Context, companyID, actorUserID string, raw []byte, opts caapp.RBACRestoreOptions) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-
-	// Only tenant_custom roles of this company and enterprise-scope permissions may change.
-	plan, err := caapp.BuildRBACRestorePlan(ctx, r, companyID, raw)
-	if err != nil {
-		return err
-	}
-	if err := r.applyRBACRestorePlanTx(ctx, tx, companyID, plan); err != nil {
-		return err
-	}
-
-	// Direct grants: only those a tenant admin may manage, and only for memberships of this company.
-	if err := r.restoreDirectGrantsTx(ctx, tx, companyID, actorUserID, snap.DirectPermissions); err != nil {
+	if err := r.restoreRBACMatrixTx(ctx, tx, companyID, actorUserID, raw, opts); err != nil {
 		return err
 	}
 	return tx.Commit()

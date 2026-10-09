@@ -319,7 +319,7 @@ type AdminRepository interface {
 	ListRBACMatrixVersions(ctx context.Context, companyID string, limit int) ([]ConfigVersionRow, error)
 	GetRBACMatrixVersion(ctx context.Context, companyID string, versionNo int) (*ConfigVersionDetail, error)
 	RestoreNotificationRuleFromSnapshot(ctx context.Context, companyID string, raw []byte) error
-	RestoreRBACMatrixFromSnapshot(ctx context.Context, companyID, actorUserID string, raw []byte) error
+	RestoreRBACMatrixFromSnapshot(ctx context.Context, companyID, actorUserID string, raw []byte, opts RBACRestoreOptions) error
 
 	// Configuration approval (Sprint 5 Batch 2B).
 	InsertPendingAdminChange(ctx context.Context, in InsertPendingAdminChangeInput) (*PendingAdminChange, error)

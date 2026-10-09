@@ -271,3 +271,46 @@
 - [x] be-security + admin-role + api-compat; các phát hiện đã xử lý hoặc ghi follow-up (xem `05-completion.md`)
 - [x] `05-completion.md`; cập nhật `10-risk-report.md`
 - [x] deploy DEV + smoke theo plan (nhánh approval chưa kiểm được trên DEV: c_001 không có người duyệt `system.settings`)
+
+---
+
+# Todo (ROLE-01 follow-up) — xem `06-followup-plan.md`
+
+## WS-C — Test tích hợp MySQL [x]
+- [x] C-T1 harness `rbac_restore_integration_test.go` (`MYSQL_TEST_DSN`, seed id ngẫu nhiên, cleanup)
+- [x] C-T2 6 case; đỏ trên `7a131a1`, xanh trên bản sửa
+- [x] C-T3 hướng dẫn chạy local (`07-integration-tests.md`)
+- [x] CP-1
+
+## WS-B — Transaction [x]
+- [x] B-T1 `queryer` + đọc qua tx (PERF-15; test pool 1 kết nối)
+- [x] B-T2 khoá `FOR UPDATE` (FORCE INDEX theo company) + plan trong tx
+- [x] B-T3 `RBACRestoreOptions{AllowCritical}` + `ErrRBACRestoreNeedsApproval`; mismatch → approval 202
+- [x] B-T4 snapshot thực sau apply (MySQL + in-memory)
+- [x] B-T5 version khi tạo/nhân bản/vô hiệu role tùy chỉnh
+- [x] CP-2 (7 revert-check, test tích hợp xanh trên MySQL 8, 3 test mới đỏ trên `10a5700`)
+
+## WS-A — Người duyệt (A1) + ROLE-04 [x]
+- [x] A-T1 test trước (3 loại quyết định × 3 persona; ROLE-04 persona rbac.manage/system.settings)
+- [x] A-T2 `authorizeConfigApprovalDecide` = rbac.manage hoặc system.settings
+- [x] A-T3 ROLE-04 `requireRbacManage` + invalidate cache
+- [x] A-T4 guard FE nút duyệt (cùng WS-E)
+- [x] A-T5 hợp đồng + QA matrix
+- [x] C-T4 smoke DEV nhánh duyệt thật (39/39 và 32/32) — CP-3
+
+## WS-D — Approval lỗi thời [x]
+- [x] D-T1 409 `APPROVAL_NOTHING_TO_APPLY`
+- [x] D-T2 compare trả `changes` thật
+- [x] D-T3 dọn pending lỗi thời DEV (API + SQL cho công ty không có tài khoản)
+- [x] D-T4 hợp đồng
+
+## WS-E — FE (cobo_web_design) [x]
+- [x] E-T1 nhãn `rbac.matrix.rollback` + test
+- [x] E-T2 guard nút duyệt theo WS-A
+- [x] E-T3 hiển thị danh sách thay đổi, lỗi theo mã, race so sánh, 403 inline
+- [x] test mới xanh, tsc không đổi, không có fail mới, build, mojibake
+
+## Đóng [x]
+- [x] CP-4 review (be-security, admin-role, api-compat, fe-security) → xử lý hoặc ghi follow-up (`08-followup-completion.md`)
+- [x] ai-cache completion; không commit/push khi chưa được yêu cầu
+- [ ] FE chưa deploy; commit/push khi user yêu cầu

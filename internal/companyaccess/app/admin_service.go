@@ -1009,7 +1009,7 @@ func (s *adminService) RemoveTeamMember(ctx context.Context, req RemoveTeamMembe
 }
 
 func (s *adminService) AssignCompanyAdmin(ctx context.Context, req AssignCompanyAdminRequest) error {
-	if err := s.authorize(ctx, req.Subject, "rbac.manage", ""); err != nil {
+	if err := s.requireRbacManage(ctx, req.Subject); err != nil {
 		return err
 	}
 	if err := s.requireTargetMembership(ctx, req.Subject, req.MembershipID); err != nil {
@@ -1026,11 +1026,15 @@ func (s *adminService) AssignCompanyAdmin(ctx context.Context, req AssignCompany
 	if err != nil || roleID == "" {
 		return perr.NewHTTPError(http.StatusInternalServerError, perr.CodeInternal, "company_admin role not found", nil)
 	}
-	return s.repo.AddRole(ctx, req.MembershipID, roleID)
+	if err := s.repo.AddRole(ctx, req.MembershipID, roleID); err != nil {
+		return err
+	}
+	s.invalidateEffectiveAccessForCompany(ctx, req.Subject.CompanyID)
+	return nil
 }
 
 func (s *adminService) RevokeCompanyAdmin(ctx context.Context, req RevokeCompanyAdminRequest) error {
-	if err := s.authorize(ctx, req.Subject, "rbac.manage", ""); err != nil {
+	if err := s.requireRbacManage(ctx, req.Subject); err != nil {
 		return err
 	}
 	if err := s.requireTargetMembership(ctx, req.Subject, req.MembershipID); err != nil {
@@ -1047,11 +1051,15 @@ func (s *adminService) RevokeCompanyAdmin(ctx context.Context, req RevokeCompany
 	if err != nil || roleID == "" {
 		return perr.NewHTTPError(http.StatusInternalServerError, perr.CodeInternal, "company_admin role not found", nil)
 	}
-	return s.repo.RemoveRole(ctx, req.MembershipID, roleID)
+	if err := s.repo.RemoveRole(ctx, req.MembershipID, roleID); err != nil {
+		return err
+	}
+	s.invalidateEffectiveAccessForCompany(ctx, req.Subject.CompanyID)
+	return nil
 }
 
 func (s *adminService) TransferOwnership(ctx context.Context, req TransferOwnershipRequest) error {
-	if err := s.authorize(ctx, req.Subject, "rbac.manage", ""); err != nil {
+	if err := s.requireRbacManage(ctx, req.Subject); err != nil {
 		return err
 	}
 	caller, err := s.repo.GetMembershipByID(ctx, req.Subject.MembershipID)
@@ -1067,7 +1075,11 @@ func (s *adminService) TransferOwnership(ctx context.Context, req TransferOwners
 	if err := s.repo.ClearMembershipPrimaryAdmin(ctx, req.Subject.MembershipID); err != nil {
 		return err
 	}
-	return s.repo.SetMembershipPrimaryAdmin(ctx, req.TargetMembershipID)
+	if err := s.repo.SetMembershipPrimaryAdmin(ctx, req.TargetMembershipID); err != nil {
+		return err
+	}
+	s.invalidateEffectiveAccessForCompany(ctx, req.Subject.CompanyID)
+	return nil
 }
 func (s *adminService) ListCompanyMemberships(ctx context.Context, req ListCompanyMembershipsRequest) (ListCompanyMembershipsResult, error) {
 	page := req.Page
@@ -1469,18 +1481,7 @@ func (s *adminService) UpdateNotificationRule(ctx context.Context, req UpdateNot
 		}
 	}
 	if ruleCode == AlertChannelPrefsRuleCode {
-		var current map[string]any
-		for _, item := range rules {
-			if item.NotificationRuleID == req.RuleID {
-				current = prefsDocumentFromRulePayload(deepCloneMap(item.Payload))
-				break
-			}
-		}
-		mergePayloadMaps(current, req.PayloadPatch)
-		if valid, issues := ValidateAlertChannelPrefsPayload(current); !valid {
-			return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, strings.Join(issues, "; "), nil)
-		}
-		if err := s.entitlementChecker().ValidateAlertChannelPrefsMutation(ctx, req.Subject.UserID, current); err != nil {
+		if err := s.validateAlertChannelPrefsPatch(ctx, req.Subject, rules, req.RuleID, req.PayloadPatch); err != nil {
 			return err
 		}
 		summary, err := s.submitNotificationPatchApproval(ctx, req.Subject, req.RuleID, req.PayloadPatch, req.Status, "")
@@ -1494,6 +1495,24 @@ func (s *adminService) UpdateNotificationRule(ctx context.Context, req UpdateNot
 	}
 	_ = s.captureNotificationRuleVersion(ctx, req.Subject, req.RuleID, configversion.SourceMutationAPI, "")
 	return nil
+}
+
+// validateAlertChannelPrefsPatch applies the checks every change to the alert channel preferences
+// must pass, whichever route queues it: the merged document is valid and the company's plan
+// allows the channels it enables.
+func (s *adminService) validateAlertChannelPrefsPatch(ctx context.Context, sub AdminSubject, rules []NotificationRuleView, ruleID string, patch map[string]any) error {
+	var current map[string]any
+	for _, item := range rules {
+		if item.NotificationRuleID == ruleID {
+			current = prefsDocumentFromRulePayload(deepCloneMap(item.Payload))
+			break
+		}
+	}
+	mergePayloadMaps(current, patch)
+	if valid, issues := ValidateAlertChannelPrefsPayload(current); !valid {
+		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, strings.Join(issues, "; "), nil)
+	}
+	return s.entitlementChecker().ValidateAlertChannelPrefsMutation(ctx, sub.UserID, current)
 }
 
 func cloneMap(m map[string]any) map[string]any {

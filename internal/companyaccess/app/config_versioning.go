@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -262,6 +263,11 @@ func (s *adminService) RollbackRBACMatrixVersion(ctx context.Context, req Rollba
 	if err != nil {
 		return nil, err
 	}
+	// A stored version is a state to converge to: it never carries the instructions of an approval
+	// proposal (explicit revokes, plan digest), so none are honoured even if one were present.
+	if sanitized, err = stripApprovalInstructions(sanitized); err != nil {
+		return nil, err
+	}
 	reason := strings.TrimSpace(req.Reason)
 	if reason == "" {
 		reason = "rollback"
@@ -272,17 +278,20 @@ func (s *adminService) RollbackRBACMatrixVersion(ctx context.Context, req Rollba
 	if err != nil {
 		return nil, err
 	}
-	// The role-permission and direct-permission routes need rbac.manage, so a rollback that
-	// changes either needs it too (system.settings alone is enough only to read versions).
-	if impact.Changes {
-		if err := s.requireRbacManage(ctx, req.Subject); err != nil {
-			return nil, err
-		}
+	// The role-permission and direct-permission routes need rbac.manage, and what a rollback
+	// changes is decided under the restore's locks, so the rollback itself always needs it
+	// (system.settings alone is enough only to read versions).
+	if err := s.requireRbacManage(ctx, req.Subject); err != nil {
+		return nil, err
 	}
 	if impact.Critical {
 		return nil, s.routeRBACRollbackToApproval(ctx, req.Subject, req.VersionNo, reason, sanitized)
 	}
-	if err := s.repo.RestoreRBACMatrixFromSnapshot(ctx, req.Subject.CompanyID, req.Subject.UserID, sanitized); err != nil {
+	if err := s.repo.RestoreRBACMatrixFromSnapshot(ctx, req.Subject.CompanyID, req.Subject.UserID, sanitized, RBACRestoreOptions{}); err != nil {
+		// The state changed after the pre-check and the restore now touches a critical permission.
+		if errors.Is(err, ErrRBACRestoreNeedsApproval) {
+			return nil, s.routeRBACRollbackToApproval(ctx, req.Subject, req.VersionNo, reason, sanitized)
+		}
 		return nil, err
 	}
 	s.invalidateEffectiveAccessForCompany(ctx, req.Subject.CompanyID)
@@ -300,4 +309,17 @@ func (s *adminService) RollbackRBACMatrixVersion(ctx context.Context, req Rollba
 		return &ConfigVersionRow{AggregateType: configversion.AggregateRBACMatrix}, nil
 	}
 	return &items[0], nil
+}
+
+// stripApprovalInstructions removes the fields only an approval proposal carries.
+func stripApprovalInstructions(raw []byte) ([]byte, error) {
+	var snap configversion.RBACMatrixSnapshot
+	if err := json.Unmarshal(raw, &snap); err != nil {
+		return nil, err
+	}
+	snap.Explicit = false
+	snap.RoleRevokes = nil
+	snap.DirectRevokes = nil
+	snap.PlanDigest = ""
+	return json.Marshal(snap)
 }

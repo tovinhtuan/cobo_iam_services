@@ -8,6 +8,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/cobo/cobo_iam_services/internal/companyaccess/configversion"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 )
 
@@ -101,6 +102,8 @@ func (s *adminService) CreateCustomRole(ctx context.Context, req CreateCustomRol
 	if err != nil {
 		return nil, err
 	}
+	// A new role changes the matrix: pending approvals and rollbacks based on the old version go stale.
+	_ = s.captureRBACMatrixVersion(ctx, req.Subject, configversion.SourceMutationAPI, "")
 	FinalizeRoleListItem(item)
 	return item, nil
 }
@@ -157,7 +160,11 @@ func (s *adminService) InactivateCustomRole(ctx context.Context, req InactivateC
 			nil,
 		)
 	}
-	return s.repo.InactivateTenantCustomRole(ctx, req.Subject.CompanyID, role.RoleID, req.Subject.UserID)
+	if err := s.repo.InactivateTenantCustomRole(ctx, req.Subject.CompanyID, role.RoleID, req.Subject.UserID); err != nil {
+		return err
+	}
+	_ = s.captureRBACMatrixVersion(ctx, req.Subject, configversion.SourceMutationAPI, "")
+	return nil
 }
 
 func (s *adminService) CloneRole(ctx context.Context, req CloneRoleRequest) (*CloneRoleResult, error) {
@@ -239,6 +246,7 @@ func (s *adminService) CloneRole(ctx context.Context, req CloneRoleRequest) (*Cl
 	if reloaded != nil {
 		item = reloaded
 	}
+	_ = s.captureRBACMatrixVersion(ctx, req.Subject, configversion.SourceMutationAPI, "")
 	FinalizeRoleListItem(item)
 	item.PermissionCount = summary.CopiedCount
 	return &CloneRoleResult{Role: *item, CopySummary: summary}, nil

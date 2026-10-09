@@ -14,7 +14,11 @@ import (
 )
 
 func (r *AdminRepository) ListPermissions(ctx context.Context) ([]caapp.PermissionListItem, error) {
-	rows, err := r.db.QueryContext(ctx, `
+	return listPermissionsQ(ctx, r.db)
+}
+
+func listPermissionsQ(ctx context.Context, q queryer) ([]caapp.PermissionListItem, error) {
+	rows, err := q.QueryContext(ctx, `
 		SELECT permission_id, permission_code, permission_name, module_name
 		FROM permissions
 		WHERE status = 'active'
@@ -39,8 +43,12 @@ func (r *AdminRepository) ListPermissions(ctx context.Context) ([]caapp.Permissi
 }
 
 func (r *AdminRepository) ListRoles(ctx context.Context, companyID string) ([]caapp.RoleListItem, error) {
+	return listRolesQ(ctx, r.db, companyID)
+}
+
+func listRolesQ(ctx context.Context, q queryer, companyID string) ([]caapp.RoleListItem, error) {
 	companyID = strings.TrimSpace(companyID)
-	rows, err := r.db.QueryContext(ctx, `
+	rows, err := q.QueryContext(ctx, `
 		SELECT r.role_id, r.role_code, r.role_name, r.status, r.company_id,
 		       r.role_type, r.is_protected, r.description,
 		       r.created_at, r.updated_at,
@@ -105,13 +113,17 @@ func (r *AdminRepository) ListRoles(ctx context.Context, companyID string) ([]ca
 }
 
 func (r *AdminRepository) RoleAccessibleByCompany(ctx context.Context, companyID, roleID string) (bool, error) {
+	return roleAccessibleByCompanyQ(ctx, r.db, companyID, roleID)
+}
+
+func roleAccessibleByCompanyQ(ctx context.Context, q queryer, companyID, roleID string) (bool, error) {
 	companyID = strings.TrimSpace(companyID)
 	roleID = strings.TrimSpace(roleID)
 	if companyID == "" || roleID == "" {
 		return false, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "company_id and role_id required", nil)
 	}
 	var roleCompany sql.NullString
-	err := r.db.QueryRowContext(ctx, `
+	err := q.QueryRowContext(ctx, `
 		SELECT company_id FROM roles WHERE role_id = ? AND status = 'active'
 	`, roleID).Scan(&roleCompany)
 	if err == sql.ErrNoRows {
@@ -127,14 +139,18 @@ func (r *AdminRepository) RoleAccessibleByCompany(ctx context.Context, companyID
 }
 
 func (r *AdminRepository) ListRolePermissions(ctx context.Context, companyID, roleID string) (*caapp.RolePermissionsView, error) {
-	ok, err := r.RoleAccessibleByCompany(ctx, companyID, roleID)
+	return listRolePermissionsQ(ctx, r.db, companyID, roleID)
+}
+
+func listRolePermissionsQ(ctx context.Context, q queryer, companyID, roleID string) (*caapp.RolePermissionsView, error) {
+	ok, err := roleAccessibleByCompanyQ(ctx, q, companyID, roleID)
 	if err != nil {
 		return nil, err
 	}
 	if !ok {
 		return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "role not found", nil)
 	}
-	rows, err := r.db.QueryContext(ctx, `
+	rows, err := q.QueryContext(ctx, `
 		SELECT p.permission_id, p.permission_code, p.permission_name, p.module_name
 		FROM role_permissions rp
 		INNER JOIN permissions p ON p.permission_id = rp.permission_id AND p.status = 'active'

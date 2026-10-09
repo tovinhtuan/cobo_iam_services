@@ -253,7 +253,7 @@ func TestComputeRBACDirectRestorePlan(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := caapp.ComputeRBACDirectRestorePlan(tc.current, tc.target)
+			got := caapp.ComputeRBACDirectRestorePlan(tc.current, tc.target, nil)
 			if !reflect.DeepEqual(nilToEmpty(got.Revoke), nilToEmpty(tc.wantRevoke)) {
 				t.Errorf("revoke = %+v, want %+v", got.Revoke, tc.wantRevoke)
 			}
@@ -272,4 +272,50 @@ func nilToEmpty(in []configversion.DirectPermissionEntry) []configversion.Direct
 		return []configversion.DirectPermissionEntry{}
 	}
 	return in
+}
+
+func TestComputeRBACDirectRestorePlan_ExplicitRevokes(t *testing.T) {
+	// An approval to remove one direct grant carries an explicit revoke, so it applies even for a
+	// permission outside GrantablePermissions (the direct-permission API can remove any code).
+	nonGrantable := directEntry("m1", "dept.manage")
+	other := directEntry("m1", "ad_hoc_alert.process_control")
+	got := caapp.ComputeRBACDirectRestorePlan(
+		[]configversion.DirectPermissionEntry{nonGrantable, other}, nil,
+		[]configversion.DirectPermissionEntry{nonGrantable},
+	)
+	if len(got.Revoke) != 1 || got.Revoke[0] != nonGrantable {
+		t.Fatalf("revoke = %+v, want only the explicit one", got.Revoke)
+	}
+	if !got.TouchesCritical {
+		t.Errorf("revoking a high-risk grant must be flagged critical")
+	}
+	// An explicit revoke of a grant that is not active any more does nothing.
+	none := caapp.ComputeRBACDirectRestorePlan(nil, nil, []configversion.DirectPermissionEntry{nonGrantable})
+	if len(none.Revoke) != 0 {
+		t.Fatalf("revoke = %+v, want none", none.Revoke)
+	}
+}
+
+func TestComputeRBACMatrixRestorePlan_ExplicitMode(t *testing.T) {
+	catalog := []caapp.PermissionListItem{
+		planPerm("disclosure.view", "disclosure"), planPerm("deadline.view", "deadline"), planPerm("rbac.manage", "admin"),
+	}
+	custom := planRole("custom", caapp.RoleTypeTenantCustom, false)
+	global := planRole("global", caapp.RoleTypeSystemGlobal, true)
+	current := map[string][]caapp.PermissionListItem{
+		"custom": {planPerm("rbac.manage", "admin"), planPerm("deadline.view", "deadline")},
+	}
+	// The proposal snapshot is stale for everything except the named revoke.
+	snap := planSnap([2]string{"custom", "disclosure.view"})
+	snap.Explicit = true
+	snap.RoleRevokes = []configversion.RolePermissionEntry{{RoleID: "custom", PermissionID: "rbac.manage"}, {RoleID: "global", PermissionID: "disclosure.view"}}
+
+	got := caapp.ComputeRBACMatrixRestorePlan([]caapp.RoleListItem{custom, global}, current, snap, catalog)
+	want := []planOp{{"custom", "rbac.manage", false}}
+	if ops := flattenPlan(got); !reflect.DeepEqual(ops, want) {
+		t.Errorf("ops = %+v, want only the named revoke on the editable role", ops)
+	}
+	if !got.TouchesCritical {
+		t.Errorf("removing rbac.manage is critical")
+	}
 }

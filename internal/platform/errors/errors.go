@@ -71,7 +71,9 @@ const (
 	CodePendingApprovalExists Code = "PENDING_APPROVAL_EXISTS"
 	CodeStaleProposal         Code = "STALE_PROPOSAL"
 	CodeApprovalNotPending    Code = "NOT_PENDING"
-	CodeApprovalRouted        Code = "APPROVAL_ROUTED"
+	// CodeApprovalNothingToApply: approving would change nothing the restore may change.
+	CodeApprovalNothingToApply Code = "APPROVAL_NOTHING_TO_APPLY"
+	CodeApprovalRouted         Code = "APPROVAL_ROUTED"
 	// Enterprise RBAC scope boundary — permission belongs to CMS/Platform, not enterprise.
 	CodePermissionOutOfEnterpriseScope Code = "PERMISSION_OUT_OF_ENTERPRISE_SCOPE"
 	// RBAC Phase B — protected/default role mutation guard.
