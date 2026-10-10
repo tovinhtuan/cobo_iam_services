@@ -181,14 +181,7 @@ func (r *Repository) GetActionPolicy(ctx context.Context, companyID, action stri
 		&p.ActionCode, &p.RequiredPermission, &p.ScopeType, &p.WorkflowState, &p.EligibleActor, &p.EffectType, &p.DenyReasonCode,
 	)
 	if err == nil {
-		action = strings.TrimSpace(action)
-		legacy := legacyPolicy(action)
-		// Mis-seeded matrix rows often default to system.settings; prefer explicit legacy mapping
-		// for actions like company.view when the user holds the action permission but not system.settings.
-		if legacy.RequiredPermission != "system.settings" && p.RequiredPermission == "system.settings" {
-			return legacy, nil
-		}
-		return &p, nil
+		return matrixOrLegacyPolicy(&p, strings.TrimSpace(action)), nil
 	}
 	if isMySQLMissingTable(err) {
 		// Compatibility fallback for environments not yet migrated with action_policy_matrix.
@@ -221,8 +214,25 @@ func scanStringCol(rows *sql.Rows) ([]string, error) {
 	return out, rows.Err()
 }
 
+// matrixOrLegacyPolicy picks between a matrix row and the legacy mapping. Mis-seeded matrix rows
+// often default to system.settings; prefer an explicit legacy case for actions like company.view
+// when the user holds the action permission but not system.settings. An action with no legacy
+// case (legacy deny) keeps its matrix row.
+func matrixOrLegacyPolicy(p *authapp.ActionPolicy, action string) *authapp.ActionPolicy {
+	legacy := legacyPolicy(action)
+	if p.RequiredPermission == "system.settings" && legacy.RequiredPermission != "system.settings" && legacy.RequiredPermission != "" {
+		return legacy
+	}
+	return p
+}
+
 func legacyPolicy(action string) *authapp.ActionPolicy {
 	required := "system.settings"
+	if strings.HasPrefix(action, "admin.") {
+		// ROLE-24: an admin action needs its own case below; without one it is denied (the
+		// checker denies an empty required permission) instead of being gated by system.settings.
+		required = ""
+	}
 	switch action {
 	case "disclosure.approve":
 		required = "disclosure.approve"

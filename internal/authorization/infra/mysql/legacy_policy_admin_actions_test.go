@@ -7,10 +7,12 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	authapp "github.com/cobo/cobo_iam_services/internal/authorization/app"
 )
 
-// RP-07: legacyPolicy falls back to system.settings for an action it does not know, so an
-// admin action string without its own case silently gets the wrong gate. Every action
+// RP-07: legacyPolicy denies an admin action it does not know (ROLE-24), so an admin action
+// string without its own case locks its route. Every action
 // companyaccess passes to authorize must be listed here with the permission it requires.
 var adminActionPolicy = map[string]string{
 	"admin.account.settings.read":         "rbac.manage",
@@ -78,5 +80,29 @@ func TestLegacyPolicy_CoversEveryCompanyAccessAction(t *testing.T) {
 	sort.Strings(missing)
 	if len(missing) > 0 {
 		t.Fatalf("give these actions a case in legacyPolicy and list them in adminActionPolicy: %v", missing)
+	}
+}
+
+// ROLE-24: an admin action without its own case used to fall back to system.settings, so any
+// holder of that permission passed a gate nobody had defined. It is denied instead.
+func TestLegacyPolicy_UnknownAdminActionIsDenied(t *testing.T) {
+	for _, action := range []string{"admin.qa_smoke.unknown", "admin.membership.unknown", "admin."} {
+		if got := legacyPolicy(action).RequiredPermission; got != "" {
+			t.Errorf("legacyPolicy(%q) requires %q, want deny (empty)", action, got)
+		}
+	}
+}
+
+func TestMatrixPolicy_SystemSettingsRowAndLegacyMapping(t *testing.T) {
+	row := func(action string) *authapp.ActionPolicy {
+		return &authapp.ActionPolicy{ActionCode: action, RequiredPermission: "system.settings"}
+	}
+	// A mis-seeded system.settings row yields to an explicit legacy case...
+	if got := matrixOrLegacyPolicy(row("company.view"), "company.view").RequiredPermission; got != "company.view" {
+		t.Errorf("company.view = %q, want the legacy company.view", got)
+	}
+	// ...but an explicit row for an unmapped admin action stays authoritative (not turned into deny).
+	if got := matrixOrLegacyPolicy(row("admin.qa_smoke.unknown"), "admin.qa_smoke.unknown").RequiredPermission; got != "system.settings" {
+		t.Errorf("admin.qa_smoke.unknown = %q, want the matrix system.settings", got)
 	}
 }
