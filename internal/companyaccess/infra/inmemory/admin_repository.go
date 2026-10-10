@@ -1691,6 +1691,16 @@ func (r *AdminRepository) CountTeamsInDepartment(_ context.Context, companyID, d
 	return n, nil
 }
 
+func (r *AdminRepository) GetTeamDepartmentID(_ context.Context, companyID, teamID string) (string, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	t, ok := r.teams[teamID]
+	if !ok || t.CompanyID != companyID {
+		return "", nil
+	}
+	return t.DepartmentID, nil
+}
+
 func (r *AdminRepository) TeamBelongsToCompany(_ context.Context, companyID, teamID string) (bool, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

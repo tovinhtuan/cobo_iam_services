@@ -1026,8 +1026,16 @@ func (s *adminService) AddTeamMember(ctx context.Context, req AddTeamMemberReque
 	if err := s.requireTeamInCompany(ctx, req.Subject.CompanyID, req.TeamID); err != nil {
 		return err
 	}
-	// Member must belong to the parent department
-	ok, err := s.repo.MemberBelongsToDepartment(ctx, req.MembershipID, req.DepartmentID)
+	// ROLE-10: the member must belong to the team's own department; a department_id in the body
+	// is only accepted when it names that department.
+	teamDept, err := s.repo.GetTeamDepartmentID(ctx, req.Subject.CompanyID, req.TeamID)
+	if err != nil {
+		return err
+	}
+	if body := strings.TrimSpace(req.DepartmentID); body != "" && body != teamDept {
+		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "department_id does not match the team's department", nil)
+	}
+	ok, err := s.repo.MemberBelongsToDepartment(ctx, req.MembershipID, teamDept)
 	if err != nil {
 		return err
 	}

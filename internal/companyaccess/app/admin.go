@@ -267,6 +267,8 @@ type AdminRepository interface {
 	CountTeamsInDepartment(ctx context.Context, companyID, departmentID string) (int, error)
 	// TeamBelongsToCompany reports whether the team exists in the company.
 	TeamBelongsToCompany(ctx context.Context, companyID, teamID string) (bool, error)
+	// GetTeamDepartmentID returns the parent department of a team of the company ("" when none).
+	GetTeamDepartmentID(ctx context.Context, companyID, teamID string) (string, error)
 	// DepartmentBelongsToCompany reports whether the department exists in the company, whatever its
 	// status. Storage errors are returned, never folded into "false".
 	DepartmentBelongsToCompany(ctx context.Context, companyID, departmentID string) (bool, error)

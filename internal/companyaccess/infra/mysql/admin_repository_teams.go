@@ -130,6 +130,20 @@ func (r *AdminRepository) CountTeamsInDepartment(ctx context.Context, companyID,
 	return n, err
 }
 
+func (r *AdminRepository) GetTeamDepartmentID(ctx context.Context, companyID, teamID string) (string, error) {
+	var dept sql.NullString
+	err := r.db.QueryRowContext(ctx,
+		`SELECT department_id FROM org_units WHERE org_unit_id = ? AND company_id = ? AND unit_type = 'team' LIMIT 1`,
+		teamID, companyID).Scan(&dept)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return dept.String, nil
+}
+
 func (r *AdminRepository) TeamBelongsToCompany(ctx context.Context, companyID, teamID string) (bool, error) {
 	var found int
 	err := r.db.QueryRowContext(ctx,
