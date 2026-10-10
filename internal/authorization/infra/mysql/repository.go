@@ -9,12 +9,31 @@ import (
 	authapp "github.com/cobo/cobo_iam_services/internal/authorization/app"
 )
 
+// The resolver relies on this to deny inactive memberships (H3).
+var _ authapp.MembershipStatusReader = (*Repository)(nil)
+
 type Repository struct {
 	db *sql.DB
 }
 
 func NewRepository(db *sql.DB) *Repository {
 	return &Repository{db: db}
+}
+
+// IsMembershipActive reports whether the membership exists in the company with status
+// active. A missing membership is not active.
+func (r *Repository) IsMembershipActive(ctx context.Context, membershipID, companyID string) (bool, error) {
+	var status string
+	err := r.db.QueryRowContext(ctx,
+		`SELECT membership_status FROM memberships WHERE membership_id = ? AND company_id = ?`,
+		membershipID, companyID).Scan(&status)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("read membership status: %w", err)
+	}
+	return strings.EqualFold(strings.TrimSpace(status), "active"), nil
 }
 
 func (r *Repository) ListPermissionCodes(ctx context.Context, membershipID, companyID string) ([]string, error) {

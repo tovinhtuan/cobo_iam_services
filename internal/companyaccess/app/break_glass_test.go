@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"testing"
 
-	auditinmem "github.com/cobo/cobo_iam_services/internal/audit/infra/inmemory"
 	auditapp "github.com/cobo/cobo_iam_services/internal/audit/app"
+	auditinmem "github.com/cobo/cobo_iam_services/internal/audit/infra/inmemory"
 	authapp "github.com/cobo/cobo_iam_services/internal/authorization/app"
 	caapp "github.com/cobo/cobo_iam_services/internal/companyaccess/app"
 	cainmem "github.com/cobo/cobo_iam_services/internal/companyaccess/infra/inmemory"
@@ -266,6 +266,40 @@ func TestBreakGlass_RevokeRemovesOverlay(t *testing.T) {
 	he, ok := perr.AsHTTPError(err)
 	if !ok || he.HTTPStatus != http.StatusForbidden {
 		t.Fatalf("expected 403 after revoke, got %v", err)
+	}
+}
+
+// BES-13: a membership deactivated while it holds an active emergency grant loses the overlay.
+func TestBreakGlass_InactiveTargetLosesOverlay(t *testing.T) {
+	repo := cainmem.NewAdminRepository()
+	requester := caapp.AdminSubject{UserID: "u_req", MembershipID: "m_req", CompanyID: "c_bg"}
+	target := caapp.AdminSubject{UserID: "u_tgt", MembershipID: "m_tgt", CompanyID: "c_bg"}
+	approver1 := caapp.AdminSubject{UserID: "u_a1", MembershipID: "m_a1", CompanyID: "c_bg"}
+	approver2 := caapp.AdminSubject{UserID: "u_a2", MembershipID: "m_a2", CompanyID: "c_bg"}
+	seedBGMember(t, repo, requester)
+	seedBGMember(t, repo, target)
+	seedBGApprover(t, repo, approver1)
+	seedBGApprover(t, repo, approver2)
+	auth := perMemberAuth{byMembership: map[string][]string{
+		"m_req": {}, "m_tgt": {}, "m_a1": {"rbac.manage"}, "m_a2": {"rbac.manage"},
+	}}
+	svc := newBreakGlassSvc(t, repo, auth)
+	grant, _ := svc.CreateEmergencyAccessRequest(context.Background(), caapp.CreateEmergencyAccessRequest{
+		Subject: requester, TargetMembershipID: target.MembershipID,
+		Reason: "incident", RequestedDurationSeconds: 3600,
+	})
+	_, _ = svc.ApproveEmergencyAccessRequest(context.Background(), caapp.ApproveEmergencyAccessRequest{Subject: approver1, SessionID: grant.SessionID})
+	_, _ = svc.ApproveEmergencyAccessRequest(context.Background(), caapp.ApproveEmergencyAccessRequest{Subject: approver2, SessionID: grant.SessionID})
+	if _, err := svc.GetConfigurationHealth(context.Background(), caapp.GetConfigurationHealthRequest{Subject: target}); err != nil {
+		t.Fatalf("precondition: overlay must grant access while active: %v", err)
+	}
+	if _, err := repo.UpdateMembershipStatus(context.Background(), "c_bg", target.MembershipID, "inactive"); err != nil {
+		t.Fatal(err)
+	}
+	_, err := svc.GetConfigurationHealth(context.Background(), caapp.GetConfigurationHealthRequest{Subject: target})
+	he, ok := perr.AsHTTPError(err)
+	if !ok || he.HTTPStatus != http.StatusForbidden {
+		t.Fatalf("expected 403 for an inactive membership with an emergency grant, got %v", err)
 	}
 }
 

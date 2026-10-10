@@ -423,6 +423,17 @@ func (s *service) Refresh(ctx context.Context, req RefreshRequest) (*RefreshResp
 	if ss.CompanyID == "" || ss.MembershipID == "" {
 		return nil, perr.NewHTTPError(http.StatusUnprocessableEntity, perr.CodeCompanyContextRequired, "company context is required", nil)
 	}
+	// A membership deactivated or removed after login must not get new tokens.
+	m, err := s.memberships.GetActiveMembership(ctx, ss.UserID, ss.CompanyID)
+	if err != nil {
+		if he, ok := perr.AsHTTPError(err); ok && he.Code == perr.CodeMembershipNotFound {
+			return nil, perr.NewHTTPError(http.StatusUnauthorized, perr.CodeSessionExpired, "session expired", nil)
+		}
+		return nil, err
+	}
+	if m == nil || m.MembershipID != ss.MembershipID {
+		return nil, perr.NewHTTPError(http.StatusUnauthorized, perr.CodeSessionExpired, "session expired", nil)
+	}
 	access, exp, err := s.tokens.IssueAccessToken(ctx, AccessTokenClaims{Sub: ss.UserID, SessionID: ss.SessionID, MembershipID: ss.MembershipID, CompanyID: ss.CompanyID})
 	if err != nil {
 		return nil, fmt.Errorf("issue access token: %w", err)

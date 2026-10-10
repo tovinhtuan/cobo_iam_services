@@ -245,7 +245,7 @@ func (r *AdminRepository) RestoreRBACMatrixFromSnapshot(ctx context.Context, com
 		r.mu.RLock()
 		m, ok := r.memberships[d.MembershipID]
 		r.mu.RUnlock()
-		if !ok || m.CompanyID != companyID {
+		if !ok || m.CompanyID != companyID || (m.Status != "" && !strings.EqualFold(m.Status, "active")) {
 			continue
 		}
 		_ = r.InsertDirectPermission(ctx, d.MembershipID, companyID, d.PermissionCode, actorUserID)

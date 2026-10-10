@@ -108,7 +108,8 @@ func (s *adminService) CreateCustomRole(ctx context.Context, req CreateCustomRol
 	return item, nil
 }
 
-func (s *adminService) UpdateCustomRole(ctx context.Context, req UpdateCustomRoleRequest) (*RoleListItem, error) {
+func (s *adminService) UpdateCustomRole(ctx context.Context, req UpdateCustomRoleRequest) (_ *RoleListItem, err error) {
+	defer s.invalidateEffectiveAccessOnSuccess(ctx, req.Subject.CompanyID, &err)
 	if err := s.requireRbacManage(ctx, req.Subject); err != nil {
 		return nil, err
 	}
@@ -140,7 +141,8 @@ func (s *adminService) UpdateCustomRole(ctx context.Context, req UpdateCustomRol
 	return item, nil
 }
 
-func (s *adminService) InactivateCustomRole(ctx context.Context, req InactivateCustomRoleRequest) error {
+func (s *adminService) InactivateCustomRole(ctx context.Context, req InactivateCustomRoleRequest) (err error) {
+	defer s.invalidateEffectiveAccessOnSuccess(ctx, req.Subject.CompanyID, &err)
 	if err := s.requireRbacManage(ctx, req.Subject); err != nil {
 		return err
 	}

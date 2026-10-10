@@ -33,7 +33,8 @@ func (s *adminService) CreateDepartment(ctx context.Context, req CreateDepartmen
 	return s.repo.CreateDepartmentRow(ctx, req.Subject.CompanyID, deptID, deptCode, name, req.HeadMembershipID, req.SortOrder)
 }
 
-func (s *adminService) UpdateDepartment(ctx context.Context, req UpdateDepartmentRequest) (*DepartmentView, error) {
+func (s *adminService) UpdateDepartment(ctx context.Context, req UpdateDepartmentRequest) (_ *DepartmentView, err error) {
+	defer s.invalidateEffectiveAccessOnSuccess(ctx, req.Subject.CompanyID, &err)
 	if err := s.requireRbacManage(ctx, req.Subject); err != nil {
 		return nil, err
 	}
@@ -65,7 +66,8 @@ func (s *adminService) UpdateDepartment(ctx context.Context, req UpdateDepartmen
 	return s.repo.PatchDepartmentRow(ctx, req.Subject.CompanyID, req.DepartmentID, req.Name, req.HeadMembershipID, clearHead, req.SortOrder, req.Status)
 }
 
-func (s *adminService) DeleteDepartment(ctx context.Context, req DeleteDepartmentRequest) error {
+func (s *adminService) DeleteDepartment(ctx context.Context, req DeleteDepartmentRequest) (err error) {
+	defer s.invalidateEffectiveAccessOnSuccess(ctx, req.Subject.CompanyID, &err)
 	if err := s.requireRbacManage(ctx, req.Subject); err != nil {
 		return err
 	}
@@ -83,14 +85,16 @@ func (s *adminService) DeleteDepartment(ctx context.Context, req DeleteDepartmen
 	return s.repo.SoftDeleteDepartment(ctx, req.DepartmentID, req.Subject.CompanyID)
 }
 
-func (s *adminService) AddDeptMember(ctx context.Context, req AddDeptMemberRequest) error {
+func (s *adminService) AddDeptMember(ctx context.Context, req AddDeptMemberRequest) (err error) {
+	defer s.invalidateEffectiveAccessOnSuccess(ctx, req.Subject.CompanyID, &err)
 	if err := s.authorizeDeptMemberMutation(ctx, req.Subject, req.DepartmentID, req.MembershipID); err != nil {
 		return err
 	}
 	return s.repo.AddDepartment(ctx, req.MembershipID, req.DepartmentID)
 }
 
-func (s *adminService) RemoveDeptMember(ctx context.Context, req RemoveDeptMemberRequest) error {
+func (s *adminService) RemoveDeptMember(ctx context.Context, req RemoveDeptMemberRequest) (err error) {
+	defer s.invalidateEffectiveAccessOnSuccess(ctx, req.Subject.CompanyID, &err)
 	if err := s.authorizeDeptMemberMutation(ctx, req.Subject, req.DepartmentID, req.MembershipID); err != nil {
 		return err
 	}

@@ -893,23 +893,34 @@ func (s *adminService) CreateMembership(ctx context.Context, req CreateMembershi
 	}
 	return result, nil
 }
-func (s *adminService) UpdateMembership(ctx context.Context, req UpdateMembershipRequest) (*MembershipView, error) {
+func (s *adminService) UpdateMembership(ctx context.Context, req UpdateMembershipRequest) (_ *MembershipView, err error) {
+	defer s.invalidateEffectiveAccessOnSuccess(ctx, req.Subject.CompanyID, &err)
 	if err := s.authorize(ctx, req.Subject, "admin.membership.update", req.MembershipID); err != nil {
 		return nil, err
 	}
 	if err := s.authorizeScopedMembershipMutation(ctx, req.Subject, "admin.membership.update", req.MembershipID); err != nil {
 		return nil, err
 	}
-	if req.Status == "inactive" {
+	// Any status other than active removes all access at once, so only the two values the
+	// admin UI uses are accepted, stored normalized.
+	status := strings.ToLower(strings.TrimSpace(req.Status))
+	if status != "active" && status != "inactive" {
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "status must be active or inactive", nil)
+	}
+	if status == "inactive" {
 		m, err := s.repo.GetMembershipByID(ctx, req.MembershipID)
-		if err == nil && m.IsPrimaryAdmin {
+		if err != nil {
+			return nil, err
+		}
+		if m.IsPrimaryAdmin {
 			return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "CANNOT_DEACTIVATE_PRIMARY_ADMIN", nil)
 		}
 	}
-	return s.repo.UpdateMembershipStatus(ctx, req.Subject.CompanyID, req.MembershipID, req.Status)
+	return s.repo.UpdateMembershipStatus(ctx, req.Subject.CompanyID, req.MembershipID, status)
 }
 
-func (s *adminService) DeleteMembership(ctx context.Context, req DeleteMembershipRequest) error {
+func (s *adminService) DeleteMembership(ctx context.Context, req DeleteMembershipRequest) (err error) {
+	defer s.invalidateEffectiveAccessOnSuccess(ctx, req.Subject.CompanyID, &err)
 	if err := s.authorize(ctx, req.Subject, "admin.membership.delete", req.MembershipID); err != nil {
 		return err
 	}
@@ -917,7 +928,10 @@ func (s *adminService) DeleteMembership(ctx context.Context, req DeleteMembershi
 		return err
 	}
 	m, err := s.repo.GetMembershipByID(ctx, req.MembershipID)
-	if err == nil && m.IsPrimaryAdmin {
+	if err != nil {
+		return err
+	}
+	if m.IsPrimaryAdmin {
 		return perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "CANNOT_DELETE_PRIMARY_ADMIN", nil)
 	}
 	return s.repo.DeleteMembership(ctx, req.Subject.CompanyID, req.MembershipID)
@@ -956,7 +970,8 @@ func (s *adminService) CreateTeam(ctx context.Context, req CreateTeamRequest) (*
 	return s.repo.CreateTeamRow(ctx, req.Subject.CompanyID, req.DepartmentID, teamID, name)
 }
 
-func (s *adminService) UpdateTeam(ctx context.Context, req UpdateTeamRequest) (*TeamView, error) {
+func (s *adminService) UpdateTeam(ctx context.Context, req UpdateTeamRequest) (_ *TeamView, err error) {
+	defer s.invalidateEffectiveAccessOnSuccess(ctx, req.Subject.CompanyID, &err)
 	if err := s.requireRbacManage(ctx, req.Subject); err != nil {
 		return nil, err
 	}
@@ -967,14 +982,16 @@ func (s *adminService) UpdateTeam(ctx context.Context, req UpdateTeamRequest) (*
 	return s.repo.PatchTeamRow(ctx, req.Subject.CompanyID, req.TeamID, req.Name, req.Status)
 }
 
-func (s *adminService) DeleteTeam(ctx context.Context, req DeleteTeamRequest) error {
+func (s *adminService) DeleteTeam(ctx context.Context, req DeleteTeamRequest) (err error) {
+	defer s.invalidateEffectiveAccessOnSuccess(ctx, req.Subject.CompanyID, &err)
 	if err := s.requireRbacManage(ctx, req.Subject); err != nil {
 		return err
 	}
 	return s.repo.DeleteTeamRow(ctx, req.Subject.CompanyID, req.TeamID)
 }
 
-func (s *adminService) AddTeamMember(ctx context.Context, req AddTeamMemberRequest) error {
+func (s *adminService) AddTeamMember(ctx context.Context, req AddTeamMemberRequest) (err error) {
+	defer s.invalidateEffectiveAccessOnSuccess(ctx, req.Subject.CompanyID, &err)
 	if err := s.requireRbacManage(ctx, req.Subject); err != nil {
 		return err
 	}
@@ -995,7 +1012,8 @@ func (s *adminService) AddTeamMember(ctx context.Context, req AddTeamMemberReque
 	return s.repo.AddTeamMember(ctx, req.Subject.CompanyID, req.TeamID, req.MembershipID)
 }
 
-func (s *adminService) RemoveTeamMember(ctx context.Context, req RemoveTeamMemberRequest) error {
+func (s *adminService) RemoveTeamMember(ctx context.Context, req RemoveTeamMemberRequest) (err error) {
+	defer s.invalidateEffectiveAccessOnSuccess(ctx, req.Subject.CompanyID, &err)
 	if err := s.requireRbacManage(ctx, req.Subject); err != nil {
 		return err
 	}
@@ -1145,7 +1163,8 @@ func (s *adminService) ListCompanyMemberships(ctx context.Context, req ListCompa
 	}
 	return ListCompanyMembershipsResult{Items: all[start:end], Total: total, Page: page, PageSize: pageSize}, nil
 }
-func (s *adminService) AssignRole(ctx context.Context, req AssignRoleRequest) error {
+func (s *adminService) AssignRole(ctx context.Context, req AssignRoleRequest) (err error) {
+	defer s.invalidateEffectiveAccessOnSuccess(ctx, req.Subject.CompanyID, &err)
 	if err := s.authorize(ctx, req.Subject, "admin.membership.role.assign", req.MembershipID); err != nil {
 		return err
 	}
@@ -1177,7 +1196,8 @@ func (s *adminService) AssignRole(ctx context.Context, req AssignRoleRequest) er
 	}
 	return s.repo.AddRole(ctx, req.MembershipID, req.RoleID)
 }
-func (s *adminService) RemoveRole(ctx context.Context, req RemoveRoleRequest) error {
+func (s *adminService) RemoveRole(ctx context.Context, req RemoveRoleRequest) (err error) {
+	defer s.invalidateEffectiveAccessOnSuccess(ctx, req.Subject.CompanyID, &err)
 	if err := s.authorize(ctx, req.Subject, "admin.membership.role.remove", req.MembershipID); err != nil {
 		return err
 	}
@@ -1186,7 +1206,8 @@ func (s *adminService) RemoveRole(ctx context.Context, req RemoveRoleRequest) er
 	}
 	return s.repo.RemoveRole(ctx, req.MembershipID, req.RoleID)
 }
-func (s *adminService) AssignDepartment(ctx context.Context, req AssignDepartmentRequest) error {
+func (s *adminService) AssignDepartment(ctx context.Context, req AssignDepartmentRequest) (err error) {
+	defer s.invalidateEffectiveAccessOnSuccess(ctx, req.Subject.CompanyID, &err)
 	if err := s.authorize(ctx, req.Subject, "admin.membership.department.assign", req.MembershipID); err != nil {
 		return err
 	}
@@ -1198,7 +1219,8 @@ func (s *adminService) AssignDepartment(ctx context.Context, req AssignDepartmen
 	}
 	return s.repo.AddDepartment(ctx, req.MembershipID, req.DepartmentID)
 }
-func (s *adminService) RemoveDepartment(ctx context.Context, req RemoveDepartmentRequest) error {
+func (s *adminService) RemoveDepartment(ctx context.Context, req RemoveDepartmentRequest) (err error) {
+	defer s.invalidateEffectiveAccessOnSuccess(ctx, req.Subject.CompanyID, &err)
 	if err := s.authorize(ctx, req.Subject, "admin.membership.department.remove", req.MembershipID); err != nil {
 		return err
 	}
@@ -1210,7 +1232,8 @@ func (s *adminService) RemoveDepartment(ctx context.Context, req RemoveDepartmen
 	}
 	return s.repo.RemoveDepartment(ctx, req.MembershipID, req.DepartmentID)
 }
-func (s *adminService) AssignTitle(ctx context.Context, req AssignTitleRequest) error {
+func (s *adminService) AssignTitle(ctx context.Context, req AssignTitleRequest) (err error) {
+	defer s.invalidateEffectiveAccessOnSuccess(ctx, req.Subject.CompanyID, &err)
 	if err := s.authorize(ctx, req.Subject, "admin.membership.title.assign", req.MembershipID); err != nil {
 		return err
 	}
@@ -1219,7 +1242,8 @@ func (s *adminService) AssignTitle(ctx context.Context, req AssignTitleRequest) 
 	}
 	return s.repo.AddTitle(ctx, req.MembershipID, req.TitleID)
 }
-func (s *adminService) RemoveTitle(ctx context.Context, req RemoveTitleRequest) error {
+func (s *adminService) RemoveTitle(ctx context.Context, req RemoveTitleRequest) (err error) {
+	defer s.invalidateEffectiveAccessOnSuccess(ctx, req.Subject.CompanyID, &err)
 	if err := s.authorize(ctx, req.Subject, "admin.membership.title.remove", req.MembershipID); err != nil {
 		return err
 	}
@@ -1290,7 +1314,8 @@ func (s *adminService) ListRolePermissions(ctx context.Context, req ListRolePerm
 	view.Permissions = filtered
 	return view, nil
 }
-func (s *adminService) AssignRolePermission(ctx context.Context, req AssignRolePermissionRequest) error {
+func (s *adminService) AssignRolePermission(ctx context.Context, req AssignRolePermissionRequest) (err error) {
+	defer s.invalidateEffectiveAccessOnSuccess(ctx, req.Subject.CompanyID, &err)
 	if err := s.authorize(ctx, req.Subject, "admin.role.permission.assign", req.RoleID); err != nil {
 		return err
 	}
@@ -1323,7 +1348,8 @@ func (s *adminService) AssignRolePermission(ctx context.Context, req AssignRoleP
 	_ = s.captureRBACMatrixVersion(ctx, req.Subject, configversion.SourceMutationAPI, "")
 	return nil
 }
-func (s *adminService) RemoveRolePermission(ctx context.Context, req RemoveRolePermissionRequest) error {
+func (s *adminService) RemoveRolePermission(ctx context.Context, req RemoveRolePermissionRequest) (err error) {
+	defer s.invalidateEffectiveAccessOnSuccess(ctx, req.Subject.CompanyID, &err)
 	if err := s.authorize(ctx, req.Subject, "admin.role.permission.remove", req.RoleID); err != nil {
 		return err
 	}
@@ -1659,7 +1685,8 @@ func (s *adminService) PatchOwnCompany(ctx context.Context, req PatchOwnCompanyR
 	return detail, nil
 }
 
-func (s *adminService) AddDirectPermission(ctx context.Context, req AddDirectPermissionRequest) error {
+func (s *adminService) AddDirectPermission(ctx context.Context, req AddDirectPermissionRequest) (err error) {
+	defer s.invalidateEffectiveAccessOnSuccess(ctx, req.Subject.CompanyID, &err)
 	if strings.TrimSpace(req.PermissionCode) == permissionInvite {
 		if err := s.assertCanGrantInvitePermission(ctx, req.Subject); err != nil {
 			return err
@@ -1680,7 +1707,8 @@ func (s *adminService) AddDirectPermission(ctx context.Context, req AddDirectPer
 	return nil
 }
 
-func (s *adminService) RemoveDirectPermission(ctx context.Context, req RemoveDirectPermissionRequest) error {
+func (s *adminService) RemoveDirectPermission(ctx context.Context, req RemoveDirectPermissionRequest) (err error) {
+	defer s.invalidateEffectiveAccessOnSuccess(ctx, req.Subject.CompanyID, &err)
 	if strings.TrimSpace(req.PermissionCode) == permissionInvite {
 		if err := s.assertCanGrantInvitePermission(ctx, req.Subject); err != nil {
 			return err

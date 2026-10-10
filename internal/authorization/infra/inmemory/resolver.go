@@ -16,6 +16,20 @@ func NewResolver(repo authapp.Repository) *Resolver {
 }
 
 func (r *Resolver) Resolve(ctx context.Context, membershipID, companyID string) (*authapp.EffectiveAccessSummary, error) {
+	if sr, ok := r.repo.(authapp.MembershipStatusReader); ok {
+		active, err := sr.IsMembershipActive(ctx, membershipID, companyID)
+		if err != nil {
+			return nil, err
+		}
+		if !active {
+			return &authapp.EffectiveAccessSummary{
+				CompanyID:    companyID,
+				MembershipID: membershipID,
+				Permissions:  []string{},
+				DataScope:    authapp.EffectiveDataScope{ScopeType: "none"},
+			}, nil
+		}
+	}
 	permissions, err := r.repo.ListPermissionCodes(ctx, membershipID, companyID)
 	if err != nil {
 		return nil, err

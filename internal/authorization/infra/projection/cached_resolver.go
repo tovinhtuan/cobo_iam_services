@@ -17,13 +17,16 @@ func NewCachedResolver(base authapp.Resolver, store SnapshotStore) *CachedResolv
 }
 
 func (r *CachedResolver) Resolve(ctx context.Context, membershipID, companyID string) (*authapp.EffectiveAccessSummary, error) {
-	if v, ok := r.store.Get(ctx, membershipID, companyID); ok {
+	v, gen, ok := r.store.Get(ctx, membershipID, companyID)
+	if ok {
 		return v, nil
 	}
+	// gen was read before the database: if an invalidation lands while we resolve, this
+	// entry is written at an old generation and is never served.
 	resolved, err := r.base.Resolve(ctx, membershipID, companyID)
 	if err != nil {
 		return nil, fmt.Errorf("resolve base effective access: %w", err)
 	}
-	r.store.Put(ctx, resolved)
+	r.store.Put(ctx, resolved, gen)
 	return resolved, nil
 }

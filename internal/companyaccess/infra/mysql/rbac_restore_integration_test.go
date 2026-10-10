@@ -412,6 +412,22 @@ func TestIntegration_RollbackDirectGrantSQL(t *testing.T) {
 	}
 }
 
+// BES-10: a rollback does not give a direct grant back to a membership deactivated since the snapshot.
+func TestIntegration_RollbackDoesNotRegrantDirectPermissionToInactiveMembership(t *testing.T) {
+	w := newITWorld(t)
+	w.grantDirect(w.approver, itDirectA)
+	v := w.snapshot(itDeadline)
+	w.revokeDirect(w.approver, itDirectA)
+	w.exec(`UPDATE memberships SET membership_status = 'inactive' WHERE membership_id = ?`, w.approver.MembershipID)
+
+	if err := w.rollback(v); err != nil {
+		t.Fatalf("rollback: %v", err)
+	}
+	if got := w.activeDirect(w.approver.MembershipID); got[itDirectA] != 0 {
+		t.Errorf("an inactive membership got its direct grant back: %v", got)
+	}
+}
+
 // --- critical rollback goes through approval, and applying it runs the same SQL in a tx ------
 
 func TestIntegration_CriticalRollback_ApprovalApplyRunsRestoreInTx(t *testing.T) {

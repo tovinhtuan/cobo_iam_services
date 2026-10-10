@@ -38,7 +38,9 @@ func rejectEnterpriseRoleIDsPayload(roleIDs []string) error {
 	return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "role_ids is not allowed for enterprise staff management; use role_id", nil)
 }
 
-func (s *adminService) ReplaceMembershipPrimaryRole(ctx context.Context, req ReplaceMembershipPrimaryRoleRequest) error {
+func (s *adminService) ReplaceMembershipPrimaryRole(ctx context.Context, req ReplaceMembershipPrimaryRoleRequest) (err error) {
+	wrote := false
+	defer s.invalidateEffectiveAccessIfWritten(ctx, req.Subject.CompanyID, &err, &wrote)
 	if err := s.authorize(ctx, req.Subject, "admin.membership.role.assign", req.MembershipID); err != nil {
 		return err
 	}
@@ -91,6 +93,7 @@ func (s *adminService) ReplaceMembershipPrimaryRole(ctx context.Context, req Rep
 		}
 	}
 
+	wrote = true
 	if primary != nil {
 		if err := s.repo.RemoveRole(ctx, req.MembershipID, primary.RoleID); err != nil {
 			return err

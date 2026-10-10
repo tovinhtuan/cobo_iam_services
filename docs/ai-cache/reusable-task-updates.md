@@ -4578,3 +4578,25 @@
 - deployment: `make deploy-fe` completed successfully; Vite build passed with required DEV flags, web assets and `nginx.conf` copied, only `cobo-web-design` restarted.
 - verification: `nginx -t` passed; `/healthz` and `/login-key` returned 200; frontend returned 200; Personal Ops V2 smoke passed; `/index.html` and `/app/dashboard` returned `Cache-Control: no-store, no-cache, must-revalidate`; hashed CSS retained `public, max-age=31536000, immutable`; API and worker uptime remained unchanged.
 - remaining: Vite emitted the existing large-chunk warning (>500 kB); no functional failure observed. No commit or push performed.
+
+## Risk review lần 3 - scope all (2026-10-10)
+
+- task type: read-only risk review (`/risk-review all`, `wf-risk-review`), 7 reviewer song song; không sửa code, không commit.
+- scope: iam `ff5ada2`, web `453a3494`; trọng tâm là bản sửa ROLE-01 (`10a5700`, `ff5ada2`).
+- kết quả: ROLE-01 giữ được (restore chỉ chạm `tenant_custom` của công ty, ở cả plan lẫn SQL). Không có CRITICAL/HIGH mới. Mới: 7 MEDIUM, 14 LOW.
+- MEDIUM mới: ROLE-12 (rollback rule prefs bỏ qua approval), ROLE-13 (tenant admin c_001 gỡ được quyền CMS), PERF-19 (deadlock), PERF-20, CACHE-11 (race invalidate), CACHE-12, API-13 (rollback BE với approval RBAC pending làm ROLE-01 xuất hiện lại; cần đưa vào runbook).
+- CRITICAL/HIGH cũ còn mở: C1, C6, H17 (sửa một phần), H3, ROLE-02, ROLE-03, PERF-10, H1, H4-H6, H8-H16, H18-H23.
+- artifacts: `docs/ai-cache/risk-review-2026-10-10/{00-scope.md,01-secret-scan-*.txt,10-risk-report.md}`.
+- BLOCKED: DB/server query, MySQL integration test (không có `MYSQL_TEST_DSN`), govulncheck, Docker build (review read-only).
+
+## PR-A thu hồi quyền có hiệu lực ngay (2026-10-10)
+
+- task type: bugfix qua `wf-bugfix` (theo `risk-review-2026-10-10/20-fix-plan.md`); working tree, chưa commit/deploy.
+- fixed: H3, H17, CACHE-11, CACHE-12, BES-10, cộng các mục review phát sinh PERF-26, BES-12, BES-13, PERF-12, PERF-31, PERF-30, BES-15.
+  - H3: resolver và refresh từ chối membership không active.
+  - H17: 28 mutation invalidate cache.
+  - CACHE-11/12: cache generation theo company, key `v2`, invalidate trên `WithoutCancel`.
+  - BES-10: restore không cấp lại direct grant cho membership inactive.
+- reusable: cache Redis dùng generation theo company (`effective_access_gen:v2:{company}`). Invalidate là O(1) và an toàn với race in-flight. Mutation mới ảnh hưởng quyền phải `defer s.invalidateEffectiveAccessOnSuccess(...)`; có AST guard test `TestAccessChangingMutations_DeferInvalidation`.
+- verify: test fail giống hệt HEAD (11 test có sẵn); `-race` sạch; build Linux OK. Docker BLOCKED (daemon không chạy).
+- artifacts: `docs/ai-cache/bug-revoke-access-effective-cache-2026-10-10/{00-report,01-root-cause,05-completion}.md`.

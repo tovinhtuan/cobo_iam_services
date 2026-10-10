@@ -296,6 +296,14 @@ func (s *adminService) hasBreakGlassPermissionOverlay(ctx context.Context, sub A
 	if grant == nil {
 		return false, nil
 	}
+	// The overlay is not part of the effective-access resolver, so it applies the same rule
+	// itself: an inactive membership gets nothing from an emergency grant.
+	if err := s.requireActiveCompanyMember(ctx, sub); err != nil {
+		if _, isHTTP := perr.AsHTTPError(err); isHTTP {
+			return false, nil
+		}
+		return false, err
+	}
 	for _, cap := range grant.CapabilitySet {
 		for _, perm := range breakGlassCapabilityPermissions[cap] {
 			if perm == permission {

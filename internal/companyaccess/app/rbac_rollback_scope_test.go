@@ -1018,10 +1018,11 @@ func TestRBACRollback_IgnoresApprovalOnlyFieldsOfAStoredVersion(t *testing.T) {
 
 // --- ROLE-22: changing who administers the company drops the cached effective access ---------------------
 
-type recordingCache struct{ invalidated [][]string }
+type recordingCache struct{ invalidated []string }
 
-func (c *recordingCache) InvalidateMemberships(_ context.Context, _ string, ids []string) {
-	c.invalidated = append(c.invalidated, ids)
+func (c *recordingCache) InvalidateCompany(_ context.Context, companyID string) error {
+	c.invalidated = append(c.invalidated, companyID)
+	return nil
 }
 
 func TestCompanyAdminRoutes_InvalidateEffectiveAccess(t *testing.T) {

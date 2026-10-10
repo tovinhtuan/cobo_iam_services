@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	auditapp "github.com/cobo/cobo_iam_services/internal/audit/app"
 	"github.com/cobo/cobo_iam_services/internal/companyaccess/configversion"
@@ -14,8 +16,12 @@ import (
 
 // EffectiveAccessCache invalidates cached effective-access projections (ADR-025).
 type EffectiveAccessCache interface {
-	InvalidateMemberships(ctx context.Context, companyID string, membershipIDs []string)
+	// InvalidateCompany drops the cached effective access of every membership of the company.
+	InvalidateCompany(ctx context.Context, companyID string) error
 }
+
+// effectiveAccessInvalidateTimeout bounds the cache call made after a change has committed.
+const effectiveAccessInvalidateTimeout = 2 * time.Second
 
 func (s *adminService) authorizeConfigVersioning(ctx context.Context, sub AdminSubject) error {
 	return s.authorizeConfigurationHealth(ctx, sub)
@@ -95,19 +101,35 @@ func (s *adminService) appendVersionAudit(ctx context.Context, sub AdminSubject,
 	})
 }
 
+// invalidateEffectiveAccessOnSuccess is deferred by mutations that change what a membership
+// may do or see (roles, permissions, status, departments, titles, teams). It drops the
+// company's cached effective access when the mutation succeeded (H17).
+func (s *adminService) invalidateEffectiveAccessOnSuccess(ctx context.Context, companyID string, err *error) {
+	if *err == nil {
+		s.invalidateEffectiveAccessForCompany(ctx, companyID)
+	}
+}
+
+// invalidateEffectiveAccessIfWritten is the variant for mutations made of several repository
+// writes without a shared transaction: once *wrote is set, a later failure still leaves
+// committed changes behind, so the cache is dropped whatever the outcome.
+func (s *adminService) invalidateEffectiveAccessIfWritten(ctx context.Context, companyID string, err *error, wrote *bool) {
+	if *err == nil || *wrote {
+		s.invalidateEffectiveAccessForCompany(ctx, companyID)
+	}
+}
+
 func (s *adminService) invalidateEffectiveAccessForCompany(ctx context.Context, companyID string) {
-	if s.effectiveAccessCache == nil {
+	if s.effectiveAccessCache == nil || companyID == "" {
 		return
 	}
-	members, err := s.repo.ListMembershipsByCompany(ctx, companyID)
-	if err != nil {
-		return
+	// The change has already committed: finish even if the client has gone away.
+	ictx, cancel := context.WithTimeout(context.WithoutCancel(ctx), effectiveAccessInvalidateTimeout)
+	defer cancel()
+	if err := s.effectiveAccessCache.InvalidateCompany(ictx, companyID); err != nil {
+		slog.WarnContext(ctx, "effective access cache invalidation failed; stale access lasts until the cache TTL",
+			slog.String("company_id", companyID), slog.String("error", err.Error()))
 	}
-	ids := make([]string, 0, len(members))
-	for _, m := range members {
-		ids = append(ids, m.MembershipID)
-	}
-	s.effectiveAccessCache.InvalidateMemberships(ctx, companyID, ids)
 }
 
 func (s *adminService) ListNotificationRuleVersions(ctx context.Context, req ListNotificationRuleVersionsRequest) (*ConfigVersionListView, error) {

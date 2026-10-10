@@ -28,7 +28,8 @@ func (s *adminService) CreateTitle(ctx context.Context, req CreateTitleRequest) 
 	return s.repo.CreateTitleRow(ctx, req.Subject.CompanyID, titleID, titleCode, name, req.SortOrder)
 }
 
-func (s *adminService) UpdateTitle(ctx context.Context, req UpdateTitleRequest) (*TitleView, error) {
+func (s *adminService) UpdateTitle(ctx context.Context, req UpdateTitleRequest) (_ *TitleView, err error) {
+	defer s.invalidateEffectiveAccessOnSuccess(ctx, req.Subject.CompanyID, &err)
 	if err := s.requireRbacManage(ctx, req.Subject); err != nil {
 		return nil, err
 	}
@@ -50,7 +51,8 @@ func (s *adminService) UpdateTitle(ctx context.Context, req UpdateTitleRequest) 
 	return s.repo.PatchTitleRow(ctx, req.Subject.CompanyID, req.TitleID, req.Name, req.SortOrder, req.Status)
 }
 
-func (s *adminService) DeleteTitle(ctx context.Context, req DeleteTitleRequest) error {
+func (s *adminService) DeleteTitle(ctx context.Context, req DeleteTitleRequest) (err error) {
+	defer s.invalidateEffectiveAccessOnSuccess(ctx, req.Subject.CompanyID, &err)
 	if err := s.requireRbacManage(ctx, req.Subject); err != nil {
 		return err
 	}
@@ -68,7 +70,8 @@ func (s *adminService) DeleteTitle(ctx context.Context, req DeleteTitleRequest) 
 	return s.repo.SoftDeleteTitle(ctx, req.TitleID, req.Subject.CompanyID)
 }
 
-func (s *adminService) AddTitleMember(ctx context.Context, req AddTitleMemberRequest) error {
+func (s *adminService) AddTitleMember(ctx context.Context, req AddTitleMemberRequest) (err error) {
+	defer s.invalidateEffectiveAccessOnSuccess(ctx, req.Subject.CompanyID, &err)
 	if err := s.requireRbacManage(ctx, req.Subject); err != nil {
 		return err
 	}
@@ -79,7 +82,8 @@ func (s *adminService) AddTitleMember(ctx context.Context, req AddTitleMemberReq
 	return s.repo.AddTitle(ctx, req.MembershipID, req.TitleID)
 }
 
-func (s *adminService) RemoveTitleMember(ctx context.Context, req RemoveTitleMemberRequest) error {
+func (s *adminService) RemoveTitleMember(ctx context.Context, req RemoveTitleMemberRequest) (err error) {
+	defer s.invalidateEffectiveAccessOnSuccess(ctx, req.Subject.CompanyID, &err)
 	if err := s.requireRbacManage(ctx, req.Subject); err != nil {
 		return err
 	}

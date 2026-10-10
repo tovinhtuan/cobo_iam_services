@@ -50,8 +50,8 @@ func (r *AdminRepository) applyRBACRestorePlanTx(ctx context.Context, tx *sql.Tx
 
 // applyRBACDirectRestorePlanTx executes the direct grant part of an RBAC matrix restore.
 // caapp.ComputeRBACDirectRestorePlan limits it to the permissions a tenant admin may grant
-// directly; grants already in place are not repeated, and a grant is only written for a
-// membership that belongs to the company.
+// directly; grants already in place are not repeated, and a grant is only written for an
+// active membership that belongs to the company.
 func (r *AdminRepository) applyRBACDirectRestorePlanTx(ctx context.Context, tx *sql.Tx, companyID, actorUserID string, plan caapp.RBACDirectRestorePlan) error {
 	for _, d := range plan.Revoke {
 		if _, err := tx.ExecContext(ctx, `
@@ -69,7 +69,7 @@ func (r *AdminRepository) applyRBACDirectRestorePlanTx(ctx context.Context, tx *
 			FROM (
 				SELECT m.membership_id AS membership_id, m.company_id AS company_id, ? AS permission_code, ? AS granted_by
 				FROM memberships m
-				WHERE m.membership_id = ? AND m.company_id = ?
+				WHERE m.membership_id = ? AND m.company_id = ? AND m.membership_status = 'active'
 			) AS t
 			ON DUPLICATE KEY UPDATE revoked_at = NULL, revoked_by = NULL, granted_by = VALUES(granted_by), granted_at = CURRENT_TIMESTAMP
 		`, d.PermissionCode, actorUserID, d.MembershipID, companyID); err != nil {

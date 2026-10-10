@@ -37,6 +37,12 @@ type Repository interface {
 	GetActionPolicy(ctx context.Context, companyID, action string) (*ActionPolicy, error)
 }
 
+// MembershipStatusReader is optionally implemented by a Repository. When it is, the
+// resolver grants no permission or data scope to a membership that is not active.
+type MembershipStatusReader interface {
+	IsMembershipActive(ctx context.Context, membershipID, companyID string) (bool, error)
+}
+
 // Checker applies decision policy based on effective access and request.
 type Checker interface {
 	Check(ctx context.Context, req AuthorizeRequest, effective *EffectiveAccessSummary, policy *ActionPolicy) (*AuthorizeDecision, error)
@@ -112,11 +118,11 @@ type ResourceAssignment struct {
 }
 
 type ActionPolicy struct {
-	ActionCode          string    `json:"action_code"`
-	RequiredPermission  string    `json:"required_permission"`
-	ScopeType           string    `json:"scope_type"`
-	WorkflowState       string    `json:"workflow_state"`
-	EligibleActor       string    `json:"eligible_actor"`
-	EffectType          string    `json:"effect_type"`
-	DenyReasonCode      perr.Code `json:"deny_reason_code"`
+	ActionCode         string    `json:"action_code"`
+	RequiredPermission string    `json:"required_permission"`
+	ScopeType          string    `json:"scope_type"`
+	WorkflowState      string    `json:"workflow_state"`
+	EligibleActor      string    `json:"eligible_actor"`
+	EffectType         string    `json:"effect_type"`
+	DenyReasonCode     perr.Code `json:"deny_reason_code"`
 }

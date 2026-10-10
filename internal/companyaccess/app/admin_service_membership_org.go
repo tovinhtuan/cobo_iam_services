@@ -151,7 +151,9 @@ func (s *adminService) assignInviteOrg(
 	return nil
 }
 
-func (s *adminService) UpdateMembershipOrgAssignments(ctx context.Context, req UpdateMembershipOrgRequest) error {
+func (s *adminService) UpdateMembershipOrgAssignments(ctx context.Context, req UpdateMembershipOrgRequest) (err error) {
+	wrote := false
+	defer s.invalidateEffectiveAccessIfWritten(ctx, req.Subject.CompanyID, &err, &wrote)
 	if err := s.authorize(ctx, req.Subject, "admin.membership.update", req.MembershipID); err != nil {
 		return err
 	}
@@ -191,6 +193,7 @@ func (s *adminService) UpdateMembershipOrgAssignments(ctx context.Context, req U
 		focalSet[id] = struct{}{}
 	}
 
+	wrote = true
 	for _, deptID := range currentDeptIDs {
 		if _, keep := desiredDept[deptID]; !keep {
 			if err := s.authorizeScopedDepartmentMutation(ctx, req.Subject, "admin.membership.update", deptID); err != nil {

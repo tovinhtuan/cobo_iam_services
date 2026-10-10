@@ -6,6 +6,9 @@ import (
 	authapp "github.com/cobo/cobo_iam_services/internal/authorization/app"
 )
 
+// The resolver relies on this to deny inactive memberships (H3).
+var _ authapp.MembershipStatusReader = (*Repository)(nil)
+
 type Repository struct {
 	Permissions       map[string][]string
 	Departments       map[string][]authapp.DepartmentScope
@@ -15,6 +18,8 @@ type Repository struct {
 	OrgUnitIDs        map[string][]string
 	OrgSubtreeUnitIDs map[string][]string
 	Policies          map[string]authapp.ActionPolicy
+	// InactiveMemberships marks memberships (key membership@company) that are not active.
+	InactiveMemberships map[string]bool
 }
 
 func NewRepository() *Repository {
@@ -93,6 +98,10 @@ func NewRepository() *Repository {
 		},
 		Policies: defaultPolicies(),
 	}
+}
+
+func (r *Repository) IsMembershipActive(_ context.Context, membershipID, companyID string) (bool, error) {
+	return !r.InactiveMemberships[key(membershipID, companyID)], nil
 }
 
 func (r *Repository) ListPermissionCodes(_ context.Context, membershipID, companyID string) ([]string, error) {
