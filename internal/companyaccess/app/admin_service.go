@@ -1417,7 +1417,9 @@ func (s *adminService) RemoveRolePermission(ctx context.Context, req RemoveRoleP
 	if err != nil {
 		return err
 	}
-	if isCriticalPermissionCode(code) {
+	// RP-08: the same "needs a second admin" set as a rollback (critical codes + TenantAdminOnly /
+	// HighRisk grant tiers).
+	if isCriticalForRestore(code) {
 		summary, qErr := s.submitRBACRolePermRemoveApproval(ctx, req.Subject, req.RoleID, req.PermissionID, "")
 		if qErr != nil {
 			return qErr

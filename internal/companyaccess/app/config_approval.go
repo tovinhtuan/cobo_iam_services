@@ -39,7 +39,8 @@ func isCriticalPermissionCode(code string) bool {
 }
 
 func requiresApprovalForDirectRemove(code string) bool {
-	if isCriticalPermissionCode(code) {
+	// RP-08: one definition with the rollback (critical codes + TenantAdminOnly / HighRisk tiers).
+	if isCriticalForRestore(code) {
 		return true
 	}
 	risk := PermissionRiskLevel(code)
