@@ -304,6 +304,10 @@ type AdminRepository interface {
 	SetMembershipPrimaryAdmin(ctx context.Context, membershipID string) error
 	// ClearMembershipPrimaryAdmin sets is_primary_admin = false for the given membership.
 	ClearMembershipPrimaryAdmin(ctx context.Context, membershipID string) error
+	// TransferPrimaryAdmin moves is_primary_admin from one membership of the company to another
+	// in one transaction, only while `from` is still the primary admin and `to` is an active
+	// member of the same company (409 STATE_CONFLICT otherwise, 404 when `to` is not a member).
+	TransferPrimaryAdmin(ctx context.Context, companyID, fromMembershipID, toMembershipID string) error
 	// GetMembershipByID returns the MembershipView for a given membership_id, or an error if not found.
 	GetMembershipByID(ctx context.Context, membershipID string) (*MembershipView, error)
 	// CountAdminsInCompany returns the number of memberships with the company_admin role in the company.
@@ -548,10 +552,10 @@ type CreateUserRequest struct {
 	CompanyID        string `json:"company_id"`
 	MembershipStatus string `json:"membership_status"`
 	// Optional membership bootstrap fields when company_id is set.
-	RoleID       string   `json:"role_id,omitempty"`
-	RoleCode     string   `json:"role_code,omitempty"`
-	RoleIDs      []string `json:"role_ids,omitempty"`
-	Permissions  []string `json:"permissions,omitempty"`
+	RoleID        string   `json:"role_id,omitempty"`
+	RoleCode      string   `json:"role_code,omitempty"`
+	RoleIDs       []string `json:"role_ids,omitempty"`
+	Permissions   []string `json:"permissions,omitempty"`
 	DepartmentID  string   `json:"department_id,omitempty"`
 	DepartmentIDs []string `json:"department_ids,omitempty"`
 	TitleID       string   `json:"title_id,omitempty"`
@@ -713,16 +717,16 @@ type GetOwnCompanyRequest struct {
 
 type PatchOwnCompanyRequest struct {
 	Subject                       AdminSubject
-	CompanyName                   *string `json:"company_name"`
-	TaxCode                       *string `json:"tax_code"`
-	RegistrationNumber            *string `json:"registration_number"`
-	Address                       *string `json:"address"`
-	Phone                         *string `json:"phone"`
-	ContactEmail                  *string `json:"contact_email"`
-	RepresentativeName            *string `json:"representative_name"`
-	IsListed                      *bool   `json:"is_listed"`
-	IsLargePublic                 *bool   `json:"is_large_public"`
-	IsNonLargePublic              *bool   `json:"is_non_large_public"`
+	CompanyName                   *string   `json:"company_name"`
+	TaxCode                       *string   `json:"tax_code"`
+	RegistrationNumber            *string   `json:"registration_number"`
+	Address                       *string   `json:"address"`
+	Phone                         *string   `json:"phone"`
+	ContactEmail                  *string   `json:"contact_email"`
+	RepresentativeName            *string   `json:"representative_name"`
+	IsListed                      *bool     `json:"is_listed"`
+	IsLargePublic                 *bool     `json:"is_large_public"`
+	IsNonLargePublic              *bool     `json:"is_non_large_public"`
 	HasSubsidiaries               *bool     `json:"has_subsidiaries"`
 	HasSubordinateAccountingUnits *bool     `json:"has_subordinate_accounting_units"`
 	BusinessSectors               *[]string `json:"business_sectors"`

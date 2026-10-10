@@ -309,6 +309,67 @@ func (r *AdminRepository) ClearMembershipPrimaryAdmin(ctx context.Context, membe
 	return err
 }
 
+func (r *AdminRepository) TransferPrimaryAdmin(ctx context.Context, companyID, fromMembershipID, toMembershipID string) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("transfer primary admin: begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	// Both rows are locked in id order, so two transfers of the same company cannot deadlock.
+	rows, err := tx.QueryContext(ctx, `
+		SELECT membership_id, membership_status, is_primary_admin
+		FROM memberships
+		WHERE company_id = ? AND membership_id IN (?, ?)
+		ORDER BY membership_id
+		FOR UPDATE
+	`, companyID, fromMembershipID, toMembershipID)
+	if err != nil {
+		return fmt.Errorf("transfer primary admin: lock: %w", err)
+	}
+	type state struct {
+		status  string
+		primary bool
+	}
+	locked := map[string]state{}
+	for rows.Next() {
+		var id string
+		var st state
+		if err := rows.Scan(&id, &st.status, &st.primary); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		locked[id] = st
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if from, ok := locked[fromMembershipID]; !ok || !from.primary || !strings.EqualFold(strings.TrimSpace(from.status), "active") {
+		return perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "ownership changed: caller is no longer the primary admin", nil)
+	}
+	to, ok := locked[toMembershipID]
+	if !ok {
+		return perr.NewHTTPError(http.StatusNotFound, perr.CodeMembershipNotFound, "membership not found", nil)
+	}
+	if !strings.EqualFold(strings.TrimSpace(to.status), "active") {
+		return perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "target membership is not active", nil)
+	}
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE memberships SET is_primary_admin = FALSE WHERE membership_id = ? AND company_id = ?`, fromMembershipID, companyID); err != nil {
+		return fmt.Errorf("transfer primary admin: clear: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE memberships SET is_primary_admin = TRUE WHERE membership_id = ? AND company_id = ?`, toMembershipID, companyID); err != nil {
+		return fmt.Errorf("transfer primary admin: set: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("transfer primary admin: commit: %w", err)
+	}
+	return nil
+}
+
 func (r *AdminRepository) GetMembershipByID(ctx context.Context, membershipID string) (*caapp.MembershipView, error) {
 	row := r.db.QueryRowContext(ctx, `
 		SELECT m.membership_id, m.user_id, m.company_id, c.company_name,

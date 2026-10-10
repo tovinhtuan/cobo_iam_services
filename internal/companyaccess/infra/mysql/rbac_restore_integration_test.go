@@ -468,6 +468,37 @@ func TestIntegration_ApproveNotificationPrefsPatch_WritesRule(t *testing.T) {
 	}
 }
 
+// RP-10 / H16: the transfer is a compare-and-set on the current owner, in one transaction.
+func TestIntegration_TransferPrimaryAdmin_IsCompareAndSet(t *testing.T) {
+	w := newITWorld(t)
+	w.makeOwnerPrimaryAdmin()
+	ctx := context.Background()
+	if err := w.repo.TransferPrimaryAdmin(ctx, w.company, w.owner.MembershipID, w.approver.MembershipID); err != nil {
+		t.Fatalf("transfer: %v", err)
+	}
+	err := w.repo.TransferPrimaryAdmin(ctx, w.company, w.owner.MembershipID, w.approver.MembershipID)
+	if he, ok := perr.AsHTTPError(err); !ok || he.Code != perr.CodeStateConflict {
+		t.Fatalf("a second transfer from the former owner must be 409, got %v", err)
+	}
+	var n int
+	if err := w.db.QueryRow(`SELECT COUNT(*) FROM memberships WHERE company_id = ? AND is_primary_admin = 1`, w.company).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("primary admins = %d, want 1", n)
+	}
+	// Target outside the company -> 404; inactive target -> 409.
+	err = w.repo.TransferPrimaryAdmin(ctx, w.company, w.approver.MembershipID, w.other.MembershipID)
+	if he, ok := perr.AsHTTPError(err); !ok || he.Code != perr.CodeMembershipNotFound {
+		t.Fatalf("target in another company must be 404, got %v", err)
+	}
+	w.exec(`UPDATE memberships SET membership_status = 'inactive' WHERE membership_id = ?`, w.owner.MembershipID)
+	err = w.repo.TransferPrimaryAdmin(ctx, w.company, w.approver.MembershipID, w.owner.MembershipID)
+	if he, ok := perr.AsHTTPError(err); !ok || he.Code != perr.CodeStateConflict {
+		t.Fatalf("inactive target must be 409, got %v", err)
+	}
+}
+
 // --- critical rollback goes through approval, and applying it runs the same SQL in a tx ------
 
 func TestIntegration_CriticalRollback_ApprovalApplyRunsRestoreInTx(t *testing.T) {

@@ -1102,13 +1102,24 @@ func (s *adminService) TransferOwnership(ctx context.Context, req TransferOwners
 	if !caller.IsPrimaryAdmin {
 		return perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "only the primary admin can transfer ownership", nil)
 	}
+	if strings.TrimSpace(req.TargetMembershipID) == req.Subject.MembershipID {
+		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "target is already the primary admin", nil)
+	}
 	if err := s.requireTargetMembership(ctx, req.Subject, req.TargetMembershipID); err != nil {
 		return err
 	}
-	if err := s.repo.ClearMembershipPrimaryAdmin(ctx, req.Subject.MembershipID); err != nil {
+	// ROLE-26: the owner must be able to administer the company; otherwise nobody holds both
+	// primary status and rbac.manage, and ownership cannot even be transferred back.
+	adminCapable, err := s.isMembershipAdminCapable(ctx, strings.TrimSpace(req.TargetMembershipID), req.Subject.CompanyID)
+	if err != nil {
 		return err
 	}
-	if err := s.repo.SetMembershipPrimaryAdmin(ctx, req.TargetMembershipID); err != nil {
+	if !adminCapable {
+		return perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "TARGET_NOT_ADMIN: the new owner must be a company admin", nil)
+	}
+	// RP-10 / H16: one transaction with a compare-and-set on the current owner, so concurrent
+	// transfers or a failed write never leave zero or two primary admins.
+	if err := s.repo.TransferPrimaryAdmin(ctx, req.Subject.CompanyID, req.Subject.MembershipID, strings.TrimSpace(req.TargetMembershipID)); err != nil {
 		return err
 	}
 	s.invalidateEffectiveAccessForCompany(ctx, req.Subject.CompanyID)

@@ -1847,6 +1847,27 @@ func (r *AdminRepository) ClearMembershipPrimaryAdmin(_ context.Context, members
 	return nil
 }
 
+func (r *AdminRepository) TransferPrimaryAdmin(_ context.Context, companyID, fromMembershipID, toMembershipID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	from, ok := r.memberships[fromMembershipID]
+	if !ok || from.CompanyID != companyID || !from.IsPrimaryAdmin || !strings.EqualFold(strings.TrimSpace(from.Status), "active") {
+		return perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "ownership changed: caller is no longer the primary admin", nil)
+	}
+	to, ok := r.memberships[toMembershipID]
+	if !ok || to.CompanyID != companyID {
+		return perr.NewHTTPError(http.StatusNotFound, perr.CodeMembershipNotFound, "membership not found", nil)
+	}
+	if !strings.EqualFold(strings.TrimSpace(to.Status), "active") {
+		return perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "target membership is not active", nil)
+	}
+	from.IsPrimaryAdmin = false
+	to.IsPrimaryAdmin = true
+	r.memberships[fromMembershipID] = from
+	r.memberships[toMembershipID] = to
+	return nil
+}
+
 func (r *AdminRepository) GetMembershipByID(_ context.Context, membershipID string) (*caapp.MembershipView, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

@@ -1045,6 +1045,10 @@ func TestCompanyAdminRoutes_InvalidateEffectiveAccess(t *testing.T) {
 			repo := cainmem.NewAdminRepository()
 			seedMem(repo, "m-primary", "u-primary", "c-1")
 			seedMem(repo, "m-target", "u-target", "c-1")
+			if name == "TransferOwnership" { // the new owner must be a company admin (ROLE-26)
+				_ = repo.AddRolePermission(context.Background(), "company_admin", "rbac.manage")
+				_ = repo.AddRole(context.Background(), "m-target", "company_admin")
+			}
 			if err := repo.SetMembershipPrimaryAdmin(context.Background(), "m-primary"); err != nil {
 				t.Fatal(err)
 			}

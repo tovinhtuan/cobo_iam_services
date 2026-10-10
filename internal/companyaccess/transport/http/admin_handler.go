@@ -176,18 +176,18 @@ func (h *AdminHandler) createUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var p struct {
-		LoginID          string   `json:"login_id"`
-		Password         string   `json:"password"`
-		FullName         string   `json:"full_name"`
-		Email            string   `json:"email"`
-		Phone            string   `json:"phone"`
-		AccountStatus    string   `json:"account_status"`
-		CompanyID        string   `json:"company_id"`        // optional: empty = company of the access token; any other value is rejected (403)
-		MembershipStatus string   `json:"membership_status"` // when company_id set
-		RoleID           string   `json:"role_id"`
-		RoleCode         string   `json:"role_code"`
-		RoleIDs          []string `json:"role_ids"`
-		Permissions      []string `json:"permissions"`
+		LoginID            string   `json:"login_id"`
+		Password           string   `json:"password"`
+		FullName           string   `json:"full_name"`
+		Email              string   `json:"email"`
+		Phone              string   `json:"phone"`
+		AccountStatus      string   `json:"account_status"`
+		CompanyID          string   `json:"company_id"`        // optional: empty = company of the access token; any other value is rejected (403)
+		MembershipStatus   string   `json:"membership_status"` // when company_id set
+		RoleID             string   `json:"role_id"`
+		RoleCode           string   `json:"role_code"`
+		RoleIDs            []string `json:"role_ids"`
+		Permissions        []string `json:"permissions"`
 		DepartmentID       string   `json:"department_id"`
 		DepartmentIDs      []string `json:"department_ids"`
 		TitleID            string   `json:"title_id"`
@@ -1085,16 +1085,16 @@ func (h *AdminHandler) patchOwnCompany(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		CompanyName                   *string `json:"company_name"`
-		TaxCode                       *string `json:"tax_code"`
-		RegistrationNumber            *string `json:"registration_number"`
-		Address                       *string `json:"address"`
-		Phone                         *string `json:"phone"`
-		ContactEmail                  *string `json:"contact_email"`
-		RepresentativeName            *string `json:"representative_name"`
-		IsListed                      *bool   `json:"is_listed"`
-		IsLargePublic                 *bool   `json:"is_large_public"`
-		IsNonLargePublic              *bool   `json:"is_non_large_public"`
+		CompanyName                   *string   `json:"company_name"`
+		TaxCode                       *string   `json:"tax_code"`
+		RegistrationNumber            *string   `json:"registration_number"`
+		Address                       *string   `json:"address"`
+		Phone                         *string   `json:"phone"`
+		ContactEmail                  *string   `json:"contact_email"`
+		RepresentativeName            *string   `json:"representative_name"`
+		IsListed                      *bool     `json:"is_listed"`
+		IsLargePublic                 *bool     `json:"is_large_public"`
+		IsNonLargePublic              *bool     `json:"is_non_large_public"`
 		HasSubsidiaries               *bool     `json:"has_subsidiaries"`
 		HasSubordinateAccountingUnits *bool     `json:"has_subordinate_accounting_units"`
 		BusinessSectors               *[]string `json:"business_sectors"`
@@ -1710,7 +1710,8 @@ func (h *AdminHandler) transferOwnership(w http.ResponseWriter, r *http.Request)
 		httpx.WriteError(w, nil, err)
 		return
 	}
-	h.auditLog(r, "admin.company.ownership.transfer", "membership", body.TargetMembershipID)
+	h.auditVersionLog(r, sub, "admin.company.ownership.transfer", "membership", body.TargetMembershipID,
+		map[string]any{"from_membership_id": sub.MembershipID, "to_membership_id": body.TargetMembershipID})
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 

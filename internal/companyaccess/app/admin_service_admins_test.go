@@ -159,6 +159,11 @@ func TestTransferOwnership_OK(t *testing.T) {
 	repo := cainmem.NewAdminRepository()
 	seedMem(repo, "m-primary", "u-primary", "c-1")
 	seedMem(repo, "m-target", "u-target", "c-1")
+	// The new owner must be admin-capable (ROLE-26).
+	_ = repo.AddRolePermission(context.Background(), "company_admin", "rbac.manage")
+	if err := repo.AddRole(context.Background(), "m-target", "company_admin"); err != nil {
+		t.Fatal(err)
+	}
 	if err := repo.SetMembershipPrimaryAdmin(context.Background(), "m-primary"); err != nil {
 		t.Fatalf("SetMembershipPrimaryAdmin: %v", err)
 	}
