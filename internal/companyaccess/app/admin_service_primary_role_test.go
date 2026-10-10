@@ -196,7 +196,8 @@ func TestInviteUser_AdditionalPermissionsIndependent(t *testing.T) {
 	sub := caapp.AdminSubject{UserID: "u_admin", MembershipID: "m_admin", CompanyID: "c_001"}
 	svc := caapp.NewAdminService(
 		repo,
-		fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{"system.settings", "admin.membership.invite"}},
+		// ROLE-03: without rbac.manage the inviter must hold the permission it grants.
+		fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{"system.settings", "admin.membership.invite", "ad_hoc_alert.propose"}},
 		idgen.UUIDv7Generator{},
 	)
 	seedInviteScopedSubject(t, repo, sub)

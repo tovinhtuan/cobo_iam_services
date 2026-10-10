@@ -99,6 +99,73 @@ func (s *adminService) countActiveAdminCapableMembers(ctx context.Context, compa
 	return n, nil
 }
 
+// assertRoleRemovalKeepsAdmin (ROLE-05) guards removing one role from a membership: the
+// primary admin keeps its admin role, and the company keeps at least one admin-capable member.
+func (s *adminService) assertRoleRemovalKeepsAdmin(ctx context.Context, companyID, membershipID, roleID string) error {
+	roles, err := s.repo.ListMembershipRoles(ctx, membershipID)
+	if err != nil {
+		return err
+	}
+	held := false
+	for _, r := range roles {
+		if r.RoleID == roleID {
+			held = true
+			break
+		}
+	}
+	if !held {
+		return nil // nothing is removed; the removal itself reports a missing binding
+	}
+	adminRole, err := s.isRoleAdminCapable(ctx, companyID, roleID)
+	if err != nil {
+		if he, ok := perr.AsHTTPError(err); ok && he.HTTPStatus == http.StatusNotFound {
+			return nil // unknown role: the removal itself reports it
+		}
+		return err
+	}
+	if !adminRole {
+		return nil
+	}
+	m, err := s.repo.GetMembershipByID(ctx, membershipID)
+	if err != nil {
+		return err
+	}
+	if m.IsPrimaryAdmin {
+		return perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "CANNOT_REMOVE_PRIMARY_ADMIN_ROLE", nil)
+	}
+	if !strings.EqualFold(strings.TrimSpace(m.Status), "active") {
+		return nil // an inactive member is not counted as an admin
+	}
+	for _, r := range roles {
+		if r.RoleID == roleID {
+			continue
+		}
+		other, err := s.isRoleAdminCapable(ctx, companyID, r.RoleID)
+		if err != nil {
+			if he, ok := perr.AsHTTPError(err); ok && he.HTTPStatus == http.StatusNotFound {
+				continue
+			}
+			return err
+		}
+		if other {
+			return nil // still an admin through another role
+		}
+	}
+	direct, err := s.repo.HasActiveDirectPermission(ctx, membershipID, adminCapablePermission)
+	if err != nil || direct {
+		return err
+	}
+	count, err := s.countActiveAdminCapableMembers(ctx, companyID)
+	if err != nil {
+		return err
+	}
+	if count <= 1 {
+		return perr.NewHTTPError(http.StatusConflict, perr.CodeLastAdminRoleChangeBlocked,
+			"cannot remove the admin role of the last admin-capable member", nil)
+	}
+	return nil
+}
+
 // assertPrimaryRoleChangeLockout applies Phase E assignment-local safety (not full R10).
 func (s *adminService) assertPrimaryRoleChangeLockout(
 	ctx context.Context,

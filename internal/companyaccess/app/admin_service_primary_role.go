@@ -93,6 +93,24 @@ func (s *adminService) ReplaceMembershipPrimaryRole(ctx context.Context, req Rep
 		}
 	}
 
+	if err := s.assertCanGrant(ctx, req.Subject, req.Subject.CompanyID, roleID, nil); err != nil {
+		return err
+	}
+	if primary != nil {
+		if err := s.assertMayRemovePlatformRole(ctx, req.Subject, primary.RoleID); err != nil {
+			return err
+		}
+		// ROLE-05 / BES-19: replacing the primary role must not demote the primary admin.
+		newIsAdmin, err := s.isRoleAdminCapable(ctx, req.Subject.CompanyID, roleID)
+		if err != nil {
+			return err
+		}
+		if !newIsAdmin {
+			if err := s.assertRoleRemovalKeepsAdmin(ctx, req.Subject.CompanyID, req.MembershipID, primary.RoleID); err != nil {
+				return err
+			}
+		}
+	}
 	wrote = true
 	if primary != nil {
 		if err := s.repo.RemoveRole(ctx, req.MembershipID, primary.RoleID); err != nil {

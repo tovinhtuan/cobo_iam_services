@@ -4600,3 +4600,21 @@
 - reusable: cache Redis dùng generation theo company (`effective_access_gen:v2:{company}`). Invalidate là O(1) và an toàn với race in-flight. Mutation mới ảnh hưởng quyền phải `defer s.invalidateEffectiveAccessOnSuccess(...)`; có AST guard test `TestAccessChangingMutations_DeferInvalidation`.
 - verify: test fail giống hệt HEAD (11 test có sẵn); `-race` sạch; build Linux OK. Docker BLOCKED (daemon không chạy).
 - artifacts: `docs/ai-cache/bug-revoke-access-effective-cache-2026-10-10/{00-report,01-root-cause,05-completion}.md`.
+
+## PR-B leo quyền / thao tác chéo tenant trong quản trị công ty (2026-10-10)
+
+- task type: bugfix qua `wf-bugfix` (base `2996f00`); working tree, chưa commit/deploy.
+- fixed:
+  - ROLE-02: rule ghi theo company của token.
+  - ROLE-03 (phương án A): chỉ cấp được role/quyền nằm trong quyền của mình; picker mời được lọc theo cùng quy tắc.
+  - ROLE-13/BES-21/ROLE-19: chỉ platform operator mới gỡ/khoá được quyền platform.
+  - ROLE-05/BES-19: giữ primary admin và admin cuối cùng.
+  - ROLE-12: rollback prefs đi qua approval; không xoá được rule prefs.
+  - BES-09/BES-20: kiểm gói theo tier của người yêu cầu.
+  - BES-18: approve notification trên MySQL ghi đúng `payload_json`.
+  - ROLE-14: target break-glass không tự duyệt được.
+  - RP-07: guard test cho `legacyPolicy`.
+- reusable: helper `grantLimitFor`/`assertCanGrant`, `isPlatformTierPermission`, `assertMayDeactivatePlatformMember`, `assertRoleRemovalKeepsAdmin` (companyaccess/app).
+- verify: test fail giống hệt HEAD gốc; `-race` sạch; build Linux OK. Docker BLOCKED. MySQL integration (BES-18) chưa chạy, cần `MYSQL_TEST_DSN`.
+- FE follow-up (PR-F): `suppressForbiddenNavigation` cho invite/primary-role/gỡ quyền; hiển thị `permission_codes`; ẩn nút duyệt break-glass cho target.
+- artifacts: `docs/ai-cache/bug-admin-escalation-2026-10-10/{00-report,01-root-cause,05-completion}.md`.

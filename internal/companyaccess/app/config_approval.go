@@ -362,6 +362,9 @@ func (s *adminService) SubmitConfigApproval(ctx context.Context, req SubmitConfi
 		if memID == "" || code == "" {
 			return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "membership_id and permission_code required", nil)
 		}
+		if err := s.assertMayRemovePlatformPermission(ctx, req.Subject, code); err != nil {
+			return nil, err
+		}
 		// The direct-permission route lets only the primary admin revoke the invite permission;
 		// the approval queue is not a way around that.
 		if strings.TrimSpace(code) == permissionInvite {
@@ -431,8 +434,18 @@ func (s *adminService) ApproveConfigApproval(ctx context.Context, req ApproveCon
 		if snap.RuleCode != AlertChannelPrefsRuleCode {
 			return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "only alert channel preferences can be changed through approval", nil)
 		}
-		if valid, issues := ValidateAlertChannelPrefsPayload(prefsDocumentFromRulePayload(deepCloneMap(snap.Payload))); !valid {
+		prefs := prefsDocumentFromRulePayload(deepCloneMap(snap.Payload))
+		if valid, issues := ValidateAlertChannelPrefsPayload(prefs); !valid {
 			return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, strings.Join(issues, "; "), nil)
+		}
+		// BES-09: the plan may have changed since the request was queued. The check uses the
+		// requester's tier, the same one checked when the change was queued (BES-20).
+		requester, err := s.repo.GetMembershipByID(ctx, row.RequestedBy)
+		if err != nil {
+			return nil, err
+		}
+		if err := s.entitlementChecker().ValidateAlertChannelPrefsMutation(ctx, requester.UserID, prefs); err != nil {
+			return nil, err
 		}
 	}
 	// An RBAC proposal that would change nothing the restore may change (for example one queued
@@ -442,6 +455,13 @@ func (s *adminService) ApproveConfigApproval(ctx context.Context, req ApproveCon
 		var proposed configversion.RBACMatrixSnapshot
 		if err := json.Unmarshal(row.ProposedSnapshotJSON, &proposed); err != nil {
 			return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "invalid proposed snapshot", nil)
+		}
+		// ROLE-19: a queued removal of a platform permission (for example one queued before
+		// the submit-time check existed) still needs a platform operator to approve it.
+		for _, d := range proposed.DirectRevokes {
+			if err := s.assertMayRemovePlatformPermission(ctx, req.Subject, d.PermissionCode); err != nil {
+				return nil, err
+			}
 		}
 		changes, err := s.rbacApprovalChanges(ctx, row.CompanyID, row.ProposedSnapshotJSON)
 		if err != nil {

@@ -20,7 +20,7 @@ Ngoài phạm vi PR-A (ghi follow-up): invalidate khi `assignments` đổi ở m
 
 ## Các PR tiếp theo (theo thứ tự)
 
-- **PR-B (quyền admin):**
+- **PR-B (quyền admin):** **Trạng thái 2026-10-10: FIXED IN WORKING TREE** (chưa commit). ROLE-03 theo phương án A. Review phát sinh và đã sửa luôn: BES-18 (HIGH, approve notification trên MySQL), BES-19, BES-20, BES-21, ROLE-19, API-17 (lọc picker), API-19, API-20, BES-23, BES-24. Chi tiết và follow-up: `../bug-admin-escalation-2026-10-10/05-completion.md`.
   - ROLE-02 (ép `company_id` theo token)
   - ROLE-13 (guard gỡ role/quyền platform)
   - ROLE-12 (rollback/xoá rule prefs qua approval)

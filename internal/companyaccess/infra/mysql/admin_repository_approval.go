@@ -266,12 +266,27 @@ func (r *AdminRepository) restoreNotificationRuleInTx(ctx context.Context, tx *s
 	if status == "" {
 		status = "active"
 	}
-	_, err = tx.ExecContext(ctx, `
+	res, err := tx.ExecContext(ctx, `
 		UPDATE notification_rules
-		SET payload = ?, status = ?, updated_at = CURRENT_TIMESTAMP
+		SET payload_json = ?, status = ?, updated_at = CURRENT_TIMESTAMP
 		WHERE notification_rule_id = ? AND company_id = ?
 	`, payloadJSON, status, snap.NotificationRuleID, companyID)
-	return err
+	if err != nil {
+		return err
+	}
+	// An approval must not be marked applied when it wrote nothing (rule deleted meanwhile).
+	if n, _ := res.RowsAffected(); n == 0 {
+		var exists int
+		if err := tx.QueryRowContext(ctx,
+			`SELECT COUNT(*) FROM notification_rules WHERE notification_rule_id = ? AND company_id = ?`,
+			snap.NotificationRuleID, companyID).Scan(&exists); err != nil {
+			return err
+		}
+		if exists == 0 {
+			return perr.NewHTTPError(http.StatusConflict, perr.CodeStaleProposal, "notification rule no longer exists", nil)
+		}
+	}
+	return nil
 }
 
 func scanPendingAdminChange(row *sql.Row) (*caapp.PendingAdminChange, error) {

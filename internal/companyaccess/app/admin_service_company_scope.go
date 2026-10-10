@@ -97,6 +97,68 @@ func (s *adminService) assertRoleHasNoPlatformPermissions(ctx context.Context, c
 	return nil
 }
 
+// assertMayRemovePlatformRole (ROLE-13): a tenant admin cannot assign a role carrying
+// platform-tier permissions, so it may not remove one either; only a platform operator may.
+func (s *adminService) assertMayRemovePlatformRole(ctx context.Context, sub AdminSubject, roleID string) error {
+	operator, err := s.isPlatformCompanyOperator(ctx, sub)
+	if err != nil || operator {
+		return err
+	}
+	if err := s.assertRoleHasNoPlatformPermissions(ctx, sub.CompanyID, roleID); err != nil {
+		if he, ok := perr.AsHTTPError(err); ok && he.HTTPStatus == http.StatusForbidden {
+			return perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied,
+				"role carries platform permissions and can only be removed by a platform operator", nil)
+		}
+		return err
+	}
+	return nil
+}
+
+// assertMayRemovePlatformPermission is the direct-permission counterpart of
+// assertMayRemovePlatformRole.
+func (s *adminService) assertMayRemovePlatformPermission(ctx context.Context, sub AdminSubject, code string) error {
+	if !isPlatformTierPermission(code) {
+		return nil
+	}
+	operator, err := s.isPlatformCompanyOperator(ctx, sub)
+	if err != nil || operator {
+		return err
+	}
+	return perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied,
+		"platform permissions can only be removed by a platform operator", nil)
+}
+
+// isPlatformTierPermission reports a permission outside the enterprise (tenant) scope:
+// EnterpriseDenyCodes plus anything under platform.* or cms.*.
+func isPlatformTierPermission(code string) bool {
+	code = strings.TrimSpace(code)
+	if strings.HasPrefix(code, "platform.") || strings.HasPrefix(code, "cms.") {
+		return true
+	}
+	return !IsEnterprisePermission(code, "")
+}
+
+// assertMayDeactivatePlatformMember (ROLE-13 / BES-21): deactivating or deleting a membership
+// that holds platform-tier permissions removes that platform access as well, so only a
+// platform operator may do it.
+func (s *adminService) assertMayDeactivatePlatformMember(ctx context.Context, sub AdminSubject, membershipID string) error {
+	operator, err := s.isPlatformCompanyOperator(ctx, sub)
+	if err != nil || operator {
+		return err
+	}
+	eff, err := s.auth.GetEffectiveAccess(ctx, membershipID, sub.CompanyID)
+	if err != nil {
+		return fmt.Errorf("load effective access: %w", err)
+	}
+	for _, p := range eff.Permissions {
+		if isPlatformTierPermission(p) {
+			return perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied,
+				"membership holds platform permissions and can only be deactivated by a platform operator", nil)
+		}
+	}
+	return nil
+}
+
 // requireTargetMembership makes sure the membership a tenant route acts on belongs to the
 // company of the access token. A membership of another company answers exactly like a missing
 // one (404 MEMBERSHIP_NOT_FOUND) so ids of other companies cannot be probed. Tenant routes never

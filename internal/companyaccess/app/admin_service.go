@@ -190,6 +190,9 @@ func (s *adminService) CreateUser(ctx context.Context, req CreateUserRequest) (*
 		if err != nil {
 			return nil, err
 		}
+		if err := s.assertCanGrant(ctx, req.Subject, req.CompanyID, roleID, req.Permissions); err != nil {
+			return nil, err
+		}
 		opts.MembershipID = s.idg.NewUUID()
 		opts.InitialRoleID = roleID
 	}
@@ -488,6 +491,9 @@ func (s *adminService) inviteUserWithCompany(
 		if err != nil {
 			return nil, err
 		}
+		if err := s.assertCanGrant(ctx, req.Subject, req.CompanyID, roleID, req.Permissions); err != nil {
+			return nil, err
+		}
 		membershipID := s.idg.NewUUID()
 		m, err := s.repo.CreateMembership(ctx, MembershipView{
 			MembershipID: membershipID,
@@ -559,6 +565,9 @@ func (s *adminService) inviteUserWithCompany(
 	}
 	roleID, err := s.validateEnterpriseInviteRole(ctx, req.CompanyID, strings.TrimSpace(req.RoleID), strings.TrimSpace(req.RoleCode), defRoleCode, isPlatformCMS)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.assertCanGrant(ctx, req.Subject, req.CompanyID, roleID, req.Permissions); err != nil {
 		return nil, err
 	}
 
@@ -647,7 +656,7 @@ func (s *adminService) ListInviteRoles(ctx context.Context, req ListInviteRolesR
 	if !isPlatformCMS {
 		items = FilterEnterpriseInviteRoles(items)
 	}
-	return items, nil
+	return s.filterGrantableInviteRoles(ctx, req.Subject, target, items)
 }
 
 func (s *adminService) ResendUserInvitation(ctx context.Context, req ResendUserInvitationRequest) error {
@@ -915,6 +924,9 @@ func (s *adminService) UpdateMembership(ctx context.Context, req UpdateMembershi
 		if m.IsPrimaryAdmin {
 			return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "CANNOT_DEACTIVATE_PRIMARY_ADMIN", nil)
 		}
+		if err := s.assertMayDeactivatePlatformMember(ctx, req.Subject, req.MembershipID); err != nil {
+			return nil, err
+		}
 	}
 	return s.repo.UpdateMembershipStatus(ctx, req.Subject.CompanyID, req.MembershipID, status)
 }
@@ -933,6 +945,9 @@ func (s *adminService) DeleteMembership(ctx context.Context, req DeleteMembershi
 	}
 	if m.IsPrimaryAdmin {
 		return perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "CANNOT_DELETE_PRIMARY_ADMIN", nil)
+	}
+	if err := s.assertMayDeactivatePlatformMember(ctx, req.Subject, req.MembershipID); err != nil {
+		return err
 	}
 	return s.repo.DeleteMembership(ctx, req.Subject.CompanyID, req.MembershipID)
 }
@@ -1180,6 +1195,9 @@ func (s *adminService) AssignRole(ctx context.Context, req AssignRoleRequest) (e
 			return err
 		}
 	}
+	if err := s.assertCanGrant(ctx, req.Subject, req.Subject.CompanyID, req.RoleID, nil); err != nil {
+		return err
+	}
 	isPlatformCMS, err := s.isPlatformCMSOperator(ctx, req.Subject)
 	if err != nil {
 		return err
@@ -1202,6 +1220,12 @@ func (s *adminService) RemoveRole(ctx context.Context, req RemoveRoleRequest) (e
 		return err
 	}
 	if err := s.requireTargetMembership(ctx, req.Subject, req.MembershipID); err != nil {
+		return err
+	}
+	if err := s.assertMayRemovePlatformRole(ctx, req.Subject, req.RoleID); err != nil {
+		return err
+	}
+	if err := s.assertRoleRemovalKeepsAdmin(ctx, req.Subject.CompanyID, req.MembershipID, req.RoleID); err != nil {
 		return err
 	}
 	return s.repo.RemoveRole(ctx, req.MembershipID, req.RoleID)
@@ -1381,17 +1405,30 @@ func (s *adminService) CreateResourceScopeRule(ctx context.Context, req CreateRe
 	if err := s.authorize(ctx, req.Subject, "admin.resource_scope_rule.create", ""); err != nil {
 		return err
 	}
+	if req.Payload == nil {
+		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "rule payload required", nil)
+	}
+	// The rule belongs to the caller's company, never to a company named in the body.
+	req.Payload["company_id"] = req.Subject.CompanyID
 	return s.repo.AddResourceScopeRule(ctx, req.Payload)
 }
 func (s *adminService) CreateWorkflowAssigneeRule(ctx context.Context, req CreateWorkflowAssigneeRuleRequest) error {
 	if err := s.authorize(ctx, req.Subject, "admin.workflow_assignee_rule.create", ""); err != nil {
 		return err
 	}
+	if req.Payload == nil {
+		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "rule payload required", nil)
+	}
+	// The rule belongs to the caller's company, never to a company named in the body.
+	req.Payload["company_id"] = req.Subject.CompanyID
 	return s.repo.AddWorkflowAssigneeRule(ctx, req.Payload)
 }
 func (s *adminService) CreateNotificationRule(ctx context.Context, req CreateNotificationRuleRequest) error {
 	if err := s.authorize(ctx, req.Subject, "admin.notification_rule.create", ""); err != nil {
 		return err
+	}
+	if req.Payload == nil {
+		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "rule payload required", nil)
 	}
 	req.Payload["company_id"] = req.Subject.CompanyID
 	code, _ := req.Payload["rule_code"].(string)
@@ -1580,6 +1617,18 @@ func (s *adminService) DeleteNotificationRule(ctx context.Context, req DeleteNot
 	if err := s.authorize(ctx, req.Subject, "admin.notification_rule.delete", ""); err != nil {
 		return err
 	}
+	// ROLE-12: the alert channel preferences change through the approval queue only; deleting
+	// the rule would bypass it.
+	rules, err := s.repo.ListNotificationRules(ctx, req.Subject.CompanyID)
+	if err != nil {
+		return err
+	}
+	for _, item := range rules {
+		if item.NotificationRuleID == req.RuleID && item.RuleCode == AlertChannelPrefsRuleCode {
+			return perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict,
+				"alert channel preferences cannot be deleted; change them through an update", nil)
+		}
+	}
 	return s.repo.DeleteNotificationRule(ctx, req.Subject.CompanyID, req.RuleID)
 }
 
@@ -1717,6 +1766,9 @@ func (s *adminService) RemoveDirectPermission(ctx context.Context, req RemoveDir
 		return err
 	}
 	if err := s.requireTargetMembership(ctx, req.Subject, req.MembershipID); err != nil {
+		return err
+	}
+	if err := s.assertMayRemovePlatformPermission(ctx, req.Subject, req.PermissionCode); err != nil {
 		return err
 	}
 	if requiresApprovalForDirectRemove(req.PermissionCode) {

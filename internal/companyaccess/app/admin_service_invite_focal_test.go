@@ -244,7 +244,13 @@ func TestInviteUser_RejectsRbacManageDirectPermission(t *testing.T) {
 func TestInviteUser_AcceptsWorkflowAndAdHocPermissions(t *testing.T) {
 	repo := cainmem.NewAdminRepository()
 	sub := caapp.AdminSubject{UserID: "u_admin", MembershipID: "m_admin", CompanyID: "c_001"}
-	svc := newEnterpriseInviteSvc(t, repo, sub)
+	seedInviteScopedSubject(t, repo, sub)
+	seedEnterpriseInviteRoles(t, repo)
+	// ROLE-03: without rbac.manage the inviter must hold every permission it grants.
+	svc := caapp.NewAdminService(repo, fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{
+		"system.settings", "admin.membership.invite",
+		"template.workflow.override.write", "disclosure_type.manage", "ad_hoc_alert.propose", "ad_hoc_alert.focal_review",
+	}}, idgen.UUIDv7Generator{})
 
 	_, err := svc.InviteUser(context.Background(), caapp.InviteUserRequest{
 		Subject:         sub,

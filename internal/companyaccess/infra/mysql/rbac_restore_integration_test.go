@@ -173,6 +173,8 @@ func (w *itWorld) cleanup() {
 	both := []any{w.company, w.company2}
 	for _, q := range []string{
 		`DELETE FROM pending_admin_changes WHERE company_id IN (?, ?)`,
+		`DELETE FROM notification_rule_versions WHERE company_id IN (?, ?)`,
+		`DELETE FROM notification_rules WHERE company_id IN (?, ?)`,
 		`DELETE FROM rbac_matrix_snapshots WHERE company_id IN (?, ?)`,
 		`DELETE FROM membership_direct_permissions WHERE company_id IN (?, ?)`,
 		`DELETE mr FROM membership_roles mr JOIN memberships m ON m.membership_id = mr.membership_id WHERE m.company_id IN (?, ?)`,
@@ -425,6 +427,44 @@ func TestIntegration_RollbackDoesNotRegrantDirectPermissionToInactiveMembership(
 	}
 	if got := w.activeDirect(w.approver.MembershipID); got[itDirectA] != 0 {
 		t.Errorf("an inactive membership got its direct grant back: %v", got)
+	}
+}
+
+// BES-18: approving an alert channel preferences change writes the rule on MySQL (the apply
+// path used a column that does not exist, so every approval failed).
+func TestIntegration_ApproveNotificationPrefsPatch_WritesRule(t *testing.T) {
+	w := newITWorld(t)
+	ctx := context.Background()
+	def := caapp.DefaultAlertChannelPrefsPayload(w.owner.MembershipID)
+	if err := w.svc.CreateNotificationRule(ctx, caapp.CreateNotificationRuleRequest{Subject: w.owner, Payload: map[string]any{
+		"rule_code": caapp.AlertChannelPrefsRuleCode, "status": "active",
+		"version": def["version"], "event_scope": def["event_scope"], "channels": def["channels"],
+		"schedules": []any{}, "recipient_policies": def["recipient_policies"],
+	}}); err != nil {
+		t.Fatalf("create prefs rule: %v", err)
+	}
+	rules, err := w.svc.ListNotificationRules(ctx, caapp.ListNotificationRulesRequest{Subject: w.owner})
+	if err != nil || len(rules) != 1 {
+		t.Fatalf("list rules: %v %d", err, len(rules))
+	}
+	err = w.svc.UpdateNotificationRule(ctx, caapp.UpdateNotificationRuleRequest{Subject: w.owner, RuleID: rules[0].NotificationRuleID,
+		PayloadPatch: map[string]any{"schedules": []any{map[string]any{"kind": "reminder", "enabled": true}}}})
+	if he, ok := perr.AsHTTPError(err); !ok || he.Code != perr.CodeApprovalRouted {
+		t.Fatalf("prefs update must be queued, got %v", err)
+	}
+	pending, err := w.svc.ListConfigApprovals(ctx, caapp.ListConfigApprovalsRequest{Subject: w.approver, Status: "pending"})
+	if err != nil || len(pending.Items) != 1 {
+		t.Fatalf("pending: %v %+v", err, pending)
+	}
+	if _, err := w.svc.ApproveConfigApproval(ctx, caapp.ApproveConfigApprovalRequest{Subject: w.approver, ApprovalID: pending.Items[0].ApprovalID}); err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+	var raw string
+	if err := w.db.QueryRow(`SELECT payload_json FROM notification_rules WHERE notification_rule_id = ?`, rules[0].NotificationRuleID).Scan(&raw); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(raw, `"reminder"`) {
+		t.Fatalf("approved patch not written, payload_json = %s", raw)
 	}
 }
 

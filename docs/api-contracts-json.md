@@ -188,6 +188,8 @@ HTTP `403` (hoac `422` tuy policy)
 
 Sau moi lan refresh thanh cong, client **phai** luu `refresh_token` moi; token cu khong con hop le (rotation).
 
+Membership cua phien khong con `active` (bi khoa hoac bi xoa sau khi dang nhap) -> **401 `SESSION_EXPIRED`** (cap nhat 2026-10-10, H3); client xu ly nhu het phien.
+
 ---
 
 ### POST /api/v1/auth/logout
@@ -748,9 +750,11 @@ Tao tai khoan user truc tiep (admin flow). Endpoint nay tao ban ghi `users` + `c
 
 ```json
 {
-  "membership_status": "inactive"
+  "status": "inactive"
 }
 ```
+
+Field request la `status` (handler khong doc `membership_status`). Chi nhan `active` hoac `inactive` (khong phan biet hoa thuong, da trim); gia tri khac -> **400 `INVALID_REQUEST`**. Khoa primary admin -> **409 `STATE_CONFLICT`** (`CANNOT_DEACTIVATE_PRIMARY_ADMIN`). Membership `inactive` mat toan bo quyen ngay lap tuc (cap nhat 2026-10-10, H3/BES-12).
 
 **Response**
 
@@ -818,6 +822,11 @@ Tao tai khoan user truc tiep (admin flow). Endpoint nay tao ban ghi `users` + `c
 ---
 
 ### DELETE /api/v1/admin/memberships/{membership_id}/roles/{role_id}
+
+Loi (cap nhat 2026-10-10):
+- Role mang quyen platform (`platform.*`, `cms.*`), nguoi goi khong phai platform operator -> **403 `PERMISSION_DENIED`** (ROLE-13).
+- Go role co `rbac.manage` cua primary admin -> **409 `STATE_CONFLICT`** (`CANNOT_REMOVE_PRIMARY_ADMIN_ROLE`).
+- Go role khien cong ty khong con thanh vien admin-capable nao -> **409 `LAST_ADMIN_ROLE_CHANGE_BLOCKED`** (ROLE-05).
 
 **Response**
 
@@ -1037,6 +1046,26 @@ Khôi phục ma trận RBAC của company về một phiên bản đã lưu. Bod
 
 ---
 
+### Cấp role / quyền và các thay đổi hành vi khác (cập nhật 2026-10-10, risk review PR-A/PR-B)
+
+- **Chỉ cấp được quyền mình có (ROLE-03).**
+  - Áp dụng cho: `POST /api/v1/admin/users`, mời user (invite), `POST /api/v1/admin/memberships/{id}/roles`, `PUT .../primary-role`.
+  - Người gọi không có `rbac.manage` và không phải platform operator chỉ được cấp role (và `permissions` trực tiếp khi mời) gồm các quyền chính họ đang có.
+  - Ngược lại trả **403 `PERMISSION_DENIED`**, `error.details.permission_codes` = danh sách quyền còn thiếu.
+  - `GET /api/v1/admin/invite-roles` chỉ trả các role người gọi được phép cấp theo quy tắc này.
+- **`DELETE /api/v1/admin/memberships/{membership_id}/permissions/{permission_code}`** và config approval `rbac.direct_permission.remove`: gỡ quyền tầng platform (`platform.*`, `cms.*` và các mã trong `EnterpriseDenyCodes`, gồm `disclosure_type.config.*`) khi không phải platform operator → **403 `PERMISSION_DENIED`** (ROLE-13). Áp dụng cả khi duyệt một đề xuất như vậy đã xếp hàng (ROLE-19).
+- **`PATCH /api/v1/admin/memberships/{membership_id}`** (`inactive`) và **`DELETE /api/v1/admin/memberships/{membership_id}`**: target đang giữ quyền tầng platform, người gọi không phải platform operator → **403 `PERMISSION_DENIED`** (BES-21).
+- **`PUT /api/v1/admin/memberships/{membership_id}/primary-role`**: đổi primary admin sang role không có `rbac.manage` → **409 `STATE_CONFLICT`** (`CANNOT_REMOVE_PRIMARY_ADMIN_ROLE`); làm công ty mất admin cuối cùng → **409 `LAST_ADMIN_ROLE_CHANGE_BLOCKED`** (BES-19).
+- **`POST /api/v1/admin/notification-rules/versions/{version_no}/rollback` (rule_id trong query/body) (ROLE-12)**, áp dụng cho rule `alert_channel_prefs`:
+  - Rollback được đưa vào hàng chờ duyệt: **202** `{approval_id, status}` (như các route approval khác), `change_type` `notification_rule.patch`.
+  - Snapshot đích vượt gói hiện tại → **402**.
+  - Rule khác giữ nguyên 200.
+- **`DELETE /api/v1/admin/notification-rules/{notification_rule_id}`**: rule `alert_channel_prefs` → **409 `STATE_CONFLICT`** (ROLE-12).
+- **Duyệt approval `alert_channel_prefs`**: kiểm lại gói (tier của **người yêu cầu**, như lúc xếp hàng) tại thời điểm duyệt; vượt gói → **402** (BES-09/BES-20). Trên MySQL, apply giờ ghi đúng cột `payload_json` (trước đây mọi lần duyệt prefs trả 500, BES-18); rule đã bị xoá → 409 `STALE_PROPOSAL`.
+- **Break-glass:**
+  - Target của emergency grant không được duyệt chính grant đó → **403** (ROLE-14).
+  - Membership inactive không nhận quyền từ overlay (BES-13).
+
 ### POST /api/v1/admin/config-approvals (change_type `rbac.permission.remove`)
 
 Đề xuất gỡ quyền khỏi role qua approval. `role_id` phải là role `tenant_custom` của company (role protected hoặc dùng chung → 403 `protected_role_read_only`; role company khác → 404 `NOT_FOUND`) và `permission_id` phải thuộc phạm vi doanh nghiệp (ngược lại 400 `PERMISSION_OUT_OF_ENTERPRISE_SCOPE`).
@@ -1044,6 +1073,8 @@ Khôi phục ma trận RBAC của company về một phiên bản đã lưu. Bod
 ---
 
 ### POST /api/v1/admin/resource-scope-rules
+
+`company_id` trong body bi bo qua: rule luon thuoc company cua access token (cap nhat 2026-10-10, ROLE-02). Body rong -> 400 `INVALID_REQUEST`.
 
 **Request**
 
@@ -1068,6 +1099,8 @@ Khôi phục ma trận RBAC của company về một phiên bản đã lưu. Bod
 ---
 
 ### POST /api/v1/admin/workflow-assignee-rules
+
+`company_id` trong body bi bo qua: rule luon thuoc company cua access token (cap nhat 2026-10-10, ROLE-02). Body rong -> 400 `INVALID_REQUEST`.
 
 **Request**
 

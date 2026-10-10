@@ -101,8 +101,9 @@ func TestNotificationRollback_CreatesNewSnapshot(t *testing.T) {
 	repo := cainmem.NewAdminRepository()
 	sub := seedRbacAdmin(t, repo)
 	svc := newVersioningSvc(t, repo)
+	// A rule other than the alert channel preferences: those are rolled back through approval (ROLE-12).
 	payload := map[string]any{
-		"rule_code": caapp.AlertChannelPrefsRuleCode,
+		"rule_code": "deadline_digest",
 		"status":    "active",
 		"channels":  map[string]any{"email": map[string]any{"enabled": true}},
 	}

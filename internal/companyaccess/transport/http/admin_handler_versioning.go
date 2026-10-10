@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	caapp "github.com/cobo/cobo_iam_services/internal/companyaccess/app"
 	auditapp "github.com/cobo/cobo_iam_services/internal/audit/app"
+	caapp "github.com/cobo/cobo_iam_services/internal/companyaccess/app"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 	"github.com/cobo/cobo_iam_services/internal/platform/httpx"
 )
@@ -136,7 +136,8 @@ func (h *AdminHandler) rollbackNotificationRuleVersion(w http.ResponseWriter, r 
 		Subject: sub, RuleID: ruleID, VersionNo: versionNo, Reason: body.Reason,
 	})
 	if err != nil {
-		httpx.WriteError(w, nil, err)
+		// Rolling back the alert channel preferences is queued for approval (202).
+		writeApprovalRoutedOrError(w, err)
 		return
 	}
 	h.auditVersionLog(r, sub, "admin.version.notification.rollback", "notification_rule", ruleID, map[string]any{

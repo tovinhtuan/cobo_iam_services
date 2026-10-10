@@ -96,6 +96,9 @@ func (s *adminService) ApproveEmergencyAccessRequest(ctx context.Context, req Ap
 	if row.RequesterMembershipID == req.Subject.MembershipID {
 		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "self-approval is not allowed", nil)
 	}
+	if row.TargetMembershipID == req.Subject.MembershipID {
+		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "the target of an emergency grant cannot approve it", nil)
+	}
 	var out *EmergencyAccessGrant
 	switch row.Status {
 	case EmergencyStatusPendingFirst:

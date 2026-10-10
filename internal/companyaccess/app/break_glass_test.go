@@ -217,6 +217,29 @@ func TestBreakGlass_NoSelfApproval(t *testing.T) {
 	}
 }
 
+// ROLE-14: the membership that receives the emergency access does not count as one of its approvers.
+func TestBreakGlass_TargetCannotApprove(t *testing.T) {
+	repo := cainmem.NewAdminRepository()
+	requester := caapp.AdminSubject{UserID: "u_req", MembershipID: "m_req", CompanyID: "c_bg"}
+	target := caapp.AdminSubject{UserID: "u_tgt", MembershipID: "m_tgt", CompanyID: "c_bg"}
+	seedBGMember(t, repo, requester)
+	seedBGApprover(t, repo, target)
+	auth := perMemberAuth{byMembership: map[string][]string{"m_req": {}, "m_tgt": {"rbac.manage"}}}
+	svc := newBreakGlassSvc(t, repo, auth)
+	grant, err := svc.CreateEmergencyAccessRequest(context.Background(), caapp.CreateEmergencyAccessRequest{
+		Subject: requester, TargetMembershipID: target.MembershipID,
+		Reason: "incident", RequestedDurationSeconds: 3600,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = svc.ApproveEmergencyAccessRequest(context.Background(), caapp.ApproveEmergencyAccessRequest{Subject: target, SessionID: grant.SessionID})
+	he, ok := perr.AsHTTPError(err)
+	if !ok || he.HTTPStatus != http.StatusForbidden {
+		t.Fatalf("expected 403 when the target approves its own grant, got %v", err)
+	}
+}
+
 func TestBreakGlass_DuplicateApproverDenied(t *testing.T) {
 	repo := cainmem.NewAdminRepository()
 	requester := caapp.AdminSubject{UserID: "u_req", MembershipID: "m_req", CompanyID: "c_bg"}

@@ -198,12 +198,16 @@ func (s *adminService) RollbackNotificationRuleVersion(ctx context.Context, req 
 	if err != nil {
 		return nil, err
 	}
-	if err := s.repo.RestoreNotificationRuleFromSnapshot(ctx, req.Subject.CompanyID, target.SnapshotJSON); err != nil {
-		return nil, err
-	}
 	reason := strings.TrimSpace(req.Reason)
 	if reason == "" {
 		reason = "rollback"
+	}
+	var snap configversion.NotificationRuleSnapshot
+	if err := json.Unmarshal(target.SnapshotJSON, &snap); err == nil && snap.RuleCode == AlertChannelPrefsRuleCode {
+		return nil, s.submitNotificationPrefsRollbackApproval(ctx, req.Subject, req.RuleID, target.SnapshotJSON, snap, reason)
+	}
+	if err := s.repo.RestoreNotificationRuleFromSnapshot(ctx, req.Subject.CompanyID, target.SnapshotJSON); err != nil {
+		return nil, err
 	}
 	if err := s.captureNotificationRuleVersion(ctx, req.Subject, req.RuleID, configversion.SourceRollback, reason); err != nil {
 		return nil, err
@@ -219,6 +223,39 @@ func (s *adminService) RollbackNotificationRuleVersion(ctx context.Context, req 
 		return &ConfigVersionRow{AggregateType: configversion.AggregateNotificationRule, AggregateID: req.RuleID}, nil
 	}
 	return &items[0], nil
+}
+
+// submitNotificationPrefsRollbackApproval (ROLE-12): rolling the alert channel preferences
+// back changes them like any other edit, so it is checked against the payload rules and the
+// company's plan and waits for a second admin, as UpdateNotificationRule does.
+func (s *adminService) submitNotificationPrefsRollbackApproval(ctx context.Context, sub AdminSubject, ruleID string, raw []byte, snap configversion.NotificationRuleSnapshot, reason string) error {
+	prefs := prefsDocumentFromRulePayload(deepCloneMap(snap.Payload))
+	if valid, issues := ValidateAlertChannelPrefsPayload(prefs); !valid {
+		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, strings.Join(issues, "; "), nil)
+	}
+	if err := s.entitlementChecker().ValidateAlertChannelPrefsMutation(ctx, sub.UserID, prefs); err != nil {
+		return err
+	}
+	baseVer, err := s.currentLiveVersionNo(ctx, sub.CompanyID, configversion.AggregateNotificationRule, ruleID)
+	if err != nil {
+		return err
+	}
+	summary, err := s.queueConfigApproval(ctx, sub, InsertPendingAdminChangeInput{
+		ID:                   s.idg.NewUUID(),
+		CompanyID:            sub.CompanyID,
+		ApprovalSubjectType:  configversion.ApprovalSubjectConfigSnapshot,
+		AggregateType:        configversion.AggregateNotificationRule,
+		AggregateID:          ruleID,
+		ChangeType:           configversion.ChangeTypeNotificationPatch,
+		ProposedSnapshotJSON: raw,
+		BaseLiveVersionNo:    &baseVer,
+		RequestedBy:          sub.MembershipID,
+		Reason:               reason,
+	})
+	if err != nil {
+		return err
+	}
+	return s.routeApprovalRouted(sub, summary)
 }
 
 func (s *adminService) ListRBACMatrixVersions(ctx context.Context, req ListRBACMatrixVersionsRequest) (*ConfigVersionListView, error) {
