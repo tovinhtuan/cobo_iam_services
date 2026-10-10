@@ -16,6 +16,8 @@ import (
 
 type AdminRepository struct {
 	mu sync.RWMutex
+	// adminLocks: companyID -> *sync.Mutex (LockCompanyAdmins).
+	adminLocks sync.Map
 
 	users                        map[string]caapp.UserView
 	usersByLoginID               map[string]string

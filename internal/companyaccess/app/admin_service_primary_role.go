@@ -70,60 +70,63 @@ func (s *adminService) ReplaceMembershipPrimaryRole(ctx context.Context, req Rep
 		}
 	}
 
-	if err := s.assertPrimaryRoleChangeLockout(ctx, MembershipActor{
-		MembershipID: req.Subject.MembershipID,
-	}, req.MembershipID, req.Subject.CompanyID, roleID); err != nil {
-		return err
-	}
-
-	roles, err := s.repo.ListMembershipRoles(ctx, req.MembershipID)
-	if err != nil {
-		return err
-	}
-	primary, _, _ := partitionMembershipRoles(roles)
-	if primary != nil && primary.RoleID == roleID {
-		return nil
-	}
-
-	alreadyAssigned := false
-	for _, r := range roles {
-		if r.RoleID == roleID {
-			alreadyAssigned = true
-			break
-		}
-	}
-
-	if err := s.assertCanGrant(ctx, req.Subject, req.Subject.CompanyID, roleID, nil); err != nil {
-		return err
-	}
-	if primary != nil {
-		if err := s.assertMayRemovePlatformRole(ctx, req.Subject, primary.RoleID); err != nil {
+	// ROLE-23: the last-admin checks below and the writes run under the company's admin lock.
+	return s.withCompanyAdminLock(ctx, req.Subject.CompanyID, func() error {
+		if err := s.assertPrimaryRoleChangeLockout(ctx, MembershipActor{
+			MembershipID: req.Subject.MembershipID,
+		}, req.MembershipID, req.Subject.CompanyID, roleID); err != nil {
 			return err
 		}
-		if err := s.assertKeepsPlatformOperator(ctx, req.Subject, req.MembershipID, primary.RoleID, ""); err != nil {
-			return err
-		}
-		// ROLE-05 / BES-19: replacing the primary role must not demote the primary admin.
-		newIsAdmin, err := s.isRoleAdminCapable(ctx, req.Subject.CompanyID, roleID)
+
+		roles, err := s.repo.ListMembershipRoles(ctx, req.MembershipID)
 		if err != nil {
 			return err
 		}
-		if !newIsAdmin {
-			if err := s.assertRoleRemovalKeepsAdmin(ctx, req.Subject.CompanyID, req.MembershipID, primary.RoleID); err != nil {
+		primary, _, _ := partitionMembershipRoles(roles)
+		if primary != nil && primary.RoleID == roleID {
+			return nil
+		}
+
+		alreadyAssigned := false
+		for _, r := range roles {
+			if r.RoleID == roleID {
+				alreadyAssigned = true
+				break
+			}
+		}
+
+		if err := s.assertCanGrant(ctx, req.Subject, req.Subject.CompanyID, roleID, nil); err != nil {
+			return err
+		}
+		if primary != nil {
+			if err := s.assertMayRemovePlatformRole(ctx, req.Subject, primary.RoleID); err != nil {
+				return err
+			}
+			if err := s.assertKeepsPlatformOperator(ctx, req.Subject, req.MembershipID, primary.RoleID, ""); err != nil {
+				return err
+			}
+			// ROLE-05 / BES-19: replacing the primary role must not demote the primary admin.
+			newIsAdmin, err := s.isRoleAdminCapable(ctx, req.Subject.CompanyID, roleID)
+			if err != nil {
+				return err
+			}
+			if !newIsAdmin {
+				if err := s.assertRoleRemovalKeepsAdmin(ctx, req.Subject.CompanyID, req.MembershipID, primary.RoleID); err != nil {
+					return err
+				}
+			}
+		}
+		wrote = true
+		if primary != nil {
+			if err := s.repo.RemoveRole(ctx, req.MembershipID, primary.RoleID); err != nil {
 				return err
 			}
 		}
-	}
-	wrote = true
-	if primary != nil {
-		if err := s.repo.RemoveRole(ctx, req.MembershipID, primary.RoleID); err != nil {
-			return err
+		if !alreadyAssigned {
+			if err := s.repo.AddRole(ctx, req.MembershipID, roleID); err != nil {
+				return err
+			}
 		}
-	}
-	if !alreadyAssigned {
-		if err := s.repo.AddRole(ctx, req.MembershipID, roleID); err != nil {
-			return err
-		}
-	}
-	return nil
+		return nil
+	})
 }

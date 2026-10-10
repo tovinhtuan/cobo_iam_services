@@ -926,19 +926,28 @@ func (s *adminService) UpdateMembership(ctx context.Context, req UpdateMembershi
 	if status != "active" && status != "inactive" {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "status must be active or inactive", nil)
 	}
-	if status == "inactive" {
+	if status != "inactive" {
+		return s.repo.UpdateMembershipStatus(ctx, req.Subject.CompanyID, req.MembershipID, status)
+	}
+	var out *MembershipView
+	err = s.withCompanyAdminLock(ctx, req.Subject.CompanyID, func() error {
 		m, err := s.repo.GetMembershipByID(ctx, req.MembershipID)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if m.IsPrimaryAdmin {
-			return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "CANNOT_DEACTIVATE_PRIMARY_ADMIN", nil)
+			return perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "CANNOT_DEACTIVATE_PRIMARY_ADMIN", nil)
 		}
 		if err := s.assertMayDeactivatePlatformMember(ctx, req.Subject, req.MembershipID); err != nil {
-			return nil, err
+			return err
 		}
-	}
-	return s.repo.UpdateMembershipStatus(ctx, req.Subject.CompanyID, req.MembershipID, status)
+		if err := s.assertMemberLeavingKeepsAdmin(ctx, req.Subject.CompanyID, req.MembershipID); err != nil {
+			return err
+		}
+		out, err = s.repo.UpdateMembershipStatus(ctx, req.Subject.CompanyID, req.MembershipID, status)
+		return err
+	})
+	return out, err
 }
 
 func (s *adminService) DeleteMembership(ctx context.Context, req DeleteMembershipRequest) (err error) {
@@ -949,17 +958,22 @@ func (s *adminService) DeleteMembership(ctx context.Context, req DeleteMembershi
 	if err := s.authorizeScopedMembershipMutation(ctx, req.Subject, "admin.membership.delete", req.MembershipID); err != nil {
 		return err
 	}
-	m, err := s.repo.GetMembershipByID(ctx, req.MembershipID)
-	if err != nil {
-		return err
-	}
-	if m.IsPrimaryAdmin {
-		return perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "CANNOT_DELETE_PRIMARY_ADMIN", nil)
-	}
-	if err := s.assertMayDeactivatePlatformMember(ctx, req.Subject, req.MembershipID); err != nil {
-		return err
-	}
-	return s.repo.DeleteMembership(ctx, req.Subject.CompanyID, req.MembershipID)
+	return s.withCompanyAdminLock(ctx, req.Subject.CompanyID, func() error {
+		m, err := s.repo.GetMembershipByID(ctx, req.MembershipID)
+		if err != nil {
+			return err
+		}
+		if m.IsPrimaryAdmin {
+			return perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "CANNOT_DELETE_PRIMARY_ADMIN", nil)
+		}
+		if err := s.assertMayDeactivatePlatformMember(ctx, req.Subject, req.MembershipID); err != nil {
+			return err
+		}
+		if err := s.assertMemberLeavingKeepsAdmin(ctx, req.Subject.CompanyID, req.MembershipID); err != nil {
+			return err
+		}
+		return s.repo.DeleteMembership(ctx, req.Subject.CompanyID, req.MembershipID)
+	})
 }
 
 func (s *adminService) ListDepartmentTeams(ctx context.Context, req ListDepartmentTeamsRequest) ([]TeamView, error) {
@@ -1102,7 +1116,26 @@ func (s *adminService) RevokeCompanyAdmin(ctx context.Context, req RevokeCompany
 	if err != nil || roleID == "" {
 		return perr.NewHTTPError(http.StatusInternalServerError, perr.CodeInternal, "company_admin role not found", nil)
 	}
-	if err := s.repo.RemoveRole(ctx, req.MembershipID, roleID); err != nil {
+	err = s.withCompanyAdminLock(ctx, req.Subject.CompanyID, func() error {
+		// ROLE-23: check the binding RemoveRole drops (matched by id, or by code where the
+		// lookup returns an invite alias).
+		held := roleID
+		roles, err := s.repo.ListMembershipRoles(ctx, req.MembershipID)
+		if err != nil {
+			return err
+		}
+		for _, r := range roles {
+			if r.RoleID == roleID || r.RoleCode == "company_admin" {
+				held = r.RoleID
+				break
+			}
+		}
+		if err := s.assertRoleRemovalKeepsAdmin(ctx, req.Subject.CompanyID, req.MembershipID, held); err != nil {
+			return err
+		}
+		return s.repo.RemoveRole(ctx, req.MembershipID, roleID)
+	})
+	if err != nil {
 		return err
 	}
 	s.invalidateEffectiveAccessForCompany(ctx, req.Subject.CompanyID)
@@ -1257,10 +1290,12 @@ func (s *adminService) RemoveRole(ctx context.Context, req RemoveRoleRequest) (e
 	if err := s.assertKeepsPlatformOperator(ctx, req.Subject, req.MembershipID, req.RoleID, ""); err != nil {
 		return err
 	}
-	if err := s.assertRoleRemovalKeepsAdmin(ctx, req.Subject.CompanyID, req.MembershipID, req.RoleID); err != nil {
-		return err
-	}
-	return s.repo.RemoveRole(ctx, req.MembershipID, req.RoleID)
+	return s.withCompanyAdminLock(ctx, req.Subject.CompanyID, func() error {
+		if err := s.assertRoleRemovalKeepsAdmin(ctx, req.Subject.CompanyID, req.MembershipID, req.RoleID); err != nil {
+			return err
+		}
+		return s.repo.RemoveRole(ctx, req.MembershipID, req.RoleID)
+	})
 }
 func (s *adminService) AssignDepartment(ctx context.Context, req AssignDepartmentRequest) (err error) {
 	defer s.invalidateEffectiveAccessOnSuccess(ctx, req.Subject.CompanyID, &err)

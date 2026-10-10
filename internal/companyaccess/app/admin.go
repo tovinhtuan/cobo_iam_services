@@ -310,6 +310,10 @@ type AdminRepository interface {
 	// in one transaction, only while `from` is still the primary admin and `to` is an active
 	// member of the same company (409 STATE_CONFLICT otherwise, 404 when `to` is not a member).
 	TransferPrimaryAdmin(ctx context.Context, companyID, fromMembershipID, toMembershipID string) error
+	// LockCompanyAdmins serializes, per company, the changes that can take admin capability
+	// away from a member, so a last-admin check and its write run without another such change
+	// in between (409 STATE_CONFLICT when the lock is not obtained in time). Call release once.
+	LockCompanyAdmins(ctx context.Context, companyID string) (release func(), err error)
 	// GetMembershipByID returns the MembershipView for a given membership_id, or an error if not found.
 	GetMembershipByID(ctx context.Context, membershipID string) (*MembershipView, error)
 	// CountAdminsInCompany returns the number of memberships with the company_admin role in the company.

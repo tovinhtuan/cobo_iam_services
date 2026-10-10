@@ -99,6 +99,42 @@ func (s *adminService) countActiveAdminCapableMembers(ctx context.Context, compa
 	return n, nil
 }
 
+// withCompanyAdminLock (ROLE-23) runs fn holding the company's admin-change lock, so the
+// last-admin check in fn and its write cannot interleave with another such change.
+func (s *adminService) withCompanyAdminLock(ctx context.Context, companyID string, fn func() error) error {
+	release, err := s.repo.LockCompanyAdmins(ctx, companyID)
+	if err != nil {
+		return err
+	}
+	defer release()
+	return fn()
+}
+
+// assertMemberLeavingKeepsAdmin (ROLE-23) guards deactivating or deleting a membership: the
+// company keeps at least one active admin-capable member. Run it under withCompanyAdminLock.
+func (s *adminService) assertMemberLeavingKeepsAdmin(ctx context.Context, companyID, membershipID string) error {
+	m, err := s.repo.GetMembershipByID(ctx, membershipID)
+	if err != nil {
+		return err
+	}
+	if !strings.EqualFold(strings.TrimSpace(m.Status), "active") {
+		return nil // an inactive member is not counted as an admin
+	}
+	capable, err := s.isMembershipAdminCapable(ctx, membershipID, companyID)
+	if err != nil || !capable {
+		return err
+	}
+	count, err := s.countActiveAdminCapableMembers(ctx, companyID)
+	if err != nil {
+		return err
+	}
+	if count <= 1 {
+		return perr.NewHTTPError(http.StatusConflict, perr.CodeLastAdminRoleChangeBlocked,
+			"cannot deactivate or remove the last admin-capable member", nil)
+	}
+	return nil
+}
+
 // assertRoleRemovalKeepsAdmin (ROLE-05) guards removing one role from a membership: the
 // primary admin keeps its admin role, and the company keeps at least one admin-capable member.
 func (s *adminService) assertRoleRemovalKeepsAdmin(ctx context.Context, companyID, membershipID, roleID string) error {
