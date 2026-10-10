@@ -180,6 +180,7 @@ func (w *itWorld) cleanup() {
 		`DELETE mr FROM membership_roles mr JOIN memberships m ON m.membership_id = mr.membership_id WHERE m.company_id IN (?, ?)`,
 		`DELETE rp FROM role_permissions rp JOIN roles r ON r.role_id = rp.role_id WHERE r.company_id IN (?, ?)`,
 		`DELETE FROM roles WHERE company_id IN (?, ?)`,
+		`DELETE FROM departments WHERE company_id IN (?, ?)`,
 		`DELETE FROM memberships WHERE company_id IN (?, ?)`,
 	} {
 		if _, err := w.db.Exec(q, both...); err != nil {
@@ -496,6 +497,21 @@ func TestIntegration_TransferPrimaryAdmin_IsCompareAndSet(t *testing.T) {
 	err = w.repo.TransferPrimaryAdmin(ctx, w.company, w.approver.MembershipID, w.owner.MembershipID)
 	if he, ok := perr.AsHTTPError(err); !ok || he.Code != perr.CodeStateConflict {
 		t.Fatalf("inactive target must be 409, got %v", err)
+	}
+}
+
+// The invite scope of a department head reads its departments on MySQL (the query ordered by a
+// column that does not exist, so every invite by a non-admin returned 500).
+func TestIntegration_ListDepartmentIDsByHeadMembership(t *testing.T) {
+	w := newITWorld(t)
+	w.exec(`INSERT INTO departments (department_id, company_id, department_code, department_name, status, head_membership_id, sort_order)
+		VALUES (?, ?, ?, 'IT dept', 'active', ?, 1)`, w.prefix+"-d1", w.company, w.prefix+"-d1", w.owner.MembershipID)
+	ids, err := w.repo.ListDepartmentIDsByHeadMembership(context.Background(), w.company, w.owner.MembershipID)
+	if err != nil {
+		t.Fatalf("list departments by head: %v", err)
+	}
+	if len(ids) != 1 || ids[0] != w.prefix+"-d1" {
+		t.Fatalf("departments = %v", ids)
 	}
 }
 

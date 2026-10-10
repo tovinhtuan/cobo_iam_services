@@ -64,7 +64,7 @@ func (r *AdminRepository) ListDepartmentIDsByHeadMembership(ctx context.Context,
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT department_id FROM departments
 		WHERE company_id = ? AND head_membership_id = ? AND status = 'active'
-		ORDER BY sort_order, name
+		ORDER BY sort_order, department_name
 	`, companyID, headMembershipID)
 	if err != nil {
 		return nil, fmt.Errorf("list departments by head: %w", err)

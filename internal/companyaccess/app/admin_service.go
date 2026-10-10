@@ -165,7 +165,7 @@ func (s *adminService) CreateUser(ctx context.Context, req CreateUserRequest) (*
 		req.DepartmentID = deptID
 		req.FocalDepartmentIDs = focalIDs
 		req.IsDepartmentFocal = isFocal
-		isPlatformCMS, err := s.isPlatformCMSOperator(ctx, req.Subject)
+		isPlatformCMS, err := s.isPlatformCompanyOperator(ctx, req.Subject)
 		if err != nil {
 			return nil, err
 		}
@@ -450,7 +450,7 @@ func (s *adminService) inviteUserWithCompany(
 	isFocal bool,
 	focalIDs []string,
 ) (*InviteUserResponse, error) {
-	isPlatformCMS, err := s.isPlatformCMSOperator(ctx, req.Subject)
+	isPlatformCMS, err := s.isPlatformCompanyOperator(ctx, req.Subject)
 	if err != nil {
 		return nil, err
 	}
@@ -623,10 +623,6 @@ func (s *adminService) inviteUserWithCompany(
 	}, nil
 }
 
-func (s *adminService) isPlatformCMSOperator(ctx context.Context, sub AdminSubject) (bool, error) {
-	return s.hasPermission(ctx, sub, "platform.cms.view")
-}
-
 func (s *adminService) ListInviteRoles(ctx context.Context, req ListInviteRolesRequest) ([]InviteRoleOption, error) {
 	if err := s.authorizeMembershipInvite(ctx, req.Subject, req.Subject.CompanyID); err != nil {
 		return nil, err
@@ -635,10 +631,8 @@ func (s *adminService) ListInviteRoles(ctx context.Context, req ListInviteRolesR
 	if err != nil {
 		return nil, err
 	}
-	isPlatformCMS, err := s.isPlatformCMSOperator(ctx, req.Subject)
-	if err != nil {
-		return nil, err
-	}
+	// ROLE-07: one definition of platform operator (platform.cms.view + rbac.manage|system.settings).
+	isPlatformCMS := operator
 	target := strings.TrimSpace(req.CompanyID)
 	if !operator {
 		if target != "" && target != req.Subject.CompanyID {
@@ -655,6 +649,14 @@ func (s *adminService) ListInviteRoles(ctx context.Context, req ListInviteRolesR
 	}
 	if !isPlatformCMS {
 		items = FilterEnterpriseInviteRoles(items)
+		// A role carrying platform permissions can only be handed out by a platform operator.
+		kept := make([]InviteRoleOption, 0, len(items))
+		for _, it := range items {
+			if err := s.assertRoleHasNoPlatformPermissions(ctx, target, it.RoleID); err == nil {
+				kept = append(kept, it)
+			}
+		}
+		items = kept
 	}
 	return s.filterGrantableInviteRoles(ctx, req.Subject, target, items)
 }
@@ -1209,7 +1211,7 @@ func (s *adminService) AssignRole(ctx context.Context, req AssignRoleRequest) (e
 	if err := s.assertCanGrant(ctx, req.Subject, req.Subject.CompanyID, req.RoleID, nil); err != nil {
 		return err
 	}
-	isPlatformCMS, err := s.isPlatformCMSOperator(ctx, req.Subject)
+	isPlatformCMS, err := s.isPlatformCompanyOperator(ctx, req.Subject)
 	if err != nil {
 		return err
 	}

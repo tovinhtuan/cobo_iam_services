@@ -55,7 +55,7 @@ func (s *adminService) ReplaceMembershipPrimaryRole(ctx context.Context, req Rep
 
 	// The membership belongs to the caller's company (checked above); roles are validated against
 	// that same company.
-	isPlatformCMS, err := s.isPlatformCMSOperator(ctx, req.Subject)
+	isPlatformCMS, err := s.isPlatformCompanyOperator(ctx, req.Subject)
 	if err != nil {
 		return err
 	}
