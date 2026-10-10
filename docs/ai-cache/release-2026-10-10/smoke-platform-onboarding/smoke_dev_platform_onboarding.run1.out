@@ -1,0 +1,19 @@
+
+PASS  gate: CMS persona with cms_operator only cannot create a company  403 PERMISSION_DENIED access denied
+PASS  gate: tenant admin (no platform.cms.view) gets 403 on platform routes  403 PERMISSION_DENIED access denied
+PASS  gate: plain member gets 403 on platform routes  403 PERMISSION_DENIED access denied
+PASS  create company (with admin.membership.invite)  201 
+PASS  new company: default roles, no member, no owner  status=['active\tverified'] roles=['admin_doanh_nghiep,user_thuong'] members=['0']
+PASS  invite representative as admin_doanh_nghiep (rbac.manage only)  201  membership=['01a125ff-5de0-71be-a6c5-fad1b19fb431', 'active', '0', 'admin_doanh_nghiep']
+PASS  invited admin holds the admin role but is not the owner  status=active primary=0 roles=admin_doanh_nghiep
+FAIL  invitation email reached DEV mailpit with a token  not found
+PASS  create password account in the company (no role field)  201  membership=['01a125ff-e639-74f2-9e69-62565f408097', 'active', '0', 'user_thuong']
+PASS  create password account without a company  201 
+PASS  assign that account to the company as admin (not owner)  201  membership=['01a125ff-ea78-79d8-9585-38cd7a7a03f5', 'active', '0', 'admin_doanh_nghiep']
+PASS  assign-company without admin.membership.invite is 403  403 PERMISSION_DENIED access denied
+PASS  CMS token cannot change a role in another company (tenant routes are token-scoped)  404 MEMBERSHIP_NOT_FOUND membership not found in company
+FAIL  deactivate the company  403 PERMISSION_DENIED access denied
+PASS  cleanup: temporary grant revoked  ['0']
+PASS  purge: company, memberships and users removed  company=['0'] users=['0'] memberships=['0']
+
+14/16 as expected

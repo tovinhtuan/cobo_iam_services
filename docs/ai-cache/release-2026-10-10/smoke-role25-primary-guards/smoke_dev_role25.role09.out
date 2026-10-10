@@ -1,0 +1,15 @@
+
+PASS  fixture: ENT is the only (active) primary admin  ['01a12508-11f8-76b1-97bb-a3f2a3bed1f3\tactive']
+PASS  remove an ordinary role works (guarded DELETE on MySQL)  200 
+PASS  restore: role re-assigned  200 
+PASS  ENT2 cannot remove the owner's admin role (409, not 403)  409 STATE_CONFLICT CANNOT_REMOVE_PRIMARY_ADMIN_ROLE
+PASS  ENT2 cannot deactivate the owner  409 STATE_CONFLICT CANNOT_DEACTIVATE_PRIMARY_ADMIN
+PASS  ENT2 cannot delete the owner  409 STATE_CONFLICT CANNOT_DELETE_PRIMARY_ADMIN
+PASS  DB unchanged after refused guards  
+PASS  owner demotes ENT2 to user_thuong via primary-role  200 
+PASS  restore: ENT2 is admin again (fixture script)  0
+PASS  race: never both transfer and deactivate succeed  outcomes=[(200, 409), (200, 409), (200, 409), (200, 409), (200, 409), (200, 409), (200, 409), (200, 409), (200, 409), (200, 409)]
+PASS  race: no 5xx (no deadlock surfaced)  0
+PASS  cleanup: QA company back to its starting state  ['01a12508-11f8-76b1-97bb-a3f2a3bed1f3\tactive\t1', 'm_qa_ent2_qaco\tactive\t0', 'm_qa_member_qaco\tactive\t0']
+
+12/12 passed

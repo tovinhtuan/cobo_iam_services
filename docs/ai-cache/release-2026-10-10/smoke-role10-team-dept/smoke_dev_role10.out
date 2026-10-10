@@ -1,0 +1,13 @@
+
+PASS  fixture: departments X and Y created  {'X': '01a12637-b1e4-7678-9c82-0a5fe230e45e', 'Y': '01a12637-b24d-7cc0-83c5-31707bbab26e'}
+PASS  fixture: team in Y created  201 
+PASS  fixture: MEMBER in X  200 
+PASS  ROLE-10 body department X cannot add MEMBER to Y's team  400 INVALID_REQUEST department_id does not match the team's department
+PASS  ROLE-10 MEMBER not in the team's department -> 409  409 STATE_CONFLICT MEMBER_NOT_IN_DEPARTMENT
+PASS  member of the team's department is added  200 
+PASS  cleanup: team deleted  200 
+PASS  cleanup: department X deleted  200 
+PASS  cleanup: department Y deleted  200 
+PASS  cleanup: MEMBER in no active QA department  ['0']
+
+10/10 passed

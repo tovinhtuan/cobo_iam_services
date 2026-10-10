@@ -1,0 +1,19 @@
+
+PASS  fixture: company S and its admin W signed in  (200, '')
+PASS  a company hosting a platform operator cannot be suspended  409 STATE_CONFLICT CANNOT_RESTRICT_PLATFORM_COMPANY: platform operators work from this company
+PASS  before: W can create a department  201 
+PASS  suspend S  200  status=['suspended']
+PASS  suspended: W can still read  200 
+PASS  suspended: a company write is refused  403 COMPANY_SUSPENDED the company is suspended: read and export only
+PASS  suspended: a membership update is refused  403 COMPANY_SUSPENDED the company is suspended: read and export only
+PASS  suspended: export is not blocked  400 INVALID_REQUEST invalid module selection
+PASS  suspended: the user's own profile is not blocked  400 INVALID_REQUEST no fields to update
+PASS  suspended: refresh works  200 
+PASS  suspended: W can sign in to S  (200, '')
+PASS  suspended: /me/companies reports company_status  suspended
+PASS  reactivate S  200 
+PASS  after reactivation: W can write again  201 
+PASS  cleanup: temporary grant revoked  ['0']
+PASS  purge: companies and users removed  companies=['0'] users=['0']
+
+16/16 passed

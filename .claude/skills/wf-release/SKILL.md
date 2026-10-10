@@ -52,7 +52,7 @@ Recommendation: GO / NO-GO (reasons)
 
 ## Phase 5 - Deploy (explicit approval only)
 Follow `deploy-dev-release`: migrations → BE → verify → FE → verify.
-Use `make deploy-dev MODE=...` (or the specific targets). Never deploy a SHA
+Use `make deploy-dev MODE=...` (or the specific targets; on a Windows workstation without `make`, `powershell -NoProfile -ExecutionPolicy Bypass -File deploy-dev.ps1 -Mode ...`). Smoke credentials come from `~/.cobo/dev-qa.env` (see `cobo_web_design/docs/ai-cache/dev-qa/README.md`) - never ask the user for them. Never deploy a SHA
 other than the one approved; stop if HEAD moved.
 
 ## Phase 6 - Post-deploy → `06-post-deploy.md`

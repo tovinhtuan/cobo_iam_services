@@ -32,7 +32,18 @@ Mau loi (HTTP 4xx/5xx):
 }
 ```
 
-Ma loi goi y: `INVALID_CREDENTIALS`, `ACCOUNT_LOCKED`, `SESSION_EXPIRED`, `NO_ACTIVE_COMPANY_ACCESS`, `MEMBERSHIP_NOT_FOUND`, `COMPANY_CONTEXT_REQUIRED`, `COMPANY_SCOPE_MISMATCH`, `PERMISSION_DENIED`, `DATA_SCOPE_DENIED`, `RESPONSIBILITY_REQUIRED`, `STATE_CONFLICT`, `MFA_REQUIRED`.
+Ma loi goi y: `INVALID_CREDENTIALS`, `ACCOUNT_LOCKED`, `SESSION_EXPIRED`, `NO_ACTIVE_COMPANY_ACCESS`, `MEMBERSHIP_NOT_FOUND`, `COMPANY_CONTEXT_REQUIRED`, `COMPANY_SCOPE_MISMATCH`, `COMPANY_INACTIVE`, `COMPANY_SUSPENDED`, `PERMISSION_DENIED`, `DATA_SCOPE_DENIED`, `RESPONSIBILITY_REQUIRED`, `STATE_CONFLICT`, `MFA_REQUIRED`.
+
+### Trang thai doanh nghiep (`companies.status`, 2026-10-10)
+
+| Trang thai | Y nghia | Tac dung |
+|---|---|---|
+| `active` | Hoat dong | Day du. |
+| `suspended` | **Tam ngung** (vd chua thanh toan) | Chi doc va xuat du lieu. Moi request ghi (POST/PUT/PATCH/DELETE) trong company -> **403 `COMPANY_SUSPENDED`**, tru: `/api/v1/auth/*`, `/api/v1/me/*` (tai khoan cua chinh user), `/api/v1/oauth/*`, `/internal/v1/authorize[/batch]`, `POST /api/v1/admin/config-export`, `POST /api/v1/admin/configuration/validate`, `POST /api/v1/admin/notification-rules/simulate`, `POST /api/v1/template-builder/validate`. Dang nhap, chon company, refresh van duoc. |
+| `inactive` | **Ngung hoat dong** | Chan han. Moi request co token gan voi company -> **403 `COMPANY_INACTIVE`** (ca phien dang chay). Login bo qua company nay; neu user chi con company `inactive` -> login 403 `COMPANY_INACTIVE`. `select-company` / `switch-company` / `refresh` toi company nay -> 403 `COMPANY_INACTIVE`. Du lieu giu nguyen; kich hoat lai co hieu luc ngay. |
+
+- `GET /api/v1/me/companies` (va `/me/authorized-companies`), `GET /api/v1/me` (`company_context.companies`): bo company `inactive`; moi item co `company_status`.
+- Platform: `POST /api/v1/platform/cms/admin/companies/{id}/suspend` | `/deactivate` | `/activate`. Khong duoc tam ngung hay ngung hoat dong company ma operator dang lam viec (company cua chinh nguoi goi, hoac company co member active giu `platform.cms.view`) -> 409 `STATE_CONFLICT` (`CANNOT_RESTRICT_PLATFORM_COMPANY`).
 
 ---
 

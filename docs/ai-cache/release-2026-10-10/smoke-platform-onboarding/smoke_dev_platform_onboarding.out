@@ -1,0 +1,26 @@
+
+PASS  gate: cms_operator only cannot create a company  403 PERMISSION_DENIED access denied
+PASS  gate: cms_operator only cannot list companies  403 PERMISSION_DENIED access denied
+PASS  gate: cms_operator only can list users  200 
+PASS  gate: cms_operator only cannot create a password account  403 PERMISSION_DENIED access denied
+PASS  gate: tenant admin (no platform.cms.view) gets 403 on platform routes  403 PERMISSION_DENIED access denied
+PASS  gate: plain member gets 403 on platform routes  403 PERMISSION_DENIED access denied
+PASS  create company (with admin.membership.invite)  201 
+PASS  new company: default roles, no member, no owner  status=['active\tverified'] roles=['admin_doanh_nghiep,user_thuong'] members=['0']
+PASS  create password account in the company (no role field)  201  membership=['01a1263a-c56d-7724-af8d-5fe8e669835c', 'active', '0', 'user_thuong']
+PASS  create password account without a company  201 
+PASS  assign that account to the company as admin (not owner)  201  membership=['01a1263a-c9b9-7edf-a374-5dabce285201', 'active', '0', 'admin_doanh_nghiep']
+PASS  the company's admin signs in  200 
+PASS  company admin (not owner) can use the tenant admin API  200 
+PASS  company admin (not owner) cannot transfer ownership (not the primary admin)  403 PERMISSION_DENIED only the primary admin can transfer ownership
+PASS  company admin (not owner) cannot grant admin.membership.invite (reserved to the owner)  403 PERMISSION_DENIED only primary admin can grant invite permission
+PASS  CMS token cannot change a role in another company (tenant routes are token-scoped)  404 MEMBERSHIP_NOT_FOUND membership not found in company
+PASS  gate: cms_operator only cannot deactivate a company  403 PERMISSION_DENIED access denied
+PASS  deactivate the company (with admin.membership.invite)  200 
+PASS  company status after deactivate  ['inactive']
+PASS  deactivated company: the admin's existing session is cut off  403 COMPANY_INACTIVE the company is no longer active
+PASS  deactivated company: its admin cannot sign in to it  403 COMPANY_INACTIVE the company is no longer active
+PASS  cleanup: temporary grant revoked  ['0']
+PASS  purge: company, memberships and users removed  company=['0'] users=['0'] memberships=['0']
+
+23/23 as expected

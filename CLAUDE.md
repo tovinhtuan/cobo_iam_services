@@ -19,6 +19,15 @@ Baseline checks: `go test ./...`, `go vet ./...`,
 `docker compose -f docker-compose.dev.yml build api` (or `BLOCKED: <reason>`).
 New migrations must be appended to `migrations/run_dev_migrations.sh`.
 
+DEV deploy/smoke credentials:
+- Never ask the user for them. Convention: `../cobo_web_design/docs/ai-cache/dev-qa/README.md`.
+- Values live in `~/.cobo/dev-qa.env`, read via `scripts/devqa/devqa_env.py`
+  (`persona()`, `base_url()`, `run_sql()`).
+- QA personas (`qa.persona.<p>@cobo.test`) and DB users `qa_ro`/`qa_rw`: create, sync, or
+  rotate with `python3 scripts/devqa/provision_qa_accounts.py [--dry-run|--rotate]`.
+- Deploy uses the SSH key from gitignored `deploy-dev.local.env`.
+- Never read passwords from migration comments.
+
 ### Workflows, agents, commands, hooks (Claude Code)
 
 - Workflow skills: `wf-feature`, `wf-bugfix`, `wf-risk-review`, `wf-pr-review`,

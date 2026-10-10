@@ -1,0 +1,18 @@
+effective-access cache generation dropped: True
+effective-access cache generation dropped: True
+effective-access cache generation dropped: True
+
+PASS  fixture: MEMBER is the only admin, nothing pending  ['m_qa_member_qaco']
+FAIL  submit: removing the last admin's rbac.manage is refused  202 
+FAIL  old binary: approving it  200  admins_after=[]
+PASS  fixture: ENT and MEMBER are the admins  ['01a12508-11f8-76b1-97bb-a3f2a3bed1f3', 'm_qa_member_qaco']
+PASS  approve: removal queued while ENT is still an admin  202 
+PASS  approve: ENT demoted, MEMBER now the only admin  200 
+PASS  requester cannot approve its own request  403 SELF_APPROVAL_NOT_ALLOWED requester cannot approve own request
+PASS  another company's token cannot approve it  404 NOT_FOUND approval not found
+FAIL  approve: approving it would leave no admin -> 409  200  admins_after=[]
+PASS  positive: removal queued (another admin stays)  202 
+PASS  positive: approved, MEMBER loses rbac.manage, ENT stays admin  200  admins=['01a12508-11f8-76b1-97bb-a3f2a3bed1f3']
+FAIL  cleanup: QA company back to its starting state, no fixture grant, nothing pending  state=['01a12508-11f8-76b1-97bb-a3f2a3bed1f3\tactive\t1\tadmin_doanh_nghiep,user_thuong', 'm_qa_ent2_qaco\tactive\t0\tadmin_doanh_nghiep', 'm_qa_member_qaco\tactive\t0\tuser_thuong'] grants=[] pending=[]
+
+8/12 passed

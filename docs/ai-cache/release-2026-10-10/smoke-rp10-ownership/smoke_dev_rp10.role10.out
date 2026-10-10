@@ -1,0 +1,21 @@
+qa company=41eab473-6cf4-4c53-aa2e-34f5d8e2495c ent=01a12508-11f8-76b1-97bb-a3f2a3bed1f3 ent2=m_qa_ent2_qaco member=m_qa_member_qaco
+
+PASS  fixture: ENT is the only primary admin  ['01a12508-11f8-76b1-97bb-a3f2a3bed1f3']
+PASS  MEMBER cannot transfer ownership  403 PERMISSION_DENIED
+PASS  transfer to self rejected  400 INVALID_REQUEST
+PASS  transfer to a membership of another company rejected  404 MEMBERSHIP_NOT_FOUND
+PASS  ROLE-26 transfer to a non-admin member rejected  409 STATE_CONFLICT
+PASS  fixture: deactivate MEMBER  200
+PASS  transfer to an inactive member rejected  409 STATE_CONFLICT
+PASS  fixture: reactivate MEMBER  200
+PASS  owner unchanged after rejected transfers  ['01a12508-11f8-76b1-97bb-a3f2a3bed1f3']
+PASS  ENT transfers ownership to ENT2  200 
+PASS  DB: ENT2 is the only primary admin  ['m_qa_ent2_qaco']
+PASS  ROLE-28 audit records the previous owner  ['01a12508-11f8-76b1-97bb-a3f2a3bed1f3']
+PASS  former owner can no longer transfer  403 PERMISSION_DENIED
+PASS  concurrent transfers: exactly one succeeds  {'Thread-18 (go)': (409, 'STATE_CONFLICT'), 'Thread-17 (go)': (200, '')}
+PASS  DB: exactly one primary admin after concurrent transfers  ['01a12508-11f8-76b1-97bb-a3f2a3bed1f3']
+PASS  cleanup: ENT is the only primary admin again  ['01a12508-11f8-76b1-97bb-a3f2a3bed1f3']
+PASS  cleanup: QA company memberships active  ['01a12508-11f8-76b1-97bb-a3f2a3bed1f3\tactive', 'm_qa_ent2_qaco\tactive', 'm_qa_member_qaco\tactive']
+
+17/17 passed

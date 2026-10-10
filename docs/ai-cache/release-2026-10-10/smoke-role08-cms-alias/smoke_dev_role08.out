@@ -1,0 +1,12 @@
+
+PASS  control: CMS operator passes the read (GET global workflow) gate  404 INVALID_REQUEST
+PASS  control: CMS operator passes the write (POST workflow publish) gate  422 INVALID_REQUEST
+PASS  control: CMS operator passes the config write (PUT deadline config) gate  404 INVALID_REQUEST
+PASS  fixture: MEMBER holds platform.cms.view + disclosure_type.manage only  ['platform.cms.view', 'disclosure_type.manage']
+PASS  ROLE-08 tenant alias refused at the read (GET global workflow) gate  403 PERMISSION_DENIED
+PASS  ROLE-08 tenant alias refused at the write (POST workflow publish) gate  403 PERMISSION_DENIED
+PASS  ROLE-08 tenant alias refused at the config write (PUT deadline config) gate  403 PERMISSION_DENIED
+PASS  cleanup: fixture grants revoked  ['0']
+PASS  cleanup: MEMBER permissions back to normal  8
+
+9/9 passed

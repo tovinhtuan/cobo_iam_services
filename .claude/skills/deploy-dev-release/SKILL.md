@@ -12,6 +12,11 @@ user request** for that exact operation (see workspace `AGENTS.md`).
 - `make deploy-dev MODE=be|fe|all|migrate|verify` → `deploy-dev.sh`
   (Windows: `make deploy-dev-win` → `deploy-dev.ps1`, plink/pscp, credentials
   from gitignored `deploy-dev.local.env`).
+- **Windows workstation (no `make` in Git Bash):** call the PowerShell script
+  directly from `cobo_iam_services`:
+  `powershell -NoProfile -ExecutionPolicy Bypass -File deploy-dev.ps1 -Mode be|fe|all|migrate|verify`.
+  Only `.ps1` reads `DEV_SSH_IDENTITY_FILE` from `deploy-dev.local.env`;
+  `deploy-dev.sh` relies on the default ssh key/agent or `SSHPASS`.
 - Steps: SSH preflight → `go build` / `npm run lint` → diff local migration
   list vs server `schema_migrations` → `push-migration.sh` → `make deploy-be`
   / `deploy-fe` → verify `/healthz`, `/readyz`, nginx `/api`.
@@ -51,6 +56,18 @@ bash .claude/skills/cache-versioning-review/scripts/check_http_headers.sh http:/
 make dev-ps && make dev-logs   # look for panics, migration errors, outbox failures
 ```
 Plus a short smoke via `e2e-playwright-cobo` (web repo) when UI changed.
+
+## Credentials (no asking the user)
+Convention: `cobo_web_design/docs/ai-cache/dev-qa/README.md`.
+- Deploy uses the SSH key from gitignored `deploy-dev.local.env`
+  (`DEV_SSH_IDENTITY_FILE`). Never use or ask for an SSH password.
+- Smoke QA accounts, base URL, SSH target and DB users live outside git in
+  `~/.cobo/dev-qa.env`. Read them only through the loaders:
+  `cobo_web_design/scripts/lib/devQaEnv.mjs` or
+  `cobo_iam_services/scripts/devqa/devqa_env.py` (`persona()`, `base_url()`,
+  `run_sql()`).
+- Never read passwords from migration comments. Never hardcode or print them.
+- If a variable is missing, name it and ask the user to add it to the file.
 
 ## Report
 ```text

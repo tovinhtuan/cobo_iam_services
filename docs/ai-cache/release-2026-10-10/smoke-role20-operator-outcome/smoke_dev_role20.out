@@ -1,0 +1,9 @@
+
+PASS  fixture: no approval pending  []
+PASS  fixture: MEMBER is an operator (cms.view + system.settings)  ['platform.cms.view', 'system.settings']
+PASS  ROLE-20 owner cannot end MEMBER's operator status  403 PERMISSION_DENIED the change would end the member's platform operator access; only a platform operator may do that
+PASS  ROLE-20 nothing removed or queued  ['platform.cms.view', 'system.settings'] []
+PASS  a removal that keeps operator status is allowed  200 
+PASS  cleanup: MEMBER back to user_thuong only  grants=[] roles=['user_thuong']
+
+6/6 passed

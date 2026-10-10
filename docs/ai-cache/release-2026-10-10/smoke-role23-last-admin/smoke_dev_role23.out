@@ -1,0 +1,17 @@
+
+PASS  fixture: QA company without a primary admin  
+PASS  fixture: ENT and ENT2 active admins, nobody primary  ['01a12508-11f8-76b1-97bb-a3f2a3bed1f3\tactive\t0\tadmin_doanh_nghiep', 'm_qa_ent2_qaco\tactive\t0\tadmin_doanh_nghiep', 'm_qa_member_qaco\tactive\t0\tuser_thuong']
+PASS  MEMBER cannot deactivate an admin  403 PERMISSION_DENIED access denied
+PASS  membership of another company: 403/404, unchanged  404 MEMBERSHIP_NOT_FOUND membership not found in company
+PASS  ENT deactivates ENT2 while ENT stays admin  200 
+PASS  sole admin cannot leave: remove admin role  409 last_admin_role_change_blocked cannot remove the admin role of the last admin-capable member
+PASS  sole admin cannot leave: revoke company admin  500 INTERNAL_ERROR company_admin role not found
+PASS  sole admin cannot leave: deactivate  409 last_admin_role_change_blocked cannot deactivate or remove the last admin-capable member
+PASS  sole admin cannot leave: delete  409 last_admin_role_change_blocked cannot deactivate or remove the last admin-capable member
+PASS  race (deactivate): one wins, the other is refused, one admin stays  bad=0 outcomes=[[(200, ''), (409, 'last_admin_role_change_blocked')], [(409, 'last_admin_role_change_blocked'), (200, '')], [(200, ''), (409, 'last_admin_role_change_blocked')], [(200, ''), (409, 'last_admin_role_change_blocked')], [(409, '
+PASS  race (deactivate): no 5xx  
+PASS  race (remove admin role): one wins, the other is refused, one admin stays  bad=0 outcomes=[[(200, ''), (403, 'PERMISSION_DENIED')], [(200, ''), (409, 'last_admin_role_change_blocked')], [(409, 'last_admin_role_change_blocked'), (200, '')], [(409, 'last_admin_role_change_blocked'), (200, '')], [(200, ''), (409, 'la
+PASS  race (remove admin role): no 5xx  
+PASS  cleanup: QA company back to its starting state (ENT owner)  ['01a12508-11f8-76b1-97bb-a3f2a3bed1f3\tactive\t1\tadmin_doanh_nghiep', 'm_qa_ent2_qaco\tactive\t0\tadmin_doanh_nghiep', 'm_qa_member_qaco\tactive\t0\tuser_thuong']
+
+14/14 passed

@@ -1,0 +1,13 @@
+
+PASS  fixture: department headed by MEMBER created  201 ('', '')
+PASS  fixture: MEMBER holds platform.cms.view + invite  ['platform.cms.view', 'admin.membership.invite']
+PASS  ROLE-07 weak operator's picker shows no deny-listed role  200 ['user_thuong']
+PASS  invite scope of a department head loads (no 500)  400 INVALID_REQUEST
+PASS  ROLE-07 weak operator goes through the tenant deny list  400 INVALID_REQUEST department focal must be assigned via focal_department_ids, not dept_lead system role
+PASS  no user was created by the refused invite  ['0']
+PASS  cleanup: department deleted  200
+PASS  cleanup: fixture grants revoked  ['0']
+PASS  cleanup: MEMBER heads no active department  ['0']
+PASS  cleanup: MEMBER permissions back to normal  8
+
+10/10 passed

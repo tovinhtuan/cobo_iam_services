@@ -1,0 +1,11 @@
+
+PASS  fixture: MEMBER holds system.settings directly  
+PASS  ROLE-24 unknown admin action denied for a system.settings holder  200 deny [] 
+PASS  ROLE-24 same via /batch  200 deny 
+PASS  body subject (other company / ENT) ignored  200 deny 
+PASS  mapped admin action: MEMBER without rbac.manage denied  200 deny 
+PASS  mapped admin action: ENT allowed via rbac.manage  200 allow ['rbac.manage'] 
+PASS  cleanup: fixture grant revoked  ['0']
+PASS  cleanup: MEMBER token still valid after cleanup  200 allow
+
+8/8 passed

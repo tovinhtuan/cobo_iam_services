@@ -1,0 +1,12 @@
+
+PASS  fixture: CMS user is not a member of the QA company  []
+FAIL  ROLE-09 status 'suspended' rejected before any write  409 INVALID_REQUEST membership already exists for user and company
+PASS  ROLE-09 no membership written  
+PASS  ROLE-21 role of another company rejected  400 INVALID_REQUEST role not found
+PASS  ROLE-21 no membership created in the QA company  []
+PASS  platform assign with the company's own role works  201  roles=['1']
+PASS  cleanup: fixture grant revoked  ['0']
+PASS  cleanup: CMS membership in the QA company deleted  200 
+PASS  cleanup: CMS user not a member of the QA company  []
+
+8/9 passed

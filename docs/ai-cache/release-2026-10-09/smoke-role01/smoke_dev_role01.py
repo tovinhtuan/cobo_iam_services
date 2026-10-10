@@ -13,21 +13,17 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
 
-BASE = "http://88.216.208.0:3000"
-IAM = sys.argv[1]
-OWN = "c_001"
-OTHER = "c_002"
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "scripts" / "devqa"))
+from devqa_env import base_url, optional, persona, run_sql  # credentials: ~/.cobo/dev-qa.env (docs: cobo_web_design/docs/ai-cache/dev-qa/)
+
+BASE = base_url()
+# Assumes DEV seed data (role/membership ids of c_001/c_002 used below).
+OWN = optional("E2E_COMPANY_ID", "c_001")
+OTHER = optional("E2E_OTHER_COMPANY_ID", "c_002")
 CMS_OPERATOR_ROLE_C001 = "r0000001-0001-4000-8000-000000000016"  # seeded cms_operator of c_001 (carries platform.cms.view)
 results = []
-
-
-def seed_password(path, pattern):
-    with open(f"{IAM}/migrations/{path}", encoding="utf-8") as f:
-        m = re.search(pattern, f.read())
-    if not m:
-        raise SystemExit(f"cannot read seed password from {path}")
-    return m.group(1)
 
 
 def call(method, path, token=None, body=None):
@@ -83,9 +79,7 @@ A = "/api/v1/admin"
 CMS_OP_ROLE_C001 = "r0000001-0001-4000-8000-000000000016"  # cms_operator of c_001 (tenant_default, protected)
 CMS_OP_ROLE_C002 = "r0000001-0001-4000-8000-000000000017"  # cms_operator of c_002
 DIRECT_CODE = "template.workflow.override.approve"          # grantable, not critical, not held by m_102
-tenant_pw = seed_password("0009_seed_authz_test_accounts.up.sql", r"Password for all users below: (\S+)")
-cms_pw = seed_password("0063_dev_platform_tenant_dual_admin.up.sql", r"platform\.tenant\.admin@example\.com / (\S+)")
-tok, mid = login("admin.dn@example.com", tenant_pw, OWN)
+tok, mid = login(*persona("ENT"), OWN)
 print(f"tenant admin logged in company={OWN} membership={mid}")
 stamp = str(int(time.time()))
 
@@ -176,7 +170,7 @@ st, raw = call("DELETE", f"{A}/roles/{RID}", tok)
 results.append((st in (200, 204), "cleanup: inactivate temp role", "DELETE", f"{A}/roles/{RID}", st, ""))
 
 # 8) platform operator still reaches the CMS
-cms, _ = login("platform.tenant.admin@example.com", cms_pw, OWN)
+cms, _ = login(*persona("CMS"), OWN)
 check("CMS operator lists companies -> 200", "GET", "/api/v1/platform/cms/admin/companies", cms, 200)
 
 report()

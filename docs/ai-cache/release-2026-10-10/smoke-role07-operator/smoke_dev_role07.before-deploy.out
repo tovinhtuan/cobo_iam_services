@@ -1,0 +1,11 @@
+
+PASS  fixture precondition: MEMBER has neither grant  8
+PASS  real operator (CMS) still offered cms_operator  200 n=10
+PASS  fixture: MEMBER now holds platform.cms.view + invite  ['platform.cms.view', 'admin.membership.invite']
+PASS  ROLE-07 weak operator's picker hides cms_operator  200 n=1
+FAIL  ROLE-07 weak operator goes through the tenant deny list (400), not the operator path  500 INTERNAL_ERROR Internal server error
+PASS  no user was created by the refused invite  ['0']
+PASS  cleanup: fixture grants revoked  ['0']
+PASS  cleanup: MEMBER permissions back to normal  8
+
+7/8 passed

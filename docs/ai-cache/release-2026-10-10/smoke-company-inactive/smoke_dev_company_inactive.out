@@ -1,0 +1,21 @@
+
+PASS  fixture: companies A and B created  ['c9459e52-1e3f-4dd9-a3e9-322d75047146', 'a2ee6056-62e7-415e-8b30-146a80383e9e']
+PASS  fixture: U signed in to A and to B, V to B  U/A=(200, '') U/B=(200, '') V=(200, '') V company=True
+PASS  before: admin API works in B  
+PASS  a company hosting a platform operator cannot be deactivated  409 STATE_CONFLICT CANNOT_RESTRICT_PLATFORM_COMPANY: platform operators work from this company status=['active']
+PASS  deactivate B  200 
+PASS  V's existing session in B is cut off  403 COMPANY_INACTIVE the company is no longer active
+PASS  U's existing session in B is cut off  403 COMPANY_INACTIVE the company is no longer active
+PASS  U's session in A is not affected  200 
+PASS  V's refresh in B is refused  403 COMPANY_INACTIVE the company is no longer active
+PASS  V cannot sign in (its only company is deactivated)  (403, 'COMPANY_INACTIVE the company is no longer active')
+PASS  U signs in and lands in A (B is skipped)  (200, '') company_is_A=True
+PASS  U's /me/companies omits B and shows company_status  200 B_listed=False A_status=active
+PASS  U cannot switch to B  403 COMPANY_INACTIVE the company is no longer active
+PASS  reactivate B  200 
+PASS  after reactivation V's existing session works again  200 
+PASS  after reactivation V signs in to B  (200, '')
+PASS  cleanup: temporary grant revoked  ['0']
+PASS  purge: companies and users removed  companies=['0'] users=['0']
+
+18/18 passed

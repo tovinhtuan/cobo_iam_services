@@ -4618,3 +4618,90 @@
 - verify: test fail giống hệt HEAD gốc; `-race` sạch; build Linux OK. Docker BLOCKED. MySQL integration (BES-18) chưa chạy, cần `MYSQL_TEST_DSN`.
 - FE follow-up (PR-F): `suppressForbiddenNavigation` cho invite/primary-role/gỡ quyền; hiển thị `permission_codes`; ẩn nút duyệt break-glass cho target.
 - artifacts: `docs/ai-cache/bug-admin-escalation-2026-10-10/{00-report,01-root-cause,05-completion}.md`.
+
+## Release DEV verify + smoke PR-A/PR-B (2026-10-10, lần 2)
+
+- task type: `wf-release` (user duyệt trước toàn bộ).
+- candidate:
+  - Working tree không có thay đổi code ứng dụng so với bản DEV (iam `c6b4ab6`, web `453a3494`); chỉ đổi script, docs, skill.
+  - Mode `verify`, không deploy binary mới.
+- checks:
+  - build OK; vet chỉ còn lỗi có sẵn.
+  - `go test`: 16 test fail có sẵn, giống hệt HEAD gốc. Các báo cáo trước ghi "11" là đếm nhầm.
+  - Docker BLOCKED.
+  - Risk review của diff: không có CRITICAL/HIGH; diff gỡ bớt credential gắn cứng.
+- smoke:
+  - `release-2026-10-10/smoke-pr-ab/smoke_dev_pr_ab.py`: 29/29 PASS với persona QA.
+  - Phạm vi: happy path ENT, MEMBER 403, company khác 403/404, BES-12, BES-21/ROLE-13, H3/H17 (khoá có hiệu lực ngay, refresh 401), cache v2, cleanup.
+- reusable:
+  - Login persona một company trả `current_context.membership_id`, không có `memberships[]`.
+  - `qa_rw` chỉ ghi được `role_permissions`/`membership_direct_permissions`.
+  - DEV chưa có rule `alert_channel_prefs`.
+- open: BES-18 chưa kiểm trên MySQL thật; FE PR-F (API-17/18).
+
+## Vòng sửa ROLE lần lượt, deploy + smoke DEV từng mục (2026-10-10)
+
+- task type: `wf-bugfix` lặp theo từng mục; mục sau chỉ bắt đầu khi smoke DEV của mục trước đạt. Nhật ký: `docs/ai-cache/release-2026-10-10/10-role-loop.md`.
+- đã xong 11 vòng (commit → api trên DEV):
+  - `ae58ecc` RP-10
+  - `851f45e` ROLE-07
+  - `512fc04` ROLE-08
+  - `1bf6318` ROLE-25
+  - `4f3a586` ROLE-09/21
+  - `ef58f12` ROLE-10
+  - `48bd3d0` RP-08
+  - `d23fc6f` ROLE-20
+  - `fb0571b` ROLE-24
+  - `c4f2fd9` ROLE-23
+  - `1479d72` ROLE-23 role-level: approval RBAC không lấy được `rbac.manage` của admin cuối cùng (api `879611ce…`)
+  - Mỗi vòng đều có backup `bin/*.rollback.<ts>`.
+- verify mỗi vòng:
+  - `go test`: đúng 16 fail có sẵn.
+  - `go vet`: chỉ lỗi có sẵn ở `workflowfulfillment/required_document_gate_test.go`.
+  - Smoke mới cho từng mục, có output trên binary cũ (`*.before-deploy.out`) để chứng minh đã tái hiện lỗi; chạy lại toàn bộ smoke regression; log 0 ERROR/panic.
+- reusable:
+  - DEV không có bảng `action_policy_matrix`, nên `legacyPolicy` quyết định mọi action.
+  - `/internal/v1/authorize` không đi qua nginx của portal; gọi thẳng API :8080.
+  - `provision_qa_company.py`:
+    - `--no-primary` tạo company không có primary admin (fixture cho smoke last-admin);
+    - tự tạo lại membership ENT nếu thiếu (`E2E_QA_ENT_MEMBERSHIP_ID`);
+    - xoá generation cache effective-access của QA company.
+  - Bài học: smoke tái hiện lỗi trên binary cũ phải dừng ở guard đầu tiên bị lọt và chạy ca ít phá huỷ trước (ca delete trên binary cũ đã xoá cứng membership QA của ENT; đã khôi phục).
+- open:
+  - Lỗi 500 có sẵn: route `/admin/company/admins` tra role code `company_admin`.
+  - Grant tạm thời hết hạn (break-glass, delegation) chưa có kiểm admin cuối cùng.
+  - `ValidateConfiguration` đếm admin theo role code `company_admin`, nên company tenant luôn bị cảnh báo `business.admin.no_primary`.
+  - Cần quyết định: PERF-11, ROLE-09 consent, phân loại lại `disclosure_type.manage`.
+  - BES-18 trên MySQL thật.
+  - FE PR-F.
+
+## Phân tích onboarding doanh nghiệp qua admin platform CMS + smoke DEV (2026-10-10)
+
+- task type: phân tích (không sửa code). Báo cáo: `docs/ai-cache/platform-onboarding-analysis-2026-10-10/00-smoke-and-recommendations.md`.
+- smoke: `release-2026-10-10/smoke-platform-onboarding/` chạy 2 lần. Lần 1 có gửi lời mời; lần 2 khớp dự đoán 21/25, 4 điểm lệch đều là lỗi vô hiệu hoá company. Chỉ dữ liệu QA, đã purge hết.
+- phát hiện:
+  - **HIGH:** vô hiệu hoá company không chặn truy cập (phiên cũ, đăng nhập mới, API, authorized-companies đều vẫn chạy).
+  - Toàn bộ route quản lý company trên platform cần `admin.membership.invite` của company operator; `cms_operator` không có quyền này nên bị 403. Riêng mời admin vào company bất kỳ chỉ cần `rbac.manage`.
+  - Company tạo qua platform không có chủ, nên không ai chuyển quyền sở hữu hay cấp quyền mời được.
+- reusable:
+  - DEV gửi mail thật qua `smtp.gmail.com` (không phải mailpit); smoke không được gửi lời mời nếu không có chủ đích (`SMOKE_SEND_INVITE=1`).
+  - Purge company/user tạo trong smoke dùng root SQL, có guard theo tên company và tiền tố login.
+- chờ user quyết định: Đ1 (chủ tài khoản), Đ2 (gate và vai trò platform), Đ3 (platform đổi role trong tenant); định nghĩa trạng thái tạm ngưng / ngừng hoạt động.
+
+## Trạng thái doanh nghiệp: Ngừng hoạt động chặn hẳn, Tạm ngưng chỉ đọc (2026-10-10)
+
+- task type: `wf-bugfix` (P0) và tính năng nhỏ; sửa → deploy → smoke DEV theo 2 vòng. Báo cáo: `docs/ai-cache/bug-company-status-access-2026-10-10/{00-report,05-completion}.md`.
+- commit:
+  - `c43b9cc` (inactive chặn hẳn; api `3836551b…`);
+  - `5715d6c` (suspended chỉ đọc + migration 0152; api `d4f86310…`).
+- contract: mã lỗi `COMPANY_INACTIVE` / `COMPANY_SUSPENDED` (403); `company_status` ở `/me`, `/me/companies`; route `POST /platform/cms/admin/companies/{id}/suspend`. Đã ghi vào `docs/api-contracts-json.md`.
+- reusable:
+  - Kiểm trạng thái company nằm ở một chỗ, `sessionbound.InspectAccessToken` (`WithCompanyStatus`).
+  - Request ghi được đánh dấu bằng `writeRequestMiddleware` (`iamapp.WithWriteRequest`); allowlist ở `internal/httpserver/write_request.go`.
+  - Platform không được tạm ngưng hay ngừng hoạt động company có operator (409 `CANNOT_RESTRICT_PLATFORM_COMPANY`).
+- verify: test đúng 16 fail có sẵn; reviewer bảo mật không có HIGH; smoke `smoke-company-inactive` 18/18, `smoke-company-suspended` 16/16; toàn bộ regression đạt (2 smoke cần chạy lại vì lỗi mạng tạm thời).
+- open:
+  - FE (lỗi, banner, nút Tạm ngưng trong CMS);
+  - worker với company inactive;
+  - `push-migration.ps1`: bước verify lỗi và gắn cứng thông tin root;
+  - `run_dev_migrations.sh` thiếu 0150.

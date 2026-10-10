@@ -1,0 +1,14 @@
+
+PASS  fixture: ENT is the only (active) primary admin  ['01a12508-11f8-76b1-97bb-a3f2a3bed1f3\tactive']
+PASS  remove an ordinary role works (guarded DELETE on MySQL)  200 
+PASS  restore: role re-assigned  200 
+FAIL  ENT2 cannot remove the owner's admin role  403 PERMISSION_DENIED role carries platform permissions and can only be removed by a platform operator
+PASS  ENT2 cannot deactivate the owner  409 STATE_CONFLICT CANNOT_DEACTIVATE_PRIMARY_ADMIN
+PASS  ENT2 cannot delete the owner  409 STATE_CONFLICT CANNOT_DELETE_PRIMARY_ADMIN
+PASS  DB unchanged after refused guards  
+FAIL  invariant after a race round: one active primary admin  ['m_qa_ent2_qaco\tinactive']
+FAIL  race: never both transfer and deactivate succeed  outcomes=[(409, 200), (200, 200)]
+PASS  race: no 5xx (no deadlock surfaced)  0
+
+7/10 passed
+select-company failed for persona ENT2: HTTP 401

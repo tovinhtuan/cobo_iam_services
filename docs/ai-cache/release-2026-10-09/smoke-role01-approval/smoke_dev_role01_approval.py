@@ -14,21 +14,17 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
 
-BASE = "http://88.216.208.0:3000"
-IAM = sys.argv[1]
-OWN = "c_001"
-OTHER = "c_002"
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "scripts" / "devqa"))
+from devqa_env import base_url, optional, persona, run_sql  # credentials: ~/.cobo/dev-qa.env (docs: cobo_web_design/docs/ai-cache/dev-qa/)
+
+BASE = base_url()
+# Assumes DEV seed data (role/membership ids of c_001/c_002 used below).
+OWN = optional("E2E_COMPANY_ID", "c_001")
+OTHER = optional("E2E_OTHER_COMPANY_ID", "c_002")
 CMS_OPERATOR_ROLE_C001 = "r0000001-0001-4000-8000-000000000016"  # seeded cms_operator of c_001 (carries platform.cms.view)
 results = []
-
-
-def seed_password(path, pattern):
-    with open(f"{IAM}/migrations/{path}", encoding="utf-8") as f:
-        m = re.search(pattern, f.read())
-    if not m:
-        raise SystemExit(f"cannot read seed password from {path}")
-    return m.group(1)
 
 
 def call(method, path, token=None, body=None):
@@ -83,19 +79,11 @@ def login(email, password, prefer_company):
 
 import subprocess
 A = "/api/v1/admin"
-SSH = ["ssh", "-o", "BatchMode=yes", "-p", "21239", "root@88.216.208.0"]
-MYSQL = "docker exec -i cobo-iam-mysql sh -c 'mysql -uroot -p\"$MYSQL_ROOT_PASSWORD\" cobo_iam -N'"
+def sql(statement):  # writes fixtures too: QA_DB_RW_USER (falls back to container root)
+    return run_sql(statement, write=True)
 
-def sql(statement):
-    r = subprocess.run(SSH + [MYSQL], input=statement, capture_output=True, text=True, timeout=60)
-    if r.returncode != 0 and "Using a password" not in r.stderr:
-        raise SystemExit(f"sql failed: {r.stderr[:300]}")
-    return [l for l in r.stdout.splitlines() if l.strip()]
-
-tenant_pw = seed_password("0009_seed_authz_test_accounts.up.sql", r"Password for all users below: (\S+)")
-cms_pw = seed_password("0063_dev_platform_tenant_dual_admin.up.sql", r"platform\.tenant\.admin@example\.com / (\S+)")
-req_tok, req_mid = login("admin.dn@example.com", tenant_pw, OWN)       # requester (rbac.manage via admin_doanh_nghiep)
-apv_tok, apv_mid = login("platform.tenant.admin@example.com", cms_pw, OWN)  # approver: another member with rbac.manage
+req_tok, req_mid = login(*persona("ENT"), OWN)       # requester (rbac.manage via admin_doanh_nghiep)
+apv_tok, apv_mid = login(*persona("ENT2"), OWN)  # approver: another member with rbac.manage
 print(f"requester={req_mid} approver={apv_mid} company={OWN}")
 assert req_mid != apv_mid
 stamp = str(int(time.time()))

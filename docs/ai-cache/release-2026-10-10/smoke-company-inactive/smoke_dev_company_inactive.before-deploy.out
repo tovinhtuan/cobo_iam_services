@@ -1,0 +1,18 @@
+
+PASS  fixture: companies A and B created  ['74fc44d9-7129-454d-aff1-def359c338f1', 'eda969b8-06d1-4dbd-8732-5757e52457cd']
+PASS  fixture: U signed in to A and to B, V to B  U/A=(200, '') U/B=(200, '') V=(200, '') V company=True
+PASS  before: admin API works in B  
+PASS  deactivate B  200 
+FAIL  V's existing session in B is cut off  200 
+FAIL  U's existing session in B is cut off  200 
+PASS  U's session in A is not affected  200 
+FAIL  V's refresh in B is refused  200 
+FAIL  V cannot sign in (its only company is deactivated)  (200, '')
+FAIL  U signs in and lands in A (B is skipped)  (200, '') company_is_A=False
+PASS  reactivate B  200 
+PASS  after reactivation V's existing session works again  200 
+PASS  after reactivation V signs in to B  (200, '')
+PASS  cleanup: temporary grant revoked  ['0']
+PASS  purge: companies and users removed  companies=['0'] users=['0']
+
+10/15 passed

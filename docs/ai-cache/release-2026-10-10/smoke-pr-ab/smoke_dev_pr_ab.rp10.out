@@ -1,0 +1,33 @@
+company=c_001 other=c_002 qa memberships=['m_qa_ent_c001', 'm_qa_ent2_c001', 'm_qa_member_c001', 'm_qa_cms_c001', 'm_qa_user_c002']
+
+PASS  ENT effective access has rbac.manage  200 n=33
+PASS  ENT lists roles  GET /api/v1/admin/roles -> 200 
+PASS  ENT lists company memberships  GET /api/v1/admin/companies/c_001/memberships -> 200 
+PASS  ENT invite-roles (ROLE-03: admin is unrestricted)  GET /api/v1/admin/invite-roles -> 200 
+PASS  ROLE-03 company admin may still offer admin_doanh_nghiep  3
+PASS  CMS operator reaches platform CMS  200
+PASS  MEMBER cannot list roles  GET /api/v1/admin/roles -> 403 PERMISSION_DENIED
+PASS  MEMBER cannot list invite roles  GET /api/v1/admin/invite-roles -> 403 PERMISSION_DENIED
+PASS  MEMBER cannot deactivate a member  PATCH /api/v1/admin/memberships/m_qa_ent2_c001 -> 403 PERMISSION_DENIED
+PASS  ENT cannot list other company's memberships  GET /api/v1/admin/companies/c_002/memberships -> 403 COMPANY_SCOPE_MISMATCH
+PASS  ENT cannot deactivate a member of the other company  PATCH /api/v1/admin/memberships/m_qa_user_c002 -> 404 MEMBERSHIP_NOT_FOUND
+PASS  ENT cannot remove a role in the other company  DELETE /api/v1/admin/memberships/m_qa_user_c002/roles/r0000001-0001-4000-8000-000000000018 -> 404 MEMBERSHIP_NOT_FOUND
+PASS  BES-12 status 'suspended' rejected  PATCH /api/v1/admin/memberships/m_qa_member_c001 -> 400 INVALID_REQUEST
+PASS  BES-21 ENT cannot deactivate the platform operator  PATCH /api/v1/admin/memberships/m_qa_cms_c001 -> 403 PERMISSION_DENIED
+PASS  BES-21 ENT cannot delete the platform operator  DELETE /api/v1/admin/memberships/m_qa_cms_c001 -> 403 PERMISSION_DENIED
+PASS  ROLE-13 ENT cannot remove the cms_operator role  DELETE /api/v1/admin/memberships/m_qa_cms_c001/roles/r0000001-0001-4000-8000-000000000016 -> 403 PERMISSION_DENIED
+PASS  ROLE-13 ENT cannot remove platform.cms.view  DELETE /api/v1/admin/memberships/m_qa_cms_c001/permissions/platform.cms.view -> 403 PERMISSION_DENIED
+PASS  CMS operator still reaches platform CMS  200
+PASS  H3 MEMBER has permissions before deactivation  200 n=8
+PASS  H3 ENT deactivates MEMBER  PATCH /api/v1/admin/memberships/m_qa_member_c001 -> 200 
+PASS  H3/H17 inactive MEMBER loses permissions at once  200 n=0
+PASS  H3 DB shows MEMBER inactive  ['inactive']
+PASS  H3 refresh refused for inactive MEMBER  401 SESSION_EXPIRED
+PASS  restore: MEMBER reactivated  200
+PASS  H3 reactivated MEMBER has permissions again  200 n=8
+PASS  CACHE v2 keys written  8
+PASS  cleanup: QA memberships unchanged  before={'m_qa_cms_c001': 'active', 'm_qa_ent_c001': 'active', 'm_qa_ent2_c001': 'active', 'm_qa_member_c001': 'active', 'm_qa_user_c002': 'active'} after={'m_qa
+PASS  cleanup: CMS persona keeps cms_operator role  ['1'] -> ['1']
+PASS  cleanup: no approval left pending  ['0']
+
+29/29 passed

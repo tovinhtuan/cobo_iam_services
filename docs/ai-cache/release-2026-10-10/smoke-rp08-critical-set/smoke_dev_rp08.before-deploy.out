@@ -1,0 +1,9 @@
+
+PASS  fixture: no approval pending in the QA company  []
+PASS  fixture: MEMBER holds workflow.step.override directly  
+FAIL  RP-08 high-tier removal is queued (202)  200 
+FAIL  RP-08 grant still active until approved  ['0']
+PASS  cleanup: fixture grant revoked  ['0']
+PASS  cleanup: nothing left pending  []
+
+4/6 passed

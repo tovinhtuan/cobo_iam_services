@@ -1,0 +1,12 @@
+
+PASS  fixture: QA company without a primary admin  
+PASS  fixture: ENT and ENT2 active admins, nobody primary  ['01a12508-11f8-76b1-97bb-a3f2a3bed1f3\tactive\t0\tadmin_doanh_nghiep', 'm_qa_ent2_qaco\tactive\t0\tadmin_doanh_nghiep', 'm_qa_member_qaco\tactive\t0\tuser_thuong']
+PASS  MEMBER cannot deactivate an admin  403 PERMISSION_DENIED access denied
+PASS  membership of another company: 403/404, unchanged  404 MEMBERSHIP_NOT_FOUND membership not found in company
+PASS  ENT deactivates ENT2 while ENT stays admin  200 
+FAIL  sole admin cannot leave: deactivate  200 
+FAIL  sole admin cannot leave: delete  200 
+FAIL  cleanup: QA company back to its starting state (ENT owner)  ['m_qa_ent2_qaco\tactive\t0\tadmin_doanh_nghiep', 'm_qa_member_qaco\tactive\t0\tuser_thuong']
+
+5/8 passed
+select-company failed for persona ENT: HTTP 401
