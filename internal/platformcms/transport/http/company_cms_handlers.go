@@ -98,14 +98,14 @@ func (h *Handler) patchCMSCompany(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var p struct {
-		CompanyName          *string `json:"company_name"`
-		TaxCode              *string `json:"tax_code"`
-		RegistrationNumber   *string `json:"registration_number"`
-		Address              *string `json:"address"`
-		Phone                *string `json:"phone"`
-		ContactEmail         *string `json:"contact_email"`
-		RepresentativeName   *string `json:"representative_name"`
-		VerificationStatus   *string `json:"verification_status"`
+		CompanyName        *string `json:"company_name"`
+		TaxCode            *string `json:"tax_code"`
+		RegistrationNumber *string `json:"registration_number"`
+		Address            *string `json:"address"`
+		Phone              *string `json:"phone"`
+		ContactEmail       *string `json:"contact_email"`
+		RepresentativeName *string `json:"representative_name"`
+		VerificationStatus *string `json:"verification_status"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
 		httpx.WriteError(w, nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "invalid JSON payload", err))
@@ -146,6 +146,11 @@ func (h *Handler) postCMSCompanyDeactivate(w http.ResponseWriter, r *http.Reques
 
 func (h *Handler) postCMSCompanyActivate(w http.ResponseWriter, r *http.Request) {
 	h.setCMSCompanyStatus(w, r, "active")
+}
+
+// postCMSCompanySuspend sets "Tạm ngưng": members keep read and export access only.
+func (h *Handler) postCMSCompanySuspend(w http.ResponseWriter, r *http.Request) {
+	h.setCMSCompanyStatus(w, r, "suspended")
 }
 
 func (h *Handler) setCMSCompanyStatus(w http.ResponseWriter, r *http.Request, status string) {

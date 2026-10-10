@@ -15,7 +15,8 @@ func TestNormalizeOperationalStatus(t *testing.T) {
 		{"InActive", StatusInactive, true},
 		{"", "", false},
 		{"   ", "", false},
-		{"suspended", "", false},
+		{"suspended", StatusSuspended, true},
+		{" Suspended ", StatusSuspended, true},
 		{"pending", "", false},
 		{"verified", "", false},
 		{"activee", "", false},
@@ -63,6 +64,28 @@ func TestNormalizeVerificationStatus(t *testing.T) {
 		}
 		if err == nil {
 			t.Fatalf("in=%q expected error, got %q", tc.in, got)
+		}
+	}
+}
+
+func TestAccessByStatus(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		status           string
+		blocks, readOnly bool
+	}{
+		{"active", false, false},
+		{"inactive", true, false},
+		{" INACTIVE ", true, false},
+		{"suspended", false, true},
+		{"Suspended", false, true},
+		{"legacy-value", false, false},
+	} {
+		if got := BlocksAccess(tc.status); got != tc.blocks {
+			t.Errorf("BlocksAccess(%q) = %v, want %v", tc.status, got, tc.blocks)
+		}
+		if got := IsReadOnly(tc.status); got != tc.readOnly {
+			t.Errorf("IsReadOnly(%q) = %v, want %v", tc.status, got, tc.readOnly)
 		}
 	}
 }

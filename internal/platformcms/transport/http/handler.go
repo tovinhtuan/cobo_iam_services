@@ -159,6 +159,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("PATCH /api/v1/platform/cms/admin/companies/{company_id}", h.observe("cms.admin.companies.patch", h.patchCMSCompany))
 	mux.HandleFunc("POST /api/v1/platform/cms/admin/companies/{company_id}/deactivate", h.observe("cms.admin.companies.deactivate", h.postCMSCompanyDeactivate))
 	mux.HandleFunc("POST /api/v1/platform/cms/admin/companies/{company_id}/activate", h.observe("cms.admin.companies.activate", h.postCMSCompanyActivate))
+	mux.HandleFunc("POST /api/v1/platform/cms/admin/companies/{company_id}/suspend", h.observe("cms.admin.companies.suspend", h.postCMSCompanySuspend))
 	mux.HandleFunc("POST /api/v1/platform/cms/admin/companies/{company_id}/subscription/activate", h.observe("cms.admin.companies.subscription.activate", h.postCMSCompanySubscriptionActivate))
 	mux.HandleFunc("POST /api/v1/platform/cms/admin/companies", h.observe("cms.admin.companies.create", h.createCMSCompany))
 	mux.HandleFunc("POST /api/v1/platform/cms/admin/users", h.observe("cms.admin.users.create", h.createAdminUser))

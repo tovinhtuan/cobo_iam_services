@@ -190,7 +190,7 @@ func New(ctx context.Context, d Deps) (http.Handler, func(), error) {
 		return nil, nil, err
 	}
 
-	return corsMiddleware(d.Config, requestIDMiddleware(d.Log, mux)), cleanup, nil
+	return corsMiddleware(d.Config, requestIDMiddleware(d.Log, writeRequestMiddleware(mux))), cleanup, nil
 }
 
 type pingDB interface {

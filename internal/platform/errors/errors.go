@@ -31,7 +31,8 @@ const (
 	CodeMembershipNotFound             Code = "MEMBERSHIP_NOT_FOUND"
 	CodeCompanyContextRequired         Code = "COMPANY_CONTEXT_REQUIRED"
 	CodeCompanyScopeMismatch           Code = "COMPANY_SCOPE_MISMATCH"
-	CodeCompanyInactive                Code = "COMPANY_INACTIVE" // company deactivated: no access
+	CodeCompanyInactive                Code = "COMPANY_INACTIVE"  // company deactivated: no access
+	CodeCompanySuspended               Code = "COMPANY_SUSPENDED" // company suspended: read-only
 	CodePermissionDenied               Code = "PERMISSION_DENIED"
 	CodeDataScopeDenied                Code = "DATA_SCOPE_DENIED"
 	CodeResponsibilityRequired         Code = "RESPONSIBILITY_REQUIRED"

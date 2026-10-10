@@ -28,7 +28,8 @@ type tokenBackend interface {
 type Option func(*Manager)
 
 // WithCompanyStatus also rejects access tokens bound to a deactivated or missing company
-// (403 COMPANY_INACTIVE), on every request.
+// (403 COMPANY_INACTIVE), and write requests (iamapp.IsWriteRequest) in a suspended company
+// (403 COMPANY_SUSPENDED), on every request.
 func WithCompanyStatus(r iamapp.CompanyStatusReader) Option {
 	return func(m *Manager) { m.companies = r }
 }
@@ -84,6 +85,10 @@ func (m *Manager) assertCompanyUsable(ctx context.Context, companyID string) err
 	}
 	if strings.TrimSpace(status) == "" || companystatus.BlocksAccess(status) {
 		return perr.NewHTTPError(http.StatusForbidden, perr.CodeCompanyInactive, "the company is no longer active", nil)
+	}
+	if companystatus.IsReadOnly(status) && iamapp.IsWriteRequest(ctx) {
+		return perr.NewHTTPError(http.StatusForbidden, perr.CodeCompanySuspended,
+			"the company is suspended: read and export only", nil)
 	}
 	return nil
 }

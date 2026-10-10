@@ -47,3 +47,19 @@ func TestSetPlatformCompanyStatus_CompanyWithOperatorsCannotBeDeactivated(t *tes
 		t.Fatalf("company without operators: %v", err)
 	}
 }
+
+func TestSetPlatformCompanyStatus_OwnCompanyCannotBeSuspended(t *testing.T) {
+	repo := cainmem.NewAdminRepository()
+	seedPlatformCompany(repo, "c_platform")
+	seedPlatformCompany(repo, "c1")
+	svc := platformAdminSvc(repo)
+	sub := caapp.AdminSubject{UserID: "u1", MembershipID: "m1", CompanyID: "c_platform"}
+	err := svc.SetPlatformCompanyStatus(context.Background(), caapp.SetPlatformCompanyStatusRequest{Subject: sub, CompanyID: "c_platform", Status: "suspended"})
+	requireHTTPCode(t, err, 409, perr.CodeStateConflict)
+	if err := svc.SetPlatformCompanyStatus(context.Background(), caapp.SetPlatformCompanyStatusRequest{Subject: sub, CompanyID: "c1", Status: "suspended"}); err != nil {
+		t.Fatalf("suspend a customer company: %v", err)
+	}
+	if out, _ := repo.GetCompanyPlatform(context.Background(), "c1"); out.Status != "suspended" {
+		t.Fatalf("status = %q, want suspended", out.Status)
+	}
+}

@@ -8,8 +8,9 @@ import (
 )
 
 const (
-	StatusActive   = "active"
-	StatusInactive = "inactive"
+	StatusActive    = "active"
+	StatusInactive  = "inactive"
+	StatusSuspended = "suspended"
 
 	VerificationVerified   = "verified"
 	VerificationUnverified = "unverified"
@@ -22,12 +23,18 @@ func BlocksAccess(status string) bool {
 	return strings.EqualFold(strings.TrimSpace(status), StatusInactive)
 }
 
-// NormalizeOperationalStatus trims and lowercases, then allowlists active|inactive.
+// IsReadOnly reports whether members only keep read access (view and export): "suspended"
+// ("Tạm ngưng", e.g. unpaid), because disclosure deadlines still apply to the company.
+func IsReadOnly(status string) bool {
+	return strings.EqualFold(strings.TrimSpace(status), StatusSuspended)
+}
+
+// NormalizeOperationalStatus trims and lowercases, then allowlists active|inactive|suspended.
 // Matches existing SetCompanyStatusPlatform normalization (ToLower+TrimSpace).
 func NormalizeOperationalStatus(raw string) (string, error) {
 	v := strings.ToLower(strings.TrimSpace(raw))
 	switch v {
-	case StatusActive, StatusInactive:
+	case StatusActive, StatusInactive, StatusSuspended:
 		return v, nil
 	case "":
 		return "", fmt.Errorf("company status is required")

@@ -35,7 +35,7 @@ func TestSetPlatformCompanyStatus_ValidActiveInactive(t *testing.T) {
 	svc := platformAdminSvc(repo)
 	sub := caapp.AdminSubject{UserID: "u1", MembershipID: "m1", CompanyID: "c_platform"}
 
-	for _, st := range []string{"active", "inactive", " ACTIVE "} {
+	for _, st := range []string{"active", "inactive", "suspended", " ACTIVE "} {
 		if err := svc.SetPlatformCompanyStatus(context.Background(), caapp.SetPlatformCompanyStatusRequest{
 			Subject: sub, CompanyID: "c1", Status: st,
 		}); err != nil {
@@ -57,7 +57,7 @@ func TestSetPlatformCompanyStatus_InvalidRejected(t *testing.T) {
 	svc := platformAdminSvc(repo)
 	sub := caapp.AdminSubject{UserID: "u1", MembershipID: "m1", CompanyID: "c_platform"}
 
-	for _, st := range []string{"suspended", "pending", "verified", "activee", "", "   ", "unknown"} {
+	for _, st := range []string{"pending", "verified", "activee", "", "   ", "unknown"} {
 		err := svc.SetPlatformCompanyStatus(context.Background(), caapp.SetPlatformCompanyStatusRequest{
 			Subject: sub, CompanyID: "c1", Status: st,
 		})

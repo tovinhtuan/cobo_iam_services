@@ -80,3 +80,32 @@ func TestInspectAccessToken_CompanyStatusOnlyForCompanyContext(t *testing.T) {
 		t.Fatalf("company that no longer exists: got %v, want COMPANY_INACTIVE", err)
 	}
 }
+
+// A suspended company ("Tạm ngưng") keeps read access; requests the HTTP layer marked as writes
+// are refused with 403 COMPANY_SUSPENDED.
+func TestInspectAccessToken_CompanySuspendedIsReadOnly(t *testing.T) {
+	id := idgen.UUIDv7Generator{}
+	sessions := iaminmem.NewSessionRepository()
+	statuses := companyStatuses{"c_1": "suspended"}
+	mgr := iamtokensessionbound.New(iamtokenopaque.NewManager(id), sessions, iamtokensessionbound.WithCompanyStatus(statuses))
+	ctx := context.Background()
+	sid := id.NewUUID()
+	if err := sessions.Create(ctx, iamapp.CreateSessionParams{SessionID: sid, UserID: "u_1", RefreshToken: "rtk", MembershipID: "m_1", CompanyID: "c_1"}); err != nil {
+		t.Fatal(err)
+	}
+	tok, _, err := mgr.IssueAccessToken(ctx, iamapp.AccessTokenClaims{Sub: "u_1", SessionID: sid, MembershipID: "m_1", CompanyID: "c_1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := mgr.InspectAccessToken(ctx, tok); err != nil {
+		t.Fatalf("read request in a suspended company: %v", err)
+	}
+	_, err = mgr.InspectAccessToken(iamapp.WithWriteRequest(ctx), tok)
+	if he, ok := perr.AsHTTPError(err); !ok || he.HTTPStatus != 403 || he.Code != perr.CodeCompanySuspended {
+		t.Fatalf("write request in a suspended company: got %v, want 403 COMPANY_SUSPENDED", err)
+	}
+	statuses["c_1"] = "active"
+	if _, err := mgr.InspectAccessToken(iamapp.WithWriteRequest(ctx), tok); err != nil {
+		t.Fatalf("write request after reactivation: %v", err)
+	}
+}

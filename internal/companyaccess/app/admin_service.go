@@ -315,7 +315,7 @@ func (s *adminService) SetPlatformCompanyStatus(ctx context.Context, req SetPlat
 		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, err.Error(), nil)
 	}
 	companyID := strings.TrimSpace(req.CompanyID)
-	if companystatus.BlocksAccess(status) {
+	if status != companystatus.StatusActive { // inactive or suspended restrict the company's members
 		if err := s.assertNotPlatformHostCompany(ctx, req.Subject, companyID); err != nil {
 			return err
 		}
@@ -323,12 +323,12 @@ func (s *adminService) SetPlatformCompanyStatus(ctx context.Context, req SetPlat
 	return s.repo.SetCompanyStatusPlatform(ctx, companyID, status)
 }
 
-// assertNotPlatformHostCompany keeps the platform reachable: deactivating a company shuts out its
-// members, so the company operators work from (the caller's own, or any with an active member
-// holding platform.cms.view) cannot be deactivated through the platform.
+// assertNotPlatformHostCompany keeps the platform usable: deactivating a company shuts out its
+// members and suspending it makes them read-only, so the company operators work from (the caller's
+// own, or any with an active member holding platform.cms.view) cannot be restricted that way.
 func (s *adminService) assertNotPlatformHostCompany(ctx context.Context, sub AdminSubject, companyID string) error {
 	refuse := perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict,
-		"CANNOT_DEACTIVATE_PLATFORM_COMPANY: platform operators work from this company", nil)
+		"CANNOT_RESTRICT_PLATFORM_COMPANY: platform operators work from this company", nil)
 	if companyID == strings.TrimSpace(sub.CompanyID) {
 		return refuse
 	}
