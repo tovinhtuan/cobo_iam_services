@@ -166,7 +166,8 @@ func TestAuthz_PublishActivate(t *testing.T) {
 		{"tenant member cannot activate", pathActivate, tokTenantMember, http.StatusForbidden},
 		{"cms maker cannot activate (checker action)", pathActivate, tokCMSMaker, http.StatusForbidden},
 		{"cms checker can activate", pathActivate, tokCMSChecker, 0},
-		{"legacy manage can publish", pathPublish, tokLegacyMaker, 0},
+		// ROLE-08: disclosure_type.manage is tenant-grantable and no longer opens CMS templates.
+		{"tenant manage alias cannot publish", pathPublish, tokLegacyMaker, http.StatusForbidden},
 		{"legacy manage cannot activate (maker)", pathActivate, tokLegacyMaker, http.StatusForbidden},
 		{"legacy publish can activate", pathActivate, tokLegacyCheck, 0},
 		{"legacy publish cannot publish", pathPublish, tokLegacyCheck, http.StatusForbidden},
@@ -245,10 +246,14 @@ func TestAuthz_ReadRoutes(t *testing.T) {
 				t.Errorf("%s %s as %s: expected 403, got %d", rt.method, rt.path, tok, rec.Code)
 			}
 		}
-		for _, tok := range []string{tokCMSReader, tokCMSMaker, tokCMSChecker, tokLegacyMaker, tokLegacyConfig} {
+		for _, tok := range []string{tokCMSReader, tokCMSMaker, tokCMSChecker, tokLegacyConfig} {
 			if rec := do(t, mux, rt.method, rt.path, tok, ""); isAuthzStatus(rec.Code) {
 				t.Errorf("%s %s as %s: expected allowed, got %d: %s", rt.method, rt.path, tok, rec.Code, rec.Body.String())
 			}
+		}
+		// ROLE-08: the tenant-grantable disclosure_type.manage alias does not read CMS templates either.
+		if rec := do(t, mux, rt.method, rt.path, tokLegacyMaker, ""); rec.Code != http.StatusForbidden {
+			t.Errorf("%s %s as tenant manage alias: expected 403, got %d", rt.method, rt.path, rec.Code)
 		}
 		if rec := do(t, mux, rt.method, rt.path, "", ""); rec.Code != http.StatusUnauthorized {
 			t.Errorf("%s %s without token: expected 401, got %d", rt.method, rt.path, rec.Code)

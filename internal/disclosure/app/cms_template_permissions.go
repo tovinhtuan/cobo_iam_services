@@ -65,7 +65,6 @@ func (s *service) requireCMSTemplateRead(ctx context.Context, sub Subject) error
 		permissionCMSTemplateActivate,
 		permissionCMSTemplateArchive,
 		permissionCMSTemplateConfigWrite,
-		permissionLegacyTemplateManage,
 		permissionLegacyConfigManage,
 	) {
 		return nil
@@ -73,7 +72,7 @@ func (s *service) requireCMSTemplateRead(ctx context.Context, sub Subject) error
 	return newCMSPermissionDenied(
 		"CMS template read permission is required",
 		[]string{permissionCMSTemplateRead},
-		[]string{permissionLegacyTemplateManage, permissionLegacyConfigManage},
+		[]string{permissionLegacyConfigManage},
 	)
 }
 
@@ -81,13 +80,15 @@ func (s *service) requireCMSTemplateWrite(ctx context.Context, sub Subject) erro
 	if err := s.requireCMSRouteAccess(ctx, sub); err != nil {
 		return err
 	}
-	if s.hasAnyPermission(ctx, sub, permissionCMSTemplateWrite, permissionLegacyTemplateManage) {
+	// ROLE-08: disclosure_type.manage is a tenant-grantable permission (company templates) and no
+	// longer opens the global CMS templates.
+	if s.hasPermission(ctx, sub, permissionCMSTemplateWrite) {
 		return nil
 	}
 	return newCMSPermissionDenied(
 		"CMS template write permission is required",
 		[]string{permissionCMSTemplateWrite},
-		[]string{permissionLegacyTemplateManage},
+		nil,
 	)
 }
 
@@ -128,7 +129,6 @@ func (s *service) requireCMSTemplateConfigWrite(ctx context.Context, sub Subject
 	if s.hasAnyPermission(ctx, sub,
 		permissionCMSTemplateConfigWrite,
 		permissionCMSTemplateWrite,
-		permissionLegacyTemplateManage,
 		permissionLegacyConfigManage,
 	) {
 		return nil
@@ -136,6 +136,6 @@ func (s *service) requireCMSTemplateConfigWrite(ctx context.Context, sub Subject
 	return newCMSPermissionDenied(
 		"CMS template config write permission is required",
 		[]string{permissionCMSTemplateConfigWrite},
-		[]string{permissionCMSTemplateWrite, permissionLegacyTemplateManage, permissionLegacyConfigManage},
+		[]string{permissionCMSTemplateWrite, permissionLegacyConfigManage},
 	)
 }

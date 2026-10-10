@@ -12,15 +12,14 @@ import (
 // Permission ladder mirrors disclosure/app/cms_template_permissions.go (workflowconfig must not import
 // disclosure). Every gated route requires platform.cms.view first, then the template capability.
 const (
-	permPlatformCMSView      = "platform.cms.view"
-	permCMSTemplateRead      = "cms.template.read"
-	permCMSTemplateWrite     = "cms.template.write"
-	permCMSTemplateActivate  = "cms.template.activate"
-	permCMSTemplateArchive   = "cms.template.archive"
-	permCMSTemplateConfig    = "cms.template.config.write"
-	permLegacyTemplateManage = "disclosure_type.manage"
-	permLegacyPublish        = "disclosure_type.publish"
-	permLegacyConfigManage   = "rbac.manage"
+	permPlatformCMSView     = "platform.cms.view"
+	permCMSTemplateRead     = "cms.template.read"
+	permCMSTemplateWrite    = "cms.template.write"
+	permCMSTemplateActivate = "cms.template.activate"
+	permCMSTemplateArchive  = "cms.template.archive"
+	permCMSTemplateConfig   = "cms.template.config.write"
+	permLegacyPublish       = "disclosure_type.publish"
+	permLegacyConfigManage  = "rbac.manage"
 )
 
 // AccessResolver is the subset of authapp.Service needed to gate platform CMS routes.
@@ -68,13 +67,14 @@ func (h *Handler) authorize(r *http.Request, message string, required, legacy []
 func (h *Handler) requireTemplateRead(r *http.Request) (subject, error) {
 	return h.authorize(r, "CMS template read permission is required",
 		[]string{permCMSTemplateRead, permCMSTemplateWrite, permCMSTemplateActivate, permCMSTemplateArchive, permCMSTemplateConfig},
-		[]string{permLegacyTemplateManage, permLegacyConfigManage})
+		[]string{permLegacyConfigManage})
 }
 
 func (h *Handler) requireTemplateWrite(r *http.Request) (subject, error) {
+	// ROLE-08: disclosure_type.manage (tenant-grantable) no longer opens the global CMS templates.
 	return h.authorize(r, "CMS template write permission is required",
 		[]string{permCMSTemplateWrite},
-		[]string{permLegacyTemplateManage})
+		nil)
 }
 
 // requireTemplateActivate is the checker capability; the maker permission (write/manage) is not enough.
