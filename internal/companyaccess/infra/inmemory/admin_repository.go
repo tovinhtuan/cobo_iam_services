@@ -1106,11 +1106,15 @@ func (r *AdminRepository) CountActiveMembershipsForRole(_ context.Context, _, ro
 	return n, nil
 }
 
-func (r *AdminRepository) GetCompanyRoleByID(_ context.Context, _, roleID string) (*caapp.RoleListItem, error) {
+func (r *AdminRepository) GetCompanyRoleByID(_ context.Context, companyID, roleID string) (*caapp.RoleListItem, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	roleID = strings.TrimSpace(roleID)
 	if roleID == "" {
+		return nil, nil
+	}
+	// A role owned by another company is not visible (parity with the MySQL repo).
+	if owner := r.roleCompany[roleID]; owner != "" && strings.TrimSpace(companyID) != "" && owner != strings.TrimSpace(companyID) {
 		return nil, nil
 	}
 	if meta, ok := r.roleMeta[roleID]; ok {

@@ -812,9 +812,30 @@ func (s *adminService) AssignUserToCompany(ctx context.Context, req AssignUserTo
 		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "user is already a member of this company", nil)
 	}
 
-	membershipStatus := strings.TrimSpace(req.MembershipStatus)
-	if membershipStatus == "" {
-		membershipStatus = "active"
+	membershipStatus, err := normalizeNewMembershipStatus(req.MembershipStatus)
+	if err != nil {
+		return nil, err
+	}
+	// ROLE-21: the role handed out is validated before anything is written: it must belong to the
+	// target company and be assignable, carry no platform permission unless the caller is a
+	// platform operator, and stay within what the caller may grant (ROLE-03).
+	resolvedRoleID := ""
+	if roleID, roleCode := strings.TrimSpace(req.RoleID), strings.TrimSpace(req.RoleCode); roleID != "" || roleCode != "" {
+		operator, err := s.isPlatformCompanyOperator(ctx, req.Subject)
+		if err != nil {
+			return nil, err
+		}
+		defRoleCode := strings.TrimSpace(s.inviteDefaultRoleCode)
+		if defRoleCode == "" {
+			defRoleCode = "user_thuong"
+		}
+		resolvedRoleID, err = s.validateEnterpriseInviteRole(ctx, companyID, roleID, roleCode, defRoleCode, operator)
+		if err != nil {
+			return nil, err
+		}
+		if err := s.assertCanGrant(ctx, req.Subject, companyID, resolvedRoleID, nil); err != nil {
+			return nil, err
+		}
 	}
 	membershipID := s.idg.NewUUID()
 	m, err := s.repo.CreateMembership(ctx, MembershipView{
@@ -824,22 +845,8 @@ func (s *adminService) AssignUserToCompany(ctx context.Context, req AssignUserTo
 		return nil, err
 	}
 
-	// Assign role if requested.
-	if roleID := strings.TrimSpace(req.RoleID); roleID != "" {
-		if err := s.repo.AddRole(ctx, m.MembershipID, roleID); err != nil {
-			_ = s.repo.DeleteMembership(ctx, m.CompanyID, m.MembershipID)
-			return nil, err
-		}
-	} else if roleCode := strings.TrimSpace(req.RoleCode); roleCode != "" {
-		defRoleCode := strings.TrimSpace(s.inviteDefaultRoleCode)
-		if defRoleCode == "" {
-			defRoleCode = "user_thuong"
-		}
-		resolvedRoleID, err := s.repo.LookupRoleIDForInvite(ctx, companyID, "", roleCode, defRoleCode)
-		if err != nil {
-			_ = s.repo.DeleteMembership(ctx, m.CompanyID, m.MembershipID)
-			return nil, err
-		}
+	// Assign the role validated above.
+	if resolvedRoleID != "" {
 		if err := s.repo.AddRole(ctx, m.MembershipID, resolvedRoleID); err != nil {
 			_ = s.repo.DeleteMembership(ctx, m.CompanyID, m.MembershipID)
 			return nil, err
@@ -891,10 +898,11 @@ func (s *adminService) CreateMembership(ctx context.Context, req CreateMembershi
 	if err := s.authorize(ctx, req.Subject, "admin.membership.create", req.CompanyID); err != nil {
 		return nil, err
 	}
-	m := MembershipView{MembershipID: s.idg.NewUUID(), UserID: req.UserID, CompanyID: req.CompanyID, CompanyName: req.CompanyID, Status: req.Status}
-	if m.Status == "" {
-		m.Status = "active"
+	status, err := normalizeNewMembershipStatus(req.Status)
+	if err != nil {
+		return nil, err
 	}
+	m := MembershipView{MembershipID: s.idg.NewUUID(), UserID: req.UserID, CompanyID: req.CompanyID, CompanyName: req.CompanyID, Status: status}
 	result, err := s.repo.CreateMembership(ctx, m)
 	if err != nil {
 		return nil, err

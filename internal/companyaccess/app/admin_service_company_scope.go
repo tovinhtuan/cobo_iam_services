@@ -140,6 +140,19 @@ func (s *adminService) assertMayRemovePlatformPermission(ctx context.Context, su
 		"platform permissions can only be removed by a platform operator", nil)
 }
 
+// normalizeNewMembershipStatus (ROLE-09) accepts the statuses a new membership may start in;
+// the empty value means active.
+func normalizeNewMembershipStatus(status string) (string, error) {
+	switch s := strings.ToLower(strings.TrimSpace(status)); s {
+	case "":
+		return "active", nil
+	case "active", "inactive", "invited":
+		return s, nil
+	default:
+		return "", perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "status must be active, inactive or invited", nil)
+	}
+}
+
 // isPlatformTierPermission reports a permission outside the enterprise (tenant) scope:
 // EnterpriseDenyCodes plus anything under platform.* or cms.*.
 func isPlatformTierPermission(code string) bool {
