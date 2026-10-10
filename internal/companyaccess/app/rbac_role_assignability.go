@@ -135,6 +135,93 @@ func (s *adminService) assertMemberLeavingKeepsAdmin(ctx context.Context, compan
 	return nil
 }
 
+// assertRBACPlanKeepsAdmin (ROLE-23, role level) refuses an RBAC restore or approval plan that
+// would leave a company with admin-capable members with none: every active member's roles and
+// direct grants are re-evaluated with the plan's rbac.manage changes applied. Run it under
+// withCompanyAdminLock when the plan is applied right after.
+func (s *adminService) assertRBACPlanKeepsAdmin(ctx context.Context, companyID string, plan RBACRestorePlan, direct RBACDirectRestorePlan) error {
+	roleAfter := map[string]bool{}   // role_id -> holds rbac.manage after the plan
+	directAfter := map[string]bool{} // membership_id -> holds rbac.manage directly after the plan
+	removes := false
+	for _, op := range plan.Ops {
+		if op.PermissionCode == adminCapablePermission {
+			roleAfter[op.RoleID] = op.Add
+			removes = removes || !op.Add
+		}
+	}
+	for _, d := range direct.Revoke {
+		if d.PermissionCode == adminCapablePermission {
+			directAfter[d.MembershipID] = false
+			removes = true
+		}
+	}
+	for _, d := range direct.Grant {
+		if d.PermissionCode == adminCapablePermission {
+			directAfter[d.MembershipID] = true
+		}
+	}
+	if !removes {
+		return nil
+	}
+	members, err := s.repo.ListMembershipsByCompany(ctx, companyID)
+	if err != nil {
+		return err
+	}
+	now, after := 0, 0
+	for _, m := range members {
+		if !strings.EqualFold(strings.TrimSpace(m.Status), "active") {
+			continue
+		}
+		capNow, capAfter, err := s.adminCapabilityAfter(ctx, companyID, m.MembershipID, roleAfter, directAfter)
+		if err != nil {
+			return err
+		}
+		if capNow {
+			now++
+		}
+		if capAfter {
+			after++
+		}
+	}
+	if now > 0 && after == 0 {
+		return perr.NewHTTPError(http.StatusConflict, perr.CodeLastAdminRoleChangeBlocked,
+			"the change would leave the company without an admin-capable member", nil)
+	}
+	return nil
+}
+
+// adminCapabilityAfter reports whether a member holds rbac.manage now and after the given role and
+// direct-grant changes.
+func (s *adminService) adminCapabilityAfter(ctx context.Context, companyID, membershipID string, roleAfter, directAfter map[string]bool) (now, after bool, err error) {
+	roles, err := s.repo.ListMembershipRoles(ctx, membershipID)
+	if err != nil {
+		return false, false, err
+	}
+	for _, r := range roles {
+		has, err := s.isRoleAdminCapable(ctx, companyID, r.RoleID)
+		if err != nil {
+			if he, ok := perr.AsHTTPError(err); ok && he.HTTPStatus == http.StatusNotFound {
+				continue
+			}
+			return false, false, err
+		}
+		now = now || has
+		if v, ok := roleAfter[r.RoleID]; ok {
+			has = v
+		}
+		after = after || has
+	}
+	has, err := s.repo.HasActiveDirectPermission(ctx, membershipID, adminCapablePermission)
+	if err != nil {
+		return false, false, err
+	}
+	now = now || has
+	if v, ok := directAfter[membershipID]; ok {
+		has = v
+	}
+	return now, after || has, nil
+}
+
 // assertRoleRemovalKeepsAdmin (ROLE-05) guards removing one role from a membership: the
 // primary admin keeps its admin role, and the company keeps at least one admin-capable member.
 func (s *adminService) assertRoleRemovalKeepsAdmin(ctx context.Context, companyID, membershipID, roleID string) error {

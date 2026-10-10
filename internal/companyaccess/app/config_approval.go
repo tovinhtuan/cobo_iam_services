@@ -85,6 +85,14 @@ func (s *adminService) queueConfigApproval(ctx context.Context, sub AdminSubject
 		return nil, perr.NewHTTPError(http.StatusServiceUnavailable, perr.CodeServiceUnavailable, "approval queue unavailable", nil)
 	}
 	if in.AggregateType == configversion.AggregateRBACMatrix {
+		// ROLE-23: a change that would leave no admin is refused now, not after the approval.
+		plan, direct, err := s.rbacRestorePlans(ctx, in.CompanyID, in.ProposedSnapshotJSON)
+		if err != nil {
+			return nil, err
+		}
+		if err := s.assertRBACPlanKeepsAdmin(ctx, in.CompanyID, plan, direct); err != nil {
+			return nil, err
+		}
 		stamped, err := s.stampRBACPlanDigest(ctx, in.CompanyID, in.ProposedSnapshotJSON)
 		if err != nil {
 			return nil, err
@@ -456,6 +464,12 @@ func (s *adminService) ApproveConfigApproval(ctx context.Context, req ApproveCon
 	// by an older binary for a protected role, or already applied outside the queue) is not
 	// approved: "approved" would claim a change that never happens.
 	if row.AggregateType == configversion.AggregateRBACMatrix {
+		// ROLE-23: the last-admin check below and the apply run under the company's admin lock.
+		release, err := s.repo.LockCompanyAdmins(ctx, req.Subject.CompanyID)
+		if err != nil {
+			return nil, err
+		}
+		defer release()
 		var proposed configversion.RBACMatrixSnapshot
 		if err := json.Unmarshal(row.ProposedSnapshotJSON, &proposed); err != nil {
 			return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "invalid proposed snapshot", nil)
@@ -475,14 +489,15 @@ func (s *adminService) ApproveConfigApproval(ctx context.Context, req ApproveCon
 			return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeApprovalNothingToApply,
 				"approving would not change anything; reject or cancel this request", nil)
 		}
-		if proposed.PlanDigest != "" {
-			plan, direct, err := s.rbacRestorePlans(ctx, row.CompanyID, row.ProposedSnapshotJSON)
-			if err != nil {
-				return nil, err
-			}
-			if RBACRestorePlanDigest(plan, direct) != proposed.PlanDigest {
-				return nil, errRBACPlanChanged()
-			}
+		plan, direct, err := s.rbacRestorePlans(ctx, row.CompanyID, row.ProposedSnapshotJSON)
+		if err != nil {
+			return nil, err
+		}
+		if proposed.PlanDigest != "" && RBACRestorePlanDigest(plan, direct) != proposed.PlanDigest {
+			return nil, errRBACPlanChanged()
+		}
+		if err := s.assertRBACPlanKeepsAdmin(ctx, row.CompanyID, plan, direct); err != nil {
+			return nil, err
 		}
 	}
 	val, err := s.ValidateConfiguration(ctx, ValidateConfigurationRequest{Subject: req.Subject})
