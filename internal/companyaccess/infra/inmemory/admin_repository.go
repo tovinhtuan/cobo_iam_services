@@ -393,6 +393,9 @@ func (r *AdminRepository) UpdateMembershipStatus(_ context.Context, companyID, m
 	if !ok || m.CompanyID != companyID {
 		return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeMembershipNotFound, "membership not found", nil)
 	}
+	if m.IsPrimaryAdmin && !strings.EqualFold(strings.TrimSpace(status), "active") {
+		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "CANNOT_DEACTIVATE_PRIMARY_ADMIN", nil)
+	}
 	m.Status = status
 	r.memberships[membershipID] = m
 	cp := m
@@ -404,6 +407,9 @@ func (r *AdminRepository) DeleteMembership(_ context.Context, companyID, members
 	m, ok := r.memberships[membershipID]
 	if !ok || m.CompanyID != companyID {
 		return perr.NewHTTPError(http.StatusNotFound, perr.CodeMembershipNotFound, "membership not found", nil)
+	}
+	if m.IsPrimaryAdmin {
+		return perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "CANNOT_DELETE_PRIMARY_ADMIN", nil)
 	}
 	delete(r.memberships, membershipID)
 	return nil
@@ -661,7 +667,24 @@ func (r *AdminRepository) AddRole(_ context.Context, membershipID, roleID string
 func (r *AdminRepository) RemoveRole(_ context.Context, membershipID, roleID string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	delSet(r.rolesByMembership, membershipID, roleID)
+	// Invite lookups name roles "r_invite_<code>" while bindings use the code: treat both as one
+	// role, like ListRolePermissions does (parity with the MySQL repo, which resolves real ids).
+	keys := []string{roleID}
+	if strings.HasPrefix(roleID, "r_invite_") {
+		keys = append(keys, strings.TrimPrefix(roleID, "r_invite_"))
+	}
+	if m, ok := r.memberships[membershipID]; ok && m.IsPrimaryAdmin {
+		for _, k := range keys {
+			_, held := r.rolesByMembership[membershipID][k]
+			_, admin := r.rolePermissions[k]["rbac.manage"]
+			if held && admin {
+				return perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "CANNOT_REMOVE_PRIMARY_ADMIN_ROLE", nil)
+			}
+		}
+	}
+	for _, k := range keys {
+		delSet(r.rolesByMembership, membershipID, k)
+	}
 	return nil
 }
 
@@ -950,11 +973,16 @@ func (r *AdminRepository) ListRolePermissions(_ context.Context, _, roleID strin
 					continue
 				}
 				seen[code] = struct{}{}
+				module := "general"
+				// Seeded catalog metadata wins, as the MySQL repo reads module_name from permissions.
+				if meta, ok := r.permissionMeta[code]; ok && strings.TrimSpace(meta.ModuleName) != "" {
+					module = meta.ModuleName
+				}
 				perms = append(perms, caapp.PermissionListItem{
 					PermissionID:   code,
 					PermissionCode: code,
 					PermissionName: code,
-					ModuleName:     "general",
+					ModuleName:     module,
 					RiskLevel:      caapp.PermissionRiskLevel(code),
 					IsGrantable:    caapp.IsGrantablePermission(code),
 				})
@@ -1860,6 +1888,18 @@ func (r *AdminRepository) TransferPrimaryAdmin(_ context.Context, companyID, fro
 	}
 	if !strings.EqualFold(strings.TrimSpace(to.Status), "active") {
 		return perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "target membership is not active", nil)
+	}
+	adminCapable := false
+	for roleID := range r.rolesByMembership[toMembershipID] {
+		if _, ok := r.rolePermissions[roleID]["rbac.manage"]; ok {
+			adminCapable = true
+		}
+	}
+	if _, ok := r.directPermissions[toMembershipID+":rbac.manage"]; ok {
+		adminCapable = true
+	}
+	if !adminCapable {
+		return perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "TARGET_NOT_ADMIN: the new owner must be a company admin", nil)
 	}
 	from.IsPrimaryAdmin = false
 	to.IsPrimaryAdmin = true

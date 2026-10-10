@@ -104,12 +104,24 @@ func (s *adminService) assertMayRemovePlatformRole(ctx context.Context, sub Admi
 	if err != nil || operator {
 		return err
 	}
-	if err := s.assertRoleHasNoPlatformPermissions(ctx, sub.CompanyID, roleID); err != nil {
-		if he, ok := perr.AsHTTPError(err); ok && he.HTTPStatus == http.StatusForbidden {
+	// Judged by permission code (platform.*, cms.*, EnterpriseDenyCodes), not by catalog module:
+	// tenant permissions such as disclosure_type.manage are tagged module "cms", and a company
+	// admin must still be able to remove a role like admin_doanh_nghiep that carries them.
+	view, err := s.repo.ListRolePermissions(ctx, sub.CompanyID, strings.TrimSpace(roleID))
+	if err != nil {
+		if he, ok := perr.AsHTTPError(err); ok && he.HTTPStatus == http.StatusNotFound {
+			return nil // the removal itself reports a missing role
+		}
+		return err
+	}
+	if view == nil {
+		return nil
+	}
+	for _, p := range view.Permissions {
+		if isPlatformTierPermission(p.PermissionCode) {
 			return perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied,
 				"role carries platform permissions and can only be removed by a platform operator", nil)
 		}
-		return err
 	}
 	return nil
 }

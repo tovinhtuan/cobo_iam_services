@@ -121,9 +121,12 @@ func (r *AdminRepository) CreateMembership(ctx context.Context, m caapp.Membersh
 }
 
 func (r *AdminRepository) UpdateMembershipStatus(ctx context.Context, companyID, membershipID, status string) (*caapp.MembershipView, error) {
+	// ROLE-25: the primary admin can never be made non-active; the guard is part of the write so
+	// an ownership transfer landing after the service's check cannot be undone by it.
 	res, err := r.db.ExecContext(ctx, `
-		UPDATE memberships SET membership_status = ? WHERE membership_id = ? AND company_id = ?
-	`, status, membershipID, companyID)
+		UPDATE memberships SET membership_status = ?
+		WHERE membership_id = ? AND company_id = ? AND (LOWER(?) = 'active' OR is_primary_admin = FALSE)
+	`, status, membershipID, companyID, status)
 	if err != nil {
 		return nil, fmt.Errorf("update membership: %w", err)
 	}
@@ -131,14 +134,17 @@ func (r *AdminRepository) UpdateMembershipStatus(ctx context.Context, companyID,
 	if n == 0 {
 		// MySQL reports 0 affected rows when the status is unchanged: only a membership that does
 		// not exist in the company is "not found".
-		var found int
+		var primary bool
 		if err := r.db.QueryRowContext(ctx,
-			`SELECT 1 FROM memberships WHERE membership_id = ? AND company_id = ? LIMIT 1`,
-			membershipID, companyID).Scan(&found); err != nil {
+			`SELECT is_primary_admin FROM memberships WHERE membership_id = ? AND company_id = ? LIMIT 1`,
+			membershipID, companyID).Scan(&primary); err != nil {
 			if err == sql.ErrNoRows {
 				return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeMembershipNotFound, "membership not found", nil)
 			}
 			return nil, err
+		}
+		if primary && !strings.EqualFold(strings.TrimSpace(status), "active") {
+			return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "CANNOT_DEACTIVATE_PRIMARY_ADMIN", nil)
 		}
 	}
 	return r.getMembershipView(ctx, membershipID)
@@ -150,16 +156,20 @@ func (r *AdminRepository) DeleteMembership(ctx context.Context, companyID, membe
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	// The membership must belong to the company before any dependent row is deleted.
-	var found int
+	// The membership must belong to the company before any dependent row is deleted, and the
+	// primary admin is re-checked under the row lock (ROLE-25).
+	var primary bool
 	err = tx.QueryRowContext(ctx,
-		`SELECT 1 FROM memberships WHERE membership_id = ? AND company_id = ? FOR UPDATE`,
-		membershipID, companyID).Scan(&found)
+		`SELECT is_primary_admin FROM memberships WHERE membership_id = ? AND company_id = ? FOR UPDATE`,
+		membershipID, companyID).Scan(&primary)
 	if err == sql.ErrNoRows {
 		return perr.NewHTTPError(http.StatusNotFound, perr.CodeMembershipNotFound, "membership not found", nil)
 	}
 	if err != nil {
 		return err
+	}
+	if primary {
+		return perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "CANNOT_DELETE_PRIMARY_ADMIN", nil)
 	}
 	for _, q := range []string{
 		`DELETE FROM membership_roles WHERE membership_id = ?`,
@@ -356,6 +366,26 @@ func (r *AdminRepository) TransferPrimaryAdmin(ctx context.Context, companyID, f
 	if !strings.EqualFold(strings.TrimSpace(to.status), "active") {
 		return perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "target membership is not active", nil)
 	}
+	// ROLE-26 inside the transaction: the target must still hold rbac.manage (a role removal
+	// serializes on the locked membership row, see RemoveRole).
+	var adminCapable bool
+	if err := tx.QueryRowContext(ctx, `
+		SELECT EXISTS (
+		    SELECT 1 FROM membership_roles mr
+		    INNER JOIN roles r ON r.role_id = mr.role_id AND r.status = 'active'
+		    INNER JOIN role_permissions rp ON rp.role_id = mr.role_id AND rp.status = 'active'
+		    INNER JOIN permissions p ON p.permission_id = rp.permission_id AND p.permission_code = 'rbac.manage'
+		    WHERE mr.membership_id = ? AND mr.status = 'active'
+		) OR EXISTS (
+		    SELECT 1 FROM membership_direct_permissions
+		    WHERE membership_id = ? AND permission_code = 'rbac.manage' AND revoked_at IS NULL
+		)
+	`, toMembershipID, toMembershipID).Scan(&adminCapable); err != nil {
+		return fmt.Errorf("transfer primary admin: admin check: %w", err)
+	}
+	if !adminCapable {
+		return perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "TARGET_NOT_ADMIN: the new owner must be a company admin", nil)
+	}
 	if _, err := tx.ExecContext(ctx,
 		`UPDATE memberships SET is_primary_admin = FALSE WHERE membership_id = ? AND company_id = ?`, fromMembershipID, companyID); err != nil {
 		return fmt.Errorf("transfer primary admin: clear: %w", err)
@@ -453,14 +483,31 @@ func (r *AdminRepository) AddRole(ctx context.Context, membershipID, roleID stri
 }
 
 func (r *AdminRepository) RemoveRole(ctx context.Context, membershipID, roleID string) error {
+	// ROLE-25: a role carrying rbac.manage is never removed from the primary admin. The guard is in
+	// the DELETE itself (the joined membership row is read under a lock), so a concurrent
+	// ownership transfer to this membership cannot slip between a check and the write.
 	res, err := r.db.ExecContext(ctx, `
-		DELETE FROM membership_roles WHERE membership_id = ? AND role_id = ?
+		DELETE mr FROM membership_roles mr
+		INNER JOIN memberships m ON m.membership_id = mr.membership_id
+		WHERE mr.membership_id = ? AND mr.role_id = ?
+		  AND NOT (m.is_primary_admin AND EXISTS (
+		      SELECT 1 FROM role_permissions rp
+		      INNER JOIN permissions p ON p.permission_id = rp.permission_id
+		      WHERE rp.role_id = mr.role_id AND rp.status = 'active' AND p.permission_code = 'rbac.manage'))
 	`, membershipID, roleID)
 	if err != nil {
 		return err
 	}
 	n, _ := res.RowsAffected()
 	if n == 0 {
+		var bound int
+		if err := r.db.QueryRowContext(ctx,
+			`SELECT COUNT(*) FROM membership_roles WHERE membership_id = ? AND role_id = ?`, membershipID, roleID).Scan(&bound); err != nil {
+			return err
+		}
+		if bound > 0 {
+			return perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "CANNOT_REMOVE_PRIMARY_ADMIN_ROLE", nil)
+		}
 		return perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "membership role not found", nil)
 	}
 	return nil

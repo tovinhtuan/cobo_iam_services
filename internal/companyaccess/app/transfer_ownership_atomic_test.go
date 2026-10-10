@@ -128,13 +128,11 @@ func TestTransferOwnership_ToNonAdminRejected(t *testing.T) {
 	}
 }
 
-// ROLE-27: an owner whose membership is no longer active cannot transfer.
-func TestTransferPrimaryAdmin_InactiveOwnerRejected(t *testing.T) {
+// ROLE-27 / ROLE-25: the primary admin cannot be made inactive at all, so an inactive owner (only
+// possible through old data) never exists; the transfer still checks the owner's status.
+func TestPrimaryAdmin_CannotBecomeInactive(t *testing.T) {
 	repo := newOwnershipFixture(t)
-	if _, err := repo.UpdateMembershipStatus(context.Background(), "c-1", "m-primary", "inactive"); err != nil {
-		t.Fatal(err)
-	}
-	err := repo.TransferPrimaryAdmin(context.Background(), "c-1", "m-primary", "m-a")
+	_, err := repo.UpdateMembershipStatus(context.Background(), "c-1", "m-primary", "inactive")
 	requireHTTPCode(t, err, 409, perr.CodeStateConflict)
 }
 

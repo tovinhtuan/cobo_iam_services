@@ -515,6 +515,24 @@ func TestIntegration_ListDepartmentIDsByHeadMembership(t *testing.T) {
 	}
 }
 
+// ROLE-25: the primary admin invariants hold in the write itself on MySQL.
+func TestIntegration_PrimaryAdminCannotBeDeactivatedOrDeleted(t *testing.T) {
+	w := newITWorld(t)
+	w.makeOwnerPrimaryAdmin()
+	ctx := context.Background()
+	_, err := w.repo.UpdateMembershipStatus(ctx, w.company, w.owner.MembershipID, "inactive")
+	if he, ok := perr.AsHTTPError(err); !ok || he.Code != perr.CodeStateConflict {
+		t.Fatalf("deactivating the primary admin must be 409, got %v", err)
+	}
+	err = w.repo.DeleteMembership(ctx, w.company, w.owner.MembershipID)
+	if he, ok := perr.AsHTTPError(err); !ok || he.Code != perr.CodeStateConflict {
+		t.Fatalf("deleting the primary admin must be 409, got %v", err)
+	}
+	if _, err := w.repo.UpdateMembershipStatus(ctx, w.company, w.approver.MembershipID, "inactive"); err != nil {
+		t.Fatalf("deactivating another member: %v", err)
+	}
+}
+
 // --- critical rollback goes through approval, and applying it runs the same SQL in a tx ------
 
 func TestIntegration_CriticalRollback_ApprovalApplyRunsRestoreInTx(t *testing.T) {

@@ -142,3 +142,23 @@ func TestApproveDirectRemove_TenantAdminCannotApprovePlatformPermissionRemoval(t
 		t.Fatal("platform permission was removed by a tenant admin's approval")
 	}
 }
+
+// Regression from ROLE-13: disclosure_type.manage is tagged module "cms" in the catalog but is a
+// tenant-grantable permission. A role carrying it (e.g. admin_doanh_nghiep) must stay removable by
+// a company admin, otherwise an owner cannot demote another admin.
+func TestRemoveRole_TenantAdminCanRemoveRoleWithCmsModuleTenantPermission(t *testing.T) {
+	repo := cainmem.NewAdminRepository()
+	sub := caapp.AdminSubject{UserID: "u_adm", MembershipID: "m_adm", CompanyID: "c_001"}
+	seedInviteScopedSubject(t, repo, sub)
+	seedInviteScopedSubject(t, repo, caapp.AdminSubject{UserID: "u_x", MembershipID: "m_x", CompanyID: "c_001"})
+	repo.SeedPermission(caapp.PermissionListItem{PermissionID: "disclosure_type.manage", PermissionCode: "disclosure_type.manage", ModuleName: "cms"})
+	repo.SeedRoleForCompany(caapp.RoleListItem{RoleID: "r_adm2", RoleCode: "admin_doanh_nghiep", RoleName: "Admin", Status: "active", RoleType: caapp.RoleTypeTenantCustom}, "c_001")
+	_ = repo.AddRolePermission(context.Background(), "r_adm2", "disclosure_type.manage")
+	if err := repo.AddRole(context.Background(), "m_x", "r_adm2"); err != nil {
+		t.Fatal(err)
+	}
+	svc := caapp.NewAdminService(repo, fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{"rbac.manage"}}, fixedIDGen("test-id"))
+	if err := svc.RemoveRole(context.Background(), caapp.RemoveRoleRequest{Subject: sub, MembershipID: "m_x", RoleID: "r_adm2"}); err != nil {
+		t.Fatalf("a role with a tenant permission tagged module cms must be removable by a company admin: %v", err)
+	}
+}
