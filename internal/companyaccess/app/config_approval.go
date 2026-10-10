@@ -366,6 +366,9 @@ func (s *adminService) SubmitConfigApproval(ctx context.Context, req SubmitConfi
 		if err := s.assertMayRemovePlatformPermission(ctx, req.Subject, code); err != nil {
 			return nil, err
 		}
+		if err := s.assertKeepsPlatformOperator(ctx, req.Subject, memID, "", strings.TrimSpace(code)); err != nil {
+			return nil, err
+		}
 		// The direct-permission route lets only the primary admin revoke the invite permission;
 		// the approval queue is not a way around that.
 		if strings.TrimSpace(code) == permissionInvite {

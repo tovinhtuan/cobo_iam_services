@@ -162,3 +162,43 @@ func TestRemoveRole_TenantAdminCanRemoveRoleWithCmsModuleTenantPermission(t *tes
 		t.Fatalf("a role with a tenant permission tagged module cms must be removable by a company admin: %v", err)
 	}
 }
+
+// ROLE-20: the ROLE-13 guard judged the removed role alone. An operator whose rbac.manage comes
+// from a role without platform permissions lost operator status when a tenant admin removed it.
+func newOperatorSplitFixture(t *testing.T) (*cainmem.AdminRepository, caapp.AdminService, caapp.AdminSubject) {
+	t.Helper()
+	repo := cainmem.NewAdminRepository()
+	sub := caapp.AdminSubject{UserID: "u_adm", MembershipID: "m_adm", CompanyID: "c_001"}
+	seedInviteScopedSubject(t, repo, sub)
+	_ = repo.AddRolePermission(context.Background(), "company_admin", "rbac.manage") // caller is a real admin
+	seedMem(repo, "m_op", "u_op", "c_001")
+	repo.SeedRoleForCompany(caapp.RoleListItem{RoleID: "r_cmsonly", RoleCode: "cms_viewer", RoleName: "CMS", Status: "active", RoleType: caapp.RoleTypeTenantCustom}, "c_001")
+	repo.SeedRoleForCompany(caapp.RoleListItem{RoleID: "r_tadmin", RoleCode: "tenant_admin_x", RoleName: "Admin", Status: "active", RoleType: caapp.RoleTypeTenantCustom}, "c_001")
+	_ = repo.AddRolePermission(context.Background(), "r_cmsonly", "platform.cms.view")
+	_ = repo.AddRolePermission(context.Background(), "r_tadmin", "rbac.manage")
+	for _, r := range []string{"r_cmsonly", "r_tadmin"} {
+		if err := repo.AddRole(context.Background(), "m_op", r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	svc := caapp.NewAdminService(repo, fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{"rbac.manage"}}, fixedIDGen("test-id"))
+	return repo, svc, sub
+}
+
+func TestRemoveRole_TenantAdminCannotEndOperatorStatus(t *testing.T) {
+	repo, svc, sub := newOperatorSplitFixture(t)
+	err := svc.RemoveRole(context.Background(), caapp.RemoveRoleRequest{Subject: sub, MembershipID: "m_op", RoleID: "r_tadmin"})
+	requireHTTPCode(t, err, 403, perr.CodePermissionDenied)
+	roles, _ := repo.ListMembershipRoles(context.Background(), "m_op")
+	if len(roles) != 2 {
+		t.Fatalf("operator lost a role: %+v", roles)
+	}
+}
+
+func TestRemoveRole_OperatorKeepingStatusMayLoseExtraRole(t *testing.T) {
+	repo, svc, sub := newOperatorSplitFixture(t)
+	_ = repo.AddRolePermission(context.Background(), "r_cmsonly", "rbac.manage") // still an operator without r_tadmin
+	if err := svc.RemoveRole(context.Background(), caapp.RemoveRoleRequest{Subject: sub, MembershipID: "m_op", RoleID: "r_tadmin"}); err != nil {
+		t.Fatalf("operator status is kept, the removal is allowed: %v", err)
+	}
+}

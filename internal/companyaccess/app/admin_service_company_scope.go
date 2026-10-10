@@ -140,6 +140,74 @@ func (s *adminService) assertMayRemovePlatformPermission(ctx context.Context, su
 		"platform permissions can only be removed by a platform operator", nil)
 }
 
+// assertKeepsPlatformOperator (ROLE-20): a caller who is not a platform operator may not make a
+// member that is one stop being one, whatever is removed (a role without platform permissions
+// can still be the one that gives the operator its rbac.manage / system.settings).
+func (s *adminService) assertKeepsPlatformOperator(ctx context.Context, sub AdminSubject, membershipID, removedRoleID, removedDirectCode string) error {
+	operator, err := s.isPlatformCompanyOperator(ctx, sub)
+	if err != nil || operator {
+		return err
+	}
+	before, err := s.membershipPermissionSet(ctx, sub.CompanyID, membershipID, "", "")
+	if err != nil || !isOperatorPermissionSet(before) {
+		return err
+	}
+	after, err := s.membershipPermissionSet(ctx, sub.CompanyID, membershipID, removedRoleID, removedDirectCode)
+	if err != nil {
+		return err
+	}
+	if isOperatorPermissionSet(after) {
+		return nil
+	}
+	return perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied,
+		"the change would end the member's platform operator access; only a platform operator may do that", nil)
+}
+
+// membershipPermissionSet collects a membership's role and direct permissions, leaving out one
+// role and/or one direct permission code.
+func (s *adminService) membershipPermissionSet(ctx context.Context, companyID, membershipID, skipRoleID, skipDirectCode string) (map[string]struct{}, error) {
+	out := map[string]struct{}{}
+	roles, err := s.repo.ListMembershipRoles(ctx, membershipID)
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range roles {
+		if r.RoleID == skipRoleID {
+			continue
+		}
+		view, err := s.repo.ListRolePermissions(ctx, companyID, r.RoleID)
+		if err != nil {
+			if he, ok := perr.AsHTTPError(err); ok && he.HTTPStatus == http.StatusNotFound {
+				continue
+			}
+			return nil, err
+		}
+		if view == nil {
+			continue
+		}
+		for _, p := range view.Permissions {
+			out[p.PermissionCode] = struct{}{}
+		}
+	}
+	direct, err := s.repo.ListActiveDirectPermissions(ctx, membershipID)
+	if err != nil {
+		return nil, err
+	}
+	for _, d := range direct {
+		if d.PermissionCode != skipDirectCode {
+			out[d.PermissionCode] = struct{}{}
+		}
+	}
+	return out, nil
+}
+
+func isOperatorPermissionSet(perms map[string]struct{}) bool {
+	_, cms := perms["platform.cms.view"]
+	_, rbac := perms["rbac.manage"]
+	_, settings := perms["system.settings"]
+	return cms && (rbac || settings)
+}
+
 // normalizeNewMembershipStatus (ROLE-09) accepts the statuses a new membership may start in;
 // the empty value means active.
 func normalizeNewMembershipStatus(status string) (string, error) {

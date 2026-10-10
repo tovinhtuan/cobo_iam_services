@@ -1254,6 +1254,9 @@ func (s *adminService) RemoveRole(ctx context.Context, req RemoveRoleRequest) (e
 	if err := s.assertMayRemovePlatformRole(ctx, req.Subject, req.RoleID); err != nil {
 		return err
 	}
+	if err := s.assertKeepsPlatformOperator(ctx, req.Subject, req.MembershipID, req.RoleID, ""); err != nil {
+		return err
+	}
 	if err := s.assertRoleRemovalKeepsAdmin(ctx, req.Subject.CompanyID, req.MembershipID, req.RoleID); err != nil {
 		return err
 	}
@@ -1800,6 +1803,9 @@ func (s *adminService) RemoveDirectPermission(ctx context.Context, req RemoveDir
 		return err
 	}
 	if err := s.assertMayRemovePlatformPermission(ctx, req.Subject, req.PermissionCode); err != nil {
+		return err
+	}
+	if err := s.assertKeepsPlatformOperator(ctx, req.Subject, req.MembershipID, "", strings.TrimSpace(req.PermissionCode)); err != nil {
 		return err
 	}
 	if requiresApprovalForDirectRemove(req.PermissionCode) {
