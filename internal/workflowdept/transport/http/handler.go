@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 	"github.com/cobo/cobo_iam_services/internal/platform/httpx"
 	"github.com/cobo/cobo_iam_services/internal/workflowdept"
 )
@@ -261,6 +262,11 @@ func (h Handler) allow(w http.ResponseWriter, r *http.Request) (Actor, bool) {
 		return Actor{}, false
 	}
 	actor, err := h.Session(r)
+	if he, ok := perr.AsHTTPError(err); ok {
+		// Keep the session error's status and code (e.g. 403 COMPANY_INACTIVE) for the client.
+		httpx.WriteError(w, nil, he)
+		return Actor{}, false
+	}
 	if err != nil || actor.CompanyID == "" || actor.MembershipID == "" {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return Actor{}, false

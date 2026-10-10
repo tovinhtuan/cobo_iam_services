@@ -225,6 +225,7 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 	var credVerifier iamapp.CredentialVerifier
 	var identity iamapp.IdentityQueryService
 	var recoveryRepo iamapp.AuthRecoveryRepository
+	var companyStatus iamapp.CompanyStatusReader
 	if pool != nil {
 		memberQuery = camysql.NewMembershipQueryService(pool)
 		sessionRepo = iammysql.NewSessionRepository(pool, 720*time.Hour)
@@ -232,6 +233,7 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 		credVerifier = cv
 		identity = cv
 		recoveryRepo = iammysql.NewAuthRecoveryRepository(pool)
+		companyStatus = iammysql.NewCompanyStatusReader(pool)
 		log.Info("iam using MySQL sessions + credentials; membership query from DB")
 	} else {
 		memberQuery = cainmem.NewMembershipQueryService()
@@ -251,7 +253,7 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 	}
 	tokenManager := tokenMgr
 	if tokenManager == nil {
-		tokenManager = buildTokenManager(log, cfg, id, sessionRepo)
+		tokenManager = buildTokenManager(log, cfg, id, sessionRepo, companyStatus)
 	}
 	var iamOpts []iamapp.ServiceOption
 	emailTemplateRegistry := notificationregistry.NewEmbedRegistry()
@@ -529,7 +531,7 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 		if err != nil {
 			return fmt.Errorf("template builder OAuth: %w", err)
 		}
-		templatebuilderoauthhttp.NewHandler(oauthSvc, disclosureSvc, tokenManager, cfg.PublicWebBaseURL).Register(mux)
+		templatebuilderoauthhttp.NewHandler(oauthSvc, disclosureSvc, tokenManager, cfg.PublicWebBaseURL).WithCompanyStatus(companyStatus).Register(mux)
 		log.Info("template builder OAuth validate-only gateway enabled")
 	}
 	workflowOpts := []workflowapp.ServiceOption{

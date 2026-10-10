@@ -8,14 +8,15 @@ import (
 	"strings"
 	"time"
 
-	authapp "github.com/cobo/cobo_iam_services/internal/authorization/app"
 	auditapp "github.com/cobo/cobo_iam_services/internal/audit/app"
 	"github.com/cobo/cobo_iam_services/internal/audit/timeline"
+	authapp "github.com/cobo/cobo_iam_services/internal/authorization/app"
 	caapp "github.com/cobo/cobo_iam_services/internal/companyaccess/app"
+	"github.com/cobo/cobo_iam_services/internal/companyaccess/companystatus"
 	iamapp "github.com/cobo/cobo_iam_services/internal/iam/app"
 	inappapp "github.com/cobo/cobo_iam_services/internal/inappnotification/app"
-	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 	"github.com/cobo/cobo_iam_services/internal/personalops/domain"
+	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 )
 
 const (
@@ -56,17 +57,17 @@ type AuditLister interface {
 }
 
 type service struct {
-	members   caapp.MembershipQueryService
-	mine      MineRepository
-	identity  IdentityReader
-	contact   ContactReader // optional
-	avatar    AvatarURLReader // optional
-	emailVer  EmailVerifiedReader // optional
-	auth      Authorizer // optional — admin scopes
-	inApp     InAppLister // optional
-	audit     AuditLister // optional — personal activity log
-	clock     Clock
-	loc       *time.Location
+	members  caapp.MembershipQueryService
+	mine     MineRepository
+	identity IdentityReader
+	contact  ContactReader       // optional
+	avatar   AvatarURLReader     // optional
+	emailVer EmailVerifiedReader // optional
+	auth     Authorizer          // optional — admin scopes
+	inApp    InAppLister         // optional
+	audit    AuditLister         // optional — personal activity log
+	clock    Clock
+	loc      *time.Location
 }
 
 func NewService(
@@ -148,7 +149,12 @@ func (s *service) GetOperationalOverview(ctx context.Context, sub Subject) (*dom
 
 	active := make([]caapp.MembershipView, 0, len(memberships))
 	membershipIDs := make([]string, 0, len(memberships))
+	blockedCompanies := map[string]bool{}
 	for _, m := range memberships {
+		if companystatus.BlocksAccess(m.CompanyStatus) {
+			blockedCompanies[m.CompanyID] = true
+			continue
+		}
 		if !strings.EqualFold(strings.TrimSpace(m.Status), "active") {
 			continue
 		}
@@ -286,7 +292,7 @@ func (s *service) GetOperationalOverview(ctx context.Context, sub Subject) (*dom
 	} else if s.inApp != nil {
 		sources = append(sources, "in_app_notifications")
 	}
-	activityLog, logPartial, logWarn := s.buildActivityLog(ctx, sub.UserID)
+	activityLog, logPartial, logWarn := s.buildActivityLog(ctx, sub.UserID, blockedCompanies)
 	if logPartial {
 		partial = true
 	}
@@ -443,14 +449,14 @@ func (s *service) buildAdminScopes(ctx context.Context, active []caapp.Membershi
 
 func (s *service) buildCompanyOverviews(active []caapp.MembershipView, records []MineRecord, now time.Time) ([]domain.CompanyOverview, int, int, []string, int) {
 	type agg struct {
-		name           string
-		assigned       int
-		overdue        int
-		dueSoon        int
-		completed      int
-		onTimeOn       int
-		onTimeTot      int
-		seen           map[string]struct{}
+		name      string
+		assigned  int
+		overdue   int
+		dueSoon   int
+		completed int
+		onTimeOn  int
+		onTimeTot int
+		seen      map[string]struct{}
 	}
 	byCompany := map[string]*agg{}
 	for _, m := range active {
@@ -662,7 +668,7 @@ func isReportRelatedNotification(n inappapp.InAppNotification) bool {
 	return false
 }
 
-func (s *service) buildActivityLog(ctx context.Context, userID string) ([]domain.ActivityItem, bool, *domain.Warning) {
+func (s *service) buildActivityLog(ctx context.Context, userID string, blockedCompanies map[string]bool) ([]domain.ActivityItem, bool, *domain.Warning) {
 	if s.audit == nil {
 		w := warn("activity_log_unavailable", "Nguồn audit log không sẵn sàng.")
 		return []domain.ActivityItem{}, true, &w
@@ -677,6 +683,9 @@ func (s *service) buildActivityLog(ctx context.Context, userID string) ([]domain
 	}
 	out := make([]domain.ActivityItem, 0, len(entries))
 	for _, e := range entries {
+		if blockedCompanies[e.CompanyID] { // a deactivated company's history is not shown
+			continue
+		}
 		title := timeline.SummaryForAction(e.Action)
 		desc := timeline.FriendlyDescription(e.Action, e.ResourceType)
 		href := timeline.ActionLinkFor(e.Action)

@@ -9,6 +9,7 @@ import (
 
 	authapp "github.com/cobo/cobo_iam_services/internal/authorization/app"
 	caapp "github.com/cobo/cobo_iam_services/internal/companyaccess/app"
+	"github.com/cobo/cobo_iam_services/internal/companyaccess/companystatus"
 	iamapp "github.com/cobo/cobo_iam_services/internal/iam/app"
 	"github.com/cobo/cobo_iam_services/internal/iam/loginpassword"
 	inappapp "github.com/cobo/cobo_iam_services/internal/inappnotification/app"
@@ -120,11 +121,12 @@ func (m *MeHandler) me(w http.ResponseWriter, r *http.Request) {
 	}
 	activeMemberships := make([]map[string]any, 0, len(memberships))
 	for _, ms := range memberships {
-		if strings.EqualFold(strings.TrimSpace(ms.Status), "active") {
+		if strings.EqualFold(strings.TrimSpace(ms.Status), "active") && !companystatus.BlocksAccess(ms.CompanyStatus) {
 			activeMemberships = append(activeMemberships, map[string]any{
-				"company_id":    ms.CompanyID,
-				"company_name":  ms.CompanyName,
-				"membership_id": ms.MembershipID,
+				"company_id":     ms.CompanyID,
+				"company_name":   ms.CompanyName,
+				"membership_id":  ms.MembershipID,
+				"company_status": ms.CompanyStatus,
 			})
 		}
 	}
@@ -181,10 +183,17 @@ func (m *MeHandler) companies(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, m.h.log, err)
 		return
 	}
-	items, err := m.members.GetMembershipsByUser(r.Context(), claims.Sub)
+	all, err := m.members.GetMembershipsByUser(r.Context(), claims.Sub)
 	if err != nil {
 		httpx.WriteError(w, m.h.log, err)
 		return
+	}
+	// A deactivated company ("Ngừng hoạt động") is not offered.
+	items := make([]caapp.MembershipView, 0, len(all))
+	for _, it := range all {
+		if !companystatus.BlocksAccess(it.CompanyStatus) {
+			items = append(items, it)
+		}
 	}
 
 	// Batch plan lookup for authorized membership company IDs only (no arbitrary lookup, no N+1).
@@ -212,6 +221,7 @@ func (m *MeHandler) companies(w http.ResponseWriter, r *http.Request) {
 			"membership_id":     it.MembershipID,
 			"company_name":      it.CompanyName,
 			"membership_status": it.Status,
+			"company_status":    it.CompanyStatus,
 			"roles":             []string{},
 			"titles":            []string{},
 			"address":           m.companyAddress(r.Context(), it.CompanyID),

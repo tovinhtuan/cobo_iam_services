@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/cobo/cobo_iam_services/internal/companyaccess/companystatus"
 	disclosureapp "github.com/cobo/cobo_iam_services/internal/disclosure/app"
 	iamapp "github.com/cobo/cobo_iam_services/internal/iam/app"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
@@ -19,6 +20,14 @@ type Handler struct {
 	disclosure   disclosureapp.Service
 	inspector    iamapp.TokenInspector
 	publicWebURL string
+	companies    iamapp.CompanyStatusReader
+}
+
+// WithCompanyStatus rejects builder action tokens bound to a deactivated or missing company: those
+// tokens are checked here, not by the session-bound token inspector.
+func (h *Handler) WithCompanyStatus(r iamapp.CompanyStatusReader) *Handler {
+	h.companies = r
+	return h
 }
 
 func NewHandler(oauthService *oauth.Service, disclosure disclosureapp.Service, inspector iamapp.TokenInspector, publicWebURL string) *Handler {
@@ -97,6 +106,17 @@ func (h *Handler) validate(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		httpx.WriteError(w, nil, perr.NewHTTPError(http.StatusUnauthorized, perr.CodeSessionExpired, "invalid oauth access token", nil))
 		return
+	}
+	if h.companies != nil {
+		status, err := h.companies.CompanyStatus(r.Context(), sub.CompanyID)
+		if err != nil {
+			httpx.WriteError(w, nil, err)
+			return
+		}
+		if strings.TrimSpace(status) == "" || companystatus.BlocksAccess(status) {
+			httpx.WriteError(w, nil, perr.NewHTTPError(http.StatusForbidden, perr.CodeCompanyInactive, "the company is no longer active", nil))
+			return
+		}
 	}
 	var body struct {
 		Filename string `json:"filename"`

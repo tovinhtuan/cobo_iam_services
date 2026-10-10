@@ -20,7 +20,7 @@ type tokenManager interface {
 // TokenManager is exported for optional dependency injection in tests.
 type TokenManager = tokenManager
 
-func buildTokenManager(log *slog.Logger, cfg config.Config, id idgen.Generator, sessions iamapp.SessionRepository) tokenManager {
+func buildTokenManager(log *slog.Logger, cfg config.Config, id idgen.Generator, sessions iamapp.SessionRepository, companies iamapp.CompanyStatusReader) tokenManager {
 	opaque := iamtokenopaque.NewManager(id)
 	mode := cfg.AccessTokenMode
 	if mode == "" {
@@ -40,7 +40,12 @@ func buildTokenManager(log *slog.Logger, cfg config.Config, id idgen.Generator, 
 	}
 	if sessions != nil {
 		log.Info("access token inspect bound to session store (revoked/expired sessions rejected)")
-		return iamtokensessionbound.New(mgr, sessions)
+		var opts []iamtokensessionbound.Option
+		if companies != nil {
+			log.Info("access token inspect bound to company status (deactivated companies rejected)")
+			opts = append(opts, iamtokensessionbound.WithCompanyStatus(companies))
+		}
+		return iamtokensessionbound.New(mgr, sessions, opts...)
 	}
 	return mgr
 }

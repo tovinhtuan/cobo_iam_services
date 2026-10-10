@@ -15,6 +15,13 @@ const (
 	VerificationUnverified = "unverified"
 )
 
+// BlocksAccess reports whether a company's operational status shuts out its members. Only
+// "inactive" ("Ngừng hoạt động") does; other values, legacy ones included, keep access. A company
+// that cannot be found is reported by callers as "" and treated as blocked by them, not here.
+func BlocksAccess(status string) bool {
+	return strings.EqualFold(strings.TrimSpace(status), StatusInactive)
+}
+
 // NormalizeOperationalStatus trims and lowercases, then allowlists active|inactive.
 // Matches existing SetCompanyStatusPlatform normalization (ToLower+TrimSpace).
 func NormalizeOperationalStatus(raw string) (string, error) {

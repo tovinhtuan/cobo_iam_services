@@ -314,7 +314,45 @@ func (s *adminService) SetPlatformCompanyStatus(ctx context.Context, req SetPlat
 	if err != nil {
 		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, err.Error(), nil)
 	}
-	return s.repo.SetCompanyStatusPlatform(ctx, strings.TrimSpace(req.CompanyID), status)
+	companyID := strings.TrimSpace(req.CompanyID)
+	if companystatus.BlocksAccess(status) {
+		if err := s.assertNotPlatformHostCompany(ctx, req.Subject, companyID); err != nil {
+			return err
+		}
+	}
+	return s.repo.SetCompanyStatusPlatform(ctx, companyID, status)
+}
+
+// assertNotPlatformHostCompany keeps the platform reachable: deactivating a company shuts out its
+// members, so the company operators work from (the caller's own, or any with an active member
+// holding platform.cms.view) cannot be deactivated through the platform.
+func (s *adminService) assertNotPlatformHostCompany(ctx context.Context, sub AdminSubject, companyID string) error {
+	refuse := perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict,
+		"CANNOT_DEACTIVATE_PLATFORM_COMPANY: platform operators work from this company", nil)
+	if companyID == strings.TrimSpace(sub.CompanyID) {
+		return refuse
+	}
+	members, err := s.repo.ListMembershipsByCompany(ctx, companyID)
+	if err != nil {
+		return err
+	}
+	for _, m := range members {
+		if !strings.EqualFold(strings.TrimSpace(m.Status), "active") {
+			continue
+		}
+		fromRole, err := s.repo.MembershipHasPermissionFromRole(ctx, m.MembershipID, companyID, "platform.cms.view")
+		if err != nil {
+			return err
+		}
+		direct, err := s.repo.HasActiveDirectPermission(ctx, m.MembershipID, "platform.cms.view")
+		if err != nil {
+			return err
+		}
+		if fromRole || direct {
+			return refuse
+		}
+	}
+	return nil
 }
 
 func (s *adminService) InviteUser(ctx context.Context, req InviteUserRequest) (*InviteUserResponse, error) {

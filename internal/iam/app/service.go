@@ -13,6 +13,7 @@ import (
 	"time"
 
 	ca "github.com/cobo/cobo_iam_services/internal/companyaccess/app"
+	"github.com/cobo/cobo_iam_services/internal/companyaccess/companystatus"
 	iamregmysql "github.com/cobo/cobo_iam_services/internal/iam/registrationmysql"
 	notificationapp "github.com/cobo/cobo_iam_services/internal/notification/app"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
@@ -128,11 +129,11 @@ func (s *service) Login(ctx context.Context, req LoginRequest) (*LoginResponse, 
 		s.recordLoginAttempt(ctx, req, user, false, err)
 		return nil, fmt.Errorf("list memberships: %w", err)
 	}
-	active := make([]ca.MembershipView, 0, len(memberships))
-	for _, m := range memberships {
-		if strings.EqualFold(m.Status, "active") {
-			active = append(active, m)
-		}
+	active, companyBlocked := usableMemberships(memberships)
+	if len(active) == 0 && companyBlocked {
+		err := errCompanyInactive()
+		s.recordLoginAttempt(ctx, req, user, false, err)
+		return nil, err
 	}
 	sid := s.idgen.NewUUID()
 	refresh, err := s.tokens.IssueRefreshToken(ctx, sid, user.UserID)
@@ -433,6 +434,9 @@ func (s *service) Refresh(ctx context.Context, req RefreshRequest) (*RefreshResp
 	}
 	if m == nil || m.MembershipID != ss.MembershipID {
 		return nil, perr.NewHTTPError(http.StatusUnauthorized, perr.CodeSessionExpired, "session expired", nil)
+	}
+	if companystatus.BlocksAccess(m.CompanyStatus) {
+		return nil, errCompanyInactive()
 	}
 	access, exp, err := s.tokens.IssueAccessToken(ctx, AccessTokenClaims{Sub: ss.UserID, SessionID: ss.SessionID, MembershipID: ss.MembershipID, CompanyID: ss.CompanyID})
 	if err != nil {
@@ -765,12 +769,7 @@ func (s *service) AcceptUserInvitation(ctx context.Context, req AcceptUserInvita
 				if memErr != nil {
 					allMem = nil
 				}
-				active := make([]ca.MembershipView, 0, len(allMem))
-				for _, m := range allMem {
-					if strings.EqualFold(m.Status, "active") {
-						active = append(active, m)
-					}
-				}
+				active, _ := usableMemberships(allMem)
 				if len(active) == 0 {
 					accessTok, expiresIn, _ = s.tokens.IssueAccessToken(ctx, AccessTokenClaims{Sub: acceptedUserID, SessionID: sid})
 					nextAct = "no_company_onboarding"
@@ -1183,6 +1182,9 @@ func (s *service) bindCompany(ctx context.Context, userID, sessionID, companyID 
 	if m == nil {
 		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodeMembershipNotFound, "membership not found in company", nil)
 	}
+	if companystatus.BlocksAccess(m.CompanyStatus) {
+		return nil, errCompanyInactive()
+	}
 	if err := s.sessions.UpdateContext(ctx, sessionID, m.MembershipID, m.CompanyID); err != nil {
 		return nil, fmt.Errorf("update session context: %w", err)
 	}
@@ -1191,4 +1193,25 @@ func (s *service) bindCompany(ctx context.Context, userID, sessionID, companyID 
 		return nil, fmt.Errorf("issue access token: %w", err)
 	}
 	return &SelectCompanyResponse{AccessToken: access, ExpiresIn: exp, CurrentContext: TokenContext{CompanyID: m.CompanyID, MembershipID: m.MembershipID}}, nil
+}
+
+// usableMemberships keeps the active memberships of companies that are not deactivated, and reports
+// whether an active membership was dropped because its company is deactivated ("Ngừng hoạt động").
+func usableMemberships(memberships []ca.MembershipView) (usable []ca.MembershipView, companyBlocked bool) {
+	usable = make([]ca.MembershipView, 0, len(memberships))
+	for _, m := range memberships {
+		if !strings.EqualFold(m.Status, "active") {
+			continue
+		}
+		if companystatus.BlocksAccess(m.CompanyStatus) {
+			companyBlocked = true
+			continue
+		}
+		usable = append(usable, m)
+	}
+	return usable, companyBlocked
+}
+
+func errCompanyInactive() error {
+	return perr.NewHTTPError(http.StatusForbidden, perr.CodeCompanyInactive, "the company is no longer active", nil)
 }

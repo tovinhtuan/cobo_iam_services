@@ -27,6 +27,7 @@ type MembershipView struct {
 	CompanyCode    string           `json:"company_code,omitempty"`
 	CompanyName    string           `json:"company_name"`
 	Status         string           `json:"membership_status"`
+	CompanyStatus  string           `json:"company_status,omitempty"` // companies.status (membership queries)
 	LoginID        string           `json:"login_id,omitempty"`
 	FullName       string           `json:"full_name,omitempty"`
 	AccountStatus  string           `json:"account_status,omitempty"`
@@ -47,22 +48,22 @@ type RoleView struct {
 type TitleView struct {
 	TitleID     string `json:"title_id"`
 	TitleName   string `json:"title_name,omitempty"` // legacy field used by MembershipQueryService
-	Name        string `json:"name,omitempty"`        // admin API field (maps from title_name)
+	Name        string `json:"name,omitempty"`       // admin API field (maps from title_name)
 	MemberCount int    `json:"member_count,omitempty"`
 	Status      string `json:"status,omitempty"`
 	SortOrder   int    `json:"sort_order,omitempty"`
 }
 
 type DepartmentView struct {
-	DepartmentID       string  `json:"department_id"`
-	DepartmentName     string  `json:"department_name,omitempty"` // legacy field used by MembershipQueryService
-	Name               string  `json:"name,omitempty"`            // admin API field (maps from department_name)
-	IsDepartmentFocal  bool    `json:"is_department_focal,omitempty"`
-	HeadMembershipID   *string `json:"head_membership_id,omitempty"`
-	HeadFullName       *string `json:"head_full_name,omitempty"`
-	MemberCount        int     `json:"member_count,omitempty"`
-	Status             string  `json:"status,omitempty"`
-	SortOrder          int     `json:"sort_order,omitempty"`
+	DepartmentID      string  `json:"department_id"`
+	DepartmentName    string  `json:"department_name,omitempty"` // legacy field used by MembershipQueryService
+	Name              string  `json:"name,omitempty"`            // admin API field (maps from department_name)
+	IsDepartmentFocal bool    `json:"is_department_focal,omitempty"`
+	HeadMembershipID  *string `json:"head_membership_id,omitempty"`
+	HeadFullName      *string `json:"head_full_name,omitempty"`
+	MemberCount       int     `json:"member_count,omitempty"`
+	Status            string  `json:"status,omitempty"`
+	SortOrder         int     `json:"sort_order,omitempty"`
 }
 
 type TeamView struct {

@@ -67,6 +67,12 @@ type LoginAttemptRecord struct {
 	UserAgent   string
 }
 
+// CompanyStatusReader reads companies.status for token inspection; it returns "" when the
+// company does not exist.
+type CompanyStatusReader interface {
+	CompanyStatus(ctx context.Context, companyID string) (string, error)
+}
+
 // SessionRepository persists and rotates sessions/refresh tokens.
 type SessionRepository interface {
 	Create(ctx context.Context, p CreateSessionParams) error
@@ -201,8 +207,8 @@ type RegisterPublicRequest struct {
 	Email           string `json:"email"`
 	Password        string `json:"password"`
 	ConfirmPassword string `json:"confirm_password"`
-	FullName    string `json:"full_name"`
-	CompanyName string `json:"company_name,omitempty"` // optional: omit or empty for account without company
+	FullName        string `json:"full_name"`
+	CompanyName     string `json:"company_name,omitempty"` // optional: omit or empty for account without company
 	IP              string `json:"-"`
 	UserAgent       string `json:"-"`
 }
