@@ -279,7 +279,7 @@ func (r *Repository) ListTypes(_ context.Context, params disclosureapp.ListTypes
 		if displayGroupCode != "" && r.displayGroupCodes[listItem.TypeID] != displayGroupCode {
 			continue
 		}
-		if query != "" && !strings.Contains(strings.ToLower(listItem.Name+" "+listItem.Description), query) {
+		if query != "" && !strings.Contains(strings.ToLower(listItem.Name+" "+listItem.Description+" "+listItem.TypeID), query) {
 			continue
 		}
 		if len(params.Tags) > 0 {
@@ -627,6 +627,24 @@ func (r *Repository) UpsertTypeVersion(ctx context.Context, req disclosureapp.Up
 		}
 	}
 
+	// Optimistic concurrency: the write target (open draft, else active) must still hold the
+	// revision the client loaded.
+	if expected := strings.TrimSpace(req.ExpectedRevision); expected != "" && !req.CreateOnly {
+		target := openDraftNo
+		if target <= 0 {
+			target = activeVersionNo
+		}
+		currentHash := ""
+		if target > 0 {
+			if byVer, ok := r.catalogByVer[req.TypeID]; ok {
+				currentHash = byVer[target].PublicationCandidateHash
+			}
+		}
+		if target <= 0 || disclosureapp.RevisionFromCandidateHash(currentHash) != expected {
+			return nil, disclosureapp.ErrStaleTemplateRevision(currentHash, target)
+		}
+	}
+
 	overwriteDraft := openDraftNo > 0 && !nextIsActive
 	versionNo := openDraftNo
 	if !overwriteDraft {
@@ -829,6 +847,9 @@ func (r *Repository) ListTypeVersions(_ context.Context, companyID, typeID strin
 	filtered := make([]disclosureapp.DisclosureTypeVersionDTO, 0, len(vs))
 	for _, ver := range vs {
 		if ver.IsActive || ver.IsReleased || ver.VersionNo == openDraftNo {
+			if byVer, ok := r.catalogByVer[typeID]; ok {
+				ver.PublicationCandidateHash = byVer[ver.VersionNo].PublicationCandidateHash
+			}
 			filtered = append(filtered, ver)
 		}
 	}

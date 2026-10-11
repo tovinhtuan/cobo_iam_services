@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/cobo/cobo_iam_services/internal/disclosure/app/applicability"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 )
 
@@ -53,6 +54,17 @@ func (s *service) preserveOmittedFieldsFromCandidate(ctx context.Context, req *U
 		}
 	}
 	return nil
+}
+
+// deriveDeadlineDurationTypeFromApplicability makes deadline_config.deadline_duration_type a
+// server-owned value: when the template carries applicability_rules, deadline_day_type (the
+// field the CMS editor actually authors) is the source of truth. Without rules the client
+// value is kept (legacy / company templates).
+func deriveDeadlineDurationTypeFromApplicability(req *UpsertTypeVersionRequest) {
+	if req == nil || req.DeadlineConfig == nil || req.ApplicabilityRules == nil {
+		return
+	}
+	req.DeadlineConfig.DeadlineDurationType = applicability.ResolveDeadlineDurationType(req.ApplicabilityRules)
 }
 
 // rejectArchivedGlobalTemplateWrite blocks draft writes on an archived global template:

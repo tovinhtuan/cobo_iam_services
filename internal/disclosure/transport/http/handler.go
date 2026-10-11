@@ -509,8 +509,9 @@ func (h *Handler) activateTypeVersion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var payload struct {
-		VersionNo int    `json:"version_no"`
-		Reason    string `json:"reason"`
+		VersionNo        int    `json:"version_no"`
+		Reason           string `json:"reason"`
+		ExpectedRevision string `json:"expected_revision"`
 	}
 	if err := decodeJSONBody(w, r, maxSmallJSONBodyBytes, &payload, false); err != nil {
 		httpx.WriteError(w, nil, err)
@@ -521,12 +522,17 @@ func (h *Handler) activateTypeVersion(w http.ResponseWriter, r *http.Request) {
 		Subject: sub,
 		TypeID:  typeID,
 	})
-	resp, err := h.svc.ActivateTypeVersion(r.Context(), disclosureapp.ActivateTypeVersionRequest{
+	activateReq := disclosureapp.ActivateTypeVersionRequest{
 		Subject:   sub,
 		TypeID:    typeID,
 		VersionNo: payload.VersionNo,
 		Reason:    strings.TrimSpace(payload.Reason),
-	})
+	}
+	if rev := strings.TrimSpace(payload.ExpectedRevision); rev != "" {
+		activateReq.ExpectedCandidateHash = disclosureapp.CandidateHashFromRevision(rev)
+		activateReq.ExpectedFromClient = true
+	}
+	resp, err := h.svc.ActivateTypeVersion(r.Context(), activateReq)
 	if err != nil {
 		httpx.WriteError(w, nil, err)
 		return
@@ -883,30 +889,15 @@ func (h *Handler) getTemplateDeadlineConfig(w http.ResponseWriter, r *http.Reque
 	httpx.WriteJSON(w, http.StatusOK, resp)
 }
 
+// updateTemplateDeadlineConfig is retired: it rewrote the live released version in place
+// (no draft/activate, no company scope). Kept as 410 for one release, then removed.
 func (h *Handler) updateTemplateDeadlineConfig(w http.ResponseWriter, r *http.Request) {
-	sub, err := h.subjectFromToken(r)
-	if err != nil {
+	if _, err := h.subjectFromToken(r); err != nil {
 		httpx.WriteError(w, nil, err)
 		return
 	}
-	var req disclosureapp.UpdateTemplateDeadlineConfigRequest
-	if err := decodeJSONBody(w, r, maxSmallJSONBodyBytes, &req, false); err != nil {
-		httpx.WriteError(w, nil, err)
-		return
-	}
-	req.Subject = sub
-	req.TypeID = strings.TrimSpace(r.PathValue("type_id"))
-	resp, err := h.svc.UpdateTemplateDeadlineConfig(r.Context(), req)
-	if err != nil {
-		httpx.WriteError(w, nil, err)
-		return
-	}
-	h.auditLog(r, sub, "disclosure.type.config.updated", "disclosure_type", req.TypeID, map[string]any{
-		"t0_policy":       req.DeadlineConfig.T0Policy,
-		"deadline_days":   req.DeadlineConfig.DeadlineDays,
-		"processing_days": req.DeadlineConfig.ProcessingDays,
-	})
-	httpx.WriteJSON(w, http.StatusOK, resp)
+	httpx.WriteError(w, nil, perr.NewHTTPError(http.StatusGone, perr.CodeEndpointRemoved,
+		"Use PUT /api/v1/admin/disclosure-types/{type_id} (draft) then activate", nil))
 }
 
 func (h *Handler) auditLog(r *http.Request, sub disclosureapp.Subject, action, resourceType, resourceID string, metadata map[string]any) {

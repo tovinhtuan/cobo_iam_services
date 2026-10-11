@@ -187,3 +187,43 @@ func TestListTypes_DefaultsPageAndPageSize(t *testing.T) {
 		t.Fatalf("page=%d page_size=%d", resp.Page, resp.PageSize)
 	}
 }
+
+// skipCountRepo behaves like MySQL with SkipCount: no COUNT(*), total reported as 0.
+type skipCountRepo struct {
+	listTypesPaginationRepo
+}
+
+func (r *skipCountRepo) ListTypes(ctx context.Context, params ListTypesParams) ([]DisclosureTypeSummaryDTO, int, error) {
+	items, total, err := r.listTypesPaginationRepo.ListTypes(ctx, params)
+	if params.LightweightOnly && params.SkipCount {
+		total = 0
+	}
+	return items, total, err
+}
+
+func TestListTypes_LightweightCatalogSkipsCountAndStillReadsAllChunks(t *testing.T) {
+	now := time.Now().UTC()
+	light := make([]DisclosureTypeSummaryDTO, 0, 120)
+	full := make(map[string]DisclosureTypeSummaryDTO, 120)
+	for i := 0; i < 120; i++ {
+		id := fmt.Sprintf("t-%03d", i)
+		light = append(light, DisclosureTypeSummaryDTO{TypeID: id, Scope: "global", Name: id, CreatedAt: now})
+		full[id] = DisclosureTypeSummaryDTO{TypeID: id, Name: id}
+	}
+	repo := &skipCountRepo{listTypesPaginationRepo{light: light, full: full}}
+	svc := NewService(repo, nil, idgen.UUIDv7Generator{})
+	resp, err := svc.ListTypes(context.Background(), ListTypesRequest{
+		Subject: Subject{CompanyID: "company-001"}, Page: 3, PageSize: 50, PageProvided: true, PageSizeProvided: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Total != 120 || len(resp.Items) != 20 {
+		t.Fatalf("total=%d items=%d (want 120 / 20)", resp.Total, len(resp.Items))
+	}
+	for _, c := range repo.calls {
+		if c.LightweightOnly && !c.SkipCount {
+			t.Fatal("lightweight catalog chunks must not run COUNT(*)")
+		}
+	}
+}

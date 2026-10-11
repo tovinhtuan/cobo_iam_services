@@ -540,6 +540,11 @@ func (s *service) materializeImportUpsert(
 	rules := norm.ApplicabilityRules
 	if rules == nil {
 		rules = applicability.DefaultGlobalRules(isPeriodic)
+		// deadline_duration_type is derived from deadline_day_type on upsert; keep a file
+		// that only declares WORKING_DAYS (no rules) on working days.
+		if norm.DeadlineConfig != nil && strings.EqualFold(strings.TrimSpace(norm.DeadlineConfig.DeadlineDurationType), DurationTypeWorkingDays) {
+			rules.DeadlineDayType = "working"
+		}
 	}
 
 	upsert := UpsertTypeVersionRequest{

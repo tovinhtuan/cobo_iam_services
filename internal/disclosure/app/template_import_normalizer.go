@@ -149,6 +149,11 @@ func NormalizeTemplateImportV1(raw TemplateImportDefinitionV1) *TemplateImportDe
 		}
 		if normRules.DeadlineDayType == "" {
 			normRules.DeadlineDayType = "calendar"
+			// No explicit day type: honour a file-level WORKING_DAYS duration (upsert derives
+			// deadline_duration_type from deadline_day_type).
+			if out.DeadlineConfig != nil && strings.EqualFold(strings.TrimSpace(out.DeadlineConfig.DeadlineDurationType), "WORKING_DAYS") {
+				normRules.DeadlineDayType = "working"
+			}
 		}
 		if out.ApplicabilityRules.DeadlineByStructure != nil {
 			normRules.DeadlineByStructure = make(map[applicability.StructureCriterion]applicability.StructureDeadlineEntry, len(out.ApplicabilityRules.DeadlineByStructure))

@@ -595,7 +595,7 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 			readinessSvc = readinessSvc.WithCatalog(assigneeRoleCatalogSvc)
 		}
 		configSvc := wfcapp.NewConfigService(versionSvc, readinessSvc)
-		wfchttp.NewHandler(versionSvc, configSvc, assigneeRoleCatalogSvc, tokenManager, authSvc).Register(mux)
+		wfchttp.NewHandler(versionSvc, configSvc, assigneeRoleCatalogSvc, tokenManager, authSvc).WithAudit(auditSvc).Register(mux)
 	}
 	notificationSvc := notificationapp.NewService(notificationRepo, authSvc, id, outboxPublisher, notifOpts...)
 	notificationHandler := notificationhttp.NewHandler(notificationSvc, tokenManager)

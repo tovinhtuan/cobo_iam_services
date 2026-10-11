@@ -24,7 +24,8 @@ NOPE = "qa-smoke-role08-no-such-template"
 ROUTES = {
     "read (GET global workflow)": ("GET", f"/api/v1/platform/cms/templates/{NOPE}/workflow", None),
     "write (POST workflow publish)": ("POST", f"/api/v1/platform/cms/templates/{NOPE}/workflow/publish", {"note": "qa smoke"}),
-    "config write (PUT deadline config)": ("PUT", f"/api/v1/admin/disclosure-types/{NOPE}/config", {"deadline_config": {}}),
+    # PUT .../config was retired (410) on 2026-10-11; the draft PUT goes through the same write gate.
+    "template write (PUT draft upsert)": ("PUT", f"/api/v1/admin/disclosure-types/{NOPE}", {}),
 }
 results = []
 

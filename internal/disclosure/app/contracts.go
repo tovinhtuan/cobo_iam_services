@@ -286,6 +286,8 @@ type ListTypesParams struct {
 	SortDir         string   // "asc" | "desc"
 	TypeIDs         []string // optional: restrict to these type IDs
 	LightweightOnly bool     // minimal columns; skips workflow/display-group batch loads
+	// SkipCount omits SELECT COUNT(*) (internal chunked catalog scans stop on a short page).
+	SkipCount bool
 	// ListMode: "" = portal consumption (active version only); "management" = CMS admin list (draft + active).
 	ListMode string
 	// PortalState: optional CMS management filter. Empty = no portal-state filter (backward compatible).
@@ -426,14 +428,17 @@ type UpsertTypeVersionRequest struct {
 	// NarrativeFieldsOmitted lists narrative JSON keys (see NarrativeFieldKeys) absent from
 	// the HTTP body. Upsert copies them from the current candidate version instead of
 	// erasing them under full-replace semantics. Explicit "" still clears. Set by HTTP decoder.
-	NarrativeFieldsOmitted []string                                  `json:"-"`
-	Checklist              []ChecklistItemDTO                        `json:"checklist"`
-	Tags                   []string                                  `json:"tags"`
-	DeadlineConfig         *TemplateDeadlineConfig                   `json:"deadline_config,omitempty"`
-	Blocks                 []TemplateBlockDTO                        `json:"blocks"`
-	DisplayGroupCodes      []string                                  `json:"display_group_codes"`
-	ChangeNote             string                                    `json:"change_note"`
-	ApplicabilityRules     *applicability.TemplateApplicabilityRules `json:"applicability_rules,omitempty"`
+	NarrativeFieldsOmitted []string `json:"-"`
+	// ExpectedRevision (optional) is the revision of the write target the client loaded
+	// (open draft, else active). Mismatch → 409 STALE_ETAG. Empty = legacy last-write-wins.
+	ExpectedRevision   string                                    `json:"expected_revision,omitempty"`
+	Checklist          []ChecklistItemDTO                        `json:"checklist"`
+	Tags               []string                                  `json:"tags"`
+	DeadlineConfig     *TemplateDeadlineConfig                   `json:"deadline_config,omitempty"`
+	Blocks             []TemplateBlockDTO                        `json:"blocks"`
+	DisplayGroupCodes  []string                                  `json:"display_group_codes"`
+	ChangeNote         string                                    `json:"change_note"`
+	ApplicabilityRules *applicability.TemplateApplicabilityRules `json:"applicability_rules,omitempty"`
 	// PublicationCandidate is derived from the request after all app-layer
 	// normalization. It is never accepted from the wire.
 	PublicationCandidate *TemplatePublicationCandidate `json:"-"`
@@ -445,6 +450,8 @@ type UpsertTypeVersionResponse struct {
 	IsActive    bool      `json:"is_active"`
 	UpdatedBy   string    `json:"updated_by"`
 	ActivatedAt time.Time `json:"activated_at"`
+	// Revision of the saved version (send back as expected_revision on the next write).
+	Revision string `json:"revision,omitempty"`
 }
 
 type ListTypeVersionsRequest struct {
@@ -454,6 +461,8 @@ type ListTypeVersionsRequest struct {
 
 type ListTypeVersionsResponse struct {
 	Items []DisclosureTypeVersionDTO `json:"items"`
+	// HeadRevision is the revision of the upsert write target (open draft, else active).
+	HeadRevision string `json:"head_revision"`
 }
 
 type ActivateTypeVersionRequest struct {
@@ -462,6 +471,9 @@ type ActivateTypeVersionRequest struct {
 	VersionNo             int    `json:"version_no"`
 	Reason                string `json:"reason"`
 	ExpectedCandidateHash string `json:"-"`
+	// ExpectedFromClient marks ExpectedCandidateHash as supplied by the client
+	// (expected_revision): a mismatch is then reported as 409 STALE_ETAG.
+	ExpectedFromClient bool `json:"-"`
 	// FreezeApplicableFromMode/Slot: when set by service, repo persists into deadline_config_json in the same TX.
 	FreezeApplicableFromMode string `json:"-"`
 	FreezeApplicableFromSlot string `json:"-"`
@@ -999,6 +1011,8 @@ type DisclosureTypeDTO struct {
 	WorkflowManifest         *WorkflowPublicationManifest `json:"-"`
 	WorkflowSemanticHash     string                       `json:"-"`
 	PublicationCandidateHash string                       `json:"-"`
+	// Revision is set only on CMS version reads (opaque concurrency token).
+	Revision string `json:"revision,omitempty"`
 }
 
 // ActivationBlockerDTO explains why a CMS template version cannot be activated yet.
@@ -1202,6 +1216,10 @@ type DisclosureTypeVersionDTO struct {
 	ChangeNote  string    `json:"change_note"`
 	UpdatedBy   string    `json:"updated_by"`
 	ActivatedAt time.Time `json:"activated_at"`
+	// Revision is the opaque optimistic-concurrency token (CMS only).
+	Revision string `json:"revision,omitempty"`
+	// PublicationCandidateHash is filled by repositories; service derives Revision from it.
+	PublicationCandidateHash string `json:"-"`
 }
 
 type RecordDTO struct {
@@ -1482,6 +1500,8 @@ type GlobalWorkflowStepInput struct {
 }
 
 type GlobalWorkflowDTO struct {
+	// Revision of the template candidate this projection was read from (CMS concurrency token).
+	Revision   string `json:"revision,omitempty"`
 	WorkflowID string `json:"workflow_id"`
 	TypeID     string `json:"type_id"`
 	Status     string `json:"status"`
@@ -1507,15 +1527,17 @@ type CmsGetGlobalWorkflowResponse struct {
 }
 
 type CmsUpsertGlobalWorkflowRequest struct {
-	Subject    Subject
-	TypeID     string                    `json:"type_id"`
-	ChangeNote string                    `json:"change_note"`
-	Steps      []GlobalWorkflowStepInput `json:"steps"`
+	Subject          Subject
+	TypeID           string                    `json:"type_id"`
+	ChangeNote       string                    `json:"change_note"`
+	Steps            []GlobalWorkflowStepInput `json:"steps"`
+	ExpectedRevision string                    `json:"expected_revision,omitempty"`
 }
 
 type CmsDeleteGlobalWorkflowRequest struct {
-	Subject Subject
-	TypeID  string
+	Subject          Subject
+	TypeID           string
+	ExpectedRevision string
 }
 
 // ─── Display Group CRUD ──────────────────────────────────────────────────────

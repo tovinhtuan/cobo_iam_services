@@ -30,9 +30,19 @@ const (
 	cmsActionGlobalRecordArchive           = "cms_global_record.archive"
 	cmsActionMaterializationPreview        = "cms_materialization.preview"
 	cmsActionMaterializationRun            = "cms_materialization.run"
+	cmsActionTemplateAlertConfigUpdate     = "cms_template.alert_config.update"
+	cmsActionWorkflowVersionPublish        = "cms_workflow.version.publish"
+	cmsActionWorkflowVersionActivate       = "cms_workflow.version.activate"
+	cmsActionWorkflowUpsert                = "cms_workflow.upsert"
+	cmsActionWorkflowDelete                = "cms_workflow.delete"
 )
 
 var cmsKnownActions = map[string]struct{}{
+	cmsActionTemplateAlertConfigUpdate:     {},
+	cmsActionWorkflowVersionPublish:        {},
+	cmsActionWorkflowVersionActivate:       {},
+	cmsActionWorkflowUpsert:                {},
+	cmsActionWorkflowDelete:                {},
 	cmsActionEntryCreate:                   {},
 	cmsActionEntryUpdate:                   {},
 	cmsActionReviewApprove:                 {},

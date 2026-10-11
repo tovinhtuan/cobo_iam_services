@@ -36,6 +36,11 @@ func TestUpsertTypeVersion_MySQLTransactionalIntegrityAndConcurrencyProof(t *tes
 		t.Fatal("UpsertTypeVersion must reject writes to archived global templates with TEMPLATE_ARCHIVED")
 	}
 
+	// 2c. Optimistic concurrency compares the write target's candidate hash under the lock.
+	if !strings.Contains(fn, "ErrStaleTemplateRevision(currentHash, target)") {
+		t.Fatal("UpsertTypeVersion must reject a stale expected_revision with STALE_ETAG")
+	}
+
 	// 3. CreateOnly duplicate detection & 409 Conflict
 	if !strings.Contains(fn, "req.CreateOnly && typeExists") {
 		t.Fatal("UpsertTypeVersion must check req.CreateOnly when typeExists")

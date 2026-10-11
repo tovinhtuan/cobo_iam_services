@@ -144,3 +144,83 @@ func TestCmsArchiveTemplate_EmptyBodyOKMalformedBodyRejected(t *testing.T) {
 		t.Fatal("archive must not run on malformed body")
 	}
 }
+
+func TestUpdateTemplateDeadlineConfig_RetiredReturns410(t *testing.T) {
+	svc := &capturingUpsertService{}
+	h := NewHandler(svc, fakeDisclosureInspector{}, nil, &fakeDisclosureAuditService{})
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/disclosure-types/type-1/config", strings.NewReader(`{"deadline_config":{"deadline_days":5}}`))
+	req.Header.Set("Authorization", "Bearer atk_test")
+	req.SetPathValue("type_id", "type-1")
+	rr := httptest.NewRecorder()
+	h.updateTemplateDeadlineConfig(rr, req)
+	if rr.Code != http.StatusGone {
+		t.Fatalf("status=%d want 410; body=%s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), "ENDPOINT_REMOVED") {
+		t.Fatalf("expected ENDPOINT_REMOVED code, body=%s", rr.Body.String())
+	}
+}
+
+type workflowFacadeService struct {
+	capturingUpsertService
+}
+
+func (f *workflowFacadeService) CmsUpsertGlobalWorkflow(_ context.Context, req disclosureapp.CmsUpsertGlobalWorkflowRequest) (*disclosureapp.GlobalWorkflowDTO, error) {
+	return &disclosureapp.GlobalWorkflowDTO{WorkflowID: "template:" + req.TypeID + ":4", TypeID: req.TypeID, Status: "draft"}, nil
+}
+
+func TestCmsUpsertGlobalWorkflow_AuditCarriesMetadata(t *testing.T) {
+	audit := &fakeDisclosureAuditService{}
+	h := NewHandler(&workflowFacadeService{}, fakeDisclosureInspector{}, nil, audit)
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/platform/cms/templates/type-1/workflow",
+		strings.NewReader(`{"change_note":"Cập nhật bước","steps":[{"step_id":"s1"},{"step_id":"s2"}]}`))
+	req.Header.Set("Authorization", "Bearer atk_test")
+	req.SetPathValue("type_id", "type-1")
+	rr := httptest.NewRecorder()
+	h.cmsUpsertGlobalWorkflow(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if len(audit.entries) != 1 || audit.entries[0].Action != "cms_workflow.upsert" {
+		t.Fatalf("unexpected audit %+v", audit.entries)
+	}
+	md := audit.entries[0].Metadata
+	if md["change_note"] != "Cập nhật bước" || md["step_count"] != 2 || md["workflow_id"] != "template:type-1:4" {
+		t.Fatalf("metadata=%+v", md)
+	}
+}
+
+type activateCapture struct {
+	capturingUpsertService
+	activateReq *disclosureapp.ActivateTypeVersionRequest
+}
+
+func (f *activateCapture) ActivateTypeVersion(_ context.Context, req disclosureapp.ActivateTypeVersionRequest) (*disclosureapp.ActivateTypeVersionResponse, error) {
+	f.activateReq = &req
+	return &disclosureapp.ActivateTypeVersionResponse{}, nil
+}
+
+func TestActivateTypeVersion_ForwardsExpectedRevision(t *testing.T) {
+	for _, tc := range []struct {
+		body       string
+		wantHash   string
+		wantClient bool
+	}{
+		{`{"version_no":2,"expected_revision":"pc1:abc"}`, "abc", true},
+		{`{"version_no":2}`, "", false},
+	} {
+		svc := &activateCapture{}
+		h := NewHandler(svc, fakeDisclosureInspector{}, nil, &fakeDisclosureAuditService{})
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/disclosure-types/type-1/activate", strings.NewReader(tc.body))
+		req.Header.Set("Authorization", "Bearer atk_test")
+		req.SetPathValue("type_id", "type-1")
+		rr := httptest.NewRecorder()
+		h.activateTypeVersion(rr, req)
+		if rr.Code != http.StatusOK || svc.activateReq == nil {
+			t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+		}
+		if svc.activateReq.ExpectedCandidateHash != tc.wantHash || svc.activateReq.ExpectedFromClient != tc.wantClient {
+			t.Fatalf("body %s: got hash=%q client=%v", tc.body, svc.activateReq.ExpectedCandidateHash, svc.activateReq.ExpectedFromClient)
+		}
+	}
+}

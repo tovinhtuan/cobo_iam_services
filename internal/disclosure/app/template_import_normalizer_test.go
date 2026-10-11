@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	disclosureapp "github.com/cobo/cobo_iam_services/internal/disclosure/app"
+	"github.com/cobo/cobo_iam_services/internal/disclosure/app/applicability"
 )
 
 func TestTemplateImportNormalizer_DefaultsAndDerivations(t *testing.T) {
@@ -187,5 +188,23 @@ func TestTemplateImportNormalizer_WorkflowAndDocumentSanitization(t *testing.T) 
 	}
 	if doc.TemplateFileID != "" {
 		t.Errorf("TemplateFileID = %q, want empty string per ACCEPT_AND_CLEAR contract", doc.TemplateFileID)
+	}
+}
+
+func TestTemplateImportNormalizer_InfersWorkingDayTypeFromDurationType(t *testing.T) {
+	raw := disclosureapp.TemplateImportDefinitionV1{
+		TemplateCategory:   "periodic",
+		DeadlineConfig:     &disclosureapp.TemplateImportDeadlineConfigV1{DeadlineDurationType: "WORKING_DAYS"},
+		ApplicabilityRules: &applicability.TemplateApplicabilityRules{},
+	}
+	norm := disclosureapp.NormalizeTemplateImportV1(raw)
+	if norm.ApplicabilityRules.DeadlineDayType != "working" {
+		t.Fatalf("deadline_day_type=%q want working", norm.ApplicabilityRules.DeadlineDayType)
+	}
+
+	explicit := raw
+	explicit.ApplicabilityRules = &applicability.TemplateApplicabilityRules{DeadlineDayType: "calendar"}
+	if got := disclosureapp.NormalizeTemplateImportV1(explicit).ApplicabilityRules.DeadlineDayType; got != "calendar" {
+		t.Fatalf("explicit day type must win, got %q", got)
 	}
 }

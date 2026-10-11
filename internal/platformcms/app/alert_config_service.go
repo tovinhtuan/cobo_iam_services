@@ -110,10 +110,10 @@ func (s *alertConfigService) UpsertAlertConfig(ctx context.Context, req UpsertAl
 		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "typeId is required", nil)
 	}
 
-	// Validate typeID exists in disclosure_types.
+	// Validate typeID is an existing GLOBAL template (company templates are tenant-owned).
 	if s.db != nil {
 		var dummy int
-		err := s.db.QueryRowContext(ctx, `SELECT 1 FROM disclosure_types WHERE type_id = ? LIMIT 1`, typeID).Scan(&dummy)
+		err := s.db.QueryRowContext(ctx, `SELECT 1 FROM disclosure_types WHERE type_id = ? AND company_id IS NULL LIMIT 1`, typeID).Scan(&dummy)
 		if errors.Is(err, sql.ErrNoRows) {
 			return perr.NewHTTPError(http.StatusNotFound, perr.CodeDisclosureTypeNotFound,
 				"disclosure type not found: "+typeID, nil)

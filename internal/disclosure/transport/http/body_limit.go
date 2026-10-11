@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strings"
 
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 )
@@ -46,6 +47,18 @@ func decodeJSONBody(w http.ResponseWriter, r *http.Request, limit int64, dst any
 		return invalidJSONError()
 	}
 	return nil
+}
+
+const maxAuditTextRunes = 500
+
+// truncateAuditText bounds free text copied into audit metadata.
+func truncateAuditText(s string) string {
+	s = strings.TrimSpace(s)
+	runes := []rune(s)
+	if len(runes) <= maxAuditTextRunes {
+		return s
+	}
+	return string(runes[:maxAuditTextRunes]) + "…"
 }
 
 func invalidJSONError() error {

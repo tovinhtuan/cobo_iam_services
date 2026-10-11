@@ -205,3 +205,82 @@ func TestPutAlertConfig_NilService_Returns503(t *testing.T) {
 
 // Unused import guard
 var _ = errors.New
+
+func TestPutAlertConfig_AllowsTemplateConfigWriters(t *testing.T) {
+	body := map[string]any{
+		"deadline":     map[string]any{"enabled": true, "templateKey": "reminder.deadline_approaching"},
+		"workflowStep": map[string]any{"enabled": false, "templateKey": ""},
+	}
+	for _, perm := range []string{"cms.template.config.write", "cms.template.write", "rbac.manage"} {
+		h := newAlertConfigTestHandler([]string{"platform.cms.view", perm}, &fakeAlertConfigSvc{})
+		w := doAlertConfigRequest(h, http.MethodPut, "/api/v1/platform/cms/templates/dt-test/alert-config", body)
+		if w.Code != http.StatusOK {
+			t.Fatalf("perm %s: status = %d, want 200; body: %s", perm, w.Code, w.Body.String())
+		}
+	}
+}
+
+func TestPutAlertConfig_WritesAuditWithBeforeAfter(t *testing.T) {
+	svc := &fakeAlertConfigSvc{getResult: &platformcmsapp.AlertConfigDTO{
+		TypeID:   "dt-test",
+		Deadline: platformcmsapp.AlertKindConfigDTO{Enabled: false, TemplateKey: "old.key"},
+	}}
+	audit := &recordingAuditSvc{}
+	h := newAlertConfigTestHandler([]string{"platform.cms.view", "cms.template.config.write"}, svc)
+	h.auditSvc = audit
+	body := map[string]any{
+		"deadline":     map[string]any{"enabled": true, "templateKey": "reminder.deadline_approaching"},
+		"workflowStep": map[string]any{"enabled": false, "templateKey": ""},
+	}
+	w := doAlertConfigRequest(h, http.MethodPut, "/api/v1/platform/cms/templates/dt-test/alert-config", body)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d; body: %s", w.Code, w.Body.String())
+	}
+	if len(audit.logs) != 1 {
+		t.Fatalf("want 1 audit entry, got %d", len(audit.logs))
+	}
+	e := audit.logs[0]
+	if e.Action != cmsActionTemplateAlertConfigUpdate || e.ResourceID != "dt-test" {
+		t.Fatalf("unexpected audit entry %+v", e)
+	}
+	if e.Metadata["before"] == nil || e.Metadata["after"] == nil {
+		t.Fatalf("metadata must carry before/after, got %+v", e.Metadata)
+	}
+	if _, ok := cmsKnownActions[cmsActionTemplateAlertConfigUpdate]; !ok {
+		t.Fatal("alert-config action must be filterable in CMS audit")
+	}
+}
+
+func TestPutAlertConfig_FailureWritesNoAudit(t *testing.T) {
+	svc := &fakeAlertConfigSvc{upsertErr: errors.New("boom")}
+	audit := &recordingAuditSvc{}
+	h := newAlertConfigTestHandler([]string{"platform.cms.view", "cms.template.write"}, svc)
+	h.auditSvc = audit
+	body := map[string]any{"deadline": map[string]any{"enabled": false, "templateKey": ""}}
+	_ = doAlertConfigRequest(h, http.MethodPut, "/api/v1/platform/cms/templates/dt-test/alert-config", body)
+	if len(audit.logs) != 0 {
+		t.Fatalf("failed upsert must not be audited: %+v", audit.logs)
+	}
+}
+
+func TestPutAlertConfig_NoOpUpdateWritesNoAudit(t *testing.T) {
+	svc := &fakeAlertConfigSvc{getResult: &platformcmsapp.AlertConfigDTO{
+		TypeID:       "dt-test",
+		Deadline:     platformcmsapp.AlertKindConfigDTO{Enabled: true, TemplateKey: "reminder.deadline_approaching"},
+		WorkflowStep: platformcmsapp.AlertKindConfigDTO{Enabled: true, TemplateKey: "reminder.workflow_step_due"},
+	}}
+	audit := &recordingAuditSvc{}
+	h := newAlertConfigTestHandler([]string{"platform.cms.view", "cms.template.write"}, svc)
+	h.auditSvc = audit
+	body := map[string]any{
+		"deadline":     map[string]any{"enabled": true, "templateKey": "reminder.deadline_approaching"},
+		"workflowStep": map[string]any{"enabled": true, "templateKey": "reminder.workflow_step_due"},
+	}
+	w := doAlertConfigRequest(h, http.MethodPut, "/api/v1/platform/cms/templates/dt-test/alert-config", body)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d", w.Code)
+	}
+	if len(audit.logs) != 0 {
+		t.Fatalf("identical before/after must not be audited: %+v", audit.logs)
+	}
+}

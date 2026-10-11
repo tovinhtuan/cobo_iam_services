@@ -1260,6 +1260,49 @@ Neu thieu bat ky key bat buoc, HTTP `400` + `error.details.field_errors` co khoa
 
 ---
 
+### CMS template write semantics (2026-10-11) — revision, create_only, omit = preserve
+
+Ap dung cho Platform CMS (`platform.cms.view` + capability `cms.template.*`). Nguon: `cobo_web_design/docs/ai-cache/cms-templates-medium-fixes-2026-10-11/02-contract.md`, `bug-cms-templates-risk-fixes-2026-10-11/02-contract-delta.md`.
+
+**Revision (optimistic concurrency).** `revision` la token opaque `"pc1:" + publication_candidate_hash` (hash canonical cua toan bo noi dung version). `""` neu version legacy chua co hash.
+
+| Endpoint | Thay doi |
+|---|---|
+| `GET /api/v1/admin/disclosure-types/{type_id}/versions` | moi item co `revision`; them `head_revision` = revision cua write target (open draft, neu khong co thi active) |
+| `GET /api/v1/admin/disclosure-types/{type_id}/versions/{version_no}` | them `revision` (route tenant `GET /api/v1/disclosure-types/{type_id}` khong doi) |
+| `PUT /api/v1/admin/disclosure-types/{type_id}` | body optional `expected_revision`; response them `revision` |
+| `POST /api/v1/admin/disclosure-types/{type_id}/activate` | body optional `expected_revision` (revision cua version duoc activate ma admin da duyet) |
+| `GET /api/v1/platform/cms/templates/{type_id}/workflow` | them `revision` |
+| `PUT /api/v1/platform/cms/templates/{type_id}/workflow` | body optional `expected_revision`; response them `revision` |
+| `DELETE /api/v1/platform/cms/templates/{type_id}/workflow` | query optional `?expected_revision=` |
+
+Khong gui `expected_revision` = hanh vi cu (last-write-wins). Lech (so duoi row lock `FOR UPDATE`) -> **409 `STALE_ETAG`** `"template changed since it was loaded; reload and retry"`, `details: { "current_revision", "target_version_no" }`. Co `expected_revision` nhung khong con write target -> 409 `STALE_ETAG`. Activate khong gui token: lech trong khoang service->lock van tra 409 `STATE_CONFLICT` nhu cu.
+
+**`PUT /api/v1/admin/disclosure-types/{type_id}` — them:**
+
+| Field / dieu kien | Ket qua |
+|---|---|
+| `create_only: true` (JSON boolean) | type_id da ton tai -> 409 `STATE_CONFLICT` `"target_type_id already exists"`; `expected_revision` bi bo qua |
+| `create_only` khong phai boolean | 400 `INVALID_REQUEST` `"invalid JSON body"` (fail closed) |
+| Vang key `applicability`, `implementation_notes`, `special_cases`, `beneficiaries`, `receiving_authorities` | giu gia tri cua candidate (open draft, neu khong co thi active); gui `""` tuong minh = xoa. Loi ha tang khi doc candidate -> loi (khong ghi) |
+| Body co `applicability_rules` | `deadline_config.deadline_duration_type` do server dan xuat: `WORKING_DAYS` neu `deadline_day_type = "working"`, nguoc lai `CALENDAR_DAYS` (gia tri client bi ghi de) |
+| Template global `status = archived` | 409 `TEMPLATE_ARCHIVED` `"template is archived; restore it before editing"` (kiem tra sau permission/scope; repo kiem tra lai duoi lock). Ap dung ca workflow PUT/DELETE facade |
+| Body > 4 MiB | 413 `INVALID_REQUEST` `"request body too large"`; JSON hong -> 400 (truoc: 500) |
+
+**Gioi han body khac:** activate / clone / archive / restore / `GET .../config`: 64 KiB (413). Archive/restore: body rong hoac chi whitespace = OK; JSON hong -> 400. Workflow PUT, import confirm: 4 MiB.
+
+**`PUT /api/v1/admin/disclosure-types/{type_id}/config` — RETIRED:** tra **410** `ENDPOINT_REMOVED` `"Use PUT /api/v1/admin/disclosure-types/{type_id} (draft) then activate"`. `GET .../config` giu nguyen nhung template cua cong ty khac -> 404.
+
+**`PUT /api/v1/platform/cms/templates/{type_id}/alert-config`:** quyen `platform.cms.view` + mot trong `cms.template.config.write | cms.template.write | rbac.manage` (truoc: bat buoc `rbac.manage`). Ghi audit `cms_template.alert_config.update` (`metadata.before/after`).
+
+**Audit moi:** `cms_workflow.version.publish` `{version_no, state, change_note}`, `cms_workflow.version.activate` `{version_no, prev_active_version_no, state}`, `cms_workflow.upsert` `{change_note, step_count, workflow_id}`, `cms_workflow.delete` `{cleared}`.
+
+**List `GET /api/v1/disclosure-types?list_mode=management`:** `q` khop them `type_id`.
+
+**Workflow step SLA tinh theo ngay.** `processing_days` la nguon su that; `due_rule` la nhan `T+{processing_days}`. Runtime (timeline, alerts, snapshot) khong ho tro gio; `H+N` (legacy) duoc FE quy doi `ceil(N/24)` ngay.
+
+---
+
 ### Company-level workflow override (tenant-isolated)
 
 Muc tieu: admin doanh nghiep co the tuy chinh workflow rieng cho template, approve de ap dung cho chinh doanh nghiep do, khong anh huong template chung va doanh nghiep khac.
@@ -1507,7 +1550,7 @@ Endpoint consumer runtime de lay workflow hieu luc:
     "message": "workflow payload is invalid",
     "details": {
       "field_errors": {
-        "workflow[0].due_rule": "must match T+N or H+N",
+        "workflow[0].stage": "is required",
         "workflow[1].documents[0].name": "is required"
       }
     }

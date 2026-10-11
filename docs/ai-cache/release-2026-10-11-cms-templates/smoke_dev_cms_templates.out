@@ -1,0 +1,29 @@
+
+PASS  list management returns total (paging)  200 total=6
+PASS  version detail exposes revision  200 rev=pc1:3f0f5f79
+PASS  H1 create_only creates + returns revision  200 
+PASS  H1 create_only on existing type_id -> 409  409 STATE_CONFLICT
+PASS  create_only non-boolean -> 400 (fail closed)  400 INVALID_REQUEST
+PASS  M1 head_revision == create response revision  200 head=pc1:7423d546 rev=pc1:7423d546
+PASS  M1 save with fresh expected_revision -> 200 + new revision  200 
+PASS  M1 stale expected_revision -> 409 STALE_ETAG (+current_revision)  409 STALE_ETAG
+PASS  H3 omitted 'applicability' preserved on save  200 got='QA-APPLICABILITY'
+PASS  H3-rest deadline_duration_type derived from deadline_day_type  day_type='working' duration='WORKING_DAYS'
+PASS  M2 PUT /config -> 410 ENDPOINT_REMOVED  410 ENDPOINT_REMOVED
+PASS  M2 GET /config (global) still 200  200
+PASS  M5 list q matches type_id  200 found=True
+PASS  M1 workflow GET revision == head  200 wf=pc1:ca9f1bb4 head=pc1:ca9f1bb4
+PASS  M1 workflow PUT with stale revision -> 409  409 STALE_ETAG b'{"error":{"code":"STALE_ETAG","message":"template changed since it was loaded; reload and retry","details":{"current_rev'
+PASS  M1 workflow PUT with fresh revision -> 200 + new revision  200  b'{"revision":"pc1:258d56aaaa2396d77141997199e01d0c58393405ffcf4ad46abacf59077f8cc0","workflow_id":"template:qa-smoke-cms-'
+PASS  M1 head_revision follows workflow save  head=pc1:258d56aa saved=pc1:258d56aa
+PASS  M1 activate with stale revision -> 409 STALE_ETAG  409 STALE_ETAG
+PASS  body > 4 MiB -> 413  413 INVALID_REQUEST
+PASS  malformed JSON -> 400 (was 500)  400 INVALID_REQUEST
+PASS  Enterprise Admin PUT global template -> 403  403 PERMISSION_DENIED
+PASS  archive qa template  200 
+PASS  H2 save on archived global template -> 409 TEMPLATE_ARCHIVED  409 TEMPLATE_ARCHIVED
+PASS  H2 restore still works after rejected save  200 
+PASS  M8 audit rows: upsert / workflow upsert / archive  cms_template.archive	1; cms_template.restore	1; cms_workflow.upsert	1; disclosure.type.version.upsert	3
+PASS  M8 cms_workflow.upsert metadata has step_count  1
+
+26/26 passed

@@ -614,15 +614,17 @@ func (s *service) ListTypeFilterOptions(ctx context.Context, req ListTypeFilterO
 func (s *service) listTypesLightweightCatalog(ctx context.Context, base ListTypesParams) ([]DisclosureTypeSummaryDTO, error) {
 	base.LightweightOnly = true
 	base.PageSize = listTypesLightweightChunkSize
+	// No COUNT(*) per chunk: a short (or empty) page means the catalog is exhausted.
+	base.SkipCount = true
 	var all []DisclosureTypeSummaryDTO
 	for page := 1; ; page++ {
 		base.Page = page
-		chunk, total, err := s.repo.ListTypes(ctx, base)
+		chunk, _, err := s.repo.ListTypes(ctx, base)
 		if err != nil {
 			return nil, err
 		}
 		all = append(all, chunk...)
-		if len(chunk) == 0 || len(all) >= total {
+		if len(chunk) < base.PageSize {
 			break
 		}
 	}
@@ -766,6 +768,7 @@ func (s *service) GetTypeVersionDetail(ctx context.Context, req GetTypeVersionDe
 	}
 	ApplyLegalBasisReadCompat(ctx, item, s.legalBasisLegacyFallbackEnabled, s.legalBasisDivergenceWarningEnabled)
 	applyActivationReadiness(item, time.Now().UTC(), s.calculator)
+	item.Revision = RevisionFromCandidateHash(item.PublicationCandidateHash)
 	return redactEnterpriseWorkflowStepsForCMSEditor(item), nil
 }
 
@@ -862,6 +865,7 @@ func (s *service) UpsertTypeVersion(ctx context.Context, req UpsertTypeVersionRe
 		}
 	}
 	ApplyTemplateFlatBlockSync(&req, s.idg)
+	deriveDeadlineDurationTypeFromApplicability(&req)
 	if err := ResolveLegalBasisWrite(ctx, &req, s.legalBasisStructuredWriteEnabled, s.idg); err != nil {
 		return nil, err
 	}
@@ -927,6 +931,9 @@ func (s *service) UpsertTypeVersion(ctx context.Context, req UpsertTypeVersionRe
 	resp, err := s.repo.UpsertTypeVersion(ctx, req)
 	if err != nil {
 		return nil, mapRepositoryUpsertError(err)
+	}
+	if resp != nil {
+		resp.Revision = RevisionFromCandidateHash(publicationCandidate.CandidateHash)
 	}
 	return resp, nil
 }
@@ -1003,7 +1010,10 @@ func (s *service) ListTypeVersions(ctx context.Context, req ListTypeVersionsRequ
 	if err != nil {
 		return nil, err
 	}
-	return &ListTypeVersionsResponse{Items: items}, nil
+	for i := range items {
+		items[i].Revision = RevisionFromCandidateHash(items[i].PublicationCandidateHash)
+	}
+	return &ListTypeVersionsResponse{Items: items, HeadRevision: headRevision(items)}, nil
 }
 
 func (s *service) ActivateTypeVersion(ctx context.Context, req ActivateTypeVersionRequest) (*ActivateTypeVersionResponse, error) {
@@ -1032,6 +1042,11 @@ func (s *service) ActivateTypeVersion(ctx context.Context, req ActivateTypeVersi
 	versionDetail, err := s.repo.GetTypeVersionDetail(ctx, req.Subject.CompanyID, req.TypeID, req.VersionNo)
 	if err != nil {
 		return nil, err
+	}
+	// Client-supplied revision (expected_revision): the version must still be the content the
+	// admin reviewed. Checked before validation so a stale client gets STALE_ETAG first.
+	if req.ExpectedFromClient && versionDetail.PublicationCandidateHash != req.ExpectedCandidateHash {
+		return nil, ErrStaleTemplateRevision(versionDetail.PublicationCandidateHash, req.VersionNo)
 	}
 	if versionDetail.WorkflowAuthorityMode != WorkflowAuthorityTemplatePinned || versionDetail.WorkflowManifest == nil {
 		return nil, &perr.HTTPError{
@@ -1127,6 +1142,10 @@ func (s *service) ActivateTypeVersion(ctx context.Context, req ActivateTypeVersi
 	}
 	resp, err := s.repo.ActivateTypeVersion(ctx, req)
 	if err != nil {
+		if he, ok := perr.AsHTTPError(err); ok && req.ExpectedFromClient && he.Code == perr.CodeStateConflict &&
+			strings.Contains(he.Message, "publication candidate changed") {
+			return nil, ErrStaleTemplateRevision("", req.VersionNo)
+		}
 		return nil, err
 	}
 	if resp != nil {
@@ -1651,6 +1670,12 @@ func (s *service) GetTemplateDeadlineConfig(ctx context.Context, req GetTemplate
 	}
 	if err := s.requireCMSTemplateRead(ctx, req.Subject); err != nil {
 		return nil, err
+	}
+	// Company templates are visible only to their own company (same rule as version reads).
+	if life, err := s.lookupTypeLifecycle(ctx, req.TypeID); err != nil {
+		return nil, err
+	} else if life != nil && strings.TrimSpace(life.CompanyID) != "" && strings.TrimSpace(life.CompanyID) != strings.TrimSpace(req.Subject.CompanyID) {
+		return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "disclosure type not found", nil)
 	}
 	versionNo, cfg, err := s.repo.GetActiveVersionDeadlineConfig(ctx, req.TypeID)
 	if err != nil {

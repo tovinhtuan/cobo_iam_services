@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
+	"github.com/cobo/cobo_iam_services/internal/platform/idgen"
 )
 
 // preserveRepo extends upsertDeadlineRepo with a lifecycle + an open draft candidate.
@@ -139,5 +140,83 @@ func TestUpsertTypeVersion_CreateOnlyDoesNotPreserve(t *testing.T) {
 	}
 	if repo.lastUpsert.Applicability != "" {
 		t.Fatalf("CreateOnly must not copy fields, got %q", repo.lastUpsert.Applicability)
+	}
+}
+
+func TestUpsertTypeVersion_DerivesDeadlineDurationTypeFromApplicability(t *testing.T) {
+	cases := []struct {
+		dayType   string
+		clientVal string
+		want      string
+	}{
+		{dayType: "working", clientVal: "", want: "WORKING_DAYS"},
+		{dayType: "calendar", clientVal: "WORKING_DAYS", want: "CALENDAR_DAYS"},
+		{dayType: "", clientVal: "", want: "CALENDAR_DAYS"},
+	}
+	for _, tc := range cases {
+		repo := &preserveRepo{lifecycle: &TypeLifecycleDTO{Status: "active", ActiveVersionNo: 1}}
+		req := baseUpsertRequest()
+		req.ApplicabilityRules.DeadlineDayType = tc.dayType
+		req.DeadlineConfig = &TemplateDeadlineConfig{DeadlineDays: 10, DeadlineDurationType: tc.clientVal}
+		if _, err := newCMSUpsertDeadlineService(repo).UpsertTypeVersion(context.Background(), req); err != nil {
+			t.Fatalf("day_type=%q: unexpected error: %v", tc.dayType, err)
+		}
+		if got := repo.lastUpsert.DeadlineConfig.DeadlineDurationType; got != tc.want {
+			t.Fatalf("day_type=%q client=%q: got %q want %q", tc.dayType, tc.clientVal, got, tc.want)
+		}
+	}
+}
+
+func TestUpsertTypeVersion_KeepsDurationTypeWithoutApplicabilityRules(t *testing.T) {
+	repo := &preserveRepo{lifecycle: &TypeLifecycleDTO{Status: "active", ActiveVersionNo: 1}}
+	req := baseUpsertRequest()
+	req.Scope = "company"
+	req.TemplateCategory = TemplateCategoryCustom
+	req.ApplicabilityRules = nil
+	req.SkipPublicationMatrix = true
+	req.DeadlineConfig = &TemplateDeadlineConfig{DeadlineDays: 5, DeadlineDurationType: "WORKING_DAYS"}
+	svc := NewService(repo, &fakeAuthService{permissions: []string{permissionPlatformCMSView, permissionCMSTemplateWrite}}, idgen.UUIDv7Generator{})
+	if _, err := svc.UpsertTypeVersion(context.Background(), req); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := repo.lastUpsert.DeadlineConfig.DeadlineDurationType; got != "WORKING_DAYS" {
+		t.Fatalf("without rules the client value must be kept, got %q", got)
+	}
+}
+
+// configScopeRepo serves GET /config lookups.
+type configScopeRepo struct {
+	preserveRepo
+}
+
+func (r *configScopeRepo) GetActiveVersionDeadlineConfig(context.Context, string) (int, *TemplateDeadlineConfig, error) {
+	return 2, &TemplateDeadlineConfig{DeadlineDays: 7}, nil
+}
+
+func TestGetTemplateDeadlineConfig_HidesOtherCompanyTemplate(t *testing.T) {
+	svc := func(life *TypeLifecycleDTO) Service {
+		return NewService(&configScopeRepo{preserveRepo{lifecycle: life}}, &fakeAuthService{
+			permissions: []string{permissionPlatformCMSView, permissionCMSTemplateWrite},
+		}, idgen.UUIDv7Generator{})
+	}
+	sub := Subject{UserID: "u", MembershipID: "m", CompanyID: "c-001"}
+	_, err := svc(&TypeLifecycleDTO{Status: "active", CompanyID: "c-999"}).GetTemplateDeadlineConfig(context.Background(), GetTemplateDeadlineConfigRequest{Subject: sub, TypeID: "t"})
+	if he, ok := perr.AsHTTPError(err); !ok || he.HTTPStatus != http.StatusNotFound {
+		t.Fatalf("other company template must be 404, got %v", err)
+	}
+	for _, life := range []*TypeLifecycleDTO{{Status: "active"}, {Status: "active", CompanyID: "c-001"}} {
+		out, err := svc(life).GetTemplateDeadlineConfig(context.Background(), GetTemplateDeadlineConfigRequest{Subject: sub, TypeID: "t"})
+		if err != nil || out.DeadlineConfig.DeadlineDays != 7 {
+			t.Fatalf("company=%q: want config, got %v %+v", life.CompanyID, err, out)
+		}
+	}
+}
+
+func TestCandidateHashFromRevision_RequiresPrefix(t *testing.T) {
+	if got := CandidateHashFromRevision("pc1:abc"); got != "abc" {
+		t.Fatalf("got %q", got)
+	}
+	if got := CandidateHashFromRevision("abc"); got == "abc" {
+		t.Fatal("a bare hash must never match a stored hash")
 	}
 }

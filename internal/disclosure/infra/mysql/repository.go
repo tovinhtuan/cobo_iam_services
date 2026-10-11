@@ -277,9 +277,9 @@ func (r *Repository) ListTypes(ctx context.Context, params disclosureapp.ListTyp
 		args = append([]any{displayGroupCode}, ownershipArgs...)
 	}
 	if query != "" {
-		conditions = append(conditions, "(LOWER(v.name) LIKE ? OR LOWER(v.description) LIKE ?)")
+		conditions = append(conditions, "(LOWER(v.name) LIKE ? OR LOWER(v.description) LIKE ? OR LOWER(t.type_id) LIKE ?)")
 		like := "%" + strings.ToLower(query) + "%"
-		args = append(args, like, like)
+		args = append(args, like, like, like)
 	}
 	if len(params.Tags) > 0 {
 		tagConds := make([]string, 0, len(params.Tags))
@@ -359,7 +359,7 @@ func (r *Repository) ListTypes(ctx context.Context, params disclosureapp.ListTyp
 		WHERE ` + whereClause
 
 	total := 0
-	if len(params.TypeIDs) == 0 {
+	if len(params.TypeIDs) == 0 && !params.SkipCount {
 		countSQL := `SELECT COUNT(*) ` + baseSQL
 		if err := r.db.QueryRowContext(ctx, countSQL, args...).Scan(&total); err != nil {
 			return nil, 0, err
@@ -370,14 +370,14 @@ func (r *Repository) ListTypes(ctx context.Context, params disclosureapp.ListTyp
 	if params.LightweightOnly {
 		dataSQL = `SELECT t.type_id, t.company_id, v.name, t.created_at, v.applicability_rules_json
 		` + baseSQL + `
-		ORDER BY ` + sortCol + ` ` + sortDir
+		ORDER BY ` + sortCol + ` ` + sortDir + `, t.type_id ` + sortDir
 	} else {
 		dataSQL = `SELECT t.type_id, t.group_id, COALESCE(t.display_group_code, ''), t.company_id,
 		       COALESCE(t.is_mandatory, 0), COALESCE(t.review_status, ''), t.active_version_no, v.version_no,
 		       v.name, v.category, v.template_category, COALESCE(LEFT(v.description, 1024), ''), v.deadline_rule, v.tags_json,
 		       COALESCE(v.periodicity, ''), v.applicability_rules_json, COALESCE(v.deadline_config_json, JSON_OBJECT()), t.created_at
 		` + baseSQL + `
-		ORDER BY ` + sortCol + ` ` + sortDir
+		ORDER BY ` + sortCol + ` ` + sortDir + `, t.type_id ` + sortDir
 	}
 	dataArgs := args
 	if page > 0 {
@@ -999,6 +999,29 @@ func (r *Repository) UpsertTypeVersion(ctx context.Context, req disclosureapp.Up
 		}
 	}
 
+	// Optimistic concurrency: the write target (open draft, else active) must still hold the
+	// revision the client loaded. Compared under the disclosure_types row lock taken above.
+	if expected := strings.TrimSpace(req.ExpectedRevision); expected != "" && !req.CreateOnly {
+		target := 0
+		if openDraft.Valid && openDraft.Int64 > 0 {
+			target = int(openDraft.Int64)
+		} else if activeVersionNo > 0 {
+			target = activeVersionNo
+		}
+		currentHash := ""
+		if target > 0 {
+			if err := tx.QueryRowContext(ctx, `
+				SELECT COALESCE(publication_candidate_hash, '') FROM disclosure_type_versions
+				WHERE type_id = ? AND version_no = ? FOR UPDATE
+			`, req.TypeID, target).Scan(&currentHash); err != nil && err != sql.ErrNoRows {
+				return nil, err
+			}
+		}
+		if target <= 0 || disclosureapp.RevisionFromCandidateHash(currentHash) != expected {
+			return nil, disclosureapp.ErrStaleTemplateRevision(currentHash, target)
+		}
+	}
+
 	tagsJSON, err := json.Marshal(req.Tags)
 	if err != nil {
 		return nil, fmt.Errorf("marshal tags: %w", err)
@@ -1234,7 +1257,8 @@ func (r *Repository) ListTypeVersions(ctx context.Context, companyID, typeID str
 		SELECT v.type_id, v.version_no,
 		       (v.version_no = t.active_version_no) AS is_active,
 		       COALESCE(v.is_released, 0) AS is_released,
-		       COALESCE(v.change_note, ''), v.updated_by, v.activated_at
+		       COALESCE(v.change_note, ''), v.updated_by, v.activated_at,
+		       COALESCE(v.publication_candidate_hash, '')
 		FROM disclosure_type_versions v
 		INNER JOIN disclosure_types t ON t.type_id = v.type_id
 		WHERE v.type_id = ? AND (t.company_id IS NULL OR t.company_id = ?)
@@ -1258,7 +1282,7 @@ func (r *Repository) ListTypeVersions(ctx context.Context, companyID, typeID str
 	for rows.Next() {
 		var item disclosureapp.DisclosureTypeVersionDTO
 		var isReleased int
-		if err := rows.Scan(&item.TypeID, &item.VersionNo, &item.IsActive, &isReleased, &item.ChangeNote, &item.UpdatedBy, &item.ActivatedAt); err != nil {
+		if err := rows.Scan(&item.TypeID, &item.VersionNo, &item.IsActive, &isReleased, &item.ChangeNote, &item.UpdatedBy, &item.ActivatedAt, &item.PublicationCandidateHash); err != nil {
 			return nil, err
 		}
 		item.IsReleased = isReleased == 1

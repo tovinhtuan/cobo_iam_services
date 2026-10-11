@@ -26,6 +26,7 @@ func (s *service) CmsGetGlobalWorkflow(ctx context.Context, req CmsGetGlobalWork
 		return nil, err
 	}
 	wf := projectTemplateWorkflow(detail, isDraft)
+	wf.Revision = RevisionFromCandidateHash(detail.PublicationCandidateHash)
 	if legacy, legacyErr := s.repo.GetGlobalWorkflow(ctx, req.TypeID); legacyErr == nil && legacy != nil {
 		wf.WorkflowID = legacy.WorkflowID
 		wf.PublishedVersionNo = legacy.PublishedVersionNo
@@ -134,6 +135,8 @@ func (s *service) CmsUpsertGlobalWorkflow(ctx context.Context, req CmsUpsertGlob
 	}
 	upsert := upsertRequestFromDetail(req.Subject, detail, blocks, req.ChangeNote)
 	upsert.SkipPublicationMatrix = true
+	// Compared by the repository under the row lock, closing the read-outside-TX gap above.
+	upsert.ExpectedRevision = strings.TrimSpace(req.ExpectedRevision)
 	saved, err := s.UpsertTypeVersion(ctx, upsert)
 	if err != nil {
 		return nil, err
@@ -142,7 +145,9 @@ func (s *service) CmsUpsertGlobalWorkflow(ctx context.Context, req CmsUpsertGlob
 	if err != nil {
 		return nil, err
 	}
-	return projectTemplateWorkflow(savedDetail, true), nil
+	out := projectTemplateWorkflow(savedDetail, true)
+	out.Revision = saved.Revision
+	return out, nil
 }
 
 // CmsDeleteGlobalWorkflow removes the global workflow for a template type.
@@ -165,6 +170,7 @@ func (s *service) CmsDeleteGlobalWorkflow(ctx context.Context, req CmsDeleteGlob
 	upsert := upsertRequestFromDetail(req.Subject, detail, blocks, "clear workflow draft")
 	upsert.SkipPublicationMatrix = true
 	upsert.ClearWorkflow = true
+	upsert.ExpectedRevision = strings.TrimSpace(req.ExpectedRevision)
 	_, err = s.UpsertTypeVersion(ctx, upsert)
 	return err
 }

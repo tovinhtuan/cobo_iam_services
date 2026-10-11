@@ -132,7 +132,11 @@ func (h *Handler) cmsUpsertGlobalWorkflow(w http.ResponseWriter, r *http.Request
 		httpx.WriteError(w, nil, err)
 		return
 	}
-	h.auditLog(r, sub, "cms_workflow.upsert", "disclosure_type", typeID, nil)
+	h.auditLog(r, sub, "cms_workflow.upsert", "disclosure_type", typeID, map[string]any{
+		"change_note": truncateAuditText(req.ChangeNote),
+		"step_count":  len(req.Steps),
+		"workflow_id": resp.WorkflowID, // template:{type_id}:{saved version_no}
+	})
 	httpx.WriteJSON(w, http.StatusOK, resp)
 }
 
@@ -144,13 +148,14 @@ func (h *Handler) cmsDeleteGlobalWorkflow(w http.ResponseWriter, r *http.Request
 	}
 	typeID := strings.TrimSpace(r.PathValue("type_id"))
 	if err := h.svc.CmsDeleteGlobalWorkflow(r.Context(), disclosureapp.CmsDeleteGlobalWorkflowRequest{
-		Subject: sub,
-		TypeID:  typeID,
+		Subject:          sub,
+		TypeID:           typeID,
+		ExpectedRevision: strings.TrimSpace(r.URL.Query().Get("expected_revision")),
 	}); err != nil {
 		httpx.WriteError(w, nil, err)
 		return
 	}
-	h.auditLog(r, sub, "cms_workflow.delete", "disclosure_type", typeID, nil)
+	h.auditLog(r, sub, "cms_workflow.delete", "disclosure_type", typeID, map[string]any{"cleared": true})
 	httpx.WriteJSON(w, http.StatusOK, map[string]bool{"deleted": true})
 }
 
