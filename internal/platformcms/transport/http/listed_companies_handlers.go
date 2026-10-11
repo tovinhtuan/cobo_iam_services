@@ -44,10 +44,15 @@ func (h *Handler) listListedCompanies(w http.ResponseWriter, r *http.Request) {
 	for _, item := range out.Items {
 		items = append(items, listedCompanySummaryJSON(item))
 	}
+	// meta reports the page/limit actually applied (defaults and caps), not the raw query.
+	applied, err := marketapp.NormalizeListParams(params)
+	if err != nil {
+		applied = params
+	}
 	writeEnvelope(w, http.StatusOK, map[string]any{"items": items}, map[string]any{
 		"total": out.Total,
-		"page":  params.Page,
-		"limit": params.Limit,
+		"page":  applied.Page,
+		"limit": applied.Limit,
 	})
 }
 

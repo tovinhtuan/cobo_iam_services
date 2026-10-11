@@ -1,0 +1,16 @@
+PASS  create disposable company  201
+PASS  real audit rows sharing one second  4 at 2026-10-11 16:44:29
+PASS  first page (default limit) has the same-second events  5
+PASS  full single page: next_cursor null (limit+1)  None
+PASS  limit=1 paging = same order, no gap, no duplicate  5 vs 5
+PASS  cursors are opaque h1.  ['h1.MjAyNi0xMC0xMVQxNjo0NDoyOVp8MDFhMTJiZDktZmQzMS03OTIzLTkzZmItNWM4NjI1OTQ1NWFj']
+PASS  malformed cursor 'not-a-cursor' -> 400 field_errors.cursor  400
+PASS  malformed cursor '2026-10-11T02:00:00.5Z' -> 400 field_errors.cursor  400
+PASS  malformed cursor 'h1.!!!' -> 400 field_errors.cursor  400
+PASS  legacy RFC3339 cursor accepted (strictly older second)  at T: 0, at T+1s: 5
+PASS  enterprise admin history -> 403  403
+PASS  EXPLAIN keyset: company index, no filesort  1	SIMPLE	audit_logs	NULL	range	PRIMARY,idx_audit_logs_company_occurred	idx_audit_logs_company_occurred	297	NULL	2	11.11	Using index condition; Using where; Backward index scan
+PASS  info: EXPLAIN with repository's (? = '' OR company_id = ?) form  1	SIMPLE	audit_logs	NULL	ref	idx_audit_logs_company_occurred	idx_audit_logs_company_occurred	147	const	5	11.11	Using where; Backward index scan
+PASS  cleanup: company deactivated  200
+
+14/14 PASS  (company 9448e3d3-d391-4093-9247-3209436bb681)

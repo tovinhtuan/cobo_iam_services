@@ -1,0 +1,1 @@
+[CoBo] Trạng thái tài khoản {{.company_name}}: {{.new_status_label}}

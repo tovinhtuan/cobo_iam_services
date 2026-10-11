@@ -78,7 +78,7 @@ func (r *Repository) ListByCompany(ctx context.Context, companyID, action, resou
 		ResourceType:   resourceType,
 		ResourceID:     resourceID,
 		FromOccurredAt: fromOccurredAt,
-		ToOccurredAt: toOccurredAt,
+		ToOccurredAt:   toOccurredAt,
 		Cursor:         cursor,
 		Limit:          limit,
 	})
@@ -109,6 +109,10 @@ func (r *Repository) ListFiltered(ctx context.Context, filter auditapp.ListFilte
 	case filter.RequireAdminPrefix:
 		actionSQL = "AND action LIKE 'admin.%'"
 	}
+	if exclude := strings.TrimSpace(filter.ExcludeActionPrefix); exclude != "" {
+		actionSQL += " AND action NOT LIKE CONCAT(?, '%')"
+		actionArgs = append(actionArgs, exclude)
+	}
 
 	args := []any{
 		companyID, companyID,
@@ -117,7 +121,21 @@ func (r *Repository) ListFiltered(ctx context.Context, filter auditapp.ListFilte
 		resourceID, resourceID,
 		fromOccurredAt, fromOccurredAt,
 		toOccurredAt, toOccurredAt,
-		cursor, cursor,
+	}
+	cursorSQL := ""
+	cursorEventID := strings.TrimSpace(filter.CursorEventID)
+	switch {
+	case filter.KeysetByEventID && cursor != "" && cursorEventID != "":
+		// time.Time param: the driver formats it in the connection location, same as it scans occurred_at.
+		cursorTime, err := time.Parse(time.RFC3339, cursor)
+		if err != nil {
+			return nil, fmt.Errorf("audit list cursor: %w", err)
+		}
+		cursorSQL = "AND (occurred_at < ? OR (occurred_at = ? AND event_id < ?))"
+		args = append(args, cursorTime, cursorTime, cursorEventID)
+	case cursor != "":
+		cursorSQL = "AND occurred_at < ?"
+		args = append(args, cursor)
 	}
 	args = append(args, actionArgs...)
 	args = append(args, limit)
@@ -134,9 +152,9 @@ func (r *Repository) ListFiltered(ctx context.Context, filter auditapp.ListFilte
 		  AND (? = '' OR resource_id = ?)
 		  AND (? = '' OR occurred_at >= ?)
 		  AND (? = '' OR occurred_at <= ?)
-		  AND (? = '' OR occurred_at < ?)
+		  ` + cursorSQL + `
 		  ` + actionSQL + `
-		ORDER BY occurred_at DESC
+		ORDER BY occurred_at DESC, event_id DESC
 		LIMIT ?`
 
 	rows, err := r.db.QueryContext(ctx, query, args...)

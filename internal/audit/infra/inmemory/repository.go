@@ -2,6 +2,7 @@ package inmemory
 
 import (
 	"context"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -52,8 +53,22 @@ func (r *Repository) ListFiltered(_ context.Context, filter auditapp.ListFilter)
 	action := strings.TrimSpace(filter.Action)
 	resourceType := strings.TrimSpace(filter.ResourceType)
 	resourceID := strings.TrimSpace(filter.ResourceID)
-	for i := len(r.entries) - 1; i >= 0; i-- {
-		item := r.entries[i]
+	cursorEventID := strings.TrimSpace(filter.CursorEventID)
+	entries := r.entries
+	if filter.KeysetByEventID {
+		// Same order as MySQL (occurred_at DESC, event_id DESC); the loop below walks the slice backwards.
+		entries = append([]auditapp.Entry(nil), r.entries...)
+		sort.SliceStable(entries, func(a, b int) bool {
+			ta, _ := parseRFC3339(entries[a].OccurredAt)
+			tb, _ := parseRFC3339(entries[b].OccurredAt)
+			if !ta.Equal(tb) {
+				return ta.Before(tb)
+			}
+			return entries[a].EventID < entries[b].EventID
+		})
+	}
+	for i := len(entries) - 1; i >= 0; i-- {
+		item := entries[i]
 		occurredAt, hasOccurred := parseRFC3339(item.OccurredAt)
 		if hasFrom && hasOccurred && occurredAt.Before(fromTime) {
 			continue
@@ -61,13 +76,19 @@ func (r *Repository) ListFiltered(_ context.Context, filter auditapp.ListFilter)
 		if hasTo && hasOccurred && occurredAt.After(toTime) {
 			continue
 		}
-		if hasCursor && hasOccurred && !occurredAt.Before(cursorTime) {
-			continue
+		if hasCursor && hasOccurred {
+			keysetTie := filter.KeysetByEventID && cursorEventID != "" && occurredAt.Equal(cursorTime) && item.EventID < cursorEventID
+			if !occurredAt.Before(cursorTime) && !keysetTie {
+				continue
+			}
 		}
 		if companyID != "" && !strings.EqualFold(strings.TrimSpace(item.CompanyID), companyID) {
 			continue
 		}
 		if actorUserID != "" && !strings.EqualFold(strings.TrimSpace(item.ActorUserID), actorUserID) {
+			continue
+		}
+		if exclude := strings.TrimSpace(filter.ExcludeActionPrefix); exclude != "" && strings.HasPrefix(item.Action, exclude) {
 			continue
 		}
 		if !matchActionFilter(item.Action, action, filter.ActionPrefix, filter.RequireAdminPrefix) {

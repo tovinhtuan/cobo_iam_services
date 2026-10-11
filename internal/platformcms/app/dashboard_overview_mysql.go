@@ -258,7 +258,8 @@ func (r *mysqlDashboardRepo) SystemHealthStats(ctx context.Context, now time.Tim
 		  (SELECT COUNT(*) FROM email_notifications WHERE status IN ('pending', 'sending', 'retry')),
 		  (SELECT COUNT(*) FROM email_notifications WHERE status = 'failed_permanent' AND updated_at >= ?),
 		  (SELECT COUNT(*) FROM outbox_events WHERE status = 'processing' AND available_at < ?),
-		  (SELECT COUNT(*) FROM reminder_occurrences WHERE status = 'FAILED' AND updated_at >= ?),
+		  (SELECT COUNT(*) FROM reminder_occurrences WHERE status = 'FAILED' AND updated_at >= ?
+		    AND (last_error_code IS NULL OR last_error_code <> 'COMPANY_INACTIVE')),
 		  (SELECT COUNT(*) FROM reminder_occurrences WHERE status = 'DISPATCHING' AND updated_at < ?),
 		  (SELECT COUNT(*) FROM periodic_cycles
 		    WHERE record_id IS NULL AND materialization_state = 'CLAIMED'

@@ -447,7 +447,8 @@ func (r *Repository) ListDispatchCandidates(ctx context.Context, now time.Time, 
 		       COALESCE(dr.type_id, dr2.type_id, dr3.type_id, ''),
 		       COALESCE(comp.company_name, ''),
 		       COALESCE(wi.workflow_instance_id, wi2.workflow_instance_id, ''),
-		       COALESCE(dr.record_id, wi.record_id, wi2.record_id, dr2.record_id, dr3.record_id, '')
+		       COALESCE(dr.record_id, wi.record_id, wi2.record_id, dr2.record_id, dr3.record_id, ''),
+		       COALESCE(comp.status, '')
 		FROM reminder_occurrences o
 		LEFT JOIN reminder_configs c
 		  ON c.scope_type = o.scope_type AND c.scope_id = o.scope_id
@@ -504,6 +505,7 @@ func (r *Repository) ListDispatchCandidates(ctx context.Context, now time.Time, 
 			&companyName,
 			&workflowInstanceID,
 			&recordID,
+			&c.CompanyStatus,
 		); err != nil {
 			return nil, fmt.Errorf("scan dispatch candidate: %w", err)
 		}

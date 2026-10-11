@@ -41,6 +41,7 @@ const (
 	CodeMFARequired                    Code = "MFA_REQUIRED"
 	CodeInternal                       Code = "INTERNAL_ERROR"
 	CodeStaleEtag                      Code = "STALE_ETAG"
+	CodeInvalidStateTransition         Code = "INVALID_STATE_TRANSITION" // e.g. suspend an inactive company
 	CodeEndpointRemoved                Code = "ENDPOINT_REMOVED" // retired route (410 Gone)
 	CodeSelfApprovalNotAllowed         Code = "SELF_APPROVAL_NOT_ALLOWED"
 	CodeFeatureNotEnabled              Code = "FEATURE_NOT_ENABLED"

@@ -191,12 +191,46 @@ func (r *AdminRepository) UpdateCompanyPlatform(ctx context.Context, req caapp.U
 	if companyID == "" {
 		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "company_id is required", nil)
 	}
+	sets, args, err := companyUpdateSets(req)
+	if err != nil {
+		return err
+	}
+	if len(sets) == 0 {
+		return nil
+	}
+	query := "UPDATE companies SET " + strings.Join(sets, ", ") + " WHERE company_id = ?"
+	args = append(args, companyID)
+	res, err := r.db.ExecContext(ctx, query, args...)
+	if err != nil {
+		if isMySQLDuplicate(err) {
+			return perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "duplicate tax code or constraint", err)
+		}
+		return mapMySQLSchemaErr(err)
+	}
+	n, _ := res.RowsAffected()
+	if n > 0 {
+		return nil
+	}
+	// MySQL default: unchanged rows report RowsAffected=0. Distinguish "no field changed" from missing company.
+	var one int
+	if qerr := r.db.QueryRowContext(ctx, `SELECT 1 FROM companies WHERE company_id = ? LIMIT 1`, companyID).Scan(&one); qerr != nil {
+		if qerr == sql.ErrNoRows {
+			return perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "company not found", nil)
+		}
+		return mapMySQLSchemaErr(qerr)
+	}
+	return nil
+}
+
+// companyUpdateSets builds the SET clauses for a platform company update (shared by
+// UpdateCompanyPlatform and MutateCompanyPlatform). Only non-nil fields are written.
+func companyUpdateSets(req caapp.UpdatePlatformCompanyRequest) ([]string, []any, error) {
 	var sets []string
 	var args []any
 	if req.CompanyName != nil {
 		v := strings.TrimSpace(*req.CompanyName)
 		if v == "" {
-			return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "company_name cannot be empty", nil)
+			return nil, nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "company_name cannot be empty", nil)
 		}
 		sets = append(sets, "company_name = ?")
 		args = append(args, v)
@@ -228,7 +262,7 @@ func (r *AdminRepository) UpdateCompanyPlatform(ctx context.Context, req caapp.U
 	if req.VerificationStatus != nil {
 		norm, err := companystatus.NormalizeVerificationStatus(*req.VerificationStatus)
 		if err != nil {
-			return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, err.Error(), nil)
+			return nil, nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, err.Error(), nil)
 		}
 		sets = append(sets, "verification_status = ?")
 		args = append(args, norm)
@@ -256,7 +290,7 @@ func (r *AdminRepository) UpdateCompanyPlatform(ctx context.Context, req caapp.U
 	if req.BusinessSectors != nil {
 		payload, err := json.Marshal(*req.BusinessSectors)
 		if err != nil {
-			return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "invalid business_sectors", err)
+			return nil, nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "invalid business_sectors", err)
 		}
 		sets = append(sets, "business_sectors = CAST(? AS JSON)")
 		args = append(args, string(payload))
@@ -284,37 +318,13 @@ func (r *AdminRepository) UpdateCompanyPlatform(ctx context.Context, req caapp.U
 			args = append(args, v)
 			payload, err := json.Marshal([]string{v})
 			if err != nil {
-				return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "invalid business_sector", err)
+				return nil, nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "invalid business_sector", err)
 			}
 			sets = append(sets, "business_sectors = CAST(? AS JSON)")
 			args = append(args, string(payload))
 		}
 	}
-	if len(sets) == 0 {
-		return nil
-	}
-	query := "UPDATE companies SET " + strings.Join(sets, ", ") + " WHERE company_id = ?"
-	args = append(args, companyID)
-	res, err := r.db.ExecContext(ctx, query, args...)
-	if err != nil {
-		if isMySQLDuplicate(err) {
-			return perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "duplicate tax code or constraint", err)
-		}
-		return mapMySQLSchemaErr(err)
-	}
-	n, _ := res.RowsAffected()
-	if n > 0 {
-		return nil
-	}
-	// MySQL default: unchanged rows report RowsAffected=0. Distinguish "no field changed" from missing company.
-	var one int
-	if qerr := r.db.QueryRowContext(ctx, `SELECT 1 FROM companies WHERE company_id = ? LIMIT 1`, companyID).Scan(&one); qerr != nil {
-		if qerr == sql.ErrNoRows {
-			return perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "company not found", nil)
-		}
-		return mapMySQLSchemaErr(qerr)
-	}
-	return nil
+	return sets, args, nil
 }
 
 func boolToTiny(v bool) int {

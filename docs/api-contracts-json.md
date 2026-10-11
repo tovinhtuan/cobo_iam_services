@@ -1599,6 +1599,25 @@ Design: `cobo_web_design/docs/ai-cache/cms-dashboard-enrichment-2026-10-11/02-co
 
 `GET /api/v1/platform/cms/dashboard/summary` is deprecated (counts the caller's own company only); kept one release for old bundles.
 
+
+### Platform CMS companies — status reason, audit, revision (2026-10-11)
+
+Contract: `cobo_web_design/docs/ai-cache/cms-companies-safety-2026-10-11/02-contract.md`. Gate unchanged: `platform.cms.view` AND (`rbac.manage` | `system.settings`) at handler and service.
+
+- `POST /api/v1/platform/cms/admin/companies/{id}/activate|suspend|deactivate` — body (≤ 16 KiB) `{ "reason_code", "reason_note"?, "confirm_company_code"? (deactivate), "expected_revision"? }`.
+  - `reason_code` per action — suspend: PAYMENT_OVERDUE, PENDING_VERIFICATION, SECURITY, CUSTOMER_REQUEST, TERMS_VIOLATION, OTHER; deactivate: PAYMENT_OVERDUE, SECURITY, CUSTOMER_REQUEST, TERMS_VIOLATION, CONTRACT_ENDED, OTHER; activate: CUSTOMER_REQUEST, PAYMENT_RECEIVED, ISSUE_RESOLVED, OTHER. `reason_note` required for OTHER (≤ 500).
+  - Already in the target status → 200 `changed:false` (no audit, no email). `inactive → suspend` → 409 `INVALID_STATE_TRANSITION`.
+  - 200: `data` = company detail (+ `revision`); `meta.status_change = { changed, from, to, notified_count, audit_event_id }`.
+  - Side effects: audit `cms.company.status_change` in the same transaction; email `company.status_changed` to active primary admins (fallback `contact_email`) after commit, without the internal note; an inactive company gets no reminders (occurrences closed as FAILED/`COMPANY_INACTIVE`, excluded from failure metrics).
+- `PATCH /api/v1/platform/cms/admin/companies/{id}` — only sent fields change (`""` clears, except `company_name`), optional `expected_revision`, body ≤ 64 KiB. No real change → 200 without audit.
+- `POST /api/v1/platform/cms/admin/companies` — validation as below; duplicate `tax_code` → 409 `STATE_CONFLICT` (`details.field_errors.tax_code`).
+- `GET /api/v1/platform/cms/admin/companies/{id}` — adds `revision` ("co1:" + 32 hex).
+- `GET /api/v1/platform/cms/admin/companies/{id}/history?limit=1..50&cursor=` — audit entries of the company (`cms.company.*`, `cms.company_plan.activate`): `{event_id, occurred_at, action, actor{user_id, display_name}, before, after, reason_code, reason_note, changes[{field, before, after, masked}]}`; `meta { limit, next_cursor }`. `next_cursor` is opaque (`h1.…`, keyset on `occurred_at DESC, event_id DESC`; null on the last page) — send it back as `cursor`. A bare RFC3339 cursor (pre 2026-10-11) is still accepted; anything else → 400 `INVALID_REQUEST` with `details.field_errors.cursor`.
+- Validation (sent fields only): `tax_code` `^\d{10}(-\d{3})?$`; `phone` `^[0-9+().\-\s]{8,20}$`; `contact_email` valid ≤ 255; `company_name` 1–255; `registration_number` ≤ 64; `address` ≤ 500; `representative_name` ≤ 255; `verification_status` verified|unverified → 400 `INVALID_REQUEST` `details.field_errors{field: message}`.
+- Errors: 409 `STALE_ETAG` (`details.current_revision`), 413 (`INVALID_REQUEST`, body too large), 409 `CANNOT_RESTRICT_PLATFORM_COMPANY` (unchanged).
+- Audit `metadata` masks `contact_email` / `phone` / `representative_name`. Tenant audit listings exclude `cms.company*` actions.
+- List meta (`/admin/companies`, `/market/listed-companies`): `page` / `limit` are the values actually applied (limit ≤ 100).
+
 ---
 
 ## G. HTTP status mapping (goi y)

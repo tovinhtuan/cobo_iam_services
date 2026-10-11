@@ -1,0 +1,22 @@
+default_locale: vi
+variables:
+  - name: company_name
+    required: true
+  - name: company_code
+    required: true
+  - name: new_status_label
+    required: true
+  - name: reason_label
+    required: true
+  - name: effective_at
+    required: true
+  - name: is_suspended
+    required: false
+  - name: is_inactive
+    required: false
+  - name: is_active
+    required: false
+  - name: support_contact
+    required: false
+  - name: portal_url
+    required: true

@@ -1,0 +1,25 @@
+PASS  create: invalid tax code -> 400 field_errors  400
+PASS  create disposable company  201
+PASS  create: duplicate tax code -> 409 (was 500)  409
+PASS  detail has revision  co1:773dfcf5
+PASS  patch: invalid phone -> 400 field_errors  400
+PASS  patch with fresh revision -> 200, new revision  200
+PASS  patch with stale revision -> 409 STALE_ETAG  409
+PASS  suspend without reason -> 400 (D-01)  400
+PASS  suspend -> 200, status_change, 1 email (contact fallback)  {'changed': True, 'from': 'active', 'to': 'suspended', 'notified_count': 1, 'audit_event_id': '01a12b81-c097-72a2-81fb-8c4a6189dfe2'}
+PASS  suspend again -> no-op  200
+PASS  deactivate wrong code -> 400  400
+PASS  deactivate with code (case-insensitive) -> inactive  200
+PASS  inactive -> suspend -> 409 INVALID_STATE_TRANSITION  409
+PASS  activate -> active  200
+PASS  status body > 16 KiB -> 413  413
+PASS  history lists create, update, 3 status changes  ['cms.company.status_change', 'cms.company.status_change', 'cms.company.status_change', 'cms.company.update', 'cms.company.create']
+PASS  history: reason note + actor name  {'user_id': 'u_qa_persona_cms', 'display_name': 'QA Persona CMS (platform operator)'}
+PASS  audit (MySQL): contact email masked in create metadata  {"after": {"phone": "", "address": "", "tax_code": "0925068272", "company_code": "qa_smoke_b_status_b_20261011220804_712
+PASS  audit rows written for every mutation  5
+PASS  enterprise admin cannot suspend -> 403  403
+PASS  enterprise admin cannot read history -> 403  403
+FAIL  Mailpit: 3 status emails (suspend, deactivate, activate)  0
+PASS  cleanup: disposable company deactivated  200
+
+22/23 PASS  (company be147b38-98b9-473e-a8b0-43d26cb53fc6)

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
+	"github.com/cobo/cobo_iam_services/internal/companyaccess/companystatus"
 	"github.com/cobo/cobo_iam_services/internal/subscription/entitlement"
 	"github.com/cobo/cobo_iam_services/internal/workflowdept"
 )
@@ -354,6 +355,12 @@ func (s *service) DispatchDueOccurrences(ctx context.Context, now time.Time, lim
 			})
 		}
 
+		if companystatus.BlocksAccess(c.CompanyStatus) {
+			s.skipInactiveCompany(ctx, c)
+			result.Skipped++
+			continue
+		}
+
 		out := s.prepareDispatch(ctx, c, now.UTC())
 		if out.evalErr != nil {
 			s.handleEvaluatorError(ctx, c, out.evalErr, result)
@@ -577,6 +584,24 @@ func emailChannelAllowed(dec EvaluateDecision) bool {
 		}
 	}
 	return false
+}
+
+// ReminderSkipCompanyInactive marks occurrences closed because the company is inactive. The row is
+// terminal (FAILED + this code) so the reminder is not sent later when the company is reactivated,
+// and failure metrics/alerts exclude this code.
+const ReminderSkipCompanyInactive = "COMPANY_INACTIVE"
+
+func (s *service) skipInactiveCompany(ctx context.Context, c DispatchCandidate) {
+	if err := s.occurrenceRepo.UpdateDispatchResult(ctx, DispatchResultInput{
+		OccurrenceID:     c.OccurrenceID,
+		Status:           ReminderStatusFailed,
+		LastErrorCode:    ReminderSkipCompanyInactive,
+		LastErrorMessage: "company is inactive: reminder not sent",
+	}); err != nil {
+		slog.WarnContext(ctx, "reminder_skip_inactive_company_update_failed",
+			slog.String("occurrence_id", c.OccurrenceID), slog.String("error", err.Error()))
+	}
+	s.recordDispatchSkipped(ctx, c, ReminderSkipCompanyInactive, "")
 }
 
 func (s *service) recordDispatchSkipped(ctx context.Context, c DispatchCandidate, reason, ruleCode string) {

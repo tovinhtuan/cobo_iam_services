@@ -19,6 +19,14 @@ func platformAdminSvc(repo *cainmem.AdminRepository) caapp.AdminService {
 	)
 }
 
+// statusReq carries a reason valid for every action and the seeded company code (deactivate).
+func statusReq(sub caapp.AdminSubject, companyID, status string) caapp.SetPlatformCompanyStatusRequest {
+	return caapp.SetPlatformCompanyStatusRequest{
+		Subject: sub, CompanyID: companyID, Status: status,
+		ReasonCode: caapp.CompanyReasonCustomerRequest, ConfirmCompanyCode: "CODE",
+	}
+}
+
 func seedPlatformCompany(repo *cainmem.AdminRepository, companyID string) {
 	repo.SeedCompany(caapp.PlatformCompanyDetail{
 		CompanyID:          companyID,
@@ -35,10 +43,8 @@ func TestSetPlatformCompanyStatus_ValidActiveInactive(t *testing.T) {
 	svc := platformAdminSvc(repo)
 	sub := caapp.AdminSubject{UserID: "u1", MembershipID: "m1", CompanyID: "c_platform"}
 
-	for _, st := range []string{"active", "inactive", "suspended", " ACTIVE "} {
-		if err := svc.SetPlatformCompanyStatus(context.Background(), caapp.SetPlatformCompanyStatusRequest{
-			Subject: sub, CompanyID: "c1", Status: st,
-		}); err != nil {
+	for _, st := range []string{"suspended", "active", "inactive", " ACTIVE "} {
+		if _, err := svc.SetPlatformCompanyStatus(context.Background(), statusReq(sub, "c1", st)); err != nil {
 			t.Fatalf("status=%q err=%v", st, err)
 		}
 	}
@@ -58,9 +64,7 @@ func TestSetPlatformCompanyStatus_InvalidRejected(t *testing.T) {
 	sub := caapp.AdminSubject{UserID: "u1", MembershipID: "m1", CompanyID: "c_platform"}
 
 	for _, st := range []string{"pending", "verified", "activee", "", "   ", "unknown"} {
-		err := svc.SetPlatformCompanyStatus(context.Background(), caapp.SetPlatformCompanyStatusRequest{
-			Subject: sub, CompanyID: "c1", Status: st,
-		})
+		_, err := svc.SetPlatformCompanyStatus(context.Background(), statusReq(sub, "c1", st))
 		if err == nil {
 			t.Fatalf("status=%q expected error", st)
 		}

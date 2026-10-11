@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"fmt"
+	htmltemplate "html/template"
 	"strings"
 	"text/template"
 )
@@ -48,7 +49,7 @@ func (emailRenderer) Render(t ResolvedTemplate, vars map[string]any) (RenderedEm
 	}
 	htmlBody := ""
 	if strings.TrimSpace(t.HTMLBody) != "" {
-		htmlBody, err = renderTemplate("body.html", t.HTMLBody, vars)
+		htmlBody, err = renderHTMLTemplate("body.html", t.HTMLBody, vars)
 		if err != nil {
 			return RenderedEmail{}, err
 		}
@@ -66,6 +67,21 @@ func renderTemplate(field, src string, vars map[string]any) (string, error) {
 	// SMTP layers convert \n -> \r\n for the wire format.
 	src = strings.ReplaceAll(src, "\r\n", "\n")
 	tmpl, err := template.New(field).Parse(src)
+	if err != nil {
+		return "", &TemplateRenderError{Field: field, Err: err}
+	}
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, vars); err != nil {
+		return "", &TemplateRenderError{Field: field, Err: err}
+	}
+	return buf.String(), nil
+}
+
+// renderHTMLTemplate renders the HTML body with html/template so variables (company names,
+// disclosure titles… often typed by tenants) are escaped for their HTML context.
+func renderHTMLTemplate(field, src string, vars map[string]any) (string, error) {
+	src = strings.ReplaceAll(src, "\r\n", "\n")
+	tmpl, err := htmltemplate.New(field).Parse(src)
 	if err != nil {
 		return "", &TemplateRenderError{Field: field, Err: err}
 	}

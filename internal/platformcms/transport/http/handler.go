@@ -161,6 +161,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/platform/cms/admin/companies", h.observe("cms.admin.companies.list", h.listCMSCompanies))
 	mux.HandleFunc("GET /api/v1/platform/cms/admin/companies/{company_id}", h.observe("cms.admin.companies.get", h.getCMSCompany))
 	mux.HandleFunc("PATCH /api/v1/platform/cms/admin/companies/{company_id}", h.observe("cms.admin.companies.patch", h.patchCMSCompany))
+	mux.HandleFunc("GET /api/v1/platform/cms/admin/companies/{company_id}/history", h.observe("cms.admin.companies.history", h.getCMSCompanyHistory))
 	mux.HandleFunc("POST /api/v1/platform/cms/admin/companies/{company_id}/deactivate", h.observe("cms.admin.companies.deactivate", h.postCMSCompanyDeactivate))
 	mux.HandleFunc("POST /api/v1/platform/cms/admin/companies/{company_id}/activate", h.observe("cms.admin.companies.activate", h.postCMSCompanyActivate))
 	mux.HandleFunc("POST /api/v1/platform/cms/admin/companies/{company_id}/suspend", h.observe("cms.admin.companies.suspend", h.postCMSCompanySuspend))
@@ -1278,8 +1279,8 @@ func (h *Handler) createCMSCompany(w http.ResponseWriter, r *http.Request) {
 		ContactEmail       string `json:"contact_email"`
 		RepresentativeName string `json:"representative_name"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
-		httpx.WriteError(w, nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "invalid JSON payload", err))
+	if err := decodeCMSCompanyBody(w, r, &p, cmsCompanyBodyLimit, false); err != nil {
+		httpx.WriteError(w, nil, err)
 		return
 	}
 	resp, err := h.adminSvc.CreateCompany(r.Context(), companyaccessapp.CreateCompanyRequest{
@@ -1295,6 +1296,7 @@ func (h *Handler) createCMSCompany(w http.ResponseWriter, r *http.Request) {
 		Phone:              p.Phone,
 		ContactEmail:       p.ContactEmail,
 		RepresentativeName: p.RepresentativeName,
+		RequestID:          httpx.RequestIDFromContext(r.Context()),
 	})
 	if err != nil {
 		httpx.WriteError(w, nil, err)

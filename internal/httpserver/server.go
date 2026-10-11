@@ -694,6 +694,33 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 	adminOpts = append(adminOpts, companyaccessapp.WithAuditRepository(auditRepo))
 	adminOpts = append(adminOpts, companyaccessapp.WithEffectiveAccessCache(projectionStore))
 	adminOpts = append(adminOpts, companyaccessapp.WithCompanyPlanReader(companyPlanReader))
+	if workflowEmailNotificationService != nil {
+		// company.status_changed: platform status changes notify the company's primary admins (D1).
+		statusEmailSvc := workflowEmailNotificationService
+		portalURL := strings.TrimRight(cfg.PublicWebBaseURL, "/")
+		supportContact := cfg.SupportEmail
+		adminOpts = append(adminOpts, companyaccessapp.WithCompanyStatusEmailer(func(ctx context.Context, e companyaccessapp.CompanyStatusEmail) error {
+			vars := make(map[string]any, len(e.Variables)+2)
+			for k, v := range e.Variables {
+				vars[k] = v
+			}
+			vars["portal_url"] = portalURL
+			vars["support_contact"] = supportContact
+			_, err := statusEmailSvc.DispatchEmail(ctx, notificationapp.DispatchEmailRequest{
+				To:                  e.To,
+				TemplateKey:         "company.status_changed",
+				Locale:              "vi",
+				Variables:           vars,
+				IdempotencyKey:      e.IdempotencyKey,
+				TriggeredByUserID:   e.ActorUserID,
+				SourceEventType:     "company.status_changed",
+				SourceAggregateType: "company",
+				SourceAggregateID:   e.CompanyID,
+				CompanyID:           e.CompanyID,
+			})
+			return err
+		}))
+	}
 	adminSvc := companyaccessapp.NewAdminService(adminRepo, authSvc, id, adminOpts...)
 	adminHandler := companyaccesshttp.NewAdminHandler(adminSvc, tokenManager, auditSvc)
 	adminHandler.WithTokenIssuer(tokenManager, sessionRepo)

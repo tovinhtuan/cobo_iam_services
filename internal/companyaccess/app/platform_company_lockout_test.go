@@ -18,12 +18,12 @@ func TestSetPlatformCompanyStatus_OwnCompanyCannotBeDeactivated(t *testing.T) {
 	seedPlatformCompany(repo, "c_platform")
 	svc := platformAdminSvc(repo)
 	sub := caapp.AdminSubject{UserID: "u1", MembershipID: "m1", CompanyID: "c_platform"}
-	err := svc.SetPlatformCompanyStatus(context.Background(), caapp.SetPlatformCompanyStatusRequest{Subject: sub, CompanyID: "c_platform", Status: "inactive"})
+	_, err := svc.SetPlatformCompanyStatus(context.Background(), statusReq(sub, "c_platform", "inactive"))
 	requireHTTPCode(t, err, 409, perr.CodeStateConflict)
 	if out, _ := repo.GetCompanyPlatform(context.Background(), "c_platform"); out.Status != "active" {
 		t.Fatalf("own company status = %q, want active", out.Status)
 	}
-	if err := svc.SetPlatformCompanyStatus(context.Background(), caapp.SetPlatformCompanyStatusRequest{Subject: sub, CompanyID: "c_platform", Status: "active"}); err != nil {
+	if _, err := svc.SetPlatformCompanyStatus(context.Background(), statusReq(sub, "c_platform", "active")); err != nil {
 		t.Fatalf("activating the own company stays allowed: %v", err)
 	}
 }
@@ -37,13 +37,13 @@ func TestSetPlatformCompanyStatus_CompanyWithOperatorsCannotBeDeactivated(t *tes
 	}
 	svc := platformAdminSvc(repo)
 	sub := caapp.AdminSubject{UserID: "u1", MembershipID: "m1", CompanyID: "c_platform"}
-	err := svc.SetPlatformCompanyStatus(context.Background(), caapp.SetPlatformCompanyStatusRequest{Subject: sub, CompanyID: "c_ops", Status: "inactive"})
+	_, err := svc.SetPlatformCompanyStatus(context.Background(), statusReq(sub, "c_ops", "inactive"))
 	requireHTTPCode(t, err, 409, perr.CodeStateConflict)
 
 	if err := repo.RevokeDirectPermission(context.Background(), "m-op", "platform.cms.view", "u_seed"); err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.SetPlatformCompanyStatus(context.Background(), caapp.SetPlatformCompanyStatusRequest{Subject: sub, CompanyID: "c_ops", Status: "inactive"}); err != nil {
+	if _, err := svc.SetPlatformCompanyStatus(context.Background(), statusReq(sub, "c_ops", "inactive")); err != nil {
 		t.Fatalf("company without operators: %v", err)
 	}
 }
@@ -54,9 +54,9 @@ func TestSetPlatformCompanyStatus_OwnCompanyCannotBeSuspended(t *testing.T) {
 	seedPlatformCompany(repo, "c1")
 	svc := platformAdminSvc(repo)
 	sub := caapp.AdminSubject{UserID: "u1", MembershipID: "m1", CompanyID: "c_platform"}
-	err := svc.SetPlatformCompanyStatus(context.Background(), caapp.SetPlatformCompanyStatusRequest{Subject: sub, CompanyID: "c_platform", Status: "suspended"})
+	_, err := svc.SetPlatformCompanyStatus(context.Background(), statusReq(sub, "c_platform", "suspended"))
 	requireHTTPCode(t, err, 409, perr.CodeStateConflict)
-	if err := svc.SetPlatformCompanyStatus(context.Background(), caapp.SetPlatformCompanyStatusRequest{Subject: sub, CompanyID: "c1", Status: "suspended"}); err != nil {
+	if _, err := svc.SetPlatformCompanyStatus(context.Background(), statusReq(sub, "c1", "suspended")); err != nil {
 		t.Fatalf("suspend a customer company: %v", err)
 	}
 	if out, _ := repo.GetCompanyPlatform(context.Background(), "c1"); out.Status != "suspended" {

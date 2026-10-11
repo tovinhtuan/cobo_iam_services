@@ -53,6 +53,8 @@ type AdminRepository struct {
 	teamMembers map[string]map[string]string // team_id -> membership_id -> company_id of the row
 
 	companies map[string]*caapp.PlatformCompanyDetail
+	companyAudit     []CompanyAuditRow
+	failCompanyAudit bool
 
 	companyFounder    map[string]string
 	companyProvSource map[string]string

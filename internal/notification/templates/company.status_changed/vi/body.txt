@@ -1,0 +1,30 @@
+Kính gửi Quản trị viên,
+
+Trạng thái tài khoản doanh nghiệp của Quý công ty trên CoBo Portal đã được cập nhật.
+
+Công ty: {{.company_name}} ({{.company_code}})
+Trạng thái mới: {{.new_status_label}}
+Lý do: {{.reason_label}}
+Thời điểm hiệu lực: {{.effective_at}} (giờ Việt Nam)
+{{- if .is_suspended}}
+
+Trong thời gian tạm ngưng, thành viên của công ty vẫn đăng nhập được để xem và xuất dữ liệu, nhưng không thể tạo, sửa hoặc nộp hồ sơ. Email nhắc hạn công bố thông tin vẫn được gửi để Quý công ty không bỏ lỡ nghĩa vụ.
+{{- end}}
+{{- if .is_inactive}}
+
+Tài khoản đã ngừng hoạt động: thành viên không thể đăng nhập và hệ thống tạm dừng gửi email nhắc hạn. Dữ liệu của Quý công ty vẫn được lưu giữ.
+{{- end}}
+{{- if .is_active}}
+
+Tài khoản đã hoạt động trở lại. Thành viên có thể đăng nhập và sử dụng đầy đủ chức năng.
+{{- end}}
+
+Truy cập CoBo Portal: {{.portal_url}}
+{{- if .support_contact}}
+Cần hỗ trợ, vui lòng liên hệ: {{.support_contact}}
+{{- end}}
+
+Lưu ý: Email này được gửi tự động, vui lòng không trả lời trực tiếp.
+
+Trân trọng,
+Hệ thống CoBo Portal

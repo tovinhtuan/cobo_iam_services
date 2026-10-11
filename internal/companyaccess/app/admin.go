@@ -12,7 +12,8 @@ type AdminService interface {
 	ListPlatformCompanies(ctx context.Context, req ListPlatformCompaniesRequest) (*ListPlatformCompaniesResult, error)
 	GetPlatformCompany(ctx context.Context, req GetPlatformCompanyRequest) (*PlatformCompanyDetail, error)
 	UpdatePlatformCompany(ctx context.Context, req UpdatePlatformCompanyRequest) error
-	SetPlatformCompanyStatus(ctx context.Context, req SetPlatformCompanyStatusRequest) error
+	SetPlatformCompanyStatus(ctx context.Context, req SetPlatformCompanyStatusRequest) (*PlatformCompanyStatusChange, error)
+	ListPlatformCompanyHistory(ctx context.Context, req ListPlatformCompanyHistoryRequest) (*PlatformCompanyHistory, error)
 	InviteUser(ctx context.Context, req InviteUserRequest) (*InviteUserResponse, error)
 	// ListInviteRoles returns assignable roles for a target company (global + company-scoped), same resolution as invite.
 	ListInviteRoles(ctx context.Context, req ListInviteRolesRequest) ([]InviteRoleOption, error)
@@ -178,6 +179,15 @@ type AdminRepository interface {
 	GetCompanyPlatform(ctx context.Context, companyID string) (*PlatformCompanyDetail, error)
 	UpdateCompanyPlatform(ctx context.Context, req UpdatePlatformCompanyRequest) error
 	SetCompanyStatusPlatform(ctx context.Context, companyID, status string) error
+	// MutateCompanyPlatform locks the company row, lets fn compute the mutation from the current
+	// snapshot, then applies the update/status and inserts the audit rows in the same transaction.
+	// fn returning (nil, nil) commits nothing. Unknown company → 404.
+	MutateCompanyPlatform(ctx context.Context, companyID string, actor CompanyAuditContext, fn func(CompanySnapshot) (*CompanyMutation, error)) error
+	// CreateStandaloneCompanyAudited is CreateStandaloneCompany plus an audit row in the same
+	// transaction; duplicate tax_code → 409.
+	CreateStandaloneCompanyAudited(ctx context.Context, displayName string, bootstrap CreateCompanyBootstrap, actor CompanyAuditContext, audit func(companyID, companyCode string) CompanyAuditRecord) (companyID, companyCode string, err error)
+	// ListCompanyPrimaryAdminEmails returns emails of active primary admins of the company.
+	ListCompanyPrimaryAdminEmails(ctx context.Context, companyID string) ([]string, error)
 	CreateMembership(ctx context.Context, m MembershipView) (*MembershipView, error)
 	// UpdateMembershipStatus and DeleteMembership only act on a membership of the given company
 	// (404 MEMBERSHIP_NOT_FOUND otherwise).
@@ -536,6 +546,7 @@ type CreateCompanyRequest struct {
 	Phone              string `json:"phone,omitempty"`
 	ContactEmail       string `json:"contact_email,omitempty"`
 	RepresentativeName string `json:"representative_name,omitempty"`
+	RequestID          string `json:"-"`
 }
 
 type CreateCompanyResult struct {

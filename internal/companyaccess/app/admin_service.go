@@ -11,7 +11,6 @@ import (
 
 	auditapp "github.com/cobo/cobo_iam_services/internal/audit/app"
 	authapp "github.com/cobo/cobo_iam_services/internal/authorization/app"
-	"github.com/cobo/cobo_iam_services/internal/companyaccess/companystatus"
 	"github.com/cobo/cobo_iam_services/internal/companyaccess/configversion"
 	"github.com/cobo/cobo_iam_services/internal/companyaccess/conflict"
 	"github.com/cobo/cobo_iam_services/internal/companyaccess/dependency"
@@ -43,6 +42,7 @@ type adminService struct {
 	exportStore                        *configExportStore
 	companyPlan                        companyplan.Reader
 	companyPlanNow                     func() time.Time
+	companyStatusEmailer               CompanyStatusEmailer
 }
 
 func NewAdminService(repo AdminRepository, auth authapp.Service, idg idgen.Generator, opts ...AdminOption) AdminService {
@@ -224,38 +224,6 @@ func (s *adminService) CreateUser(ctx context.Context, req CreateUserRequest) (*
 	return out, nil
 }
 
-func (s *adminService) CreateCompany(ctx context.Context, req CreateCompanyRequest) (*CreateCompanyResult, error) {
-	if err := s.authorizePlatformCompanyAdmin(ctx, req.Subject); err != nil {
-		return nil, err
-	}
-	name := strings.TrimSpace(req.CompanyName)
-	if name == "" {
-		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "company_name is required", nil)
-	}
-	vStatus, err := companystatus.NormalizeVerificationStatus(companystatus.VerificationVerified)
-	if err != nil {
-		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, err.Error(), nil)
-	}
-	boot := CreateCompanyBootstrap{
-		VerificationStatus: vStatus,
-		TaxCode:            strings.TrimSpace(req.TaxCode),
-		RegistrationNumber: strings.TrimSpace(req.RegistrationNumber),
-		Address:            strings.TrimSpace(req.Address),
-		Phone:              strings.TrimSpace(req.Phone),
-		ContactEmail:       strings.TrimSpace(req.ContactEmail),
-		RepresentativeName: strings.TrimSpace(req.RepresentativeName),
-	}
-	companyID, companyCode, err := s.repo.CreateStandaloneCompany(ctx, name, boot)
-	if err != nil {
-		return nil, err
-	}
-	return &CreateCompanyResult{
-		CompanyID:   companyID,
-		CompanyCode: companyCode,
-		CompanyName: name,
-	}, nil
-}
-
 // authorizePlatformCompanyAdmin gates platform company management (list/get/create/update/status).
 // Platform operator only: platform.cms.view AND (rbac.manage | system.settings), the same rule as the
 // /api/v1/platform/cms/admin/* routes. It used to also require the tenant action admin.membership.create
@@ -290,38 +258,8 @@ func (s *adminService) GetPlatformCompany(ctx context.Context, req GetPlatformCo
 	if err := s.attachOwnCompanyPlan(ctx, cid, detail); err != nil {
 		return nil, err
 	}
+	detail.Revision = CompanyRevision(SnapshotFromDetail(detail))
 	return detail, nil
-}
-
-func (s *adminService) UpdatePlatformCompany(ctx context.Context, req UpdatePlatformCompanyRequest) error {
-	if err := s.authorizePlatformCompanyAdmin(ctx, req.Subject); err != nil {
-		return err
-	}
-	if req.VerificationStatus != nil {
-		norm, err := companystatus.NormalizeVerificationStatus(*req.VerificationStatus)
-		if err != nil {
-			return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, err.Error(), nil)
-		}
-		req.VerificationStatus = &norm
-	}
-	return s.repo.UpdateCompanyPlatform(ctx, req)
-}
-
-func (s *adminService) SetPlatformCompanyStatus(ctx context.Context, req SetPlatformCompanyStatusRequest) error {
-	if err := s.authorizePlatformCompanyAdmin(ctx, req.Subject); err != nil {
-		return err
-	}
-	status, err := companystatus.NormalizeOperationalStatus(req.Status)
-	if err != nil {
-		return perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, err.Error(), nil)
-	}
-	companyID := strings.TrimSpace(req.CompanyID)
-	if status != companystatus.StatusActive { // inactive or suspended restrict the company's members
-		if err := s.assertNotPlatformHostCompany(ctx, req.Subject, companyID); err != nil {
-			return err
-		}
-	}
-	return s.repo.SetCompanyStatusPlatform(ctx, companyID, status)
 }
 
 // assertNotPlatformHostCompany keeps the platform usable: deactivating a company shuts out its

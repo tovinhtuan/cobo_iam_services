@@ -56,6 +56,8 @@ type PlatformCompanyDetail struct {
 	DepartmentCount  int    `json:"department_count"`
 	CreatedAtRFC3339 string `json:"created_at"`
 	UpdatedAtRFC3339 string `json:"updated_at"`
+	// Revision is the optimistic-concurrency token for PATCH and status changes (CompanyRevision).
+	Revision string `json:"revision,omitempty"`
 	// Plan is additive Case C commercial plan.
 	// Always serialized: null when no covering record. Not badge-filtered on backend.
 	// CMS GetPlatformCompany and Portal GetOwnCompany both enrich from company_subscriptions.
@@ -101,10 +103,20 @@ type UpdatePlatformCompanyRequest struct {
 	HasSubordinateAccountingUnits *bool
 	BusinessSectors               *[]string
 	BusinessSector                *string // deprecated single-value write path
+	// ExpectedRevision (optional): reject with 409 STALE_ETAG when the company changed meanwhile.
+	ExpectedRevision string
+	RequestID        string
 }
 
 type SetPlatformCompanyStatusRequest struct {
 	Subject   AdminSubject
 	CompanyID string
-	Status    string // e.g. active, inactive
+	Status    string // active | suspended | inactive
+	// ReasonCode is required (allowed codes depend on the action); ReasonNote is required for OTHER.
+	ReasonCode string
+	ReasonNote string
+	// ConfirmCompanyCode must equal the company code to deactivate.
+	ConfirmCompanyCode string
+	ExpectedRevision   string
+	RequestID          string
 }

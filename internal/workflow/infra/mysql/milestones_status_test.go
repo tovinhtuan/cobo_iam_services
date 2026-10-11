@@ -24,6 +24,7 @@ func TestReminderStatusFromRow(t *testing.T) {
 		{"dispatching", 1, ns("o1"), ns("DISPATCHING"), ns(""), "pending"},
 		{"sent", 1, ns("o1"), ns("SENT"), ns(""), "sent"},
 		{"expired", 1, ns("o1"), ns("FAILED"), ns("REMINDER_EXPIRED"), "cancelled"},
+		{"company inactive", 1, ns("o1"), ns("FAILED"), ns("COMPANY_INACTIVE"), "cancelled"},
 		{"obsolete at dispatch", 1, ns("o1"), ns("FAILED"), ns("REMINDER_OBSOLETE"), "cancelled"},
 		{"failed", 1, ns("o1"), ns("FAILED"), ns("EMAIL_PROVIDER_PERMANENT_ERROR"), "failed"},
 		{"tolerates legacy value 2", 2, ns(""), ns(""), ns(""), "cancelled"},

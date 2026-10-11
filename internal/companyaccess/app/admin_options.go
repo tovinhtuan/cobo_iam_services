@@ -14,6 +14,13 @@ import (
 // AdminOption configures AdminService construction.
 type AdminOption func(*adminService)
 
+// WithCompanyStatusEmailer wires the company.status_changed notification (sent after commit).
+func WithCompanyStatusEmailer(e CompanyStatusEmailer) AdminOption {
+	return func(s *adminService) {
+		s.companyStatusEmailer = e
+	}
+}
+
 // WithInvitationMailer wires invitation emails to IAM/outbox (required for InviteUser when email should be sent).
 func WithInvitationMailer(m InvitationMailer) AdminOption {
 	return func(s *adminService) {

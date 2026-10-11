@@ -219,6 +219,9 @@ type DispatchCandidate struct {
 	CompanyName        string    // company_name from companies via the business record — never recipient membership
 	DisclosureTypeID   string    // type_id from disclosure_types (via disclosure_records)
 	RecordID           string    // disclosure_records.record_id used for CTA; never the workflow instance id
+	// CompanyStatus is companies.status of CompanyID ("" when unknown). An inactive company gets no
+	// reminders (contract cms-companies-safety-2026-10-11 D-04); suspended keeps receiving them.
+	CompanyStatus string
 }
 
 // RecipientResolver resolves the email recipient list for a dispatch candidate.
