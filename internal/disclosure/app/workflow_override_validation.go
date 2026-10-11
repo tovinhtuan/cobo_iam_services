@@ -22,9 +22,24 @@ func ValidateCompanyWorkflowOverrideSteps(steps []WorkflowStepDTO) error {
 			nil,
 		)
 	}
+	seenStepID := make(map[string]int, len(steps))
 	for i := range steps {
 		steps[i].StepID = strings.TrimSpace(steps[i].StepID)
 		steps[i].Stage = strings.TrimSpace(steps[i].Stage)
+		if prev, dup := seenStepID[strings.ToLower(steps[i].StepID)]; dup && steps[i].StepID != "" {
+			// Duplicate step ids produce duplicate reminder milestones (REM-01).
+			return &perr.HTTPError{
+				Code:       perr.CodeWorkflowOverrideInvalid,
+				Message:    fmt.Sprintf("workflow step %d is invalid: step_id duplicates step %d", i, prev),
+				HTTPStatus: http.StatusBadRequest,
+				Details: map[string]any{
+					"field_errors": map[string]string{
+						fmt.Sprintf("workflow[%d].step_id", i): "step_id must be unique",
+					},
+				},
+			}
+		}
+		seenStepID[strings.ToLower(steps[i].StepID)] = i
 		if steps[i].StepID == "" || steps[i].Stage == "" {
 			return &perr.HTTPError{
 				Code:       perr.CodeWorkflowOverrideInvalid,

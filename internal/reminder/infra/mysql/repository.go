@@ -279,6 +279,32 @@ func (r *Repository) InsertAttempt(ctx context.Context, in reminderapp.ReminderD
 	return nil
 }
 
+// EnsureOccurrence inserts the occurrence when its idempotency_key is new and otherwise
+// returns the existing row untouched. It must never overwrite status or scheduled_at: a
+// duplicate key would otherwise re-arm an already SENT reminder on every tick (REM-01).
+func (r *Repository) EnsureOccurrence(ctx context.Context, in reminderapp.ReminderOccurrenceDTO) (*reminderapp.ReminderOccurrenceDTO, error) {
+	if in.OccurrenceID == "" {
+		in.OccurrenceID = in.IdempotencyKey
+	}
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO reminder_occurrences (
+			occurrence_id, disclosure_id, scope_type, scope_id, scheduled_at, status, attempt_count,
+			idempotency_key
+		) VALUES (?, ?, ?, ?, ?, ?, 0, ?)
+		ON DUPLICATE KEY UPDATE id = id
+	`, in.OccurrenceID, in.DisclosureID, in.ScopeType, in.ScopeID, in.ScheduledAt.UTC(), in.Status, in.IdempotencyKey)
+	if err != nil {
+		return nil, fmt.Errorf("ensure reminder occurrence: %w", err)
+	}
+	row := r.db.QueryRowContext(ctx, `
+		SELECT occurrence_id, disclosure_id, scope_type, scope_id, scheduled_at, status,
+		       attempt_count, idempotency_key, last_attempt_at, last_error_code, provider_message_id
+		FROM reminder_occurrences
+		WHERE idempotency_key = ?
+	`, in.IdempotencyKey)
+	return scanOccurrenceRow(row)
+}
+
 func (r *Repository) SeedOccurrence(ctx context.Context, in reminderapp.ReminderOccurrenceDTO) (*reminderapp.ReminderOccurrenceDTO, error) {
 	if in.OccurrenceID == "" {
 		in.OccurrenceID = in.IdempotencyKey

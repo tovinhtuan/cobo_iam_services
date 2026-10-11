@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"path/filepath"
 	"sort"
@@ -340,7 +341,13 @@ func (s *service) SubmitRecord(ctx context.Context, req SubmitRecordRequest) (*R
 		return nil, err
 	}
 	if s.workflowBootstrap != nil && strings.TrimSpace(updated.WorkflowInstanceID) == "" {
-		if wfID, wfErr := s.workflowBootstrap.EnsureOnSubmit(ctx, req.Subject, *updated); wfErr == nil && wfID != "" {
+		wfID, wfErr := s.workflowBootstrap.EnsureOnSubmit(ctx, req.Subject, *updated)
+		if wfErr != nil {
+			slog.WarnContext(ctx, "submit: workflow bootstrap failed",
+				slog.String("company_id", updated.CompanyID),
+				slog.String("record_id", updated.RecordID),
+				slog.String("err", wfErr.Error()))
+		} else if wfID != "" {
 			updated.WorkflowInstanceID = wfID
 		}
 	}

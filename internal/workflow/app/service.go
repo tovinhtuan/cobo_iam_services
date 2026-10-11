@@ -83,7 +83,7 @@ func (s *service) createWorkflowInstance(ctx context.Context, req CreateWorkflow
 		return nil, perr.NewHTTPError(
 			http.StatusUnprocessableEntity,
 			perr.CodeInvalidRequest,
-			"frozen workflow snapshot is required",
+			SnapshotValidationMessage(err, "frozen workflow snapshot is required"),
 			err,
 		)
 	}

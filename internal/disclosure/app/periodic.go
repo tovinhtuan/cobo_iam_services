@@ -267,6 +267,17 @@ func materializePeriodicDisclosures(ctx context.Context, now time.Time, repo Per
 		}
 		recordID, workflowInstanceID, err := creator.CreateAndSubmitPeriodicRecord(ctx, c.CycleID, c.CompanyID, c.TypeID, "m_system_worker", autoRecordTitle(c), &t0, plannedDate)
 		if err != nil {
+			if workflowerrs.IsDuplicateWorkflowStep(err) {
+				// Configuration error: retrying cannot succeed until the template/override is fixed.
+				if markErr := repo.MarkPeriodicCycleFailed(ctx, c.CycleID, recordID, "DUPLICATE_WORKFLOW_STEP", "effective workflow has duplicate step ids"); markErr != nil {
+					return materialized, fmt.Errorf("mark periodic cycle %s failed: %w", c.CycleID, markErr)
+				}
+				slog.ErrorContext(ctx, "periodic materialization failed permanently: duplicate workflow step ids",
+					slog.String("cycle_id", c.CycleID),
+					slog.String("type_id", c.TypeID),
+					slog.String("company_id", c.CompanyID))
+				continue
+			}
 			if workflowerrs.IsEmptyEffectiveWorkflow(err) {
 				if markErr := repo.MarkPeriodicCycleFailed(ctx, c.CycleID, recordID, "EMPTY_EFFECTIVE_WORKFLOW", "effective workflow has no materializable steps"); markErr != nil {
 					return materialized, fmt.Errorf("mark periodic cycle %s failed: %w", c.CycleID, markErr)

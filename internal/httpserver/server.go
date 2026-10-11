@@ -613,6 +613,7 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 			reminderSvcOpts = append(reminderSvcOpts,
 				reminderapp.WithMilestoneScanner(remindermysql.NewMilestoneScanner(pool)),
 				reminderapp.WithWorkflowStepTaskStateReader(remindermysql.NewWorkflowStepTaskStateReader(pool)),
+				reminderapp.WithWorkflowStepRuntimeReader(remindermysql.NewWorkflowStepRuntimeReader(pool)),
 			)
 			log.Info("workflow milestone reminder bridge enabled")
 		}

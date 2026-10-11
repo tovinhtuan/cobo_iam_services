@@ -39,7 +39,7 @@ func (b *Bootstrap) EnsureOnSubmit(ctx context.Context, sub disclosureapp.Subjec
 	documentRequirements := workflowapp.ProjectDocumentRequirementSnapshots(effResp.Data.Workflow)
 	snapshot := workflowapp.MapEffectiveWorkflowToSnapshot(effResp.Data.Workflow, workflowSource)
 	if err := workflowapp.ValidateSnapshot(snapshot); err != nil {
-		return "", perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "template has no effective workflow steps", err)
+		return "", perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, workflowapp.SnapshotValidationMessage(err, "template has no effective workflow steps"), err)
 	}
 	var t0 *time.Time
 	if rec.PlannedDate != "" {

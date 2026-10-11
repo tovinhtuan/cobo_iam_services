@@ -211,7 +211,7 @@ func resolveWorkflowSnapshotForMaterialize(
 			}
 			snapshot := workflowapp.MapProposalWorkflowToSnapshot(opts.ProposalWorkflow)
 			if err := workflowapp.ValidateSnapshot(snapshot); err != nil {
-				return nil, perr.NewHTTPError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, "frozen proposal workflow has no materializable steps", err)
+				return nil, perr.NewHTTPError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, workflowapp.SnapshotValidationMessage(err, "frozen proposal workflow has no materializable steps"), err)
 			}
 			return &resolvedWorkflowMaterialization{
 				snapshot:             snapshot,
@@ -233,7 +233,7 @@ func resolveWorkflowSnapshotForMaterialize(
 			}
 			snapshot := workflowapp.MapProposalWorkflowToSnapshot(opts.ProposalWorkflow)
 			if err := workflowapp.ValidateSnapshot(snapshot); err != nil {
-				return nil, perr.NewHTTPError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, "frozen proposal workflow has no materializable steps", err)
+				return nil, perr.NewHTTPError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, workflowapp.SnapshotValidationMessage(err, "frozen proposal workflow has no materializable steps"), err)
 			}
 			return &resolvedWorkflowMaterialization{
 				snapshot:             snapshot,
@@ -258,7 +258,7 @@ func resolveWorkflowSnapshotForMaterialize(
 	snapshot := workflowapp.MapEffectiveWorkflowToSnapshot(effResp.Data.Workflow, workflowSource)
 	snapshot = workflowapp.ApplyAdHocStepOverrides(snapshot, opts.StepOverrides)
 	if err := workflowapp.ValidateSnapshot(snapshot); err != nil {
-		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "template has no effective workflow steps", err)
+		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, workflowapp.SnapshotValidationMessage(err, "template has no effective workflow steps"), err)
 	}
 	return &resolvedWorkflowMaterialization{
 		snapshot:             snapshot,

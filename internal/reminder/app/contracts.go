@@ -54,6 +54,59 @@ type MilestoneScanner interface {
 	MarkMilestoneSent(ctx context.Context, milestoneID, occurrenceID string) error
 }
 
+// MilestoneCursor is a keyset position in the due-milestone order (scheduled_date, milestone_id).
+type MilestoneCursor struct {
+	ScheduledDate time.Time
+	MilestoneID   string
+}
+
+// MilestonePageScanner is an optional MilestoneScanner extension that pages through due
+// milestones with a keyset cursor, so rows that must wait cannot hide later eligible rows
+// behind a fixed LIMIT (REM-06).
+type MilestonePageScanner interface {
+	ListDueMilestonesPage(ctx context.Context, asOf time.Time, after *MilestoneCursor, limit int) ([]DueMilestone, error)
+}
+
+// MilestoneObsoleter is an optional MilestoneScanner extension that marks a milestone as
+// handled without an occurrence (reminder_sent=1, reminder_occurrence_id=NULL) when its
+// reminder can never be due again: instance closed, step completed or step long past its end.
+type MilestoneObsoleter interface {
+	MarkMilestoneObsolete(ctx context.Context, milestoneID string) error
+}
+
+// OccurrenceEnsurer is an optional OccurrenceRepository extension: insert the occurrence if
+// its idempotency_key is new, otherwise return the existing row unchanged. Unlike
+// SeedOccurrence it never overwrites status or scheduled_at of an existing occurrence (REM-01).
+type OccurrenceEnsurer interface {
+	EnsureOccurrence(ctx context.Context, in ReminderOccurrenceDTO) (*ReminderOccurrenceDTO, error)
+}
+
+// WorkflowStepRuntimeStep is one snapshot step with its runtime progress. EndDate is the
+// planned end (delay-shifted) as a date in the company timezone, encoded at 00:00 UTC.
+type WorkflowStepRuntimeStep struct {
+	StepID    string
+	StepCode  string
+	Current   bool
+	Completed bool
+	EndDate   time.Time
+	HasEnd    bool
+}
+
+// WorkflowStepRuntime is the runtime view of a workflow instance used to decide whether a
+// step reminder is due. Step progress comes from workflow_instance_step_states, not from
+// workflow_tasks (non-proposal workflows only ever get a task for their first step).
+type WorkflowStepRuntime struct {
+	InstanceStatus string
+	WorkflowSource string
+	Steps          []WorkflowStepRuntimeStep
+}
+
+// WorkflowStepRuntimeReader loads the runtime view of an instance. A nil result with nil
+// error means the instance does not exist in the company.
+type WorkflowStepRuntimeReader interface {
+	WorkflowStepRuntime(ctx context.Context, companyID, workflowInstanceID string, asOf time.Time) (*WorkflowStepRuntime, error)
+}
+
 type ConfigRepository interface {
 	UpsertByScope(ctx context.Context, in ReminderConfigDTO) (*ReminderConfigDTO, error)
 	GetByScope(ctx context.Context, scopeType ScopeType, scopeID string) (*ReminderConfigDTO, error)

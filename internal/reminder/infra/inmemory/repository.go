@@ -211,6 +211,32 @@ func (r *Repository) SeedOccurrence(_ context.Context, in reminderapp.ReminderOc
 	return &out, nil
 }
 
+// EnsureOccurrence is insert-if-absent by idempotency_key; an existing occurrence is
+// returned unchanged (parity with the MySQL repository, REM-01).
+func (r *Repository) EnsureOccurrence(_ context.Context, in reminderapp.ReminderOccurrenceDTO) (*reminderapp.ReminderOccurrenceDTO, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for _, existing := range r.occurrences {
+		if in.IdempotencyKey != "" && existing.IdempotencyKey == in.IdempotencyKey {
+			out := existing
+			return &out, nil
+		}
+	}
+	occ := in
+	if occ.OccurrenceID == "" {
+		occ.OccurrenceID = occ.IdempotencyKey
+	}
+	if existing, ok := r.occurrences[occ.OccurrenceID]; ok {
+		out := existing
+		return &out, nil
+	}
+	r.occurrences[occ.OccurrenceID] = occ
+	r.updatedAt[occ.OccurrenceID] = time.Now().UTC()
+	out := occ
+	return &out, nil
+}
+
 func (r *Repository) MaterializeDueOccurrences(_ context.Context, _ time.Time) (int, error) {
 	// In-memory scheduler materialization is intentionally no-op in this scaffold.
 	return 0, nil

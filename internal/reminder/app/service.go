@@ -38,6 +38,7 @@ type service struct {
 	membershipQuerier          MembershipEmailQuerier
 	taskAssigneeReader         WorkflowTaskAssigneeReader
 	stepTaskStateReader        WorkflowStepTaskStateReader
+	stepRuntimeReader          WorkflowStepRuntimeReader
 	dispatchLogger             *slog.Logger
 	tierEnforcement            *entitlement.Checker
 	bindingOwnership           BindingOwnershipLookup
@@ -154,6 +155,15 @@ func WithTierEnforcement(checker *entitlement.Checker) ServiceOption {
 func WithWorkflowStepTaskStateReader(r WorkflowStepTaskStateReader) ServiceOption {
 	return func(s *service) {
 		s.stepTaskStateReader = r
+	}
+}
+
+// WithWorkflowStepRuntimeReader wires step progress from workflow_instance_step_states so
+// reminders follow the current step on every workflow source (RMC-01) and dead milestones
+// leave the queue (REM-06). Without it the legacy task-only eligibility is used.
+func WithWorkflowStepRuntimeReader(r WorkflowStepRuntimeReader) ServiceOption {
+	return func(s *service) {
+		s.stepRuntimeReader = r
 	}
 }
 
@@ -979,9 +989,22 @@ func validateReminderConfig(cfg ReminderConfigInput) error {
 	return nil
 }
 
+const (
+	milestoneSeedBatchLimit = 200
+	// milestoneSeedMaxPages bounds the work per tick when the scanner supports paging.
+	milestoneSeedMaxPages = 5
+)
+
+type stepRuntimeLookup struct {
+	rt  *WorkflowStepRuntime
+	err error
+}
+
 // SeedOccurrencesFromDueMilestones bridges workflow_step_milestones → reminder_occurrences.
-// It is idempotent: each milestone row carries a unique milestone_id used as the idempotency_key,
-// and reminder_occurrences has a unique index on idempotency_key.
+// One occurrence exists per (instance, step, due_minus_Nd) idempotency_key; seeding never
+// changes an existing occurrence (REM-01). Milestones whose reminder can no longer be due
+// are taken out of the queue (REM-06), and step eligibility follows the current workflow
+// step, not the first task (RMC-01).
 func (s *service) SeedOccurrencesFromDueMilestones(ctx context.Context, now time.Time) (int, error) {
 	if s.milestoneScanner == nil {
 		return 0, nil // feature not wired; skip silently
@@ -989,41 +1012,126 @@ func (s *service) SeedOccurrencesFromDueMilestones(ctx context.Context, now time
 	if now.IsZero() {
 		now = time.Now().UTC()
 	}
-	const batchLimit = 200
-	milestones, err := s.milestoneScanner.ListDueMilestones(ctx, now, batchLimit)
-	if err != nil {
-		return 0, fmt.Errorf("list due milestones: %w", err)
-	}
+	runtimes := map[string]stepRuntimeLookup{}
 	seeded := 0
-	for _, m := range milestones {
-		if !IsDueMinusReminderMilestone(m.MilestoneType) {
-			continue
+	pager, canPage := s.milestoneScanner.(MilestonePageScanner)
+	var cursor *MilestoneCursor
+	for page := 0; page < milestoneSeedMaxPages; page++ {
+		var milestones []DueMilestone
+		var err error
+		if canPage {
+			milestones, err = pager.ListDueMilestonesPage(ctx, now, cursor, milestoneSeedBatchLimit)
+		} else {
+			milestones, err = s.milestoneScanner.ListDueMilestones(ctx, now, milestoneSeedBatchLimit)
 		}
-		if !s.workflowStepReminderEligible(ctx, m) {
-			s.metrics.IncCounter("reminder_milestone_ineligible_total", map[string]string{"milestone_type": m.MilestoneType})
-			continue
-		}
-		idempotencyKey := WorkflowStepReminderIdempotencyKey(m.WorkflowInstanceID, m.StepID, m.MilestoneType)
-		occ, err := s.occurrenceRepo.SeedOccurrence(ctx, ReminderOccurrenceDTO{
-			OccurrenceID:   m.MilestoneID,
-			DisclosureID:   m.WorkflowInstanceID, // use instance as disclosure scope
-			ScopeType:      ScopeTypeWorkflowStep,
-			ScopeID:        m.StepID,
-			ScheduledAt:    m.ScheduledDate.UTC(),
-			Status:         ReminderStatusPending,
-			IdempotencyKey: idempotencyKey,
-		})
 		if err != nil {
-			// duplicate idempotency_key = already seeded; not an error
-			s.metrics.IncCounter("reminder_milestone_seed_error_total", map[string]string{"milestone_type": m.MilestoneType})
-			continue
+			return seeded, fmt.Errorf("list due milestones: %w", err)
 		}
-		if err := s.milestoneScanner.MarkMilestoneSent(ctx, m.MilestoneID, occ.OccurrenceID); err != nil {
-			s.metrics.IncCounter("reminder_milestone_mark_error_total", map[string]string{"milestone_type": m.MilestoneType})
-			continue
+		for _, m := range milestones {
+			if s.seedOneMilestone(ctx, m, now, runtimes) {
+				seeded++
+			}
 		}
-		s.metrics.IncCounter("reminder_milestone_seeded_total", map[string]string{"milestone_type": m.MilestoneType})
-		seeded++
+		if !canPage || len(milestones) < milestoneSeedBatchLimit {
+			break
+		}
+		last := milestones[len(milestones)-1]
+		cursor = &MilestoneCursor{ScheduledDate: last.ScheduledDate, MilestoneID: last.MilestoneID}
 	}
 	return seeded, nil
+}
+
+func (s *service) seedOneMilestone(ctx context.Context, m DueMilestone, now time.Time, runtimes map[string]stepRuntimeLookup) bool {
+	offset, ok := ParseDueMinusReminderOffset(m.MilestoneType)
+	if !ok {
+		return false
+	}
+	labels := map[string]string{"milestone_type": m.MilestoneType}
+
+	var rt *WorkflowStepRuntime
+	if s.stepRuntimeReader != nil {
+		key := m.CompanyID + "|" + m.WorkflowInstanceID
+		lookup, cached := runtimes[key]
+		if !cached {
+			lookup.rt, lookup.err = s.stepRuntimeReader.WorkflowStepRuntime(ctx, m.CompanyID, m.WorkflowInstanceID, now)
+			runtimes[key] = lookup
+		}
+		if lookup.err != nil {
+			s.metrics.IncCounter("reminder_milestone_runtime_error_total", labels)
+			return false
+		}
+		rt = lookup.rt
+		task := WorkflowStepTaskAbsent
+		if rt != nil && isProposalWorkflowSource(rt.WorkflowSource) && s.stepTaskStateReader != nil {
+			st, err := s.stepTaskStateReader.StepTaskState(ctx, m.CompanyID, m.WorkflowInstanceID, m.StepID)
+			if err != nil {
+				s.metrics.IncCounter("reminder_milestone_runtime_error_total", labels)
+				return false
+			}
+			task = st
+		}
+		decision, reason := decideWorkflowStepReminder(rt, task, m.StepID, offset, companyBusinessDate(now))
+		switch decision {
+		case decisionWait:
+			s.metrics.IncCounter("reminder_milestone_ineligible_total", labels)
+			return false
+		case decisionObsolete:
+			s.obsoleteMilestone(ctx, m, reason)
+			return false
+		}
+	} else if !s.workflowStepReminderEligible(ctx, m) {
+		s.metrics.IncCounter("reminder_milestone_ineligible_total", labels)
+		return false
+	}
+
+	in := ReminderOccurrenceDTO{
+		OccurrenceID:   m.MilestoneID,
+		DisclosureID:   m.WorkflowInstanceID, // use instance as disclosure scope
+		ScopeType:      ScopeTypeWorkflowStep,
+		ScopeID:        m.StepID,
+		ScheduledAt:    reminderScheduledAt(m, rt, offset),
+		Status:         ReminderStatusPending,
+		IdempotencyKey: WorkflowStepReminderIdempotencyKey(m.WorkflowInstanceID, m.StepID, m.MilestoneType),
+	}
+	var occ *ReminderOccurrenceDTO
+	var err error
+	if ensurer, ok := s.occurrenceRepo.(OccurrenceEnsurer); ok {
+		occ, err = ensurer.EnsureOccurrence(ctx, in)
+	} else {
+		occ, err = s.occurrenceRepo.SeedOccurrence(ctx, in)
+	}
+	if err != nil || occ == nil {
+		s.metrics.IncCounter("reminder_milestone_seed_error_total", labels)
+		return false
+	}
+	if err := s.milestoneScanner.MarkMilestoneSent(ctx, m.MilestoneID, occ.OccurrenceID); err != nil {
+		s.metrics.IncCounter("reminder_milestone_mark_error_total", labels)
+		return false
+	}
+	s.metrics.IncCounter("reminder_milestone_seeded_total", labels)
+	return true
+}
+
+func (s *service) obsoleteMilestone(ctx context.Context, m DueMilestone, reason string) {
+	obsoleter, ok := s.milestoneScanner.(MilestoneObsoleter)
+	if !ok {
+		s.metrics.IncCounter("reminder_milestone_ineligible_total", map[string]string{"milestone_type": m.MilestoneType})
+		return
+	}
+	if err := obsoleter.MarkMilestoneObsolete(ctx, m.MilestoneID); err != nil {
+		s.metrics.IncCounter("reminder_milestone_mark_error_total", map[string]string{"milestone_type": m.MilestoneType})
+		return
+	}
+	s.metrics.IncCounter("reminder_milestone_obsoleted_total", map[string]string{"reason": reason})
+}
+
+// companyBusinessDate returns the Asia/Ho_Chi_Minh calendar date of t, encoded at 00:00 UTC
+// (the encoding used for milestone and step dates).
+func companyBusinessDate(t time.Time) time.Time {
+	loc, err := time.LoadLocation("Asia/Ho_Chi_Minh")
+	if err != nil {
+		loc = time.FixedZone("ICT", 7*3600)
+	}
+	local := t.In(loc)
+	return time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, time.UTC)
 }

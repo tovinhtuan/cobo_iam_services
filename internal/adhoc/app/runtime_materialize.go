@@ -37,11 +37,19 @@ func ValidateFrozenProposalWorkflowForRuntime(snap *ProposalWorkflowSnapshot) er
 		return newAdHocFieldError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, "workflow.steps", fmt.Sprintf("frozen workflow exceeds technical maximum of %d steps", MaxProposalWorkflowSteps))
 	}
 	seenOrders := make(map[int]struct{}, len(snap.Steps))
+	seenIDs := make(map[string]struct{}, len(snap.Steps))
 	for i, step := range snap.Steps {
 		prefix := fmt.Sprintf("workflow.steps[%d]", i)
 		if strings.TrimSpace(step.ID) == "" {
 			return newAdHocFieldError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, prefix+".id", "proposal step id is required")
 		}
+		// Defense in depth: proposal ids are normalised on write, but a duplicate id here
+		// would create duplicate reminder milestones (REM-01).
+		idKey := strings.ToLower(strings.TrimSpace(step.ID))
+		if _, dup := seenIDs[idKey]; dup {
+			return newAdHocFieldError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, prefix+".id", "proposal step id must be unique")
+		}
+		seenIDs[idKey] = struct{}{}
 		if strings.TrimSpace(step.Name) == "" {
 			return newAdHocFieldError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, prefix+".name", "name is required")
 		}

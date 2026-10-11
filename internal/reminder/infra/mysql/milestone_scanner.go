@@ -18,19 +18,32 @@ func NewMilestoneScanner(db *sql.DB) *MilestoneScanner {
 	return &MilestoneScanner{db: db}
 }
 
-// ListDueMilestones returns milestone rows whose scheduled_date <= DATE(asOf) and reminder_sent=0.
-// Uses FOR UPDATE SKIP LOCKED to allow concurrent worker instances without double-sending.
+// ListDueMilestones returns the first page of due milestones (see ListDueMilestonesPage).
 func (s *MilestoneScanner) ListDueMilestones(ctx context.Context, asOf time.Time, limit int) ([]reminderapp.DueMilestone, error) {
+	return s.ListDueMilestonesPage(ctx, asOf, nil, limit)
+}
+
+// ListDueMilestonesPage returns milestone rows whose scheduled_date <= DATE(asOf) and
+// reminder_sent=0, ordered by (scheduled_date, milestone_id) and starting strictly after the
+// keyset cursor. Paging keeps rows that must wait from hiding later eligible rows (REM-06).
+// Duplicate seeding across workers is prevented by the occurrence idempotency_key, not by
+// row locks (this query runs in autocommit).
+func (s *MilestoneScanner) ListDueMilestonesPage(ctx context.Context, asOf time.Time, after *reminderapp.MilestoneCursor, limit int) ([]reminderapp.DueMilestone, error) {
 	asOfDate := asOf.UTC().Format("2006-01-02")
+	afterDate, afterID := "0001-01-01", ""
+	if after != nil {
+		afterDate = after.ScheduledDate.UTC().Format("2006-01-02")
+		afterID = after.MilestoneID
+	}
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT milestone_id, company_id, workflow_instance_id, step_id, milestone_type, scheduled_date
 		FROM workflow_step_milestones
 		WHERE reminder_sent = 0 AND scheduled_date <= ?
 		  AND milestone_type LIKE 'due_minus_%'
-		ORDER BY scheduled_date ASC
+		  AND (scheduled_date > ? OR (scheduled_date = ? AND milestone_id > ?))
+		ORDER BY scheduled_date ASC, milestone_id ASC
 		LIMIT ?
-		FOR UPDATE SKIP LOCKED
-	`, asOfDate, limit)
+	`, asOfDate, afterDate, afterDate, afterID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list due milestones: %w", err)
 	}
@@ -47,6 +60,20 @@ func (s *MilestoneScanner) ListDueMilestones(ctx context.Context, asOf time.Time
 		out = append(out, m)
 	}
 	return out, rows.Err()
+}
+
+// MarkMilestoneObsolete takes a milestone out of the due queue when its reminder can never
+// be due again. It reuses reminder_sent=1 with a NULL occurrence id: reminder_sent is read as
+// a bool by the workflow reminders API, so a new value (e.g. 2) would break that endpoint.
+func (s *MilestoneScanner) MarkMilestoneObsolete(ctx context.Context, milestoneID string) error {
+	if _, err := s.db.ExecContext(ctx, `
+		UPDATE workflow_step_milestones
+		SET reminder_sent = 1, reminder_occurrence_id = NULL
+		WHERE milestone_id = ? AND reminder_sent = 0
+	`, milestoneID); err != nil {
+		return fmt.Errorf("mark milestone obsolete %s: %w", milestoneID, err)
+	}
+	return nil
 }
 
 // MarkMilestoneSent sets reminder_sent=1 and records the occurrence_id on the milestone row.

@@ -210,6 +210,7 @@ func main() {
 			reminderOpts = append(reminderOpts,
 				reminderapp.WithMilestoneScanner(remindermysql.NewMilestoneScanner(sqlDB)),
 				reminderapp.WithWorkflowStepTaskStateReader(remindermysql.NewWorkflowStepTaskStateReader(sqlDB)),
+				reminderapp.WithWorkflowStepRuntimeReader(remindermysql.NewWorkflowStepRuntimeReader(sqlDB)),
 				reminderapp.WithInAppCreator(&reminderinapp.Bridge{Svc: inAppSvc}),
 			)
 			log.Info("workflow milestone reminder bridge enabled")

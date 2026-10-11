@@ -165,12 +165,39 @@ func FirstStepCode(snapshot []StepSnapshot) string {
 	return code
 }
 
-// ValidateSnapshot ensures at least one step exists when a snapshot is required.
+// ValidateSnapshot ensures at least one step exists when a snapshot is required, and that
+// step identities (step_id, and step_code when set) are unique. It is the common sink of
+// every workflow source (template, company override, CMS, ad-hoc proposal).
 func ValidateSnapshot(snapshot []StepSnapshot) error {
 	if len(snapshot) == 0 {
 		return fmt.Errorf("%w", workflowerrs.ErrEmptyWorkflowSnapshot)
 	}
+	seenID := make(map[string]int, len(snapshot))
+	seenCode := make(map[string]int, len(snapshot))
+	for i, s := range snapshot {
+		if id := strings.ToLower(strings.TrimSpace(s.StepID)); id != "" {
+			if prev, ok := seenID[id]; ok {
+				return fmt.Errorf("%w: step_id %q at positions %d and %d", workflowerrs.ErrDuplicateWorkflowStep, strings.TrimSpace(s.StepID), prev, i)
+			}
+			seenID[id] = i
+		}
+		if code := strings.ToLower(strings.TrimSpace(s.StepCode)); code != "" {
+			if prev, ok := seenCode[code]; ok {
+				return fmt.Errorf("%w: step_code %q at positions %d and %d", workflowerrs.ErrDuplicateWorkflowStep, strings.TrimSpace(s.StepCode), prev, i)
+			}
+			seenCode[code] = i
+		}
+	}
 	return nil
+}
+
+// SnapshotValidationMessage returns the user-facing message for a ValidateSnapshot error,
+// falling back to emptyMessage for an empty workflow.
+func SnapshotValidationMessage(err error, emptyMessage string) string {
+	if workflowerrs.IsDuplicateWorkflowStep(err) {
+		return "workflow step_id must be unique"
+	}
+	return emptyMessage
 }
 
 // IsEmptyEffectiveWorkflow reports whether err is an empty effective workflow (ad-hoc 4xx or worker skip).

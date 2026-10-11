@@ -114,8 +114,7 @@ func (s *service) CmsUpsertGlobalWorkflow(ctx context.Context, req CmsUpsertGlob
 	if err := rejectDuplicateIncomingIdentities(req.Steps); err != nil {
 		return nil, err
 	}
-	assignFacadeStepKeys(&req, detail)
-	if err := rejectDuplicateFacadeStepKeys(req.Steps); err != nil {
+	if err := normalizeFacadeStepIdentities(&req, detail); err != nil {
 		return nil, err
 	}
 	merged := mergeIncomingWorkflowSteps(workflowStepsFromDetail(detail), req.Steps)
@@ -281,29 +280,39 @@ func assignFacadeStepKeys(req *CmsUpsertGlobalWorkflowRequest, detail *Disclosur
 	}
 }
 
+// normalizeFacadeStepIdentities assigns generated step ids/keys, then re-checks uniqueness:
+// a generated "<type>-step-N" id can collide with an explicit id in the same request (REM-01).
+func normalizeFacadeStepIdentities(req *CmsUpsertGlobalWorkflowRequest, detail *DisclosureTypeDTO) error {
+	assignFacadeStepKeys(req, detail)
+	if err := rejectDuplicateIncomingIdentities(req.Steps); err != nil {
+		return err
+	}
+	return rejectDuplicateFacadeStepKeys(req.Steps)
+}
+
 func rejectDuplicateIncomingIdentities(steps []GlobalWorkflowStepInput) error {
 	seenID := map[string]int{}
 	seenKey := map[string]int{}
 	for i, step := range steps {
 		if id := strings.TrimSpace(step.StepID); id != "" {
-			if prev, ok := seenID[id]; ok {
+			if prev, ok := seenID[strings.ToLower(id)]; ok {
 				return &perr.HTTPError{
 					HTTPStatus: http.StatusBadRequest, Code: perr.CodeInvalidRequest,
 					Message: "workflow step_id must be unique",
 					Details: map[string]any{"step_index": i, "duplicate_of": prev, "step_id": id},
 				}
 			}
-			seenID[id] = i
+			seenID[strings.ToLower(id)] = i
 		}
 		if key := strings.TrimSpace(step.StepKey); key != "" {
-			if prev, ok := seenKey[key]; ok {
+			if prev, ok := seenKey[strings.ToLower(key)]; ok {
 				return &perr.HTTPError{
 					HTTPStatus: http.StatusBadRequest, Code: perr.CodeInvalidRequest,
 					Message: "workflow step_key must be unique",
 					Details: map[string]any{"step_index": i, "duplicate_of": prev, "step_key": key},
 				}
 			}
-			seenKey[key] = i
+			seenKey[strings.ToLower(key)] = i
 		}
 	}
 	return nil
@@ -319,14 +328,14 @@ func rejectDuplicateFacadeStepKeys(steps []GlobalWorkflowStepInput) error {
 		if key == "" {
 			continue
 		}
-		if prev, ok := seen[key]; ok {
+		if prev, ok := seen[strings.ToLower(key)]; ok {
 			return &perr.HTTPError{
 				HTTPStatus: http.StatusBadRequest, Code: perr.CodeInvalidRequest,
 				Message: "workflow step_key must be unique",
 				Details: map[string]any{"step_index": i, "duplicate_of": prev, "step_key": key},
 			}
 		}
-		seen[key] = i
+		seen[strings.ToLower(key)] = i
 	}
 	return nil
 }
