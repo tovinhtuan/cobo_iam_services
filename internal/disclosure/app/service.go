@@ -856,6 +856,11 @@ func (s *service) UpsertTypeVersion(ctx context.Context, req UpsertTypeVersionRe
 	if req.Scope == templateScopeCompany && !isCompanyCreatableTemplateCategory(req.TemplateCategory) {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "company scope only supports custom template category", nil)
 	}
+	if !req.CreateOnly {
+		if err := s.rejectArchivedGlobalTemplateWrite(ctx, req.TypeID); err != nil {
+			return nil, err
+		}
+	}
 	ApplyTemplateFlatBlockSync(&req, s.idg)
 	if err := ResolveLegalBasisWrite(ctx, &req, s.legalBasisStructuredWriteEnabled, s.idg); err != nil {
 		return nil, err
@@ -863,6 +868,9 @@ func (s *service) UpsertTypeVersion(ctx context.Context, req UpsertTypeVersionRe
 	syncLegalBasisBlockDescriptionFromFlat(&req)
 	HydrateTemplateBlocksBilingualForPersistence(req.Blocks)
 	if err := s.preservePinnedWorkflowIfOmitted(ctx, &req); err != nil {
+		return nil, err
+	}
+	if err := s.preserveOmittedFieldsFromCandidate(ctx, &req); err != nil {
 		return nil, err
 	}
 	req.DisplayGroupCodes = normalizeDisplayGroupCodes(req.DisplayGroupCodes)

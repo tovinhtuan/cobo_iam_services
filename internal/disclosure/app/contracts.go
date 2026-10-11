@@ -421,14 +421,19 @@ type UpsertTypeVersionRequest struct {
 	// block is persisted instead of being treated as "omitted, preserve pinned".
 	ClearWorkflow bool `json:"-"`
 	// CreateOnly rejects the upsert when type_id already exists (clone target race guard).
-	CreateOnly         bool                                      `json:"-"`
-	Checklist          []ChecklistItemDTO                        `json:"checklist"`
-	Tags               []string                                  `json:"tags"`
-	DeadlineConfig     *TemplateDeadlineConfig                   `json:"deadline_config,omitempty"`
-	Blocks             []TemplateBlockDTO                        `json:"blocks"`
-	DisplayGroupCodes  []string                                  `json:"display_group_codes"`
-	ChangeNote         string                                    `json:"change_note"`
-	ApplicabilityRules *applicability.TemplateApplicabilityRules `json:"applicability_rules,omitempty"`
+	// CMS "create template" sets it via body key "create_only": true (HTTP decoder).
+	CreateOnly bool `json:"-"`
+	// NarrativeFieldsOmitted lists narrative JSON keys (see NarrativeFieldKeys) absent from
+	// the HTTP body. Upsert copies them from the current candidate version instead of
+	// erasing them under full-replace semantics. Explicit "" still clears. Set by HTTP decoder.
+	NarrativeFieldsOmitted []string                                  `json:"-"`
+	Checklist              []ChecklistItemDTO                        `json:"checklist"`
+	Tags                   []string                                  `json:"tags"`
+	DeadlineConfig         *TemplateDeadlineConfig                   `json:"deadline_config,omitempty"`
+	Blocks                 []TemplateBlockDTO                        `json:"blocks"`
+	DisplayGroupCodes      []string                                  `json:"display_group_codes"`
+	ChangeNote             string                                    `json:"change_note"`
+	ApplicabilityRules     *applicability.TemplateApplicabilityRules `json:"applicability_rules,omitempty"`
 	// PublicationCandidate is derived from the request after all app-layer
 	// normalization. It is never accepted from the wire.
 	PublicationCandidate *TemplatePublicationCandidate `json:"-"`

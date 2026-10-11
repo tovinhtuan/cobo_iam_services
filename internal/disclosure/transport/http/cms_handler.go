@@ -21,7 +21,10 @@ func (h *Handler) cmsArchiveTemplate(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Reason string `json:"reason"`
 	}
-	_ = json.NewDecoder(r.Body).Decode(&body)
+	if err := decodeJSONBody(w, r, maxSmallJSONBodyBytes, &body, true); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
 	resp, err := h.svc.CmsArchiveTemplate(r.Context(), disclosureapp.CmsArchiveTemplateRequest{
 		Subject: sub,
 		TypeID:  typeID,
@@ -60,7 +63,10 @@ func (h *Handler) cmsRestoreTemplate(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Reason string `json:"reason"`
 	}
-	_ = json.NewDecoder(r.Body).Decode(&body)
+	if err := decodeJSONBody(w, r, maxSmallJSONBodyBytes, &body, true); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
 	resp, err := h.svc.CmsRestoreTemplate(r.Context(), disclosureapp.CmsRestoreTemplateRequest{
 		Subject: sub,
 		TypeID:  typeID,
@@ -115,7 +121,7 @@ func (h *Handler) cmsUpsertGlobalWorkflow(w http.ResponseWriter, r *http.Request
 	}
 	typeID := strings.TrimSpace(r.PathValue("type_id"))
 	var req disclosureapp.CmsUpsertGlobalWorkflowRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(w, r, maxTemplateWriteBodyBytes, &req, false); err != nil {
 		httpx.WriteError(w, nil, err)
 		return
 	}

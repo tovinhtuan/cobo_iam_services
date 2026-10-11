@@ -28,8 +28,12 @@ func TestUpsertTypeVersion_MySQLTransactionalIntegrityAndConcurrencyProof(t *tes
 	}
 
 	// 2. Concurrency Safety: Row-level lock / FOR UPDATE
-	if !strings.Contains(fn, "SELECT active_version_no, company_id FROM disclosure_types WHERE type_id = ? FOR UPDATE") {
+	if !strings.Contains(fn, "SELECT active_version_no, company_id, COALESCE(status, '') FROM disclosure_types WHERE type_id = ? FOR UPDATE") {
 		t.Fatal("UpsertTypeVersion must acquire exclusive row lock with FOR UPDATE to serialize concurrent writes on type_id")
+	}
+	// 2b. Archived global template must be rejected under the same lock (no silent un-archive).
+	if !strings.Contains(fn, `Code:       "TEMPLATE_ARCHIVED"`) {
+		t.Fatal("UpsertTypeVersion must reject writes to archived global templates with TEMPLATE_ARCHIVED")
 	}
 
 	// 3. CreateOnly duplicate detection & 409 Conflict

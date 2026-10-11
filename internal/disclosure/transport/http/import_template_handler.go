@@ -2,6 +2,7 @@ package http
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -271,7 +272,12 @@ func (h *Handler) cmsConfirmTemplateImport(w http.ResponseWriter, r *http.Reques
 	}
 
 	var req disclosureapp.ConfirmTemplateImportRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxTemplateWriteBodyBytes)).Decode(&req); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			httpx.WriteError(w, nil, perr.NewHTTPError(http.StatusRequestEntityTooLarge, perr.CodeInvalidRequest, "request body too large", nil))
+			return
+		}
 		httpx.WriteError(w, nil, perr.NewHTTPError(
 			http.StatusBadRequest,
 			perr.CodeInvalidRequest,

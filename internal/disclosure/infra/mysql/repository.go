@@ -928,8 +928,9 @@ func (r *Repository) UpsertTypeVersion(ctx context.Context, req disclosureapp.Up
 	changeNote := strings.TrimSpace(req.ChangeNote)
 	var currentVersion sql.NullInt64
 	var currentCompany sql.NullString
+	var currentStatus string
 	typeExists := false
-	if err := tx.QueryRowContext(ctx, `SELECT active_version_no, company_id FROM disclosure_types WHERE type_id = ? FOR UPDATE`, req.TypeID).Scan(&currentVersion, &currentCompany); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT active_version_no, company_id, COALESCE(status, '') FROM disclosure_types WHERE type_id = ? FOR UPDATE`, req.TypeID).Scan(&currentVersion, &currentCompany, &currentStatus); err != nil {
 		if err != sql.ErrNoRows {
 			return nil, err
 		}
@@ -938,6 +939,16 @@ func (r *Repository) UpsertTypeVersion(ctx context.Context, req disclosureapp.Up
 	}
 	if req.CreateOnly && typeExists {
 		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "target_type_id already exists", nil)
+	}
+	// Archived global template: a draft write would flip status to 'active' and strand
+	// archive metadata (Restore → 409). Service checks too; this closes the race under the lock.
+	if typeExists && (!currentCompany.Valid || currentCompany.String == "") && strings.EqualFold(strings.TrimSpace(currentStatus), "archived") {
+		return nil, &perr.HTTPError{
+			HTTPStatus: http.StatusConflict,
+			Code:       "TEMPLATE_ARCHIVED",
+			Message:    "template is archived; restore it before editing",
+			Details:    map[string]any{"type_id": req.TypeID},
+		}
 	}
 	if typeExists && currentCompany.Valid && currentCompany.String != "" && currentCompany.String != companyID {
 		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodePermissionDenied, "cannot modify type from another company", nil)

@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -391,20 +390,34 @@ func (h *Handler) upsertTypeVersion(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, nil, err)
 		return
 	}
-	rawBody, err := io.ReadAll(r.Body)
+	rawBody, err := readJSONBody(w, r, maxTemplateWriteBodyBytes)
 	if err != nil {
 		httpx.WriteError(w, nil, err)
 		return
 	}
 	var payload disclosureapp.UpsertTypeVersionRequest
 	if err := json.Unmarshal(rawBody, &payload); err != nil {
-		httpx.WriteError(w, nil, err)
+		httpx.WriteError(w, nil, invalidJSONError())
 		return
 	}
 	var rawKeys map[string]json.RawMessage
 	if err := json.Unmarshal(rawBody, &rawKeys); err == nil {
 		if _, ok := rawKeys["legal_bases"]; ok {
 			payload.LegalBasesProvided = true
+		}
+		if raw, ok := rawKeys["create_only"]; ok {
+			var createOnly bool
+			if err := json.Unmarshal(raw, &createOnly); err != nil {
+				// Fail closed: a malformed create guard must not degrade into an overwrite.
+				httpx.WriteError(w, nil, invalidJSONError())
+				return
+			}
+			payload.CreateOnly = createOnly
+		}
+		for _, key := range disclosureapp.NarrativeFieldKeys {
+			if _, ok := rawKeys[key]; !ok {
+				payload.NarrativeFieldsOmitted = append(payload.NarrativeFieldsOmitted, key)
+			}
 		}
 	}
 	payload.Subject = sub
@@ -434,7 +447,7 @@ func (h *Handler) cloneTypeFromActive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var payload disclosureapp.CloneTypeFromActiveRequest
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+	if err := decodeJSONBody(w, r, maxSmallJSONBodyBytes, &payload, false); err != nil {
 		httpx.WriteError(w, nil, err)
 		return
 	}
@@ -499,7 +512,7 @@ func (h *Handler) activateTypeVersion(w http.ResponseWriter, r *http.Request) {
 		VersionNo int    `json:"version_no"`
 		Reason    string `json:"reason"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+	if err := decodeJSONBody(w, r, maxSmallJSONBodyBytes, &payload, false); err != nil {
 		httpx.WriteError(w, nil, err)
 		return
 	}
@@ -877,7 +890,7 @@ func (h *Handler) updateTemplateDeadlineConfig(w http.ResponseWriter, r *http.Re
 		return
 	}
 	var req disclosureapp.UpdateTemplateDeadlineConfigRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(w, r, maxSmallJSONBodyBytes, &req, false); err != nil {
 		httpx.WriteError(w, nil, err)
 		return
 	}
