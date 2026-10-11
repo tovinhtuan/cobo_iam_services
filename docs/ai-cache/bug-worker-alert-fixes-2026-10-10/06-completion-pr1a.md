@@ -1,6 +1,6 @@
 # PR-1a: Completion report (wf-bugfix), 2026-10-11
 
-Trạng thái: **đã implement và verify ở local, CHƯA commit, CHƯA deploy.** Q-25 (thao tác trên server DEV), commit và deploy đều đang chờ user cho phép.
+Trạng thái: **đã commit (`0a63b2d` code, `683f65d` docs; chưa push) và đã deploy lên DEV ngày 2026-10-11.** User đồng ý Q-25, commit và deploy ("đồng ý 1, 2, 3"). Nhật ký ở cuối file.
 
 Phạm vi theo `02a-plan-pr1-reminder.md` (PR-1a) và các quyết định Phase 0 (PO đồng ý toàn bộ, 2026-10-11).
 
@@ -101,9 +101,27 @@ Follow-ups:
   API-48   tài liệu enum trạng thái reminder pending|sent|failed|cancelled
 ```
 
-## Rollout (chờ user cho phép từng bước)
+## Nhật ký rollout DEV 2026-10-11 (UTC)
 
-1. Q-25 trên DEV: cách ly binary worker/api cũ, tắt 6 template QA chu kỳ hằng ngày, bật allowlist email, rotate `INTERNAL_REMINDER_TOKEN`.
-2. Commit PR-1a.
-3. Dark launch: deploy với `REMINDER_DISPATCH_ENABLED=false`, recreate worker, theo dõi `reminder_milestone_obsoleted_total` và số occurrence mới; sau đó bật dispatch.
-4. Hạn chót: 2026-10-12. REM-06 sẽ bắt đầu chặn scanner quanh 13–14/10.
+Trước khi thao tác (qa_ro, 01:58):
+- 1300 milestone đến hạn chưa gửi, nhưng scanner chỉ lấy `due_minus_%`: 232 dòng (101 `due_minus_1d`, 131 `due_minus_3d`). 673 `step_start` và 395 `step_end` không thuộc phạm vi scanner.
+- Ước lượng bằng SQL theo cùng thứ tự quyết định: 0 eligible, 214 wait (bước trước chưa xong), 18 obsolete. Kết quả thật sau deploy khớp đúng.
+- 0 occurrence PENDING/RETRY đến hạn. Mốc id: occurrence max id 1416798, delivery max id 702.
+
+1. **Q-25(b) DATA-01 (02:01):** archive 6 template QA chu kỳ hằng ngày qua `POST /api/v1/platform/cms/templates/{type_id}/archive`, dùng persona `CMS` (có `cms.template.archive`), lý do có ghi audit. Kết quả: cả 6 đều `archived`, `active_version_no` 0, `archived_from_version_no` 1; không còn template daily nào active. Khôi phục: `POST .../restore`.
+   - `qa_rw` chỉ có quyền ghi trên `membership_direct_permissions` và `role_permissions`, không UPDATE được `disclosure_types`, nên mới phải dùng API. Không dùng root.
+2. **Q-25(a) (02:02):** sao lưu binary đang chạy thành `bin/{api,worker}.rollback.20261011T020205Z` (mốc rollback); chuyển 26 binary cũ (`worker.bak*`, `worker.rollback.20261002T*`, `api.bak*`, `api_new`, `api.new.*`) vào `bin/quarantine/` và đặt quyền 000. Chỉ di chuyển, không xoá.
+3. **Q-25(d) (02:02):** sao lưu `.env` thành `.env.bak-q25-20261011T020205Z` (quyền 600). Rotate `INTERNAL_REMINDER_TOKEN` bằng `openssl rand -hex 32`, giá trị không in ra đâu. Token cũ trùng với giá trị đã commit trong `deploy-artifacts/_tmp_seed_reminder_smoke.py` (xác nhận SEC-26/H22). Sau deploy, `/metrics` với token cũ trả 401. Prometheus scrape qua mạng nội bộ Docker, không dùng token, nên không bị ảnh hưởng.
+4. **Q-25(c) allowlist email: KHÔNG làm được bằng cấu hình.** Code chưa có allowlist (SEC-27 nằm ở PR-W5). Chuyển `SMTP_HOST` sang Mailpit thì sẽ lộ link reset qua cổng :8025 public (C6). Thay vào đó dùng chốt chặn theo số liệu: dark launch, đếm occurrence sẽ gửi, chỉ bật lại gửi khi hàng đợi gần như trống.
+5. **Dark launch (02:03):** `REMINDER_DISPATCH_ENABLED=false`, chạy `deploy-dev.ps1 -Mode be`. Hash sha256 của binary trên server khớp bản build local; `/healthz` và `/readyz` OK; env của worker và token trong api khớp `.env`.
+   - Sau 1 phút: obsolete 0 → 18; wait 214; 0 occurrence mới; 0 delivery; log worker chỉ có INFO.
+6. **Bật gửi (02:05):** `REMINDER_DISPATCH_ENABLED=true`, recreate worker. Lúc 02:06: 0 ERROR/WARN; 0 occurrence đến hạn; 0 delivery mới; 0 occurrence gửi lặp.
+
+Rollback (nếu cần): copy `bin/{api,worker}.rollback.20261011T020205Z` đè lên `bin/{api,worker}`, rồi `docker compose -f docker-compose.artifacts.yml up -d --force-recreate --no-deps api worker`. Dữ liệu tương thích (chỉ ghi `reminder_sent` 0/1).
+
+Follow-up mới phát sinh khi rollout:
+- PERF-54: cursor phân trang đặt lại mỗi tick. Nếu số dòng wait vượt 1000 (5×200) thì các dòng phía sau bị bỏ đói. DEV hiện có 214 và DATA-01 đã tắt nên không còn tăng nhanh. Hướng sửa: cursor xoay vòng giữa các tick.
+- PERF-55: worker không có endpoint `/metrics`, nên `reminder_milestone_obsoleted_total` (đếm trong worker) không scrape được. Tạm theo dõi bằng SQL `reminder_sent=1 AND reminder_occurrence_id IS NULL`. Gộp vào PERF-52 (gauge từ MySQL ở phía API).
+- SEC-29: xoá literal token (đã chết) khỏi `deploy-artifacts/_tmp_seed_reminder_smoke.py`, chuyển sang đọc env.
+- SEC-27 (allowlist email) vẫn là điều kiện trước khi lượng email tăng theo RMC-01.
+- Theo dõi 24h theo `03` §5 và `04` §8.

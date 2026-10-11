@@ -4847,4 +4847,10 @@
   - Image dev chạy `go run` khi start, nên `docker compose build api` không compile gì. Muốn có bằng chứng phải `docker run --rm cobo_iam_services_api go build ./cmd/...`.
   - Docker Desktop có thể tự khởi động (`Start-Process "C:\Program Files\Docker\Docker\Docker Desktop.exe"`), không cần ghi BLOCKED ngay.
   - Milestone obsolete = `reminder_sent=1` + `reminder_occurrence_id=NULL`; API ra `cancelled`.
-- open: Q-25 (thao tác DEV), commit, deploy dark launch, tất cả chờ user cho phép. Hạn 2026-10-12.
+- **Rollout 2026-10-11 (user đồng ý):** commit `0a63b2d` + `683f65d` (chưa push); archive 6 template QA daily qua API CMS (persona CMS); cách ly 26 binary; rotate `INTERNAL_REMINDER_TOKEN` (token cũ = giá trị đã commit, nay trả 401); dark launch rồi bật gửi. Kết quả: 18 obsolete, 214 wait, 0 occurrence/delivery mới, không lỗi. Nhật ký trong `06-completion-pr1a.md`.
+- reusable (rollout):
+  - `qa_rw` không ghi được `disclosure_types`. Archive template dùng `POST /api/v1/platform/cms/templates/{id}/archive` với persona `CMS`; login plaintext `{"login_id","password"}` được chấp nhận.
+  - Scanner reminder chỉ lấy `due_minus_%`; `step_start`/`step_end` không bao giờ được seed (đừng tính nhầm vào backlog).
+  - `/metrics` cho qua nguồn nội bộ; Prometheus không cần token.
+  - Không có allowlist email: dùng chốt chặn "dark launch + đếm occurrence đến hạn" trước khi bật lại gửi.
+- open: PERF-54 (cursor xoay vòng), PERF-55/52 (metric worker), SEC-29 (xoá literal token), SEC-27 (allowlist email), theo dõi 24h; các PR tiếp theo PR-2a, PR-3, PR-4, PR-1b, PR-5, PR-2b.
