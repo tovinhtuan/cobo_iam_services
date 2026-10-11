@@ -22,3 +22,6 @@ deploy-dev.local.env
 /docs/ai-cache/**/*.har
 /docs/ai-cache/**/trace.zip
 /docs/ai-cache/**/*.mp4
+# Python bytecode (may embed constants of local scripts)
+__pycache__/
+*.pyc

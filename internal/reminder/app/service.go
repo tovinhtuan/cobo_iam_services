@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
@@ -42,6 +43,11 @@ type service struct {
 	dispatchLogger             *slog.Logger
 	tierEnforcement            *entitlement.Checker
 	bindingOwnership           BindingOwnershipLookup
+
+	// seedCursor is where the next due-milestone scan resumes, so rows past one tick's
+	// budget are reached on later ticks instead of never (PERF-54). Guarded by seedMu.
+	seedMu     sync.Mutex
+	seedCursor *MilestoneCursor
 }
 
 type EmailSender interface {
@@ -1015,30 +1021,63 @@ func (s *service) SeedOccurrencesFromDueMilestones(ctx context.Context, now time
 	runtimes := map[string]stepRuntimeLookup{}
 	seeded := 0
 	pager, canPage := s.milestoneScanner.(MilestonePageScanner)
-	var cursor *MilestoneCursor
-	for page := 0; page < milestoneSeedMaxPages; page++ {
-		var milestones []DueMilestone
-		var err error
-		if canPage {
-			milestones, err = pager.ListDueMilestonesPage(ctx, now, cursor, milestoneSeedBatchLimit)
-		} else {
-			milestones, err = s.milestoneScanner.ListDueMilestones(ctx, now, milestoneSeedBatchLimit)
-		}
+	if !canPage {
+		milestones, err := s.milestoneScanner.ListDueMilestones(ctx, now, milestoneSeedBatchLimit)
 		if err != nil {
-			return seeded, fmt.Errorf("list due milestones: %w", err)
+			return 0, fmt.Errorf("list due milestones: %w", err)
 		}
 		for _, m := range milestones {
 			if s.seedOneMilestone(ctx, m, now, runtimes) {
 				seeded++
 			}
 		}
-		if !canPage || len(milestones) < milestoneSeedBatchLimit {
-			break
+		return seeded, nil
+	}
+
+	// Resume where the previous tick stopped and wrap around once, so rows that keep
+	// waiting cannot hide later rows beyond the per-tick budget (PERF-54).
+	s.seedMu.Lock()
+	defer s.seedMu.Unlock()
+	start := s.seedCursor
+	cursor := start
+	wrapped := start == nil
+	for page := 0; page < milestoneSeedMaxPages; page++ {
+		milestones, err := pager.ListDueMilestonesPage(ctx, now, cursor, milestoneSeedBatchLimit)
+		if err != nil {
+			return seeded, fmt.Errorf("list due milestones: %w", err)
+		}
+		for _, m := range milestones {
+			if wrapped && start != nil && !milestoneBeforeCursor(m, *start) {
+				s.seedCursor = nil // full pass done within this tick
+				return seeded, nil
+			}
+			if s.seedOneMilestone(ctx, m, now, runtimes) {
+				seeded++
+			}
+		}
+		if len(milestones) < milestoneSeedBatchLimit {
+			if wrapped {
+				s.seedCursor = nil
+				return seeded, nil
+			}
+			wrapped, cursor = true, nil
+			continue
 		}
 		last := milestones[len(milestones)-1]
 		cursor = &MilestoneCursor{ScheduledDate: last.ScheduledDate, MilestoneID: last.MilestoneID}
 	}
+	s.seedCursor = cursor
 	return seeded, nil
+}
+
+// milestoneBeforeCursor reports whether m sorts before c in the scanner order
+// (scheduled_date, milestone_id).
+func milestoneBeforeCursor(m DueMilestone, c MilestoneCursor) bool {
+	md, cd := dateOnly(m.ScheduledDate.UTC()), dateOnly(c.ScheduledDate.UTC())
+	if !md.Equal(cd) {
+		return md.Before(cd)
+	}
+	return m.MilestoneID < c.MilestoneID
 }
 
 func (s *service) seedOneMilestone(ctx context.Context, m DueMilestone, now time.Time, runtimes map[string]stepRuntimeLookup) bool {

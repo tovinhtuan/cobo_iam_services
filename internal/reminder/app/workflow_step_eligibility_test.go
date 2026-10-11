@@ -214,3 +214,85 @@ func TestSeedOccurrences_WaitRowsDoNotStarve(t *testing.T) {
 		t.Fatalf("waiting rows must not be obsoleted, got %d", len(scanner.obsolete))
 	}
 }
+
+// PERF-54: more waiting rows than one tick can read (5 pages x 200) must not hide later rows
+// forever; the scan resumes where the previous tick stopped and wraps around.
+func TestSeedOccurrences_WaitRowsBeyondTickBudgetDoNotStarve(t *testing.T) {
+	now := hcmDate(2026, 10, 10)
+	waiting := milestoneSeedBatchLimit*milestoneSeedMaxPages + 300
+	var due []DueMilestone
+	for i := 0; i < waiting; i++ {
+		due = append(due, DueMilestone{
+			MilestoneID: fmt.Sprintf("wait-%05d", i), CompanyID: "c1", WorkflowInstanceID: "waiting",
+			StepID: "s2", MilestoneType: "due_minus_1d", ScheduledDate: now.AddDate(0, 0, -1),
+		})
+	}
+	due = append(due, DueMilestone{MilestoneID: "zz-live", CompanyID: "c1", WorkflowInstanceID: "open", StepID: "s1", MilestoneType: "due_minus_1d", ScheduledDate: now})
+	scanner := newOrderedMilestoneScanner(due)
+	repo := newMySQLLikeOccurrenceRepo()
+	rt := &fakeRuntimeReader{byInstance: map[string]*WorkflowStepRuntime{
+		"waiting": legacyRuntime(
+			WorkflowStepRuntimeStep{StepID: "s1", Current: true, EndDate: hcmDate(2026, 10, 15), HasEnd: true},
+			WorkflowStepRuntimeStep{StepID: "s2", EndDate: hcmDate(2026, 10, 20), HasEnd: true},
+		),
+		"open": legacyRuntime(WorkflowStepRuntimeStep{StepID: "s1", Current: true, EndDate: hcmDate(2026, 10, 11), HasEnd: true}),
+	}}
+	svc := NewService(fakeConfigRepo{}, repo, &fakeAttemptRepo{},
+		WithMilestoneScanner(scanner),
+		WithWorkflowStepTaskStateReader(fakeStepTaskStateReader{}),
+		WithWorkflowStepRuntimeReader(rt),
+	)
+	key := WorkflowStepReminderIdempotencyKey("open", "s1", "due_minus_1d")
+	for tick := 0; tick < 3; tick++ {
+		if _, err := svc.SeedOccurrencesFromDueMilestones(context.Background(), now); err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := repo.byKey[key]; ok {
+			return
+		}
+	}
+	t.Fatalf("eligible milestone behind %d waiting rows never seeded in 3 ticks", waiting)
+}
+
+// PERF-54: after a partial tick the scan continues past the cursor and then wraps, so a row
+// before the cursor that became eligible meanwhile is still reached.
+func TestSeedOccurrences_SeedCursorWrapsAround(t *testing.T) {
+	now := hcmDate(2026, 10, 10)
+	due := []DueMilestone{{MilestoneID: "aa-early", CompanyID: "c1", WorkflowInstanceID: "early", StepID: "s2", MilestoneType: "due_minus_1d", ScheduledDate: now.AddDate(0, 0, -2)}}
+	for i := 0; i < milestoneSeedBatchLimit*milestoneSeedMaxPages+50; i++ {
+		due = append(due, DueMilestone{
+			MilestoneID: fmt.Sprintf("wait-%05d", i), CompanyID: "c1", WorkflowInstanceID: "waiting",
+			StepID: "s2", MilestoneType: "due_minus_1d", ScheduledDate: now.AddDate(0, 0, -1),
+		})
+	}
+	scanner := newOrderedMilestoneScanner(due)
+	repo := newMySQLLikeOccurrenceRepo()
+	waiting := legacyRuntime(
+		WorkflowStepRuntimeStep{StepID: "s1", Current: true, EndDate: hcmDate(2026, 10, 15), HasEnd: true},
+		WorkflowStepRuntimeStep{StepID: "s2", EndDate: hcmDate(2026, 10, 20), HasEnd: true},
+	)
+	rt := &fakeRuntimeReader{byInstance: map[string]*WorkflowStepRuntime{"waiting": waiting, "early": waiting}}
+	svc := NewService(fakeConfigRepo{}, repo, &fakeAttemptRepo{},
+		WithMilestoneScanner(scanner),
+		WithWorkflowStepTaskStateReader(fakeStepTaskStateReader{}),
+		WithWorkflowStepRuntimeReader(rt),
+	)
+	key := WorkflowStepReminderIdempotencyKey("early", "s2", "due_minus_1d")
+	if _, err := svc.SeedOccurrencesFromDueMilestones(context.Background(), now); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := repo.byKey[key]; ok {
+		t.Fatal("step 2 must wait while step 1 is current")
+	}
+	// Step 1 of the early instance completes; its step 2 becomes current.
+	rt.byInstance["early"] = legacyRuntime(
+		WorkflowStepRuntimeStep{StepID: "s1", Completed: true, EndDate: hcmDate(2026, 10, 9), HasEnd: true},
+		WorkflowStepRuntimeStep{StepID: "s2", Current: true, EndDate: hcmDate(2026, 10, 11), HasEnd: true},
+	)
+	if _, err := svc.SeedOccurrencesFromDueMilestones(context.Background(), now); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := repo.byKey[key]; !ok {
+		t.Fatal("row before the cursor not reached after wrap-around")
+	}
+}
