@@ -41,6 +41,7 @@ import (
 	"github.com/cobo/cobo_iam_services/internal/disclosure/app/deadlineengine"
 	disclosureinmem "github.com/cobo/cobo_iam_services/internal/disclosure/infra/inmemory"
 	disclosuremysql "github.com/cobo/cobo_iam_services/internal/disclosure/infra/mysql"
+	disclosureobserve "github.com/cobo/cobo_iam_services/internal/disclosure/infra/observe"
 	disclosureworkflow "github.com/cobo/cobo_iam_services/internal/disclosure/infra/workflow"
 	disclosurehttp "github.com/cobo/cobo_iam_services/internal/disclosure/transport/http"
 	holidayapp "github.com/cobo/cobo_iam_services/internal/holiday/app"
@@ -827,6 +828,22 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 			}
 		} else {
 			log.Info("reminder metrics collector registered")
+		}
+	}
+
+	// PER-06: periodic worker + holiday calendar gauges (the worker has no /metrics).
+	if pool != nil {
+		periodicCollector := disclosureobserve.NewPeriodicObservabilityCollector(
+			disclosureobserve.NewDBPeriodicCountSource(pool),
+			filepath.Join("configs", "non_trading_days"),
+			disclosureapp.PeriodicClaimLease)
+		if err := prometheus.Register(periodicCollector); err != nil {
+			var already prometheus.AlreadyRegisteredError
+			if !errors.As(err, &already) {
+				log.Warn("periodic metrics collector registration failed", slog.String("err", err.Error()))
+			}
+		} else {
+			log.Info("periodic metrics collector registered")
 		}
 	}
 

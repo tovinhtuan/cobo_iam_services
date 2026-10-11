@@ -50,7 +50,8 @@ type Domain interface {
 	ClaimCycle(ctx context.Context, cycleID string) (bool, error)
 	ReleaseCycle(ctx context.Context, cycleID string) error
 	UpdateCycleRecord(ctx context.Context, cycleID, recordID string) error
-	CreateAndSubmitRecordWithPlannedDate(ctx context.Context, companyID, typeID, createdByMembershipID, title string, t0Date *time.Time, plannedDate string) (recordID, workflowInstanceID string, err error)
+	// CreateAndSubmitPeriodicRecord creates or resumes the deterministic record of cycleID.
+	CreateAndSubmitPeriodicRecord(ctx context.Context, cycleID, companyID, typeID, createdByMembershipID, title string, t0Date *time.Time, plannedDate string) (recordID, workflowInstanceID string, err error)
 	ComputeDue(ctx context.Context, cycleStart time.Time, deadlineDays int, durationType string) (time.Time, error)
 	NewCycleID() string
 	Location() *time.Location

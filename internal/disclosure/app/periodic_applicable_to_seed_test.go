@@ -486,3 +486,60 @@ func TestApplicableTo_MaterializerSourceHasNoGate(t *testing.T) {
 		t.Fatal("materializer must not recheck ApplicableTo")
 	}
 }
+
+// BES-38/PER-02: a company-scoped periodic type is seeded only for its owner company, both for
+// the current slot and for future pre-generation; other tenants must not get cycles (and with
+// them the type name in alerts or a Draft).
+func TestSeedPeriodicCycles_CompanyTypeOnlyForOwner(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 9, 10, 10, 0, 0, 0, time.UTC)
+	repo := &seedApplicableToRepo{
+		Repository: inmemory.NewRepository(),
+		types: []disclosureapp.PeriodicTypeRow{{
+			TypeID: "t-owned", FrequencyUnit: "monthly", CycleAnchorDay: 5, DeadlineDays: 10,
+			IsGlobal: false, OwnerCompanyID: "co-1", PeriodicCycleGenerationLeadDays: 90,
+		}},
+		companies: []string{"co-1", "co-2"},
+	}
+	if _, err := newSeedApplicableToSvc(repo).SeedPeriodicCycles(ctx, now); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if got := upsertCountFor(repo, "co-2", "t-owned"); got != 0 {
+		t.Fatalf("company type of co-1 seeded %d cycle(s) for co-2", got)
+	}
+	if got := upsertCountFor(repo, "co-1", "t-owned"); got == 0 {
+		t.Fatal("owner company must still be seeded")
+	}
+}
+
+// BES-38: listing queries join the type owner so a stray cycle of another tenant is ignored.
+func TestPeriodicCycleListsFilterTypeOwner(t *testing.T) {
+	for _, f := range []struct{ file, fn string }{
+		{"../infra/mysql/repository.go", "func (r *Repository) ListPendingCycles("},
+		{"../infra/mysql/repository.go", "func (r *Repository) ListActivePeriodicTypes("},
+		{"../../deadlinealerts/infra/mysql/repository.go", "ListNextAlertCycles("},
+	} {
+		data, err := os.ReadFile(f.file)
+		if err != nil {
+			t.Fatalf("read %s: %v", f.file, err)
+		}
+		src := strings.ReplaceAll(string(data), "\r\n", "\n")
+		i := strings.Index(src, f.fn)
+		if i < 0 {
+			t.Fatalf("%s not found in %s", f.fn, f.file)
+		}
+		body := src[i:]
+		if end := strings.Index(body, "\n}\n"); end > 0 {
+			body = body[:end]
+		}
+		wants := []string{"(dt.company_id IS NULL OR dt.company_id = pc.company_id)"}
+		if strings.Contains(f.fn, "ListActivePeriodicTypes") {
+			wants = []string{"COALESCE(dt.company_id, '')", "(dt.company_id IS NULL OR TRIM(dt.company_id) <> '')"}
+		}
+		for _, want := range wants {
+			if !strings.Contains(body, want) {
+				t.Fatalf("%s must contain %q", f.fn, want)
+			}
+		}
+	}
+}

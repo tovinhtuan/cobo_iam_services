@@ -117,6 +117,7 @@ func ComputeDeadlineSteps(
 		return ListDeadlineStepsResponse{RecordID: ctx.RecordID, Steps: []DeadlineStepDTO{}}, nil
 	}
 	loc := disclosureapp.CompanyLocation(tz)
+	today = today.In(loc) // company-local date of the instant (DLA-01)
 	todayLocal := time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, loc)
 	t0 := ctx.T0Date.In(loc)
 	t0 = time.Date(t0.Year(), t0.Month(), t0.Day(), 0, 0, 0, 0, loc)

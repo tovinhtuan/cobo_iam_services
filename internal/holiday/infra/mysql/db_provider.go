@@ -11,19 +11,30 @@ import (
 // DBProvider loads non-trading holidays from MySQL (per-year cache).
 type DBProvider struct {
 	repo *Repository
+	// ttl > 0 reloads a cached year after ttl; 0 keeps it until InvalidateYear (API process,
+	// which invalidates on upload). The worker cannot see that invalidation (PER-06).
+	ttl time.Duration
+	now func() time.Time
 
 	mu    sync.RWMutex
 	cache map[int]yearCache
 }
 
 type yearCache struct {
-	m   map[string]string
-	err error
+	m        map[string]string
+	loadedAt time.Time
 }
 
 func NewDBProvider(repo *Repository) *DBProvider {
+	return NewDBProviderWithTTL(repo, 0)
+}
+
+// NewDBProviderWithTTL is NewDBProvider with cached years reloaded after ttl.
+func NewDBProviderWithTTL(repo *Repository, ttl time.Duration) *DBProvider {
 	return &DBProvider{
 		repo:  repo,
+		ttl:   ttl,
+		now:   time.Now,
 		cache: map[int]yearCache{},
 	}
 }
@@ -43,10 +54,10 @@ func (p *DBProvider) IsNonTradingDay(ctx context.Context, date time.Time) (bool,
 	p.mu.RLock()
 	yc, ok := p.cache[year]
 	p.mu.RUnlock()
+	if ok && p.ttl > 0 && p.now().Sub(yc.loadedAt) >= p.ttl {
+		ok = false
+	}
 	if ok {
-		if yc.err != nil {
-			return false, "", yc.err
-		}
 		reason, hit := yc.m[key]
 		if !hit {
 			return false, "", nil
@@ -55,14 +66,15 @@ func (p *DBProvider) IsNonTradingDay(ctx context.Context, date time.Time) (bool,
 	}
 
 	m, err := p.repo.GetHolidayMapForYear(ctx, year)
-
-	p.mu.Lock()
-	p.cache[year] = yearCache{m: m, err: err}
-	p.mu.Unlock()
-
 	if err != nil {
+		// Do not cache failures: a transient DB error must not break the year until restart.
 		return false, "", err
 	}
+
+	p.mu.Lock()
+	p.cache[year] = yearCache{m: m, loadedAt: p.now()}
+	p.mu.Unlock()
+
 	reason, hit := m[key]
 	if !hit {
 		return false, "", nil

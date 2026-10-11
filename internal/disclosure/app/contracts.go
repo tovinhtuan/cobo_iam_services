@@ -1267,9 +1267,12 @@ type PeriodicTypeRow struct {
 	// CycleAnchorWeekday nil = legacy Sunday; 0..6 when set (Go weekday).
 	CycleAnchorWeekday *int
 	// MonthInQuarter nil = legacy 1; 1..3 when set.
-	MonthInQuarter     *int
-	OpenDaysBeforeT    int // CMS open_days_before_t; 0 = OpenAt=T
-	IsGlobal           bool
+	MonthInQuarter  *int
+	OpenDaysBeforeT int // CMS open_days_before_t; 0 = OpenAt=T
+	IsGlobal        bool
+	// OwnerCompanyID is disclosure_types.company_id ("" for global types). A company-scoped
+	// type is seeded only for its owner (BES-38/PER-02).
+	OwnerCompanyID     string
 	ApplicabilityRules *applicability.TemplateApplicabilityRules
 	// ApplicableFromMode / ApplicableFromSlot from ACTIVE deadline_config_json (Phase 4/5).
 	// Empty/empty = legacy; worker uses frozen slot only (never resolves CURRENT/NEXT).

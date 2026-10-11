@@ -1,9 +1,64 @@
 {
   "year": 2026,
+  "note": "Q-06 (2026-10-11): only certain days. Days that depend on yearly announcements (Tet, Gio To, the day next to 02/09, swaps) are entered through the CMS holiday upload once officially published.",
   "holidays": [
     {
       "date": "2026-01-01",
       "name": "Tet Duong Lich",
+      "type": "PUBLIC_HOLIDAY",
+      "description": "Ngay nghi le chinh thuc"
+    },
+    {
+      "date": "2026-02-16",
+      "name": "Tet Nguyen Dan",
+      "type": "PUBLIC_HOLIDAY",
+      "description": "Ngay nghi le chinh thuc"
+    },
+    {
+      "date": "2026-02-17",
+      "name": "Tet Nguyen Dan",
+      "type": "PUBLIC_HOLIDAY",
+      "description": "Ngay nghi le chinh thuc"
+    },
+    {
+      "date": "2026-02-18",
+      "name": "Tet Nguyen Dan",
+      "type": "PUBLIC_HOLIDAY",
+      "description": "Ngay nghi le chinh thuc"
+    },
+    {
+      "date": "2026-02-19",
+      "name": "Tet Nguyen Dan",
+      "type": "PUBLIC_HOLIDAY",
+      "description": "Ngay nghi le chinh thuc"
+    },
+    {
+      "date": "2026-02-20",
+      "name": "Tet Nguyen Dan",
+      "type": "PUBLIC_HOLIDAY",
+      "description": "Ngay nghi le chinh thuc"
+    },
+    {
+      "date": "2026-04-27",
+      "name": "Nghi bu Gio To Hung Vuong (26/04 roi vao Chu nhat)",
+      "type": "COMPENSATORY_DAY",
+      "description": "Ngay nghi bu"
+    },
+    {
+      "date": "2026-04-30",
+      "name": "Ngay Giai phong mien Nam",
+      "type": "PUBLIC_HOLIDAY",
+      "description": "Ngay nghi le chinh thuc"
+    },
+    {
+      "date": "2026-05-01",
+      "name": "Ngay Quoc te Lao dong",
+      "type": "PUBLIC_HOLIDAY",
+      "description": "Ngay nghi le chinh thuc"
+    },
+    {
+      "date": "2026-09-02",
+      "name": "Quoc khanh",
       "type": "PUBLIC_HOLIDAY",
       "description": "Ngay nghi le chinh thuc"
     }

@@ -19,9 +19,11 @@ type MemoryDomain struct {
 	Claimed    map[string]bool
 	Records    map[string]string // cycleID -> recordID
 	FailCreate bool
-	Seq        int
-	Loc        *time.Location
-	Calc       *disclosureapp.DeadlineCalculator
+	// CreatedForCycles lists the cycle IDs records were created for, in order.
+	CreatedForCycles []string
+	Seq              int
+	Loc              *time.Location
+	Calc             *disclosureapp.DeadlineCalculator
 }
 
 func NewMemoryDomain(t TypeSnapshot, profile applicability.CompanyApplicabilityProfile) *MemoryDomain {
@@ -131,10 +133,10 @@ func (m *MemoryDomain) UpdateCycleRecord(_ context.Context, cycleID, recordID st
 	return fmt.Errorf("cycle not found")
 }
 
-func (m *MemoryDomain) CreateAndSubmitRecordWithPlannedDate(context.Context, string, string, string, string, *time.Time, string) (string, string, error) {
+func (m *MemoryDomain) CreateAndSubmitPeriodicRecord(_ context.Context, cycleID, _, _, _, _ string, _ *time.Time, _ string) (string, string, error) {
 	if m.FailCreate {
 		return "", "", fmt.Errorf("forced create failure")
 	}
-	m.Seq++
-	return fmt.Sprintf("rec-%d", m.Seq), fmt.Sprintf("wf-%d", m.Seq), nil
+	m.CreatedForCycles = append(m.CreatedForCycles, cycleID)
+	return "rec-" + cycleID, "wf-" + cycleID, nil
 }

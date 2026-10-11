@@ -146,6 +146,6 @@ func (d *ProductionDomain) UpdateCycleRecord(ctx context.Context, cycleID, recor
 	return d.Repo.UpdateCycleRecord(ctx, cycleID, recordID)
 }
 
-func (d *ProductionDomain) CreateAndSubmitRecordWithPlannedDate(ctx context.Context, companyID, typeID, createdByMembershipID, title string, t0Date *time.Time, plannedDate string) (string, string, error) {
-	return d.Creator.CreateAndSubmitRecordWithPlannedDate(ctx, companyID, typeID, createdByMembershipID, title, t0Date, plannedDate)
+func (d *ProductionDomain) CreateAndSubmitPeriodicRecord(ctx context.Context, cycleID, companyID, typeID, createdByMembershipID, title string, t0Date *time.Time, plannedDate string) (string, string, error) {
+	return d.Creator.CreateAndSubmitPeriodicRecord(ctx, cycleID, companyID, typeID, createdByMembershipID, title, t0Date, plannedDate)
 }

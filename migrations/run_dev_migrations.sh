@@ -153,6 +153,7 @@ seed_dev_identity_authorization.sql
 0149_cms_template_import_attempt_lease.up.sql
 0151_periodic_cycle_materialization_state.up.sql
 0152_companies_status_suspended.up.sql
+0153_periodic_cycles_failed_claim_fence.up.sql
 seed_dev_company_subscriptions.sql
 "
 

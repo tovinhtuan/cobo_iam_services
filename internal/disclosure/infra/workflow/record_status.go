@@ -24,9 +24,15 @@ func (a *RecordStatusAdapter) MarkRecordApproved(ctx context.Context, companyID,
 	}
 	rec.Status = "Approved"
 	if strings.TrimSpace(rec.PublishedDate) == "" {
-		rec.PublishedDate = time.Now().UTC().Format("2006-01-02")
+		rec.PublishedDate = publishedDate(time.Now())
 	}
 	rec.UpdatedBy = actorUserID
 	_, err = a.repo.Update(ctx, *rec)
 	return err
+}
+
+// publishedDate is the company-local (Asia/Ho_Chi_Minh) date of the approval instant; the UTC
+// date is still yesterday until 07:00 in Vietnam (DLA-01).
+func publishedDate(now time.Time) string {
+	return now.In(disclosureapp.CompanyLocation("Asia/Ho_Chi_Minh")).Format("2006-01-02")
 }

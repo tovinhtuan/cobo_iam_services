@@ -96,10 +96,12 @@ func (r *Repository) ReplaceCalendar(ctx context.Context, in ReplaceCalendarInpu
 	}
 
 	for _, d := range in.Dates {
+		// Bind the civil date as text: a time.Time at 00:00 Asia/Ho_Chi_Minh would be converted
+		// to UTC by the driver (loc=UTC) and stored as the previous day (DUE-01).
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO holiday_dates (calendar_id, calendar_year, holiday_date, day_type, name)
 			VALUES (?, ?, ?, ?, ?)
-		`, in.CalendarID, in.CalendarYear, d.Date, d.DayType, nullStr(d.Name)); err != nil {
+		`, in.CalendarID, in.CalendarYear, d.Date.Format("2006-01-02"), d.DayType, nullStr(d.Name)); err != nil {
 			return fmt.Errorf("insert holiday_dates: %w", err)
 		}
 	}

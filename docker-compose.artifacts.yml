@@ -174,6 +174,9 @@ services:
   worker:
     <<: *runtime
     container_name: cobo-iam-worker
+    # PER-04: longer than the periodic item timeout (2m) + finalize (10s), so a claimed cycle finishes on stop;
+    # a cycle cut off anyway is requeued by the stale-claim reaper after 10m.
+    stop_grace_period: 150s
     depends_on:
       mysql:
         condition: service_healthy

@@ -9,6 +9,7 @@ import (
 	"net/smtp"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -17,6 +18,7 @@ import (
 	adhocrecord "github.com/cobo/cobo_iam_services/internal/adhoc/infra/disclosure"
 	disclosureapp "github.com/cobo/cobo_iam_services/internal/disclosure/app"
 	disclosuremysql "github.com/cobo/cobo_iam_services/internal/disclosure/infra/mysql"
+	holidaymysql "github.com/cobo/cobo_iam_services/internal/holiday/infra/mysql"
 	inappapp "github.com/cobo/cobo_iam_services/internal/inappnotification/app"
 	inappmysql "github.com/cobo/cobo_iam_services/internal/inappnotification/infra/mysql"
 	notificationapp "github.com/cobo/cobo_iam_services/internal/notification/app"
@@ -42,6 +44,9 @@ import (
 	"github.com/cobo/cobo_iam_services/internal/workflowdept"
 	wdmysql "github.com/cobo/cobo_iam_services/internal/workflowdept/infra/mysql"
 )
+
+// workerHolidayCacheTTL bounds how long the worker uses a cached holiday calendar (PER-06).
+const workerHolidayCacheTTL = 5 * time.Minute
 
 func main() {
 	ctx := context.Background()
@@ -132,10 +137,20 @@ func main() {
 	)
 	if sqlDB != nil && cfg.PeriodicSeedingEnabled {
 		disclosureRepo := disclosuremysql.NewRepository(sqlDB)
+		// Same holiday source as the API (CMS-uploaded calendar, JSON files as fallback). The
+		// TTL lets an upload reach this long-lived process without a query per checked day (PER-06).
+		holidayRepo := holidaymysql.NewRepository(sqlDB)
+		holidayProvider := &holidaymysql.CompositeProvider{
+			Repo:         holidayRepo,
+			DB:           holidaymysql.NewDBProviderWithTTL(holidayRepo, workerHolidayCacheTTL),
+			File:         disclosureapp.NewHolidayCalendarFileProvider(filepath.Join("configs", "non_trading_days")),
+			YearCheckTTL: workerHolidayCacheTTL,
+		}
 		disclosureSvc = disclosureapp.NewService(
 			disclosureRepo,
 			nil, /* no auth: worker mode */
 			idgen.UUIDv7Generator{},
+			disclosureapp.WithHolidayCalendarProvider(holidayProvider),
 			disclosureapp.WithTemplateApplicabilityStrictFilter(cfg.TemplateApplicabilityStrictFilter),
 			disclosureapp.WithDeadlineEngineV2Shadow(cfg.DeadlineEngineV2Shadow),
 			disclosureapp.WithLegalBasisStructuredWriteEnabled(cfg.LegalBasisStructuredWriteEnabled),

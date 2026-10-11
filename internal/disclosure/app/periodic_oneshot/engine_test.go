@@ -171,3 +171,23 @@ func TestWorkingDaysCalculatorMatchesExpectedDue(t *testing.T) {
 		t.Fatalf("got %s", due.Format("2006-01-02"))
 	}
 }
+
+// PERF-46/PER-07: the one-shot tool must bind the record to the cycle (deterministic record id,
+// like the worker), so a retry after a lost response resumes the same record instead of
+// creating a second one.
+func TestEngine_UsesDeterministicRecordID(t *testing.T) {
+	dom := oneshot.NewMemoryDomain(baseType(), baseProfile())
+	eng := &oneshot.Engine{Env: oneshot.EnvGuard{Environment: "DEV", Database: "cobo_iam", HostAlias: "127.0.0.1", Port: "3306"}, Domain: dom}
+	scope := oneshot.Scope{TypeID: oneshot.AllowedTypeID, CompanyID: oneshot.AllowedCompanyID, Period: oneshot.AllowedPeriod}
+	prev, err := eng.Preview(context.Background(), scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rep, err := eng.Apply(context.Background(), scope, prev.ConfirmToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(dom.CreatedForCycles) != 1 || dom.CreatedForCycles[0] != rep.CycleID {
+		t.Fatalf("record must be created for cycle %q, got %v", rep.CycleID, dom.CreatedForCycles)
+	}
+}

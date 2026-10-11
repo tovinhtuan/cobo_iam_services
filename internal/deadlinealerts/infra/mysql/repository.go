@@ -803,6 +803,8 @@ func (r *Repository) ListNextAlertCycles(ctx context.Context, companyID, todayHC
 			AND dtv.version_no = dt.active_version_no
 		WHERE pc.company_id = ?
 		  AND pc.record_id IS NULL
+		  -- BES-38: never show another tenant's company-scoped type.
+		  AND (dt.company_id IS NULL OR dt.company_id = pc.company_id)
 		  AND COALESCE(pc.open_at, pc.cycle_start) IS NOT NULL
 		  AND COALESCE(pc.open_at, pc.cycle_start) > ?
 		ORDER BY

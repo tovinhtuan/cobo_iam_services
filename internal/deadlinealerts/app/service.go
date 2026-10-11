@@ -3,7 +3,9 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -181,13 +183,25 @@ func (s *service) enrichDeadlineAlertRows(
 	// Membership (NeedsCompanyAction + AlertWindow) is owned by repository ListRows (Phase 1).
 	// Service only enriches: access re-check, due resolution, status/confirmation presentation.
 	enriched := make([]DeadlineAlertDTO, 0)
+	skipped := 0
+	var firstSkipped AlertRow
+	var firstSkipErr error
 	for _, row := range rows {
 		if !accessScope.AllowsRow(row) {
 			continue
 		}
 		dueDate, alertStatus, err := s.resolveDueDateAndStatus(ctx, row, companyCtx, now, typeConfigCache)
 		if err != nil {
-			return nil, err
+			// One row whose due date cannot be resolved must not fail the whole list and
+			// dashboard (DLA-05); infrastructure errors and cancelled requests still fail (API-01).
+			if ctx.Err() != nil || !isUnresolvableDueError(err) {
+				return nil, err
+			}
+			if skipped == 0 {
+				firstSkipped, firstSkipErr = row, err
+			}
+			skipped++
+			continue
 		}
 		if dueDate == "" {
 			continue
@@ -226,6 +240,14 @@ func (s *service) enrichDeadlineAlertRows(
 
 	if enriched == nil {
 		enriched = []DeadlineAlertDTO{}
+	}
+	if skipped > 0 {
+		slog.WarnContext(ctx, "deadline alert rows skipped: due unresolved",
+			slog.String("company_id", req.Subject.CompanyID),
+			slog.Int("count", skipped),
+			slog.String("first_record_id", firstSkipped.RecordID),
+			slog.String("first_type_id", firstSkipped.TypeID),
+			slog.String("err", firstSkipErr.Error()))
 	}
 	return enriched, nil
 }
@@ -516,4 +538,21 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+// isUnresolvableDueError reports errors that belong to one row (no holiday calendar for the
+// year, invalid deadline config) rather than to the request or the infrastructure (API-01).
+func isUnresolvableDueError(err error) bool {
+	if errors.Is(err, disclosureapp.ErrHolidayYearMissing) {
+		return true
+	}
+	var syntaxErr *json.SyntaxError
+	var typeErr *json.UnmarshalTypeError
+	if errors.As(err, &syntaxErr) || errors.As(err, &typeErr) {
+		return true
+	}
+	if httpErr, ok := perr.AsHTTPError(err); ok && httpErr != nil {
+		return httpErr.HTTPStatus >= 400 && httpErr.HTTPStatus < 500
+	}
+	return false
 }

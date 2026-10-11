@@ -122,28 +122,19 @@ func (e *Engine) Apply(ctx context.Context, scope Scope, confirmToken string) (*
 	t0 := plan.cycleStart
 	plannedDate := plan.due.Format("2006-01-02")
 	title := fmt.Sprintf("%s — %s", plan.typeName, plan.cycleLabel)
-	recordID, wfID, err := e.Domain.CreateAndSubmitRecordWithPlannedDate(
-		ctx, scope.CompanyID, scope.TypeID, "m_system_oneshot", title, &t0, plannedDate,
+	recordID, wfID, err := e.Domain.CreateAndSubmitPeriodicRecord(
+		ctx, cycleID, scope.CompanyID, scope.TypeID, "m_system_oneshot", title, &t0, plannedDate,
 	)
 	if err != nil {
-		_ = e.Domain.ReleaseCycle(ctx, cycleID)
-		if cycleCreated {
-			_ = e.Domain.DeleteUnmaterializedCycle(ctx, cycleID)
-		}
+		e.abandonClaim(ctx, cycleID, cycleCreated)
 		return nil, fmt.Errorf("create disclosure record: %w", err)
 	}
 	if recordID == "" || wfID == "" {
-		_ = e.Domain.ReleaseCycle(ctx, cycleID)
-		if cycleCreated {
-			_ = e.Domain.DeleteUnmaterializedCycle(ctx, cycleID)
-		}
+		e.abandonClaim(ctx, cycleID, cycleCreated)
 		return nil, fmt.Errorf("create disclosure record: missing record or workflow instance")
 	}
 	if err := e.Domain.UpdateCycleRecord(ctx, cycleID, recordID); err != nil {
-		_ = e.Domain.ReleaseCycle(ctx, cycleID)
-		if cycleCreated {
-			_ = e.Domain.DeleteUnmaterializedCycle(ctx, cycleID)
-		}
+		e.abandonClaim(ctx, cycleID, cycleCreated)
 		return nil, fmt.Errorf("link cycle record: %w", err)
 	}
 
@@ -353,4 +344,15 @@ func parseMonthlyPeriod(period string, loc *time.Location) (start time.Time, lab
 	start = time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, loc)
 	label = start.Format("2006-01")
 	return start, label, nil
+}
+
+// abandonClaim gives up a claim after a failure. A cycle this run created is deleted while
+// still claimed: releasing it first would make it claimable by a live worker between the
+// release and the delete (PERF-03). A pre-existing cycle goes back to the queue.
+func (e *Engine) abandonClaim(ctx context.Context, cycleID string, cycleCreated bool) {
+	if cycleCreated {
+		_ = e.Domain.DeleteUnmaterializedCycle(ctx, cycleID)
+		return
+	}
+	_ = e.Domain.ReleaseCycle(ctx, cycleID)
 }

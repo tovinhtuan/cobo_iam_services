@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -260,7 +261,7 @@ func (r *Repository) FindTask(ctx context.Context, companyID, taskID string) (*w
 	t.AssigneeMembershipIDs = ids
 	if len(ids) > 0 && strings.TrimSpace(t.AssigneeMembershipID) != "" {
 		// Contract drift: do not merge; relation wins for auth via ResolveTaskAssigneeMembershipIDs.
-		_ = fmt.Errorf("task assignment dual authority detected task_id=%s", t.TaskID)
+		slog.WarnContext(ctx, "task assignment dual authority detected", slog.String("task_id", t.TaskID))
 	}
 	return &t, nil
 }

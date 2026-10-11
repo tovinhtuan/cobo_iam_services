@@ -2272,6 +2272,7 @@ func (r *Repository) ListActivePeriodicTypes(ctx context.Context) ([]disclosurea
 		       END AS month_in_quarter,
 		       COALESCE(JSON_EXTRACT(dtv.deadline_config_json, '$.open_days_before_t'), 0)              AS open_days_before_t,
 		       CASE WHEN dt.company_id IS NULL THEN 1 ELSE 0 END AS is_global,
+		       COALESCE(dt.company_id, '') AS owner_company_id,
 		       dtv.applicability_rules_json,
 		       COALESCE(JSON_UNQUOTE(JSON_EXTRACT(dtv.deadline_config_json, '$.applicable_from_mode')), '') AS applicable_from_mode,
 		       COALESCE(JSON_UNQUOTE(JSON_EXTRACT(dtv.deadline_config_json, '$.applicable_from_slot')), '') AS applicable_from_slot,
@@ -2281,7 +2282,10 @@ func (r *Repository) ListActivePeriodicTypes(ctx context.Context) ([]disclosurea
 		JOIN disclosure_type_versions dtv ON dtv.type_id = dt.type_id AND dtv.version_no = dt.active_version_no
 		WHERE JSON_UNQUOTE(JSON_EXTRACT(dtv.deadline_config_json, '$.template_category')) IN ('periodic', 'custom')
 		  AND LOWER(JSON_UNQUOTE(JSON_EXTRACT(dtv.deadline_config_json, '$.frequency_unit'))) IN ('monthly', 'quarterly', 'yearly', 'daily', 'weekly', 'month', 'quarter', 'year', 'day', 'week')
-		  AND dt.status = 'active'`
+		  AND dt.status = 'active'
+		  -- BES-38/BES-40: a company-scoped type needs a real owner; a blank company_id would
+		  -- look company-scoped without an owner and must never be seeded for every company.
+		  AND (dt.company_id IS NULL OR TRIM(dt.company_id) <> '')`
 	rows, err := r.db.QueryContext(ctx, q)
 	if err != nil {
 		return nil, fmt.Errorf("list periodic types: %w", err)
@@ -2295,7 +2299,7 @@ func (r *Repository) ListActivePeriodicTypes(ctx context.Context) ([]disclosurea
 		var weekdayRaw, miqRaw sql.NullInt64
 		if err := rows.Scan(&row.TypeID, &row.FrequencyUnit, &row.FrequencyInterval,
 			&row.DeadlineDays, &row.CycleAnchorDay, &row.CycleAnchorMonth, &weekdayRaw, &miqRaw,
-			&row.OpenDaysBeforeT, &isGlobal, &rulesRaw,
+			&row.OpenDaysBeforeT, &isGlobal, &row.OwnerCompanyID, &rulesRaw,
 			&row.ApplicableFromMode, &row.ApplicableFromSlot, &row.ApplicableTo,
 			&row.PeriodicCycleGenerationLeadDays); err != nil {
 			return nil, fmt.Errorf("scan periodic type row: %w", err)
@@ -2453,6 +2457,8 @@ func (r *Repository) ListPendingCycles(ctx context.Context, asOf time.Time, buff
 		INNER JOIN disclosure_types dt ON dt.type_id = pc.type_id
 		INNER JOIN disclosure_type_versions dtv ON dtv.type_id = dt.type_id AND dtv.version_no = dt.active_version_no
 		WHERE pc.record_id IS NULL
+		  -- BES-38: a company-scoped type materializes only for its owner company.
+		  AND (dt.company_id IS NULL OR dt.company_id = pc.company_id)
 		  AND (
 			(pc.materialization_state = 'PENDING' AND pc.materialized_at IS NULL)
 			OR (pc.materialization_state = 'RETRY' AND pc.next_attempt_at <= NOW(3))
@@ -2510,15 +2516,17 @@ func (r *Repository) TryClaimPeriodicCycle(ctx context.Context, cycleID string) 
 	return n == 1, nil
 }
 
-// ReleasePeriodicCycleClaim clears the claim when materialize fails before record_id is set.
+// ReleasePeriodicCycleClaim gives the cycle back to the queue when materialize stops before
+// record_id is set. It becomes RETRY due now: PENDING with materialized_at set matches no
+// selector branch, so the cycle would be stuck forever (PERF-46/PER-07).
 func (r *Repository) ReleasePeriodicCycleClaim(ctx context.Context, cycleID string) error {
 	const q = `
 		UPDATE periodic_cycles
 		-- Keep the legacy claim marker so an old worker binary (which does not
 		-- understand materialization_state) cannot re-run this retry early.
 		SET materialized_at = NOW(3),
-		    materialization_state = 'PENDING',
-		    next_attempt_at = NULL
+		    materialization_state = 'RETRY',
+		    next_attempt_at = NOW(3)
 		WHERE cycle_id = ? AND record_id IS NULL AND materialization_state = 'CLAIMED'`
 	_, err := r.db.ExecContext(ctx, q, cycleID)
 	if err != nil {
@@ -2532,14 +2540,19 @@ func (r *Repository) MarkPeriodicCycleRetry(ctx context.Context, cycleID, attemp
 		UPDATE periodic_cycles
 		-- See MarkPeriodicCycleRetry: this is a compatibility fence for an
 		-- older worker during a code rollback.
+		-- PER-03: exponential backoff 1, 2, 4 ... capped at 60 minutes; after
+		-- periodicMaxAttempts claims the cycle FAILS (RETRY_EXHAUSTED) instead of retrying
+		-- forever. attempt_count is incremented by the claim and not assigned here, so the
+		-- SET evaluation order does not matter.
 		SET materialized_at = NOW(3),
-		    materialization_state = 'RETRY',
+		    materialization_state = IF(attempt_count >= ?, 'FAILED', 'RETRY'),
 		    attempt_record_id = COALESCE(NULLIF(?, ''), attempt_record_id),
-		    next_attempt_at = DATE_ADD(NOW(3), INTERVAL 1 MINUTE),
-		    last_error_code = NULLIF(?, ''),
+		    next_attempt_at = IF(attempt_count >= ?, NULL,
+		        DATE_ADD(NOW(3), INTERVAL LEAST(3600, 60 * POW(2, LEAST(GREATEST(attempt_count, 1) - 1, 6))) SECOND)),
+		    last_error_code = IF(attempt_count >= ?, 'RETRY_EXHAUSTED', NULLIF(?, '')),
 		    last_error_message = NULLIF(?, '')
 		WHERE cycle_id = ? AND record_id IS NULL AND materialization_state = 'CLAIMED'`
-	res, err := r.db.ExecContext(ctx, q, attemptRecordID, failureCode, failureMessage, cycleID)
+	res, err := r.db.ExecContext(ctx, q, periodicMaxAttempts, attemptRecordID, periodicMaxAttempts, periodicMaxAttempts, failureCode, failureMessage, cycleID)
 	if err != nil {
 		return fmt.Errorf("mark periodic cycle retry: %w", err)
 	}
@@ -2553,10 +2566,40 @@ func (r *Repository) MarkPeriodicCycleRetry(ctx context.Context, cycleID, attemp
 	return nil
 }
 
+// periodicMaxAttempts caps claims of one cycle before it fails with RETRY_EXHAUSTED (PER-03).
+// Requeue by hand: UPDATE periodic_cycles SET materialization_state='RETRY',
+// next_attempt_at=NOW(3), attempt_count=0 WHERE cycle_id=? AND materialization_state='FAILED'
+// AND record_id IS NULL.
+const periodicMaxAttempts = 20
+
+// RequeueStalePeriodicClaims returns CLAIMED cycles older than olderThanSec to the queue, so a
+// worker stopped between claim and completion does not strand them (PER-04). It applies the
+// same backoff and attempt cap as MarkPeriodicCycleRetry, so a cycle that keeps timing out or
+// crashing the worker still ends FAILED (PERF-01). The age check runs entirely in SQL.
+func (r *Repository) RequeueStalePeriodicClaims(ctx context.Context, olderThanSec int) (int64, error) {
+	const q = `
+		UPDATE periodic_cycles
+		SET materialization_state = IF(attempt_count >= ?, 'FAILED', 'RETRY'),
+		    next_attempt_at = IF(attempt_count >= ?, NULL,
+		        DATE_ADD(NOW(3), INTERVAL LEAST(3600, 60 * POW(2, LEAST(GREATEST(attempt_count, 1) - 1, 6))) SECOND)),
+		    materialized_at = NOW(3),
+		    last_error_code = IF(attempt_count >= ?, 'RETRY_EXHAUSTED', 'CLAIM_EXPIRED')
+		WHERE record_id IS NULL
+		  AND materialization_state = 'CLAIMED'
+		  AND materialized_at < NOW(3) - INTERVAL ? SECOND`
+	res, err := r.db.ExecContext(ctx, q, periodicMaxAttempts, periodicMaxAttempts, periodicMaxAttempts, olderThanSec)
+	if err != nil {
+		return 0, fmt.Errorf("requeue stale periodic claims: %w", err)
+	}
+	return res.RowsAffected()
+}
+
 func (r *Repository) MarkPeriodicCycleFailed(ctx context.Context, cycleID, attemptRecordID, failureCode, failureMessage string) error {
 	const q = `
 		UPDATE periodic_cycles
-		SET materialized_at = NULL,
+		-- Keep the legacy claim fence: a worker older than cabbecf selects
+		-- materialized_at IS NULL and would re-run a FAILED cycle every tick (PER-01).
+		SET materialized_at = COALESCE(materialized_at, NOW(3)),
 		    materialization_state = 'FAILED',
 		    attempt_record_id = COALESCE(NULLIF(?, ''), attempt_record_id),
 		    next_attempt_at = NULL,

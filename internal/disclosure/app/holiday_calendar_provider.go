@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -53,6 +54,9 @@ func (p *HolidayCalendarFileProvider) IsNonTradingDay(ctx context.Context, date 
 	return true, reason, nil
 }
 
+// ErrHolidayYearMissing marks a lookup for a year without any holiday calendar (PER-06).
+var ErrHolidayYearMissing = errors.New("holiday calendar year missing")
+
 func (p *HolidayCalendarFileProvider) loadYear(year int) (map[string]string, error) {
 	p.mu.RLock()
 	if cached, ok := p.cache[year]; ok {
@@ -64,7 +68,7 @@ func (p *HolidayCalendarFileProvider) loadYear(year int) (map[string]string, err
 	path := filepath.Join(p.basePath, fmt.Sprintf("%d.json", year))
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("missing holiday config for year %d at %s: %w", year, path, err)
+		return nil, fmt.Errorf("missing holiday config for year %d at %s: %w: %w", year, path, ErrHolidayYearMissing, err)
 	}
 	var parsed HolidayCalendarYearFile
 	if err := json.Unmarshal(raw, &parsed); err != nil {

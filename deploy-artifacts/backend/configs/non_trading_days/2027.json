@@ -1,0 +1,30 @@
+{
+  "year": 2027,
+  "note": "Q-06 (2026-10-11): only certain days. Days that depend on yearly announcements (Tet, Gio To, the day next to 02/09, swaps) are entered through the CMS holiday upload once officially published.",
+  "holidays": [
+    {
+      "date": "2027-01-01",
+      "name": "Tet Duong Lich",
+      "type": "PUBLIC_HOLIDAY",
+      "description": "Ngay nghi le chinh thuc"
+    },
+    {
+      "date": "2027-04-30",
+      "name": "Ngay Giai phong mien Nam",
+      "type": "PUBLIC_HOLIDAY",
+      "description": "Ngay nghi le chinh thuc"
+    },
+    {
+      "date": "2027-05-03",
+      "name": "Nghi bu Ngay Quoc te Lao dong (01/05 roi vao Thu bay)",
+      "type": "COMPENSATORY_DAY",
+      "description": "Ngay nghi bu"
+    },
+    {
+      "date": "2027-09-02",
+      "name": "Quoc khanh",
+      "type": "PUBLIC_HOLIDAY",
+      "description": "Ngay nghi le chinh thuc"
+    }
+  ]
+}

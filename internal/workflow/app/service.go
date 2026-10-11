@@ -145,7 +145,7 @@ func (s *service) createWorkflowInstance(ctx context.Context, req CreateWorkflow
 		if len(rows) == 0 && req.T0Date != nil && len(req.Snapshot) > 0 {
 			built, buildErr := buildMilestonesFromSnapshot(created.WorkflowInstanceID, req.Subject.CompanyID, req.Snapshot, *req.T0Date, s.idg.NewUUID)
 			if buildErr != nil {
-				_ = fmt.Errorf("build milestones: %w", buildErr)
+				logMilestonesNotSeeded(ctx, "build", req.Subject.CompanyID, created.WorkflowInstanceID, buildErr)
 			} else {
 				rows = built
 			}
@@ -157,12 +157,22 @@ func (s *service) createWorkflowInstance(ctx context.Context, req CreateWorkflow
 		}
 		if len(rows) > 0 {
 			if err := s.milestone.InsertStepMilestones(ctx, rows); err != nil {
-				// Non-fatal: instance is created; log and continue. Milestones can be retried.
-				_ = fmt.Errorf("seed milestones: %w", err)
+				// Non-fatal: the instance exists, and failing the request would only retry into
+				// the existing instance without seeding either. Log so it can be repaired (PER-05).
+				logMilestonesNotSeeded(ctx, "insert", req.Subject.CompanyID, created.WorkflowInstanceID, err)
 			}
 		}
 	}
 	return created, nil
+}
+
+// logMilestonesNotSeeded reports an instance created without reminder milestones (PER-05).
+func logMilestonesNotSeeded(ctx context.Context, stage, companyID, workflowInstanceID string, err error) {
+	slog.ErrorContext(ctx, "workflow milestones not seeded",
+		slog.String("stage", stage),
+		slog.String("company_id", companyID),
+		slog.String("workflow_instance_id", workflowInstanceID),
+		slog.String("err", err.Error()))
 }
 
 func prepareDocumentRequirementSnapshots(

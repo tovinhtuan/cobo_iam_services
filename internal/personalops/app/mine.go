@@ -46,6 +46,7 @@ func RemainingDays(dueDate string, now time.Time, loc *time.Location) int {
 	if err != nil {
 		return 0
 	}
+	now = now.In(loc) // the company-local date of the instant, not its UTC date (DLA-01)
 	now = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
 	due = time.Date(due.Year(), due.Month(), due.Day(), 0, 0, 0, 0, loc)
 	return int(due.Sub(now).Hours() / 24)
