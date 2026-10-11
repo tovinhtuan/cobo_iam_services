@@ -256,10 +256,11 @@ func (s *adminService) CreateCompany(ctx context.Context, req CreateCompanyReque
 	}, nil
 }
 
+// authorizePlatformCompanyAdmin gates platform company management (list/get/create/update/status).
+// Platform operator only: platform.cms.view AND (rbac.manage | system.settings), the same rule as the
+// /api/v1/platform/cms/admin/* routes. It used to also require the tenant action admin.membership.create
+// (→ admin.membership.invite), which the seeded cms_operator role lacks, so real operators got 403.
 func (s *adminService) authorizePlatformCompanyAdmin(ctx context.Context, sub AdminSubject) error {
-	if err := s.authorize(ctx, sub, "admin.membership.create", sub.CompanyID); err != nil {
-		return err
-	}
 	operator, err := s.isPlatformCompanyOperator(ctx, sub)
 	if err != nil {
 		return err

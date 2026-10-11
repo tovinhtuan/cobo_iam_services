@@ -1558,6 +1558,47 @@ Endpoint consumer runtime de lay workflow hieu luc:
 }
 ```
 
+
+### Platform CMS dashboard overview (2026-10-11)
+
+`GET /api/v1/platform/cms/dashboard/overview[?refresh=true]` — platform-wide aggregates for the `/cms` home screen.
+Design: `cobo_web_design/docs/ai-cache/cms-dashboard-enrichment-2026-10-11/02-contract.md`.
+
+- Route gate `platform.cms.view` (403 `PERMISSION_DENIED`). 503 `SERVICE_UNAVAILABLE` when the API runs without MySQL.
+- Each section is gated again; without permission it is `{"status":"forbidden"}` (no data, no query):
+  `companies` / `subscriptions` / `growth` / `users` → `rbac.manage` | `system.settings` (platform operator, same as the
+  companies and users screens); `templates` → `cms.template.read` set
+  (read/write/activate/archive/config.write | `rbac.manage`); `disclosures` → none extra; `system_health` → `system.settings`.
+- `growth.data` = `{ "days": [{ "date": "YYYY-MM-DD", "companies": n, "users": n, "disclosures": n }] (30 HCM days ending today), "totals": {...} }` — rows created per day.
+- A failing or slow section (3 s; every query also has `MAX_EXECUTION_TIME(2000)`) is `{"status":"error","error_code":"TIMEOUT|INTERNAL"}`; the response stays 200. Errors are logged server side, never cached.
+- Cache per section 60 s (platform-wide numbers), single flight per section, computation detached from client cancel. `refresh=true` accepts data at most 10 s old (global) and is limited to once per 10 s per user. `generated_at` = time the oldest served section was computed.
+- `attention.items[]` = `{code, severity, count}` with `count > 0`, built only from `ok` sections, sorted critical → warning → info.
+  Codes: `disclosures_overdue`, `templates_missing_workflow`, `email_failed_24h`, `outbox_stuck` (critical);
+  `companies_unverified`, `subscriptions_expiring`, `holiday_calendar_missing` (warning); `companies_suspended`, `templates_open_draft` (info).
+- Disclosures: open obligations = deadlinealerts V1 membership on active companies; due = `planned_date` (HCM date);
+  `open_without_due` counts open records without `planned_date`. `on_time_rate_30d` is `null` when `completed_30d = 0`.
+
+```json
+{
+  "data": {
+    "generated_at": "2026-10-11T10:42:05Z",
+    "cached": false,
+    "timezone": "Asia/Ho_Chi_Minh",
+    "sections": {
+      "companies": { "status": "ok", "data": { "total": 21, "active": 21, "inactive": 0, "suspended": 0, "verified": 6, "unverified": 15, "new_30d": 1 } },
+      "subscriptions": { "status": "ok", "data": { "by_plan": { "FREE": 0, "PREMIUM": 4, "ENTERPRISE": 0 }, "no_plan": 17, "trial": 0, "expiring_14d": 0 } },
+      "users": { "status": "ok", "data": { "active_users": 50, "active_memberships": 93, "new_30d": 6, "without_company": 3, "pending_activation": 48 } },
+      "templates": { "status": "ok", "data": { "active": 6, "not_active": 10, "archived": 11, "open_drafts": 2, "active_missing_workflow": 0, "imports_7d": { "confirmed": 3, "failed": 0 } } },
+      "disclosures": { "status": "ok", "data": { "by_status": { "draft": 338, "in_progress": 16, "completed": 0 }, "open": 20, "overdue": 12, "overdue_companies": 4, "due_today": 0, "due_next_7d": 8, "open_without_due": 0, "on_time_rate_30d": null, "completed_30d": 0, "top_overdue_companies": [ { "company_id": "c_001", "name": "Company X", "overdue": 3 } ] } },
+      "system_health": { "status": "forbidden" },
+      "attention": { "status": "ok", "items": [ { "code": "disclosures_overdue", "severity": "critical", "count": 12 } ] }
+    }
+  }
+}
+```
+
+`GET /api/v1/platform/cms/dashboard/summary` is deprecated (counts the caller's own company only); kept one release for old bundles.
+
 ---
 
 ## G. HTTP status mapping (goi y)

@@ -1,0 +1,21 @@
+PASS  no token -> 401  401
+PASS  ENT (enterprise admin) -> 403  403
+PASS  CMS overview 200  HTTP 200 in 100 ms
+PASS  envelope fields  {'generated_at': '2026-10-11T13:35:42Z', 'cached': False, 'timezone': 'Asia/Ho_Chi_Minh'}
+PASS  section statuses valid  {'companies': 'ok', 'subscriptions': 'ok', 'users': 'ok', 'templates': 'ok', 'disclosures': 'ok', 'system_health': 'forbidden', 'growth': 'ok', 'attention': 'ok'}
+PASS  no section error  {'companies': 'ok', 'subscriptions': 'ok', 'users': 'ok', 'templates': 'ok', 'disclosures': 'ok', 'system_health': 'forbidden', 'growth': 'ok', 'attention': 'ok'}
+PASS  forbidden sections carry no data  none
+PASS  uncached response < 2 s  100 ms
+PASS  company sections follow companies screen gate  companies API 200 -> {'companies': 'ok', 'subscriptions': 'ok', 'growth': 'ok'}
+PASS  companies match DB  api 21/15 db 21/15
+PASS  disclosure status buckets sum = records at active companies  api {'draft': 338, 'in_progress': 16, 'completed': 0} db 354
+PASS  top overdue <= 5  4
+PASS  attention overdue consistent with section  overdue 12 item {'code': 'disclosures_overdue', 'severity': 'critical', 'count': 12}
+PASS  growth has 30 days  30
+PASS  growth totals = sum of days  351
+PASS  second call served from cache  cached=True 95 ms
+PASS  refresh within 10 s is rate-limited (cache)  cached=True
+PASS  legacy summary still served (compat)  200
+PASS  audit feed limit=8  HTTP 200, 8 items
+
+19/19 PASS

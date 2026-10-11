@@ -39,6 +39,7 @@ type Handler struct {
 	alertConfigSvc         platformcmsapp.AlertConfigService
 	subscriptionUpgradeSvc platformcmsapp.SubscriptionUpgradePaymentService
 	globalRecordsSvc       *platformcmsapp.Service
+	dashboardOverviewSvc   *platformcmsapp.DashboardOverviewService
 	upgradePaymentDB       *sql.DB
 	companyPlanRepo        companyplan.Repository
 	mediaRepo              cmsMediaRepository
@@ -91,6 +92,7 @@ func NewHandler(inspector iamapp.TokenInspector, authorizer authapp.Service, adm
 			nil,
 			h.permissionChecker(),
 		)
+		h.dashboardOverviewSvc = platformcmsapp.NewDashboardOverviewService(platformcmsapp.NewMySQLDashboardRepository(mediaOpts.DB))
 	}
 	return h
 }
@@ -128,7 +130,9 @@ func (h *Handler) WithCompanyPlanRepository(r companyplan.Repository) *Handler {
 }
 
 func (h *Handler) Register(mux *http.ServeMux) {
+	// Deprecated: company-scoped counts; the /cms screen uses dashboard/overview. Remove after one release.
 	mux.HandleFunc("GET /api/v1/platform/cms/dashboard/summary", h.observe("cms.dashboard.summary", h.dashboardSummary))
+	mux.HandleFunc("GET /api/v1/platform/cms/dashboard/overview", h.observe("cms.dashboard.overview", h.dashboardOverview))
 	mux.HandleFunc("GET /api/v1/platform/cms/collections", h.observe("cms.collections.list", h.collections))
 	mux.HandleFunc("GET /api/v1/platform/cms/collections/{collection_id}", h.observe("cms.collections.detail", h.collectionDetail))
 	mux.HandleFunc("GET /api/v1/platform/cms/entries", h.observe("cms.entries.list", h.entries))
