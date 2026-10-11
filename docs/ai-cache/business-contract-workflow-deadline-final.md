@@ -1,8 +1,8 @@
 # Business Contract (Final) — Workflow, Periodic, Ad-hoc & Deadline Alerts
 
-**Phiên bản:** 1.1-final  
-**Ngày hiệu lực:** 2026-05-27  
-**Cập nhật PO:** 2026-05-27 — §2.1 quyết định triển khai P0 (locked)  
+**Phiên bản:** 1.2  
+**Ngày hiệu lực:** 2026-05-27 (v1.1); **v1.2: 2026-10-11**  
+**Cập nhật PO:** 2026-05-27 — §2.1 quyết định triển khai P0 (locked); **2026-10-11 — §2.2 Amendment v1.2 (PO đồng ý toàn bộ khuyến nghị trong `bug-worker-alert-fixes-2026-10-10/05-po-ba-decision-recommendations.md`)**  
 **Trạng thái:** Canonical — thay thế mô tả mâu thuẫn trong contract cũ (periodic “workflow disabled”, Done = Published)  
 **Phạm vi repo:** `cobo_iam_services` (BE), `cobo_web_design` (FE)  
 **Đối tượng:** Dev, BA, PO, QA
@@ -50,6 +50,42 @@ Tài liệu PO 2026-05-26 **thay thế** các mục xung đột trong `deadline-
 | **Partial workflow fail (periodic)** | **Fail materialize** — cycle **không** gắn `record_id` nếu thiếu `workflow_instance_id` + snapshot hợp lệ (WF-A) | Orphan record hiếm = edge OQ-DA-03; P1 metric/cleanup |
 | **Dữ liệu cũ không workflow** | **Không backfill P0** | UX degraded + `pending_init`; backfill P1 theo batch BA |
 | **Effective workflow rỗng** | **Chặn** — ad-hoc **4xx**; worker skip cycle + `error_count` (không tạo record) | Không record “thành công” không workflow khi WF-A bật |
+
+### 2.2 Amendment v1.2 (2026-10-11): thay thế các mục mâu thuẫn bên dưới
+
+**Định nghĩa chung.** Đây là nguồn sự thật duy nhất cho tab Cảnh báo, dashboard, "Việc của tôi" và reminder.
+
+| Khái niệm | Định nghĩa |
+|---|---|
+| `ObligationOpen(record)` | Periodic / custom / thủ công: `status = Draft AND submitted_at IS NULL`.<br>Irregular (ad-hoc): proposal `approved` AND record chưa ở trạng thái `Approved / Published / Completed / Done` (tức từ lúc duyệt tới khi workflow công bố hoàn tất), bất kể record đã auto-submit lúc duyệt. |
+| `CompletedAt(record)` | Lấy theo thứ tự ưu tiên:<br>1. `confirmed_at` (xác nhận đã công bố, kể cả ngoài hệ thống);<br>2. periodic/thủ công: `submitted_at`;<br>3. ad-hoc: thời điểm record đạt `Approved / Published / Completed`.<br>So sánh theo ngày `Asia/Ho_Chi_Minh` với hạn. |
+| Hạn (due) | Tính theo **đúng loại ngày template khai báo**: `applicability_rules.deadline_day_type`, nếu trống thì `deadline_config.deadline_duration_type`.<br>Ngày cụ thể (`FIXED_DATE`) là ngày bắt buộc; chỉ dời khi template chọn `MOVE_TO_NEXT_WORKING_DAY`.<br>**Không tự dời** hạn ngày lịch rơi vào ngày nghỉ.<br>Template có `deadline_days > 0` phải khai báo loại ngày khi publish; nếu thiếu thì fallback là ngày lịch. |
+| "Hôm nay" | Ngày theo `Asia/Ho_Chi_Minh` (không lấy ngày UTC). |
+
+**Thay đổi so với v1.1**
+
+| Mục | v1.1 | v1.2 |
+|---|---|---|
+| §5.1 / AC-4 | Terminal → `PENDING_CONFIRM`; confirm → `DONE` | **Bỏ `PENDING_CONFIRM`.** Record hết `ObligationOpen` thì rời tab Cảnh báo (xem ở lịch sử). **Confirm** dùng khi nghĩa vụ đã thực hiện **ngoài hệ thống** trong lúc record còn mở → `DONE`. Confirm lần hai giữ người xác nhận đầu tiên (trả 200). |
+| §5.2 | List theo record có due | List = `ObligationOpen` + có due + đã tới `OpenAt` (periodic). Ad-hoc hiện **ngay khi được duyệt**. Một record không tính được hạn không được làm lỗi cả danh sách. |
+| §3.2 | 2 vòng focal → admin | Một vòng, nhiều reviewer, **cần tất cả đồng ý** (v3).<br>Ngày chốt (`final_t0_date`, `final_deadline_date`, ghi chú): **giá trị được nhập sau cùng thắng**; ô để trống **không** xoá giá trị người trước đã nhập; modal duyệt hiển thị giá trị hiện hành.<br>Hạn hiển thị dùng `final_t0_date` khi có.<br>Khi đã đủ phiếu thì **không** cho Reject/Cancel (409); finalize lỗi giữa chừng phải bù trừ.<br>Submit proposal kiểm tra lại reviewer (active, có quyền) và quyền tạo hồ sơ của người đề xuất. |
+| §7 Reminder | Milestone → occurrence → email | Nhắc theo **bước hiện tại của workflow** (không phụ thuộc task), đúng người (assignee → trưởng phòng → nhân viên phòng → admin).<br>Gửi trong khung **07:00–21:00 VN mọi ngày**.<br>Grace 2 ngày sau hạn bước; bản nhắc trễ quá 48h thì hết hạn (không gửi).<br>Khi trễ chỉ gửi **một** thông báo "Đã quá hạn N ngày" cho mỗi bước.<br>Bản bị skip không chặn hàng đợi.<br>Bước workflow nhắc theo offset của template; lịch gửi của company chỉ áp cho nhắc hạn nộp.<br>Thiếu cấu hình kênh thì dùng mặc định (email + in-app). |
+| Company status | — | `inactive`: dừng nhắc, dừng tạo kỳ và cảnh báo.<br>`suspended`: vẫn tạo kỳ và vẫn nhắc (nghĩa vụ pháp lý không tạm ngưng). |
+| Workflow submit thủ công | Theo cấu hình | T0 = ngày submit (HCM), `t0_policy=system_date`. Tổng thời gian xử lý vượt hạn thì cảnh báo, không tự nén. |
+| Dashboard KPI | `06-approved-kpi-formulas.md` (2026-08-03) | KPI trạng thái mở (#1, #3, #5) là **ảnh chụp hiện tại, không theo range**; #2 dùng cửa sổ 7 ngày; range chỉ áp cho KPI hoàn thành (#4, #6) theo `CompletedAt`. Màu tỉ lệ đúng hạn: ≥95% success, 85–95% warning, <85% critical, mẫu 0 thì neutral. |
+| Ngày nghỉ | File cấu hình | File chỉ chứa ngày chắc chắn; ngày phụ thuộc thông báo hằng năm nhập qua CMS. BA cập nhật lịch năm sau vào **tháng 10** hằng năm. |
+
+**Acceptance criteria bổ sung**
+
+| # | Tiêu chí |
+|---|---|
+| AC-11 | Ad-hoc được duyệt xuất hiện ngay trên tab Cảnh báo với hạn đúng; biến mất khi workflow hoàn tất |
+| AC-12 | Bước 2..N của workflow periodic/custom được nhắc khi tới lượt; bước đã hoàn tất không bị nhắc |
+| AC-13 | "Việc của tôi" hiển thị task của record periodic (Draft) |
+| AC-14 | Cùng template/kỳ: preview CMS, worker và tab Cảnh báo ra **cùng** ngày hạn |
+| AC-15 | Không có email nhắc gửi ngoài 07:00–21:00 VN; không gửi lặp cùng occurrence |
+
+Thay thế: §3.2 (state machine), §5.1, §5.2, AC-4, §7 ở dưới chỉ còn hiệu lực ở phần **không** mâu thuẫn với §2.2.
 
 ---
 

@@ -4705,3 +4705,146 @@
   - worker với company inactive;
   - `push-migration.ps1`: bước verify lỗi và gắn cứng thông tin root;
   - `run_dev_migrations.sh` thiếu 0150.
+
+## Risk review lần 4, scope all (2026-10-10)
+
+- task type: `wf-risk-review`, read-only; không sửa code.
+- Báo cáo: `docs/ai-cache/risk-review-2026-10-10-2/{00-scope,10-risk-report}.md`.
+- Phạm vi: iam `1479d72` (HEAD lên `a8acb51` trong lúc review), web `453a3494`.
+- Kết quả:
+  - HIGH mới duy nhất là BES-29 (company bị deactivate vẫn truy cập được), đã sửa ở `c43b9cc`.
+  - HIGH cũ còn mở; H1 (reminder-config chéo tenant, cả 5 route) là ưu tiên 1.
+  - MEDIUM mới: ROLE-29 (`rule_code` khác hoa/thường lách approval prefs), ROLE-30 (non-operator kích hoạt lại/xoá operator inactive), BES-30 (email HTML dùng `text/template`), BES-31 (authorize/batch không giới hạn), PERF-33 (khoá admin bao trọn vòng 3N+1), FES-18 (FE coi 202 chờ duyệt là đã gỡ), API-24, API-25.
+- reusable:
+  - Subagent `.claude/agents/*` có thể không nạp được trong phiên desktop. Khi đó chạy `general-purpose` với prompt "đọc `.claude/agents/<name>.md` và đóng vai đó", nhấn mạnh read-only.
+  - Output thô của `scan_secrets.py` lộ 2+2 ký tự của mỗi giá trị; không nên commit (SEC-24).
+- open: cache-versioning reviewer bị dừng giữa chừng; `5715d6c` chưa review độc lập.
+
+## Audit worker/alert: trùng lặp, spam, bản ghi rác (2026-10-10)
+
+- task type: phân tích read-only; không sửa code, không ghi DB.
+- Báo cáo: `docs/ai-cache/worker-alert-spam-audit-2026-10-10/00-report.md`.
+- Sự cố 4 triệu bản ghi:
+  - Đó là `disclosure_records` do periodic materialize tạo Draft mỗi tick, đã sửa ở `cabbecf`.
+  - DEV còn khoảng 2,7 GB `data_free`. `reminder_occurrences` `AUTO_INCREMENT` 1,42 triệu là do id bị đốt bởi `INSERT IGNORE` mỗi tick (REM-08), không phải gửi lặp.
+- Hiện không có vòng lặp nào đang chạy trên DEV.
+- Rủi ro chính:
+  - PER-01: còn 6 binary worker cũ hơn `cabbecf` trên DEV; rollback sẽ chạy lại vòng lặp.
+  - REM-01: upsert seed reset SENT→PENDING khi milestone trùng; adhoc không chặn `step.ID` trùng.
+  - REM-06: milestone chết chặn scanner `LIMIT 200`; DEV 136, +15/ngày, sẽ chặn quanh 14-15/10.
+  - DATA-01: 6 template QA chu kỳ daily tạo ~620 dòng và 20 email thật mỗi ngày.
+- reusable:
+  - Query DEV read-only bằng `devqa_env.run_sql` (qa_ro). Phải kiểm `QA_DB_USER` trước, nếu không sẽ fallback về root.
+  - `SET SESSION information_schema_stats_expiry=0` để đọc `AUTO_INCREMENT` mới nhất.
+  - `data_free` lớn là dấu vết đã xoá hàng loạt.
+- open: chờ user quyết định xoá binary cũ và tắt template QA daily; các PR-W1..W4.
+
+## Risk review lần 5: rủi ro worker/alert (2026-10-10)
+
+- task type: `wf-risk-review`, read-only.
+- Báo cáo: `docs/ai-cache/risk-review-2026-10-10-3/{00-scope,10-risk-report}.md`. Đính chính đã được ghi vào `worker-alert-spam-audit-2026-10-10/00-report.md`.
+- Reviewer: perf-reliability, be-security (chạy lại theo hướng chỉ nêu cách sửa, sau khi lần 1 bị bộ lọc an toàn dừng), api-compat, secrets-cors.
+- Kết quả: 0 CRITICAL, 9 HIGH. Gấp nhất:
+  - REM-06: milestone chết chặn scanner quanh 13-14/10.
+  - PER-01: rollback worker trước `cabbecf`.
+  - REM-01: kích hoạt qua override workflow có `step_id` trùng, không phải qua ad-hoc.
+  - REM-05: 50 dòng skip là chặn mọi tenant.
+  - H1/BES-36.
+  - PER-06: thiếu `2027.json`, worker không dùng lịch nghỉ trong DB; hạn 2026-12-01.
+  - SEC-27: DEV gửi Gmail thật, không có allowlist.
+  - SEC-26 (plausible): relay qua endpoint internal reminder.
+  - H19/API-34: `deploy-be` không migrate.
+- reusable:
+  - Không dùng `reminder_sent=2`, vì `ListByInstance` scan vào `bool`.
+  - `reminder_occurrences.status` là ENUM: thêm giá trị mới vào cuối bằng `ALGORITHM=INSTANT`, migrate trước binary.
+  - Sàn rollback worker là `cabbecf`.
+  - Ưu tiên bản sửa không đổi schema, vì `deploy-be` không migrate.
+  - Prompt reviewer bảo mật nên ghi rõ "chỉ nêu cách sửa, không mô tả cách khai thác".
+- open: chờ user cho phép thao tác DEV (cách ly binary, tắt QA daily, dọn milestone chết) và PR-W1..W6.
+
+## Audit chức năng flow worker/alert (2026-10-10)
+
+- task type: phân tích read-only, domain. Chuỗi skill: `cobo-task-workflow` → `cobo-domain-cbtt` → `deadline-reminder-holiday` + `notification-delivery` + `backend-workflow-engine`.
+- Báo cáo: `docs/ai-cache/worker-alert-functional-audit-2026-10-10/00-report.md`.
+- 11 HIGH, đều đã đọc code xác nhận; 8 mục khớp dữ liệu DEV:
+  - Reminder: RMC-01 (bước 2..N không được nhắc; đây là gốc của REM-06; DEV bước 2: 0/125, bước 3: 0/10).
+  - Ad-hoc:
+    - AHA-01: ad-hoc đã duyệt không có ở tab hạn;
+    - AHA-07: 2 instance, màn hình hiển thị instance template;
+    - AHA-02: confirm ở bước cuối không duyệt record;
+    - AHA-03: chỉ lấy ngày chốt của người duyệt cuối, bỏ qua `final_t0`.
+  - Danh sách hạn và dashboard:
+    - DLA-02: truy vấn phụ lọc `<>'draft'`, trong khi danh sách chỉ có Draft;
+    - DLA-03: range dashboard kết thúc ở hôm nay;
+    - DLA-04: KPI hoàn thành luôn 0, màu đúng hạn bị đảo.
+  - Tính hạn:
+    - DUE-02: mặc định ngày làm việc, TT96 là ngày lịch;
+    - DUE-03: `2026.json` chỉ có 01/01;
+    - DUE-01: upload lịch nghỉ lưu lùi 1 ngày do `loc=UTC`.
+- reusable:
+  - "Hôm nay" phải tính bằng `now.In(loc)` trước khi lấy ngày.
+  - Không bind `time.Time` vào cột DATE khi DSN `loc=UTC`; bind chuỗi `YYYY-MM-DD`.
+  - Workflow `global_template` chỉ có task cho bước 1; tiến độ các bước nằm ở `workflow_instance_step_states`.
+  - Record ad-hoc có 2 instance; khi chọn instance phải ưu tiên `proposal_snapshot%`.
+- open: cần quyết định sản phẩm cho AHA-01, DUE-02/DUE-10, AHA-03, DLA-04, RMC-05, DUE-07; các PR-F1..F5.
+
+## Tài liệu triển khai sửa bug worker/alert (2026-10-10)
+
+- task type: `wf-bugfix` ở chế độ lập kế hoạch (Phase 0–2 đầy đủ; Phase 3–6 dưới dạng kế hoạch), kết hợp quy ước `spec-authoring` (Phase 0 chốt quyết định). Chưa sửa code.
+- Thư mục: `docs/ai-cache/bug-worker-alert-fixes-2026-10-10/`
+  - `00-report.md`: intake
+  - `01-root-cause.md`
+  - `02-implementation-plan.md`: Phase 0 Q-01..Q-26, thứ tự PR, xung đột giữa PR, phụ lục PR-W3..W6
+  - `02a`..`02d`: chi tiết từng PR
+  - `03-test-plan.md`: GATE R/V
+  - `04-rollout-data-repair.md`
+- Thứ tự PR:
+  1. PR-1a reminder hotfix, phải xong trước 2026-10-12
+  2. PR-2a
+  3. PR-3 ad-hoc
+  4. PR-4 danh sách hạn/dashboard
+  5. PR-1b
+  6. PR-5
+  7. PR-2b hạn pháp lý (cần BA/pháp chế)
+- reusable:
+  - Chỉ có một migration (`0153`, data-only, PER-01). Còn lại đều không đổi schema, vì `deploy-be` không migrate.
+  - Chọn instance dùng chung qua `internal/platform/workflowsel` (ưu tiên `proposal_snapshot%`, rồi mới nhất).
+  - Không bao giờ ghi `reminder_sent=2`.
+  - File ngày nghỉ phải có ở cả `configs/` và `deploy-artifacts/backend/configs/`.
+- open: các quyết định chặn Q-04/05/06/07 (BA/pháp chế), Q-12/13 (ad-hoc), Q-18/19/21 (dashboard/FE), Q-22/23 (company/prefs), Q-25 (vận hành DEV).
+- **Cập nhật 2026-10-10, Q-05 đã được user chốt:**
+  - Hạn trùng ngày nghỉ **không tự dời**: tính đúng loại ngày (làm việc / lịch) mà template khai báo. Hạn là ngày cụ thể (FIXED_DATE) thì bắt buộc; chỉ dời khi template chọn tường minh `MOVE_TO_NEXT_WORKING_DAY`.
+  - DUE-10 đóng (không phải bug).
+  - Q-04 có hướng: resolver theo khai báo của template, fallback ngày lịch chỉ khi template không khai báo, kèm validate bắt buộc khai báo.
+  - DEV: 12/12 template active đã khai báo trong rules; preview CMS và fallback của danh sách hạn mới là chỗ còn sai (mặc định WORKING).
+
+## Khuyến nghị PO/BA chốt quyết định worker/alert (2026-10-10)
+
+- File: `docs/ai-cache/bug-worker-alert-fixes-2026-10-10/05-po-ba-decision-recommendations.md`. Bảng Q-xx trong `02-implementation-plan.md` đã được cập nhật theo.
+- Mâu thuẫn contract tìm thấy:
+  - C-1: §5.1/AC-4 vẫn quy định `PENDING_CONFIRM`, nhưng V1 (2026-08-25) chỉ giữ Draft; `OPTIONAL_COMPAT` chưa từng được chốt.
+  - C-2: công thức KPI (2026-08-03) chưa được sửa theo V1.
+  - C-3: V1 coi ad-hoc approve là hết nghĩa vụ.
+  - C-4: "Draft = nghĩa vụ đang mở" chưa áp hết các nơi đọc (DLA-02, PO-01 "Việc của tôi").
+  - C-5: §3.2 còn mô tả 2 vòng duyệt.
+  - C-6: A4 last-writer-wins bị hiểu sai thành "ô trống cũng ghi đè".
+- Khuyến nghị chính:
+  - Định nghĩa chung `ObligationOpen` và `CompletedAt`.
+  - Ad-hoc hiện từ lúc duyệt tới khi workflow hoàn tất.
+  - Giữ A4 theo nghĩa "giá trị được nhập cuối cùng" (huỷ khuyến nghị "ngày sớm nhất").
+  - Bỏ `PENDING_CONFIRM`; giữ confirm cho trường hợp "công bố ngoài hệ thống".
+  - KPI trạng thái mở không theo range.
+  - Company suspended vẫn được nhắc; thiếu cấu hình kênh thì dùng mặc định (DEV: 3/21 company có prefs).
+- Phát hiện mới PO-01 (HIGH): `personalops` lọc `<>'draft'`, nên task định kỳ không hiện trong "Việc của tôi".
+
+## PR-1a reminder worker/alert: implement + verify (2026-10-11)
+
+- Completion: `docs/ai-cache/bug-worker-alert-fixes-2026-10-10/06-completion-pr1a.md`. Chưa commit, chưa deploy.
+- Sửa REM-01, REM-06, RMC-01, RMC-04, RMC-06 và chặn step_id trùng ở mọi đường tạo workflow. Không có migration.
+- Verify: build OK; `go test ./...` còn 16 fail, khớp baseline; vet chỉ còn copylocks có sẵn; gofmt (bản LF) sạch; race reminder OK; Docker build api OK + compile cmd/api, cmd/worker trong image OK.
+- DEV (qa_ro): 0 step_id trùng ở mọi nguồn (snapshot, override, global steps, proposal); 136 milestone chết sẽ bị đánh obsolete ở tick đầu.
+- reusable:
+  - Image dev chạy `go run` khi start, nên `docker compose build api` không compile gì. Muốn có bằng chứng phải `docker run --rm cobo_iam_services_api go build ./cmd/...`.
+  - Docker Desktop có thể tự khởi động (`Start-Process "C:\Program Files\Docker\Docker\Docker Desktop.exe"`), không cần ghi BLOCKED ngay.
+  - Milestone obsolete = `reminder_sent=1` + `reminder_occurrence_id=NULL`; API ra `cancelled`.
+- open: Q-25 (thao tác DEV), commit, deploy dark launch, tất cả chờ user cho phép. Hạn 2026-10-12.

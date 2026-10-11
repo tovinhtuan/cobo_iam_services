@@ -6,6 +6,13 @@
   - `cobo_web_design` branch `improve/ui-theme` HEAD `453a3494` (không có commit mới từ lần 3)
 - Lần trước: `../risk-review-2026-10-10/` (lần 3, iam `ff5ada2`, web `453a3494`). Kế hoạch sửa: `../risk-review-2026-10-10/20-fix-plan.md`.
 
+## HEAD đổi trong lúc review
+- iam lên `a8acb51` khi các reviewer đang chạy:
+  - `c43b9cc`: company bị deactivate thì chặn member ngay, tức bản sửa BES-29;
+  - `5715d6c`: company suspended chỉ được đọc;
+  - `a8acb51`: commit `scripts/devqa/**`, smoke ngày 2026-10-10, cùng file này và `01-secret-scan-*.txt`.
+- Phần lớn finding được đọc ở `1479d72`. Phạm vi đã kiểm cho các commit mới ghi tại `10-risk-report.md`, mục Not checked.
+
 ## Thay đổi code kể từ lần 3
 - iam `ff5ada2..1479d72`: 13 commit, 76 file (+4558/-270). Danh sách: `git diff --name-status ff5ada2 1479d72`.
   - `2996f00` PR-A: thu hồi quyền có hiệu lực ngay (generation cache theo company, resolver lọc `membership_status`, invalidate ở mọi mutation, refresh chặn membership inactive).
