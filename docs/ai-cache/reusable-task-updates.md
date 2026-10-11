@@ -4867,4 +4867,10 @@
   - `deploy-init` ghi đè compose trên server: thay đổi compose thì chèn tay đúng dòng cần, có backup.
   - Test fake periodic để `OwnerCompanyID` rỗng: guard Go cho qua; fail-closed nằm ở SQL `ListActivePeriodicTypes`.
   - Muốn test log thì `slog.SetDefault` với JSON handler vào buffer (không chạy song song).
-- open: commit + deploy (migrate 0153 + be + compose), BA upload lịch chính thức, follow-up BES-41/PERF-05, PR-2b.
+- **Deploy DEV 2026-10-11:** commit `fffe055`/`8926a94`/`5c10ab6` (chưa push); 0153 áp dụng tay (root trong container, mật khẩu từ biến môi trường); `-Mode be`; chèn `stop_grace_period` vào compose trên server (file dùng CRLF). Smoke API, metrics, DB, log đều đạt.
+- reusable (deploy):
+  - `deploy-dev.ps1 -Mode migrate` hỏng trên PowerShell 5.1 (stderr của mysql). Không chạy service `migrate` trên DEV: runner đặt lại mật khẩu root/cobo.
+  - `docker-compose.artifacts.yml` trên server dùng CRLF: so khớp bằng chuỗi con/awk `index()`, regex `$` không khớp.
+  - Đọc `/metrics` từ host server: `curl 127.0.0.1:8080/metrics` (nguồn nội bộ nên không cần token).
+  - Persona QA cần login, rồi `select-company` bằng `session.pre_company_token`.
+- open: BA upload lịch chính thức, follow-up BES-41/PERF-05, sửa script migrate, PR-2b.

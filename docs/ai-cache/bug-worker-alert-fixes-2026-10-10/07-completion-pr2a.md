@@ -1,6 +1,6 @@
 # PR-2a: Completion report (wf-bugfix), 2026-10-11
 
-Trạng thái: **đã implement và verify ở local; CHƯA commit, CHƯA deploy.** Gồm 11 mục PR-2a của `02b-plan-pr2-deadline-periodic.md`, một mục cùng loại lỗi của DLA-01 (`published_date`), và hai follow-up của PR-1a (PERF-54, SEC-29, xem `06-completion-pr1a.md`).
+Trạng thái: **đã commit (`fffe055`, `8926a94`, `5c10ab6`; chưa push) và đã deploy + smoke trên DEV ngày 2026-10-11** (user: "đồng ý 1, 2, 3", smoke trên DEV thay cho Docker local). Gồm 11 mục PR-2a của `02b-plan-pr2-deadline-periodic.md`, một mục cùng loại lỗi của DLA-01 (`published_date`), và hai follow-up của PR-1a (PERF-54, SEC-29, xem `06-completion-pr1a.md`).
 
 ```text
 Bug / fix (GATE R: test tái hiện fail trên 141a242 trước khi sửa):
@@ -106,3 +106,27 @@ Verify lại sau khi sửa theo review: build OK; `go test ./...` 16 fail trùng
 - BA upload lịch nghỉ chính thức 2026/2027 qua CMS (sau khi có DUE-01 trên DEV).
 - PR-2b (ngày pháp lý): DUE-02, DUE-09, DUE-07, DUE-08, DLA-05 phần neo created_at, test khoá Q-05.
 - Repair 1 instance thiếu milestone (PER-05): chỉ liệt kê, cần quyết định.
+
+## Nhật ký rollout DEV 2026-10-11 (UTC)
+
+1. **Trước deploy (03:56, qa_ro):** periodic COMPLETED 332, PENDING 14; occurrence max id 1416798; milestone obsolete 18. Danh sách migration chờ (so runner với `schema_migrations`) chỉ có `0153`.
+2. **Backup:** `bin/{api,worker}.rollback.20261011T035605Z`, `docker-compose.artifacts.yml.bak-20261011T035605Z`.
+3. **Migration 0153 (03:57):**
+   - `deploy-dev.ps1 -Mode migrate` đã sync `migrations/` rồi dừng: PowerShell 5.1 coi dòng cảnh báo mysql trên stderr là lỗi (lỗi có sẵn của script).
+   - Không dùng service `migrate` vì runner chạy `ALTER USER root/cobo ... BY '<mặc định>'`, tức đặt lại mật khẩu DB.
+   - Áp dụng đúng file 0153 bằng root trong container DB, mật khẩu lấy từ biến môi trường của container (không gõ ra dòng lệnh), rồi `INSERT IGNORE INTO schema_migrations`. Hash file trên server khớp local. Số dòng phải sửa trước/sau: 0/0.
+4. **Deploy BE (03:59):** `deploy-dev.ps1 -Mode be`; `/healthz` và `/readyz` OK; hash binary trên server khớp bản build.
+5. **Compose (04:00):** file trên server giống hệt bản local trước khi đổi (không có chỉnh tay). Chèn 3 dòng (2 comment + `stop_grace_period: 150s`) bằng awk, xử lý CRLF; sau đó file trên server khớp bản local mới. Recreate worker: `StopTimeout=150`.
+6. **Smoke DEV (04:01–04:03):**
+   - `/metrics` (Prometheus đang scrape): `cobo_holiday_calendar_year_available{slot=current|next, source=file}` = 1, `source=db` = 0 (chưa upload); `cobo_periodic_cycles{COMPLETED}` 332, `{PENDING}` 14; `claimed_stale` 0; scrape errors 0. API log có "periodic metrics collector registered".
+   - API (script `smoke_pr2a.py`, persona ENT/c_001, USER/c_001, USER/c_002): `deadline-alerts` (tất cả + OVERDUE/DUE_SOON/UPCOMING), `deadline-alerts/next`, `dashboard/overview`, `me/operational-overview`, `deadlines/{record}/steps` đều 200 (c_001: 5 cảnh báo = 3 OVERDUE + 2 UPCOMING; steps 6). CMS `holiday-calendars/2026|2027` = 404 (chưa có lịch DB, đúng kỳ vọng).
+   - DB: CLAIMED/FAILED/RETRY = 0; không có cycle/record mới ngoài dự kiến; reminder: 0 occurrence mới, 0 đến hạn.
+   - Log: worker 27 INFO, API 28 INFO, 0 WARN/ERROR.
+7. **Chưa smoke được trực tiếp:** DLA-01 (cần khung 00:00–07:00 giờ VN; đã có unit test); DUE-01 trên DB thật (cần BA upload qua CMS); PER-04 reaper (cần dừng worker giữa một item).
+
+Rollback: copy `bin/{api,worker}.rollback.20261011T035605Z` đè lên `bin/{api,worker}` rồi recreate api + worker; compose: khôi phục từ `.bak-20261011T035605Z`. 0153 là forward-only và vô hại. Rollback worker sẽ mở lại BES-38 (API-03).
+
+Follow-up vận hành phát sinh:
+- `deploy-dev.ps1 -Mode migrate` lỗi trên PowerShell 5.1 (stderr của mysql). `push-migration.*` gõ mật khẩu root ngay trên dòng lệnh.
+- `run_dev_migrations.sh` (service `migrate`) đặt lại mật khẩu root/cobo về mặc định mỗi lần chạy: không dùng trên DEV có mật khẩu đã rotate.
+- Sau khi BA upload lịch qua CMS: kiểm `MIN/MAX(holiday_date)` của năm nằm đúng trong năm, và metric `source=db` lên 1.
