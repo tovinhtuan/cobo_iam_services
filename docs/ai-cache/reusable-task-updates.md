@@ -4853,4 +4853,18 @@
   - Scanner reminder chỉ lấy `due_minus_%`; `step_start`/`step_end` không bao giờ được seed (đừng tính nhầm vào backlog).
   - `/metrics` cho qua nguồn nội bộ; Prometheus không cần token.
   - Không có allowlist email: dùng chốt chặn "dark launch + đếm occurrence đến hạn" trước khi bật lại gửi.
-- open: PERF-54 (cursor xoay vòng), PERF-55/52 (metric worker), SEC-29 (xoá literal token), SEC-27 (allowlist email), theo dõi 24h; các PR tiếp theo PR-2a, PR-3, PR-4, PR-1b, PR-5, PR-2b.
+- PERF-54 (cursor xoay vòng giữa các tick) và SEC-29 (bỏ token gắn cứng) đã sửa ngày 2026-10-11, chưa commit.
+- open: PERF-55/52 (metric worker), SEC-27 (allowlist email), theo dõi 24h; các PR tiếp theo PR-2a, PR-3, PR-4, PR-1b, PR-5, PR-2b.
+
+## PR-2a worker/alert (periodic + lịch nghỉ + hôm nay theo HCM): implement + review (2026-10-11)
+
+- Completion: `docs/ai-cache/bug-worker-alert-fixes-2026-10-10/07-completion-pr2a.md`. Chưa commit, chưa deploy.
+- 11 mục: PER-01 (+ migration data 0153), PERF-46, BES-38, PER-05, PER-04, PER-03, DUE-01, DUE-03 (file 2026/2027 theo Q-06), PER-06 (worker dùng lịch DB, TTL 5 phút; metric phía API), DLA-01 (+ `published_date`), DLA-05 (phần bỏ qua dòng lỗi).
+- Review: không có CRITICAL/HIGH; đã sửa PERF-01, API-01 (MEDIUM) và các mục LOW (BES-40/42, PERF-02/03/04, API-04).
+- Verify: 16 fail trùng baseline; race OK; Docker + compile 3 binary trong image OK. DEV (qa_ro): không có dòng nào thuộc diện ảnh hưởng.
+- reusable:
+  - CMS đã có luồng upload lịch nghỉ: `/cms/settings/holiday-calendar` (XLSX, preview rồi PUT replace; quyền `system.settings` hoặc `rbac.manage`). Chỉ upload sau khi DUE-01 đã lên DEV (trước đó dữ liệu bị lùi 1 ngày), và worker chỉ đọc lịch DB sau PER-06.
+  - `deploy-init` ghi đè compose trên server: thay đổi compose thì chèn tay đúng dòng cần, có backup.
+  - Test fake periodic để `OwnerCompanyID` rỗng: guard Go cho qua; fail-closed nằm ở SQL `ListActivePeriodicTypes`.
+  - Muốn test log thì `slog.SetDefault` với JSON handler vào buffer (không chạy song song).
+- open: commit + deploy (migrate 0153 + be + compose), BA upload lịch chính thức, follow-up BES-41/PERF-05, PR-2b.

@@ -125,3 +125,11 @@ Follow-up mới phát sinh khi rollout:
 - SEC-29: xoá literal token (đã chết) khỏi `deploy-artifacts/_tmp_seed_reminder_smoke.py`, chuyển sang đọc env.
 - SEC-27 (allowlist email) vẫn là điều kiện trước khi lượng email tăng theo RMC-01.
 - Theo dõi 24h theo `03` §5 và `04` §8.
+
+## Sửa tiếp sau rollout (2026-10-11, chưa commit, chưa deploy)
+
+- **PERF-54 (đã sửa):** `SeedOccurrencesFromDueMilestones` giữ cursor giữa các tick (`seedCursor`, có `seedMu`). Tick sau đọc tiếp từ chỗ tick trước dừng; tới cuối hàng thì quay về đầu một lần và dừng khi gặp lại điểm bắt đầu (`milestoneBeforeCursor`). Scanner không phân trang vẫn chạy như cũ.
+  - Tái hiện: `TestSeedOccurrences_WaitRowsBeyondTickBudgetDoNotStarve` (1300 dòng chờ + 1 dòng đủ điều kiện). Fail trên `141a242`, pass sau khi sửa.
+  - Test bảo vệ: `TestSeedOccurrences_SeedCursorWrapsAround` (dòng nằm trước cursor được xử lý sau khi quay vòng).
+- **SEC-29 (đã sửa):** `deploy-artifacts/_tmp_seed_reminder_smoke.py` đọc `DEV_API_BASE_URL` và `INTERNAL_REMINDER_TOKEN` từ env; đã bỏ token, IP và email gắn cứng (lịch sử git vẫn còn token cũ, nhưng token đó đã bị rotate).
+- Verify: `go build ./...` OK; `go test ./...` 16 fail đúng baseline; vet chỉ còn copylocks có sẵn; gofmt (bản LF) sạch; `go test -race ./internal/reminder/...` OK; Docker build api và compile `cmd/api`, `cmd/worker` trong image OK.
