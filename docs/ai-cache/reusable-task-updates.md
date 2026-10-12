@@ -4882,3 +4882,4 @@
 - Gotchas: `gofmt -l` trên Windows liệt kê mọi file CRLF — kiểm tra trên bản LF; field `has_workflow` tính cả override của công ty đang gọi còn bộ lọc thì không
 - Kiểm chứng: build/vet OK; test mới pass; fail có sẵn = baseline (6 template import reminder_config, legal_basis_backfill file mode Windows); Docker build BLOCKED (daemon tắt), `GOOS=linux go build ./cmd/api ./cmd/worker` OK
 - FE đi kèm: `cobo_web_design/docs/ai-cache/cms-templates-redesign-2026-10-12/`. Deploy BE trước FE
+- Deploy DEV 2026-10-12: BE `bf97e16` rồi FE `c36d9106` (bundle `index-CopEbFsk.js`); rollback BE `bin/rollback/*.pre-templates-list-20261012T140914Z`, FE `web/releases/pre-templates-redesign-20261012T141130Z.tar.gz`; smoke API + UI đạt (chi tiết `cobo_web_design/docs/ai-cache/cms-templates-redesign-2026-10-12/99-summary.md`)
