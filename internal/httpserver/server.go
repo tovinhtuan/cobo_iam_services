@@ -435,7 +435,7 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 		}
 		disclosureOpts = append(disclosureOpts, disclosureapp.WithHolidayCalendarProvider(composite))
 		holidayProvider = composite
-		holidaySvc = holidayapp.NewService(holidayRepo, dbHoliday, id)
+		holidaySvc = holidayapp.NewService(holidayRepo, dbHoliday, id, holidayapp.WithDefaultCalendarDir(filepath.Join("configs", "non_trading_days")))
 	}
 	disclosureSvc := disclosureapp.NewService(disclosureRepo, authSvc, id, disclosureOpts...)
 	deadlineCalc := disclosureapp.NewDeadlineCalculator(holidayProvider)

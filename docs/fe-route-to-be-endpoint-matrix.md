@@ -94,7 +94,7 @@
 | `/cms/ops/sessions` | session ops | `GET /api/v1/platform/cms/ops/sessions`, `POST /api/v1/platform/cms/ops/sessions/:session_id/revoke` | Implemented |
 | `/cms/ops/health` | health view | `GET /api/v1/platform/cms/ops/health`, `GET /api/v1/platform/cms/ops/metrics` | Implemented |
 | `/cms/settings/general` | general settings | FE route/spec exists; matching backend settings endpoints are not currently visible in `platformcms` handler list | Partial |
-| `/cms/settings/holiday-calendar` | holiday calendar | `GET /api/v1/platform/cms/holiday-calendars/{year}`, `POST /preview`, `PUT /api/v1/platform/cms/holiday-calendars/{year}` | Implemented |
+| `/cms/settings/holiday-calendar` | holiday calendar | `GET /api/v1/platform/cms/holiday-calendars/{year}`, `GET …/{year}/default`, `POST …/{year}/preview` (multipart or JSON), `PUT …/{year}` (multipart or JSON, `expected_revision`), `DELETE …/{year}`, `GET …/{year}/export.xlsx` | Implemented |
 | `/cms/reference/listed-companies` | listed companies reference list (vnstock, read-only) | `GET /api/v1/platform/cms/market/listed-companies` | Implemented |
 | `/cms/reference/listed-companies/:symbol` | listed company detail (vnstock profile / partial) | `GET /api/v1/platform/cms/market/listed-companies/{symbol}` | Implemented |
 | `/cms/settings/localization` | localization settings | FE route/spec exists; backend endpoint not currently visible | Partial |

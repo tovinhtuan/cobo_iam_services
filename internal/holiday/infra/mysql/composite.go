@@ -59,6 +59,13 @@ func (c *CompositeProvider) hasDBCalendar(ctx context.Context, year int) (bool, 
 	return exists, nil
 }
 
+// forgetYear drops the cached "calendar exists" answer so the next lookup re-checks.
+func (c *CompositeProvider) forgetYear(year int) {
+	c.mu.Lock()
+	delete(c.years, year)
+	c.mu.Unlock()
+}
+
 var _ disclosureapp.HolidayCalendarProvider = (*CompositeProvider)(nil)
 
 // IsNonTradingDay implements disclosureapp.HolidayCalendarProvider.
@@ -78,7 +85,17 @@ func (c *CompositeProvider) IsNonTradingDay(ctx context.Context, date time.Time)
 			return false, "", err
 		}
 		if ok {
-			return c.DB.IsNonTradingDay(ctx, date)
+			// The "exists" check and the dates are cached separately (worker TTLs). After a calendar
+			// is removed the dates can reload empty while "exists" is still cached: treat that as
+			// no calendar (fall back to the file) instead of a year without holidays.
+			has, err := c.DB.HasDates(ctx, year)
+			if err != nil {
+				return false, "", err
+			}
+			if has {
+				return c.DB.IsNonTradingDay(ctx, date)
+			}
+			c.forgetYear(year)
 		}
 	}
 	return c.File.IsNonTradingDay(ctx, date)

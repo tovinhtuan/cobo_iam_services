@@ -185,6 +185,9 @@ func (h *Handler) Register(mux *http.ServeMux) {
 		mux.HandleFunc("GET /api/v1/platform/cms/holiday-calendars/{year}", h.observe("cms.holiday.get", h.holidayCalendarGet))
 		mux.HandleFunc("POST /api/v1/platform/cms/holiday-calendars/{year}/preview", h.observe("cms.holiday.preview", h.holidayCalendarPreview))
 		mux.HandleFunc("PUT /api/v1/platform/cms/holiday-calendars/{year}", h.observe("cms.holiday.replace", h.holidayCalendarReplace))
+		mux.HandleFunc("DELETE /api/v1/platform/cms/holiday-calendars/{year}", h.observe("cms.holiday.delete", h.holidayCalendarDelete))
+		mux.HandleFunc("GET /api/v1/platform/cms/holiday-calendars/{year}/default", h.observe("cms.holiday.default", h.holidayCalendarDefault))
+		mux.HandleFunc("GET /api/v1/platform/cms/holiday-calendars/{year}/export.xlsx", h.observe("cms.holiday.export", h.holidayCalendarExport))
 	}
 	mux.HandleFunc("GET /api/v1/platform/cms/market/listed-companies", h.observe("cms.market.listed_companies.list", h.listListedCompanies))
 	mux.HandleFunc("GET /api/v1/platform/cms/market/listed-companies/{symbol}", h.observe("cms.market.listed_companies.get", h.getListedCompany))

@@ -27,6 +27,9 @@ const (
 	CompanyAuditActionPrefix = "cms.company"
 	// CompanyAuditTenantExcludedPrefix is hidden from tenant audit views (D-02: cms.company.* only).
 	CompanyAuditTenantExcludedPrefix = "cms.company."
+	// HolidayAuditTenantExcludedPrefix: platform-wide holiday calendar changes are written with the
+	// operator's active company but are platform actions, so tenant views hide them too.
+	HolidayAuditTenantExcludedPrefix = "cms.holiday_calendar."
 
 	CompanyAuditCreate             = "cms.company.create"
 	CompanyAuditUpdate             = "cms.company.update"

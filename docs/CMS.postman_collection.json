@@ -16,6 +16,10 @@
     ]
   },
   "variable": [
+    {
+      "key": "holiday_revision",
+      "value": ""
+    },
     { "key": "base_url", "value": "http://localhost:8080" },
     { "key": "access_token", "value": "" },
     { "key": "refresh_token", "value": "" },
@@ -830,44 +834,258 @@
       "item": [
         {
           "name": "Get Holiday Calendar",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Keep the revision for PUT/DELETE expected_revision (\"\" when the year has no calendar).",
+                  "const body = pm.response.code === 200 ? pm.response.json() : null;",
+                  "pm.collectionVariables.set('holiday_revision', body && body.data && body.data.revision ? body.data.revision : '');"
+                ]
+              }
+            }
+          ],
           "request": {
             "method": "GET",
+            "header": [],
+            "description": "Published calendar of the year (404 when none). `revision` is sent back as `expected_revision` when saving.",
             "url": {
               "raw": "{{base_url}}/api/v1/platform/cms/holiday-calendars/{{year}}",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "platform", "cms", "holiday-calendars", "{{year}}"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "platform",
+                "cms",
+                "holiday-calendars",
+                "{{year}}"
+              ]
             }
           }
         },
         {
-          "name": "Preview Holiday Calendar",
+          "name": "Get Default Holiday Calendar",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "description": "Built-in calendar (configs/non_trading_days/{year}.json) used while no calendar is published. 404 NOT_FOUND when the year has none.",
+            "url": {
+              "raw": "{{base_url}}/api/v1/platform/cms/holiday-calendars/{{year}}/default",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "platform",
+                "cms",
+                "holiday-calendars",
+                "{{year}}",
+                "default"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Preview Holiday Calendar (xlsx)",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [],
             "body": {
-              "mode": "raw",
-              "raw": "{\n  \"holidays\": [\n    {\n      \"date\": \"2026-01-01\",\n      \"name\": \"New Year\"\n    }\n  ]\n}"
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": ""
+                }
+              ]
             },
+            "description": "Validates an .xlsx (column A date, B name, C day type). No DB write.",
             "url": {
               "raw": "{{base_url}}/api/v1/platform/cms/holiday-calendars/{{year}}/preview",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "platform", "cms", "holiday-calendars", "{{year}}", "preview"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "platform",
+                "cms",
+                "holiday-calendars",
+                "{{year}}",
+                "preview"
+              ]
             }
           }
         },
         {
-          "name": "Replace Holiday Calendar",
+          "name": "Preview Holiday Calendar (editor JSON)",
           "request": {
-            "method": "PUT",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"holidays\": [\n    {\n      \"date\": \"2026-01-01\",\n      \"name\": \"New Year\"\n    }\n  ]\n}"
+              "raw": "{\n  \"dates\": [\n    { \"date\": \"{{year}}-01-01\", \"name\": \"Tết Dương lịch\", \"day_type\": \"PUBLIC_HOLIDAY\" },\n    { \"date\": \"{{year}}-09-02\", \"name\": \"Quốc khánh\", \"day_type\": \"PUBLIC_HOLIDAY\" }\n  ]\n}"
             },
+            "description": "Same rules as the .xlsx upload; row_index = 1-based position in `dates` (max 400 rows). No DB write.",
+            "url": {
+              "raw": "{{base_url}}/api/v1/platform/cms/holiday-calendars/{{year}}/preview",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "platform",
+                "cms",
+                "holiday-calendars",
+                "{{year}}",
+                "preview"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Replace Holiday Calendar (editor JSON)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"dates\": [\n    { \"date\": \"{{year}}-01-01\", \"name\": \"Tết Dương lịch\", \"day_type\": \"PUBLIC_HOLIDAY\" },\n    { \"date\": \"{{year}}-09-02\", \"name\": \"Quốc khánh\", \"day_type\": \"PUBLIC_HOLIDAY\" }\n  ],\n  \"description\": \"Theo thông báo SGDCK\",\n  \"expected_revision\": \"{{holiday_revision}}\"\n}"
+            },
+            "description": "Requires system.settings or rbac.manage. `expected_revision`: revision from GET, \"\" when the year has no calendar, omit to skip the check. 409 STALE_ETAG (details.current_revision) on mismatch. Writes audit cms.holiday_calendar.replace.",
             "url": {
               "raw": "{{base_url}}/api/v1/platform/cms/holiday-calendars/{{year}}",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "platform", "cms", "holiday-calendars", "{{year}}"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "platform",
+                "cms",
+                "holiday-calendars",
+                "{{year}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Replace Holiday Calendar (xlsx)",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": ""
+                },
+                {
+                  "key": "description",
+                  "value": "Theo thông báo SGDCK",
+                  "type": "text"
+                },
+                {
+                  "key": "expected_revision",
+                  "value": "{{holiday_revision}}",
+                  "type": "text",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Unchanged multipart flow; `expected_revision` is optional.",
+            "url": {
+              "raw": "{{base_url}}/api/v1/platform/cms/holiday-calendars/{{year}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "platform",
+                "cms",
+                "holiday-calendars",
+                "{{year}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Delete Holiday Calendar",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"expected_revision\": \"{{holiday_revision}}\",\n  \"reason\": \"Phát hành nhầm\"\n}"
+            },
+            "description": "Requires system.settings or rbac.manage. The year falls back to the default calendar (`fallback`: default | none). Writes audit cms.holiday_calendar.delete.",
+            "url": {
+              "raw": "{{base_url}}/api/v1/platform/cms/holiday-calendars/{{year}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "platform",
+                "cms",
+                "holiday-calendars",
+                "{{year}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Export Holiday Calendar (.xlsx)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "description": "source=db (published, default) or default (built-in). Readable by the upload parser.",
+            "url": {
+              "raw": "{{base_url}}/api/v1/platform/cms/holiday-calendars/{{year}}/export.xlsx?source=db",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "platform",
+                "cms",
+                "holiday-calendars",
+                "{{year}}",
+                "export.xlsx"
+              ],
+              "query": [
+                {
+                  "key": "source",
+                  "value": "db"
+                }
+              ]
             }
           }
         }

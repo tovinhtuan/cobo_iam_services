@@ -109,7 +109,7 @@ func (r *Repository) ListFiltered(ctx context.Context, filter auditapp.ListFilte
 	case filter.RequireAdminPrefix:
 		actionSQL = "AND action LIKE 'admin.%'"
 	}
-	if exclude := strings.TrimSpace(filter.ExcludeActionPrefix); exclude != "" {
+	for _, exclude := range filter.ExcludedPrefixes() {
 		actionSQL += " AND action NOT LIKE CONCAT(?, '%')"
 		actionArgs = append(actionArgs, exclude)
 	}

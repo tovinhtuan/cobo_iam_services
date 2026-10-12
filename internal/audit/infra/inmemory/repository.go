@@ -88,7 +88,7 @@ func (r *Repository) ListFiltered(_ context.Context, filter auditapp.ListFilter)
 		if actorUserID != "" && !strings.EqualFold(strings.TrimSpace(item.ActorUserID), actorUserID) {
 			continue
 		}
-		if exclude := strings.TrimSpace(filter.ExcludeActionPrefix); exclude != "" && strings.HasPrefix(item.Action, exclude) {
+		if hasAnyPrefix(item.Action, filter.ExcludedPrefixes()) {
 			continue
 		}
 		if !matchActionFilter(item.Action, action, filter.ActionPrefix, filter.RequireAdminPrefix) {
@@ -141,4 +141,13 @@ func parseRFC3339(value string) (time.Time, bool) {
 		return time.Time{}, false
 	}
 	return t, true
+}
+
+func hasAnyPrefix(action string, prefixes []string) bool {
+	for _, p := range prefixes {
+		if strings.HasPrefix(action, p) {
+			return true
+		}
+	}
+	return false
 }

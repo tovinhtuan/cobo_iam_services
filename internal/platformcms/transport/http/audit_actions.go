@@ -1,5 +1,7 @@
 package http
 
+import holidayapp "github.com/cobo/cobo_iam_services/internal/holiday/app"
+
 const (
 	cmsActionEntryCreate                   = "cms.entry.create"
 	cmsActionEntryUpdate                   = "cms.entry.update"
@@ -39,9 +41,13 @@ const (
 	cmsActionWorkflowVersionActivate       = "cms_workflow.version.activate"
 	cmsActionWorkflowUpsert                = "cms_workflow.upsert"
 	cmsActionWorkflowDelete                = "cms_workflow.delete"
+	cmsActionHolidayCalendarReplace        = holidayapp.AuditActionReplace
+	cmsActionHolidayCalendarDelete         = holidayapp.AuditActionDelete
 )
 
 var cmsKnownActions = map[string]struct{}{
+	cmsActionHolidayCalendarReplace:        {},
+	cmsActionHolidayCalendarDelete:         {},
 	cmsActionTemplateAlertConfigUpdate:     {},
 	cmsActionWorkflowVersionPublish:        {},
 	cmsActionWorkflowVersionActivate:       {},

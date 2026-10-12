@@ -22,6 +22,9 @@ type captureDriver struct {
 	queryOK         bool
 	calendarQueries int
 	dateQueries     int
+	// queryFn, when set, answers every query (used by the transactional replace/delete tests).
+	queryFn func(q string, args []driver.Value) (driver.Rows, error)
+	commits int
 }
 
 func (d *captureDriver) Open(string) (driver.Conn, error) { return &captureConn{d: d}, nil }
@@ -30,11 +33,16 @@ type captureConn struct{ d *captureDriver }
 
 func (c *captureConn) Prepare(q string) (driver.Stmt, error) { return &captureStmt{c: c, q: q}, nil }
 func (c *captureConn) Close() error                          { return nil }
-func (c *captureConn) Begin() (driver.Tx, error)             { return captureTx{}, nil }
+func (c *captureConn) Begin() (driver.Tx, error)             { return captureTx{d: c.d}, nil }
 
-type captureTx struct{}
+type captureTx struct{ d *captureDriver }
 
-func (captureTx) Commit() error   { return nil }
+func (t captureTx) Commit() error {
+	t.d.mu.Lock()
+	t.d.commits++
+	t.d.mu.Unlock()
+	return nil
+}
 func (captureTx) Rollback() error { return nil }
 
 type captureStmt struct {
@@ -51,10 +59,13 @@ func (s *captureStmt) Exec(args []driver.Value) (driver.Result, error) {
 	s.c.d.execs = append(s.c.d.execs, args)
 	return driver.RowsAffected(1), nil
 }
-func (s *captureStmt) Query([]driver.Value) (driver.Rows, error) {
+func (s *captureStmt) Query(args []driver.Value) (driver.Rows, error) {
 	s.c.d.mu.Lock()
 	defer s.c.d.mu.Unlock()
 	s.c.d.queries++
+	if s.c.d.queryFn != nil {
+		return s.c.d.queryFn(s.q, args)
+	}
 	if s.c.d.queryOK {
 		switch {
 		case strings.Contains(s.q, "FROM holiday_calendars"):
@@ -113,6 +124,7 @@ func TestReplaceCalendar_BindsCivilDate(t *testing.T) {
 		t.Skip("tzdata unavailable")
 	}
 	db, d := openCaptureDB(t)
+	d.queryFn = noCalendarQueries
 
 	want := []string{"2027-01-01", "2026-02-16", "2026-12-31"}
 	var rows []HolidayDateRow
@@ -120,7 +132,7 @@ func TestReplaceCalendar_BindsCivilDate(t *testing.T) {
 		day, _ := time.ParseInLocation("2006-01-02", s, hcm)
 		rows = append(rows, HolidayDateRow{Date: day, DayType: "PUBLIC_HOLIDAY", Name: "x"})
 	}
-	if err := NewRepository(db).ReplaceCalendar(context.Background(), ReplaceCalendarInput{
+	if _, err := NewRepository(db).ReplaceCalendar(context.Background(), ReplaceCalendarInput{
 		CalendarID: "cal-1", CalendarYear: 2027, UploadedBy: "u", Dates: rows,
 	}); err != nil {
 		t.Fatal(err)

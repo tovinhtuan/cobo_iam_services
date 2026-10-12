@@ -2,7 +2,11 @@ package app
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -24,14 +28,91 @@ var dateFormats = []string{
 	"02-01-2006",
 }
 
+const (
+	issueCodeTruncated = "VALUE_TRUNCATED"
+
+	maxNameRunes    = 512
+	maxDayTypeRunes = 32
+	defaultDayType  = "PUBLIC_HOLIDAY"
+)
+
+// candidateRow is one input row before validation; xlsx and JSON both feed ValidateHolidayRows.
+type candidateRow struct {
+	RowIndex int
+	Date     time.Time
+	DateErr  error
+	Name     string
+	DayType  string
+}
+
+// validateHolidayRows applies the rules shared by .xlsx upload and the JSON editor: the date must
+// parse and belong to expectedYear, no duplicates, weekend dates warn (weekends are already
+// non-trading), name/day_type are trimmed and cut to the column size with a warning.
+func validateHolidayRows(cands []candidateRow, expectedYear int, loc *time.Location) PreviewResult {
+	out := PreviewResult{CalendarYear: expectedYear}
+	seen := make(map[string]int)
+	for _, c := range cands {
+		rn := c.RowIndex
+		if c.DateErr != nil {
+			out.Errors = append(out.Errors, ParseIssue{Row: rn, Code: issueCodeBadDate, Message: c.DateErr.Error()})
+			continue
+		}
+		d := time.Date(c.Date.Year(), c.Date.Month(), c.Date.Day(), 0, 0, 0, 0, loc)
+		if y := d.Year(); y != expectedYear {
+			out.Errors = append(out.Errors, ParseIssue{
+				Row: rn, Code: issueCodeWrongYear,
+				Message: fmt.Sprintf("date must belong to calendar year %d (got %d)", expectedYear, y),
+			})
+			continue
+		}
+
+		key := d.Format("2006-01-02")
+		if prev, dup := seen[key]; dup {
+			out.Errors = append(out.Errors, ParseIssue{
+				Row: rn, Code: issueCodeDuplicate,
+				Message: fmt.Sprintf("duplicate date %s (also row %d)", key, prev),
+			})
+			continue
+		}
+		seen[key] = rn
+
+		dayType := strings.TrimSpace(c.DayType)
+		if dayType == "" {
+			dayType = defaultDayType
+		}
+		name := strings.TrimSpace(c.Name)
+		if runeLen(name) > maxNameRunes || runeLen(dayType) > maxDayTypeRunes {
+			out.Warnings = append(out.Warnings, ParseIssue{
+				Row: rn, Code: issueCodeTruncated,
+				Message: fmt.Sprintf("name is cut to %d characters and type to %d", maxNameRunes, maxDayTypeRunes),
+			})
+		}
+
+		if wd := d.Weekday(); wd == time.Saturday || wd == time.Sunday {
+			out.Warnings = append(out.Warnings, ParseIssue{
+				Row: rn, Code: issueCodeWeekendOverlap,
+				Message: "date falls on a weekend; weekends are already counted by the system, no need to list it",
+			})
+		}
+
+		out.Rows = append(out.Rows, ParsedHolidayRow{
+			RowIndex: rn,
+			Date:     d,
+			DayType:  truncateRunes(dayType, maxDayTypeRunes),
+			Name:     truncateRunes(name, maxNameRunes),
+		})
+		out.TotalAccepted++
+	}
+	return out
+}
+
+func runeLen(s string) int { return len([]rune(s)) }
+
 // ParseHolidayXLSX parses the first worksheet: column A = date, B = optional name, C = optional day type.
 // If column A cannot be parsed as a date and contains no ASCII digits (e.g. a header like "Ngày nghỉ"),
 // the row is skipped without error so spreadsheets may include a title row.
 func ParseHolidayXLSX(raw []byte, expectedYear int, loc *time.Location) PreviewResult {
-	out := PreviewResult{
-		CalendarYear: expectedYear,
-		Rows:         nil,
-	}
+	out := PreviewResult{CalendarYear: expectedYear}
 	if loc == nil {
 		loc = time.UTC
 	}
@@ -55,9 +136,8 @@ func ParseHolidayXLSX(raw []byte, expectedYear int, loc *time.Location) PreviewR
 		return out
 	}
 
-	seen := make(map[string]int)
+	var cands []candidateRow
 	for i, row := range rows {
-		rn := i + 1
 		if len(row) == 0 {
 			continue
 		}
@@ -65,63 +145,58 @@ func ParseHolidayXLSX(raw []byte, expectedYear int, loc *time.Location) PreviewR
 		if cell == "" {
 			continue
 		}
-
-		d, err := parseDateCell(cell, loc)
-		if err != nil {
-			if !hasASCIIDigit(cell) {
-				continue
-			}
-			out.Errors = append(out.Errors, ParseIssue{Row: rn, Code: issueCodeBadDate, Message: err.Error()})
+		c := candidateRow{RowIndex: i + 1}
+		c.Date, c.DateErr = parseDateCell(cell, loc)
+		if c.DateErr != nil && !hasASCIIDigit(cell) {
 			continue
 		}
-		d = time.Date(d.Year(), d.Month(), d.Day(), 0, 0, 0, 0, loc)
-		if y := d.Year(); y != expectedYear {
-			out.Errors = append(out.Errors, ParseIssue{
-				Row: rn, Code: issueCodeWrongYear,
-				Message: fmt.Sprintf("date must belong to calendar year %d (got %d)", expectedYear, y),
-			})
-			continue
-		}
-
-		key := d.Format("2006-01-02")
-		if prev, dup := seen[key]; dup {
-			out.Errors = append(out.Errors, ParseIssue{
-				Row: rn, Code: issueCodeDuplicate,
-				Message: fmt.Sprintf("duplicate date %s (also row %d)", key, prev),
-			})
-			continue
-		}
-		seen[key] = rn
-
-		dayType := "PUBLIC_HOLIDAY"
-		name := ""
 		if len(row) > 1 {
-			name = strings.TrimSpace(row[1])
+			c.Name = row[1]
 		}
 		if len(row) > 2 {
-			if v := strings.TrimSpace(row[2]); v != "" {
-				dayType = v
-			}
+			c.DayType = row[2]
 		}
-
-		wd := d.Weekday()
-		if wd == time.Saturday || wd == time.Sunday {
-			out.Warnings = append(out.Warnings, ParseIssue{
-				Row: rn, Code: issueCodeWeekendOverlap,
-				Message: "date falls on a weekend; it still counts as one non-trading day when listed",
-			})
-		}
-
-		out.Rows = append(out.Rows, ParsedHolidayRow{
-			RowIndex: rn,
-			Date:     d,
-			DayType:  truncateRunes(dayType, 32),
-			Name:     truncateRunes(name, 512),
-		})
-		out.TotalAccepted++
+		cands = append(cands, c)
 	}
+	return validateHolidayRows(cands, expectedYear, loc)
+}
 
+// ValidateHolidayInput validates editor rows (JSON). Dates must be YYYY-MM-DD; RowIndex is the
+// 1-based position in the request. ContentSHA256 is the hash of the normalized accepted rows,
+// so the same list always yields the same revision.
+func ValidateHolidayInput(in []HolidayInputRow, expectedYear int, loc *time.Location) PreviewResult {
+	if loc == nil {
+		loc = time.UTC
+	}
+	cands := make([]candidateRow, 0, len(in))
+	for i, r := range in {
+		c := candidateRow{RowIndex: i + 1, Name: r.Name, DayType: r.DayType}
+		ds := strings.TrimSpace(r.Date)
+		if ds == "" {
+			c.DateErr = fmt.Errorf("date is required")
+		} else if d, err := time.ParseInLocation("2006-01-02", ds, loc); err != nil {
+			c.DateErr = fmt.Errorf("unrecognized date value %q (expected YYYY-MM-DD)", ds)
+		} else {
+			c.Date = d
+		}
+		cands = append(cands, c)
+	}
+	out := validateHolidayRows(cands, expectedYear, loc)
+	out.ContentSHA256 = rowsSHA256(out.Rows)
 	return out
+}
+
+func rowsSHA256(rows []ParsedHolidayRow) string {
+	sorted := append([]ParsedHolidayRow(nil), rows...)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Date.Before(sorted[j].Date) })
+	// JSON keeps field boundaries unambiguous even when a name contains "|" or a newline.
+	canon := make([][3]string, 0, len(sorted))
+	for _, r := range sorted {
+		canon = append(canon, [3]string{r.Date.Format("2006-01-02"), r.DayType, r.Name})
+	}
+	raw, _ := json.Marshal(canon)
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:])
 }
 
 func hasASCIIDigit(s string) bool {

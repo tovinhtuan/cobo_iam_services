@@ -2,8 +2,11 @@ package mysql
 
 import (
 	"context"
+	"database/sql/driver"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -66,5 +69,39 @@ func TestCompositeProvider_CachesYearCheckForTTL(t *testing.T) {
 	}
 	if d.calendarQueries != 2 {
 		t.Fatalf("after TTL want a re-check, got %d", d.calendarQueries)
+	}
+}
+
+// API-01: the worker cached "2027 has a DB calendar", then the calendar was removed and the dates
+// reloaded empty. The year must fall back to the file calendar, not become a year without holidays.
+func TestCompositeProvider_EmptyDBYearFallsBackToFile(t *testing.T) {
+	db, d := openCaptureDB(t)
+	d.queryFn = func(q string, _ []driver.Value) (driver.Rows, error) {
+		switch {
+		case strings.Contains(q, "FROM holiday_calendars"):
+			return &captureRows{cols: []string{"n"}, vals: [][]driver.Value{{int64(1)}}}, nil // stale "exists"
+		case strings.Contains(q, "FROM holiday_dates"):
+			return &captureRows{cols: []string{"holiday_date", "day_type", "name"}}, nil // dates already gone
+		}
+		return nil, errors.New("unexpected query")
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "2027.json"), []byte(`{"year":2027,"holidays":[{"date":"2027-01-01","type":"PUBLIC_HOLIDAY"}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	repo := NewRepository(db)
+	c := &CompositeProvider{Repo: repo, DB: NewDBProviderWithTTL(repo, 5*time.Minute), File: disclosureapp.NewHolidayCalendarFileProvider(dir), YearCheckTTL: 5 * time.Minute}
+	off, _, err := c.IsNonTradingDay(context.Background(), time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !off {
+		t.Fatal("empty DB year must fall back to the file calendar")
+	}
+	c.mu.Lock()
+	_, cached := c.years[2027]
+	c.mu.Unlock()
+	if cached {
+		t.Fatal("stale exists=true must be dropped")
 	}
 }

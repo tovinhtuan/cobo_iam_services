@@ -48,9 +48,28 @@ func (p *DBProvider) IsNonTradingDay(ctx context.Context, date time.Time) (bool,
 		return false, "", ctx.Err()
 	default:
 	}
-	year := date.Year()
-	key := date.Format("2006-01-02")
+	m, err := p.yearMap(ctx, date.Year())
+	if err != nil {
+		return false, "", err
+	}
+	reason, hit := m[date.Format("2006-01-02")]
+	if !hit {
+		return false, "", nil
+	}
+	return true, reason, nil
+}
 
+// HasDates reports whether the year's cached (or freshly loaded) calendar has any date. A
+// published calendar always has at least one, so an empty year means it was removed.
+func (p *DBProvider) HasDates(ctx context.Context, year int) (bool, error) {
+	m, err := p.yearMap(ctx, year)
+	if err != nil {
+		return false, err
+	}
+	return len(m) > 0, nil
+}
+
+func (p *DBProvider) yearMap(ctx context.Context, year int) (map[string]string, error) {
 	p.mu.RLock()
 	yc, ok := p.cache[year]
 	p.mu.RUnlock()
@@ -58,28 +77,19 @@ func (p *DBProvider) IsNonTradingDay(ctx context.Context, date time.Time) (bool,
 		ok = false
 	}
 	if ok {
-		reason, hit := yc.m[key]
-		if !hit {
-			return false, "", nil
-		}
-		return true, reason, nil
+		return yc.m, nil
 	}
 
 	m, err := p.repo.GetHolidayMapForYear(ctx, year)
 	if err != nil {
 		// Do not cache failures: a transient DB error must not break the year until restart.
-		return false, "", err
+		return nil, err
 	}
 
 	p.mu.Lock()
 	p.cache[year] = yearCache{m: m, loadedAt: p.now()}
 	p.mu.Unlock()
-
-	reason, hit := m[key]
-	if !hit {
-		return false, "", nil
-	}
-	return true, reason, nil
+	return m, nil
 }
 
 // InvalidateYear drops cached rows for a civil year (call after ReplaceCalendar).

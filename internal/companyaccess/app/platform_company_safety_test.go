@@ -373,6 +373,8 @@ func TestTenantAuditLogs_ExcludePlatformCompanyActions(t *testing.T) {
 		{EventID: "e1", OccurredAt: "2026-10-01T01:00:00Z", CompanyID: "c1", Action: caapp.CompanyAuditStatusChange},
 		{EventID: "e2", OccurredAt: "2026-10-01T02:00:00Z", CompanyID: "c1", Action: "cms.company_plan.activate"}, // stays visible (D-02 is cms.company.* only)
 		{EventID: "e3", OccurredAt: "2026-10-01T03:00:00Z", CompanyID: "c1", Action: "admin.membership.create"},
+		// Platform-wide holiday calendar change made while the operator's active company was c1.
+		{EventID: "e4", OccurredAt: "2026-10-01T04:00:00Z", CompanyID: "c1", Action: "cms.holiday_calendar.replace"},
 	} {
 		if err := audit.Append(ctx, e); err != nil {
 			t.Fatal(err)
@@ -387,7 +389,7 @@ func TestTenantAuditLogs_ExcludePlatformCompanyActions(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, item := range out.Items {
-		if strings.HasPrefix(item.Action, "cms.company.") {
+		if strings.HasPrefix(item.Action, "cms.company.") || strings.HasPrefix(item.Action, "cms.holiday_calendar.") {
 			t.Fatalf("tenant audit leaked %q", item.Action)
 		}
 	}

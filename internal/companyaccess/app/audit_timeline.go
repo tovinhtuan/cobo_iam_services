@@ -95,7 +95,8 @@ func (s *adminService) ListAuditLogs(ctx context.Context, req ListAuditLogsReque
 		Cursor:         req.Cursor,
 		Limit:          limit,
 		// Platform CMS actions on this company (cms.company.*: status, verification, profile) stay platform-only (D-02).
-		ExcludeActionPrefix: CompanyAuditTenantExcludedPrefix,
+		ExcludeActionPrefix:   CompanyAuditTenantExcludedPrefix,
+		ExcludeActionPrefixes: []string{HolidayAuditTenantExcludedPrefix},
 	})
 	if err != nil {
 		return nil, err
@@ -140,7 +141,8 @@ func (s *adminService) ListChangeTimeline(ctx context.Context, req ListChangeTim
 		Cursor:         req.Cursor,
 		Limit:          limit,
 		// Platform CMS actions on this company (cms.company.*: status, verification, profile) stay platform-only (D-02).
-		ExcludeActionPrefix: CompanyAuditTenantExcludedPrefix,
+		ExcludeActionPrefix:   CompanyAuditTenantExcludedPrefix,
+		ExcludeActionPrefixes: []string{HolidayAuditTenantExcludedPrefix},
 	}
 	if filter.Action == "" && !filter.ActionPrefix {
 		filter.RequireAdminPrefix = true
