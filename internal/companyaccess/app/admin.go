@@ -618,6 +618,10 @@ type ListCompanyMembershipsRequest struct {
 	Page int
 	// PageSize is the number of items per page. Zero or negative values default to 20; max 100.
 	PageSize int
+	// Q optionally filters by full name or login id (case- and diacritic-insensitive); max 100 runes.
+	Q string
+	// Status optionally filters by account-status group: active | invited | pending | inactive.
+	Status string
 }
 
 // ListCompanyMembershipsResult holds a paginated membership list.
@@ -626,6 +630,8 @@ type ListCompanyMembershipsResult struct {
 	Total    int
 	Page     int
 	PageSize int
+	// StatusCounts counts rows per account-status group after Q (before Status).
+	StatusCounts MembershipStatusCounts
 }
 
 type AssignRoleRequest struct {

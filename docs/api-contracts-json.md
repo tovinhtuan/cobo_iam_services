@@ -1618,6 +1618,15 @@ Contract: `cobo_web_design/docs/ai-cache/cms-companies-safety-2026-10-11/02-cont
 - Audit `metadata` masks `contact_email` / `phone` / `representative_name`. Tenant audit listings exclude `cms.company*` actions.
 - List meta (`/admin/companies`, `/market/listed-companies`): `page` / `limit` are the values actually applied (limit ≤ 100).
 
+### Platform CMS users — search, status filter, counts (2026-10-12)
+
+Contract: `cobo_web_design/docs/ai-cache/cms-users-redesign-2026-10-12/02-contract.md`. Gate and scope unchanged.
+
+- `GET /api/v1/platform/cms/admin/users?company_id=&page=&page_size=&q=&status=` — new optional `q` (full name / login id, case- and Vietnamese-diacritic-insensitive, ≤ 100 characters) and `status` (account-status group: `active` | `invited` | `pending` = pending_email_verification, pending_verification | `inactive` = inactive, suspended, locked, disabled, revoked). Applied after authorization/scope: search → count → status → page; `total` counts rows after both filters.
+- `meta.status_counts = { all, active, invited, pending, inactive }` — after `q`, before `status` (always present on this endpoint).
+- Errors: 400 `INVALID_REQUEST` with `details.field_errors.q` (too long) or `details.field_errors.status` (unknown value).
+- `/api/v1/admin/companies/{company_id}/memberships` (enterprise) does not read `q`/`status`; response unchanged.
+
 ---
 
 ## G. HTTP status mapping (goi y)

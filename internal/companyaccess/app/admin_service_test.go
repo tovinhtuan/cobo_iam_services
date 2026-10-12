@@ -898,3 +898,45 @@ func TestListCompanyMemberships_RolesEnriched(t *testing.T) {
 		t.Fatal("expected Roles[0].RoleID to be non-empty")
 	}
 }
+
+func TestAdminService_ListCompanyMemberships_SearchStatusAndCounts(t *testing.T) {
+	repo := cainmem.NewAdminRepository()
+	sub := caapp.AdminSubject{UserID: "u_admin", MembershipID: "m_admin", CompanyID: "c_001"}
+	seedInviteScopedSubject(t, repo, sub)
+	svc := caapp.NewAdminService(
+		repo,
+		fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{"system.settings", "rbac.manage"}},
+		idgen.UUIDv7Generator{},
+	)
+	for _, u := range []struct{ login, name, status string }{
+		{"nguyen.an@example.com", "Nguyễn Văn An", "active"},
+		{"tran.binh@example.com", "Trần Bình", "pending_email_verification"},
+	} {
+		if _, err := svc.CreateUser(context.Background(), caapp.CreateUserRequest{
+			Subject: sub, LoginID: u.login, Password: "StrongPass123!", FullName: u.name, Email: u.login,
+			CompanyID: "c_001", AccountStatus: u.status, MembershipStatus: "active",
+		}); err != nil {
+			t.Fatalf("CreateUser %s: %v", u.login, err)
+		}
+	}
+
+	res, err := svc.ListCompanyMemberships(context.Background(), caapp.ListCompanyMembershipsRequest{Subject: sub, CompanyID: "c_001", Q: "NGUYEN"})
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	if res.Total != 1 || len(res.Items) != 1 || res.Items[0].LoginID != "nguyen.an@example.com" || res.StatusCounts.All != 1 {
+		t.Fatalf("search result total=%d items=%+v counts=%+v", res.Total, res.Items, res.StatusCounts)
+	}
+
+	res, err = svc.ListCompanyMemberships(context.Background(), caapp.ListCompanyMembershipsRequest{Subject: sub, CompanyID: "c_001", Status: "pending"})
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	if res.Total != 1 || res.Items[0].LoginID != "tran.binh@example.com" || res.StatusCounts.Pending != 1 || res.StatusCounts.All < 2 {
+		t.Fatalf("status result total=%d items=%+v counts=%+v", res.Total, res.Items, res.StatusCounts)
+	}
+
+	if _, err := svc.ListCompanyMemberships(context.Background(), caapp.ListCompanyMembershipsRequest{Subject: sub, CompanyID: "c_001", Status: "bogus"}); err == nil {
+		t.Fatal("unknown status must be rejected")
+	}
+}

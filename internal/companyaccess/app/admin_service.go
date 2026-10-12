@@ -1165,7 +1165,6 @@ func (s *adminService) ListCompanyMemberships(ctx context.Context, req ListCompa
 	if pageSize > 100 {
 		pageSize = 100
 	}
-
 	var all []MembershipView
 	if req.ListWithoutCompany {
 		operator, err := s.isPlatformCompanyOperator(ctx, req.Subject)
@@ -1206,16 +1205,22 @@ func (s *adminService) ListCompanyMemberships(ctx context.Context, req ListCompa
 		all = filtered
 	}
 
+	// Filters are validated only after the caller passed the tenant/permission checks above (403 before 400).
+	q, status, err := normalizeMembershipFilter(req.Q, req.Status)
+	if err != nil {
+		return ListCompanyMembershipsResult{}, err
+	}
+	all, counts := filterMemberships(all, q, status)
 	total := len(all)
 	start := (page - 1) * pageSize
 	if start >= total {
-		return ListCompanyMembershipsResult{Items: []MembershipView{}, Total: total, Page: page, PageSize: pageSize}, nil
+		return ListCompanyMembershipsResult{Items: []MembershipView{}, Total: total, Page: page, PageSize: pageSize, StatusCounts: counts}, nil
 	}
 	end := start + pageSize
 	if end > total {
 		end = total
 	}
-	return ListCompanyMembershipsResult{Items: all[start:end], Total: total, Page: page, PageSize: pageSize}, nil
+	return ListCompanyMembershipsResult{Items: all[start:end], Total: total, Page: page, PageSize: pageSize, StatusCounts: counts}, nil
 }
 func (s *adminService) AssignRole(ctx context.Context, req AssignRoleRequest) (err error) {
 	defer s.invalidateEffectiveAccessOnSuccess(ctx, req.Subject.CompanyID, &err)

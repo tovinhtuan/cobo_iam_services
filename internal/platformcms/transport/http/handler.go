@@ -1346,13 +1346,15 @@ func (h *Handler) adminUsers(w http.ResponseWriter, r *http.Request) {
 		ListWithoutCompany: listWithout,
 		Page:               page,
 		PageSize:           pageSize,
+		Q:                  q.Get("q"),
+		Status:             q.Get("status"),
 	})
 	if err != nil {
 		httpx.WriteError(w, nil, err)
 		return
 	}
 	writeEnvelope(w, http.StatusOK, map[string]any{"items": result.Items}, map[string]any{
-		"total": result.Total, "page": result.Page, "page_size": result.PageSize,
+		"total": result.Total, "page": result.Page, "page_size": result.PageSize, "status_counts": result.StatusCounts,
 	})
 }
 
