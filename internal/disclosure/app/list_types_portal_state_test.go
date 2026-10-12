@@ -54,3 +54,26 @@ func TestListTypes_PassesPortalStateAndHasOpenDraft(t *testing.T) {
 		t.Fatalf("has_open_draft=%v", first.HasOpenDraft)
 	}
 }
+
+func TestListTypes_PassesHasWorkflow(t *testing.T) {
+	repo := &listTypesPaginationRepo{
+		light: []DisclosureTypeSummaryDTO{{TypeID: "t-1", Scope: "global", Name: "A"}},
+		full:  map[string]DisclosureTypeSummaryDTO{"t-1": {TypeID: "t-1", Name: "A"}},
+	}
+	svc := newListTypesPaginationService(repo)
+	no := false
+	if _, err := svc.ListTypes(context.Background(), ListTypesRequest{
+		Subject:     Subject{CompanyID: "c1"},
+		PortalState: PortalStateActive,
+		HasWorkflow: &no,
+		ListMode:    "management",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.calls) == 0 {
+		t.Fatal("expected repo call")
+	}
+	if first := repo.calls[0]; first.HasWorkflow == nil || *first.HasWorkflow {
+		t.Fatalf("has_workflow=%v", first.HasWorkflow)
+	}
+}

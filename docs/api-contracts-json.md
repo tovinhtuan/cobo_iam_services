@@ -1299,6 +1299,13 @@ Khong gui `expected_revision` = hanh vi cu (last-write-wins). Lech (so duoi row 
 
 **List `GET /api/v1/disclosure-types?list_mode=management`:** `q` khop them `type_id`.
 
+**List `GET /api/v1/disclosure-types?list_mode=management` — field CMS (2026-10-12, additive):**
+- Query moi `has_workflow=true|false` (tuy chon; gia tri khac -> 400 `INVALID_REQUEST`): loc theo ban active co workflow pinned >= 1 buoc (cung quy tac voi field `has_workflow` va so dem `active_missing_workflow` cua dashboard CMS).
+- Moi item them `updated_at` (RFC3339 UTC, `disclosure_types.updated_at` — cap nhat moi lan luu nhap, dang Portal, luu tru, khoi phuc) va `open_draft_version_no` (phien ban chua phat hanh lon nhat; bo qua khi khong co).
+- Hai field chi tra khi `list_mode=management`; danh sach Portal (khong co `list_mode`) giu nguyen payload.
+- `has_workflow` chi co nghia cung `portal_state=active` (mau khong co ban active luon bi coi la "khong co workflow"). Field `has_workflow` con tinh ca workflow override da duyet cua cong ty dang goi; bo loc va so dem dashboard thi khong.
+- Thu tu deploy: BE truoc FE (BE cu bo qua `has_workflow`; FE hien canh bao khi phat hien).
+
 **Workflow step SLA tinh theo ngay.** `processing_days` la nguon su that; `due_rule` la nhan `T+{processing_days}`. Runtime (timeline, alerts, snapshot) khong ho tro gio; `H+N` (legacy) duoc FE quy doi `ceil(N/24)` ngay.
 
 ---

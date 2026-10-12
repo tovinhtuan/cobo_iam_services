@@ -4874,3 +4874,11 @@
   - Đọc `/metrics` từ host server: `curl 127.0.0.1:8080/metrics` (nguồn nội bộ nên không cần token).
   - Persona QA cần login, rồi `select-company` bằng `session.pre_company_token`.
 - open: BA upload lịch chính thức, follow-up BES-41/PERF-05, sửa script migrate, PR-2b.
+
+## 2026-10-12 — `GET /api/v1/disclosure-types`: field CMS additive + bộ lọc `has_workflow`
+- `list_mode=management`: item thêm `updated_at` (`disclosure_types.updated_at`, bump mỗi lần upsert/activate/archive/restore) và `open_draft_version_no` (MAX version chưa phát hành); portal list không đổi
+- Query `has_workflow=true|false` (khác → 400): cùng quy tắc `batchLoadActiveWorkflowFlags`/dashboard `active_missing_workflow` (active version TEMPLATE_PINNED ≥ 1 bước); chỉ có nghĩa với `portal_state=active`
+- File: `internal/disclosure/app/{contracts,service}.go`, `transport/http/handler.go` (`parseOptionalBoolQuery`), `infra/mysql/repository.go`, `infra/inmemory/repository.go`, `docs/api-contracts-json.md`; test mới ở app/inmemory/http/mysql(source)
+- Gotchas: `gofmt -l` trên Windows liệt kê mọi file CRLF — kiểm tra trên bản LF; field `has_workflow` tính cả override của công ty đang gọi còn bộ lọc thì không
+- Kiểm chứng: build/vet OK; test mới pass; fail có sẵn = baseline (6 template import reminder_config, legal_basis_backfill file mode Windows); Docker build BLOCKED (daemon tắt), `GOOS=linux go build ./cmd/api ./cmd/worker` OK
+- FE đi kèm: `cobo_web_design/docs/ai-cache/cms-templates-redesign-2026-10-12/`. Deploy BE trước FE

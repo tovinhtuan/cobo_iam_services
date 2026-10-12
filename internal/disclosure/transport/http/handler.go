@@ -313,19 +313,15 @@ func (h *Handler) listTypes(w http.ResponseWriter, r *http.Request) {
 	pageSizeRaw := strings.TrimSpace(r.URL.Query().Get("page_size"))
 	page, _ := strconv.Atoi(pageRaw)
 	pageSize, _ := strconv.Atoi(pageSizeRaw)
-	var hasOpenDraft *bool
-	if raw := strings.TrimSpace(r.URL.Query().Get("has_open_draft")); raw != "" {
-		switch strings.ToLower(raw) {
-		case "true", "1":
-			v := true
-			hasOpenDraft = &v
-		case "false", "0":
-			v := false
-			hasOpenDraft = &v
-		default:
-			httpx.WriteError(w, nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "has_open_draft must be true or false", nil))
-			return
-		}
+	hasOpenDraft, ok := parseOptionalBoolQuery(r.URL.Query().Get("has_open_draft"))
+	if !ok {
+		httpx.WriteError(w, nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "has_open_draft must be true or false", nil))
+		return
+	}
+	hasWorkflow, ok := parseOptionalBoolQuery(r.URL.Query().Get("has_workflow"))
+	if !ok {
+		httpx.WriteError(w, nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "has_workflow must be true or false", nil))
+		return
 	}
 	resp, err := h.svc.ListTypes(r.Context(), disclosureapp.ListTypesRequest{
 		Subject:          sub,
@@ -345,12 +341,29 @@ func (h *Handler) listTypes(w http.ResponseWriter, r *http.Request) {
 		ListMode:         strings.TrimSpace(r.URL.Query().Get("list_mode")),
 		PortalState:      strings.TrimSpace(r.URL.Query().Get("portal_state")),
 		HasOpenDraft:     hasOpenDraft,
+		HasWorkflow:      hasWorkflow,
 	})
 	if err != nil {
 		httpx.WriteError(w, nil, err)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+// parseOptionalBoolQuery: "" → (nil, true); true/1 and false/0 → value; anything else → (nil, false).
+func parseOptionalBoolQuery(raw string) (*bool, bool) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "":
+		return nil, true
+	case "true", "1":
+		v := true
+		return &v, true
+	case "false", "0":
+		v := false
+		return &v, true
+	default:
+		return nil, false
+	}
 }
 
 func (h *Handler) listTypeFilterOptions(w http.ResponseWriter, r *http.Request) {

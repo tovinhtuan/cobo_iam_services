@@ -295,6 +295,9 @@ type ListTypesParams struct {
 	PortalState string
 	// HasOpenDraft: optional; when non-nil, filter roots that have (or lack) an unreleased version.
 	HasOpenDraft *bool
+	// HasWorkflow: optional; when non-nil, filter roots whose active version has (or lacks) a pinned
+	// workflow with >= 1 step (same rule as the has_workflow list field and the CMS dashboard count).
+	HasWorkflow *bool
 }
 
 // Portal state filter values for GET /api/v1/disclosure-types?portal_state=...
@@ -327,6 +330,8 @@ type ListTypesRequest struct {
 	PortalState string
 	// HasOpenDraft: optional secondary filter (nil = omit).
 	HasOpenDraft *bool
+	// HasWorkflow: optional secondary filter (nil = omit). See ListTypesParams.HasWorkflow.
+	HasWorkflow *bool
 }
 
 type ListTypesResponse struct {
@@ -930,6 +935,11 @@ type DisclosureTypeSummaryDTO struct {
 	// DeadlineConfig is loaded for applicability derivation on list; never serialized.
 	DeadlineConfig *TemplateDeadlineConfig `json:"-"`
 	CreatedAt      time.Time               `json:"-"`
+	// UpdatedAt (list_mode=management only): disclosure_types.updated_at, bumped by every draft save,
+	// publish, archive and restore. Additive; omitted for the portal list.
+	UpdatedAt *time.Time `json:"updated_at,omitempty"`
+	// OpenDraftVersionNo (list_mode=management only): highest unreleased version, 0/omitted when none.
+	OpenDraftVersionNo int `json:"open_draft_version_no,omitempty"`
 }
 
 // PortalListCycleDueRow is one persisted cycle due hint for portal list enrichment (company-scoped).

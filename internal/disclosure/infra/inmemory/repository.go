@@ -370,6 +370,18 @@ func (r *Repository) ListTypes(_ context.Context, params disclosureapp.ListTypes
 			}
 		}
 
+		if params.HasWorkflow != nil && *params.HasWorkflow != (activeVersionNo > 0 && disclosureapp.TemplateHasWorkflow(listItem.Blocks)) {
+			continue
+		}
+		openDraftVersionNo := 0
+		if listMode == "management" {
+			for _, ver := range r.versions[item.TypeID] {
+				if !ver.IsReleased && ver.VersionNo > openDraftVersionNo {
+					openDraftVersionNo = ver.VersionNo
+				}
+			}
+		}
+
 		scope := "company"
 		ownerCompanyID := r.catalogScope[item.TypeID]
 		if ownerCompanyID == "global" {
@@ -415,6 +427,7 @@ func (r *Repository) ListTypes(_ context.Context, params disclosureapp.ListTypes
 			ActiveVersionNo:    activeVersionNo,
 			ListedVersionNo:    listedVersionNo,
 			DeadlineConfig:     listItem.DeadlineConfig,
+			OpenDraftVersionNo: openDraftVersionNo,
 		})
 	}
 	total := len(out)

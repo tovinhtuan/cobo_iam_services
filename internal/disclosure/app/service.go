@@ -521,6 +521,7 @@ func (s *service) ListTypes(ctx context.Context, req ListTypesRequest) (*ListTyp
 		ListMode:         listMode,
 		PortalState:      portalState,
 		HasOpenDraft:     req.HasOpenDraft,
+		HasWorkflow:      req.HasWorkflow,
 	})
 	if err != nil {
 		return nil, err

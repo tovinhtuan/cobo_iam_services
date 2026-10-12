@@ -352,6 +352,21 @@ func (r *Repository) ListTypes(ctx context.Context, params disclosureapp.ListTyp
 		}
 	}
 
+	if params.HasWorkflow != nil {
+		// Mirrors batchLoadActiveWorkflowFlags / the CMS dashboard: active version pinned with >= 1 step.
+		existsSQL := `EXISTS (
+			SELECT 1 FROM disclosure_type_versions wv
+			WHERE wv.type_id = t.type_id AND wv.version_no = t.active_version_no
+			  AND wv.workflow_authority_mode = 'TEMPLATE_PINNED'
+			  AND JSON_LENGTH(COALESCE(wv.workflow_manifest_json, JSON_OBJECT('steps', JSON_ARRAY())), '$.steps') > 0
+		)`
+		if *params.HasWorkflow {
+			conditions = append(conditions, existsSQL)
+		} else {
+			conditions = append(conditions, "NOT "+existsSQL)
+		}
+	}
+
 	whereClause := strings.Join(conditions, " AND ")
 	versionJoin := listTypesVersionJoin(params.ListMode)
 	baseSQL := `FROM disclosure_types t` + joins + `
@@ -375,7 +390,10 @@ func (r *Repository) ListTypes(ctx context.Context, params disclosureapp.ListTyp
 		dataSQL = `SELECT t.type_id, t.group_id, COALESCE(t.display_group_code, ''), t.company_id,
 		       COALESCE(t.is_mandatory, 0), COALESCE(t.review_status, ''), t.active_version_no, v.version_no,
 		       v.name, v.category, v.template_category, COALESCE(LEFT(v.description, 1024), ''), v.deadline_rule, v.tags_json,
-		       COALESCE(v.periodicity, ''), v.applicability_rules_json, COALESCE(v.deadline_config_json, JSON_OBJECT()), t.created_at
+		       COALESCE(v.periodicity, ''), v.applicability_rules_json, COALESCE(v.deadline_config_json, JSON_OBJECT()), t.created_at,
+		       t.updated_at,
+		       (SELECT MAX(od.version_no) FROM disclosure_type_versions od
+		        WHERE od.type_id = t.type_id AND COALESCE(od.is_released, 0) = 0)
 		` + baseSQL + `
 		ORDER BY ` + sortCol + ` ` + sortDir + `, t.type_id ` + sortDir
 	}
@@ -421,15 +439,27 @@ func (r *Repository) ListTypes(ctx context.Context, params disclosureapp.ListTyp
 		var deadlineConfigRaw []byte
 		var ownerCompanyID sql.NullString
 		var listedVersionNo int
+		var updatedAt sql.NullTime
+		var openDraftVersionNo sql.NullInt64
 		if err := rows.Scan(
 			&item.TypeID, &item.GroupID, &item.DisplayGroupCode, &ownerCompanyID,
 			&item.IsMandatory, &item.ReviewStatus, &item.ActiveVersionNo, &listedVersionNo,
 			&item.Name, &item.Category, &item.TemplateCategory, &item.Description, &item.DeadlineRule, &tagsRaw,
 			&item.Periodicity, &rulesRaw, &deadlineConfigRaw, &item.CreatedAt,
+			&updatedAt, &openDraftVersionNo,
 		); err != nil {
 			return nil, 0, err
 		}
 		item.ListedVersionNo = listedVersionNo
+		if strings.EqualFold(strings.TrimSpace(params.ListMode), "management") {
+			if updatedAt.Valid {
+				ts := updatedAt.Time.UTC()
+				item.UpdatedAt = &ts
+			}
+			if openDraftVersionNo.Valid {
+				item.OpenDraftVersionNo = int(openDraftVersionNo.Int64)
+			}
+		}
 		if rules, err := applicability.ParseRulesJSON(rulesRaw); err != nil {
 			return nil, 0, err
 		} else {

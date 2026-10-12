@@ -72,3 +72,16 @@ func readRepositorySrc(t *testing.T) string {
 	}
 	return strings.ReplaceAll(string(data), "\r\n", "\n")
 }
+
+func TestListTypes_CMSFieldsAndHasWorkflowFilter(t *testing.T) {
+	src := readRepositorySrc(t)
+	if !strings.Contains(src, "params.HasWorkflow != nil") {
+		t.Fatal("ListTypes must apply the optional has_workflow filter")
+	}
+	if !strings.Contains(src, "wv.version_no = t.active_version_no") || !strings.Contains(src, "wv.workflow_authority_mode = 'TEMPLATE_PINNED'") {
+		t.Fatal("has_workflow filter must use the same rule as has_workflow (active version pinned with steps)")
+	}
+	if !strings.Contains(src, "t.updated_at,") || !strings.Contains(src, "SELECT MAX(od.version_no) FROM disclosure_type_versions od") {
+		t.Fatal("management list must select updated_at and the open draft version")
+	}
+}
