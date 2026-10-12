@@ -7,6 +7,10 @@ Nothing secret is printed. Convention: ../cobo_web_design/docs/ai-cache/dev-qa/R
     python3 scripts/devqa/provision_qa_accounts.py            # create/sync, then verify logins
     python3 scripts/devqa/provision_qa_accounts.py --rotate   # new passwords for everything
     python3 scripts/devqa/provision_qa_accounts.py --dry-run  # show the plan, change nothing
+    python3 scripts/devqa/provision_qa_accounts.py --namespace linux  # separate set for another machine
+
+--namespace NS creates an independent set (qa.NS.<p>@cobo.test, u_qa_NS_<p>, DB users qa_ro_NS /
+qa_rw_NS) so a machine without the shared env file never resets the shared personas' passwords.
 
 Requires: DEV_SSH_* in the env file (key auth), Go toolchain (bcrypt helper), run from any cwd.
 Targets DEV only - it writes to the server database over SSH as the container's root user.
@@ -43,6 +47,8 @@ PERSONAS = {
     "USER": ("QA Persona USER (multi-company)", [("c_001", "admin_doanh_nghiep"), ("c_002", "admin_doanh_nghiep")]),
 }
 EMAIL_FMT = "qa.persona.{p}@cobo.test"
+# Default namespace "persona" keeps the historical ids (u_qa_persona_<p>, m_qa_<p>_c001, qa_ro, qa_rw).
+NAMESPACE = "persona"
 COMPANY_ID, OTHER_COMPANY_ID = "c_001", "c_002"
 
 # DB users: local socket only (docker exec), never reachable through the published 3306 port.
@@ -57,6 +63,30 @@ DB_USERS = {
 }
 
 NS = uuid.UUID("6f0c2a52-7d1e-4f39-9a5e-0c0ba0de9a11")
+
+
+def set_namespace(ns):
+    """Switches emails, ids and DB users to an independent set; the default leaves everything as is."""
+    global EMAIL_FMT, NAMESPACE, DB_USERS
+    if not re.fullmatch(r"[a-z][a-z0-9]{1,11}", ns):
+        raise SystemExit("--namespace must be 2-12 chars [a-z0-9], starting with a letter")
+    if ns == "persona":
+        return
+    NAMESPACE = ns
+    EMAIL_FMT = "qa." + ns + ".{p}@cobo.test"
+    DB_USERS = {
+        prefix: (f"{user}_{ns}", [g.replace(f"'{user}'@", f"'{user}_{ns}'@") for g in grants])
+        for prefix, (user, grants) in DB_USERS.items()
+    }
+
+
+def user_id(p):
+    return f"u_qa_{NAMESPACE}_{p.lower()}"
+
+
+def membership_id(p, company):
+    infix = "" if NAMESPACE == "persona" else f"{NAMESPACE}_"
+    return f"m_qa_{infix}{p.lower()}_{company.replace('_', '')}"
 
 
 def new_password():
@@ -93,8 +123,10 @@ def update_env_file(values):
 
 def persona_sql(p, password_hash):
     name, grants = PERSONAS[p]
+    if NAMESPACE != "persona":
+        name = name.replace("QA Persona", f"QA {NAMESPACE}")
     email = EMAIL_FMT.format(p=p.lower())
-    uid = f"u_qa_persona_{p.lower()}"
+    uid = user_id(p)
     cred = str(uuid.uuid5(NS, f"cred:{uid}"))
     out = [
         "INSERT INTO users (user_id, login_id, full_name, email, email_verified_at, account_status, locked_until) "
@@ -109,7 +141,7 @@ def persona_sql(p, password_hash):
         "password_changed_at=VALUES(password_changed_at), status='active';",
     ]
     for company, role_code in grants:
-        mid = f"m_qa_{p.lower()}_{company.replace('_', '')}"
+        mid = membership_id(p, company)
         out += [
             "INSERT INTO memberships (membership_id, user_id, company_id, membership_status) "
             f"VALUES ('{mid}', '{uid}', '{company}', 'active') ON DUPLICATE KEY UPDATE membership_status='active';",
@@ -152,7 +184,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--rotate", action="store_true", help="generate new passwords for every persona and DB user")
     ap.add_argument("--dry-run", action="store_true", help="print the plan only")
+    ap.add_argument("--namespace", default="persona", help="independent account set, e.g. 'linux' (default: shared personas)")
     args = ap.parse_args()
+    set_namespace(args.namespace)
 
     env.load()
     env.require("DEV_SSH_HOST")
