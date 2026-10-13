@@ -1636,6 +1636,17 @@ Contract: `cobo_web_design/docs/ai-cache/cms-users-redesign-2026-10-12/02-contra
 
 ---
 
+### Tenant disclosure type detail — current cycle record (2026-10-13)
+
+`GET /api/v1/disclosure-types/{type_id}` (tenant, `company_id` tu token). Chi them 2 truong tuy chon trong `deadline_summary`; moi truong cu giu nguyen. Nguon: `cobo_web_design/docs/ai-cache/portal-disclosure-type-current-cycle-record-2026-10-13/02-contract.md`.
+
+| Truong | Kieu | Y nghia |
+|---|---|---|
+| `current_cycle_label` | string, omitempty | `periodic_cycles.cycle_label` cua slot hien tai (`2026-10`, `2026-Q4`, `2026`, `YYYY-MM-DD` cho ngay/tuan) khi da co dong cycle cho company + type |
+| `current_record_id` | string, omitempty | `disclosure_records.record_id` da tao cho slot do (JOIN cung `company_id`, record treo khong tra); chi tra khi user co `deadline.view` |
+
+Khong co khi: mau bat thuong / `deadline_mode = NONE`, chua co dong cycle, `deadline_summary.status = UNKNOWN`, loi doc cycle (response van 200, log `portal_cycle_dues_read_failed`). Khong them vao `GET /api/v1/disclosure-types` (list).
+
 ## G. HTTP status mapping (goi y)
 
 | HTTP | Khi nao |

@@ -949,6 +949,9 @@ type PortalListCycleDueRow struct {
 	// DueDateYYYYMMDD is planned_date when present, else periodic_cycles.due_date.
 	DueDateYYYYMMDD string
 	Source          string // PLANNED_DATE | CYCLE_DUE
+	// RecordID is the materialized disclosure record for the cycle ("" when not created yet
+	// or the record no longer exists).
+	RecordID string
 }
 
 type DisclosureTypeDTO struct {
@@ -1093,6 +1096,10 @@ type DeadlineSummaryDTO struct {
 	RuleCode                     *string `json:"rule_code,omitempty"`
 	RuleDescription              *string `json:"rule_description,omitempty"`
 	Timezone                     *string `json:"timezone,omitempty"`
+	// CurrentCycleLabel / CurrentRecordID describe the persisted periodic cycle of the current
+	// logical slot (company-scoped). Additive; omitted when no cycle row exists for the slot.
+	CurrentCycleLabel *string `json:"current_cycle_label,omitempty"`
+	CurrentRecordID   *string `json:"current_record_id,omitempty"`
 }
 
 type TemplateDeadlineConfig struct {

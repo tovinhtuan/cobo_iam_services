@@ -702,6 +702,7 @@ func (s *service) GetTypeDetail(ctx context.Context, req GetTypeDetailRequest) (
 		}
 		now := time.Now()
 		s.attachDetailAbsoluteResolvedDue(ctx, req.Subject.CompanyID, item, now, nil)
+		s.limitCurrentRecordToDeadlineViewers(ctx, req.Subject, item)
 		ApplyDerivedApplicabilityState(&item.ApplicabilityState, item.DeadlineConfig, item.Periodicity, now)
 		return item, nil
 	}
@@ -726,6 +727,7 @@ func (s *service) GetTypeDetail(ctx context.Context, req GetTypeDetailRequest) (
 			Timezone:        ptrString("Asia/Ho_Chi_Minh"),
 		}
 		s.attachDetailAbsoluteResolvedDue(ctx, req.Subject.CompanyID, item, now, nil)
+		s.limitCurrentRecordToDeadlineViewers(ctx, req.Subject, item)
 		ApplyDerivedApplicabilityState(&item.ApplicabilityState, item.DeadlineConfig, item.Periodicity, now)
 		return item, nil
 	}
@@ -734,6 +736,7 @@ func (s *service) GetTypeDetail(ctx context.Context, req GetTypeDetailRequest) (
 	// overwrite due_date when persisted cycle wins (same SoT as portal list).
 	attachResolvedDueDate(item.ResolvedDeadlineRule, summary)
 	s.attachDetailAbsoluteResolvedDue(ctx, req.Subject.CompanyID, item, now, summary)
+	s.limitCurrentRecordToDeadlineViewers(ctx, req.Subject, item)
 	// Batch 5B Phase A (shadow only, see deadlineengine_shadow.go): does not
 	// modify item/summary or the API response. Guarded so the default
 	// (DEADLINE_ENGINE_V2_SHADOW=false) issues zero extra repo calls.
@@ -1760,6 +1763,18 @@ func (s *service) requireDisclosureCatalogRead(ctx context.Context, sub Subject)
 		return err
 	}
 	return nil
+}
+
+// limitCurrentRecordToDeadlineViewers keeps deadline_summary.current_record_id only for users
+// who can open alert/record details (deadline.view). Catalog-only readers (ad-hoc proposers,
+// creators) still get current_cycle_label; record endpoints re-check access regardless.
+func (s *service) limitCurrentRecordToDeadlineViewers(ctx context.Context, sub Subject, item *DisclosureTypeDTO) {
+	if item == nil || item.DeadlineSummary == nil || item.DeadlineSummary.CurrentRecordID == nil {
+		return
+	}
+	if !s.hasPermission(ctx, sub, "deadline.view") {
+		item.DeadlineSummary.CurrentRecordID = nil
+	}
 }
 
 func (s *service) hasPermission(ctx context.Context, sub Subject, permission string) bool {

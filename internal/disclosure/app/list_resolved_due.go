@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -59,6 +60,9 @@ func loadPortalCycleDuesByTypeLabel(
 	}
 	rows, err := reader.ListPortalListCycleDues(ctx, companyID, typeIDs)
 	if err != nil {
+		// Degrade to preview due / no current-cycle fields; keep the read path available.
+		slog.WarnContext(ctx, "portal_cycle_dues_read_failed",
+			"company_id", companyID, "type_count", len(typeIDs), "error", err)
 		return out
 	}
 	for _, row := range rows {
@@ -281,6 +285,7 @@ func (s *service) attachDetailAbsoluteResolvedDue(
 
 	freq := frequencyForAbsoluteDue(cfg, item.Periodicity)
 	cycleByTypeLabel := loadPortalCycleDuesByTypeLabel(ctx, s.repo, companyID, []string{item.TypeID})
+	attachCurrentCycleRecord(item.DeadlineSummary, cycleByTypeLabel, item.TypeID, freq, now, loc)
 	previewYMD := previewDeadlineYYYYMMDDFromSummary(summary)
 	res := resolveAbsoluteDueFromCycleOrPreview(cycleByTypeLabel, item.TypeID, freq, now, loc, previewYMD)
 	item.ResolvedDueAt = res.DueAt
@@ -297,5 +302,38 @@ func (s *service) attachDetailAbsoluteResolvedDue(
 	if item.ResolvedDeadlineRule != nil {
 		due := ymd
 		item.ResolvedDeadlineRule.DueDate = &due
+	}
+}
+
+// attachCurrentCycleRecord exposes the persisted cycle of the current logical slot on
+// deadline_summary (label + materialized record) so the Portal can open that record.
+// No-op without a usable summary (nil / UNKNOWN) or without a periodic_cycles row for the
+// slot; never invents ids. GetTypeDetail drops the record id for users without deadline.view.
+func attachCurrentCycleRecord(
+	summary *DeadlineSummaryDTO,
+	cycleByTypeLabel map[string]PortalListCycleDueRow,
+	typeID string,
+	freq string,
+	now time.Time,
+	loc *time.Location,
+) {
+	if summary == nil || summary.Status == "UNKNOWN" || len(cycleByTypeLabel) == 0 {
+		return
+	}
+	if loc == nil {
+		loc = asiaHoChiMinh()
+	}
+	slot := ResolveLogicalSlot(freq, now, loc)
+	row, ok := cycleByTypeLabel[strings.TrimSpace(typeID)+"|"+slot]
+	if !ok {
+		return
+	}
+	label := strings.TrimSpace(row.CycleLabel)
+	if label == "" {
+		return
+	}
+	summary.CurrentCycleLabel = &label
+	if recordID := strings.TrimSpace(row.RecordID); recordID != "" {
+		summary.CurrentRecordID = &recordID
 	}
 }

@@ -4883,3 +4883,9 @@
 - Kiểm chứng: build/vet OK; test mới pass; fail có sẵn = baseline (6 template import reminder_config, legal_basis_backfill file mode Windows); Docker build BLOCKED (daemon tắt), `GOOS=linux go build ./cmd/api ./cmd/worker` OK
 - FE đi kèm: `cobo_web_design/docs/ai-cache/cms-templates-redesign-2026-10-12/`. Deploy BE trước FE
 - Deploy DEV 2026-10-12: BE `bf97e16` rồi FE `c36d9106` (bundle `index-CopEbFsk.js`); rollback BE `bin/rollback/*.pre-templates-list-20261012T140914Z`, FE `web/releases/pre-templates-redesign-20261012T141130Z.tar.gz`; smoke API + UI đạt (chi tiết `cobo_web_design/docs/ai-cache/cms-templates-redesign-2026-10-12/99-summary.md`)
+
+## 2026-10-13 — `deadline_summary.current_cycle_label` / `current_record_id` (GET /api/v1/disclosure-types/{id})
+- Contract + review: `cobo_web_design/docs/ai-cache/portal-disclosure-type-current-cycle-record-2026-10-13/`; doc `docs/api-contracts-json.md` (mục "Tenant disclosure type detail — current cycle record")
+- `ListPortalListCycleDues` chọn thêm `COALESCE(dr.record_id,'')`, JOIN `dr.company_id = pc.company_id`; `attachCurrentCycleRecord` theo `ResolveLogicalSlot(freq, now)`; bỏ khi summary UNKNOWN; `limitCurrentRecordToDeadlineViewers` (cần `deadline.view`); lỗi đọc → log `portal_cycle_dues_read_failed`
+- Test: `internal/disclosure/app/list_resolved_due_current_cycle_test.go` (8 ca). `go test ./...` fail giống baseline (14 test có sẵn: template_category validation, notification meta parity, feature flags, platformCMS prefix…)
+- Không migration; chưa commit/deploy
