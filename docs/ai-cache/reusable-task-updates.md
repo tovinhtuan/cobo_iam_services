@@ -4889,3 +4889,4 @@
 - `ListPortalListCycleDues` chọn thêm `COALESCE(dr.record_id,'')`, JOIN `dr.company_id = pc.company_id`; `attachCurrentCycleRecord` theo `ResolveLogicalSlot(freq, now)`; bỏ khi summary UNKNOWN; `limitCurrentRecordToDeadlineViewers` (cần `deadline.view`); lỗi đọc → log `portal_cycle_dues_read_failed`
 - Test: `internal/disclosure/app/list_resolved_due_current_cycle_test.go` (8 ca). `go test ./...` fail giống baseline (14 test có sẵn: template_category validation, notification meta parity, feature flags, platformCMS prefix…)
 - Không migration; chưa commit/deploy
+- Deploy DEV 2026-10-13: BE `9ed701c` (rollback `bin/rollback/{api,worker}.pre-current-cycle-record-*`) rồi FE `99ef28b9`; `/api` qua nginx 502 vài giây khi API khởi động rồi 200; smoke API: `current_cycle_label=2026-10`, có `current_record_id` (chi tiết `cobo_web_design/docs/ai-cache/portal-disclosure-type-current-cycle-record-2026-10-13/99-summary.md`)
