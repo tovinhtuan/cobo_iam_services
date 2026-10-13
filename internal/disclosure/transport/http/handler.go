@@ -311,8 +311,16 @@ func (h *Handler) listTypes(w http.ResponseWriter, r *http.Request) {
 	}
 	pageRaw := strings.TrimSpace(r.URL.Query().Get("page"))
 	pageSizeRaw := strings.TrimSpace(r.URL.Query().Get("page_size"))
-	page, _ := strconv.Atoi(pageRaw)
-	pageSize, _ := strconv.Atoi(pageSizeRaw)
+	page, ok := parseOptionalIntQuery(pageRaw)
+	if !ok {
+		httpx.WriteError(w, nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "page must be a positive integer", nil))
+		return
+	}
+	pageSize, ok := parseOptionalIntQuery(pageSizeRaw)
+	if !ok {
+		httpx.WriteError(w, nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "page_size must be between 1 and 100", nil))
+		return
+	}
 	hasOpenDraft, ok := parseOptionalBoolQuery(r.URL.Query().Get("has_open_draft"))
 	if !ok {
 		httpx.WriteError(w, nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "has_open_draft must be true or false", nil))
@@ -348,6 +356,19 @@ func (h *Handler) listTypes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+// parseOptionalIntQuery: "" → (0, true); valid int → value; non-numeric or outside
+// the int range → (0, false), instead of the MaxInt/MinInt that Atoi clamps to.
+func parseOptionalIntQuery(raw string) (int, bool) {
+	if raw == "" {
+		return 0, true
+	}
+	v, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, false
+	}
+	return v, true
 }
 
 // parseOptionalBoolQuery: "" → (nil, true); true/1 and false/0 → value; anything else → (nil, false).

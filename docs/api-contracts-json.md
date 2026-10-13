@@ -1297,6 +1297,35 @@ Khong gui `expected_revision` = hanh vi cu (last-write-wins). Lech (so duoi row 
 
 **Audit moi:** `cms_workflow.version.publish` `{version_no, state, change_note}`, `cms_workflow.version.activate` `{version_no, prev_active_version_no, state}`, `cms_workflow.upsert` `{change_note, step_count, workflow_id}`, `cms_workflow.delete` `{cleared}`.
 
+**List `GET /api/v1/disclosure-types` — query params (Portal tenant; CMS dung cung route voi `list_mode=management`) (2026-10-13):**
+
+Response 200: `{ "items": [...], "total": <so mau sau loc>, "page": <int>, "page_size": <int> }`. Moi param deu tuy chon; gia tri rong / chi whitespace = khong gui.
+
+| Param | Gia tri | Ghi chu |
+|---|---|---|
+| `q` | chuoi | Khop chuoi con, khong phan biet hoa thuong, tren `name`, `description`, `type_id` |
+| `display_group_code` | ma nhom hien thi | Mau thuoc nhom (`template_display_groups`) |
+| `tag_ids` | danh sach phan cach `,` | Khop bat ky tag nao (OR); bo trung khong phan biet hoa thuong |
+| `department_id` | id phong ban | Mau co buoc workflow pinned gan phong ban nay |
+| `frequency` | `ad_hoc`, `daily`, `weekly`, `monthly`, `quarterly`, `yearly` | Nhan alias (`irregular`, `event_based`, `annual`, `hang_quy`, ...); gia tri la khong bao loi, chi tra rong |
+| `scope` | `global` \| `company` | `global` = mau he thong, `company` = mau rieng cua cong ty dang goi; bo trong = ca hai. Khac -> 400 |
+| `page` | so nguyen >= 1, mac dinh `1` | Trang vuot qua trang cuoi (ke ca rat lon) -> 200 `items: []`, `total` thuc |
+| `page_size` | 1..100, mac dinh `20` | |
+| `sort_by` | `name` \| `created_at`, mac dinh `created_at` | `name` theo collation tieng Viet, khong phan biet hoa thuong (a < á < ă < â < b, d < đ, u < ư); trung ten thi xep theo `type_id` tang dan |
+| `sort_dir` | `asc` \| `desc`, mac dinh `desc` | `sort_by` / `sort_dir` khong phan biet hoa thuong |
+
+Loi 400 `INVALID_REQUEST` (message on dinh):
+
+| Dieu kien | `message` |
+|---|---|
+| `page` khong phai so nguyen, vuot int64, hoac <= 0 | `page must be a positive integer` |
+| `page_size` khong phai so nguyen, vuot int64, hoac ngoai 1..100 | `page_size must be between 1 and 100` |
+| `sort_by` khac `name`, `created_at` | `sort_by must be one of: name, created_at` |
+| `sort_dir` khac `asc`, `desc` | `sort_dir must be one of: asc, desc` |
+| `scope` khac `global`, `company` | `scope must be one of: global, company` |
+
+Thay doi 2026-10-13: truoc day `page` / `page_size` vuot int64 bi kep ve MaxInt64 va `page` rat lon lam tran so khi tinh offset -> panic, client mat ket noi (khong co response). Nay vuot int64 -> 400; `page` lon trong khoang int64 -> 200 trang rong. FE Portal da gioi han `page` <= 10000 nen khong anh huong. `sort_by=name` truoc so sanh byte UTF-8 (ten bat dau bang chu co dau nhu Đ, Ủ, Á nam sau Z); nay dung collation tieng Viet, contract khong doi, chi doi thu tu.
+
 **List `GET /api/v1/disclosure-types?list_mode=management`:** `q` khop them `type_id`.
 
 **List `GET /api/v1/disclosure-types?list_mode=management` — field CMS (2026-10-12, additive):**

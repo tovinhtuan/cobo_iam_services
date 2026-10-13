@@ -14,6 +14,8 @@ import (
 	"github.com/cobo/cobo_iam_services/internal/disclosure/app/applicability"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 	"github.com/cobo/cobo_iam_services/internal/platform/idgen"
+	"golang.org/x/text/collate"
+	"golang.org/x/text/language"
 )
 
 type service struct {
@@ -538,7 +540,11 @@ func (s *service) ListTypes(ctx context.Context, req ListTypesRequest) (*ListTyp
 	}
 	sortTypeSummaries(filtered, sortBy, sortDir)
 	total := len(filtered)
-	start := (page - 1) * pageSize
+	// Compare before multiplying: (page-1)*pageSize overflows int for huge pages.
+	start := total
+	if page-1 <= total/pageSize {
+		start = (page - 1) * pageSize
+	}
 	if start >= total {
 		return &ListTypesResponse{Items: []DisclosureTypeSummaryDTO{}, Total: total, Page: page, PageSize: pageSize}, nil
 	}
@@ -633,17 +639,23 @@ func (s *service) listTypesLightweightCatalog(ctx context.Context, base ListType
 }
 
 func sortTypeSummaries(items []DisclosureTypeSummaryDTO, sortBy, sortDir string) {
+	// Vietnamese collation keeps Đ/Ă/Ư... next to their base letter (byte order put them after Z).
+	// A Collator is not safe for concurrent use, so build one per call.
+	var nameCollator *collate.Collator
+	if sortBy == "name" {
+		nameCollator = collate.New(language.Vietnamese, collate.IgnoreCase)
+	}
 	less := func(i, j int) bool {
 		switch sortBy {
 		case "name":
-			if strings.EqualFold(items[i].Name, items[j].Name) {
+			cmp := nameCollator.CompareString(items[i].Name, items[j].Name)
+			if cmp == 0 {
 				return items[i].TypeID < items[j].TypeID
 			}
-			lessName := strings.ToLower(items[i].Name) < strings.ToLower(items[j].Name)
 			if sortDir == "asc" {
-				return lessName
+				return cmp < 0
 			}
-			return !lessName
+			return cmp > 0
 		default:
 			if items[i].CreatedAt.Equal(items[j].CreatedAt) {
 				return items[i].TypeID < items[j].TypeID

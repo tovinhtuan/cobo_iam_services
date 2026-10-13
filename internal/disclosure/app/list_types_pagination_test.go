@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"math"
 	"net/http"
 	"testing"
 	"time"
@@ -168,6 +169,153 @@ func TestListTypes_InvalidPaginationReturns400(t *testing.T) {
 			he, ok := err.(*perr.HTTPError)
 			if !ok || he.HTTPStatus != http.StatusBadRequest {
 				t.Fatalf("err=%v want 400", err)
+			}
+		})
+	}
+}
+
+// Regression: (page-1)*page_size used to overflow int for huge pages, wrap negative,
+// pass the start >= total guard and panic on filtered[start:end].
+func TestListTypes_HugePageReturnsEmptyPageWithoutOverflow(t *testing.T) {
+	now := time.Now().UTC()
+	cases := []struct {
+		name     string
+		page     int
+		pageSize int
+	}{
+		{"overflow page", 500000000000000000, 20},
+		{"max int page", math.MaxInt, 100},
+		{"huge page", 1 << 40, 1},
+		{"first page past end", 2, 3},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := &listTypesPaginationRepo{
+				light: []DisclosureTypeSummaryDTO{
+					{TypeID: "t-3", Scope: "global", Name: "C", CreatedAt: now.Add(-1 * time.Hour)},
+					{TypeID: "t-2", Scope: "global", Name: "B", CreatedAt: now.Add(-2 * time.Hour)},
+					{TypeID: "t-1", Scope: "global", Name: "A", CreatedAt: now.Add(-3 * time.Hour)},
+				},
+			}
+			svc := newListTypesPaginationService(repo)
+			resp, err := svc.ListTypes(context.Background(), ListTypesRequest{
+				Subject:          Subject{CompanyID: "company-001"},
+				Page:             tc.page,
+				PageSize:         tc.pageSize,
+				PageProvided:     true,
+				PageSizeProvided: true,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if resp.Total != 3 || len(resp.Items) != 0 {
+				t.Fatalf("total=%d items=%d want 3 / 0", resp.Total, len(resp.Items))
+			}
+			if resp.Page != tc.page || resp.PageSize != tc.pageSize {
+				t.Fatalf("page=%d page_size=%d want %d / %d", resp.Page, resp.PageSize, tc.page, tc.pageSize)
+			}
+			for _, c := range repo.calls {
+				if !c.LightweightOnly {
+					t.Fatalf("empty page must not load full summaries: %+v", c)
+				}
+			}
+		})
+	}
+}
+
+func TestListTypes_SortByName(t *testing.T) {
+	now := time.Now().UTC()
+	light := []DisclosureTypeSummaryDTO{
+		{TypeID: "t-1", Scope: "global", Name: "beta", CreatedAt: now.Add(-1 * time.Hour)},
+		{TypeID: "t-2", Scope: "global", Name: "Alpha", CreatedAt: now.Add(-2 * time.Hour)},
+		{TypeID: "t-3", Scope: "global", Name: "Charlie", CreatedAt: now.Add(-3 * time.Hour)},
+		{TypeID: "t-0", Scope: "global", Name: "alpha", CreatedAt: now.Add(-4 * time.Hour)},
+	}
+	full := make(map[string]DisclosureTypeSummaryDTO, len(light))
+	for _, item := range light {
+		full[item.TypeID] = DisclosureTypeSummaryDTO{TypeID: item.TypeID, Name: item.Name}
+	}
+	cases := []struct {
+		name    string
+		sortBy  string
+		sortDir string
+		want    []string
+	}{
+		// Case-insensitive name order; equal names tie-break on type_id.
+		{"name asc", "name", "asc", []string{"t-0", "t-2", "t-1", "t-3"}},
+		{"name asc mixed case params", " Name ", "ASC", []string{"t-0", "t-2", "t-1", "t-3"}},
+		{"name desc", "name", "desc", []string{"t-3", "t-1", "t-0", "t-2"}},
+		{"default created_at desc", "", "", []string{"t-1", "t-2", "t-3", "t-0"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := &listTypesPaginationRepo{light: light, full: full}
+			svc := newListTypesPaginationService(repo)
+			resp, err := svc.ListTypes(context.Background(), ListTypesRequest{
+				Subject: Subject{CompanyID: "company-001"},
+				SortBy:  tc.sortBy,
+				SortDir: tc.sortDir,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := make([]string, 0, len(resp.Items))
+			for _, item := range resp.Items {
+				got = append(got, item.TypeID)
+			}
+			if fmt.Sprint(got) != fmt.Sprint(tc.want) {
+				t.Fatalf("order=%v want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// Byte order put accented initials (Đ, Ủ, Á) after Z; Vietnamese collation keeps
+// them next to their base letter (a < á < ă < â, d < đ, u < ư).
+func TestSortTypeSummaries_NameUsesVietnameseCollation(t *testing.T) {
+	names := []string{"Zalo", "Ủy quyền", "Đại hội", "Báo cáo", "Ánh xạ", "Dự án", "Ước tính", "an toàn", "Ăn chia", "ân hạn", "ĐẠI DIỆN"}
+	items := make([]DisclosureTypeSummaryDTO, 0, len(names))
+	for i, name := range names {
+		items = append(items, DisclosureTypeSummaryDTO{TypeID: fmt.Sprintf("t-%02d", i), Name: name})
+	}
+	want := []string{"an toàn", "Ánh xạ", "Ăn chia", "ân hạn", "Báo cáo", "Dự án", "ĐẠI DIỆN", "Đại hội", "Ủy quyền", "Ước tính", "Zalo"}
+
+	sortTypeSummaries(items, "name", "asc")
+	got := make([]string, 0, len(items))
+	for _, item := range items {
+		got = append(got, item.Name)
+	}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("asc order=%v\nwant %v", got, want)
+	}
+
+	sortTypeSummaries(items, "name", "desc")
+	for i, item := range items {
+		if item.Name != want[len(want)-1-i] {
+			t.Fatalf("desc[%d]=%q want %q", i, item.Name, want[len(want)-1-i])
+		}
+	}
+}
+
+func TestListTypes_InvalidSortReturns400(t *testing.T) {
+	svc := newListTypesPaginationService(&listTypesPaginationRepo{})
+	cases := []struct {
+		name    string
+		req     ListTypesRequest
+		wantMsg string
+	}{
+		{"unknown sort_by", ListTypesRequest{Subject: Subject{CompanyID: "c1"}, SortBy: "updated_at"}, "sort_by must be one of: name, created_at"},
+		{"unknown sort_dir", ListTypesRequest{Subject: Subject{CompanyID: "c1"}, SortBy: "name", SortDir: "up"}, "sort_dir must be one of: asc, desc"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := svc.ListTypes(context.Background(), tc.req)
+			he, ok := err.(*perr.HTTPError)
+			if !ok || he.HTTPStatus != http.StatusBadRequest || he.Code != perr.CodeInvalidRequest {
+				t.Fatalf("err=%v want 400 INVALID_REQUEST", err)
+			}
+			if he.Message != tc.wantMsg {
+				t.Fatalf("message=%q want %q", he.Message, tc.wantMsg)
 			}
 		})
 	}

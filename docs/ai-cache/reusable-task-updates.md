@@ -4890,3 +4890,33 @@
 - Test: `internal/disclosure/app/list_resolved_due_current_cycle_test.go` (8 ca). `go test ./...` fail giống baseline (14 test có sẵn: template_category validation, notification meta parity, feature flags, platformCMS prefix…)
 - Không migration; chưa commit/deploy
 - Deploy DEV 2026-10-13: BE `9ed701c` (rollback `bin/rollback/{api,worker}.pre-current-cycle-record-*`) rồi FE `99ef28b9`; `/api` qua nginx 502 vài giây khi API khởi động rồi 200; smoke API: `current_cycle_label=2026-10`, có `current_record_id` (chi tiết `cobo_web_design/docs/ai-cache/portal-disclosure-type-current-cycle-record-2026-10-13/99-summary.md`)
+
+## 2026-10-13 - Disclosure type list: reject unparseable page/page_size, fix offset overflow panic
+
+- task type: bugfix
+- objective: `GET /api/v1/disclosure-types` (Portal and CMS `list_mode=management`) panicked on a huge `page` (`slice bounds out of range`); no recover middleware, so the client got no response; also `sort_by=name` put accented initials (Đ, Ủ, Á) after Z
+- what was implemented/discovered:
+  - root cause 1 (`internal/disclosure/transport/http/handler.go` listTypes): `page, _ := strconv.Atoi(...)` ignored the range error, so `page=100000000000000000000` became MaxInt64 instead of 400
+  - root cause 2 (`internal/disclosure/app/service.go` ListTypes): `start := (page-1)*pageSize` overflowed for in-range huge pages (e.g. `500000000000000000` x 20), wrapped negative, passed `start >= total`, then `filtered[start:end]` panicked
+  - fix: new handler helper `parseOptionalIntQuery`; an Atoi error (non-numeric or outside int) returns 400 `INVALID_REQUEST` with the existing messages before the service is called. Service compares `page-1 <= total/pageSize` before multiplying; otherwise start = total -> empty page with real total
+  - `page_size` beyond int64 was already rejected by the service range check (`> 100`); now rejected in the handler with the same message
+  - `sortTypeSummaries` (name) now uses `collate.New(language.Vietnamese, collate.IgnoreCase)` (`golang.org/x/text`, already a direct dep; go.mod unchanged), one collator per call (not safe for concurrent use); ties still break on `type_id`. Go re-sort is authoritative: the MySQL `ORDER BY v.name` of the lightweight chunks does not decide the final order
+  - tests: `TestListTypes_HugePageReturnsEmptyPageWithoutOverflow`, `TestListTypes_SortByName`, `TestSortTypeSummaries_NameUsesVietnameseCollation`, `TestListTypes_InvalidSortReturns400` (app); `TestListTypes_UnparseablePaginationReturns400`, `TestListTypes_PassesParsedPaginationToService` (transport/http)
+  - same overflow pattern still exists in `deadlinealerts/app/service.go` ListDeadlineAlerts and `companyaccess/app/admin_service.go` ListCompanyMemberships (in-memory slicing, page not clamped from above), not fixed here
+- affected repos/files/modules:
+  - `cobo_iam_services/internal/disclosure/transport/http/handler.go`
+  - `cobo_iam_services/internal/disclosure/app/service.go`
+  - `cobo_iam_services/internal/disclosure/app/list_types_pagination_test.go`
+  - `cobo_iam_services/internal/disclosure/transport/http/list_types_query_test.go`
+  - `cobo_iam_services/docs/api-contracts-json.md` (tenant list query params + 400 matrix)
+- important contracts/behaviors/constraints/decisions:
+  - non-numeric `page` / `page_size` already returned 400 with the same message (via service); only out-of-int64 values change (clamped -> 400)
+  - malformed `page` / `page_size` is now rejected in the handler before the service authz check (same order as `has_open_draft` / `has_workflow`)
+  - in-range huge `page` -> 200 `items: []`, real `total`; phase-2 full-summary load is skipped
+  - FE Portal caps `?page=` at 10000, no FE change needed
+- build/verification result:
+  - new/related tests pass: `go test ./internal/disclosure/app/ ./internal/disclosure/transport/http/ -run 'TestListTypes_|TestParseOptional'`
+  - `go test ./internal/disclosure/...`: only pre-existing template-import failures (6, same on clean base 8acd8f9) plus `TestSchemaParityConditionalPeriodicity`, which reads `../cobo_web_design` by relative path and fails only from a `.claude/worktrees/` checkout
+  - `go test ./internal/httpserver -run disclosureType`: 3 failures (`template_category must be one of [periodic, irregular]`), identical on clean base
+  - `go test -race` on the new app tests: pass; `go vet ./internal/disclosure/...`: pass; `go vet ./...` fails only on pre-existing `internal/workflowfulfillment/required_document_gate_test.go:326-327` (copies atomic.Int64)
+  - gofmt clean on changed files; `docker compose -f docker-compose.dev.yml build api`: pass
