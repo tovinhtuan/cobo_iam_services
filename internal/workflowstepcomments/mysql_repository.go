@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/cobo/cobo_iam_services/internal/platform/pagination"
 )
 
 // MySQLRepository persists workflow_step_comments.
@@ -36,7 +38,7 @@ func (r *MySQLRepository) ListAliveByStep(ctx context.Context, owner OwnerContex
 	if err != nil {
 		return nil, 0, fmt.Errorf("count workflow_step_comments: %w", err)
 	}
-	offset := (page - 1) * pageSize
+	offset := pagination.Offset(page, pageSize)
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT id, company_id, disclosure_record_id, workflow_instance_id, step_code,
 		       author_user_id, author_membership_id, body, created_at, updated_at,

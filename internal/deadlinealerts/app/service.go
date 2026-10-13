@@ -13,6 +13,7 @@ import (
 	authapp "github.com/cobo/cobo_iam_services/internal/authorization/app"
 	disclosureapp "github.com/cobo/cobo_iam_services/internal/disclosure/app"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
+	"github.com/cobo/cobo_iam_services/internal/platform/pagination"
 )
 
 func (s *service) ListDeadlineAlerts(ctx context.Context, req ListDeadlineAlertsRequest) (*ListDeadlineAlertsResponse, error) {
@@ -38,14 +39,7 @@ func (s *service) ListDeadlineAlerts(ctx context.Context, req ListDeadlineAlerts
 	}
 
 	total := len(enriched)
-	start := (page - 1) * pageSize
-	if start > total {
-		start = total
-	}
-	end := start + pageSize
-	if end > total {
-		end = total
-	}
+	start, end := pagination.Window(page, pageSize, total)
 	items := enriched[start:end]
 	if items == nil {
 		items = []DeadlineAlertDTO{}

@@ -14,6 +14,7 @@ import (
 	"github.com/cobo/cobo_iam_services/internal/disclosure/app/applicability"
 	iamregmysql "github.com/cobo/cobo_iam_services/internal/iam/registrationmysql"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
+	"github.com/cobo/cobo_iam_services/internal/platform/pagination"
 )
 
 func (r *AdminRepository) CreateStandaloneCompany(ctx context.Context, displayName string, boot caapp.CreateCompanyBootstrap) (string, string, error) {
@@ -42,7 +43,7 @@ func (r *AdminRepository) ListCompaniesPlatform(ctx context.Context, req caapp.L
 	if limit > 100 {
 		limit = 100
 	}
-	offset := (page - 1) * limit
+	offset := pagination.Offset(page, limit)
 
 	sortCol := "c.created_at"
 	switch strings.ToLower(strings.TrimSpace(req.SortBy)) {

@@ -15,6 +15,7 @@ import (
 	"github.com/cobo/cobo_iam_services/internal/disclosure/app/applicability"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 	"github.com/cobo/cobo_iam_services/internal/platform/idgen"
+	"github.com/cobo/cobo_iam_services/internal/platform/pagination"
 )
 
 type mysqlGlobalRecordsRepo struct {
@@ -164,7 +165,7 @@ func (r *mysqlGlobalRecordsRepo) ListByTemplate(ctx context.Context, f ListGloba
 	if pageSize <= 0 {
 		pageSize = 20
 	}
-	offset := (page - 1) * pageSize
+	offset := pagination.Offset(page, pageSize)
 	listArgs := append(append([]any{}, args...), pageSize, offset)
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT id, template_id, cycle_key, title, COALESCE(summary,''), content, status,
@@ -275,7 +276,7 @@ func (r *mysqlGlobalRecordsRepo) ListCompanyChildren(ctx context.Context, cmsRec
 	if pageSize <= 0 {
 		pageSize = 20
 	}
-	offset := (page - 1) * pageSize
+	offset := pagination.Offset(page, pageSize)
 	listArgs := append(append([]any{}, args...), pageSize, offset)
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT company_id, record_id, title, status, planned_date, submitted_at, completed_at, updated_at

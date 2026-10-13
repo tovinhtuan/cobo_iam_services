@@ -16,6 +16,7 @@ import (
 	"github.com/cobo/cobo_iam_services/internal/disclosure/app/applicability"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 	"github.com/cobo/cobo_iam_services/internal/platform/idgen"
+	"github.com/cobo/cobo_iam_services/internal/platform/pagination"
 )
 
 // isDuplicateRecordIDError reports whether err is a MySQL duplicate-key error
@@ -1740,7 +1741,7 @@ func (r *Repository) ListCompanyWorkflowOverrideVersions(ctx context.Context, co
 	if err := row.Scan(&total); err != nil {
 		return nil, 0, err
 	}
-	offset := (page - 1) * pageSize
+	offset := pagination.Offset(page, pageSize)
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT v.version_no, v.state, COALESCE(v.change_note, ''), v.workflow_json, v.created_by, COALESCE(v.approved_by, ''), v.approved_at, v.created_at
 		FROM company_template_workflow_override_versions v

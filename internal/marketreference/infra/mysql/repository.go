@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/cobo/cobo_iam_services/internal/marketreference/app"
+	"github.com/cobo/cobo_iam_services/internal/platform/pagination"
 )
 
 const (
@@ -72,7 +73,7 @@ func (r *Repository) Count(ctx context.Context, p app.ListParams) (int, error) {
 func (r *Repository) listPage(ctx context.Context, p app.ListParams) ([]app.ListedCompanySummary, error) {
 	where, args := buildListWhere(p)
 	order := buildListOrderBy(p)
-	offset := (p.Page - 1) * p.Limit
+	offset := pagination.Offset(p.Page, p.Limit)
 	query := fmt.Sprintf(`
 		SELECT
 			e.symbol,

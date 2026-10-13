@@ -6,6 +6,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/cobo/cobo_iam_services/internal/platform/pagination"
 )
 
 // MemoryRepository is an in-memory store for unit tests.
@@ -40,13 +42,9 @@ func (r *MemoryRepository) ListAliveByStep(_ context.Context, owner OwnerContext
 	if pageSize < 1 {
 		pageSize = DefaultPageSize
 	}
-	start := (page - 1) * pageSize
+	start, end := pagination.Window(page, pageSize, total)
 	if start >= total {
 		return []Comment{}, total, nil
-	}
-	end := start + pageSize
-	if end > total {
-		end = total
 	}
 	out := make([]Comment, end-start)
 	copy(out, alive[start:end])

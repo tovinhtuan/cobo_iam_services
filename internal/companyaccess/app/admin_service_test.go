@@ -2,6 +2,7 @@ package app_test
 
 import (
 	"context"
+	"math"
 	"net/http"
 	"testing"
 
@@ -938,5 +939,52 @@ func TestAdminService_ListCompanyMemberships_SearchStatusAndCounts(t *testing.T)
 
 	if _, err := svc.ListCompanyMemberships(context.Background(), caapp.ListCompanyMembershipsRequest{Subject: sub, CompanyID: "c_001", Status: "bogus"}); err == nil {
 		t.Fatal("unknown status must be rejected")
+	}
+}
+
+// Regression: (page-1)*page_size overflowed int for huge pages, wrapped negative,
+// passed the start >= total guard and panicked on all[start:end]. Shared by the
+// company admin and CMS admin users routes.
+func TestAdminService_ListCompanyMemberships_HugePageReturnsEmptyPage(t *testing.T) {
+	repo := cainmem.NewAdminRepository()
+	sub := caapp.AdminSubject{UserID: "u_admin", MembershipID: "m_admin", CompanyID: "c_001"}
+	seedInviteScopedSubject(t, repo, sub)
+	svc := caapp.NewAdminService(
+		repo,
+		fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{"system.settings", "rbac.manage"}},
+		idgen.UUIDv7Generator{},
+	)
+	all, err := svc.ListCompanyMemberships(context.Background(), caapp.ListCompanyMembershipsRequest{Subject: sub, CompanyID: "c_001"})
+	if err != nil {
+		t.Fatalf("first page: %v", err)
+	}
+	if all.Total == 0 || len(all.Items) != all.Total {
+		t.Fatalf("first page total=%d items=%d want the seeded memberships", all.Total, len(all.Items))
+	}
+
+	cases := []struct {
+		name     string
+		page     int
+		pageSize int
+	}{
+		{"overflow page", 500000000000000000, 20},
+		{"max int page", math.MaxInt, 100},
+		{"wraps to zero page", 1<<62 + 1, 4},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			res, err := svc.ListCompanyMemberships(context.Background(), caapp.ListCompanyMembershipsRequest{
+				Subject: sub, CompanyID: "c_001", Page: tc.page, PageSize: tc.pageSize,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if res.Items == nil || len(res.Items) != 0 || res.Total != all.Total {
+				t.Fatalf("items=%d total=%d want 0 / %d", len(res.Items), res.Total, all.Total)
+			}
+			if res.Page != tc.page || res.PageSize != tc.pageSize {
+				t.Fatalf("page=%d page_size=%d want %d / %d", res.Page, res.PageSize, tc.page, tc.pageSize)
+			}
+		})
 	}
 }

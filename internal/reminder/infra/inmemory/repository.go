@@ -9,6 +9,7 @@ import (
 	"time"
 
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
+	"github.com/cobo/cobo_iam_services/internal/platform/pagination"
 	reminderapp "github.com/cobo/cobo_iam_services/internal/reminder/app"
 )
 
@@ -104,14 +105,7 @@ func (r *Repository) ListHistoryByDisclosure(_ context.Context, disclosureID str
 	if pageSize <= 0 {
 		pageSize = 20
 	}
-	start := (page - 1) * pageSize
-	if start > len(items) {
-		start = len(items)
-	}
-	end := start + pageSize
-	if end > len(items) {
-		end = len(items)
-	}
+	start, end := pagination.Window(page, pageSize, len(items))
 
 	return &reminderapp.ReminderHistoryPage{
 		Items:    items[start:end],

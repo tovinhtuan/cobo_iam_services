@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+
+	"github.com/cobo/cobo_iam_services/internal/platform/pagination"
 )
 
 // MySQLMentionCandidateStore searches active memberships by full_name/login_id.
@@ -52,7 +54,7 @@ func (s *MySQLMentionCandidateStore) SearchActiveMembers(ctx context.Context, co
 	if err != nil {
 		return nil, 0, fmt.Errorf("count mention candidates: %w", err)
 	}
-	offset := (page - 1) * pageSize
+	offset := pagination.Offset(page, pageSize)
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT m.membership_id,
 		       COALESCE(NULLIF(TRIM(u.full_name), ''), NULLIF(TRIM(u.login_id), ''), m.user_id) AS display_name

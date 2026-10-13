@@ -10,6 +10,7 @@ import (
 	"time"
 
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
+	"github.com/cobo/cobo_iam_services/internal/platform/pagination"
 	reminderapp "github.com/cobo/cobo_iam_services/internal/reminder/app"
 )
 
@@ -102,7 +103,7 @@ func (r *Repository) ListHistoryByDisclosure(ctx context.Context, disclosureID s
 	if q.PageSize <= 0 {
 		q.PageSize = 20
 	}
-	offset := (q.Page - 1) * q.PageSize
+	offset := pagination.Offset(q.Page, q.PageSize)
 
 	whereParts := []string{`(
 		disclosure_id = ?

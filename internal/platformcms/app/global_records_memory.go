@@ -6,6 +6,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/cobo/cobo_iam_services/internal/platform/pagination"
 )
 
 // MemoryRepository is an in-memory GlobalRecords Repository for unit tests.
@@ -129,14 +131,7 @@ func (m *MemoryRepository) ListByTemplate(ctx context.Context, f ListGlobalRecor
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].CreatedAt.After(items[j].CreatedAt) })
 	total := len(items)
-	start := (f.Page - 1) * f.PageSize
-	if start > total {
-		start = total
-	}
-	end := start + f.PageSize
-	if end > total {
-		end = total
-	}
+	start, end := pagination.Window(f.Page, f.PageSize, total)
 	return ListGlobalRecordsResult{Items: items[start:end], Page: f.Page, PageSize: f.PageSize, Total: total}, nil
 }
 
@@ -178,14 +173,7 @@ func (m *MemoryRepository) ListCompanyChildren(ctx context.Context, cmsRecordID 
 		filtered = append(filtered, c)
 	}
 	total := len(filtered)
-	start := (page - 1) * pageSize
-	if start > total {
-		start = total
-	}
-	end := start + pageSize
-	if end > total {
-		end = total
-	}
+	start, end := pagination.Window(page, pageSize, total)
 	return filtered[start:end], total, nil
 }
 

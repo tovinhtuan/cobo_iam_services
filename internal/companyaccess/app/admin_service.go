@@ -17,6 +17,7 @@ import (
 	"github.com/cobo/cobo_iam_services/internal/disclosure/app/applicability"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 	"github.com/cobo/cobo_iam_services/internal/platform/idgen"
+	"github.com/cobo/cobo_iam_services/internal/platform/pagination"
 	"github.com/cobo/cobo_iam_services/internal/platform/refreshtoken"
 	"github.com/cobo/cobo_iam_services/internal/subscription/companyplan"
 	"golang.org/x/crypto/bcrypt"
@@ -1212,13 +1213,9 @@ func (s *adminService) ListCompanyMemberships(ctx context.Context, req ListCompa
 	}
 	all, counts := filterMemberships(all, q, status)
 	total := len(all)
-	start := (page - 1) * pageSize
+	start, end := pagination.Window(page, pageSize, total)
 	if start >= total {
 		return ListCompanyMembershipsResult{Items: []MembershipView{}, Total: total, Page: page, PageSize: pageSize, StatusCounts: counts}, nil
-	}
-	end := start + pageSize
-	if end > total {
-		end = total
 	}
 	return ListCompanyMembershipsResult{Items: all[start:end], Total: total, Page: page, PageSize: pageSize, StatusCounts: counts}, nil
 }

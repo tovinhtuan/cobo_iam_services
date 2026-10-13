@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/cobo/cobo_iam_services/internal/platform/pagination"
 )
 
 // MentionCandidate is an active company membership eligible for @mention.
@@ -58,13 +60,9 @@ func (m *MemoryMentionCandidateStore) SearchActiveMembers(_ context.Context, com
 	if pageSize < 1 {
 		pageSize = CandidatePageDefault
 	}
-	start := (page - 1) * pageSize
+	start, end := pagination.Window(page, pageSize, total)
 	if start >= total {
 		return []MentionCandidate{}, total, nil
-	}
-	end := start + pageSize
-	if end > total {
-		end = total
 	}
 	out := make([]MentionCandidate, end-start)
 	copy(out, matched[start:end])

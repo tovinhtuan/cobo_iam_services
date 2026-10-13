@@ -12,6 +12,7 @@ import (
 
 	adhocapp "github.com/cobo/cobo_iam_services/internal/adhoc/app"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
+	"github.com/cobo/cobo_iam_services/internal/platform/pagination"
 )
 
 type Repository struct {
@@ -659,7 +660,7 @@ func (r *Repository) List(ctx context.Context, companyID string, statusFilter []
 		return nil, 0, err
 	}
 
-	offset := (page - 1) * pageSize
+	offset := pagination.Offset(page, pageSize)
 	listArgs := append(countArgs, pageSize, offset)
 	cols, caps, err := r.proposalDetailColumns(ctx)
 	if err != nil {

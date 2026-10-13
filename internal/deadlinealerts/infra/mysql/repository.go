@@ -15,6 +15,7 @@ import (
 	"github.com/cobo/cobo_iam_services/internal/disclosure/app/deadlineengine"
 	disclosuremysql "github.com/cobo/cobo_iam_services/internal/disclosure/infra/mysql"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
+	"github.com/cobo/cobo_iam_services/internal/platform/pagination"
 	"github.com/cobo/cobo_iam_services/internal/workflowdept"
 )
 
@@ -75,7 +76,7 @@ func (r *Repository) ListRowsPage(ctx context.Context, companyID string, scope d
 	if err != nil {
 		return nil, 0, err
 	}
-	rows, err := r.listRows(ctx, companyID, scope, pageSize, (page-1)*pageSize)
+	rows, err := r.listRows(ctx, companyID, scope, pageSize, pagination.Offset(page, pageSize))
 	if err != nil {
 		return nil, 0, err
 	}

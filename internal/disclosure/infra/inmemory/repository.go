@@ -13,6 +13,7 @@ import (
 	"github.com/cobo/cobo_iam_services/internal/disclosure/app/applicability"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 	"github.com/cobo/cobo_iam_services/internal/platform/idgen"
+	"github.com/cobo/cobo_iam_services/internal/platform/pagination"
 )
 
 type Repository struct {
@@ -1230,13 +1231,9 @@ func (r *Repository) ListCompanyWorkflowOverrideVersions(_ context.Context, comp
 	}
 	slices.SortFunc(out, func(a, b disclosureapp.CompanyWorkflowOverrideVersionDTO) int { return b.VersionNo - a.VersionNo })
 	total := len(out)
-	start := (page - 1) * pageSize
+	start, end := pagination.Window(page, pageSize, total)
 	if start >= total {
 		return []disclosureapp.CompanyWorkflowOverrideVersionDTO{}, total, nil
-	}
-	end := start + pageSize
-	if end > total {
-		end = total
 	}
 	return out[start:end], total, nil
 }
