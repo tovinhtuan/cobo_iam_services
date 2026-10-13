@@ -22,6 +22,7 @@ const WorkflowSourceProposalSnapshotV3 = "proposal_snapshot_v3"
 // MapProposalWorkflowToSnapshot maps a frozen proposal schema-v2|v3 workflow into instance StepSnapshot rows.
 // Proposal step id is runtime step_id/step_code authority; source_step_id is provenance only (ignored for identity).
 // processing_days and department_id come from the frozen proposal — never from a live template.
+// Step content (description, documents, reminder_config) comes only from the content captured at submit.
 // v3: AssigneeMembershipIDs only (singular empty). v2: singular only.
 func MapProposalWorkflowToSnapshot(snap *adhocapp.ProposalWorkflowSnapshot) []StepSnapshot {
 	if snap == nil || len(snap.Steps) == 0 {
@@ -39,7 +40,7 @@ func MapProposalWorkflowToSnapshot(snap *adhocapp.ProposalWorkflowSnapshot) []St
 		if step.ProcessingDays > 0 {
 			dueRule = fmt.Sprintf("T+%d", step.ProcessingDays)
 		}
-		// Frozen proposals have no CMS reminder_config. Flow B already seeded
+		// Proposals without captured content have no reminder_config. Flow B already seeded
 		// scheduled milestones for timeline-enabled ad-hoc instances; freeze DEFAULT
 		// [3,1] at map time so milestone build does not late-resolve later defaults.
 		defaultDays := append([]int(nil), disclosureapp.DefaultWorkflowStepReminderDays...)
@@ -52,6 +53,15 @@ func MapProposalWorkflowToSnapshot(snap *adhocapp.ProposalWorkflowSnapshot) []St
 			DisplayOrder:          step.Order,
 			ProcessingDays:        step.ProcessingDays,
 			EffectiveReminderDays: defaultDays,
+			SourceStepID:          strings.TrimSpace(step.SourceStepID),
+		}
+		if inh := step.Inherited; inh != nil {
+			row.Description = inh.Description
+			row.DescriptionFormat = inh.DescriptionFormat
+			row.Documents = mapProposalStepDocuments(inh.Documents)
+			row.ReminderConfig = proposalReminderConfig(inh.ReminderConfig)
+			res := disclosureapp.ResolveWorkflowStepReminderRule(row.ReminderConfig)
+			row.EffectiveReminderDays = append([]int{}, res.EffectiveDays...)
 		}
 		if snap.SchemaVersion == adhocapp.ProposalWorkflowSchemaV3 {
 			row.AssigneeMembershipIDs = adhocapp.EffectiveAssigneeMembershipIDs(step, adhocapp.ProposalWorkflowSchemaV3)
@@ -68,6 +78,39 @@ func MapProposalWorkflowToSnapshot(snap *adhocapp.ProposalWorkflowSnapshot) []St
 		return out[i].DisplayOrder < out[j].DisplayOrder
 	})
 	return out
+}
+
+func mapProposalStepDocuments(docs []adhocapp.ProposalStepDocument) []StepDocumentSnapshot {
+	if len(docs) == 0 {
+		return nil
+	}
+	out := make([]StepDocumentSnapshot, 0, len(docs))
+	for _, d := range docs {
+		tplID := strings.TrimSpace(d.TemplateFileID)
+		tplName := strings.TrimSpace(d.TemplateFileName)
+		if tplID == "" {
+			tplName = ""
+		}
+		out = append(out, StepDocumentSnapshot{
+			DocID:            strings.TrimSpace(d.DocID),
+			Name:             strings.TrimSpace(d.Name),
+			Required:         d.Required,
+			TemplateFileID:   tplID,
+			TemplateFileName: tplName,
+		})
+	}
+	return out
+}
+
+func proposalReminderConfig(cfg *adhocapp.ProposalStepReminderConfig) *disclosureapp.WorkflowStepReminderConfig {
+	if cfg == nil {
+		return nil
+	}
+	return disclosureapp.CloneWorkflowStepReminderConfig(&disclosureapp.WorkflowStepReminderConfig{
+		Enabled:    cfg.Enabled,
+		Mode:       cfg.Mode,
+		DaysBefore: cfg.DaysBefore,
+	})
 }
 
 // MapEffectiveWorkflowToSnapshot converts effective workflow steps into frozen snapshot rows.

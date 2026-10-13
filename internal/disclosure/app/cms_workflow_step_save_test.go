@@ -532,6 +532,12 @@ func TestWorkflowStepSave_CMSEditorEffectivePreview_DoesNotOpenRuntime(t *testin
 	if len(preview.Data.Workflow) != 4 {
 		t.Fatalf("preview steps=%d want 4", len(preview.Data.Workflow))
 	}
+	// Freezing callers (ad-hoc proposal submit) ask for runtime content only: no editor preview.
+	if _, err := cms.GetEffectiveWorkflow(ctx, disclosureapp.GetEffectiveWorkflowRequest{
+		Subject: testSubjectWF, TypeID: typeID, RuntimeOnly: true,
+	}); err == nil {
+		t.Fatal("RuntimeOnly must not return the unpublished CMS draft preview")
+	}
 
 	hasRuntime, err := inner.HasActiveEnterpriseWorkflow(ctx, testSubjectWF.CompanyID, typeID)
 	if err != nil {

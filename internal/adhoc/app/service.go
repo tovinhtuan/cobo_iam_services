@@ -35,6 +35,7 @@ type service struct {
 	org                 OrgDirectory          // nil until AttachWorkflowDeps; required for v2 org refs
 	seeder              WorkflowSeeder        // optional template seed
 	runtime             WorkflowRuntimeReader // nil until AttachRuntimeTracking; detail tracking only
+	stepContent         StepContentResolver   // nil = submit does not capture template step content
 }
 
 func NewService(repo Repository, recordCreator RecordCreator, typeCatalog TypeCatalog, idg idgen.Generator, autoApprove bool, auth authapp.Service, mv MembershipValidator, notifier ProposalNotifier, metrics Metrics) Service {
@@ -381,6 +382,7 @@ func (s *service) SubmitProposal(ctx context.Context, req ProposalActionRequest)
 		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "proposal has no assigned reviewers", nil)
 	}
 
+	submitApplied := false // read by the deferred capture log (only meaningful after UpdateStatus)
 	statusUpd := StatusUpdate{
 		ProposalID:               req.ProposalID,
 		CompanyID:                req.Subject.CompanyID,
@@ -399,6 +401,7 @@ func (s *service) SubmitProposal(ctx context.Context, req ProposalActionRequest)
 				return nil, err
 			}
 			frozen := *cur.Workflow
+			frozen.Steps = append([]ProposalWorkflowStep(nil), cur.Workflow.Steps...)
 			frozen.Frozen = true
 			statusUpd.Workflow = &frozen
 		case ProposalWorkflowSchemaV3:
@@ -408,6 +411,14 @@ func (s *service) SubmitProposal(ctx context.Context, req ProposalActionRequest)
 			}
 			normalized.Frozen = true
 			statusUpd.Workflow = normalized
+		}
+		// Capture template step content after department/assignee validation, in the same UPDATE.
+		if statusUpd.Workflow != nil {
+			captured, err := s.captureStepContent(ctx, req.Subject, cur.ProposalID, cur.TypeID, statusUpd.Workflow)
+			if err != nil {
+				return nil, err
+			}
+			defer func() { logStepContentCaptured(cur.ProposalID, cur.TypeID, captured, submitApplied) }()
 		}
 	}
 	// SUBMIT_NULL_NORMALIZED_TO_CALENDAR_DAYS: persist explicit day type in the same status UPDATE.
@@ -420,6 +431,7 @@ func (s *service) SubmitProposal(ctx context.Context, req ProposalActionRequest)
 	if err != nil {
 		return nil, err
 	}
+	submitApplied = applied
 	if applied {
 		s.metrics.RecordTransition(updated.CompanyID, cur.Status, StatusPendingFocalApproval)
 	}
@@ -899,6 +911,8 @@ func (s *service) ListProposals(ctx context.Context, req ListProposalsRequest) (
 	}
 	for i := range items {
 		items[i] = *s.embedReviewState(ctx, &items[i])
+		// List never needs step bodies; detail (GetProposal) returns them.
+		items[i].Workflow = WithoutInheritedStepContent(items[i].Workflow)
 	}
 	return &ListProposalsResponse{Items: items, Page: req.Page, PageSize: req.PageSize, Total: total}, nil
 }

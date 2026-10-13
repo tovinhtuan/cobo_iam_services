@@ -4949,3 +4949,9 @@
   - endpoints: deadline-alerts (no filter = SQL, `start_date` filter = in-memory), admin memberships, ad-hoc proposals, workflow override versions, reminder history, step comments, mention candidates (`q` >= 2 chars), cms admin users, cms companies (`limit`), cms listed companies (`limit`), cms global records by template, cms global record company-records
   - pre-existing, not from this change: ad-hoc proposals and cms companies return `items: null` (not `[]`) for any page past the end, e.g. `page=50`
   - api logs after deploy: 0 panic, 0 ERROR
+
+## 2026-10-13 — Ad-hoc proposal inherits template step content at submit (direction A, uncommitted)
+- Contract/design/verification live in the web repo: `cobo_web_design/docs/ai-cache/adhoc-proposal-step-content-inheritance-2026-10-13/`
+- SubmitProposal (flag `ADHOC_PROPOSAL_INHERIT_STEP_CONTENT_ENABLED`, devAware: true when ENV=development) reads the submitter company's effective workflow once and freezes `steps[].inherited` + `content_capture` into `proposed_workflow_json`; infra error → 503 `SERVICE_UNAVAILABLE` `details.reason=step_content_unavailable` (stays draft); 4xx → submit without capture
+- Approve: `MapProposalWorkflowToSnapshot` copies description/documents/reminder_config (→ EffectiveReminderDays); `ProjectProposalDocumentRequirementSnapshots` writes 0135 rows (StepCode = proposal step id) so the required-document gate (422) now applies to new ad-hoc alerts. No migration
+- Files: `internal/adhoc/app/workflow_content_capture.go`, `internal/adhoc/infra/disclosure/step_content_resolver.go`, `internal/workflow/app/{snapshot,document_requirement_snapshot,contracts}.go`, record_creator, config, server wiring

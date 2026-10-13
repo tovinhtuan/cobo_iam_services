@@ -135,6 +135,24 @@ type StepSnapshot struct {
 	// nil means DEFAULT (absent). Do not omitempty EffectiveReminderDays: empty slice is DISABLED.
 	ReminderConfig        *disclosureapp.WorkflowStepReminderConfig `json:"reminder_config,omitempty"`
 	EffectiveReminderDays []int                                     `json:"effective_reminder_days"`
+	// SourceStepID is template provenance for proposal_snapshot_v2|v3 steps (never identity).
+	SourceStepID string `json:"source_step_id,omitempty"`
+	// Step content frozen from the template when an ad-hoc proposal was submitted
+	// (proposal_snapshot_v2|v3 only). Documents are display-only; fulfillment authority
+	// stays in workflow_step_document_requirement_snapshots. Legacy `instructions` is not
+	// copied (description is the only narrative; the reminder worker would mail it otherwise).
+	Description       string                 `json:"description,omitempty"`
+	DescriptionFormat string                 `json:"description_format,omitempty"`
+	Documents         []StepDocumentSnapshot `json:"documents,omitempty"`
+}
+
+// StepDocumentSnapshot is one document requirement shown in a snapshot step.
+type StepDocumentSnapshot struct {
+	DocID            string `json:"doc_id"`
+	Name             string `json:"name"`
+	Required         bool   `json:"required"`
+	TemplateFileID   string `json:"template_file_id,omitempty"`
+	TemplateFileName string `json:"template_file_name,omitempty"`
 }
 
 // StepMilestoneRow is a single milestone row ready for persistence.

@@ -757,6 +757,9 @@ type GetCompanyWorkflowOverrideDraftReminderPreviewResponse struct {
 type GetEffectiveWorkflowRequest struct {
 	Subject Subject
 	TypeID  string
+	// RuntimeOnly skips the CMS-editor unpublished-draft preview fallback, so only content that
+	// runtime would materialize is returned (used when freezing it, e.g. ad-hoc proposal submit).
+	RuntimeOnly bool
 }
 
 // EffectiveWorkflowDTO.Source is one of: "company_override" (tenant override active version)

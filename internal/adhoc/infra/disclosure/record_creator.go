@@ -167,6 +167,7 @@ func (a *RecordCreatorAdapter) CreateAndSubmitRecordWithOpts(ctx context.Context
 			slog.String("materialization_mode", materializationMode),
 			slog.String("workflow_source", workflowSource),
 			slog.Int("snapshot_steps", len(snapshot)),
+			slog.Int("document_requirements", len(documentRequirements)),
 			slog.String("first_task_assignee_membership_id", firstTaskAssignee),
 			slog.Int("first_task_assignee_count", len(firstTaskAssignees)),
 		)
@@ -215,7 +216,7 @@ func resolveWorkflowSnapshotForMaterialize(
 			}
 			return &resolvedWorkflowMaterialization{
 				snapshot:             snapshot,
-				documentRequirements: nil, // proposal path has no documents[] fulfillment authority in V1
+				documentRequirements: workflowapp.ProjectProposalDocumentRequirementSnapshots(opts.ProposalWorkflow),
 				workflowSource:       workflowapp.WorkflowSourceProposalSnapshotV3,
 				firstTaskAssignees:   adhocapp.FirstStepAssigneeMembershipIDs(opts.ProposalWorkflow),
 				mode:                 adhocapp.MaterializationModeV3Snapshot,
@@ -237,7 +238,7 @@ func resolveWorkflowSnapshotForMaterialize(
 			}
 			return &resolvedWorkflowMaterialization{
 				snapshot:             snapshot,
-				documentRequirements: nil,
+				documentRequirements: workflowapp.ProjectProposalDocumentRequirementSnapshots(opts.ProposalWorkflow),
 				workflowSource:       workflowapp.WorkflowSourceProposalSnapshotV2,
 				firstTaskAssignee:    adhocapp.FirstStepAssigneeMembershipID(opts.ProposalWorkflow),
 				mode:                 adhocapp.MaterializationModeV2Snapshot,

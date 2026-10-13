@@ -643,6 +643,7 @@
           "name": "Submit Ad Hoc Proposal",
           "request": {
             "method": "POST",
+            "description": "Submit draft (creator only). When ADHOC_PROPOSAL_INHERIT_STEP_CONTENT_ENABLED, the server copies template step content (description, description_format, instructions, documents[], reminder_config) of the company's effective workflow into workflow.steps[].inherited (matched by source_step_id) and sets workflow.content_capture {captured_at, workflow_source, version_no, missing_source_step_ids}. Clients cannot send inherited. 503 SERVICE_UNAVAILABLE details.reason=step_content_unavailable when the template cannot be read: proposal stays draft, retry submit.",
             "url": {
               "raw": "{{base_url}}/api/v1/company/ad-hoc-proposals/{{proposal_id}}/submit",
               "host": ["{{base_url}}"],
@@ -659,6 +660,7 @@
           "name": "Get Ad Hoc Proposal Detail",
           "request": {
             "method": "GET",
+            "description": "workflow.steps[].inherited and workflow.content_capture are present only on proposals submitted with step content capture (absent on drafts and older proposals).",
             "url": {
               "raw": "{{base_url}}/api/v1/company/ad-hoc-proposals/{{proposal_id}}",
               "host": ["{{base_url}}"],
@@ -670,6 +672,7 @@
           "name": "Submit Ad Hoc Proposal",
           "request": {
             "method": "POST",
+            "description": "Submit draft (creator only). When ADHOC_PROPOSAL_INHERIT_STEP_CONTENT_ENABLED, the server copies template step content (description, description_format, instructions, documents[], reminder_config) of the company's effective workflow into workflow.steps[].inherited (matched by source_step_id) and sets workflow.content_capture {captured_at, workflow_source, version_no, missing_source_step_ids}. Clients cannot send inherited. 503 SERVICE_UNAVAILABLE details.reason=step_content_unavailable when the template cannot be read: proposal stays draft, retry submit.",
             "url": {
               "raw": "{{base_url}}/api/v1/company/ad-hoc-proposals/{{proposal_id}}/submit",
               "host": ["{{base_url}}"],

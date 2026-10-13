@@ -20,6 +20,8 @@ const (
 	MaxProposalWorkflowSteps = 50
 	// MinProposalWorkflowSteps required for schema v2/v3.
 	MinProposalWorkflowSteps = 1
+	// MaxProposalSourceStepIDLength bounds source_step_id (template step ids are short slugs/uuids).
+	MaxProposalSourceStepIDLength = 128
 )
 
 // ProposalWorkflowStep is one step in a proposal-owned workflow snapshot (v2 or v3).
@@ -36,6 +38,8 @@ type ProposalWorkflowStep struct {
 	DepartmentID          string   `json:"department_id,omitempty"`
 	AssigneeMembershipID  string   `json:"assignee_membership_id,omitempty"`
 	AssigneeMembershipIDs []string `json:"assignee_membership_ids,omitempty"`
+	// Inherited is template step content captured at submit (never set by the client).
+	Inherited *ProposalStepInheritedContent `json:"inherited,omitempty"`
 }
 
 // ProposalWorkflowSnapshot is the authority for schema_version=2|3 proposals.
@@ -44,6 +48,8 @@ type ProposalWorkflowSnapshot struct {
 	DisclosureTypeID string                 `json:"disclosure_type_id,omitempty"`
 	Frozen           bool                   `json:"frozen"`
 	Steps            []ProposalWorkflowStep `json:"steps"`
+	// ContentCapture is set when step content was captured at submit; nil for drafts and older proposals.
+	ContentCapture *ProposalContentCapture `json:"content_capture,omitempty"`
 }
 
 // ProposalWorkflowStepInput is the create/PATCH wire item (client may send client_id or existing id).
@@ -150,6 +156,9 @@ func NormalizeProposalWorkflowSteps(
 		}
 		if in.ProcessingDays < 0 {
 			return nil, newAdHocFieldError(http.StatusBadRequest, perr.CodeInvalidRequest, fmt.Sprintf("workflow_steps[%d].processing_days", i), "processing_days must be >= 0")
+		}
+		if len(strings.TrimSpace(in.SourceStepID)) > MaxProposalSourceStepIDLength {
+			return nil, newAdHocFieldError(http.StatusBadRequest, perr.CodeInvalidRequest, fmt.Sprintf("workflow_steps[%d].source_step_id", i), fmt.Sprintf("source_step_id exceeds %d characters", MaxProposalSourceStepIDLength))
 		}
 		dept := strings.TrimSpace(in.DepartmentID)
 		singular := strings.TrimSpace(in.AssigneeMembershipID)

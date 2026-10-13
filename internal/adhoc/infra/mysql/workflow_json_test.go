@@ -48,3 +48,23 @@ func TestDecodeProposalWorkflowPayload_schemaV2(t *testing.T) {
 		t.Fatalf("out=%s err=%v", out, err)
 	}
 }
+
+func TestDecodeProposalWorkflowPayload_schemaV3InheritedContentRoundTrip(t *testing.T) {
+	raw := `{"schema_version":3,"disclosure_type_id":"t1","frozen":true,` +
+		`"content_capture":{"captured_at":"2026-10-20T03:00:00Z","workflow_source":"company_override","version_no":4,"missing_source_step_ids":["gone"]},` +
+		`"steps":[{"id":"ps1","source_step_id":"tpl-1","order":1,"name":"A","processing_days":2,"department_id":"d1","assignee_membership_ids":["m1"],` +
+		`"inherited":{"description":"<p>x</p>","description_format":"safe_html","documents":[{"doc_id":"doc-1","name":"N","required":true,"template_file_id":"wdt-1","template_file_name":"m.docx"}],` +
+		`"reminder_config":{"enabled":true,"mode":"days_before","days_before":[5,2]}}}]}`
+	_, _, snap, err := decodeProposalWorkflowPayload(raw)
+	if err != nil || snap == nil || snap.ContentCapture == nil || snap.ContentCapture.VersionNo != 4 {
+		t.Fatalf("snap=%#v err=%v", snap, err)
+	}
+	inh := snap.Steps[0].Inherited
+	if inh == nil || inh.Documents[0].TemplateFileID != "wdt-1" || inh.ReminderConfig.DaysBefore[1] != 2 {
+		t.Fatalf("inherited=%#v", inh)
+	}
+	out, err := marshalProposalWorkflowPayload(adhocapp.ProposalDTO{Workflow: snap}, nil)
+	if err != nil || !strings.Contains(out, `"description_format":"safe_html","documents":[{"doc_id":"doc-1"`) || !strings.Contains(out, `"missing_source_step_ids":["gone"]`) {
+		t.Fatalf("out=%s err=%v", out, err)
+	}
+}

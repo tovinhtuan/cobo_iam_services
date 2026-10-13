@@ -170,6 +170,10 @@ type Config struct {
 	// ADHOC_EMAIL_METRICS_ENABLED: emit cobo_adhoc_proposal_transition_total (Batch 5(a) / AK.3).
 	// Default true — additive-only instrumentation, zero behavioural risk.
 	AdhocEmailMetricsEnabled bool
+	// ADHOC_PROPOSAL_INHERIT_STEP_CONTENT_ENABLED: capture template step description, documents and
+	// reminder_config into ad-hoc proposals at submit. Default false (true when ENV=development).
+	// Only gates capture; proposals already captured keep their content when turned off.
+	AdhocProposalInheritStepContentEnabled bool
 	// PERIODIC_SEEDING_ENABLED: worker seeds + materializes periodic/custom disclosure records.
 	PeriodicSeedingEnabled bool
 
@@ -291,6 +295,7 @@ func Load() (Config, error) {
 		WorkflowAdhocAutoApproveEnabled:        boolEnv("WORKFLOW_ADHOC_AUTOAPPROVE_ENABLED", false),
 		WorkflowStepCommentMentionsEnabled:     boolEnv("WORKFLOW_STEP_COMMENT_MENTIONS_ENABLED", false),
 		AdhocEmailMetricsEnabled:               boolEnv("ADHOC_EMAIL_METRICS_ENABLED", true),
+		AdhocProposalInheritStepContentEnabled: devAwareBoolEnv("ADHOC_PROPOSAL_INHERIT_STEP_CONTENT_ENABLED", false, true),
 		PeriodicSeedingEnabled:                 boolEnv("PERIODIC_SEEDING_ENABLED", false),
 		CompanyProvisionIdempotencyRequired:    boolEnv("COMPANY_PROVISION_IDEMPOTENCY_REQUIRED", false),
 		CompanySelfCreateEnabled:               boolEnv("COMPANY_SELF_CREATE_ENABLED", false),

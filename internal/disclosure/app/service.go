@@ -1635,8 +1635,10 @@ func (s *service) GetEffectiveWorkflow(ctx context.Context, req GetEffectiveWork
 	}
 	out, err := s.repo.GetEffectiveWorkflow(ctx, req.Subject.CompanyID, req.TypeID)
 	if err != nil {
-		if preview, ok := s.cmsEditorUnpublishedDraftWorkflowPreview(ctx, req, err); ok {
-			return preview, nil
+		if !req.RuntimeOnly {
+			if preview, ok := s.cmsEditorUnpublishedDraftWorkflowPreview(ctx, req, err); ok {
+				return preview, nil
+			}
 		}
 		return nil, err
 	}

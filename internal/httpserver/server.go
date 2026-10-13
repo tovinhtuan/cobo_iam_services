@@ -786,8 +786,11 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 		adhocSvc = adhocapp.NewService(adhocRepo, recordCreator, typeCatalog, id, cfg.WorkflowAdhocAutoApproveEnabled, authSvc, membershipValidator, proposalNotifier, adhocMetrics)
 		adhocSvc = adhocapp.AttachWorkflowDeps(adhocSvc, adhocmysql.NewOrgDirectory(pool), adhocrecord.NewWorkflowSeederAdapter(disclosureSvc))
 		adhocSvc = adhocapp.AttachRuntimeTracking(adhocSvc, adhocworkflow.NewRuntimeReader(workflowRepo))
+		if cfg.AdhocProposalInheritStepContentEnabled {
+			adhocSvc = adhocapp.AttachStepContentCapture(adhocSvc, adhocrecord.NewStepContentResolverAdapter(disclosureSvc))
+		}
 		adhocHandler = adhochttp.NewHandler(log, adhocSvc, tokenManager, idemStore)
-		log.Info("ad-hoc proposal module enabled")
+		log.Info("ad-hoc proposal module enabled", "inherit_step_content", cfg.AdhocProposalInheritStepContentEnabled)
 	}
 
 	companyReader := portaldashboardapp.AdminCompanyReader{

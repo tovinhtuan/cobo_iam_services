@@ -1676,6 +1676,32 @@ Contract: `cobo_web_design/docs/ai-cache/cms-users-redesign-2026-10-12/02-contra
 
 Khong co khi: mau bat thuong / `deadline_mode = NONE`, chua co dong cycle, `deadline_summary.status = UNKNOWN`, loi doc cycle (response van 200, log `portal_cycle_dues_read_failed`). Khong them vao `GET /api/v1/disclosure-types` (list).
 
+### Ad-hoc proposal — step content captured at submit (2026-10-13)
+
+Full contract: `cobo_web_design/docs/ai-cache/adhoc-proposal-step-content-inheritance-2026-10-13/02-contract.md`.
+
+- `POST /api/v1/company/ad-hoc-proposals/{proposal_id}/submit` (flag `ADHOC_PROPOSAL_INHERIT_STEP_CONTENT_ENABLED`, true by default when `ENV=development`): the server copies the content of each template step (matched by `source_step_id`, from the submitter company's runtime effective workflow) into `workflow.steps[].inherited` and records `workflow.content_capture`. Clients cannot send `inherited` (create/PATCH ignore it).
+
+```json
+"workflow": {
+  "schema_version": 3, "frozen": true,
+  "content_capture": { "captured_at": "2026-10-20T03:00:00Z", "workflow_source": "company_override", "version_no": 4, "missing_source_step_ids": ["step-007"] },
+  "steps": [{
+    "id": "01a1...", "source_step_id": "step-001", "order": 1, "name": "...", "processing_days": 1,
+    "department_id": "dep-legal", "assignee_membership_ids": ["m_1"],
+    "inherited": {
+      "description": "<p>...</p>", "description_format": "safe_html",
+      "documents": [{ "doc_id": "doc-1", "name": "...", "required": true, "template_file_id": "wdt_01...", "template_file_name": "mau.docx" }],
+      "reminder_config": { "enabled": true, "mode": "days_before", "days_before": [5, 2] }
+    }
+  }]
+}
+```
+
+- Errors: `503 SERVICE_UNAVAILABLE` with `details.reason = "step_content_unavailable"` when the template cannot be read (infra error, > 5 s, 401/403); the proposal stays draft — retry submit. 400/404/409/422 from the template read → submit without capture. `400 INVALID_REQUEST field=workflow_steps[i].source_step_id` when longer than 128 chars.
+- `GET .../ad-hoc-proposals` (list) returns `content_capture` but omits `steps[].inherited`; `GET .../ad-hoc-proposals/{id}` returns both.
+- Approve: the workflow instance snapshot (`GET /api/v1/workflows/instances/{id}`, `workflow_source = proposal_snapshot_v2|v3`) gets `source_step_id`, `description`, `description_format`, `documents[]`, `reminder_config` (→ `effective_reminder_days`); document requirement rows are created, so `POST .../steps/{step_code}/complete` returns `422 WORKFLOW_STEP_REQUIRED_DOCUMENT_MISSING` until required documents are uploaded. `safe_html` is not sanitized server-side — clients must sanitize when rendering.
+
 ## G. HTTP status mapping (goi y)
 
 | HTTP | Khi nao |
