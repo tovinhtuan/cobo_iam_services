@@ -4920,3 +4920,6 @@
   - `go test ./internal/httpserver -run disclosureType`: 3 failures (`template_category must be one of [periodic, irregular]`), identical on clean base
   - `go test -race` on the new app tests: pass; `go vet ./internal/disclosure/...`: pass; `go vet ./...` fails only on pre-existing `internal/workflowfulfillment/required_document_gate_test.go:326-327` (copies atomic.Int64)
   - gofmt clean on changed files; `docker compose -f docker-compose.dev.yml build api`: pass
+- Deploy DEV 2026-10-13 ~09:01Z: BE `4a6fbce` (`make deploy-dev MODE=be` from worktree branch `claude/practical-robinson-ce524a`), no migration, FE untouched; server `bin/api` / `bin/worker` sha256 match local build; rollback `bin/rollback/{api,worker}.pre-list-pagination-fix-20261013T085844Z` (= previous `9ed701c` build)
+  - pre-deploy `go test ./...`: 15 failures, the same 14 as clean base `8acd8f9` + `TestSchemaParityConditionalPeriodicity` (worktree path only)
+  - smoke via nginx (`E2E_BASE_URL`, personas ENT + CMS): 18/18 pass - 400 for page/page_size beyond int64, non-numeric, 0, 101, invalid sort_by/sort_dir; `page=500000000000000000` and `page=MaxInt64` -> 200 `items: []` with real total (tenant and `list_mode=management`); no token -> 401; CMS `sort_by=name` initials B < Đ < Q (asc) and reversed (desc); api logs 15m: 0 panic, 0 ERROR/WARN
