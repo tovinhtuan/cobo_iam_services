@@ -310,15 +310,12 @@ func (r *Repository) ListTypes(ctx context.Context, params disclosureapp.ListTyp
 		}
 	}
 	if deptID := strings.TrimSpace(params.DepartmentID); deptID != "" {
-		conditions = append(conditions, `EXISTS (
-			SELECT 1
-			FROM JSON_TABLE(
-				COALESCE(v.workflow_manifest_json, JSON_OBJECT('steps', JSON_ARRAY())),
-				'$.steps[*]' COLUMNS (department_id VARCHAR(64) PATH '$.department_id')
-			) workflow_step
-			WHERE v.workflow_authority_mode = 'TEMPLATE_PINNED'
-			  AND workflow_step.department_id = ?
-		)`)
+		// Not EXISTS (SELECT … FROM JSON_TABLE(v.…)): on MySQL 8.0 that correlated form matches no row.
+		conditions = append(conditions, `v.workflow_authority_mode = 'TEMPLATE_PINNED'
+			AND JSON_CONTAINS(
+				COALESCE(JSON_EXTRACT(v.workflow_manifest_json, '$.steps[*].department_id'), JSON_ARRAY()),
+				JSON_QUOTE(?)
+			)`)
 		args = append(args, deptID)
 	}
 	if len(params.TypeIDs) > 0 {
@@ -556,7 +553,7 @@ func (r *Repository) ListTypeFilterOptions(ctx context.Context, companyID string
 
 	deptRows, err := r.db.QueryContext(ctx, `
 		SELECT DISTINCT workflow_step.department_id,
-		       COALESCE(NULLIF(d.department_name, ''), workflow_step.department_id) AS department_name
+		       COALESCE(NULLIF(d.department_name, ''), NULLIF(wtd.department_name, ''), workflow_step.department_id) AS department_name
 		FROM disclosure_types t
 		INNER JOIN disclosure_type_versions v
 			ON v.type_id = t.type_id AND v.version_no = t.active_version_no
@@ -568,6 +565,9 @@ func (r *Repository) ListTypeFilterOptions(ctx context.Context, companyID string
 			ON d.department_id = workflow_step.department_id
 			AND d.company_id = ?
 			AND d.status != 'inactive'
+		-- Template steps store a platform catalog code (0114_workflow_template_departments), not a tenant department id.
+		LEFT JOIN workflow_template_departments wtd
+			ON wtd.department_code = workflow_step.department_id
 		WHERE (t.company_id IS NULL OR t.company_id = ?)
 		  AND v.workflow_authority_mode = 'TEMPLATE_PINNED'
 		  AND workflow_step.department_id IS NOT NULL

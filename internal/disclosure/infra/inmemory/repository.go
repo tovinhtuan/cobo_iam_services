@@ -497,6 +497,11 @@ func (r *Repository) ListTypeFilterOptions(_ context.Context, companyID string) 
 			out.Tags = append(out.Tags, disclosureapp.TypeFilterOptionDTO{ID: tag, Name: tag})
 		}
 	}
+	// Template steps store a platform catalog code; show its name like the MySQL repository.
+	catalogNames := make(map[string]string, len(r.templateDepartments))
+	for _, d := range r.templateDepartments {
+		catalogNames[d.DepartmentCode] = strings.TrimSpace(d.DepartmentName)
+	}
 	deptSeen := map[string]struct{}{}
 	for _, wf := range r.globalWorkflows {
 		if wf == nil {
@@ -511,7 +516,11 @@ func (r *Repository) ListTypeFilterOptions(_ context.Context, companyID string) 
 				continue
 			}
 			deptSeen[id] = struct{}{}
-			out.Departments = append(out.Departments, disclosureapp.TypeFilterOptionDTO{ID: id, Name: id})
+			name := catalogNames[id]
+			if name == "" {
+				name = id
+			}
+			out.Departments = append(out.Departments, disclosureapp.TypeFilterOptionDTO{ID: id, Name: name})
 		}
 	}
 	return out, nil
