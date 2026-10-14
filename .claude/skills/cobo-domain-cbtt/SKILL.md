@@ -75,9 +75,13 @@ spec. A draft circular to replace TT96 was under consultation in 2026.
 - Civil Code 2015 Đ147-148: a period ending on a rest day ends at the end of
   the next working day (applied to TT96 deadlines by inference).
 - **Check the code**: the deadline engine (`disclosure/app/deadlineengine`,
-  `add_days.go`) skips Sat/Sun/holidays, and workflow `dueRule` uses `T+N`
-  (calendar days) / `H+N` (hours). For each template confirm whether its rule
-  is calendar-day with roll-forward or working-day, and cite the clause.
+  `add_days.go`) skips Sat/Sun/holidays. Workflow step SLA is day-based:
+  `processing_days` is the source of truth and `dueRule` is only the derived
+  label `T+N` (calendar days). Hour rules (`H+N`) are not supported at runtime;
+  legacy values are converted to `ceil(N/24)` days in the CMS editor, so a 24h
+  CBTT obligation cannot be modelled as an hour-precise step SLA. For each
+  template confirm whether its rule is calendar-day with roll-forward or
+  working-day, and cite the clause.
 
 ## Penalties (motivation for alerts)
 NĐ 156/2020 Điều 42 (organizations; individuals pay half): late disclosure

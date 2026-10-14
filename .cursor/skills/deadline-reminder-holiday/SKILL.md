@@ -46,7 +46,10 @@ Pair with `cobo-domain-cbtt` for the legal rule behind each deadline.
 - `internal/holiday`: CMS uploads XLSX (excelize; col A date, B name, C type);
   DB calendar overrides `configs/non_trading_days/<year>.json`. Year map
   cached in-process separately in API and worker.
-- Workflow `dueRule`: `T+N` calendar days, `H+N` hours, or month literal.
+- Workflow step SLA: `processing_days` is the source of truth; `dueRule` is
+  the derived label `T+N` (calendar days). Runtime (timeline, alerts,
+  snapshot) has no hour support; legacy `H+N` is converted by the CMS editor
+  to `ceil(N/24)` days (`parseDueRuleToDays` in FE `templateWorkflowCatalog.ts`).
 
 ## Rules
 1. All date math in `Asia/Ho_Chi_Minh`; store instants in UTC; compare dates
