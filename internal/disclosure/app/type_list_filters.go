@@ -54,3 +54,26 @@ func ParseTagQuery(raw string) []string {
 	}
 	return out
 }
+
+// ParseTagFilters merges the legacy comma-separated `tag_ids` with repeated `tag` values, which are
+// taken as whole tags (a tag may contain a comma). Duplicates are dropped ignoring case.
+func ParseTagFilters(csv string, exact []string) []string {
+	out := ParseTagQuery(csv)
+	seen := make(map[string]struct{}, len(out)+len(exact))
+	for _, t := range out {
+		seen[strings.ToLower(t)] = struct{}{}
+	}
+	for _, raw := range exact {
+		t := strings.TrimSpace(raw)
+		if t == "" {
+			continue
+		}
+		key := strings.ToLower(t)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, t)
+	}
+	return out
+}

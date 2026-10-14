@@ -108,7 +108,8 @@ type Repository interface {
 	ListTypeGroups(ctx context.Context, companyID string) ([]DisclosureGroupDTO, error)
 	ListDisplayGroups(ctx context.Context) ([]DisplayGroupDTO, error)
 	ListTypes(ctx context.Context, params ListTypesParams) ([]DisclosureTypeSummaryDTO, int, error)
-	ListTypeFilterOptions(ctx context.Context, companyID string) (*ListTypeFilterOptionsResponse, error)
+	// typeIDs: the types visible to the company (list after applicability); options come only from them.
+	ListTypeFilterOptions(ctx context.Context, companyID string, typeIDs []string) (*ListTypeFilterOptionsResponse, error)
 	GetTypeDetail(ctx context.Context, companyID, typeID string) (*DisclosureTypeDTO, error)
 	GetTypeVersionDetail(ctx context.Context, companyID, typeID string, versionNo int) (*DisclosureTypeDTO, error)
 	HasActiveEnterpriseWorkflow(ctx context.Context, companyID, typeID string) (bool, error)

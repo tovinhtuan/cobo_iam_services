@@ -124,7 +124,7 @@ func TestMySQL_ListTypeFilterOptions_DepartmentNames(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	resp, err := repo.ListTypeFilterOptions(context.Background(), dfCompany)
+	resp, err := repo.ListTypeFilterOptions(context.Background(), dfCompany, []string{dfTypeLegal, dfTypeIR, dfTypeTenant})
 	if err != nil {
 		t.Fatal(err)
 	}

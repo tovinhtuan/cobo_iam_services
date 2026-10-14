@@ -24,7 +24,7 @@ func TestListTypeFilterOptions_DepartmentNameFromTemplateCatalog(t *testing.T) {
 	}
 	r.mu.Unlock()
 
-	resp, err := r.ListTypeFilterOptions(context.Background(), "c_001")
+	resp, err := r.ListTypeFilterOptions(context.Background(), "c_001", []string{"dt-dept-name-test"})
 	if err != nil {
 		t.Fatal(err)
 	}

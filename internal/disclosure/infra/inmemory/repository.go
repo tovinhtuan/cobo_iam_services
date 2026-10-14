@@ -319,12 +319,10 @@ func (r *Repository) ListTypes(_ context.Context, params disclosureapp.ListTypes
 		}
 		if dept := strings.TrimSpace(params.DepartmentID); dept != "" {
 			hasDept := false
-			if wf := r.globalWorkflows[listItem.TypeID]; wf != nil {
-				for _, step := range wf.Steps {
-					if strings.TrimSpace(step.DepartmentID) == dept {
-						hasDept = true
-						break
-					}
+			for _, id := range r.effectiveDepartmentIDsLocked(companyID, listItem.TypeID) {
+				if strings.TrimSpace(id) == dept {
+					hasDept = true
+					break
 				}
 			}
 			if !hasDept {
@@ -473,50 +471,41 @@ func (r *Repository) activePublicationLocked(typeID string) (disclosureapp.Discl
 	return item, true
 }
 
-func (r *Repository) ListTypeFilterOptions(_ context.Context, companyID string) (*disclosureapp.ListTypeFilterOptionsResponse, error) {
+func (r *Repository) ListTypeFilterOptions(_ context.Context, companyID string, typeIDs []string) (*disclosureapp.ListTypeFilterOptionsResponse, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	_ = companyID
 	out := &disclosureapp.ListTypeFilterOptionsResponse{
 		Tags:        []disclosureapp.TypeFilterOptionDTO{},
 		Departments: []disclosureapp.TypeFilterOptionDTO{},
 		Frequencies: disclosureapp.DefaultFrequencyFilterOptions(),
-	}
-	tagSeen := map[string]struct{}{}
-	for _, item := range r.catalog {
-		for _, tag := range item.Tags {
-			tag = strings.TrimSpace(tag)
-			if tag == "" {
-				continue
-			}
-			key := strings.ToLower(tag)
-			if _, ok := tagSeen[key]; ok {
-				continue
-			}
-			tagSeen[key] = struct{}{}
-			out.Tags = append(out.Tags, disclosureapp.TypeFilterOptionDTO{ID: tag, Name: tag})
-		}
 	}
 	// Template steps store a platform catalog code; show its name like the MySQL repository.
 	catalogNames := make(map[string]string, len(r.templateDepartments))
 	for _, d := range r.templateDepartments {
 		catalogNames[d.DepartmentCode] = strings.TrimSpace(d.DepartmentName)
 	}
+	tagSeen := map[string]struct{}{}
 	deptSeen := map[string]struct{}{}
-	for _, wf := range r.globalWorkflows {
-		if wf == nil {
+	for _, typeID := range typeIDs {
+		// Never another company's private type, even if a caller passes its id.
+		if owner := r.catalogScope[typeID]; owner != "" && owner != "global" && owner != companyID {
 			continue
 		}
-		for _, step := range wf.Steps {
-			id := strings.TrimSpace(step.DepartmentID)
-			if id == "" {
+		for _, tag := range r.catalog[typeID].Tags {
+			tag = strings.TrimSpace(tag)
+			key := strings.ToLower(tag)
+			if _, ok := tagSeen[key]; ok || tag == "" {
 				continue
 			}
+			tagSeen[key] = struct{}{}
+			out.Tags = append(out.Tags, disclosureapp.TypeFilterOptionDTO{ID: tag, Name: tag})
+		}
+		for _, id := range r.effectiveDepartmentIDsLocked(companyID, typeID) {
 			if _, ok := deptSeen[id]; ok {
 				continue
 			}
 			deptSeen[id] = struct{}{}
-			name := catalogNames[id]
+			name := catalogNames[strings.TrimSpace(id)]
 			if name == "" {
 				name = id
 			}
@@ -524,6 +513,28 @@ func (r *Repository) ListTypeFilterOptions(_ context.Context, companyID string) 
 		}
 	}
 	return out, nil
+}
+
+// effectiveDepartmentIDsLocked: step department ids of the effective workflow (approved company
+// override > template workflow), same precedence as the MySQL list filter. Caller holds r.mu.
+func (r *Repository) effectiveDepartmentIDsLocked(companyID, typeID string) []string {
+	var ids []string
+	if st, ok := r.overrideByCompanyType[overrideKey(companyID, typeID)]; ok && st.header.ActiveVersionNo > 0 {
+		for _, step := range st.versions[st.header.ActiveVersionNo].Workflow {
+			if strings.TrimSpace(step.DepartmentID) != "" {
+				ids = append(ids, step.DepartmentID)
+			}
+		}
+		return ids
+	}
+	if wf := r.globalWorkflows[typeID]; wf != nil {
+		for _, step := range wf.Steps {
+			if strings.TrimSpace(step.DepartmentID) != "" {
+				ids = append(ids, step.DepartmentID)
+			}
+		}
+	}
+	return ids
 }
 
 func (r *Repository) GetTypeDetail(_ context.Context, companyID, typeID string) (*disclosureapp.DisclosureTypeDTO, error) {
@@ -1648,7 +1659,7 @@ func (r *Repository) CountCompanyTemplatesByCompanyID(_ context.Context, company
 	defer r.mu.RUnlock()
 	count := 0
 	for _, dt := range r.catalog {
-		if dt.OwnerCompanyID == companyID {
+		if dt.OwnerCompanyID == companyID && !strings.EqualFold(strings.TrimSpace(dt.ReviewStatus), "archived") {
 			count++
 		}
 	}

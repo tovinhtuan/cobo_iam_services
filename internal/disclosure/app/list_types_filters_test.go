@@ -114,7 +114,11 @@ type filterOptionsRepo struct {
 	Repository
 }
 
-func (r *filterOptionsRepo) ListTypeFilterOptions(_ context.Context, _ string) (*ListTypeFilterOptionsResponse, error) {
+func (r *filterOptionsRepo) ListTypes(_ context.Context, _ ListTypesParams) ([]DisclosureTypeSummaryDTO, int, error) {
+	return nil, 0, nil
+}
+
+func (r *filterOptionsRepo) ListTypeFilterOptions(_ context.Context, _ string, _ []string) (*ListTypeFilterOptionsResponse, error) {
 	return &ListTypeFilterOptionsResponse{
 		Tags:        nil,
 		Departments: nil,

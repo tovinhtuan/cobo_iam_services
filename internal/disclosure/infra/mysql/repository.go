@@ -215,6 +215,11 @@ func (r *Repository) ListTypeGroups(ctx context.Context, _ string) ([]disclosure
 	return out, rows.Err()
 }
 
+// likeContainsPattern matches s literally anywhere (use with LIKE ? ESCAPE '!').
+func likeContainsPattern(s string) string {
+	return "%" + strings.NewReplacer("!", "!!", "%", "!%", "_", "!_").Replace(s) + "%"
+}
+
 func listTypesVersionJoin(listMode string) string {
 	if strings.ToLower(strings.TrimSpace(listMode)) == "management" {
 		return `INNER JOIN disclosure_type_versions v
@@ -278,8 +283,8 @@ func (r *Repository) ListTypes(ctx context.Context, params disclosureapp.ListTyp
 		args = append([]any{displayGroupCode}, ownershipArgs...)
 	}
 	if query != "" {
-		conditions = append(conditions, "(LOWER(v.name) LIKE ? OR LOWER(v.description) LIKE ? OR LOWER(t.type_id) LIKE ?)")
-		like := "%" + strings.ToLower(query) + "%"
+		conditions = append(conditions, "(LOWER(v.name) LIKE ? ESCAPE '!' OR LOWER(v.description) LIKE ? ESCAPE '!' OR LOWER(t.type_id) LIKE ? ESCAPE '!')")
+		like := likeContainsPattern(strings.ToLower(query))
 		args = append(args, like, like, like)
 	}
 	if len(params.Tags) > 0 {
@@ -289,9 +294,9 @@ func (r *Repository) ListTypes(ctx context.Context, params disclosureapp.ListTyp
 			if tag == "" {
 				continue
 			}
-			// tags_json is a JSON array of strings; match any selected tag (OR).
-			tagConds = append(tagConds, "JSON_CONTAINS(COALESCE(v.tags_json, JSON_ARRAY()), JSON_QUOTE(?), '$')")
-			args = append(args, tag)
+			// tags_json is a JSON array of strings; match any selected tag (OR), ignoring case like the options list.
+			tagConds = append(tagConds, "JSON_CONTAINS(CAST(LOWER(COALESCE(v.tags_json, JSON_ARRAY())) AS JSON), JSON_QUOTE(?), '$')")
+			args = append(args, strings.ToLower(tag))
 		}
 		if len(tagConds) > 0 {
 			conditions = append(conditions, "("+strings.Join(tagConds, " OR ")+")")
@@ -310,13 +315,22 @@ func (r *Repository) ListTypes(ctx context.Context, params disclosureapp.ListTyp
 		}
 	}
 	if deptID := strings.TrimSpace(params.DepartmentID); deptID != "" {
+		// Effective workflow, same precedence as batchLoadActiveWorkflowFlags / ListTypeFilterOptions:
+		// the company's approved override (active_version_no > 0) replaces the pinned template workflow.
 		// Not EXISTS (SELECT … FROM JSON_TABLE(v.…)): on MySQL 8.0 that correlated form matches no row.
-		conditions = append(conditions, `v.workflow_authority_mode = 'TEMPLATE_PINNED'
-			AND JSON_CONTAINS(
-				COALESCE(JSON_EXTRACT(v.workflow_manifest_json, '$.steps[*].department_id'), JSON_ARRAY()),
-				JSON_QUOTE(?)
-			)`)
-		args = append(args, deptID)
+		conditions = append(conditions, `(CASE WHEN EXISTS (
+				SELECT 1 FROM company_template_workflow_overrides o
+				WHERE o.company_id = ? AND o.type_id = t.type_id AND o.active_version_no > 0
+			) THEN EXISTS (
+				SELECT 1 FROM company_template_workflow_overrides o
+				INNER JOIN company_template_workflow_override_versions ov
+					ON ov.override_id = o.override_id AND ov.version_no = o.active_version_no
+				WHERE o.company_id = ? AND o.type_id = t.type_id AND o.active_version_no > 0
+				  AND JSON_CONTAINS(COALESCE(JSON_EXTRACT(ov.workflow_json, '$[*].department_id'), JSON_ARRAY()), JSON_QUOTE(?))
+			) ELSE v.workflow_authority_mode = 'TEMPLATE_PINNED'
+				AND JSON_CONTAINS(COALESCE(JSON_EXTRACT(v.workflow_manifest_json, '$.steps[*].department_id'), JSON_ARRAY()), JSON_QUOTE(?))
+			END)`)
+		args = append(args, companyID, companyID, deptID, deptID)
 	}
 	if len(params.TypeIDs) > 0 {
 		placeholders := make([]string, len(params.TypeIDs))
@@ -505,99 +519,171 @@ func (r *Repository) ListTypes(ctx context.Context, params disclosureapp.ListTyp
 	return out, total, nil
 }
 
-func (r *Repository) ListTypeFilterOptions(ctx context.Context, companyID string) (*disclosureapp.ListTypeFilterOptionsResponse, error) {
+func (r *Repository) ListTypeFilterOptions(ctx context.Context, companyID string, typeIDs []string) (*disclosureapp.ListTypeFilterOptionsResponse, error) {
 	companyID = strings.TrimSpace(companyID)
 	out := &disclosureapp.ListTypeFilterOptionsResponse{
 		Tags:        []disclosureapp.TypeFilterOptionDTO{},
 		Departments: []disclosureapp.TypeFilterOptionDTO{},
 		Frequencies: disclosureapp.DefaultFrequencyFilterOptions(),
 	}
+	if len(typeIDs) == 0 {
+		return out, nil
+	}
+	placeholders := make([]string, len(typeIDs))
+	args := []any{companyID}
+	for i, id := range typeIDs {
+		placeholders[i] = "?"
+		args = append(args, id)
+	}
+	args = append(args, companyID)
 
-	tagRows, err := r.db.QueryContext(ctx, `
-		SELECT COALESCE(v.tags_json, JSON_ARRAY())
+	// One row per visible type: tags + the department ids of its effective workflow, with the same
+	// precedence as the list filter (approved company override > pinned template workflow).
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT COALESCE(v.tags_json, JSON_ARRAY()),
+		       o.override_id IS NOT NULL,
+		       JSON_EXTRACT(ov.workflow_json, '$[*].department_id'),
+		       CASE WHEN v.workflow_authority_mode = 'TEMPLATE_PINNED'
+		            THEN JSON_EXTRACT(v.workflow_manifest_json, '$.steps[*].department_id') END
 		FROM disclosure_types t
 		INNER JOIN disclosure_type_versions v
 			ON v.type_id = t.type_id AND v.version_no = t.active_version_no
-		WHERE (t.company_id IS NULL OR t.company_id = ?)
-	`, companyID)
+		LEFT JOIN company_template_workflow_overrides o
+			ON o.type_id = t.type_id AND o.company_id = ? AND o.active_version_no > 0
+		LEFT JOIN company_template_workflow_override_versions ov
+			ON ov.override_id = o.override_id AND ov.version_no = o.active_version_no
+		WHERE t.type_id IN (`+strings.Join(placeholders, ",")+`)
+		  AND (t.company_id IS NULL OR t.company_id = ?)
+		ORDER BY t.created_at ASC, t.type_id ASC
+	`, args...)
 	if err != nil {
 		return nil, err
 	}
-	defer tagRows.Close()
+	defer rows.Close()
 	tagSeen := map[string]struct{}{}
-	for tagRows.Next() {
-		var raw []byte
-		if err := tagRows.Scan(&raw); err != nil {
+	deptSeen := map[string]struct{}{}
+	var deptIDs []string
+	for rows.Next() {
+		var tagsRaw, overrideDepts, templateDepts []byte
+		var hasOverride bool
+		if err := rows.Scan(&tagsRaw, &hasOverride, &overrideDepts, &templateDepts); err != nil {
 			return nil, err
 		}
 		var tags []string
-		if err := decodeTags(raw, &tags); err != nil {
-			continue
+		if err := decodeTags(tagsRaw, &tags); err == nil {
+			for _, tag := range tags {
+				tag = strings.TrimSpace(tag)
+				key := strings.ToLower(tag)
+				if _, ok := tagSeen[key]; ok || tag == "" {
+					continue
+				}
+				tagSeen[key] = struct{}{}
+				out.Tags = append(out.Tags, disclosureapp.TypeFilterOptionDTO{ID: tag, Name: tag})
+			}
 		}
-		for _, tag := range tags {
-			tag = strings.TrimSpace(tag)
-			if tag == "" {
+		effective := templateDepts
+		if hasOverride {
+			effective = overrideDepts
+		}
+		// Ids stay raw: the list filter matches them exactly (JSON_CONTAINS).
+		for _, id := range decodeDepartmentIDs(effective) {
+			if _, ok := deptSeen[id]; ok {
 				continue
 			}
-			key := strings.ToLower(tag)
-			if _, ok := tagSeen[key]; ok {
-				continue
-			}
-			tagSeen[key] = struct{}{}
-			out.Tags = append(out.Tags, disclosureapp.TypeFilterOptionDTO{ID: tag, Name: tag})
+			deptSeen[id] = struct{}{}
+			deptIDs = append(deptIDs, id)
 		}
 	}
-	if err := tagRows.Err(); err != nil {
+	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-
-	deptRows, err := r.db.QueryContext(ctx, `
-		SELECT DISTINCT workflow_step.department_id,
-		       COALESCE(NULLIF(d.department_name, ''), NULLIF(wtd.department_name, ''), workflow_step.department_id) AS department_name
-		FROM disclosure_types t
-		INNER JOIN disclosure_type_versions v
-			ON v.type_id = t.type_id AND v.version_no = t.active_version_no
-		INNER JOIN JSON_TABLE(
-			COALESCE(v.workflow_manifest_json, JSON_OBJECT('steps', JSON_ARRAY())),
-			'$.steps[*]' COLUMNS (department_id VARCHAR(64) PATH '$.department_id')
-		) workflow_step
-		LEFT JOIN departments d
-			ON d.department_id = workflow_step.department_id
-			AND d.company_id = ?
-			AND d.status != 'inactive'
-		-- Template steps store a platform catalog code (0114_workflow_template_departments), not a tenant department id.
-		LEFT JOIN workflow_template_departments wtd
-			ON wtd.department_code = workflow_step.department_id
-		WHERE (t.company_id IS NULL OR t.company_id = ?)
-		  AND v.workflow_authority_mode = 'TEMPLATE_PINNED'
-		  AND workflow_step.department_id IS NOT NULL
-		  AND TRIM(workflow_step.department_id) <> ''
-		ORDER BY department_name ASC
-	`, companyID, companyID)
-	if err != nil {
-		// Workflow/department tables may be unavailable in some environments — keep empty departments.
+	if len(deptIDs) == 0 {
 		return out, nil
 	}
-	defer deptRows.Close()
-	for deptRows.Next() {
-		var id, name string
-		if err := deptRows.Scan(&id, &name); err != nil {
-			return nil, err
-		}
-		id = strings.TrimSpace(id)
-		name = strings.TrimSpace(name)
-		if id == "" {
-			continue
-		}
+
+	names, err := r.departmentOptionNames(ctx, companyID, deptIDs)
+	if err != nil {
+		return nil, err
+	}
+	for _, id := range deptIDs {
+		name := names[departmentNameKey(id)]
 		if name == "" {
-			name = "Chưa xác định"
+			name = strings.TrimSpace(id)
 		}
 		out.Departments = append(out.Departments, disclosureapp.TypeFilterOptionDTO{ID: id, Name: name})
 	}
-	if err := deptRows.Err(); err != nil {
+	return out, nil
+}
+
+// decodeDepartmentIDs reads a JSON array of step department ids; blanks and non-strings are skipped.
+func decodeDepartmentIDs(raw []byte) []string {
+	if len(raw) == 0 {
+		return nil
+	}
+	var values []any
+	if err := json.Unmarshal(raw, &values); err != nil {
+		return nil
+	}
+	ids := make([]string, 0, len(values))
+	for _, v := range values {
+		if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
+			ids = append(ids, s)
+		}
+	}
+	return ids
+}
+
+func departmentNameKey(id string) string { return strings.ToLower(strings.TrimSpace(id)) }
+
+// departmentOptionNames: the company's own department name first (override steps store tenant ids;
+// a department deactivated after the override was saved keeps its name), then the platform template
+// catalog (template steps store workflow_template_departments codes).
+func (r *Repository) departmentOptionNames(ctx context.Context, companyID string, ids []string) (map[string]string, error) {
+	placeholders := make([]string, len(ids))
+	idArgs := make([]any, len(ids))
+	for i, id := range ids {
+		placeholders[i] = "?"
+		idArgs[i] = id
+	}
+	in := strings.Join(placeholders, ",")
+	names := map[string]string{}
+	collect := func(rows *sql.Rows) error {
+		defer rows.Close()
+		for rows.Next() {
+			var id, name string
+			if err := rows.Scan(&id, &name); err != nil {
+				return err
+			}
+			key := departmentNameKey(id)
+			if _, taken := names[key]; !taken && strings.TrimSpace(name) != "" {
+				names[key] = strings.TrimSpace(name)
+			}
+		}
+		return rows.Err()
+	}
+
+	tenantRows, err := r.db.QueryContext(ctx, `
+		SELECT department_id, department_name FROM departments
+		WHERE company_id = ? AND department_id IN (`+in+`)
+	`, append([]any{companyID}, idArgs...)...)
+	if err != nil {
 		return nil, err
 	}
-	return out, nil
+	if err := collect(tenantRows); err != nil {
+		return nil, err
+	}
+	catalogRows, err := r.db.QueryContext(ctx, `
+		SELECT department_code, department_name FROM workflow_template_departments
+		WHERE department_code IN (`+in+`)
+	`, idArgs...)
+	if err != nil {
+		// Pre-0114 environments have no catalog table: options fall back to the raw id.
+		return names, nil
+	}
+	if err := collect(catalogRows); err != nil {
+		return nil, err
+	}
+	return names, nil
 }
 
 // batchLoadDisplayGroupCodes fetches display_group_codes for a set of type IDs from the
@@ -2941,7 +3027,8 @@ func (r *Repository) GetCompanyTypeDeadlineContext(ctx context.Context, companyI
 func (r *Repository) CountCompanyTemplatesByCompanyID(ctx context.Context, companyID string) (int, error) {
 	var count int
 	err := r.db.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM disclosure_types WHERE company_id = ? AND status != 'archived'`,
+		// Archiving a company type only moves review_status (TransitionCompanyTemplateReviewStatus).
+		`SELECT COUNT(*) FROM disclosure_types WHERE company_id = ? AND status != 'archived' AND COALESCE(review_status, '') <> 'archived'`,
 		companyID).Scan(&count)
 	return count, err
 }

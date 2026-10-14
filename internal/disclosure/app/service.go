@@ -599,7 +599,21 @@ func (s *service) ListTypeFilterOptions(ctx context.Context, req ListTypeFilterO
 	if err := s.requireDisclosureCatalogRead(ctx, req.Subject); err != nil {
 		return nil, err
 	}
-	resp, err := s.repo.ListTypeFilterOptions(ctx, req.Subject.CompanyID)
+	// Options come from the types this company sees in the portal list (applicability applied),
+	// so every option selects at least one listed type.
+	light, err := s.listTypesLightweightCatalog(ctx, ListTypesParams{CompanyID: req.Subject.CompanyID})
+	if err != nil {
+		return nil, err
+	}
+	visible, err := s.filterTypesByApplicability(ctx, req.Subject.CompanyID, light)
+	if err != nil {
+		return nil, err
+	}
+	typeIDs := make([]string, 0, len(visible))
+	for _, item := range visible {
+		typeIDs = append(typeIDs, item.TypeID)
+	}
+	resp, err := s.repo.ListTypeFilterOptions(ctx, req.Subject.CompanyID, typeIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -612,6 +626,7 @@ func (s *service) ListTypeFilterOptions(ctx context.Context, req ListTypeFilterO
 	if resp.Departments == nil {
 		resp.Departments = []TypeFilterOptionDTO{}
 	}
+	sortFilterOptionsByName(resp.Departments)
 	if len(resp.Frequencies) == 0 {
 		resp.Frequencies = DefaultFrequencyFilterOptions()
 	}
@@ -636,6 +651,17 @@ func (s *service) listTypesLightweightCatalog(ctx context.Context, base ListType
 		}
 	}
 	return all, nil
+}
+
+// sortFilterOptionsByName orders options by Vietnamese name (Đ next to D), then id.
+func sortFilterOptionsByName(options []TypeFilterOptionDTO) {
+	collator := collate.New(language.Vietnamese, collate.IgnoreCase)
+	sort.SliceStable(options, func(i, j int) bool {
+		if cmp := collator.CompareString(options[i].Name, options[j].Name); cmp != 0 {
+			return cmp < 0
+		}
+		return options[i].ID < options[j].ID
+	})
 }
 
 func sortTypeSummaries(items []DisclosureTypeSummaryDTO, sortBy, sortDir string) {
