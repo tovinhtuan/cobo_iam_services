@@ -342,7 +342,7 @@ func (s *service) SubmitRecord(ctx context.Context, req SubmitRecordRequest) (*R
 	if err != nil {
 		return nil, err
 	}
-	if s.workflowBootstrap != nil && strings.TrimSpace(updated.WorkflowInstanceID) == "" {
+	if !req.SkipWorkflowBootstrap && s.workflowBootstrap != nil && strings.TrimSpace(updated.WorkflowInstanceID) == "" {
 		wfID, wfErr := s.workflowBootstrap.EnsureOnSubmit(ctx, req.Subject, *updated)
 		if wfErr != nil {
 			slog.WarnContext(ctx, "submit: workflow bootstrap failed",

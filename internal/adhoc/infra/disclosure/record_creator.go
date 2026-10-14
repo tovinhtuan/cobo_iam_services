@@ -137,6 +137,10 @@ func (a *RecordCreatorAdapter) CreateAndSubmitRecordWithOpts(ctx context.Context
 		if _, err := a.svc.SubmitRecord(ctx, disclosureapp.SubmitRecordRequest{
 			Subject:  sub,
 			RecordID: rec.RecordID,
+			// This adapter creates the instance below (proposal snapshot or effective workflow with
+			// overrides); a submit bootstrap would add a second, template-based instance that the alert
+			// runtime then reads instead (lowest instance id per record).
+			SkipWorkflowBootstrap: a.workflowOn,
 		}); err != nil {
 			return "", "", fmt.Errorf("submit record: %w", err)
 		}

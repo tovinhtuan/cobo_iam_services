@@ -187,3 +187,40 @@ func TestCreateAndSubmitPeriodicRecord_requiresWorkflowBeforeRecordWrite(t *test
 		t.Fatalf("record=%q workflow=%q", recordID, workflowID)
 	}
 }
+
+type submitSpyRecordService struct {
+	duplicatePeriodicRecordService
+	submits []disclosureapp.SubmitRecordRequest
+}
+
+func (s *submitSpyRecordService) CreateRecord(_ context.Context, req disclosureapp.CreateRecordRequest) (*disclosureapp.RecordDTO, error) {
+	return &disclosureapp.RecordDTO{RecordID: "rec-1", CompanyID: req.Subject.CompanyID, TypeID: req.Payload.TypeID}, nil
+}
+
+func (s *submitSpyRecordService) SubmitRecord(_ context.Context, req disclosureapp.SubmitRecordRequest) (*disclosureapp.RecordDTO, error) {
+	s.submits = append(s.submits, req)
+	return &disclosureapp.RecordDTO{RecordID: req.RecordID}, nil
+}
+
+// Regression (DEV E2E 2026-10-14): ad-hoc approval created a template instance through the submit
+// bootstrap plus the proposal instance; the alert runtime then read the template one.
+func TestCreateAndSubmitRecordWithOpts_ProposalSubmitSkipsWorkflowBootstrap(t *testing.T) {
+	svc := &submitSpyRecordService{}
+	wf := &fakeWorkflowMaterializer{}
+	a := &RecordCreatorAdapter{svc: svc, workflow: wf, workflowOn: true}
+	snap := &adhocapp.ProposalWorkflowSnapshot{
+		SchemaVersion: adhocapp.ProposalWorkflowSchemaV3,
+		Frozen:        true,
+		Steps:         []adhocapp.ProposalWorkflowStep{{ID: "ps-1", Order: 1, Name: "A", ProcessingDays: 1, DepartmentID: "d1", AssigneeMembershipIDs: []string{"m1"}}},
+	}
+	recordID, instanceID, err := a.CreateAndSubmitRecordWithOpts(context.Background(), "co", "t1", "m-creator", "title", nil, adhocapp.CreateRecordOpts{ProposalWorkflow: snap})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(svc.submits) != 1 || !svc.submits[0].SkipWorkflowBootstrap {
+		t.Fatalf("submit must skip the template bootstrap: %#v", svc.submits)
+	}
+	if wf.calls != 1 || recordID != "rec-1" || instanceID != "wf-resumed" {
+		t.Fatalf("exactly one (proposal) instance expected: calls=%d record=%q instance=%q", wf.calls, recordID, instanceID)
+	}
+}

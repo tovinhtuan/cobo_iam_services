@@ -227,6 +227,9 @@ type UpdateRecordRequest struct {
 type SubmitRecordRequest struct {
 	Subject  Subject
 	RecordID string
+	// SkipWorkflowBootstrap: the caller creates the record's workflow instance itself (ad-hoc proposal
+	// materialization), so submit must not bootstrap a second, template-based instance.
+	SkipWorkflowBootstrap bool
 }
 
 type ConfirmRecordRequest struct {
