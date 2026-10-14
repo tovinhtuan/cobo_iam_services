@@ -137,13 +137,17 @@ type StepSnapshot struct {
 	EffectiveReminderDays []int                                     `json:"effective_reminder_days"`
 	// SourceStepID is template provenance for proposal_snapshot_v2|v3 steps (never identity).
 	SourceStepID string `json:"source_step_id,omitempty"`
-	// Step content frozen from the template when an ad-hoc proposal was submitted
-	// (proposal_snapshot_v2|v3 only). Documents are display-only; fulfillment authority
+	// Step content frozen from the template when an ad-hoc proposal was submitted, plus the
+	// proposer's additions (proposal_snapshot_v2|v3 only). Documents are display-only; fulfillment authority
 	// stays in workflow_step_document_requirement_snapshots. Legacy `instructions` is not
 	// copied (description is the only narrative; the reminder worker would mail it otherwise).
 	Description       string                 `json:"description,omitempty"`
 	DescriptionFormat string                 `json:"description_format,omitempty"`
 	Documents         []StepDocumentSnapshot `json:"documents,omitempty"`
+	// ProposalNote is the proposer's note for a template step (plain text). Steps without template
+	// content carry the note as Description instead. Documents include the proposer's extra
+	// required documents after the template ones.
+	ProposalNote string `json:"proposal_note,omitempty"`
 }
 
 // StepDocumentSnapshot is one document requirement shown in a snapshot step.

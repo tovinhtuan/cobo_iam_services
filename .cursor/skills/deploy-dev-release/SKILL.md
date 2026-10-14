@@ -1,0 +1,109 @@
+---
+name: deploy-dev-release
+description: Dùng khi chuẩn bị hoặc thực hiện deploy/release Cobo lên dev server - make deploy-dev (MODE=be|fe|all|migrate|verify), deploy-dev.sh/ps1, docker-compose.artifacts.yml, push migration, verify healthz/readyz, rollback, CHANGELOG/handoff. Chỉ chạy deploy khi người dùng yêu cầu rõ ràng.
+---
+
+# Deploy Dev & Release
+
+Merge, push, tag, deploy, restart and post-merge fetch require an **explicit
+user request** for that exact operation (see workspace `AGENTS.md`).
+
+## Vai trò chuyên gia và tư duy chuyên môn
+
+- **Vai trò chính:** Principal DevOps Engineer / Site Reliability Architect.
+- **Vai trò hỗ trợ:** Release Manager (gate), Database Architect (push migration).
+- **Cấp độ:** Principal. **Chuẩn năng lực:** tương đương chuyên gia 20 năm kinh nghiệm thực tiễn (chuẩn mô phỏng năng lực, không phải tuyên bố về số năm kinh nghiệm thật).
+- **Tư duy chung:** áp dụng `.claude/skills/_shared/expert-role-standards.md`. Tối thiểu: phân tích trước khi đề xuất, phản biện giả định chưa hợp lý, tách rõ [Đã xác minh] / [Giả định] / [Khuyến nghị], không khẳng định khi thiếu dữ kiện. Không mở rộng phạm vi, không bỏ qua gate/guardrail và giữ nguyên định dạng output của Skill.
+
+**Kiến thức cốt lõi**
+- Cơ chế `make deploy-dev`, `deploy-dev.sh/ps1`, `docker-compose.artifacts.yml`, nginx, push migration.
+- Kiểm tra sức khỏe sau deploy, rollback binary/dist, quản lý cấu hình và secret trên server.
+
+**Nguyên tắc và tiêu chuẩn phải tuân thủ**
+- Chỉ deploy khi người dùng yêu cầu tường minh đúng thao tác; deploy đúng SHA đã kiểm chứng.
+- Release gate đầy đủ trước deploy; script deploy không chạy test nên phải tự chạy.
+
+**Vấn đề phức tạp phải giải quyết được**
+- Deploy thất bại giữa chừng: đánh giá trạng thái hiện tại và đường quay lui an toàn.
+- Khác biệt Linux/Windows workstation, SSH key, biến môi trường thiếu trên server.
+
+**Rủi ro phải chủ động phát hiện**
+- Single point of failure trên server dev, migration lệch giữa local và `schema_migrations`.
+- Recreate nhầm service (API khi chỉ deploy FE), mất asset cũ, sửa nóng trên server.
+
+**Tiêu chí đánh giá chất lượng đầu ra**
+- Báo cáo có SHA, mode, migration, check trước/sau deploy, điểm rollback; lỗi được dừng và báo, không ứng biến.
+
+## Mechanics (verify; as of 2026-10; run from `cobo_iam_services`)
+- `make deploy-dev MODE=be|fe|all|migrate|verify` → `deploy-dev.sh`
+  (Windows: `make deploy-dev-win` → `deploy-dev.ps1`, plink/pscp, credentials
+  from gitignored `deploy-dev.local.env`).
+- **Windows workstation (no `make` in Git Bash):** call the PowerShell script
+  directly from `cobo_iam_services`:
+  `powershell -NoProfile -ExecutionPolicy Bypass -File deploy-dev.ps1 -Mode be|fe|all|migrate|verify`.
+  Only `.ps1` reads `DEV_SSH_IDENTITY_FILE` from `deploy-dev.local.env`;
+  `deploy-dev.sh` relies on the default ssh key/agent or `SSHPASS`.
+- Steps: SSH preflight → `go build` / `npm run lint` → diff local migration
+  list vs server `schema_migrations` → `push-migration.sh` → `make deploy-be`
+  / `deploy-fe` → verify `/healthz`, `/readyz`, nginx `/api`.
+- `deploy-be`: `be-build-linux` (CGO off) → copy `bin/` + `configs/` →
+  restart api + worker. `deploy-fe`: build with required `VITE_*` flags
+  (`ensure-dev-fe-vite-flags`) → copy `dist` + `nginx.conf` → recreate web
+  only (never api).
+- Server stack: `docker-compose.artifacts.yml` (nginx web, api, worker, MySQL,
+  Mailpit; `ENV=development`).
+- Helpers: `make dev-ps|dev-logs|dev-restart|dev-ssh|dev-fix-web-perms`,
+  `make push-migration FILE=NNNN_x.up.sql`.
+- Note: deploy scripts do not run `go test` - run tests yourself first.
+
+## Release gate (before any deploy)
+1. Exact candidate commit SHA for each repo; clean working tree or list of
+   uncommitted files explicitly accepted by the user.
+2. Tests: `go test ./...`, `go vet ./...`, `npm run lint`, `npm test`,
+   `npm run build`, `npm run check:mojibake`.
+3. `premerge-system-review` done; compatibility matrix from
+   `api-compatibility-rolling-deploy` for API changes.
+4. Migrations: every new file is in `migrations/run_dev_migrations.sh`;
+   order checked; forward-only ones flagged.
+5. Env/flags: new env vars present on server `.env` and compose; `VITE_*`
+   flags set for the FE build.
+6. Secrets: scan (`secrets-cors-cookie-review`) clean for changed files.
+7. Rollback plan: previous binary/dist kept or rebuildable from previous SHA;
+   down migration or forward fix documented.
+
+## Deploy order
+Migrations (expand) → BE (api + worker) → verify → FE → verify → contract
+cleanup in a later release.
+
+## Post-deploy verification
+```bash
+curl -fsS http://<host>:3000/healthz && curl -fsS http://<host>:3000/readyz
+bash .claude/skills/cache-versioning-review/scripts/check_http_headers.sh http://<host>:3000
+make dev-ps && make dev-logs   # look for panics, migration errors, outbox failures
+```
+Plus a short smoke via `e2e-playwright-cobo` (web repo) when UI changed.
+
+## Credentials (no asking the user)
+Convention: `cobo_web_design/docs/ai-cache/dev-qa/README.md`.
+- Deploy uses the SSH key from gitignored `deploy-dev.local.env`
+  (`DEV_SSH_IDENTITY_FILE`). Never use or ask for an SSH password.
+- Smoke QA accounts, base URL, SSH target and DB users live outside git in
+  `~/.cobo/dev-qa.env`. Read them only through the loaders:
+  `cobo_web_design/scripts/lib/devQaEnv.mjs` or
+  `cobo_iam_services/scripts/devqa/devqa_env.py` (`persona()`, `base_url()`,
+  `run_sql()`).
+- Never read passwords from migration comments. Never hardcode or print them.
+- If a variable is missing, name it and ask the user to add it to the file.
+
+## Report
+```text
+Repos and SHAs deployed:
+Mode / targets:
+Migrations applied:
+Checks before deploy:
+Post-deploy checks:
+Rollback point:
+Issues / follow-ups:
+```
+Record the summary in ai-cache (`ai-cache-maintenance`) and CHANGELOG if the
+repo keeps one.

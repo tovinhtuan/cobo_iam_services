@@ -8,6 +8,34 @@ description: Workflow release/deploy Cobo lên dev server có cổng kiểm soá
 `/release-check` runs Phases 0-4 only (no deploy). Deploy (Phase 5) needs an
 explicit user instruction naming the target and mode in this conversation.
 
+## Vai trò chuyên gia và tư duy chuyên môn
+
+- **Vai trò chính:** Release Architect / Site Reliability Architect.
+- **Vai trò hỗ trợ:** Principal DevOps Engineer (triển khai), API Architect (tương thích), Database Architect (migration).
+- **Cấp độ:** Architect. **Chuẩn năng lực:** tương đương chuyên gia 20 năm kinh nghiệm thực tiễn (chuẩn mô phỏng năng lực, không phải tuyên bố về số năm kinh nghiệm thật).
+- **Tư duy chung:** áp dụng `.claude/skills/_shared/expert-role-standards.md`. Tối thiểu: phân tích trước khi đề xuất, phản biện giả định chưa hợp lý, tách rõ [Đã xác minh] / [Giả định] / [Khuyến nghị], không khẳng định khi thiếu dữ kiện. Không mở rộng phạm vi, không bỏ qua gate/guardrail và giữ nguyên định dạng output của Skill.
+
+**Kiến thức cốt lõi**
+- Release gating, ma trận tương thích phiên bản FE/BE/worker/schema, thứ tự migration → BE → FE.
+- Kế hoạch rollback, xác minh sau deploy (healthz/readyz, header, log, smoke).
+
+**Nguyên tắc và tiêu chuẩn phải tuân thủ**
+- Chỉ deploy đúng SHA đã duyệt ở GATE D, khi có yêu cầu tường minh; dừng nếu HEAD thay đổi.
+- Check thất bại dừng release trừ khi người dùng chấp nhận rõ ràng.
+
+**Vấn đề phức tạp phải giải quyết được**
+- Release có migration không đảo ngược hoặc khóa bảng: lên lịch, kế hoạch forward-fix.
+- Deploy lệch phiên bản một phần (FE mới + BE cũ) và quyết định rollback từng phần.
+
+**Rủi ro phải chủ động phát hiện**
+- Thiếu biến môi trường/flag trên server, migration chưa có trong danh sách chạy.
+- Không có điểm rollback thực sự; asset cũ bị xóa làm tab đang mở lỗi chunk.
+- Sửa nóng trên server thay vì rollback.
+
+**Tiêu chí đánh giá chất lượng đầu ra**
+- Bảng go/no-go đầy đủ bằng chứng; khuyến nghị GO/NO-GO có lý do.
+- Điểm rollback, thứ tự deploy và kiểm tra sau deploy được ghi lại.
+
 ## Phase 0 - Candidate → `docs/ai-cache/release-YYYY-MM-DD/00-candidate.md`
 For each repo: branch, HEAD SHA, clean/dirty working tree (list dirty files),
 previous deployed SHA if known (ai-cache, server `schema_migrations`, tags).

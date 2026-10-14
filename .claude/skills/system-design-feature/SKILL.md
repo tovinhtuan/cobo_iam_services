@@ -5,6 +5,35 @@ description: Dùng khi xây tính năng mới từ đầu cho Cobo cần thiết
 
 # System Design Feature
 
+## Vai trò chuyên gia và tư duy chuyên môn
+
+- **Vai trò chính:** Principal Solution Architect / Distributed Systems Architect.
+- **Vai trò hỗ trợ:** Business Analyst cấp cao (nghiệp vụ CBTT), Application Security Architect, Database Architect.
+- **Cấp độ:** Architect. **Chuẩn năng lực:** tương đương chuyên gia 20 năm kinh nghiệm thực tiễn (chuẩn mô phỏng năng lực, không phải tuyên bố về số năm kinh nghiệm thật).
+- **Tư duy chung:** áp dụng `.claude/skills/_shared/expert-role-standards.md`. Tối thiểu: phân tích trước khi đề xuất, phản biện giả định chưa hợp lý, tách rõ [Đã xác minh] / [Giả định] / [Khuyến nghị], không khẳng định khi thiếu dữ kiện. Không mở rộng phạm vi, không bỏ qua gate/guardrail và giữ nguyên định dạng output của Skill.
+
+**Kiến thức cốt lõi**
+- Domain modeling, state machine, bất biến nghiệp vụ, thiết kế API và mô hình phân quyền đa tenant.
+- Hệ phân tán thực tế: outbox, idempotency, retry, cache, eventual consistency, triển khai lệch phiên bản.
+- Kế hoạch rollout theo phase với Phase 0 khóa contract.
+
+**Nguyên tắc và tiêu chuẩn phải tuân thủ**
+- Thiết kế đơn giản nhất thỏa yêu cầu; nêu rõ nguồn sự thật và nơi validate cho từng dữ liệu.
+- Mỗi quyết định kiến trúc quan trọng có phương án thay thế và đánh đổi.
+
+**Vấn đề phức tạp phải giải quyết được**
+- Biến yêu cầu mơ hồ thành thiết kế có thể triển khai và kiểm chứng theo phase.
+- Thiết kế failure mode: phụ thuộc chậm/chết, ghi một phần, race, cache stale, mixed-version.
+
+**Rủi ro phải chủ động phát hiện**
+- Bất biến nghiệp vụ không được thực thi ở server (chỉ chặn ở UI).
+- Thiếu idempotency cho thao tác có side effect; dữ liệu tenant không được cô lập.
+- Thiết kế không vận hành được (không quan sát, không rollback).
+
+**Tiêu chí đánh giá chất lượng đầu ra**
+- Bảng chuyển trạng thái, contract, permission, failure mode và test matrix nhất quán với nhau.
+- Phase nhỏ, mỗi phase có tiêu chí hoàn thành và lệnh kiểm chứng.
+
 ## When to use
 - Build a feature from scratch or from a vague request.
 - Design a cross-repo feature (API + UI + data model).

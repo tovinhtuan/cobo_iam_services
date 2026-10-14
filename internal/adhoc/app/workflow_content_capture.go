@@ -227,8 +227,8 @@ func isNoTemplateContentStatus(status int) bool {
 	return false
 }
 
-// WithoutInheritedStepContent returns a copy without per-step inherited content (list projection:
-// keeps content_capture, drops the potentially large step bodies).
+// WithoutInheritedStepContent returns a copy without per-step inherited content and proposer
+// additions (list projection: keeps content_capture, drops the potentially large step bodies).
 func WithoutInheritedStepContent(snap *ProposalWorkflowSnapshot) *ProposalWorkflowSnapshot {
 	if snap == nil {
 		return nil
@@ -237,6 +237,7 @@ func WithoutInheritedStepContent(snap *ProposalWorkflowSnapshot) *ProposalWorkfl
 	out.Steps = append([]ProposalWorkflowStep(nil), snap.Steps...)
 	for i := range out.Steps {
 		out.Steps[i].Inherited = nil
+		out.Steps[i].Additions = nil
 	}
 	return &out
 }

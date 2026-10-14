@@ -40,6 +40,8 @@ type ProposalWorkflowStep struct {
 	AssigneeMembershipIDs []string `json:"assignee_membership_ids,omitempty"`
 	// Inherited is template step content captured at submit (never set by the client).
 	Inherited *ProposalStepInheritedContent `json:"inherited,omitempty"`
+	// Additions is the proposer-owned note and extra required documents (client, draft).
+	Additions *ProposalStepAdditions `json:"additions,omitempty"`
 }
 
 // ProposalWorkflowSnapshot is the authority for schema_version=2|3 proposals.
@@ -66,6 +68,8 @@ type ProposalWorkflowStepInput struct {
 	DepartmentID          string    `json:"department_id,omitempty"`
 	AssigneeMembershipID  string    `json:"assignee_membership_id,omitempty"`
 	AssigneeMembershipIDs *[]string `json:"assignee_membership_ids,omitempty"`
+	// Additions omitted = older client (no proposer-owned content for this step).
+	Additions *ProposalStepAdditions `json:"additions,omitempty"`
 }
 
 // ResolveProposalWorkflowContractVersion classifies persisted JSON authority.
@@ -186,6 +190,11 @@ func NormalizeProposalWorkflowSteps(
 		}
 		usedIDs[id] = struct{}{}
 
+		additions, err := normalizeProposalStepAdditions(i, in.Additions)
+		if err != nil {
+			return nil, err
+		}
+
 		step := ProposalWorkflowStep{
 			ID:             id,
 			SourceStepID:   strings.TrimSpace(in.SourceStepID),
@@ -193,6 +202,7 @@ func NormalizeProposalWorkflowSteps(
 			Name:           name,
 			ProcessingDays: in.ProcessingDays,
 			DepartmentID:   dept,
+			Additions:      additions,
 		}
 
 		if useV3 {
@@ -216,6 +226,10 @@ func NormalizeProposalWorkflowSteps(
 		}
 
 		steps = append(steps, step)
+	}
+
+	if err := validateProposalAdditionsTotals(steps); err != nil {
+		return nil, err
 	}
 
 	schema := ProposalWorkflowSchemaV2

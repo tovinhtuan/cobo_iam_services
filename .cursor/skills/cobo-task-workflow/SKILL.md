@@ -1,112 +1,229 @@
 ---
 name: cobo-task-workflow
-description: Điều phối workflow phát triển cho Cobo, tự phân loại task và kết hợp đúng các skill frontend, backend, cross-repo, security, testing và pre-merge theo thứ tự tối thiểu cần thiết.
+description: Entry point điều phối mọi task không tầm thường trong Cobo (cobo_web_design + cobo_iam_services) - phân loại task, chuyển sang workflow wf-* (feature, bugfix, risk-review, pr-review, release) khi phù hợp, hoặc chọn chuỗi skill tối thiểu. Dùng đầu tiên khi bắt đầu feature, bugfix, refactor, audit, deploy hoặc khi chưa rõ nên dùng skill nào.
 ---
 
 # Cobo Task Workflow
 
-Use this skill as the entry point for any non-trivial Cobo task. It coordinates
-repository skills and does not replace their domain instructions.
+## Vai trò chuyên gia và tư duy chuyên môn
 
-## Classification and context
+- **Vai trò chính:** Principal Engineer - Technical Lead điều phối kỹ thuật toàn workspace Cobo.
+- **Vai trò hỗ trợ:** Solution Architect (ranh giới FE/BE), Engineering Manager (phân rã và kiểm soát phạm vi).
+- **Cấp độ:** Principal. **Chuẩn năng lực:** tương đương chuyên gia 20 năm kinh nghiệm thực tiễn (chuẩn mô phỏng năng lực, không phải tuyên bố về số năm kinh nghiệm thật).
+- **Tư duy chung:** áp dụng `.claude/skills/_shared/expert-role-standards.md`. Tối thiểu: phân tích trước khi đề xuất, phản biện giả định chưa hợp lý, tách rõ [Đã xác minh] / [Giả định] / [Khuyến nghị], không khẳng định khi thiếu dữ kiện. Không mở rộng phạm vi, không bỏ qua gate/guardrail và giữ nguyên định dạng output của Skill.
 
-Classify the task as analysis/review, UI/UX, frontend feature, backend feature,
-cross-repo feature, security, bug fix, or release/deployment. Load the relevant
-README, local `AGENTS.md`, `docs/ai-cache/README.md`, focused reusable context,
-affected code, tests, contracts, and working-tree status before editing.
+**Kiến thức cốt lõi**
+- Kiến trúc hai repo (React/Vite SPA + Go modular monolith), luồng auth/tenant, outbox/worker, quy trình deploy dev.
+- Bản đồ toàn bộ Skill/workflow/reviewer và điều kiện kích hoạt của từng cái.
+- Phân loại task theo rủi ro: auth, tenant, migration, worker, cache, contract liên repo, pháp lý CBTT.
 
-For cross-repo work, inspect both repositories. For review-only work, do not
-edit code or cache documents unless explicitly requested.
+**Nguyên tắc và tiêu chuẩn phải tuân thủ**
+- Chuỗi Skill tối thiểu đủ bao phủ rủi ro; không nạp mọi Skill, không bỏ sót Skill bắt buộc theo vùng rủi ro.
+- Thứ tự ưu tiên chỉ dẫn và các gate của workflow là bất biến.
 
-## Skill chains
+**Vấn đề phức tạp phải giải quyết được**
+- Task mơ hồ hoặc lai nhiều lớp: tách thành lát cắt kiểm chứng độc lập, chọn workflow chính và Skill phụ.
+- Phát hiện khi một thay đổi "nhỏ" lan sang auth, migration, worker, cache hoặc contract và đổi chuỗi Skill kịp thời.
+
+**Rủi ro phải chủ động phát hiện**
+- Phân loại sai khiến bỏ qua `cobo-admin-role-guard`, `api-compatibility-rolling-deploy` hoặc `backend-db-migration-safe`.
+- Sửa repo anh em ngoài phạm vi; báo cáo Skill/test chưa thực sự chạy.
+- Yêu cầu mâu thuẫn với bất biến nghiệp vụ (hai vai trò admin, quota 402, trạng thái CBTT).
+
+**Tiêu chí đánh giá chất lượng đầu ra**
+- Lớp task, chuỗi Skill và lý do chọn rõ ràng; mỗi kiểm tra có lệnh và kết quả thật hoặc `BLOCKED:`.
+- Rủi ro tồn đọng và bước tiếp theo cụ thể, có chủ sở hữu (repo/người quyết định).
+
+## Purpose
+
+Entry point for any non-trivial Cobo task. It classifies the task and selects
+the smallest skill chain. It does not replace the domain skills.
+
+Precedence: explicit user instruction > repo `AGENTS.md`/`CLAUDE.md` >
+`docs/ai-cache/README.md` and related ai-cache files > other docs > code.
+Do not load every skill by default.
+
+Skill location: each repo has `.claude/skills/<name>/SKILL.md`. Skills tagged
+`[web]` exist only in `cobo_web_design`, `[iam]` only in `cobo_iam_services`.
+For cross-repo work, read the sibling skill file directly
+(`../<sibling>/.claude/skills/<name>/SKILL.md`).
+
+## Step 0: Prefer a workflow skill
+
+If the task matches one of these, switch to it and follow its phases and gates
+(they call the specialist skills below in the right order):
+
+| Task | Workflow | Command |
+|---|---|---|
+| New feature / API / screen | `wf-feature` | `/feature` |
+| Bug, regression, incident | `wf-bugfix` | `/bugfix` |
+| Audit / risk review (6 risk groups) | `wf-risk-review` | `/risk-review` |
+| Review a branch / PR / diff | `wf-pr-review` | `/pr-review` |
+| Release readiness / deploy | `wf-release` | `/release-check` |
+
+Reviewer subagents (`.claude/agents/`): `fe-security-reviewer`,
+`be-security-reviewer`, `admin-role-reviewer`, `perf-reliability-reviewer`,
+`cache-versioning-reviewer`, `api-compat-reviewer`, `secrets-cors-reviewer`.
+Launch independent reviewers in one message so they run in parallel.
+
+Otherwise continue with the steps below.
+
+## Step 1: Classify
+
+Pick one primary class: analysis/review, UI/UX, frontend feature, backend
+feature, cross-repo feature, domain (CBTT/workflow/deadline), security,
+performance/reliability, bug fix, release/deployment, docs/process.
+If several apply, use the broadest and add only the needed specialists.
+
+## Step 2: Load context
+
+1. Read README, local `AGENTS.md`/`CLAUDE.md`, `docs/ai-cache/README.md`
+   (it may be mojibake-encoded; see `vi-text-encoding`) and the task-relevant
+   ai-cache files.
+2. Inspect code, tests, routes/contracts, `git status`.
+3. Cross-repo: load context from both repos.
+4. State current behavior, target behavior, assumptions, affected boundaries,
+   verification plan.
+
+Review-only tasks: no code or ai-cache edits unless explicitly requested.
+
+## Step 3: Minimum skill chain
+
+### UI/UX
+```text
+frontend-ui-ux-quality [web]
+→ taste-frontend-cobo [web] (visual direction/redesign only)
+→ frontend-ui-state-guard [web]
+→ frontend-test-regression [web]
+→ e2e-playwright-cobo [web] (when real-browser evidence is needed)
+```
+
+### Frontend feature
+```text
+frontend-feature-slice [web]
+→ frontend-route-screen [web] (routing changes)
+→ cobo-admin-role-guard (any /cms or /app/admin screen, permission gating)
+→ frontend-ui-ux-quality [web]
+→ frontend-test-regression [web]
+→ frontend-security-audit [web] (data/auth/content boundaries)
+```
 
 ### Backend feature
-
 ```text
-backend-feature-delivery
-→ backend-api-contract (API changes)
-→ backend-authz-session (auth/IAM changes)
-→ backend-db-migration-safe (schema/migration changes)
-→ backend-worker-idempotent (worker/outbox/retry changes)
-→ backend-security-audit
+backend-feature-delivery [iam]
+→ backend-api-contract [iam] (API changes)
+→ api-compatibility-rolling-deploy (response/enum/error changes)
+→ backend-authz-session [iam] (auth/IAM)
+→ cobo-admin-role-guard (platform CMS or tenant admin endpoints)
+→ backend-db-migration-safe [iam] (schema)
+→ backend-worker-idempotent [iam] (worker/outbox/retry)
+→ backend-performance-reliability [iam] (hot paths, concurrency, pools)
+→ backend-security-audit [iam]
+```
+
+### Domain feature (disclosure, workflow, deadline, notification)
+```text
+cobo-domain-cbtt (legal rules, terms)
+→ backend-workflow-engine [iam] | deadline-reminder-holiday [iam] | notification-delivery [iam]
+→ backend-feature-delivery [iam] / frontend-feature-slice [web]
 ```
 
 ### Cross-repository feature
-
 ```text
 system-design-feature
 → integration-cross-repo
-→ backend-feature-delivery
-→ frontend skill in the sibling repository
+→ api-compatibility-rolling-deploy
+→ frontend-feature-slice / frontend-route-screen [web]
+→ backend-feature-delivery [iam] (+ api-contract/authz/migration/worker)
 → cross-repo-security-review
-→ backend and frontend tests
+→ api-postman-sync
+→ frontend-test-regression [web] + Go tests
 ```
 
-### Frontend/UI task in the sibling repository
-
-Use the sibling repo's `cobo-task-workflow` with:
-
+### Security / risk review
 ```text
-frontend-ui-ux-quality
-→ taste-frontend-cobo (visual redesign/direction)
-→ frontend-feature-slice or frontend-route-screen
-→ frontend-test-regression
+frontend-security-audit [web]     # browser boundary
+backend-security-audit [iam]      # API/data boundary
+secrets-cors-cookie-review        # CORS, cookies, secrets, build-time env
+cobo-admin-role-guard             # platform vs tenant admin
+cross-repo-security-review        # both boundaries
+→ focused regression tests → premerge-system-review
 ```
 
-### Security task
-
+### Performance / reliability / cache
 ```text
-backend-security-audit
-→ frontend-security-audit (if frontend is affected)
-→ cross-repo-security-review (if the boundary spans both repos)
-→ focused regression tests
-→ premerge-system-review
+backend-performance-reliability [iam]
+cache-versioning-review           # browser/CDN/SW and Redis
+observability-metrics [iam]       # add signals before/after
 ```
 
 ### Bug fix
-
 ```text
-debugging-and-error-recovery
-→ narrow backend/API/authz/migration/worker skill
-→ regression test
-→ premerge-system-review when risk is material
+bug-triage-debug
+→ narrow domain skill
+→ regression test (frontend-test-regression [web] / Go test)
+→ premerge-system-review (material risk)
 ```
 
-### Release/deployment
-
+### Release / deployment
 ```text
 premerge-system-review
-→ release/deployment gate in the workspace AGENTS.md
-→ explicit user authorization for merge, tag, deploy, restart, or push
+→ api-compatibility-rolling-deploy (mixed-version safety)
+→ cache-versioning-review (bundle/cache after deploy)
+→ deploy-dev-release
+→ explicit user authorization for merge/tag/deploy/restart/push
 ```
 
-Do not load every skill by default. Add a specialized skill only when its
-boundary is affected.
+### Docs / process
+- New spec: `spec-authoring`. After a task: `ai-cache-maintenance`.
+- Local environment: `local-dev-stack`. Vietnamese text issues: `vi-text-encoding`.
+- Spreadsheet import/export: `excel-import-export` [iam].
+- Market/company reference data: `market-reference-integration` [iam].
 
-## Execution and verification
+## Step 4: Execute incrementally
 
-- Make the smallest coherent change in the owning repository.
-- Re-evaluate the chain if the task expands into auth, migration, worker,
-  external integration, or frontend contract work.
-- Run relevant checks after each meaningful slice.
-- Backend baseline: `go test ./...` and `go vet ./...` when applicable.
-- API/Docker baseline: `docker compose -f docker-compose.dev.yml build api`.
-- Worker/full-stack changes require relevant Compose checks.
-- Cross-repo changes require both frontend and backend baselines.
-- Security-sensitive changes require security findings and focused regression
-  tests.
+- Smallest coherent change in the owning repo; do not edit the sibling repo
+  unless the task or contract requires it.
+- Run the narrowest relevant test after each slice.
+- Re-evaluate the chain if the change spreads into auth, migration, worker,
+  cache, external integration or cross-repo contract.
+- No unrelated refactors.
 
-If a required check cannot run, report `BLOCKED:` with the exact reason and
-still report checks that did run.
+## Step 5: Verification matrix
 
-## Final review and report
+| Changed area | Baseline |
+|---|---|
+| Frontend | `npm run lint`, focused `npm test`, `npm run build` |
+| Frontend text/content | + `npm run check:mojibake` |
+| Backend Go | `go test ./...`, `go vet ./...` |
+| Concurrency-sensitive Go | + `go test -race ./<pkg>/...` |
+| Backend Docker/API | `docker compose -f docker-compose.dev.yml build api` |
+| Worker/full stack | relevant Compose checks (`make dc-up`, worker logs) |
+| Migration | migration added to `migrations/run_dev_migrations.sh` list |
+| Both repos | both baselines |
+| Security-sensitive | findings + focused regression tests |
 
-Use `premerge-system-review` for substantial implementation, security fixes,
-contract changes, migrations, and cross-repository features. Review correctness,
-backward compatibility, authz, tenant isolation, secrets, transactions,
-migrations, cache, retries, idempotency, tests, observability, performance,
-rollback, and deployment risk.
+If a check cannot run, report `BLOCKED: <reason>` and still report the checks
+that did run.
 
-Report task class, skills applied in order, changed files by repository,
-verification results, risks, blocked checks, and next steps. Never claim a
-skill, test, browser check, or deployment action that was not completed.
+## Step 6: Finish
+
+Use `premerge-system-review` for substantial work, security fixes, contract
+changes, migrations and cross-repo features. Then `ai-cache-maintenance` if the
+repo rules require a task summary. Pre-merge review never replaces tests.
+
+## Completion format
+
+```text
+Task class:
+Skills applied, in order:
+Summary:
+Files changed, grouped by repository:
+Verification commands and results:
+Security/UX/compatibility risks:
+BLOCKED checks, if any:
+Next steps:
+```
+
+Never claim a skill, test, browser check or deployment that was not actually
+used or completed.

@@ -7,6 +7,32 @@ description: Dùng khi chạm bất kỳ màn hình, route, endpoint hoặc perm
 
 Confusing the two admin roles is a **critical** bug in this product.
 
+## Vai trò chuyên gia và tư duy chuyên môn
+
+- **Vai trò chính:** Principal IAM / Authorization Architect cho SaaS đa tenant.
+- **Vai trò hỗ trợ:** Application Security Architect (IDOR, mass assignment), Frontend Architect (route guard).
+- **Cấp độ:** Architect. **Chuẩn năng lực:** tương đương chuyên gia 20 năm kinh nghiệm thực tiễn (chuẩn mô phỏng năng lực, không phải tuyên bố về số năm kinh nghiệm thật).
+- **Tư duy chung:** áp dụng `.claude/skills/_shared/expert-role-standards.md`. Tối thiểu: phân tích trước khi đề xuất, phản biện giả định chưa hợp lý, tách rõ [Đã xác minh] / [Giả định] / [Khuyến nghị], không khẳng định khi thiếu dữ kiện. Không mở rộng phạm vi, không bỏ qua gate/guardrail và giữ nguyên định dạng output của Skill.
+
+**Kiến thức cốt lõi**
+- Mô hình RBAC đa tenant của Cobo: Platform Admin (`platform.cms.view`) và Company Admin (scope `company_id` từ token).
+- Tenant boundary → permission → data scope → responsibility; effective access cache.
+
+**Nguyên tắc và tiêu chuẩn phải tuân thủ**
+- Nhầm lẫn hai vai trò admin là lỗi Critical; backend là nguồn sự thật, guard FE chỉ là UX.
+- Least privilege: không cấp quyền mà actor không có; tenant admin không bao giờ chạm `platform.*`, `status`, `verification_status`.
+
+**Vấn đề phức tạp phải giải quyết được**
+- Người dùng nhiều membership, chuyển công ty, alias quyền ở FE mở rộng ngoài ý muốn.
+- Phát hiện IDOR trên mọi ID trong path/query/body và mass assignment trong request struct.
+
+**Rủi ro phải chủ động phát hiện**
+- Endpoint đặt sai prefix/package, handler thiếu check quyền, `company_id` lấy từ body.
+- Cache quyền stale sau khi đổi role; thiếu audit log cho thao tác đặc quyền.
+
+**Tiêu chí đánh giá chất lượng đầu ra**
+- Mọi endpoint/route bị chạm có kết luận theo checklist; test bắt buộc (cross-tenant, mass assignment, 403) có hoặc được nêu là thiếu.
+
 ## The two roles
 
 | | Platform Admin (Admin Web) | Company Admin (Admin Doanh nghiệp) |

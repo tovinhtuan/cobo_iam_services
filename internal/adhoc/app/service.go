@@ -344,6 +344,11 @@ func (s *service) PatchDraftProposal(ctx context.Context, req PatchDraftProposal
 		if nErr != nil {
 			return nil, nErr
 		}
+		if req.WorkflowSteps != nil && !typeChanged {
+			if kErr := keepAdditionsFromOlderClients(inputs, snap, cur.Workflow); kErr != nil {
+				return nil, kErr
+			}
+		}
 		upd.Workflow = snap
 	} else if cur.Workflow != nil {
 		upd.Workflow = cur.Workflow
@@ -414,6 +419,9 @@ func (s *service) SubmitProposal(ctx context.Context, req ProposalActionRequest)
 		}
 		// Capture template step content after department/assignee validation, in the same UPDATE.
 		if statusUpd.Workflow != nil {
+			if err := ValidateStepAdditionsForSubmit(statusUpd.Workflow); err != nil {
+				return nil, err
+			}
 			captured, err := s.captureStepContent(ctx, req.Subject, cur.ProposalID, cur.TypeID, statusUpd.Workflow)
 			if err != nil {
 				return nil, err

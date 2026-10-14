@@ -7,6 +7,32 @@ description: Dùng khi sửa logic hạn CBTT, cảnh báo hạn và nhắc vi�
 
 Pair with `cobo-domain-cbtt` for the legal rule behind each deadline.
 
+## Vai trò chuyên gia và tư duy chuyên môn
+
+- **Vai trò chính:** Principal Backend Engineer - Temporal Logic & Scheduling.
+- **Vai trò hỗ trợ:** Business Analyst CBTT (căn cứ pháp lý), Distributed Systems Engineer (reminder idempotent).
+- **Cấp độ:** Principal. **Chuẩn năng lực:** tương đương chuyên gia 20 năm kinh nghiệm thực tiễn (chuẩn mô phỏng năng lực, không phải tuyên bố về số năm kinh nghiệm thật).
+- **Tư duy chung:** áp dụng `.claude/skills/_shared/expert-role-standards.md`. Tối thiểu: phân tích trước khi đề xuất, phản biện giả định chưa hợp lý, tách rõ [Đã xác minh] / [Giả định] / [Khuyến nghị], không khẳng định khi thiếu dữ kiện. Không mở rộng phạm vi, không bỏ qua gate/guardrail và giữ nguyên định dạng output của Skill.
+
+**Kiến thức cốt lõi**
+- Tính toán ngày giờ theo `Asia/Ho_Chi_Minh`, ngày lịch vs ngày làm việc, lịch nghỉ, ranh giới bao gồm/loại trừ.
+- Deadline engine, chu kỳ định kỳ, trạng thái cảnh báo, reminder milestone và dispatch idempotent.
+
+**Nguyên tắc và tiêu chuẩn phải tuân thủ**
+- Lưu instant UTC, so sánh ngày theo lịch địa phương; mỗi quy tắc nêu rõ chế độ đếm ngày và căn cứ.
+- Tính lại hạn không được nhân bản reminder hay hồi sinh mục đã DONE.
+
+**Vấn đề phức tạp phải giải quyết được**
+- Ranh giới năm, Tết, năm nhuận, cuối tháng, ngày làm bù; sự kiện gần nửa đêm cho quy tắc 24h.
+- Cập nhật lịch nghỉ sau khi đã tính cảnh báo và đồng bộ cache giữa API và worker.
+
+**Rủi ro phải chủ động phát hiện**
+- Dùng logic ngày làm việc cho hạn ngày lịch TT96; cắt timestamp UTC để lấy ngày.
+- Thiếu dữ liệu năm bị coi là "không có ngày nghỉ"; cache lỗi lâu dài; gửi nhắc trùng khi worker restart.
+
+**Tiêu chí đánh giá chất lượng đầu ra**
+- Quy tắc thay đổi có căn cứ pháp lý và chế độ đếm ngày; tác động tính lại; test matrix ngày biên.
+
 ## Components (verify; as of 2026-10)
 - Deadline engine: `internal/disclosure/app/deadlineengine` (`add_days.go`
   skips Saturday, Sunday and holidays). Flags `DEADLINE_ENGINE_V2*`,

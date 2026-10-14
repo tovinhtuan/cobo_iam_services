@@ -36,11 +36,41 @@ const (
 	requirementTemplateNameMaxLen   = 255
 )
 
-// ProjectProposalDocumentRequirementSnapshots maps the document requirements captured into a
-// frozen proposal workflow (schema v2|v3) at submit into snapshot rows. StepCode is the proposal
-// step id (runtime step_code). Steps without captured content produce no rows. Values are fitted to
-// the 0135 column limits and doc ids deduplicated case-insensitively within a step (unique key
-// instance+step_code+source_doc_id under a _ci collation) so approve can never fail on insert.
+// EffectiveProposalStepDocuments returns the documents a frozen proposal step requires at runtime:
+// the template documents captured at submit, then the proposer's additional documents (always
+// required, never with a template file). An addition whose doc id collides (case-insensitively)
+// with a template doc id gets a deterministic replacement id so it keeps its requirement row.
+func EffectiveProposalStepDocuments(step adhocapp.ProposalWorkflowStep) []adhocapp.ProposalStepDocument {
+	var out []adhocapp.ProposalStepDocument
+	taken := map[string]struct{}{}
+	if step.Inherited != nil {
+		out = append(out, step.Inherited.Documents...)
+		for _, d := range step.Inherited.Documents {
+			taken[strings.ToLower(strings.TrimSpace(d.DocID))] = struct{}{}
+		}
+	}
+	if step.Additions != nil {
+		for j, d := range step.Additions.Documents {
+			id := strings.TrimSpace(d.DocID)
+			for n := 0; ; n++ {
+				if _, dup := taken[strings.ToLower(id)]; id != "" && !dup {
+					break
+				}
+				id = fmt.Sprintf("%sstep_%d_%d", adhocapp.ProposalAdditionalDocIDPrefix, j, n)
+			}
+			taken[strings.ToLower(id)] = struct{}{}
+			out = append(out, adhocapp.ProposalStepDocument{DocID: id, Name: d.Name, Required: true})
+		}
+	}
+	return out
+}
+
+// ProjectProposalDocumentRequirementSnapshots maps the document requirements of a frozen proposal
+// workflow (schema v2|v3) into snapshot rows: template documents captured at submit plus the
+// proposer's additional documents. StepCode is the proposal step id (runtime step_code). Steps
+// without documents produce no rows. Values are fitted to the 0135 column limits and doc ids
+// deduplicated case-insensitively within a step (unique key instance+step_code+source_doc_id under
+// a _ci collation) so approve can never fail on insert.
 func ProjectProposalDocumentRequirementSnapshots(snap *adhocapp.ProposalWorkflowSnapshot) []DocumentRequirementSnapshot {
 	if snap == nil {
 		return nil
@@ -48,11 +78,12 @@ func ProjectProposalDocumentRequirementSnapshots(snap *adhocapp.ProposalWorkflow
 	var out []DocumentRequirementSnapshot
 	for _, step := range snap.Steps {
 		stepCode := strings.TrimSpace(step.ID)
-		if stepCode == "" || step.Inherited == nil {
+		docs := EffectiveProposalStepDocuments(step)
+		if stepCode == "" || len(docs) == 0 {
 			continue
 		}
-		seen := make(map[string]struct{}, len(step.Inherited.Documents))
-		for i, doc := range step.Inherited.Documents {
+		seen := make(map[string]struct{}, len(docs))
+		for i, doc := range docs {
 			sourceDocID := strings.TrimSpace(doc.DocID)
 			if sourceDocID == "" || utf8.RuneCountInString(sourceDocID) > requirementSourceDocIDMaxLen {
 				sourceDocID = fmt.Sprintf("auto:%s:%d", stepCode, i)

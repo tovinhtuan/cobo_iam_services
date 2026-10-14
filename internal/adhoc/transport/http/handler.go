@@ -69,7 +69,7 @@ func (h *Handler) createProposal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req adhocapp.CreateProposalRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeProposalWriteBody(w, r, &req); err != nil {
 		httpx.WriteError(w, h.log, err)
 		return
 	}
@@ -136,7 +136,7 @@ func (h *Handler) patchDraftProposal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req adhocapp.PatchDraftProposalRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeProposalWriteBody(w, r, &req); err != nil {
 		httpx.WriteError(w, h.log, err)
 		return
 	}

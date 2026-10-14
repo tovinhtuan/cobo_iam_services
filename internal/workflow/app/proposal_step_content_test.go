@@ -123,3 +123,104 @@ func TestProjectProposalDocumentRequirementSnapshots_FitsTableLimits(t *testing.
 		t.Fatalf("long doc id → auto key, template name capped: %#v", rows[1])
 	}
 }
+
+func proposalWithAdditions() *adhocapp.ProposalWorkflowSnapshot {
+	return &adhocapp.ProposalWorkflowSnapshot{
+		SchemaVersion: adhocapp.ProposalWorkflowSchemaV3,
+		Frozen:        true,
+		Steps: []adhocapp.ProposalWorkflowStep{
+			{
+				ID: "ps-1", SourceStepID: "tpl-1", Order: 1, Name: "A", ProcessingDays: 1,
+				Inherited: &adhocapp.ProposalStepInheritedContent{
+					Description: "<p>Hướng dẫn mẫu</p>", DescriptionFormat: "safe_html",
+					Documents:      []adhocapp.ProposalStepDocument{{DocID: "doc-1", Name: "Quyết định", Required: true, TemplateFileID: "wdt-1", TemplateFileName: "mau.docx"}},
+					ReminderConfig: &adhocapp.ProposalStepReminderConfig{Enabled: true, Mode: "days_before", DaysBefore: []int{1}},
+				},
+				Additions: &adhocapp.ProposalStepAdditions{
+					Note:      "  Căn cứ nghị quyết 12/10  ",
+					Documents: []adhocapp.ProposalStepAdditionalDocument{{DocID: "prop_a", Name: "Nghị quyết HĐQT 12/10"}},
+				},
+			},
+			{
+				ID: "ps-2", Order: 2, Name: "Tự thêm", ProcessingDays: 1,
+				Additions: &adhocapp.ProposalStepAdditions{
+					Note:      "Đối chiếu <script>x</script>",
+					Documents: []adhocapp.ProposalStepAdditionalDocument{{DocID: "prop_b", Name: "Biên bản"}},
+				},
+			},
+			{ID: "ps-3", SourceStepID: "tpl-3", Order: 3, Name: "C", ProcessingDays: 1,
+				Inherited: &adhocapp.ProposalStepInheritedContent{}, Additions: &adhocapp.ProposalStepAdditions{}},
+		},
+	}
+}
+
+func TestMapProposalWorkflowToSnapshot_LayersAdditionsOnTemplate(t *testing.T) {
+	snap := MapProposalWorkflowToSnapshot(proposalWithAdditions())
+	s1 := snap[0]
+	if s1.Description != "<p>Hướng dẫn mẫu</p>" || s1.DescriptionFormat != "safe_html" || s1.ProposalNote != "Căn cứ nghị quyết 12/10" {
+		t.Fatalf("template step keeps template description + proposal note: %#v", s1)
+	}
+	if len(s1.Documents) != 2 || s1.Documents[0].DocID != "doc-1" || s1.Documents[0].TemplateFileID != "wdt-1" ||
+		s1.Documents[1].DocID != "prop_a" || !s1.Documents[1].Required || s1.Documents[1].TemplateFileID != "" {
+		t.Fatalf("documents = template then additions (required, no file): %#v", s1.Documents)
+	}
+	if !reflect.DeepEqual(s1.EffectiveReminderDays, []int{1}) {
+		t.Fatalf("reminders stay from the template: %v", s1.EffectiveReminderDays)
+	}
+	s2 := snap[1]
+	if s2.Description != "Đối chiếu <script>x</script>" || s2.DescriptionFormat != "plain_text" || s2.ProposalNote != "" {
+		t.Fatalf("self-added step: note becomes the plain-text description: %#v", s2)
+	}
+	if len(s2.Documents) != 1 || s2.Documents[0].Name != "Biên bản" || !s2.Documents[0].Required ||
+		!reflect.DeepEqual(s2.EffectiveReminderDays, []int{3, 1}) {
+		t.Fatalf("self-added step documents/reminders: %#v", s2)
+	}
+	raw, _ := json.Marshal(snap[2])
+	for _, field := range []string{`"proposal_note"`, `"description"`, `"documents"`} {
+		if strings.Contains(string(raw), field) {
+			t.Fatalf("empty additions must add nothing (%s): %s", field, raw)
+		}
+	}
+}
+
+func TestProjectProposalDocumentRequirementSnapshots_IncludesAdditions(t *testing.T) {
+	snap := proposalWithAdditions()
+	// An addition id colliding with a template doc id (case-insensitive) gets a replacement id and keeps its row.
+	snap.Steps[0].Additions.Documents = append(snap.Steps[0].Additions.Documents, adhocapp.ProposalStepAdditionalDocument{DocID: "DOC-1", Name: "Trùng mã mẫu"})
+	rows := ProjectProposalDocumentRequirementSnapshots(snap)
+	if len(rows) != 4 {
+		t.Fatalf("want template + 2 additions on step 1 and addition on step 2, got %#v", rows)
+	}
+	if rows[0].SourceDocID != "doc-1" || rows[1].SourceDocID != "prop_a" || !rows[1].Required || rows[1].TemplateFileID != "" || rows[1].Ordinal != 1 {
+		t.Fatalf("step 1 rows: %#v %#v", rows[0], rows[1])
+	}
+	if rows[2].SourceDocID != "prop_step_1_0" || rows[2].Name != "Trùng mã mẫu" {
+		t.Fatalf("colliding addition row: %#v", rows[2])
+	}
+	if rows[3].StepCode != "ps-2" || rows[3].SourceDocID != "prop_b" || rows[3].Name != "Biên bản" || !rows[3].Required {
+		t.Fatalf("self-added step row: %#v", rows[3])
+	}
+}
+
+func TestEffectiveProposalStepDocuments_AdditionCollidingWithTemplateIDKeepsItsRow(t *testing.T) {
+	step := adhocapp.ProposalWorkflowStep{
+		ID: "ps-1",
+		Inherited: &adhocapp.ProposalStepInheritedContent{Documents: []adhocapp.ProposalStepDocument{
+			{DocID: "prop_x", Name: "Mẫu", Required: true},
+			{DocID: "prop_step_0_0", Name: "Mẫu 2", Required: true},
+		}},
+		Additions: &adhocapp.ProposalStepAdditions{Documents: []adhocapp.ProposalStepAdditionalDocument{{DocID: "PROP_X", Name: "Bổ sung"}}},
+	}
+	docs := EffectiveProposalStepDocuments(step)
+	if len(docs) != 3 || docs[2].DocID != "prop_step_0_1" || docs[2].Name != "Bổ sung" || !docs[2].Required {
+		t.Fatalf("addition must get a fresh deterministic id: %#v", docs)
+	}
+	rows := ProjectProposalDocumentRequirementSnapshots(&adhocapp.ProposalWorkflowSnapshot{SchemaVersion: adhocapp.ProposalWorkflowSchemaV3, Steps: []adhocapp.ProposalWorkflowStep{step}})
+	if len(rows) != 3 || rows[2].SourceDocID != "prop_step_0_1" {
+		t.Fatalf("the addition must keep its requirement row: %#v", rows)
+	}
+	snap := MapProposalWorkflowToSnapshot(&adhocapp.ProposalWorkflowSnapshot{SchemaVersion: adhocapp.ProposalWorkflowSchemaV3, Steps: []adhocapp.ProposalWorkflowStep{step}})
+	if snap[0].Documents[2].DocID != "prop_step_0_1" {
+		t.Fatalf("display uses the same id as the requirement row: %#v", snap[0].Documents)
+	}
+}

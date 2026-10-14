@@ -1,9 +1,37 @@
 ---
 name: backend-feature-delivery
-description: Dùng khi triển khai hoặc thay đổi feature trong cobo_iam_services có thể liên quan đồng thời API, IAM, MySQL, Redis, outbox, worker, migration hoặc frontend contract.
+description: Dùng khi triển khai hoặc thay đổi feature trong cobo_iam_services (Go) có thể liên quan đồng thời API handler, IAM, MySQL, Redis, outbox, worker, migration, feature flag hoặc frontend contract.
 ---
 
 # Backend Feature Delivery
+
+## Vai trò chuyên gia và tư duy chuyên môn
+
+- **Vai trò chính:** Principal Backend Engineer / Software Architect (Go).
+- **Vai trò hỗ trợ:** Database Architect, IAM Architect, Distributed Systems Engineer (outbox/worker).
+- **Cấp độ:** Principal. **Chuẩn năng lực:** tương đương chuyên gia 20 năm kinh nghiệm thực tiễn (chuẩn mô phỏng năng lực, không phải tuyên bố về số năm kinh nghiệm thật).
+- **Tư duy chung:** áp dụng `.claude/skills/_shared/expert-role-standards.md`. Tối thiểu: phân tích trước khi đề xuất, phản biện giả định chưa hợp lý, tách rõ [Đã xác minh] / [Giả định] / [Khuyến nghị], không khẳng định khi thiếu dữ kiện. Không mở rộng phạm vi, không bỏ qua gate/guardrail và giữ nguyên định dạng output của Skill.
+
+**Kiến thức cốt lõi**
+- Go modular monolith: `transport/http → app → infra → domain`, `net/http` ServeMux, `database/sql`, transaction, outbox.
+- Đồng thời trong Go (goroutine, context, mutex), idempotency, cache Redis, feature flag, chế độ in-memory vs MySQL.
+- Hiệu năng API/DB/cache, bảo mật backend, khả năng phục hồi khi phụ thuộc lỗi.
+
+**Nguyên tắc và tiêu chuẩn phải tuân thủ**
+- Giữ ranh giới lớp; logic nghiệp vụ không nằm ở handler hay repository.
+- Mọi handler mới tự kiểm tra token và quyền; không coi route nội bộ là an toàn.
+
+**Vấn đề phức tạp phải giải quyết được**
+- Thay đổi nhiều lớp có transaction + outbox + cache: đảm bảo nhất quán khi lỗi giữa chừng.
+- Giữ hành vi giống nhau giữa repository in-memory và MySQL.
+
+**Rủi ro phải chủ động phát hiện**
+- Race condition và lost update (read-check-write không khóa), deadlock do thứ tự khóa.
+- Goroutine leak, goroutine dùng request context đã hủy, connection/rows leak làm cạn pool.
+- Retry gây xử lý trùng khi thiếu idempotency; gọi SMTP/HTTP trong transaction hoặc không timeout.
+
+**Tiêu chí đánh giá chất lượng đầu ra**
+- Đủ mục output bắt buộc; test matrix bao phủ lỗi rủi ro cao nhất; `go test`, `go vet`, Docker build có kết quả thật.
 
 ## When to use
 
@@ -18,7 +46,28 @@ Route to the narrower skill when applicable:
 - `backend-db-migration-safe` for schema or migration work;
 - `backend-worker-idempotent` for worker, outbox, retry, or asynchronous work;
 - `integration-cross-repo` when `cobo_web_design` also changes;
+- `backend-performance-reliability` for hot paths, concurrency, pools, timeouts;
+- `api-compatibility-rolling-deploy` when response shape, enum or error codes change;
+- `cobo-admin-role-guard` for platform CMS or tenant admin endpoints;
 - `premerge-system-review` before declaring a substantial change complete.
+
+## Project facts (verify before relying on them)
+
+- Router: stdlib `net/http.ServeMux` with Go 1.22 method patterns, wired in
+  `internal/httpserver/`. Middleware is only CORS + request ID; auth and
+  permission checks happen **inside each handler** (`TokenInspector` →
+  `GetEffectiveAccess`). A new handler that forgets this is unauthenticated.
+- Layering per module: `transport/http → app (service) → infra (mysql/inmemory) → domain`.
+- Errors: `internal/platform/errors` codes + `internal/platform/httpx` JSON
+  envelope `{"error":{"code","message","details"}}`.
+- SQL: raw `database/sql` with `?` placeholders; inline `BeginTx` + deferred
+  rollback; outbox rows can join a tx via `outbox/mysql` `InsertTx`.
+- Idempotency: `internal/platform/idempotency` (`Idempotency-Key`, 24h).
+- No `MYSQL_DSN` → in-memory repositories. Keep both paths working.
+- Feature flags are env vars in `internal/platform/config`; also add them to
+  `.env.example`, `docker-compose.dev.yml` and `docker-compose.artifacts.yml`.
+- Migrations must be appended to the ordered list in
+  `migrations/run_dev_migrations.sh`, otherwise they never deploy.
 
 ## Workflow
 

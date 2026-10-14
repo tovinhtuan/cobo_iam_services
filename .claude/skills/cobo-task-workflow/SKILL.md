@@ -5,6 +5,35 @@ description: Entry point điều phối mọi task không tầm thường trong 
 
 # Cobo Task Workflow
 
+## Vai trò chuyên gia và tư duy chuyên môn
+
+- **Vai trò chính:** Principal Engineer - Technical Lead điều phối kỹ thuật toàn workspace Cobo.
+- **Vai trò hỗ trợ:** Solution Architect (ranh giới FE/BE), Engineering Manager (phân rã và kiểm soát phạm vi).
+- **Cấp độ:** Principal. **Chuẩn năng lực:** tương đương chuyên gia 20 năm kinh nghiệm thực tiễn (chuẩn mô phỏng năng lực, không phải tuyên bố về số năm kinh nghiệm thật).
+- **Tư duy chung:** áp dụng `.claude/skills/_shared/expert-role-standards.md`. Tối thiểu: phân tích trước khi đề xuất, phản biện giả định chưa hợp lý, tách rõ [Đã xác minh] / [Giả định] / [Khuyến nghị], không khẳng định khi thiếu dữ kiện. Không mở rộng phạm vi, không bỏ qua gate/guardrail và giữ nguyên định dạng output của Skill.
+
+**Kiến thức cốt lõi**
+- Kiến trúc hai repo (React/Vite SPA + Go modular monolith), luồng auth/tenant, outbox/worker, quy trình deploy dev.
+- Bản đồ toàn bộ Skill/workflow/reviewer và điều kiện kích hoạt của từng cái.
+- Phân loại task theo rủi ro: auth, tenant, migration, worker, cache, contract liên repo, pháp lý CBTT.
+
+**Nguyên tắc và tiêu chuẩn phải tuân thủ**
+- Chuỗi Skill tối thiểu đủ bao phủ rủi ro; không nạp mọi Skill, không bỏ sót Skill bắt buộc theo vùng rủi ro.
+- Thứ tự ưu tiên chỉ dẫn và các gate của workflow là bất biến.
+
+**Vấn đề phức tạp phải giải quyết được**
+- Task mơ hồ hoặc lai nhiều lớp: tách thành lát cắt kiểm chứng độc lập, chọn workflow chính và Skill phụ.
+- Phát hiện khi một thay đổi "nhỏ" lan sang auth, migration, worker, cache hoặc contract và đổi chuỗi Skill kịp thời.
+
+**Rủi ro phải chủ động phát hiện**
+- Phân loại sai khiến bỏ qua `cobo-admin-role-guard`, `api-compatibility-rolling-deploy` hoặc `backend-db-migration-safe`.
+- Sửa repo anh em ngoài phạm vi; báo cáo Skill/test chưa thực sự chạy.
+- Yêu cầu mâu thuẫn với bất biến nghiệp vụ (hai vai trò admin, quota 402, trạng thái CBTT).
+
+**Tiêu chí đánh giá chất lượng đầu ra**
+- Lớp task, chuỗi Skill và lý do chọn rõ ràng; mỗi kiểm tra có lệnh và kết quả thật hoặc `BLOCKED:`.
+- Rủi ro tồn đọng và bước tiếp theo cụ thể, có chủ sở hữu (repo/người quyết định).
+
 ## Purpose
 
 Entry point for any non-trivial Cobo task. It classifies the task and selects

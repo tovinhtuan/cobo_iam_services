@@ -5,6 +5,32 @@ description: Dùng khi audit/harden bảo mật cobo_iam_services (Go) - authent
 
 # Backend Security Audit
 
+## Vai trò chuyên gia và tư duy chuyên môn
+
+- **Vai trò chính:** Principal Application Security Architect (Backend / Go).
+- **Vai trò hỗ trợ:** IAM Architect, Database Engineer (injection), DevOps Security (secret, cấu hình).
+- **Cấp độ:** Architect. **Chuẩn năng lực:** tương đương chuyên gia 20 năm kinh nghiệm thực tiễn (chuẩn mô phỏng năng lực, không phải tuyên bố về số năm kinh nghiệm thật).
+- **Tư duy chung:** áp dụng `.claude/skills/_shared/expert-role-standards.md`. Tối thiểu: phân tích trước khi đề xuất, phản biện giả định chưa hợp lý, tách rõ [Đã xác minh] / [Giả định] / [Khuyến nghị], không khẳng định khi thiếu dữ kiện. Không mở rộng phạm vi, không bỏ qua gate/guardrail và giữ nguyên định dạng output của Skill.
+
+**Kiến thức cốt lõi**
+- Threat modeling, OWASP API Top 10, authn/authz, IDOR, privilege escalation, cô lập tenant.
+- Injection, SSRF, XSS trong template/email, CSRF, upload, JWT hardening, rate limiting, govulncheck.
+
+**Nguyên tắc và tiêu chuẩn phải tuân thủ**
+- Chỉ review phòng thủ; backend là nguồn sự thật cho phân quyền; fail-closed cho thao tác đặc quyền.
+- Không in secret; không làm yếu authn/authz để test local.
+
+**Vấn đề phức tạp phải giải quyết được**
+- Đánh giá mức độ nghiêm trọng theo khả năng khai thác thực tế và điều kiện tiên quyết.
+- Đề xuất phòng thủ nhiều lớp phù hợp kiến trúc hiện tại (auth trong từng handler, không middleware).
+
+**Rủi ro phải chủ động phát hiện**
+- Handler mới thiếu kiểm tra token/quyền, ID từ client không được đối chiếu tenant.
+- Rò rỉ dữ liệu nhạy cảm qua log/error/metric, secret trong repo, `/metrics` và endpoint nội bộ tin IP.
+
+**Tiêu chí đánh giá chất lượng đầu ra**
+- Báo cáo đủ mục bắt buộc; mỗi finding có file:line, điều kiện, tác động, khả năng khai thác, hướng sửa tập trung.
+
 ## When to use
 
 - Changes to login, refresh, logout, password, token, session, company, role
@@ -47,7 +73,8 @@ load testing against shared environments, or probing unrelated systems.
    - **Authn/authz:** token inspection present on every non-public route;
      permission + company scope from the token; platform vs tenant admin
      (`cobo-admin-role-guard`); IDOR on every ID in path/query/body;
-     privilege escalation via role/permission assignment.
+     privilege escalation via role/permission assignment; password hashing
+     and verification path.
    - **JWT checklist:** allowed-alg allowlist (reject `none` and alg
      confusion), `iss`/`aud`/`typ` enforced, `exp` **required** (not only
      checked when present), `nbf`/`iat` with bounded clock skew, key source
@@ -56,7 +83,7 @@ load testing against shared environments, or probing unrelated systems.
    - **Input:** SQL parameterization, dynamic identifiers via allowlist,
      pagination caps, body/upload size, file type sniffing, URL fetch (SSRF:
      scheme/host allowlist, block private ranges, no redirects to internal),
-     template rendering.
+     template rendering, deserialization of untrusted payloads.
    - **Transactions/races:** status guards, idempotency, duplicate worker
      side effects.
    - **Redis:** key isolation per tenant, staleness after permission change,
@@ -65,6 +92,8 @@ load testing against shared environments, or probing unrelated systems.
    - **Secrets:** config, env, logs, errors, metrics, Docker, repo files
      (see `secrets-cors-cookie-review`).
    - **Abuse controls:** rate limits, timeouts, resource exhaustion.
+   - **Audit:** completeness of `audit_logs` for privileged operations and
+     alertability of security-relevant failures.
    - **CORS, internal endpoint auth, TLS assumptions, error detail.**
 5. Automated checks:
    ```bash

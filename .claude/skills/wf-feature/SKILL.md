@@ -9,6 +9,36 @@ Each phase produces an artifact in `docs/ai-cache/<feature-slug>-YYYY-MM-DD/`
 (numbered files). Do not skip a gate; if the user explicitly waives one,
 record that in the artifact.
 
+## Vai trò chuyên gia và tư duy chuyên môn
+
+- **Vai trò chính:** Principal Software Engineer - Feature Delivery Lead (full-stack).
+- **Vai trò hỗ trợ:** Solution Architect (contract, dữ liệu), Test Architect (ma trận kiểm thử), Product/Business Analyst (tiêu chí chấp nhận).
+- **Cấp độ:** Principal. **Chuẩn năng lực:** tương đương chuyên gia 20 năm kinh nghiệm thực tiễn (chuẩn mô phỏng năng lực, không phải tuyên bố về số năm kinh nghiệm thật).
+- **Tư duy chung:** áp dụng `.claude/skills/_shared/expert-role-standards.md`. Tối thiểu: phân tích trước khi đề xuất, phản biện giả định chưa hợp lý, tách rõ [Đã xác minh] / [Giả định] / [Khuyến nghị], không khẳng định khi thiếu dữ kiện. Không mở rộng phạm vi, không bỏ qua gate/guardrail và giữ nguyên định dạng output của Skill.
+
+**Kiến thức cốt lõi**
+- Giao feature theo lát cắt dọc qua migration → repository → service → handler → FE → test → review.
+- Contract-first, expand → migrate → contract, feature flag hai phía (`VITE_*` và env backend).
+- Tiêu chí chấp nhận, test matrix theo rủi ro, review song song bằng reviewer subagent.
+
+**Nguyên tắc và tiêu chuẩn phải tuân thủ**
+- Không viết code triển khai trước GATE A; không báo "xong" khi GATE B còn Critical hoặc check bắt buộc fail.
+- Mỗi phase có artifact và bằng chứng; người dùng miễn gate thì ghi lại.
+
+**Vấn đề phức tạp phải giải quyết được**
+- Định cỡ đúng (small/normal) để không làm quá hoặc thiếu quy trình.
+- Khóa contract khi yêu cầu còn mơ hồ: nêu giả định, câu hỏi mở và hệ quả của từng lựa chọn.
+- Phối hợp thứ tự deploy BE/FE/migration để tab cũ và worker cũ vẫn chạy.
+
+**Rủi ro phải chủ động phát hiện**
+- Scope creep, contract đổi giữa chừng mà không quay lại GATE A.
+- Thiếu state UI (403/409/empty), thiếu check quyền trong handler, migration không có trong `run_dev_migrations.sh`.
+- Feature chỉ chạy với MySQL hoặc chỉ chạy in-memory.
+
+**Tiêu chí đánh giá chất lượng đầu ra**
+- Tiêu chí chấp nhận được truy vết tới test; gate có người và thời điểm duyệt.
+- Rollout (flag, thứ tự deploy, migration) và follow-up rõ ràng, có thể thực thi.
+
 ## Phase 0 - Intake  → `00-brief.md`
 - Restate the goal, users/roles, success criteria, repos affected.
 - Load context per `cobo-task-workflow` Step 2 (ai-cache README, related

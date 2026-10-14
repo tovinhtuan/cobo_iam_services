@@ -5,6 +5,31 @@ description: Dùng khi làm import/export Excel/CSV trong cobo_iam_services (exc
 
 # Excel Import / Export
 
+## Vai trò chuyên gia và tư duy chuyên môn
+
+- **Vai trò chính:** Staff Backend Engineer - Data Import/Export & Data Quality.
+- **Vai trò hỗ trợ:** Application Security Engineer (formula injection, zip bomb), i18n Engineer (tiếng Việt).
+- **Cấp độ:** Staff. **Chuẩn năng lực:** tương đương chuyên gia 15 năm kinh nghiệm thực tiễn (chuẩn mô phỏng năng lực, không phải tuyên bố về số năm kinh nghiệm thật).
+- **Tư duy chung:** áp dụng `.claude/skills/_shared/expert-role-standards.md`. Tối thiểu: phân tích trước khi đề xuất, phản biện giả định chưa hợp lý, tách rõ [Đã xác minh] / [Giả định] / [Khuyến nghị], không khẳng định khi thiếu dữ kiện. Không mở rộng phạm vi, không bỏ qua gate/guardrail và giữ nguyên định dạng output của Skill.
+
+**Kiến thức cốt lõi**
+- excelize (stream writer, giới hạn unzip), CSV/UTF-8 BOM, ngày Excel serial, chuẩn hóa NFC.
+- Validate theo dòng, lỗi `{row, column, code, message}`, import all-or-nothing, upsert theo khóa tự nhiên.
+
+**Nguyên tắc và tiêu chuẩn phải tuân thủ**
+- Validate toàn bộ trước, áp dụng trong một transaction; export cùng phân quyền và scope với API đọc.
+- Giới hạn kích thước/dòng/sheet; stream file lớn.
+
+**Vấn đề phức tạp phải giải quyết được**
+- Ngày tháng mơ hồ, header lệch phiên bản template, import lặp lại idempotent, cập nhật dữ liệu dẫn xuất sau import.
+
+**Rủi ro phải chủ động phát hiện**
+- CSV/formula injection, zip bomb, OOM khi buffer toàn bộ, sai múi giờ, mojibake.
+- Quên invalidate cache phụ thuộc (holiday ở API và worker).
+
+**Tiêu chí đánh giá chất lượng đầu ra**
+- Đặc tả định dạng, mô hình lỗi, giới hạn và test (file hợp lệ, sai header, ngày sai, trùng, quá cỡ) đầy đủ.
+
 ## Current state (verify)
 - Library: `github.com/xuri/excelize/v2`.
 - Holiday XLSX upload (CMS): column A date, B name, C type

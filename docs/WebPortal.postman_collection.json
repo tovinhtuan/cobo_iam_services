@@ -643,7 +643,7 @@
           "name": "Submit Ad Hoc Proposal",
           "request": {
             "method": "POST",
-            "description": "Submit draft (creator only). When ADHOC_PROPOSAL_INHERIT_STEP_CONTENT_ENABLED, the server copies template step content (description, description_format, instructions, documents[], reminder_config) of the company's effective workflow into workflow.steps[].inherited (matched by source_step_id) and sets workflow.content_capture {captured_at, workflow_source, version_no, missing_source_step_ids}. Clients cannot send inherited. 503 SERVICE_UNAVAILABLE details.reason=step_content_unavailable when the template cannot be read: proposal stays draft, retry submit.",
+            "description": "Submit draft (creator only). When ADHOC_PROPOSAL_INHERIT_STEP_CONTENT_ENABLED, the server copies template step content (description, description_format, instructions, documents[], reminder_config) of the company's effective workflow into workflow.steps[].inherited (matched by source_step_id) and sets workflow.content_capture {captured_at, workflow_source, version_no, missing_source_step_ids}. Clients cannot send inherited. 503 SERVICE_UNAVAILABLE details.reason=step_content_unavailable when the template cannot be read: proposal stays draft, retry submit. Step additions: a step without source_step_id whose additions is present with an empty note → 422 INVALID_REQUEST field=workflow_steps[i].additions.note (description_required); additions is kept at submit.",
             "url": {
               "raw": "{{base_url}}/api/v1/company/ad-hoc-proposals/{{proposal_id}}/submit",
               "host": ["{{base_url}}"],
@@ -660,7 +660,7 @@
           "name": "Get Ad Hoc Proposal Detail",
           "request": {
             "method": "GET",
-            "description": "workflow.steps[].inherited and workflow.content_capture are present only on proposals submitted with step content capture (absent on drafts and older proposals).",
+            "description": "workflow.steps[].inherited and workflow.content_capture are present only on proposals submitted with step content capture (absent on drafts and older proposals). workflow.steps[].additions {note, documents[{doc_id, name}]} is the proposer-owned note and extra required documents (drafts and submitted proposals; omitted by the list endpoint).",
             "url": {
               "raw": "{{base_url}}/api/v1/company/ad-hoc-proposals/{{proposal_id}}",
               "host": ["{{base_url}}"],
@@ -669,10 +669,40 @@
           }
         },
         {
+          "name": "Patch Draft Workflow With Step Additions",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "description": "Creator only, draft only. workflow_steps replaces the whole workflow. additions: note ≤ 2000 (plain text), ≤ 20 documents per step, name required ≤ 255 and unique per step, doc_id kept when it matches ^prop_[A-Za-z0-9_-]{1,64}$ else generated; required/template_file_* are ignored (additional documents are always required, no template file). NFC-normalized; control/invisible characters → 400. Whole proposal: ≤ 20000 note characters and ≤ 100 additional documents (400 additions_total_exceeded, field workflow_steps). A step sent without additions keeps its saved additions (older clients); send {} to clear. Body > 1 MiB → 413.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workflow_steps\": [\n    {\n      \"id\": \"{{proposal_step_id}}\",\n      \"source_step_id\": \"{{template_step_id}}\",\n      \"order\": 1,\n      \"name\": \"Xac dinh su kien\",\n      \"processing_days\": 1,\n      \"department_id\": \"{{department_id}}\",\n      \"assignee_membership_ids\": [],\n      \"additions\": {\n        \"note\": \"Can cu nghi quyet HDQT ngay 12/10.\",\n        \"documents\": [\n          {\n            \"name\": \"Nghi quyet HDQT ngay 12/10\"\n          }\n        ]\n      }\n    },\n    {\n      \"order\": 2,\n      \"name\": \"Kiem tra cheo\",\n      \"processing_days\": 1,\n      \"department_id\": \"{{department_id}}\",\n      \"assignee_membership_ids\": [],\n      \"additions\": {\n        \"note\": \"Doi chieu so lieu voi bao cao quy.\",\n        \"documents\": [\n          {\n            \"name\": \"Bien ban kiem tra cheo\"\n          }\n        ]\n      }\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/company/ad-hoc-proposals/{{proposal_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "company",
+                "ad-hoc-proposals",
+                "{{proposal_id}}"
+              ]
+            }
+          }
+        },
+        {
           "name": "Submit Ad Hoc Proposal",
           "request": {
             "method": "POST",
-            "description": "Submit draft (creator only). When ADHOC_PROPOSAL_INHERIT_STEP_CONTENT_ENABLED, the server copies template step content (description, description_format, instructions, documents[], reminder_config) of the company's effective workflow into workflow.steps[].inherited (matched by source_step_id) and sets workflow.content_capture {captured_at, workflow_source, version_no, missing_source_step_ids}. Clients cannot send inherited. 503 SERVICE_UNAVAILABLE details.reason=step_content_unavailable when the template cannot be read: proposal stays draft, retry submit.",
+            "description": "Submit draft (creator only). When ADHOC_PROPOSAL_INHERIT_STEP_CONTENT_ENABLED, the server copies template step content (description, description_format, instructions, documents[], reminder_config) of the company's effective workflow into workflow.steps[].inherited (matched by source_step_id) and sets workflow.content_capture {captured_at, workflow_source, version_no, missing_source_step_ids}. Clients cannot send inherited. 503 SERVICE_UNAVAILABLE details.reason=step_content_unavailable when the template cannot be read: proposal stays draft, retry submit. Step additions: a step without source_step_id whose additions is present with an empty note → 422 INVALID_REQUEST field=workflow_steps[i].additions.note (description_required); additions is kept at submit.",
             "url": {
               "raw": "{{base_url}}/api/v1/company/ad-hoc-proposals/{{proposal_id}}/submit",
               "host": ["{{base_url}}"],

@@ -55,14 +55,23 @@ func MapProposalWorkflowToSnapshot(snap *adhocapp.ProposalWorkflowSnapshot) []St
 			EffectiveReminderDays: defaultDays,
 			SourceStepID:          strings.TrimSpace(step.SourceStepID),
 		}
+		note := ""
+		if step.Additions != nil {
+			note = strings.TrimSpace(step.Additions.Note)
+		}
 		if inh := step.Inherited; inh != nil {
 			row.Description = inh.Description
 			row.DescriptionFormat = inh.DescriptionFormat
-			row.Documents = mapProposalStepDocuments(inh.Documents)
+			row.ProposalNote = note
 			row.ReminderConfig = proposalReminderConfig(inh.ReminderConfig)
 			res := disclosureapp.ResolveWorkflowStepReminderRule(row.ReminderConfig)
 			row.EffectiveReminderDays = append([]int{}, res.EffectiveDays...)
+		} else if note != "" {
+			// No template content (self-added / missing in the template / capture off): the note is the description.
+			row.Description = note
+			row.DescriptionFormat = disclosureapp.WorkflowStepDescriptionFormatPlainText
 		}
+		row.Documents = mapProposalStepDocuments(EffectiveProposalStepDocuments(step))
 		if snap.SchemaVersion == adhocapp.ProposalWorkflowSchemaV3 {
 			row.AssigneeMembershipIDs = adhocapp.EffectiveAssigneeMembershipIDs(step, adhocapp.ProposalWorkflowSchemaV3)
 			// NO_V3_FIRST_ASSIGNEE_SHADOW_AUTHORITY — leave singular empty.

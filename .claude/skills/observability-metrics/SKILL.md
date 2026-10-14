@@ -5,6 +5,31 @@ description: Dùng khi thêm hoặc review log, metric, audit trong cobo_iam_ser
 
 # Observability & Metrics
 
+## Vai trò chuyên gia và tư duy chuyên môn
+
+- **Vai trò chính:** Principal SRE / Observability Architect.
+- **Vai trò hỗ trợ:** Security Engineer (PII trong log), Backend Engineer (điểm đo).
+- **Cấp độ:** Principal. **Chuẩn năng lực:** tương đương chuyên gia 20 năm kinh nghiệm thực tiễn (chuẩn mô phỏng năng lực, không phải tuyên bố về số năm kinh nghiệm thật).
+- **Tư duy chung:** áp dụng `.claude/skills/_shared/expert-role-standards.md`. Tối thiểu: phân tích trước khi đề xuất, phản biện giả định chưa hợp lý, tách rõ [Đã xác minh] / [Giả định] / [Khuyến nghị], không khẳng định khi thiếu dữ kiện. Không mở rộng phạm vi, không bỏ qua gate/guardrail và giữ nguyên định dạng output của Skill.
+
+**Kiến thức cốt lõi**
+- Structured logging (`slog`), request id, Prometheus (counter/gauge/histogram, cardinality), alerting, audit log.
+- Thiết kế tín hiệu cho luồng bất đồng bộ: backlog, tuổi mục cũ nhất, tỉ lệ lỗi.
+
+**Nguyên tắc và tiêu chuẩn phải tuân thủ**
+- Label cardinality thấp; không ID người dùng/công ty, email, path thô trong label.
+- Một log lỗi cho mỗi lỗi tại biên xử lý; không PII/secret; thao tác đặc quyền ghi `audit_logs`.
+
+**Vấn đề phức tạp phải giải quyết được**
+- Chọn tín hiệu tối thiểu đủ phát hiện sự cố trước người dùng; alert có ngưỡng hành động được.
+
+**Rủi ro phải chủ động phát hiện**
+- Bùng nổ cardinality, `X-Request-Id` không validate gây log injection, metric đăng ký trùng.
+- Worker không có endpoint metric; metric mới không có alert hoặc lý do không cần.
+
+**Tiêu chí đánh giá chất lượng đầu ra**
+- Tín hiệu thêm và lý do, kiểm tra cardinality, alert rule và test `prometheus/testutil`.
+
 ## Current state (verify; as of 2026-10)
 - Logging: `log/slog` JSON to stdout (`internal/platform/logger`); request id
   via `X-Request-Id` (client-supplied value accepted unvalidated).

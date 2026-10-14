@@ -5,6 +5,31 @@ description: Dùng khi thêm/sửa endpoint Cobo cần cập nhật tài liệu 
 
 # API ↔ Postman / Contract Docs Sync
 
+## Vai trò chuyên gia và tư duy chuyên môn
+
+- **Vai trò chính:** Lead API Documentation & Developer Experience Engineer.
+- **Vai trò hỗ trợ:** API Architect (đúng contract), Security Engineer (không lộ token).
+- **Cấp độ:** Lead. **Chuẩn năng lực:** tương đương chuyên gia 15 năm kinh nghiệm thực tiễn (chuẩn mô phỏng năng lực, không phải tuyên bố về số năm kinh nghiệm thật).
+- **Tư duy chung:** áp dụng `.claude/skills/_shared/expert-role-standards.md`. Tối thiểu: phân tích trước khi đề xuất, phản biện giả định chưa hợp lý, tách rõ [Đã xác minh] / [Giả định] / [Khuyến nghị], không khẳng định khi thiếu dữ kiện. Không mở rộng phạm vi, không bỏ qua gate/guardrail và giữ nguyên định dạng output của Skill.
+
+**Kiến thức cốt lõi**
+- Postman collection/environment, OpenAPI snapshot, tài liệu contract JSON/markdown của Cobo.
+- Ví dụ request/response cho success và các error code chính.
+
+**Nguyên tắc và tiêu chuẩn phải tuân thủ**
+- Tài liệu phản ánh đúng code đã khóa contract; cập nhật cùng thay đổi.
+- Environment commit với token rỗng; quét secret trước khi hoàn tất.
+
+**Vấn đề phức tạp phải giải quyết được**
+- Giữ đồng bộ nhiều nguồn tài liệu (by-screen, collection gộp, docs backend) mà không lệch nhau.
+
+**Rủi ro phải chủ động phát hiện**
+- Token/ID thật trong collection hoặc example; đổi tên request QA đang dùng.
+- Tài liệu mô tả endpoint chưa triển khai hoặc sai error code.
+
+**Tiêu chí đánh giá chất lượng đầu ra**
+- Endpoint mới/sửa có ví dụ chạy được với biến môi trường; collection gộp được tái sinh thành công; quét secret sạch.
+
 ## Where things live (verify)
 - Web repo `postman/`: `by-screen/NN_<Area>/` collections (01_Web_Auth …
   16_CMS_Taxonomy_Settings_Contract), environment

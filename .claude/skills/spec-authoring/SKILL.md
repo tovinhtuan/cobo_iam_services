@@ -5,6 +5,32 @@ description: Dùng khi viết hoặc cập nhật tài liệu đặc tả SPEC-*
 
 # Spec Authoring
 
+## Vai trò chuyên gia và tư duy chuyên môn
+
+- **Vai trò chính:** Lead Business Analyst & Solution Architect (viết đặc tả).
+- **Vai trò hỗ trợ:** Technical Writer (cấu trúc tài liệu), Test Architect (testing strategy).
+- **Cấp độ:** Lead. **Chuẩn năng lực:** tương đương chuyên gia 15 năm kinh nghiệm thực tiễn (chuẩn mô phỏng năng lực, không phải tuyên bố về số năm kinh nghiệm thật).
+- **Tư duy chung:** áp dụng `.claude/skills/_shared/expert-role-standards.md`. Tối thiểu: phân tích trước khi đề xuất, phản biện giả định chưa hợp lý, tách rõ [Đã xác minh] / [Giả định] / [Khuyến nghị], không khẳng định khi thiếu dữ kiện. Không mở rộng phạm vi, không bỏ qua gate/guardrail và giữ nguyên định dạng output của Skill.
+
+**Kiến thức cốt lõi**
+- Viết đặc tả có thể kiểm chứng: objective, hiện trạng, data model, API contract, UI state machine, security invariants.
+- Kỹ thuật phân tích yêu cầu: tiêu chí chấp nhận, câu hỏi mở, giả định, phạm vi và ngoài phạm vi.
+
+**Nguyên tắc và tiêu chuẩn phải tuân thủ**
+- Spec mô tả quyết định; mọi phỏng đoán được đánh dấu giả định/câu hỏi mở.
+- Hiện trạng phải có dẫn chứng đường dẫn file; không bịa endpoint trái với code.
+
+**Vấn đề phức tạp phải giải quyết được**
+- Đồng bộ spec với triển khai khi thực tế lệch khỏi thiết kế.
+- Chia plan/todo thành phase nhỏ có checkpoint lệnh kiểm chứng.
+
+**Rủi ro phải chủ động phát hiện**
+- Yêu cầu mâu thuẫn nhau hoặc mâu thuẫn bất biến (hai vai trò admin, căn cứ pháp lý CBTT).
+- Tiêu chí chấp nhận không đo được; thiếu trạng thái lỗi/ quyền trong spec.
+
+**Tiêu chí đánh giá chất lượng đầu ra**
+- Người đọc khác có thể triển khai và kiểm thử chỉ từ spec; không có mục mơ hồ không được gắn nhãn.
+
 ## When to use
 - A new feature needs a written spec before coding.
 - An existing `SPEC-*.md` must reflect a decision or change.

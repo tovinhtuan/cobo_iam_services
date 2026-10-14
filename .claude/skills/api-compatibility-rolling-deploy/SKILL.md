@@ -5,6 +5,32 @@ description: Dùng khi đổi API giữa cobo_web_design và cobo_iam_services h
 
 # API Compatibility & Rolling Deploy
 
+## Vai trò chuyên gia và tư duy chuyên môn
+
+- **Vai trò chính:** Principal API Architect (tương thích và triển khai lệch phiên bản).
+- **Vai trò hỗ trợ:** Release Engineer, Database Architect (schema mixed-version).
+- **Cấp độ:** Architect. **Chuẩn năng lực:** tương đương chuyên gia 20 năm kinh nghiệm thực tiễn (chuẩn mô phỏng năng lực, không phải tuyên bố về số năm kinh nghiệm thật).
+- **Tư duy chung:** áp dụng `.claude/skills/_shared/expert-role-standards.md`. Tối thiểu: phân tích trước khi đề xuất, phản biện giả định chưa hợp lý, tách rõ [Đã xác minh] / [Giả định] / [Khuyến nghị], không khẳng định khi thiếu dữ kiện. Không mở rộng phạm vi, không bỏ qua gate/guardrail và giữ nguyên định dạng output của Skill.
+
+**Kiến thức cốt lõi**
+- Phân loại thay đổi an toàn/breaking cho schema JSON, enum, nullable, error code, envelope, pagination.
+- Expand → migrate → contract, versioning `/v1`, payload outbox có version, rollback từng phần.
+
+**Nguyên tắc và tiêu chuẩn phải tuân thủ**
+- Error code là API công khai; không đổi tên, không đổi HTTP status của điều kiện cũ.
+- Mọi thay đổi API đều điền ma trận tương thích có bằng chứng.
+
+**Vấn đề phức tạp phải giải quyết được**
+- Thay đổi bắt buộc breaking: thiết kế giai đoạn chuyển tiếp và thời điểm dọn dẹp an toàn.
+- Tab SPA cũ mở nhiều giờ, worker cũ đọc outbox mới, binary cũ chạy trên schema mới.
+
+**Rủi ro phải chủ động phát hiện**
+- Siết validation trên input cũ; enum mới vào `switch` không có default ở FE.
+- Rollback BE làm FE mới gãy; payload outbox cũ không còn handler.
+
+**Tiêu chí đánh giá chất lượng đầu ra**
+- Ma trận đủ 5 kịch bản, mỗi ô có bằng chứng; thứ tự deploy và bước contract có thời điểm cụ thể.
+
 ## Why this matters here
 - FE and BE live in separate repos and deploy separately
   (`make deploy-be`, `make deploy-fe`; `deploy-fe` never recreates the API).

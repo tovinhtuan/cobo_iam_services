@@ -1702,6 +1702,39 @@ Full contract: `cobo_web_design/docs/ai-cache/adhoc-proposal-step-content-inheri
 - `GET .../ad-hoc-proposals` (list) returns `content_capture` but omits `steps[].inherited`; `GET .../ad-hoc-proposals/{id}` returns both.
 - Approve: the workflow instance snapshot (`GET /api/v1/workflows/instances/{id}`, `workflow_source = proposal_snapshot_v2|v3`) gets `source_step_id`, `description`, `description_format`, `documents[]`, `reminder_config` (→ `effective_reminder_days`); document requirement rows are created, so `POST .../steps/{step_code}/complete` returns `422 WORKFLOW_STEP_REQUIRED_DOCUMENT_MISSING` until required documents are uploaded. `safe_html` is not sanitized server-side — clients must sanitize when rendering.
 
+### Ad-hoc proposal — proposer step additions (2026-10-14)
+
+Full contract: `cobo_web_design/docs/ai-cache/adhoc-proposal-step-content-editable-2026-10-14/02-contract.md`. The template part of a step stays read-only (captured at submit as above); the proposer only adds a note and extra required documents.
+
+- `POST /api/v1/company/ad-hoc-proposals`, `PATCH .../{proposal_id}`: optional `workflow_steps[i].additions`. Omitted = older client. Additions-aware clients always send it (may be `{}`). Body limit 1 MiB → `413 INVALID_REQUEST`; malformed JSON → `400 INVALID_REQUEST`.
+
+```json
+"workflow_steps": [{
+  "id": "01a1...", "source_step_id": "step-001", "order": 1, "name": "...", "processing_days": 1,
+  "department_id": "dep-legal", "assignee_membership_ids": [],
+  "additions": {
+    "note": "Plain text, max 2000 characters",
+    "documents": [{ "doc_id": "prop_7f3c...", "name": "Nghi quyet HDQT 12/10" }, { "name": "Bien ban hop" }]
+  }
+}]
+```
+
+- Validation (`400 INVALID_REQUEST`, `details.field = workflow_steps[i].additions...`):
+  - `note`: trimmed, at most 2000 characters.
+  - `documents`: at most 20 per step.
+  - `documents[j].name`: required, at most 255 characters, unique within the step (case-insensitive).
+  - `documents[j].doc_id`: kept when it matches `^prop_[A-Za-z0-9_-]{1,64}$` and is unique; otherwise the server generates `prop_<uuid>`.
+  - Other document fields (`required`, `template_file_id`, `template_file_name`) are ignored: additional documents are always required and never have a template file.
+  - `note` and names are NFC-normalized. Control characters (the note allows `\n`, `\r`, `\t`) and invisible/bidi characters → `400 … contains invalid characters`.
+  - Whole proposal: at most 20000 note characters and 100 additional documents in total → `400 INVALID_REQUEST`, `details.field = workflow_steps`, message `additions_total_exceeded: ...`.
+  - PATCH: a step sent without `additions` whose `id` matches a saved step keeps the saved additions (older clients). Send `{}` to clear them.
+- `GET .../ad-hoc-proposals/{id}` returns `workflow.steps[].additions`; the list endpoint omits it.
+- Submit: a step without `source_step_id` whose `additions` is present but has an empty `note` → `422 INVALID_REQUEST`, `details.field = workflow_steps[i].additions.note`, message `description_required: ...`. `additions` is kept when the template is captured into `inherited`.
+- Approve (instance snapshot and document requirement rows):
+  - Step with `inherited`: `description` comes from the template; `proposal_note` (new, omitempty) holds `additions.note`; `documents` lists the template documents first, then the additions (`required=true`). An addition whose `doc_id` collides with a template doc id gets `prop_step_<j>_<n>`.
+  - Step without `inherited`: `description = additions.note` (`description_format = plain_text`); `documents` are the additions; reminders use the default.
+  - Requirement rows include the additions, so `POST .../complete` returns `422 WORKFLOW_STEP_REQUIRED_DOCUMENT_MISSING` until they are uploaded.
+
 ## G. HTTP status mapping (goi y)
 
 | HTTP | Khi nao |

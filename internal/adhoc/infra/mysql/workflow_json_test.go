@@ -68,3 +68,23 @@ func TestDecodeProposalWorkflowPayload_schemaV3InheritedContentRoundTrip(t *test
 		t.Fatalf("out=%s err=%v", out, err)
 	}
 }
+
+func TestDecodeProposalWorkflowPayload_schemaV3AdditionsRoundTrip(t *testing.T) {
+	raw := `{"schema_version":3,"disclosure_type_id":"t1","frozen":false,` +
+		`"steps":[{"id":"ps1","source_step_id":"tpl-1","order":1,"name":"A","processing_days":1,"assignee_membership_ids":[],` +
+		`"additions":{"note":"Căn cứ nghị quyết","documents":[{"doc_id":"prop_a","name":"Nghị quyết HĐQT"}]}},` +
+		`{"id":"ps2","order":2,"name":"B","processing_days":1,"additions":{}}]}`
+	_, _, snap, err := decodeProposalWorkflowPayload(raw)
+	if err != nil || snap == nil {
+		t.Fatalf("snap=%#v err=%v", snap, err)
+	}
+	add := snap.Steps[0].Additions
+	if add == nil || add.Note != "Căn cứ nghị quyết" || len(add.Documents) != 1 || add.Documents[0].DocID != "prop_a" || snap.Steps[1].Additions == nil {
+		t.Fatalf("additions=%#v step2=%#v", add, snap.Steps[1].Additions)
+	}
+	out, err := marshalProposalWorkflowPayload(adhocapp.ProposalDTO{Workflow: snap}, nil)
+	if err != nil || !strings.Contains(out, `"additions":{"note":"Căn cứ nghị quyết","documents":[{"doc_id":"prop_a","name":"Nghị quyết HĐQT"}]}`) ||
+		!strings.Contains(out, `"additions":{}`) {
+		t.Fatalf("out=%s err=%v", out, err)
+	}
+}

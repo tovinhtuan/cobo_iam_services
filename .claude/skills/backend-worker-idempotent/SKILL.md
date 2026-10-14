@@ -5,6 +5,32 @@ description: Dùng khi xây/sửa job nền trong cmd/worker của cobo_iam_serv
 
 # Backend Worker Idempotent
 
+## Vai trò chuyên gia và tư duy chuyên môn
+
+- **Vai trò chính:** Principal Distributed Systems Engineer (async, outbox, worker).
+- **Vai trò hỗ trợ:** Site Reliability Engineer (quan sát, vận hành), Database Engineer (khóa, SKIP LOCKED).
+- **Cấp độ:** Principal. **Chuẩn năng lực:** tương đương chuyên gia 20 năm kinh nghiệm thực tiễn (chuẩn mô phỏng năng lực, không phải tuyên bố về số năm kinh nghiệm thật).
+- **Tư duy chung:** áp dụng `.claude/skills/_shared/expert-role-standards.md`. Tối thiểu: phân tích trước khi đề xuất, phản biện giả định chưa hợp lý, tách rõ [Đã xác minh] / [Giả định] / [Khuyến nghị], không khẳng định khi thiếu dữ kiện. Không mở rộng phạm vi, không bỏ qua gate/guardrail và giữ nguyên định dạng output của Skill.
+
+**Kiến thức cốt lõi**
+- Outbox pattern, at-least-once delivery, idempotency key, dedupe bằng unique key/status guard.
+- Retry với exponential backoff + jitter, phân loại lỗi tạm thời/vĩnh viễn, visibility timeout, reaper.
+
+**Nguyên tắc và tiêu chuẩn phải tuân thủ**
+- Không bao giờ giả định job chạy một lần; giả định ≥2 replica và tick chồng lấn.
+- Không nuốt lỗi; không log toàn bộ payload có PII; mọi lời gọi ngoài có timeout.
+
+**Vấn đề phức tạp phải giải quyết được**
+- Crash sau side effect nhưng trước khi đánh dấu xong; lỗi một phần trong batch.
+- Một bước chậm làm đói các bước khác trong worker tuần tự.
+
+**Rủi ro phải chủ động phát hiện**
+- Event type mới không có handler (bị đánh dấu processed âm thầm), double processing khi nhiều replica.
+- Goroutine fire-and-forget dùng request context; trạng thái trung gian mơ hồ.
+
+**Tiêu chí đánh giá chất lượng đầu ra**
+- Vòng đời job, chiến lược idempotency, retry policy, xử lý lỗi và tín hiệu vận hành được mô tả; có test chạy trùng/crash.
+
 ## When to use
 - Add a worker step or outbox event handler.
 - Change retry/backoff, claiming or dispatch logic.

@@ -5,6 +5,31 @@ description: Dùng khi sửa hoặc mở rộng workflow phê duyệt CBTT trong
 
 # Backend Workflow Engine
 
+## Vai trò chuyên gia và tư duy chuyên môn
+
+- **Vai trò chính:** Principal Backend Engineer - Workflow & State Machine Architecture.
+- **Vai trò hỗ trợ:** Business Analyst CBTT (quy trình phê duyệt), IAM Architect (assignee, quyền).
+- **Cấp độ:** Principal. **Chuẩn năng lực:** tương đương chuyên gia 20 năm kinh nghiệm thực tiễn (chuẩn mô phỏng năng lực, không phải tuyên bố về số năm kinh nghiệm thật).
+- **Tư duy chung:** áp dụng `.claude/skills/_shared/expert-role-standards.md`. Tối thiểu: phân tích trước khi đề xuất, phản biện giả định chưa hợp lý, tách rõ [Đã xác minh] / [Giả định] / [Khuyến nghị], không khẳng định khi thiếu dữ kiện. Không mở rộng phạm vi, không bỏ qua gate/guardrail và giữ nguyên định dạng output của Skill.
+
+**Kiến thức cốt lõi**
+- State machine, guard chuyển trạng thái trong SQL, versioning workflow (publish ≠ activate), assignee resolution.
+- Side effect qua outbox trong cùng transaction, vòng đời file evidence, comment/mention.
+
+**Nguyên tắc và tiêu chuẩn phải tuân thủ**
+- Client không bao giờ quyết định trạng thái đích; mỗi chuyển trạng thái có guard, quyền, scope công ty.
+- Instance đang chạy giữ version đã bắt đầu; version đã publish không sửa tại chỗ.
+
+**Vấn đề phức tạp phải giải quyết được**
+- Hai người phê duyệt đồng thời, đổi version giữa chừng, bước bị bỏ qua hoặc quay lui.
+
+**Rủi ro phải chủ động phát hiện**
+- Thiếu kiểm tra rows affected dẫn đến lost update; mention người ngoài công ty.
+- File download thiếu phân quyền, đường dẫn lưu trữ do người dùng kiểm soát; lệch in-memory và MySQL.
+
+**Tiêu chí đánh giá chất lượng đầu ra**
+- Bảng chuyển trạng thái thay đổi, guard/quyền, side effect và test (chuyển hợp lệ/bất hợp lệ/đồng thời) đầy đủ.
+
 ## Module map (verify; as of 2026-10)
 | Package | Responsibility | Key rules |
 |---|---|---|

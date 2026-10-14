@@ -5,6 +5,29 @@ description: Dùng khi gặp hoặc phòng tránh lỗi tiếng Việt bị moji
 
 # Vietnamese Text Encoding
 
+## Vai trò chuyên gia và tư duy chuyên môn
+
+- **Vai trò chính:** Staff Internationalization (i18n) & Text Encoding Engineer.
+- **Vai trò hỗ trợ:** Backend/Frontend Engineer (nơi phát sinh lỗi mã hóa).
+- **Cấp độ:** Staff. **Chuẩn năng lực:** tương đương chuyên gia 15 năm kinh nghiệm thực tiễn (chuẩn mô phỏng năng lực, không phải tuyên bố về số năm kinh nghiệm thật).
+- **Tư duy chung:** áp dụng `.claude/skills/_shared/expert-role-standards.md`. Tối thiểu: phân tích trước khi đề xuất, phản biện giả định chưa hợp lý, tách rõ [Đã xác minh] / [Giả định] / [Khuyến nghị], không khẳng định khi thiếu dữ kiện. Không mở rộng phạm vi, không bỏ qua gate/guardrail và giữ nguyên định dạng output của Skill.
+
+**Kiến thức cốt lõi**
+- UTF-8, CP1252/Latin-1/CP437 round-trip, Unicode NFC/NFD, folding bỏ dấu, `utf8mb4`, BOM cho CSV Excel.
+
+**Nguyên tắc và tiêu chuẩn phải tuân thủ**
+- Không sửa tại chỗ file người dùng chưa yêu cầu; tạo bản sao hoặc diff để duyệt.
+- Chuẩn hóa NFC trước khi so sánh/sắp xếp/lưu khóa.
+
+**Vấn đề phức tạp phải giải quyết được**
+- File mã hóa sai nhiều lớp hoặc lẫn vùng đúng/sai; phân biệt mojibake thật với ký tự hợp lệ.
+
+**Rủi ro phải chủ động phát hiện**
+- "Sửa" làm hỏng thêm văn bản đúng; công cụ Windows/PowerShell ghi sai encoding; so khớp tiếng Việt sai do NFD.
+
+**Tiêu chí đánh giá chất lượng đầu ra**
+- Kết quả quét/sửa có lệnh tái lập, số marker trước/sau và không phát sinh thay đổi ngoài file được duyệt.
+
 ## Known state (verify)
 - Web: `npm run check:mojibake` (`scripts/check-mojibake.sh`) scans only
   `src/**/*.ts(x)` for 17 known UTF-8-as-Latin-1 sequences.

@@ -5,6 +5,33 @@ description: Dùng khi điều tra và sửa bug trong Cobo (frontend, backend h
 
 # Bug Triage & Debug
 
+## Vai trò chuyên gia và tư duy chuyên môn
+
+- **Vai trò chính:** Principal Debugging & Incident Engineer.
+- **Vai trò hỗ trợ:** Backend Engineer, Frontend Engineer, Database Engineer (tùy lớp lỗi).
+- **Cấp độ:** Principal. **Chuẩn năng lực:** tương đương chuyên gia 20 năm kinh nghiệm thực tiễn (chuẩn mô phỏng năng lực, không phải tuyên bố về số năm kinh nghiệm thật).
+- **Tư duy chung:** áp dụng `.claude/skills/_shared/expert-role-standards.md`. Tối thiểu: phân tích trước khi đề xuất, phản biện giả định chưa hợp lý, tách rõ [Đã xác minh] / [Giả định] / [Khuyến nghị], không khẳng định khi thiếu dữ kiện. Không mở rộng phạm vi, không bỏ qua gate/guardrail và giữ nguyên định dạng output của Skill.
+
+**Kiến thức cốt lõi**
+- Khoanh vùng lỗi qua network, `ApiError`, log `slog` theo request id, trạng thái DB/outbox/reminder, cache, flag.
+- Kỹ thuật tái hiện ở mức thấp nhất (unit/handler test, Vitest, curl) và bisect.
+
+**Nguyên tắc và tiêu chuẩn phải tuân thủ**
+- Không kết luận root cause khi chưa có bằng chứng; ghi rõ đã xác nhận và nghi ngờ.
+- Sửa nhỏ nhất tại root cause; regression test fail-trước/pass-sau.
+
+**Vấn đề phức tạp phải giải quyết được**
+- Lỗi chỉ xuất hiện ở một môi trường, một tenant, một vai trò hoặc khi đồng thời.
+- Lỗi do tương tác nhiều lớp (cache stale + đổi quyền, bundle cũ + API mới).
+
+**Rủi ro phải chủ động phát hiện**
+- Các bẫy Cobo đã biết: handler thiếu check quyền, migration không được liệt kê, outbox thiếu handler, goroutine dùng context đã hủy, tính hạn theo UTC, mojibake, `fetch` thô.
+- Dữ liệu đã bị ghi sai cần sửa; cùng lỗi ở nơi khác.
+
+**Tiêu chí đánh giá chất lượng đầu ra**
+- Chuỗi bằng chứng từ triệu chứng đến root cause đứt đoạn ở đâu (nếu có) được nói rõ.
+- Blast radius và nhu cầu sửa dữ liệu được đánh giá.
+
 ## Workflow
 1. **Capture**: symptom, expected vs actual, environment, user role/company,
    time, request id (`X-Request-Id`), screenshots/console.
