@@ -1,0 +1,98 @@
+{
+  "ENT_CompanyX_savedPrefs": {
+    "status": {
+      "runtime": false,
+      "enforcement": false,
+      "shadow": true,
+      "defaults_applied": false,
+      "ui_state": "storage_configured",
+      "storage": true
+    },
+    "workflowOffset1": {
+      "http": 200,
+      "would_send": true,
+      "would_skip": false,
+      "reason": "",
+      "trace": [
+        "layer1_rule_load:pass",
+        "layer1_rule_status:pass",
+        "layer1_event_scope:pass",
+        "layer1_schedule_match:pass",
+        "layer1_channel_gate:pass"
+      ]
+    },
+    "deadlineOffset1": {
+      "http": 200,
+      "would_send": false,
+      "would_skip": true,
+      "reason": "RULE_SCHEDULE_NOT_MATCHED",
+      "trace": [
+        "layer1_rule_load:pass",
+        "layer1_rule_status:pass",
+        "layer1_event_scope:pass",
+        "layer1_schedule_match:fail:RULE_SCHEDULE_NOT_MATCHED"
+      ]
+    },
+    "deadlineOffset7": {
+      "http": 200,
+      "would_send": true,
+      "would_skip": false,
+      "reason": "",
+      "trace": [
+        "layer1_rule_load:pass",
+        "layer1_rule_status:pass",
+        "layer1_event_scope:pass",
+        "layer1_schedule_match:pass",
+        "layer1_channel_gate:pass"
+      ]
+    },
+    "blocked": []
+  },
+  "USER_CompanyY_noPrefs": {
+    "status": {
+      "runtime": false,
+      "enforcement": false,
+      "shadow": true,
+      "defaults_applied": true,
+      "ui_state": "not_configured",
+      "storage": false
+    },
+    "workflowOffset1": {
+      "http": 200,
+      "would_send": true,
+      "would_skip": false,
+      "reason": "",
+      "trace": [
+        "layer1_rule_load:pass",
+        "layer1_event_scope:pass",
+        "layer1_schedule_match:pass",
+        "layer1_channel_gate:pass"
+      ]
+    },
+    "deadlineOffset1": {
+      "http": 200,
+      "would_send": true,
+      "would_skip": false,
+      "reason": "",
+      "trace": [
+        "layer1_rule_load:pass",
+        "layer1_event_scope:pass",
+        "layer1_schedule_match:pass",
+        "layer1_channel_gate:pass"
+      ]
+    },
+    "deadlineOffset7": {
+      "http": 200,
+      "would_send": true,
+      "would_skip": false,
+      "reason": "",
+      "trace": [
+        "layer1_rule_load:pass",
+        "layer1_event_scope:pass",
+        "layer1_schedule_match:pass",
+        "layer1_channel_gate:pass"
+      ]
+    },
+    "blocked": []
+  }
+}

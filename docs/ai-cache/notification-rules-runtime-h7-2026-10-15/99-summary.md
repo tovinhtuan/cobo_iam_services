@@ -1,0 +1,29 @@
+# 99 — Tóm tắt: H7 (c) — thiết lập "Kênh nhận cảnh báo" có tác dụng thật (15/10/2026)
+
+- **Workflow:** `wf-feature`, hai repo.
+  - Gates: A = user duyệt "làm tất cả các bước theo khuyến nghị" (Q-23/Q-24); B = không Critical/High sau review song song.
+- **Commit (chưa push):**
+  - BE `90ff8f3` (tính năng) + `97f5cda` (trace mô phỏng).
+  - FE `0d4400b5`, cộng commit tài liệu.
+- **Bàn giao:**
+  - Consumer an toàn để bật:
+    - thiếu thiết lập → gửi như hôm nay (D-H7-1);
+    - dòng tắt → `RULE_DISABLED`;
+    - email/in-app riêng; chỉ in-app → tạo in-app đồng bộ + email dự phòng;
+    - lịch chỉ chặn nhắc hạn nộp;
+    - `department_focal` ánh xạ đúng phòng ban công ty.
+  - Chế độ shadow có log + metric.
+  - API trạng thái nói thật; FE chip/banner 3 chế độ + "Đã tắt" + ghi chú lịch.
+- **Kiểm tra:**
+  - Go: 0 fail mới so với HEAD, `go vet` giống HEAD, Docker build api OK, race OK.
+  - FE: tsc 12, vitest 57 = baseline, build/mojibake OK.
+  - DEV: smoke API/UI và hồi quy 9/9 + 12/12 đạt (`05-verification.md`).
+- **DEV:** shadow **bật**, enforcement **tắt**. Chưa có dữ liệu shadow vì DEV không có nhắc đến hạn. Bật enforcement theo runbook trong `05-verification.md` khi đủ bằng chứng.
+- **Follow-up:**
+  - API-04: widget dashboard vận hành (đang ẩn) hiểu cờ theo nghĩa cũ.
+  - Postman/OpenAPI/contract JSON chưa có status/simulate (thiếu từ trước).
+  - Tài liệu env cho `NOTIFICATION_RULES_*`.
+  - Dòng skip kẹt `PENDING` có thể chặn hàng đợi (có từ trước, PERF-02).
+  - Escalation/quá hạn chưa định nghĩa.
+  - Zalo/SMS.
+  - FE: `LoginPage` điền sẵn tài khoản dev.

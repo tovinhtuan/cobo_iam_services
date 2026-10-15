@@ -4972,4 +4972,4 @@
   - Thiết lập "chỉ in-app" cần bằng chứng giao được; bộ tạo in-app cũ nuốt lỗi nên phải thêm bản có đếm.
   - Repo in-memory từng gán cứng `status` → test status sai.
 - Rollback: tắt consumer trước khi đổi binary (BE cũ fail-closed).
-
+- Deploy DEV 2026-10-15: BE `97f5cda` (api + worker, `.env` thêm `NOTIFICATION_RULES_SHADOW_ENABLED=true`, consumer vẫn tắt), FE `0d4400b5` (bundle `index-BWoELcr9.js`). Rollback BE `bin/rollback/*.pre-h7-20261015T050117Z` + `.env.bak.pre-h7-…`, FE `web/releases/pre-h7-fe-20261015T061942Z.tar.gz`. Smoke API/UI + hồi quy 9/9, 12/12 đạt. Bật enforcement theo runbook `05-verification.md`.

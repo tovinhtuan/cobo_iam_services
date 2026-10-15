@@ -1,0 +1,19 @@
+{
+  "vi": {
+    "mode": "shadow",
+    "chip": "Đang chạy thử",
+    "shadowBanner": "Đang chạy thử: hệ thống đối chiếu thiết lập này với cách gửi hiện tại nhưng chưa dùng nó đ",
+    "notApplied": false,
+    "hint": "Áp dụng cho nhắc hạn nộp. Nhắc từng bước quy trình gửi theo mốc của quy trình."
+  },
+  "en": {
+    "mode": "shadow",
+    "chip": "Trial run",
+    "shadowBanner": "Trial run: the system compares these settings with the current delivery but does not use t",
+    "notApplied": false,
+    "hint": "Applies to filing deadline reminders. Workflow step reminders follow the workflow milestones."
+  },
+  "blocked": [],
+  "pageErrors": [],
+  "failed": []
+}
