@@ -106,7 +106,7 @@
     "/api/v1/auth/refresh": { "post": { "summary": "Lam moi access/refresh", "auth": "none" } },
     "/api/v1/auth/logout": { "post": { "summary": "Thu hoi refresh session", "auth": "none" } },
     "/api/v1/auth/forgot-password": { "post": { "summary": "Quen mat khau", "auth": "none" } },
-    "/api/v1/auth/resend-verification-email": { "post": { "summary": "Gui lai email xac thuc", "auth": "none" } },
+    "/api/v1/auth/resend-verification-email": { "post": { "summary": "Gui lai OTP xac thuc email cho user dang dang nhap; khong co bearer thi tra 200 va khong gui (AUTH-03)", "auth": "bearer" } },
     "/api/v1/auth/reset-password": { "post": { "summary": "Doi mat khau bang token", "auth": "none" } },
     "/api/v1/auth/verify-email": { "post": { "summary": "Xac thuc email bang token", "auth": "none" } },
     "/api/v1/auth/select-company": { "post": { "summary": "Sau login nhieu cty: bind context (pre-company token)", "auth": "bearer_pre_company" } },

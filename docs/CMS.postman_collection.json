@@ -209,10 +209,10 @@
         {
           "name": "Resend Verification Email",
           "request": {
-            "auth": { "type": "noauth" },
+            "description": "Gửi lại OTP xác thực email cho user đang đăng nhập (collection bearer). Không có bearer, chỉ gửi email: trả 200 nhưng không gửi gì (AUTH-03).",
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"email\": \"owner@example.com\"\n}" },
+            "body": { "mode": "raw", "raw": "{}" },
             "url": {
               "raw": "{{base_url}}/api/v1/auth/resend-verification-email",
               "host": ["{{base_url}}"],

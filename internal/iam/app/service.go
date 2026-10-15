@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -255,6 +256,43 @@ func randomDigits6() string {
 	return fmt.Sprintf("%06d", n)
 }
 
+// sendLimit caps auth emails sent to one user by unauthenticated endpoints within a window (AUTH-03).
+type sendLimit struct {
+	window time.Duration
+	max    int
+}
+
+var (
+	emailOTPSendLimits      = []sendLimit{{window: time.Hour, max: 5}, {window: 24 * time.Hour, max: 10}}
+	passwordResetSendLimits = []sendLimit{{window: time.Hour, max: 3}, {window: 24 * time.Hour, max: 10}}
+)
+
+func sendWindows(limits []sendLimit, now time.Time) []SendWindow {
+	out := make([]SendWindow, 0, len(limits))
+	for _, l := range limits {
+		out = append(out, SendWindow{Since: now.Add(-l.window), Max: l.max})
+	}
+	return out
+}
+
+// sendLimitReached reports whether any window already holds Max sends; count returns the sends since a time.
+func sendLimitReached(ctx context.Context, windows []SendWindow, count func(context.Context, time.Time) (int, error)) (bool, error) {
+	for _, w := range windows {
+		n, err := count(ctx, w.Since)
+		if err != nil {
+			return false, err
+		}
+		if n >= w.Max {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func tooManyVerificationEmails() error {
+	return perr.NewHTTPError(http.StatusTooManyRequests, perr.CodeRateLimited, "too many verification emails requested", nil)
+}
+
 func (s *service) issueEmailVerificationOTP(ctx context.Context, userID string) error {
 	if s.recovery == nil || strings.TrimSpace(userID) == "" {
 		return nil
@@ -266,26 +304,40 @@ func (s *service) issueEmailVerificationOTP(ctx context.Context, userID string) 
 	if ok {
 		return nil
 	}
-	since := time.Now().UTC().Add(-time.Hour)
-	n, err := s.recovery.CountEmailVerificationOTPsSince(ctx, userID, since)
+	windows := sendWindows(emailOTPSendLimits, time.Now().UTC())
+	// Cheap early check before bcrypt; the authoritative check runs when the OTP is stored.
+	limited, err := sendLimitReached(ctx, windows, func(ctx context.Context, since time.Time) (int, error) {
+		return s.recovery.CountEmailVerificationOTPsSince(ctx, userID, since)
+	})
 	if err != nil {
 		return err
 	}
-	if n >= 5 {
-		return perr.NewHTTPError(http.StatusTooManyRequests, perr.CodeRateLimited, "too many verification emails requested", nil)
+	if limited {
+		return tooManyVerificationEmails()
 	}
-	if err := s.recovery.InvalidatePendingEmailVerificationOTPs(ctx, userID); err != nil {
-		return err
+	issuer, serialized := s.recovery.(LimitedRecoveryIssuer)
+	if !serialized {
+		if err := s.recovery.InvalidatePendingEmailVerificationOTPs(ctx, userID); err != nil {
+			return err
+		}
 	}
 	code := randomDigits6()
 	hash, err := bcrypt.GenerateFromPassword([]byte(code), bcrypt.DefaultCost)
 	if err != nil {
 		return fmt.Errorf("hash otp: %w", err)
 	}
-	exp := time.Now().UTC().Add(s.emailOTPTTL)
-	if err := s.recovery.StoreEmailVerificationOTP(ctx, EmailOTPRecord{
-		OTPID: s.idgen.NewUUID(), UserID: userID, CodeHash: string(hash), ExpiresAt: exp,
-	}); err != nil {
+	otp := EmailOTPRecord{
+		OTPID: s.idgen.NewUUID(), UserID: userID, CodeHash: string(hash), ExpiresAt: time.Now().UTC().Add(s.emailOTPTTL),
+	}
+	if serialized {
+		issued, err := issuer.IssueEmailVerificationOTPWithinLimits(ctx, otp, windows)
+		if err != nil {
+			return err
+		}
+		if !issued {
+			return tooManyVerificationEmails()
+		}
+	} else if err := s.recovery.StoreEmailVerificationOTP(ctx, otp); err != nil {
 		return err
 	}
 	u, err := s.recovery.FindUserByUserID(ctx, userID)
@@ -485,9 +537,20 @@ func (s *service) ForgotPassword(ctx context.Context, req ForgotPasswordRequest)
 	if err != nil {
 		return nil, fmt.Errorf("generate reset token: %w", err)
 	}
-	if err := s.recovery.StorePasswordResetToken(ctx, RecoveryTokenRecord{
+	token := RecoveryTokenRecord{
 		TokenID: s.idgen.NewUUID(), UserID: user.UserID, TokenHash: tokenHash, ExpiresAt: time.Now().UTC().Add(s.passwordResetTTL),
-	}); err != nil {
+	}
+	if issuer, ok := s.recovery.(LimitedRecoveryIssuer); ok {
+		issued, err := issuer.StorePasswordResetTokenWithinLimits(ctx, token, sendWindows(passwordResetSendLimits, time.Now().UTC()))
+		if err != nil {
+			return nil, fmt.Errorf("store password reset token: %w", err)
+		}
+		if !issued {
+			// Same generic response as an unknown email: the caller must not learn that the account exists.
+			slog.WarnContext(ctx, "password_reset_rate_limited", slog.String("user_id", user.UserID))
+			return &ForgotPasswordResponse{Success: true}, nil
+		}
+	} else if err := s.recovery.StorePasswordResetToken(ctx, token); err != nil {
 		return nil, fmt.Errorf("store password reset token: %w", err)
 	}
 	resetLink := s.buildActionLink("/reset-password", rawToken)
@@ -517,13 +580,12 @@ func (s *service) ResendVerificationEmail(ctx context.Context, req ResendVerific
 	if s.recovery == nil {
 		return &ResendVerificationEmailResponse{Success: true}, nil
 	}
-	var user *RecoveryUser
-	var err error
-	if strings.TrimSpace(req.UserID) != "" {
-		user, err = s.recovery.FindUserByUserID(ctx, req.UserID)
-	} else {
-		user, err = s.recovery.FindUserByEmail(ctx, email)
+	if strings.TrimSpace(req.UserID) == "" {
+		// The OTP can only be entered from a signed-in session (VerifyEmail), so an email-only request
+		// would just mail a code nobody can use. Keep the generic success, send nothing (AUTH-03).
+		return &ResendVerificationEmailResponse{Success: true}, nil
 	}
+	user, err := s.recovery.FindUserByUserID(ctx, req.UserID)
 	if err != nil {
 		return nil, err
 	}

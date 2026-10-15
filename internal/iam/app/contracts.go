@@ -109,6 +109,20 @@ type AuthRecoveryRepository interface {
 	TryConsumeEmailVerificationOTP(ctx context.Context, userID, plainCode string, now time.Time) (EmailOTPConsumeOutcome, error)
 }
 
+// SendWindow is one per-user send limit: at most Max sends created since Since.
+type SendWindow struct {
+	Since time.Time
+	Max   int
+}
+
+// LimitedRecoveryIssuer stores OTPs and reset tokens only while the user is below every window, and
+// serializes concurrent issues for one user so parallel requests cannot pass the limits (AUTH-03).
+// Each method returns false, nil when a limit is reached.
+type LimitedRecoveryIssuer interface {
+	IssueEmailVerificationOTPWithinLimits(ctx context.Context, otp EmailOTPRecord, windows []SendWindow) (bool, error)
+	StorePasswordResetTokenWithinLimits(ctx context.Context, token RecoveryTokenRecord, windows []SendWindow) (bool, error)
+}
+
 // EmailOTPRecord stores a bcrypt hash of a numeric OTP for email verification.
 type EmailOTPRecord struct {
 	OTPID     string
