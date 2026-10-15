@@ -4973,3 +4973,36 @@
   - Repo in-memory từng gán cứng `status` → test status sai.
 - Rollback: tắt consumer trước khi đổi binary (BE cũ fail-closed).
 - Deploy DEV 2026-10-15: BE `97f5cda` (api + worker, `.env` thêm `NOTIFICATION_RULES_SHADOW_ENABLED=true`, consumer vẫn tắt), FE `0d4400b5` (bundle `index-BWoELcr9.js`). Rollback BE `bin/rollback/*.pre-h7-20261015T050117Z` + `.env.bak.pre-h7-…`, FE `web/releases/pre-h7-fe-20261015T061942Z.tar.gz`. Smoke API/UI + hồi quy 9/9, 12/12 đạt. Bật enforcement theo runbook `05-verification.md`.
+
+## 2026-10-15: Risk review luồng đăng ký / đăng nhập / quên mật khẩu (chỉ đọc)
+- Báo cáo đầy đủ: `cobo_iam_services/docs/ai-cache/risk-review-auth-flows-2026-10-15/` (`00-scope.md`, `10-risk-report.md`). 8 reviewer chạy song song. Main agent tự kiểm lại mọi CRITICAL/HIGH trên code và trên dữ liệu DEV, chỉ đọc. Không sửa code.
+- Kết quả: 1 Critical, 4 High, 9 Medium, 6 Low.
+- **AUTH-01 (Critical):**
+  - `LoginPage.tsx:21-22` điền sẵn tài khoản seed trong mọi bundle.
+  - Cùng mật khẩu đó login được `u_admin_dn` (admin doanh nghiệp) và `u_admin_web` (Platform Admin) trên DEV.
+  - Seed `0009`/`0034` nằm trong danh sách migration chính.
+- **High:**
+  - AUTH-02: đăng ký trước bằng email nạn nhân thì chiếm được lời mời; user chưa xác thực vẫn thành admin.
+  - AUTH-03: giới hạn OTP resend không bao giờ kích hoạt, forgot-password không có giới hạn. `:8080` public nên vượt được nginx. DEV gửi email qua Gmail.
+  - AUTH-04: DEV chạy HTTP; khoá RSA login trên DEV trùng khoá đã commit.
+  - AUTH-05: staff kẹt ở `pending_email_verification` (19 user trên DEV).
+- Bài học:
+  - Mật khẩu seed trùng giữa admin doanh nghiệp và Platform Admin, nên một lần lộ là mất cả hai vai trò.
+  - Bộ đếm rate limit không được đếm trên những dòng mà chính luồng đó vừa xoá.
+  - `DOCKER-USER` trên DEV chỉ giới hạn 1025/3306/8025/9090/9093. `:8080` không nằm trong danh sách.
+- Việc tiếp theo cần user duyệt: OPS-1 (khoá/đổi mật khẩu seed DEV, chặn `:8080`), rồi MR-1 FE (bỏ prefill) theo `bugfix-workflow`.
+
+## 2026-10-15: Sửa AUTH-03 (giới hạn gửi email auth), chưa commit/deploy
+- Hồ sơ: `docs/ai-cache/bug-auth03-auth-email-limits-2026-10-15/`.
+- Thay đổi:
+  - OTP 5/giờ, 10/ngày; quên mật khẩu 3/giờ, 10/ngày, vẫn trả phản hồi chung.
+  - Kiểm tra trong tx `SELECT users ... FOR UPDATE`, nên song song không vượt trần (đã tái hiện 20 → 20 email, sau khi sửa đúng 3 và 5).
+  - Resend ẩn danh: 200, không gửi.
+  - nginx `auth_email_per_ip` 3r/m.
+  - Postman và contract đã đồng bộ.
+- Bài học:
+  - Bộ đếm rate limit không được đếm trên dòng mà chính luồng đó DELETE.
+  - Giới hạn theo user cần serialize theo user (khoá dòng cha), nếu không request song song vượt trần.
+  - Retention phải theo `created_at`.
+  - Test MySQL chạy được bằng container `mysql:8.0` cục bộ dùng xong bỏ, chỉ cần áp migration 0001/0007/0027 và đặt `MYSQL_TEST_DSN`.
+- Còn mở: OPS-1 (`:8080`, seed), trần tổng/tách SMTP, index `(user_id, created_at)`, kiểm tz production.
