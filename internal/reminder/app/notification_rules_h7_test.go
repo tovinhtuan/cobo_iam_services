@@ -540,3 +540,39 @@ func TestDispatchDue_Shadow_SkippedRowNotCounted(t *testing.T) {
 		t.Fatalf("skipped rows must not be shadow-counted, got %v", got)
 	}
 }
+
+// Simulation trace says when the company schedule does not apply (workflow step, defaults).
+func TestSimulateDispatchDecision_TraceScheduleNotGated(t *testing.T) {
+	reader := &fakeNotificationRulesReader{byCompany: map[string]*AlertChannelPrefsDocument{
+		"c1": prefsDoc("c1", true, true, 30, 7, 3, 0),
+	}}
+	sim := NewDispatchSimulator(DispatchDecisionDeps{EvaluatorSimulate: NewNotificationRulesEvaluator(reader, true)})
+	now := time.Now().UTC()
+	for _, tc := range []struct {
+		company, event string
+		scope          ScopeType
+	}{
+		{"c1", "workflow", ScopeTypeWorkflowStep},
+		{"c2", "deadline", ScopeTypeDisclosure}, // no row → defaults
+	} {
+		res, err := sim.SimulateDispatchDecision(context.Background(), SimulateDispatchInput{
+			CompanyID: tc.company, EventType: tc.event, ScopeType: tc.scope, ScopeID: "s:1", WorkflowInstanceID: "wi-1",
+			ScheduledAt: now, DueAt: now.Add(24 * time.Hour), RecipientEmails: []string{"a@example.com"},
+		})
+		if err != nil {
+			t.Fatalf("%s/%s: %v", tc.company, tc.event, err)
+		}
+		if res.WouldSkip {
+			t.Fatalf("%s/%s must send, reason=%q", tc.company, tc.event, res.ReasonCode)
+		}
+		found := false
+		for _, st := range res.Trace {
+			if st.Step == "layer1_schedule_match" && strings.Contains(st.Detail, "not gated") {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("%s/%s: trace must say the schedule is not gated: %+v", tc.company, tc.event, res.Trace)
+		}
+	}
+}

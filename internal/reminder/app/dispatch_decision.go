@@ -196,6 +196,9 @@ func evaluateDispatchDecision(ctx context.Context, deps DispatchDecisionDeps, in
 				}
 				if dec.SkipReason == SkipReasonRuleScheduleNotMatched {
 					trace = appendTrace(trace, "layer1_schedule_match", "fail", "no schedule matched", dec.SkipReason)
+				} else if dec.DefaultsApplied || strings.EqualFold(strings.TrimSpace(in.EventType), "workflow") {
+					// Q-24 / D-H7-1: the company schedule does not gate this reminder.
+					trace = appendTrace(trace, "layer1_schedule_match", "pass", "not gated (workflow step or system defaults)", "")
 				} else if dec.Allowed || dec.SkipReason == "" {
 					trace = appendTrace(trace, "layer1_schedule_match", "pass", "schedule matched", "")
 				}
