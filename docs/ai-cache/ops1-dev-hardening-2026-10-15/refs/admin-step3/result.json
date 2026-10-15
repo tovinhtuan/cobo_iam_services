@@ -1,0 +1,160 @@
+{
+  "baseUrl": "http://88.216.208.0:3000",
+  "results": [
+    {
+      "name": "reporting",
+      "ok": true,
+      "ms": 3051
+    },
+    {
+      "name": "roles",
+      "ok": true,
+      "ms": 929
+    },
+    {
+      "name": "alert-channels",
+      "ok": true,
+      "ms": 1147
+    },
+    {
+      "name": "settings-approvals",
+      "ok": true,
+      "ms": 1413
+    },
+    {
+      "name": "settings-emergency",
+      "ok": true,
+      "ms": 3925
+    },
+    {
+      "name": "settings-account",
+      "ok": true,
+      "ms": 1924
+    },
+    {
+      "name": "settings-help",
+      "ok": true,
+      "ms": 1754
+    },
+    {
+      "name": "change-log",
+      "ok": true,
+      "ms": 1162
+    },
+    {
+      "name": "member-drawer",
+      "ok": true,
+      "ms": 2776
+    },
+    {
+      "name": "department-drawer",
+      "ok": true,
+      "ms": 2139
+    },
+    {
+      "name": "mobile-375",
+      "ok": true,
+      "ms": 20917
+    },
+    {
+      "name": "english-ui",
+      "ok": true,
+      "ms": 12417
+    }
+  ],
+  "facts": {
+    "reporting": {
+      "shown": "auto-create-table",
+      "rows": 12,
+      "tab": "admin-main-tab-reporting",
+      "legacyTab": "admin-main-tab-reporting",
+      "oldLauncher": 0,
+      "rawColors": {},
+      "uuids": 0,
+      "codes": [],
+      "docOverflowX": false
+    },
+    "roles": {
+      "formFocus": true,
+      "rawColors": {},
+      "uuids": 0,
+      "codes": [],
+      "docOverflowX": false
+    },
+    "alert-channels": {
+      "crumb": "Cài đặt Kênh nhận cảnh báo",
+      "rawColors": {},
+      "uuids": 0,
+      "codes": [],
+      "docOverflowX": false
+    },
+    "settings-approvals": {
+      "rawColors": {},
+      "uuids": 0,
+      "codes": [],
+      "docOverflowX": false
+    },
+    "settings-emergency": {
+      "rawColors": {},
+      "uuids": 0,
+      "codes": [],
+      "docOverflowX": false
+    },
+    "settings-account": {
+      "rawColors": {},
+      "uuids": 0,
+      "codes": [],
+      "docOverflowX": false
+    },
+    "settings-help": {
+      "rawColors": {},
+      "uuids": 0,
+      "codes": [],
+      "docOverflowX": false
+    },
+    "change-log": {
+      "items": 20,
+      "drawerFocus": true,
+      "focusBack": true,
+      "urlAfterFilter": "",
+      "rawColors": {},
+      "uuids": 0,
+      "codes": [],
+      "docOverflowX": false
+    },
+    "member-drawer": {
+      "focusInside": true,
+      "uuids": 0,
+      "codes": []
+    },
+    "department-drawer": {
+      "focusInside": true,
+      "deleteDialog": {
+        "initialFocus": "Hủy"
+      },
+      "uuids": 0,
+      "codes": []
+    },
+    "mobile-375": {
+      "?tab=reporting": false,
+      "?tab=rbac": false,
+      "?tab=notifications": false,
+      "?tab=account": false,
+      "audit": false
+    },
+    "english-ui": {
+      "checked": [
+        "?tab=reporting",
+        "?tab=rbac",
+        "?tab=notifications",
+        "?tab=approvals",
+        "?tab=emergency",
+        "?tab=account",
+        "?tab=staff"
+      ]
+    }
+  },
+  "consoleErrors": [],
+  "failedRequests": [],
+  "blockedWrites": []
+}

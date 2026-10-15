@@ -1,0 +1,150 @@
+{
+  "baseUrl": "http://88.216.208.0:3000",
+  "results": [
+    {
+      "name": "shell-1440",
+      "ok": true,
+      "ms": 1522
+    },
+    {
+      "name": "tabs-keyboard",
+      "ok": true,
+      "ms": 905
+    },
+    {
+      "name": "people-1440",
+      "ok": true,
+      "ms": 1368
+    },
+    {
+      "name": "people-pending-and-titles",
+      "ok": true,
+      "ms": 1577
+    },
+    {
+      "name": "settings-1440",
+      "ok": true,
+      "ms": 1139
+    },
+    {
+      "name": "h5-legacy-routes",
+      "ok": true,
+      "ms": 8042
+    },
+    {
+      "name": "people-1024",
+      "ok": true,
+      "ms": 950
+    },
+    {
+      "name": "mobile-375",
+      "ok": true,
+      "ms": 1715
+    },
+    {
+      "name": "member-guard",
+      "ok": true,
+      "ms": 3263
+    }
+  ],
+  "facts": {
+    "shell-1440": {
+      "summary": "10 đơn vị · 71 thành viên · 22 lời mời chờ kích hoạt",
+      "cta": "Thêm đơn vị",
+      "ctaBg": "rgb(11, 113, 150)",
+      "tabs": [
+        "Cơ cấu tổ chức",
+        "Nhân sự",
+        "Loại thông tin báo cáo",
+        "Cài đặt"
+      ],
+      "selected": "admin-main-tab-org",
+      "deptRows": 10,
+      "tableScrollable": "false",
+      "menuItems": [
+        {
+          "text": "Chi tiết",
+          "visible": true
+        },
+        {
+          "text": "Sửa tên",
+          "visible": true
+        },
+        {
+          "text": "XóaPhòng ban còn thành viên, không thể xóa",
+          "visible": true
+        }
+      ],
+      "rawColors": {}
+    },
+    "tabs-keyboard": {
+      "url": "/app/admin?tab=staff",
+      "focused": "admin-main-tab-people"
+    },
+    "people-1440": {
+      "rows": 20,
+      "summary": "71 thành viên",
+      "pagination": "Trang 1/4 Trước Sau",
+      "subtabs": [
+        "Danh sách nhân sự",
+        "Chức danh",
+        "Lời mời đang chờ"
+      ],
+      "delegations": 1,
+      "lastMenuVisible": true,
+      "rawColors": {}
+    },
+    "people-pending-and-titles": {
+      "pendingRows": 20,
+      "pendingEmpty": false,
+      "titleRows": 1,
+      "rawColors": {}
+    },
+    "settings-1440": {
+      "groups": [
+        "Quyền & phê duyệt",
+        "Thông báo",
+        "Tài khoản & dữ liệu",
+        "Hỗ trợ"
+      ],
+      "headerCta": 0,
+      "crumb": "Cài đặt Kênh nhận cảnh báo",
+      "rawColors": {}
+    },
+    "h5-legacy-routes": {
+      "landed": {
+        "/app/admin/users": "/app/admin?tab=staff admin-main-tab-people",
+        "/app/admin/roles": "/app/admin?tab=rbac admin-main-tab-settings",
+        "/app/admin/departments": "/app/admin admin-main-tab-org",
+        "/app/admin/titles": "/app/admin?tab=titles admin-main-tab-people",
+        "/app/admin?tab=users": "/app/admin?tab=users admin-main-tab-people",
+        "/app/admin?tab=roles": "/app/admin?tab=roles admin-main-tab-settings"
+      },
+      "auditRoundTrip": "?tab=settings"
+    },
+    "people-1024": {
+      "scrollable": "true",
+      "actionsVisible": true,
+      "docOverflowX": false
+    },
+    "mobile-375": {
+      "docOverflowX": false,
+      "settingsOverflowX": false,
+      "ctaWidth": 327,
+      "mainWidth": 375,
+      "tablistTop": 282,
+      "metaVisible": true,
+      "headColumnVisible": false
+    },
+    "member-guard": {
+      "/app/admin": "/app/forbidden",
+      "/app/admin?tab=settings": "/app/forbidden",
+      "/app/admin/hub": "/app/forbidden",
+      "/app/admin/users": "/app/forbidden",
+      "/app/admin/audit": "/app/forbidden"
+    }
+  },
+  "consoleErrors": [],
+  "failedRequests": [],
+  "blockedWrites": []
+}

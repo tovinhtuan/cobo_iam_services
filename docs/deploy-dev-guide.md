@@ -399,7 +399,7 @@ ssh -p 21239 root@88.216.208.0 \
 | Biến | Giá trị trên dev server `88.216.208.0` |
 |------|----------------------------------------|
 | `PUBLIC_WEB_BASE_URL` | `http://88.216.208.0:3000` |
-| `PUBLIC_API_BASE_URL` | `http://88.216.208.0:8080` |
+| `PUBLIC_API_BASE_URL` | `http://88.216.208.0:3000` (qua nginx; đổi từ `:8080` ngày 15/10/2026, OPS-1) |
 
 Đã cấu hình trong `docker-compose.artifacts.yml` (service `api` và `worker`). Có thể override thêm trong `/root/cobo_project/.env` rồi recreate:
 
@@ -416,7 +416,7 @@ Sau `POST /api/v1/auth/forgot-password`, link trong mail phải là
 Mở: **`http://88.216.208.0:3000`**
 
 > Nếu không vào được: kiểm tra firewall server có mở port 3000 không.  
-> API: **`http://88.216.208.0:8080`**
+> API: dùng **`http://88.216.208.0:3000/api/...`** (nginx). Cổng `:8080` chỉ mở cho IP trong allowlist của `cobo-docker-firewall.service` (`/root/firewall-backup/phase2/apply-docker-user.sh`).
 
 ---
 

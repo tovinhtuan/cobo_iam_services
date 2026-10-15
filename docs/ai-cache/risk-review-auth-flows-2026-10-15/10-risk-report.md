@@ -437,3 +437,15 @@ Thứ tự đề xuất: OPS-1 và MR-1 (trong ngày) → MR-2 và MR-3 → MR-7
   - nginx giới hạn 3 req/phút/IP.
   - Còn mở một phần: chưa có trần tổng/tách quota SMTP (chờ quyết định), và `:8080` public (OPS-1).
 - Chưa commit, chưa deploy.
+
+## Cập nhật 15/10/2026: deploy và OPS-1 trên DEV
+- Đã deploy lên DEV: BE `d74c983`, FE `bb263dfe`. Smoke AUTH-03 6/6, login trống 2/2. Xem các thư mục `bug-*`.
+- **OPS-1 xong** (chi tiết: `docs/ai-cache/ops1-dev-hardening-2026-10-15/README.md`):
+  - đã đổi mật khẩu 15 tài khoản seed và thu hồi session của chúng; mật khẩu cũ → 401;
+  - `PUBLIC_API_BASE_URL` → `:3000` (qua nginx, có location upload 20MB);
+  - đã chặn `:8080` từ ngoài allowlist; rule được lưu trong `cobo-docker-firewall.service`.
+- **AUTH-01** trên DEV: không còn khai thác được bằng cặp seed. Vẫn mở:
+  - tài khoản `019e6d62-…` (người thật, `tua…@gmail.com`) đang dùng mật khẩu seed;
+  - migration seed vẫn nằm trong danh sách chính (MR-8).
+- **AUTH-03**: đã đóng đường vòng qua `:8080`. Vẫn mở: trần tổng hoặc tách quota SMTP (chờ quyết định).
+- Chưa làm: `REGISTRATION_DISABLED` (quyết định sản phẩm).
