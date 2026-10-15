@@ -33,6 +33,7 @@ type adminService struct {
 	inviteDefaultRoleCode              string
 	tierLookup                         func(ctx context.Context, userID string) string
 	notificationRulesConsumerEnabled   bool
+	notificationRulesShadowEnabled     bool
 	subscriptionTierEnforcementEnabled bool
 	dispatchSimulator                  NotificationDispatchSimulator
 	conflictReader                     conflict.SnapshotReader
@@ -1534,14 +1535,16 @@ func (s *adminService) GetNotificationRuleStatus(ctx context.Context, req GetNot
 		PreviewAvailable:           false,
 		SimulationAvailable:        s.dispatchSimulator != nil,
 		RuntimeConsumerEnabled:     s.notificationRulesConsumerEnabled,
-		DispatchEnforcementEnabled: false,
+		DispatchEnforcementEnabled: s.notificationRulesConsumerEnabled,
+		ShadowModeEnabled:          s.notificationRulesShadowEnabled && !s.notificationRulesConsumerEnabled,
+		DefaultsApplied:            rule == nil,
 		SubscriptionTierEnforced:   s.subscriptionTierEnforcementEnabled,
 		ChannelsActive:             []string{},
 		UIState:                    "not_configured",
 		Warnings:                   []string{},
 	}
 	if rule == nil {
-		view.Warnings = append(view.Warnings, "Chưa có cấu hình kênh cảnh báo. Lưu cấu hình để bắt đầu.")
+		view.Warnings = append(view.Warnings, "Chưa lưu cấu hình kênh cảnh báo: hệ thống gửi mọi nhắc qua email và trong ứng dụng.")
 		return view, nil
 	}
 	valid, issues := ValidateAlertChannelPrefsPayload(rule.Payload)
@@ -1553,6 +1556,12 @@ func (s *adminService) GetNotificationRuleStatus(ctx context.Context, req GetNot
 	}
 	view.LastUpdatedBy = stringFromPayload(rule.Payload, "updated_by")
 
+	if st := strings.TrimSpace(rule.Status); st != "" && !strings.EqualFold(st, "active") {
+		// A disabled row means no reminders once the prefs are applied (RULE_DISABLED); say so (API-02).
+		view.UIState = "disabled"
+		view.Warnings = append(view.Warnings, "Cấu hình kênh cảnh báo đang tắt: khi được áp dụng, hệ thống không gửi nhắc cho doanh nghiệp này.")
+		return view, nil
+	}
 	if !valid {
 		view.UIState = "misconfigured"
 		for _, issue := range issues {
@@ -1561,9 +1570,13 @@ func (s *adminService) GetNotificationRuleStatus(ctx context.Context, req GetNot
 		return view, nil
 	}
 	view.UIState = "storage_configured"
-	view.Warnings = append(view.Warnings, "Cấu hình đã được lưu nhưng chưa ảnh hưởng tới runtime dispatch.")
-	if !view.RuntimeConsumerEnabled {
-		view.Warnings = append(view.Warnings, "Runtime consumer chưa đọc notification_rules — preview và dispatch chưa khả dụng.")
+	switch {
+	case view.DispatchEnforcementEnabled:
+		view.Warnings = append(view.Warnings, "Cấu hình đang được áp dụng khi gửi nhắc.")
+	case view.ShadowModeEnabled:
+		view.Warnings = append(view.Warnings, "Cấu hình đang được chạy thử song song; nhắc vẫn gửi theo mặc định.")
+	default:
+		view.Warnings = append(view.Warnings, "Cấu hình đã được lưu nhưng chưa ảnh hưởng tới runtime dispatch.")
 	}
 	view.Warnings = append(view.Warnings, "Preview chưa khả dụng (Sprint 2).")
 	if !view.SubscriptionTierEnforced {

@@ -300,6 +300,9 @@
 - **Ước lượng:** S–M
 
 ### RMC-07 / AHA-08 Email và in-app được đánh giá chung; thiếu row prefs bị coi là RULE_MISSING
+> **Đã làm 15/10/2026** trong `notification-rules-runtime-h7-2026-10-15/`, cùng RMC-08.
+> Khác kế hoạch (D-H7-1): công ty chưa có dòng thì không chặn lịch, không lọc người nhận.
+> Chỉ in-app thì tạo in-app đồng bộ, có email dự phòng.
 - **Mức độ / nguồn:** MEDIUM, tiềm ẩn: chỉ xảy ra khi `NOTIFICATION_RULES_CONSUMER_ENABLED=true`. Flag mặc định tắt (`platform/config/notification_rules_consumer.go`); chưa biết giá trị trên DEV.
 - **Nguyên nhân gốc:**
   - Runtime chỉ đánh giá `channel="email"` (`dispatch_decision.go:79`), nên prefs "chỉ in-app" ra CHANNEL_DISABLED và không gửi gì.

@@ -18,6 +18,10 @@ type NotificationRuleStatusView struct {
 	SimulationAvailable          bool     `json:"simulation_available"`
 	RuntimeConsumerEnabled       bool     `json:"runtime_consumer_enabled"`
 	DispatchEnforcementEnabled   bool     `json:"dispatch_enforcement_enabled"`
+	// ShadowModeEnabled: prefs are evaluated next to the real dispatch and logged, delivery unchanged.
+	ShadowModeEnabled bool `json:"shadow_mode_enabled"`
+	// DefaultsApplied: the company has no saved prefs; delivery keeps the system defaults.
+	DefaultsApplied bool `json:"defaults_applied"`
 	SubscriptionTierEnforced     bool     `json:"subscription_tier_enforced"`
 	ChannelsActive               []string `json:"channels_active"`
 	LastUpdatedAt                string   `json:"last_updated_at,omitempty"`

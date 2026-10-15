@@ -23,6 +23,10 @@ type promMetricsSet struct {
 	milestoneSeedTotal      *prometheus.CounterVec
 	milestoneSeedErrTotal   *prometheus.CounterVec
 	milestoneMarkErrTotal   *prometheus.CounterVec
+	// H7: notification rules shadow evaluation (prefs applied vs real dispatch).
+	rulesShadowTotal *prometheus.CounterVec
+	// H7: in-app-only reminders by result (in_app, email_fallback, undelivered).
+	inAppOnlyTotal *prometheus.CounterVec
 }
 
 func newPromMetricsSet() *promMetricsSet {
@@ -82,6 +86,18 @@ func newPromMetricsSet() *promMetricsSet {
 			Name:      "milestone_mark_error_total",
 			Help:      "Total errors while marking milestones as sent",
 		}, []string{"milestone_type"}),
+		rulesShadowTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "cobo",
+			Subsystem: "reminder",
+			Name:      "rules_shadow_total",
+			Help:      "Shadow evaluations of company alert prefs compared with the real dispatch decision",
+		}, []string{"outcome", "reason"}),
+		inAppOnlyTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "cobo",
+			Subsystem: "reminder",
+			Name:      "in_app_only_total",
+			Help:      "In-app-only reminders by delivery result",
+		}, []string{"result"}),
 	}
 }
 
@@ -100,6 +116,8 @@ func NewPromMetrics() *PromMetrics {
 			promSet.milestoneSeedTotal,
 			promSet.milestoneSeedErrTotal,
 			promSet.milestoneMarkErrTotal,
+			promSet.rulesShadowTotal,
+			promSet.inAppOnlyTotal,
 		)
 	})
 	return &PromMetrics{}
@@ -123,6 +141,10 @@ func (p *PromMetrics) IncCounter(name string, tags map[string]string) {
 		promSet.milestoneSeedErrTotal.WithLabelValues(tags["milestone_type"]).Inc()
 	case "reminder_milestone_mark_error_total":
 		promSet.milestoneMarkErrTotal.WithLabelValues(tags["milestone_type"]).Inc()
+	case "reminder_rules_shadow_total":
+		promSet.rulesShadowTotal.WithLabelValues(tags["outcome"], tags["reason"]).Inc()
+	case "reminder_in_app_only_total":
+		promSet.inAppOnlyTotal.WithLabelValues(tags["result"]).Inc()
 	default:
 		_ = stableTagString(tags)
 	}

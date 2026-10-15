@@ -129,3 +129,90 @@ func TestAdminService_GetNotificationRuleStatus_StorageConfigured(t *testing.T) 
 		t.Fatal("runtime must stay false unless env set")
 	}
 }
+
+// H7 T11: the status API tells the truth about delivery — off / shadow / enforced — and whether the
+// company runs on the defaults.
+func TestAdminService_GetNotificationRuleStatus_H7Modes(t *testing.T) {
+	sub := caapp.AdminSubject{UserID: "u_owner", MembershipID: "m_owner", CompanyID: "c_001"}
+	newSvc := func(opts ...caapp.AdminOption) caapp.AdminService {
+		return caapp.NewAdminService(
+			cainmem.NewAdminRepository(),
+			fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{"rbac.manage"}},
+			fixedIDGen("u_owner"),
+			opts...,
+		)
+	}
+	cases := []struct {
+		name                    string
+		opts                    []caapp.AdminOption
+		enforced, shadow, deflt bool
+	}{
+		{"off", nil, false, false, true},
+		{"shadow", []caapp.AdminOption{caapp.WithNotificationRulesShadowEnabled(true)}, false, true, true},
+		{"enforced", []caapp.AdminOption{caapp.WithNotificationRulesConsumerEnabled(true)}, true, false, true},
+		{"enforced wins over shadow", []caapp.AdminOption{caapp.WithNotificationRulesConsumerEnabled(true), caapp.WithNotificationRulesShadowEnabled(true)}, true, false, true},
+	}
+	for _, tc := range cases {
+		status, err := newSvc(tc.opts...).GetNotificationRuleStatus(context.Background(), caapp.GetNotificationRuleStatusRequest{Subject: sub})
+		if err != nil {
+			t.Fatalf("%s: GetNotificationRuleStatus: %v", tc.name, err)
+		}
+		if status.DispatchEnforcementEnabled != tc.enforced || status.RuntimeConsumerEnabled != tc.enforced {
+			t.Errorf("%s: enforcement=%v runtime=%v want %v", tc.name, status.DispatchEnforcementEnabled, status.RuntimeConsumerEnabled, tc.enforced)
+		}
+		if status.ShadowModeEnabled != tc.shadow {
+			t.Errorf("%s: shadow=%v want %v", tc.name, status.ShadowModeEnabled, tc.shadow)
+		}
+		if status.DefaultsApplied != tc.deflt {
+			t.Errorf("%s: defaults_applied=%v want %v", tc.name, status.DefaultsApplied, tc.deflt)
+		}
+	}
+
+	svc := newSvc(caapp.WithNotificationRulesShadowEnabled(true))
+	payload := caapp.DefaultAlertChannelPrefsPayload(sub.MembershipID)
+	payload["company_id"] = sub.CompanyID
+	payload["rule_code"] = caapp.AlertChannelPrefsRuleCode
+	if err := svc.CreateNotificationRule(context.Background(), caapp.CreateNotificationRuleRequest{Subject: sub, Payload: payload}); err != nil {
+		t.Fatalf("CreateNotificationRule: %v", err)
+	}
+	status, err := svc.GetNotificationRuleStatus(context.Background(), caapp.GetNotificationRuleStatusRequest{Subject: sub})
+	if err != nil {
+		t.Fatalf("GetNotificationRuleStatus: %v", err)
+	}
+	if status.DefaultsApplied || !status.ShadowModeEnabled {
+		t.Fatalf("saved prefs under shadow: defaults_applied=%v shadow=%v", status.DefaultsApplied, status.ShadowModeEnabled)
+	}
+}
+
+// H7 API-02: a disabled prefs row (no reminders once applied) is reported as ui_state=disabled.
+func TestAdminService_GetNotificationRuleStatus_DisabledRow(t *testing.T) {
+	repo := cainmem.NewAdminRepository()
+	svc := caapp.NewAdminService(
+		repo,
+		fakeAuthService{decision: authapp.DecisionAllow, permissions: []string{"rbac.manage"}},
+		fixedIDGen("u_owner"),
+		caapp.WithNotificationRulesConsumerEnabled(true),
+	)
+	sub := caapp.AdminSubject{UserID: "u_owner", MembershipID: "m_owner", CompanyID: "c_001"}
+	payload := caapp.DefaultAlertChannelPrefsPayload(sub.MembershipID)
+	payload["company_id"] = sub.CompanyID
+	payload["rule_code"] = caapp.AlertChannelPrefsRuleCode
+	if err := svc.CreateNotificationRule(context.Background(), caapp.CreateNotificationRuleRequest{Subject: sub, Payload: payload}); err != nil {
+		t.Fatalf("CreateNotificationRule: %v", err)
+	}
+	rules, err := repo.ListNotificationRules(context.Background(), sub.CompanyID)
+	if err != nil || len(rules) != 1 {
+		t.Fatalf("ListNotificationRules: %v (%d rules)", err, len(rules))
+	}
+	inactive := "inactive"
+	if err := repo.UpdateNotificationRuleMerged(context.Background(), sub.CompanyID, rules[0].NotificationRuleID, nil, &inactive); err != nil {
+		t.Fatalf("disable rule: %v", err)
+	}
+	status, err := svc.GetNotificationRuleStatus(context.Background(), caapp.GetNotificationRuleStatusRequest{Subject: sub})
+	if err != nil {
+		t.Fatalf("GetNotificationRuleStatus: %v", err)
+	}
+	if status.UIState != "disabled" || status.DefaultsApplied {
+		t.Fatalf("ui_state=%q defaults_applied=%v, want disabled/false", status.UIState, status.DefaultsApplied)
+	}
+}

@@ -28,15 +28,25 @@ func NewService(repo Repository, userIDQuerier UserIDQuerier, log *slog.Logger) 
 // It resolves user_ids from RecipientEmails via UserIDQuerier.
 // Errors are logged but never propagate — caller (reminder worker) is fire-and-forget.
 func (s *svc) CreateForReminder(ctx context.Context, req ReminderInAppRequest) error {
+	_, _ = s.CreateForReminderCounted(ctx, req)
+	return nil
+}
+
+// CreateForReminderCounted is CreateForReminder that reports how many notifications were created
+// and the first error. The reminder worker uses it when in-app is the only channel of a reminder
+// (H7), so it can fall back to email instead of losing the reminder.
+func (s *svc) CreateForReminderCounted(ctx context.Context, req ReminderInAppRequest) (int, error) {
 	if s.userIDQuerier == nil || len(req.RecipientEmails) == 0 {
-		return nil
+		return 0, nil
 	}
 	userIDs, err := s.userIDQuerier.UserIDsByEmails(ctx, req.CompanyID, req.RecipientEmails)
 	if err != nil {
 		s.log.Warn("inappnotification: resolve user IDs for reminder failed",
 			slog.String("company_id", req.CompanyID), slog.String("err", err.Error()))
-		return nil
+		return 0, err
 	}
+	created := 0
+	var firstErr error
 	var rt *string
 	var ri *string
 	if req.ResourceType != "" {
@@ -64,9 +74,14 @@ func (s *svc) CreateForReminder(ctx context.Context, req ReminderInAppRequest) e
 		if createErr := s.repo.Create(ctx, n); createErr != nil {
 			s.log.Warn("inappnotification: create failed",
 				slog.String("user_id", uid), slog.String("err", createErr.Error()))
+			if firstErr == nil {
+				firstErr = createErr
+			}
+			continue
 		}
+		created++
 	}
-	return nil
+	return created, firstErr
 }
 
 // CreateForUser creates a single in-app notification for a known user_id.

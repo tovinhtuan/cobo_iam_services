@@ -17,6 +17,27 @@ func (b *Bridge) CreateForReminderDispatch(ctx context.Context, c reminderapp.Di
 	if b == nil || b.Svc == nil {
 		return nil
 	}
+	return b.Svc.CreateForReminder(ctx, b.request(c))
+}
+
+type countedReminderCreator interface {
+	CreateForReminderCounted(ctx context.Context, req inappapp.ReminderInAppRequest) (int, error)
+}
+
+// DeliverForReminderDispatch creates the in-app notifications and reports how many were created
+// (reminderapp.InAppNotificationDeliverer). Used when in-app is the only channel of a reminder.
+func (b *Bridge) DeliverForReminderDispatch(ctx context.Context, c reminderapp.DispatchCandidate) (int, error) {
+	if b == nil || b.Svc == nil {
+		return 0, nil
+	}
+	if counted, ok := b.Svc.(countedReminderCreator); ok {
+		return counted.CreateForReminderCounted(ctx, b.request(c))
+	}
+	// A service without counting cannot prove delivery: report none so the caller falls back.
+	return 0, b.Svc.CreateForReminder(ctx, b.request(c))
+}
+
+func (b *Bridge) request(c reminderapp.DispatchCandidate) inappapp.ReminderInAppRequest {
 	kind := inappapp.KindReminderDeadline
 	if c.ScopeType == reminderapp.ScopeTypeWorkflowStep {
 		kind = inappapp.KindReminderWorkflow
@@ -44,7 +65,7 @@ func (b *Bridge) CreateForReminderDispatch(ctx context.Context, c reminderapp.Di
 	body := buildReminderBody(c.ScopeType, stepName, dueDate)
 	resourceID := resolveDisclosureResourceID(c)
 
-	return b.Svc.CreateForReminder(ctx, inappapp.ReminderInAppRequest{
+	return inappapp.ReminderInAppRequest{
 		CompanyID:       c.CompanyID,
 		Kind:            kind,
 		Title:           title,
@@ -52,7 +73,7 @@ func (b *Bridge) CreateForReminderDispatch(ctx context.Context, c reminderapp.Di
 		ResourceType:    inappapp.ResourceTypeDisclosure,
 		ResourceID:      resourceID,
 		RecipientEmails: c.RecipientEmails,
-	})
+	}
 }
 
 func buildReminderBody(scope reminderapp.ScopeType, stepName, dueDate string) string {

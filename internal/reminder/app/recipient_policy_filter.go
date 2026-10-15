@@ -11,6 +11,7 @@ func applyRecipientPolicies(
 	querier MembershipEmailQuerier,
 	taskReader WorkflowTaskAssigneeReader,
 	stepReader WorkflowStepReader,
+	instanceReader InstanceStepReader,
 	companyID string,
 	candidates []string,
 	policies []string,
@@ -29,7 +30,7 @@ func applyRecipientPolicies(
 
 	allowed := make(map[string]struct{})
 	for _, policy := range policies {
-		emails, err := policyAllowedEmails(ctx, querier, taskReader, stepReader, companyID, policy, c)
+		emails, err := policyAllowedEmails(ctx, querier, taskReader, stepReader, instanceReader, companyID, policy, c)
 		if err != nil {
 			return nil, err
 		}
@@ -56,6 +57,7 @@ func policyAllowedEmails(
 	querier MembershipEmailQuerier,
 	taskReader WorkflowTaskAssigneeReader,
 	stepReader WorkflowStepReader,
+	instanceReader InstanceStepReader,
 	companyID, policy string,
 	c DispatchCandidate,
 ) ([]string, error) {
@@ -72,20 +74,35 @@ func policyAllowedEmails(
 		stepCode := extractStepID(c.ScopeID)
 		return taskReader.AssigneeEmailsByStep(ctx, companyID, c.WorkflowInstanceID, stepCode)
 	case "department_focal":
-		if querier == nil {
+		if querier == nil || c.ScopeType != ScopeTypeWorkflowStep {
 			return nil, nil
 		}
-		deptID := ""
-		if c.ScopeType == ScopeTypeWorkflowStep && stepReader != nil {
-			step, err := stepReader.GetStepByID(ctx, extractStepID(c.ScopeID))
+		stepID := extractStepID(c.ScopeID)
+		var step *WorkflowStepConfig
+		// RMC-08: the instance snapshot carries the company's own step first; the global step only
+		// names a template department, which must be mapped onto the company's department.
+		if instanceReader != nil && strings.TrimSpace(c.WorkflowInstanceID) != "" {
+			st, err := instanceReader.GetStepByInstance(ctx, companyID, c.WorkflowInstanceID, stepID)
 			if err != nil {
 				return nil, err
 			}
-			if step != nil {
-				deptID = strings.TrimSpace(step.DepartmentID)
-			}
+			step = st
 		}
-		if deptID == "" {
+		if step == nil && stepReader != nil {
+			st, err := stepReader.GetStepByID(ctx, stepID)
+			if err != nil {
+				return nil, err
+			}
+			step = st
+		}
+		if step == nil || strings.TrimSpace(step.DepartmentID) == "" {
+			return nil, nil
+		}
+		deptID, ok, err := querier.ResolveCompanyDepartment(ctx, companyID, strings.TrimSpace(step.DepartmentID))
+		if err != nil {
+			return nil, err
+		}
+		if !ok || deptID == "" {
 			return nil, nil
 		}
 		return querier.EmailsByDepartments(ctx, companyID, []string{deptID})

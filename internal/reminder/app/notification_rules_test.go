@@ -87,20 +87,21 @@ func TestNotificationRulesEvaluator_FlagOff(t *testing.T) {
 	}
 }
 
-func TestNotificationRulesEvaluator_NoRules(t *testing.T) {
+// H7 Q-23: no row no longer means RULE_MISSING; the defaults keep today's delivery.
+func TestNotificationRulesEvaluator_NoRules_AppliesDefaults(t *testing.T) {
 	eval := NewNotificationRulesEvaluator(&fakeNotificationRulesReader{}, true)
 	dec, err := eval.Evaluate(context.Background(), EvaluateInput{CompanyID: "c1", EventType: "deadline", Channel: "email"})
 	if err != nil {
 		t.Fatalf("Evaluate: %v", err)
 	}
-	if dec.Layer1Applied {
-		t.Fatal("layer1_applied should be false without row")
+	if !dec.Layer1Applied || !dec.DefaultsApplied {
+		t.Fatalf("defaults must be applied without a row: layer1=%v defaults=%v", dec.Layer1Applied, dec.DefaultsApplied)
 	}
-	if dec.Allowed {
-		t.Fatal("allowed should be false without prefs row")
+	if !dec.Allowed || dec.SkipReason != "" {
+		t.Fatalf("allowed=%v skip=%q", dec.Allowed, dec.SkipReason)
 	}
-	if dec.SkipReason != SkipReasonRuleMissing {
-		t.Fatalf("skip_reason=%q want %q", dec.SkipReason, SkipReasonRuleMissing)
+	if !dec.ChannelAllowed["email"] || !dec.ChannelAllowed["in_app"] {
+		t.Fatalf("defaults allow email and in-app, got %v", dec.ChannelAllowed)
 	}
 }
 
@@ -110,7 +111,8 @@ func TestNotificationRulesEvaluator_DisabledChannel(t *testing.T) {
 			"c1": validPrefsDoc("c1", false),
 		},
 	}, true)
-	dec, err := eval.Evaluate(context.Background(), EvaluateInput{CompanyID: "c1", EventType: "deadline", Channel: "email"})
+	// The schedule is checked before channels (both channels need it), so give a matching offset.
+	dec, err := eval.Evaluate(context.Background(), evalInputWithSchedule("c1", "deadline"))
 	if err != nil {
 		t.Fatalf("Evaluate: %v", err)
 	}
@@ -119,6 +121,9 @@ func TestNotificationRulesEvaluator_DisabledChannel(t *testing.T) {
 	}
 	if dec.SkipReason != SkipReasonChannelDisabled {
 		t.Fatalf("skip_reason=%q want %q", dec.SkipReason, SkipReasonChannelDisabled)
+	}
+	if dec.ChannelAllowed["email"] || !dec.ChannelAllowed["in_app"] {
+		t.Fatalf("email off / in-app on expected, got %v", dec.ChannelAllowed)
 	}
 }
 

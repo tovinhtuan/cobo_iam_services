@@ -655,6 +655,7 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 			reminderapp.WithRecipientPolicyDeps(membershipQuerier, membershipQuerier),
 			reminderapp.WithDispatchLogger(log),
 			reminderapp.WithNotificationRulesFoundation(rulesReader, rulesEvaluator),
+			reminderapp.WithNotificationRulesShadow(rulesReader, cfg.NotificationRulesShadowEnabled),
 			reminderapp.WithTierEnforcement(tierChecker),
 		)
 		simDeps := reminderapp.DispatchDecisionDeps{
@@ -665,6 +666,7 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 			MembershipQuerier:  membershipQuerier,
 			TaskAssigneeReader: membershipQuerier,
 			StepReader:         stepReader,
+			InstanceStepReader: instanceStepReader,
 			TierEnforcement:    tierChecker,
 		}
 		adminOpts = append(adminOpts, companyaccessapp.WithDispatchSimulator(newReminderDispatchSimulatorAdapter(reminderapp.NewDispatchSimulator(simDeps))))
@@ -690,6 +692,7 @@ func register(mux *http.ServeMux, log *slog.Logger, cfg config.Config, tokenMgr 
 	}
 	adminOpts = append(adminOpts, companyaccessapp.WithSubscriptionTierLookup(tierLookup))
 	adminOpts = append(adminOpts, companyaccessapp.WithNotificationRulesConsumerEnabled(cfg.NotificationRulesConsumerEnabled))
+	adminOpts = append(adminOpts, companyaccessapp.WithNotificationRulesShadowEnabled(cfg.NotificationRulesShadowEnabled))
 	adminOpts = append(adminOpts, companyaccessapp.WithSubscriptionTierEnforcementEnabled(cfg.SubscriptionTierEnforcementEnabled))
 	adminOpts = append(adminOpts, companyaccessapp.WithAuditRepository(auditRepo))
 	adminOpts = append(adminOpts, companyaccessapp.WithEffectiveAccessCache(projectionStore))

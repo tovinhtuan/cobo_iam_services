@@ -197,6 +197,8 @@ type DispatchOccurrenceRequest struct {
 	TemplateCode    string         `json:"template_code"`
 	TemplatePayload map[string]any `json:"template_payload"`
 	RecipientEmails []string       `json:"recipient_emails"`
+	// SkipEmail is internal (never from JSON): deliver in-app only, without SMTP (AHA-08).
+	SkipEmail bool `json:"-"`
 }
 
 type DispatchCandidate struct {
@@ -385,6 +387,13 @@ const (
 // Implementations must be safe to call fire-and-forget; errors must not propagate to caller.
 type InAppNotificationCreator interface {
 	CreateForReminderDispatch(ctx context.Context, candidate DispatchCandidate) error
+}
+
+// InAppNotificationDeliverer is implemented by creators that can report how many in-app
+// notifications they created. Required for in-app-only reminders (H7): when nothing was created,
+// the worker falls back to email instead of losing the reminder.
+type InAppNotificationDeliverer interface {
+	DeliverForReminderDispatch(ctx context.Context, candidate DispatchCandidate) (created int, err error)
 }
 
 // AlertConfigRepository persists alert_template_configs rows.

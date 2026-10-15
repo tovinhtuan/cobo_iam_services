@@ -44,3 +44,26 @@ func TestLoad_NotificationRulesConsumerEnabledTrue(t *testing.T) {
 		t.Fatal("NotificationRulesConsumerEnabled want true")
 	}
 }
+
+// H7 T12: NOTIFICATION_RULES_SHADOW_ENABLED is read with the same truthy values, default false.
+func TestLoad_NotificationRulesShadowEnabled(t *testing.T) {
+	t.Setenv("NOTIFICATION_RULES_SHADOW_ENABLED", "")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.NotificationRulesShadowEnabled {
+		t.Fatal("shadow must default to false")
+	}
+	t.Setenv("NOTIFICATION_RULES_SHADOW_ENABLED", "true")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.NotificationRulesShadowEnabled {
+		t.Fatal("NOTIFICATION_RULES_SHADOW_ENABLED=true must enable shadow")
+	}
+	if !ParseNotificationRulesShadowEnabled(" YES ") || ParseNotificationRulesShadowEnabled("no") {
+		t.Fatal("shadow flag parsing must follow the consumer flag")
+	}
+}

@@ -216,6 +216,7 @@ func main() {
 			reminderapp.WithAlertHook(reminderobserve.AlertLogger{Log: log}),
 			reminderapp.WithDispatchLogger(log),
 			reminderapp.WithNotificationRulesFoundation(rulesReader, rulesEvaluator),
+			reminderapp.WithNotificationRulesShadow(rulesReader, cfg.NotificationRulesShadowEnabled),
 			reminderapp.WithTierEnforcement(tierChecker),
 			reminderapp.WithBindingOwnership(wdmysql.NewDeliveryStore(sqlDB)),
 		}

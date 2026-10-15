@@ -35,6 +35,9 @@ type service struct {
 	instanceStepReader         InstanceStepReader
 	publicWebBaseURL           string
 	inAppCreator               InAppNotificationCreator // optional, nil = disabled
+	// shadowEvaluator, when set and the runtime consumer is off, evaluates the company alert prefs
+	// next to the real decision and records the difference without changing delivery (H7 shadow).
+	shadowEvaluator *NotificationRulesEvaluator
 	notificationRulesReader    NotificationRulesReader
 	notificationRulesEvaluator *NotificationRulesEvaluator
 	membershipQuerier          MembershipEmailQuerier
@@ -126,6 +129,16 @@ func WithInstanceStepReader(r InstanceStepReader) ServiceOption {
 func WithInAppCreator(c InAppNotificationCreator) ServiceOption {
 	return func(s *service) {
 		s.inAppCreator = c
+	}
+}
+
+// WithNotificationRulesShadow turns on shadow evaluation of company alert prefs
+// (NOTIFICATION_RULES_SHADOW_ENABLED). It has no effect while the runtime consumer is enabled.
+func WithNotificationRulesShadow(reader NotificationRulesReader, enabled bool) ServiceOption {
+	return func(s *service) {
+		if enabled && reader != nil {
+			s.shadowEvaluator = NewNotificationRulesEvaluator(reader, true)
+		}
 	}
 }
 
@@ -380,12 +393,16 @@ func (s *service) DispatchDueOccurrences(ctx context.Context, now time.Time, lim
 			}
 		}
 
+		// In-app only needs a creator that can report delivery (fallback to email when nothing was
+		// created); without one, email keeps the reminder.
+		skipEmail := out.skipEmail && s.inAppDeliverer() != nil
 		resp, dispatchErr := s.DispatchOccurrence(ctx, DispatchOccurrenceRequest{
 			OccurrenceID:    c.OccurrenceID,
 			IdempotencyKey:  c.IdempotencyKey,
 			TemplateCode:    out.templateCode,
 			TemplatePayload: out.payload,
 			RecipientEmails: out.recipients,
+			SkipEmail:       skipEmail,
 		})
 		if dispatchErr != nil {
 			result.Failed++
@@ -398,6 +415,11 @@ func (s *service) DispatchDueOccurrences(ctx context.Context, now time.Time, lim
 				cc := c
 				cc.RecipientEmails = out.recipients
 				cc.TemplatePayload = out.payload
+				if skipEmail {
+					// In-app is the only channel: deliver now, not fire-and-forget (PERF-01).
+					s.deliverInAppOnly(ctx, cc, out.templateCode)
+					break
+				}
 				go func(candidate DispatchCandidate) {
 					_ = s.inAppCreator.CreateForReminderDispatch(context.Background(), candidate)
 				}(cc)
@@ -421,6 +443,7 @@ type prepareDispatchOutcome struct {
 	skipReason   string
 	ruleCode     string
 	allowInApp   bool
+	skipEmail    bool
 	evalErr      error
 }
 
@@ -439,7 +462,13 @@ func (s *service) prepareDispatch(ctx context.Context, c DispatchCandidate, asOf
 		skipReason:   dec.SkipReason,
 		ruleCode:     dec.RuleCode,
 		allowInApp:   dec.AllowInApp,
+		skipEmail:    dec.SkipEmail,
 		evalErr:      dec.EvalErr,
+	}
+	// Skipped rows stay PENDING and are listed again every tick; shadow only compares rows that are
+	// actually delivered so each reminder is counted once (PERF-02).
+	if s.shadowEvaluator != nil && !(s.notificationRulesEvaluator != nil && s.notificationRulesEvaluator.ConsumerEnabled()) && dec.EvalErr == nil && !dec.Skip {
+		s.recordShadowDecision(ctx, c, asOf, dec)
 	}
 	if out.payload == nil {
 		out.payload = map[string]any{}
@@ -573,17 +602,9 @@ func (s *service) dispatchDecisionDeps() DispatchDecisionDeps {
 		MembershipQuerier:  s.membershipQuerier,
 		TaskAssigneeReader: s.taskAssigneeReader,
 		StepReader:         s.stepReader,
+		InstanceStepReader: s.instanceStepReader,
 		TierEnforcement:    s.tierEnforcement,
 	}
-}
-
-func emailChannelAllowed(dec EvaluateDecision) bool {
-	for _, ch := range dec.ActiveChannels {
-		if strings.EqualFold(ch, "email") {
-			return true
-		}
-	}
-	return false
 }
 
 // ReminderSkipCompanyInactive marks occurrences closed because the company is inactive. The row is
@@ -670,7 +691,10 @@ func (s *service) dispatchClaimedOccurrence(ctx context.Context, occurrence *Rem
 	}
 
 	providerMessageID := "mock-accepted"
-	if s.emailSender != nil {
+	if req.SkipEmail {
+		// Company prefs allow in-app only (AHA-08): no SMTP; the in-app notification follows SENT.
+		providerMessageID = "in_app_only"
+	} else if s.emailSender != nil {
 		msgID, sendErr := s.emailSender.SendReminderEmail(ctx, templateCode, req.TemplatePayload, validEmails, req.IdempotencyKey)
 		if sendErr != nil {
 			if isRetryableError(sendErr) && attemptNo < 5 {

@@ -7,7 +7,8 @@ import (
 	"time"
 )
 
-func TestPrepareDispatch_FlagOn_RuleMissing_Skip(t *testing.T) {
+// H7 Q-23: a company without prefs keeps today's delivery (was RULE_MISSING skip).
+func TestPrepareDispatch_FlagOn_RuleMissing_UsesDefaults(t *testing.T) {
 	eval := NewNotificationRulesEvaluator(&fakeNotificationRulesReader{}, true)
 	svc := NewService(nil, nil, nil, WithNotificationRulesFoundation(&fakeNotificationRulesReader{}, eval)).(*service)
 	c := DispatchCandidate{
@@ -18,15 +19,16 @@ func TestPrepareDispatch_FlagOn_RuleMissing_Skip(t *testing.T) {
 		ScheduledAt:     time.Now().UTC(),
 	}
 	out := svc.prepareDispatch(context.Background(), c, time.Now().UTC())
-	if !out.skip || out.skipReason != SkipReasonRuleMissing {
-		t.Fatalf("skip=%v reason=%q want %q", out.skip, out.skipReason, SkipReasonRuleMissing)
+	if out.skip || out.skipEmail || !out.allowInApp {
+		t.Fatalf("defaults must send email + in-app: skip=%v reason=%q skipEmail=%v inApp=%v", out.skip, out.skipReason, out.skipEmail, out.allowInApp)
 	}
 }
 
+// H7 AHA-08: skip only when neither email nor in-app is allowed.
 func TestPrepareDispatch_FlagOn_ChannelDisabled_Skip(t *testing.T) {
-	reader := &fakeNotificationRulesReader{byCompany: map[string]*AlertChannelPrefsDocument{
-		"c1": validPrefsDoc("c1", false),
-	}}
+	doc := validPrefsDocNoPolicies("c1", false)
+	doc.Channels["in_app"] = ChannelPref{Enabled: false}
+	reader := &fakeNotificationRulesReader{byCompany: map[string]*AlertChannelPrefsDocument{"c1": doc}}
 	eval := NewNotificationRulesEvaluator(reader, true)
 	svc := NewService(nil, nil, nil, WithNotificationRulesFoundation(reader, eval)).(*service)
 	now := time.Now().UTC()
@@ -90,12 +92,14 @@ func TestPrepareDispatch_FlagOn_Eligible_Continues(t *testing.T) {
 	}
 }
 
-func TestDispatchDue_FlagOn_RuleMissing_NoSend(t *testing.T) {
+// H7 Q-23: missing prefs row still sends (was skip).
+func TestDispatchDue_FlagOn_RuleMissing_SendsDefaults(t *testing.T) {
 	reader := &fakeNotificationRulesReader{}
 	eval := NewNotificationRulesEvaluator(reader, true)
 	candidates := []DispatchCandidate{{
 		OccurrenceID:    "occ1",
 		IdempotencyKey:  "occ1",
+		TemplateCode:    "reminder.deadline",
 		RecipientEmails: []string{"user@example.com"},
 		CompanyID:       "c1",
 		ScheduledAt:     time.Now().UTC(),
@@ -116,8 +120,8 @@ func TestDispatchDue_FlagOn_RuleMissing_NoSend(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DispatchDueOccurrences: %v", err)
 	}
-	if res.Skipped != 1 || res.Sent != 0 {
-		t.Fatalf("expected skip=1 sent=0 got %+v", res)
+	if res.Skipped != 0 || res.Sent != 1 {
+		t.Fatalf("expected sent=1 skip=0 got %+v", res)
 	}
 }
 
@@ -192,7 +196,7 @@ func TestApplyRecipientPolicies_FiltersAll(t *testing.T) {
 		adminEmails: map[string][]string{"c1": {"admin@co.com"}},
 	}
 	candidates := []string{"other@co.com"}
-	filtered, err := applyRecipientPolicies(context.Background(), querier, nil, nil, "c1", candidates, []string{"company_admin"}, DispatchCandidate{})
+	filtered, err := applyRecipientPolicies(context.Background(), querier, nil, nil, nil, "c1", candidates, []string{"company_admin"}, DispatchCandidate{})
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}
@@ -206,7 +210,7 @@ func TestApplyRecipientPolicies_Intersect(t *testing.T) {
 		adminEmails: map[string][]string{"c1": {"admin@co.com"}},
 	}
 	candidates := []string{"admin@co.com", "other@co.com"}
-	filtered, err := applyRecipientPolicies(context.Background(), querier, nil, nil, "c1", candidates, []string{"company_admin"}, DispatchCandidate{})
+	filtered, err := applyRecipientPolicies(context.Background(), querier, nil, nil, nil, "c1", candidates, []string{"company_admin"}, DispatchCandidate{})
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}

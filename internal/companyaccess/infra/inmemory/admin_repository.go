@@ -1005,6 +1005,10 @@ func (r *AdminRepository) GetNotificationRuleByCode(_ context.Context, companyID
 		code, _ := strFromAnyMap(rule, "rule_code")
 		if cid == companyID && code == ruleCode {
 			id, _ := strFromAnyMap(rule, "notification_rule_id")
+			status, _ := strFromAnyMap(rule, "status")
+			if strings.TrimSpace(status) == "" {
+				status = "active" // same default as the MySQL column
+			}
 			payload := cloneAnyMap(rule)
 			for _, k := range []string{"notification_rule_id", "company_id", "rule_code", "status"} {
 				delete(payload, k)
@@ -1012,7 +1016,7 @@ func (r *AdminRepository) GetNotificationRuleByCode(_ context.Context, companyID
 			return &caapp.NotificationRuleView{
 				NotificationRuleID: id,
 				RuleCode:           code,
-				Status:             "active",
+				Status:             status,
 				Payload:            payload,
 				UpdatedAt:          time.Now().UTC(),
 			}, nil

@@ -26,6 +26,8 @@ type DispatchDecisionDeps struct {
 	MembershipQuerier MembershipEmailQuerier
 	TaskAssigneeReader WorkflowTaskAssigneeReader
 	StepReader        WorkflowStepReader
+	// InstanceStepReader resolves the step of a workflow instance snapshot first (RMC-08).
+	InstanceStepReader InstanceStepReader
 	TierEnforcement   *entitlement.Checker
 }
 
@@ -65,6 +67,10 @@ type DispatchDecisionResult struct {
 	Recipients       []string
 	RuleCode         string
 	AllowInApp       bool
+	// SkipEmail is set at runtime when the company prefs allow in-app but not email (AHA-08).
+	SkipEmail bool
+	// DefaultsApplied is true when layer 1 ran on the defaults (company has no prefs row).
+	DefaultsApplied bool
 	EvalErr          error
 	MatchedSchedules []ScheduleMatch
 	Trace            []TraceStep
@@ -177,8 +183,12 @@ func evaluateDispatchDecision(ctx context.Context, deps DispatchDecisionDeps, in
 
 		if withTrace {
 			if dec.Layer1Applied {
-				trace = appendTrace(trace, "layer1_rule_load", "pass", "active notification rule loaded", "")
-				trace = appendTrace(trace, "layer1_rule_status", "pass", "rule active", "")
+				if dec.DefaultsApplied {
+					trace = appendTrace(trace, "layer1_rule_load", "pass", "no saved prefs — system defaults applied (all channels, no schedule gate, no recipient filter)", "")
+				} else {
+					trace = appendTrace(trace, "layer1_rule_load", "pass", "active notification rule loaded", "")
+					trace = appendTrace(trace, "layer1_rule_status", "pass", "rule active", "")
+				}
 				if dec.SkipReason == SkipReasonEventScopeExcluded {
 					trace = appendTrace(trace, "layer1_event_scope", "fail", "event not in scope", dec.SkipReason)
 				} else {
@@ -194,16 +204,26 @@ func evaluateDispatchDecision(ctx context.Context, deps DispatchDecisionDeps, in
 				} else if dec.Allowed {
 					trace = appendTrace(trace, "layer1_channel_gate", "pass", in.Channel, "")
 				}
+			} else if dec.SkipReason == SkipReasonRuleDisabled {
+				trace = appendTrace(trace, "layer1_rule_load", "pass", "notification rule loaded", "")
+				trace = appendTrace(trace, "layer1_rule_status", "fail", "rule disabled by the company", SkipReasonRuleDisabled)
 			} else {
-				trace = appendTrace(trace, "layer1_rule_load", "fail", "no active rule row", SkipReasonRuleMissing)
+				trace = appendTrace(trace, "layer1_rule_load", "fail", "notification rule not usable", dec.SkipReason)
 			}
 		}
 
-		if !dec.Allowed {
+		out.DefaultsApplied = dec.DefaultsApplied
+		// Simulation answers for the requested channel. Runtime delivers on every allowed channel and
+		// skips only when neither email nor in-app is allowed (AHA-08).
+		blocked := !dec.Allowed
+		if mode == DispatchDecisionModeRuntime {
+			blocked = !dec.ChannelAllowed["email"] && !dec.ChannelAllowed["in_app"]
+		}
+		if blocked {
 			out.Skip = true
 			out.SkipReason = dec.SkipReason
 			if out.SkipReason == "" {
-				out.SkipReason = SkipReasonRuleMissing
+				out.SkipReason = SkipReasonChannelDisabled
 			}
 			if withTrace {
 				trace = appendTrace(trace, "decision", "fail", "WOULD_SKIP", out.SkipReason)
@@ -223,7 +243,12 @@ func evaluateDispatchDecision(ctx context.Context, deps DispatchDecisionDeps, in
 			return out
 		}
 
-		out.AllowInApp = emailChannelAllowed(dec)
+		if mode == DispatchDecisionModeRuntime {
+			out.SkipEmail = !dec.ChannelAllowed["email"]
+			out.AllowInApp = dec.ChannelAllowed["in_app"]
+		} else {
+			out.AllowInApp = dec.ChannelAllowed["in_app"]
+		}
 	} else if withTrace {
 		trace = appendTrace(trace, "layer1_rule_load", "skip", "runtime consumer disabled — layer 1 skipped", SkipReasonConsumerDisabled)
 	}
@@ -303,7 +328,7 @@ func evaluateDispatchDecision(ctx context.Context, deps DispatchDecisionDeps, in
 
 	// Layer 3b — policies.
 	if layer1On && len(layer1Policies) > 0 {
-		filtered, err := applyRecipientPolicies(ctx, deps.MembershipQuerier, deps.TaskAssigneeReader, deps.StepReader, in.CompanyID, out.Recipients, layer1Policies, candidate)
+		filtered, err := applyRecipientPolicies(ctx, deps.MembershipQuerier, deps.TaskAssigneeReader, deps.StepReader, deps.InstanceStepReader, in.CompanyID, out.Recipients, layer1Policies, candidate)
 		if err != nil {
 			out.EvalErr = err
 			if withTrace {

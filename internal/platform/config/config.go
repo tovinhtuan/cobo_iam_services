@@ -199,6 +199,10 @@ type Config struct {
 	// dispatch path unchanged until explicitly enabled.
 	NotificationRulesConsumerEnabled bool
 
+	// NotificationRulesShadowEnabled evaluates company alert prefs next to the real dispatch and logs
+	// the difference without changing delivery (H7). Ignored while the consumer is enabled.
+	NotificationRulesShadowEnabled bool
+
 	// SubscriptionTierEnforcementEnabled gates server-side subscription tier checks
 	// on notification rule mutations, runtime dispatch premium skip, and simulation
 	// warnings (Sprint 3 Batch 5). Default false — preserve Sprint 2/3 behavior.
@@ -303,6 +307,7 @@ func Load() (Config, error) {
 		DeadlineEngineV2:                       boolEnv("DEADLINE_ENGINE_V2", false),
 		DeadlineEngineV2Shadow:                 boolEnv("DEADLINE_ENGINE_V2_SHADOW", false),
 		NotificationRulesConsumerEnabled:       ParseNotificationRulesConsumerEnabled(os.Getenv("NOTIFICATION_RULES_CONSUMER_ENABLED")),
+		NotificationRulesShadowEnabled:         ParseNotificationRulesShadowEnabled(os.Getenv("NOTIFICATION_RULES_SHADOW_ENABLED")),
 		SubscriptionTierEnforcementEnabled:     ParseSubscriptionTierEnforcementEnabled(os.Getenv("SUBSCRIPTION_TIER_ENFORCEMENT_ENABLED")),
 		LegalBasisStructuredWriteEnabled:       boolEnv("LEGAL_BASIS_STRUCTURED_WRITE_ENABLED", false),
 		LegalBasisLegacyFallbackEnabled:        boolEnv("LEGAL_BASIS_LEGACY_FALLBACK_ENABLED", true),

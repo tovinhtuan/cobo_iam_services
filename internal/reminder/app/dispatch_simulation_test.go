@@ -17,7 +17,8 @@ func testDispatchDecisionDeps(reader NotificationRulesReader, emailEnabled bool)
 	}
 }
 
-func TestSimulateDispatchDecision_RuleMissing(t *testing.T) {
+// H7 Q-23: simulation of a company without prefs shows the defaults (would send).
+func TestSimulateDispatchDecision_RuleMissing_UsesDefaults(t *testing.T) {
 	sim := NewDispatchSimulator(DispatchDecisionDeps{
 		EvaluatorSimulate: NewNotificationRulesEvaluator(&fakeNotificationRulesReader{}, true),
 	})
@@ -34,8 +35,8 @@ func TestSimulateDispatchDecision_RuleMissing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SimulateDispatchDecision: %v", err)
 	}
-	if !res.WouldSkip || res.ReasonCode != SkipReasonRuleMissing {
-		t.Fatalf("would_skip=%v reason=%q", res.WouldSkip, res.ReasonCode)
+	if res.WouldSkip {
+		t.Fatalf("defaults must not skip: would_skip=%v reason=%q", res.WouldSkip, res.ReasonCode)
 	}
 	if len(res.Trace) < 2 {
 		t.Fatalf("expected trace steps, got %d", len(res.Trace))

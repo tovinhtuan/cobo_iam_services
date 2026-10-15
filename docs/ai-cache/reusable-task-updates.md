@@ -4957,3 +4957,19 @@
 - Files: `internal/adhoc/app/workflow_content_capture.go`, `internal/adhoc/infra/disclosure/step_content_resolver.go`, `internal/workflow/app/{snapshot,document_requirement_snapshot,contracts}.go`, record_creator, config, server wiring
 - Deployed to DEV 2026-10-14 (BE `7443ce8` then FE `21faa884`, bundle `index-C2dGrXw0.js`); rollback BE `bin/rollback/{api,worker}.pre-step-content-20261014T014639Z`, FE `web/releases/pre-step-content-20261014T015534Z.tar.gz`; startup log `inherit_step_content=true`; read-only API + UI smoke passed
 - 2026-10-14 bugfix (uncommitted, deployed to DEV BE): ad-hoc approval created two workflow instances per record (SubmitRecord bootstrap from the live template + the proposal instance); the alert runtime (`GetWorkflowInstanceByRecord`, lowest id) read the template one. Fix: `SubmitRecordRequest.SkipWorkflowBootstrap`, set by `RecordCreatorAdapter` when it creates the instance itself. Tests: `submit_record_bootstrap_test.go`, `TestCreateAndSubmitRecordWithOpts_ProposalSubmitSkipsWorkflowBootstrap`. DEV E2E after fix: 1 instance, frozen content shown, 422 required-document gate then complete OK. Two older DEV records still have duplicate instances (no data fix). Rollback `bin/rollback/{api,worker}.pre-bootstrap-dup-fix-20261014T023252Z`
+
+## 2026-10-15 — H7 (c): thiết lập kênh cảnh báo có tác dụng thật + chế độ shadow
+- Chi tiết `notification-rules-runtime-h7-2026-10-15/`. `wf-feature`; GATE A = user duyệt "làm tất cả theo khuyến nghị" (Q-23/Q-24).
+- Khi consumer bật:
+  - thiếu dòng → gửi như hôm nay (D-H7-1);
+  - dòng tắt → `RULE_DISABLED`;
+  - email/in-app đánh giá riêng; chỉ in-app → tạo in-app đồng bộ, email dự phòng;
+  - lịch công ty chỉ chặn nhắc hạn nộp;
+  - `department_focal` ánh xạ phòng ban công ty.
+- Mới: `NOTIFICATION_RULES_SHADOW_ENABLED` (log `notification_rules_shadow`, metric `cobo_reminder_rules_shadow_total{outcome,reason}`); metric `cobo_reminder_in_app_only_total{result}`. API trạng thái thêm `shadow_mode_enabled`, `defaults_applied`, `ui_state=disabled`; `dispatch_enforcement_enabled` = consumer.
+- Bài học:
+  - Bật một consumer từng fail-closed phải có mặc định fail-open và shadow trước.
+  - Thiết lập "chỉ in-app" cần bằng chứng giao được; bộ tạo in-app cũ nuốt lỗi nên phải thêm bản có đếm.
+  - Repo in-memory từng gán cứng `status` → test status sai.
+- Rollback: tắt consumer trước khi đổi binary (BE cũ fail-closed).
+

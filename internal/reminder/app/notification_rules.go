@@ -85,6 +85,11 @@ type EvaluateDecision struct {
 	Priority          int
 	IdempotencyKey    string
 	AuditMetadata     map[string]any
+	// ChannelAllowed reports per delivery channel ("email", "in_app") whether the company prefs
+	// allow it for this event (AHA-08). Allowed keeps meaning "the requested channel is allowed".
+	ChannelAllowed map[string]bool
+	// DefaultsApplied is true when the company has no prefs row and the defaults were used (Q-23).
+	DefaultsApplied bool
 }
 
 // Skip reason codes (stable — Batch 2A contract, UPPER_SNAKE).

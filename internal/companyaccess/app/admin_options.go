@@ -59,6 +59,14 @@ func WithSubscriptionTierLookup(fn func(ctx context.Context, userID string) stri
 	}
 }
 
+// WithNotificationRulesShadowEnabled sets shadow_mode_enabled in the notification status API
+// (NOTIFICATION_RULES_SHADOW_ENABLED; reported only while the consumer is off).
+func WithNotificationRulesShadowEnabled(enabled bool) AdminOption {
+	return func(s *adminService) {
+		s.notificationRulesShadowEnabled = enabled
+	}
+}
+
 // WithNotificationRulesConsumerEnabled sets runtime_consumer_enabled in notification status API.
 func WithNotificationRulesConsumerEnabled(enabled bool) AdminOption {
 	return func(s *adminService) {
