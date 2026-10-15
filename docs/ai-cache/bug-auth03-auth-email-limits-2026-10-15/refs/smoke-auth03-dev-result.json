@@ -1,0 +1,35 @@
+{
+  "base": "DEV",
+  "results": [
+    {
+      "step": "persona-user-exists",
+      "ok": true,
+      "detail": "USER persona found"
+    },
+    {
+      "step": "resend-signed-out-no-send",
+      "ok": true,
+      "detail": "status=200 otp_rows_delta=0"
+    },
+    {
+      "step": "forgot-per-user-limit",
+      "ok": true,
+      "detail": "statuses=[200, 200, 200, 200] tokens_last_hour 3->3 expected_issued=0"
+    },
+    {
+      "step": "nginx-per-ip-limit",
+      "ok": true,
+      "detail": "statuses=[200, 200, 200, 429, 429]"
+    },
+    {
+      "step": "login-unaffected",
+      "ok": true,
+      "detail": "statuses=[200, 200]"
+    },
+    {
+      "step": "rate-limited-log",
+      "ok": true,
+      "detail": "password_reset_rate_limited lines=5"
+    }
+  ]
+}

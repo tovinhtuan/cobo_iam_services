@@ -5006,3 +5006,4 @@
   - Retention phải theo `created_at`.
   - Test MySQL chạy được bằng container `mysql:8.0` cục bộ dùng xong bỏ, chỉ cần áp migration 0001/0007/0027 và đặt `MYSQL_TEST_DSN`.
 - Còn mở: OPS-1 (`:8080`, seed), trần tổng/tách SMTP, index `(user_id, created_at)`, kiểm tz production.
+- Deploy DEV 2026-10-15: BE `d74c983` cùng FE `bb263dfe` (bundle `index-B2g83lTQ.js`, nginx mới). Rollback FE `web/releases/pre-auth01-auth03-20261015T073547Z.tar.gz`; BE build lại từ `bf1b64b` (lần này không sao lưu binary). Smoke AUTH-03 6/6, login trống 2/2, admin 9/9 + 12/12. Bài học: nhớ sao lưu `bin/api`/`bin/worker` vào `bin/rollback/` trước `deploy-dev.sh be`, vì script không tự làm.
