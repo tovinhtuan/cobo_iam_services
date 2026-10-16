@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -24,6 +25,16 @@ type fakeWorkflowRepository struct {
 	failNextCreateInstance   error
 	failDocRequirementInsert error
 	createTaskCalls          int
+
+	// completedSteps mirrors workflow_instance_step_states for the instance under test.
+	completedSteps []string
+	lastTransition TaskTransitionApply
+}
+
+func (f *fakeWorkflowRepository) ListCompletedStepCodes(context.Context, string, string) ([]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.completedSteps...), nil
 }
 
 func (f *fakeWorkflowRepository) ensure() {
@@ -191,6 +202,10 @@ func (f *fakeWorkflowRepository) ApplyTaskTransition(_ context.Context, in TaskT
 	if cur.Status != in.FromStatus {
 		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "task is not pending", nil)
 	}
+	f.lastTransition = in
+	if missing := MissingSteps(in.RequireCompletedSteps, f.completedSteps); len(missing) > 0 {
+		return nil, StepsIncompleteError(missing)
+	}
 	if in.NextTask != nil && f.failNextCreateTask != nil {
 		err := f.failNextCreateTask
 		f.failNextCreateTask = nil
@@ -213,6 +228,9 @@ func (f *fakeWorkflowRepository) ApplyTaskTransition(_ context.Context, in TaskT
 			return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "workflow instance not found", nil)
 		}
 		f.instances[ik] = *in.Instance
+	}
+	if in.CompleteStepBy != "" && !slices.Contains(f.completedSteps, in.StepCode) {
+		f.completedSteps = append(f.completedSteps, in.StepCode)
 	}
 	cp := cur
 	return &cp, nil

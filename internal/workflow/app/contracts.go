@@ -49,6 +49,8 @@ type Repository interface {
 	ListDocumentRequirementSnapshotsByInstanceStep(ctx context.Context, companyID, workflowInstanceID, stepCode string) ([]DocumentRequirementSnapshot, error)
 	// GetDocumentRequirementSnapshotByID loads one B1 snapshot by id within company.
 	GetDocumentRequirementSnapshotByID(ctx context.Context, companyID, snapshotID string) (*DocumentRequirementSnapshot, error)
+	// ListCompletedStepCodes returns the steps completed in the step runtime (workflow_instance_step_states).
+	ListCompletedStepCodes(ctx context.Context, companyID, workflowInstanceID string) ([]string, error)
 }
 
 // TaskTransitionApply is one atomic pending→terminal task transition.
@@ -61,6 +63,22 @@ type TaskTransitionApply struct {
 	NextTask *TaskDTO
 	// Instance, when set, updates status + current_step_code in the same transaction.
 	Instance *WorkflowInstanceDTO
+
+	// WorkflowInstanceID and StepCode name the task's step for the gates below.
+	WorkflowInstanceID string
+	StepCode           string
+	// GateRequiredDocuments runs the required-document gate (B3) for StepCode in the transaction:
+	// completing a task completes its step, as /complete does on the deadline screen.
+	GateRequiredDocuments bool
+	// RequireCompletedSteps must all be completed in the step runtime for the transition to apply.
+	// A template workflow only has a task for step 1 and progresses its steps on the deadline
+	// screen, so that task may not complete the instance while later steps are open.
+	RequireCompletedSteps []string
+	// CompleteStepBy, when set, marks StepCode completed in the step runtime in the same transaction
+	// (completed_at is write-once). A frozen proposal advances by task, and the fulfillment upload
+	// takes the current step from the step runtime, so each completed task must complete its step.
+	CompleteStepBy  string
+	StepCompletedAt time.Time
 }
 
 // MilestoneRepository persists workflow step milestone rows seeded at instance creation.

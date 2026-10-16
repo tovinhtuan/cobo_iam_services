@@ -340,8 +340,10 @@ func TestV2MultiStep_MissingNextAssigneeFails(t *testing.T) {
 	}
 }
 
-func TestLegacy_CompleteFirstTaskCompletesInstance(t *testing.T) {
-	repo := &fakeWorkflowRepository{}
+// The step-1 task completes a template workflow only once its steps are done in the step runtime
+// (bug-workflow-step-skip-2026-10-16; this test used to lock in completion right after step 1).
+func TestLegacy_CompleteFirstTaskCompletesInstanceOnceStepsAreDone(t *testing.T) {
+	repo := &fakeWorkflowRepository{completedSteps: []string{"prepare", "review"}}
 	updater := &countingRecordUpdater{}
 	svc := NewService(repo, allowAuth{}, &seqIDGen{},
 		WithFlags(Flags{SnapshotEnabled: true}),
@@ -367,7 +369,7 @@ func TestLegacy_CompleteFirstTaskCompletesInstance(t *testing.T) {
 	}
 	inst, _ := repo.FindInstance(context.Background(), "c1", repo.createdInstance.WorkflowInstanceID)
 	if inst.Status != "approved" {
-		t.Fatalf("legacy still completes after first task, got %q", inst.Status)
+		t.Fatalf("instance status=%q after every step completed, want approved", inst.Status)
 	}
 	if len(mustList(t, repo, "c1", repo.createdInstance.WorkflowInstanceID)) != 1 {
 		t.Fatal("legacy must not create next task from snapshot")

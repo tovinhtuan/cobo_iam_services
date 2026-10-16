@@ -42,7 +42,7 @@ const (
 	CodeInternal                       Code = "INTERNAL_ERROR"
 	CodeStaleEtag                      Code = "STALE_ETAG"
 	CodeInvalidStateTransition         Code = "INVALID_STATE_TRANSITION" // e.g. suspend an inactive company
-	CodeEndpointRemoved                Code = "ENDPOINT_REMOVED" // retired route (410 Gone)
+	CodeEndpointRemoved                Code = "ENDPOINT_REMOVED"         // retired route (410 Gone)
 	CodeSelfApprovalNotAllowed         Code = "SELF_APPROVAL_NOT_ALLOWED"
 	CodeFeatureNotEnabled              Code = "FEATURE_NOT_ENABLED"
 	CodeFeatureDisabled                Code = "FEATURE_DISABLED"
@@ -104,6 +104,8 @@ const (
 	CodeWorkflowStepNotCurrent              Code = "WORKFLOW_STEP_NOT_CURRENT"
 	CodeWorkflowStepAlreadyCompleted        Code = "WORKFLOW_STEP_ALREADY_COMPLETED"
 	CodeWorkflowStepRequiredDocumentMissing Code = "WORKFLOW_STEP_REQUIRED_DOCUMENT_MISSING"
+	// A template workflow cannot be completed from its step-1 task while snapshot steps are open.
+	CodeWorkflowStepsIncomplete Code = "WORKFLOW_STEPS_INCOMPLETE"
 	// G2C — generic workflow step evidence (not document fulfillment)
 	CodeWorkflowStepEvidenceFileNotFound     Code = "WORKFLOW_STEP_EVIDENCE_FILE_NOT_FOUND"
 	CodeWorkflowStepEvidenceFileTooLarge     Code = "WORKFLOW_STEP_EVIDENCE_FILE_TOO_LARGE"

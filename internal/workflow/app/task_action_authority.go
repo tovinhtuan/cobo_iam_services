@@ -103,8 +103,16 @@ func (s *service) EvaluateTaskAction(ctx context.Context, sub Subject, task Task
 // ComputeAvailableActions returns wire actions the current membership can execute now.
 // Independent evaluation per action (review ≠ reject). Side-effect-free.
 func (s *service) ComputeAvailableActions(ctx context.Context, sub Subject, task TaskDTO) []string {
+	return s.computeAvailableActions(ctx, sub, task, s.stepsOpen(ctx, sub.CompanyID, task.WorkflowInstanceID))
+}
+
+func (s *service) computeAvailableActions(ctx context.Context, sub Subject, task TaskDTO, stepsOpen bool) []string {
 	out := make([]string, 0, len(CanonicalAvailableTaskActions))
 	for _, wire := range CanonicalAvailableTaskActions {
+		// The step-1 task of a template workflow may not complete it while steps are open.
+		if stepsOpen && wire != "reject" {
+			continue
+		}
 		ok, _, err := s.EvaluateTaskAction(ctx, sub, task, wire)
 		if err != nil || !ok {
 			continue
@@ -115,9 +123,36 @@ func (s *service) ComputeAvailableActions(ctx context.Context, sub Subject, task
 }
 
 func (s *service) enrichTaskAvailableActions(ctx context.Context, sub Subject, tasks []TaskDTO) {
+	open := map[string]bool{}
 	for i := range tasks {
-		tasks[i].AvailableActions = s.ComputeAvailableActions(ctx, sub, tasks[i])
+		id := tasks[i].WorkflowInstanceID
+		v, seen := open[id]
+		if !seen {
+			v = s.stepsOpen(ctx, sub.CompanyID, id)
+			open[id] = v
+		}
+		tasks[i].AvailableActions = s.computeAvailableActions(ctx, sub, tasks[i], v)
 	}
+}
+
+// stepsOpen reports whether a template workflow still has snapshot steps open in the step runtime
+// (bug-workflow-step-skip-2026-10-16, WF-01). It only shapes available_actions; the repository
+// enforces the steps inside the transition. An unreadable instance hides nothing because the
+// transition loads it first and fails; a failed step read counts as open.
+func (s *service) stepsOpen(ctx context.Context, companyID, instanceID string) bool {
+	inst, err := s.repo.FindInstance(ctx, companyID, instanceID)
+	if err != nil || inst == nil {
+		return false
+	}
+	required := requiredCompletedSteps(*inst)
+	if len(required) == 0 {
+		return false
+	}
+	done, err := s.repo.ListCompletedStepCodes(ctx, companyID, instanceID)
+	if err != nil {
+		return true
+	}
+	return len(MissingSteps(required, done)) > 0
 }
 
 func httpErrorForTaskActionDeny(code perr.Code, message string) error {

@@ -12,6 +12,7 @@ import (
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 	workflowapp "github.com/cobo/cobo_iam_services/internal/workflow/app"
 	"github.com/cobo/cobo_iam_services/internal/workflowdept"
+	wffmysql "github.com/cobo/cobo_iam_services/internal/workflowfulfillment/mysql"
 )
 
 type Repository struct {
@@ -283,11 +284,56 @@ func (r *Repository) UpdateTask(ctx context.Context, task workflowapp.TaskDTO) (
 }
 
 func (r *Repository) ApplyTaskTransition(ctx context.Context, in workflowapp.TaskTransitionApply) (*workflowapp.TaskDTO, error) {
+	// Gates (bug-workflow-step-skip-2026-10-16). The required-document gate runs only for a step with
+	// a required document. The probe reads outside the transaction: a plain read inside it would fix
+	// the REPEATABLE READ view before the gate's locks, and the gate would count fulfillment files
+	// from that stale view. Requirement snapshots are seeded with the instance and never change, so
+	// the early read cannot miss one.
+	gated := false
+	if in.GateRequiredDocuments && strings.TrimSpace(in.StepCode) != "" {
+		var err error
+		if gated, err = stepHasRequiredDocument(ctx, r.db, in.CompanyID, in.WorkflowInstanceID, in.StepCode); err != nil {
+			return nil, err
+		}
+	}
+
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("begin task transition: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+
+	if gated {
+		// UpsertStepCompleted's order: requirement snapshots → step state → validate. Nothing before
+		// these locking reads may read plainly, so validation counts files as of the locks.
+		snaps, err := wffmysql.LockDocumentRequirementSnapshots(ctx, tx, in.CompanyID, in.WorkflowInstanceID, in.StepCode)
+		if err != nil {
+			return nil, err
+		}
+		var completedAt sql.NullTime
+		err = tx.QueryRowContext(ctx, `
+			SELECT completed_at FROM workflow_instance_step_states
+			WHERE workflow_instance_id = ? AND step_code = ?
+			FOR UPDATE
+		`, in.WorkflowInstanceID, in.StepCode).Scan(&completedAt)
+		if err != nil && err != sql.ErrNoRows {
+			return nil, fmt.Errorf("lock step state: %w", err)
+		}
+		if err := wffmysql.ValidateRequiredDocumentFulfillmentLocked(ctx, tx, in.CompanyID, in.WorkflowInstanceID, in.StepCode, snaps); err != nil {
+			return nil, err
+		}
+	}
+	if len(in.RequireCompletedSteps) > 0 {
+		// completed_at is write-once (mark incomplete never clears it), so a plain read is enough: a
+		// stale read can only miss a step completed meanwhile, which refuses the transition.
+		done, err := completedStepCodes(ctx, tx, in.CompanyID, in.WorkflowInstanceID)
+		if err != nil {
+			return nil, err
+		}
+		if missing := workflowapp.MissingSteps(in.RequireCompletedSteps, done); len(missing) > 0 {
+			return nil, workflowapp.StepsIncompleteError(missing)
+		}
+	}
 
 	res, err := tx.ExecContext(ctx, `
 		UPDATE workflow_tasks SET status = ?
@@ -345,11 +391,72 @@ func (r *Repository) ApplyTaskTransition(ctx context.Context, in workflowapp.Tas
 		}
 	}
 
+	if in.CompleteStepBy != "" && strings.TrimSpace(in.StepCode) != "" {
+		// Keeps an earlier completion (completed_at is write-once, as in UpsertStepCompleted).
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO workflow_instance_step_states (
+				company_id, workflow_instance_id, step_code,
+				completed_at, completed_by_membership_id
+			) VALUES (?, ?, ?, ?, ?)
+			ON DUPLICATE KEY UPDATE
+				completed_by_membership_id = IF(completed_at IS NULL, VALUES(completed_by_membership_id), completed_by_membership_id),
+				completed_at = COALESCE(completed_at, VALUES(completed_at)),
+				updated_at = CURRENT_TIMESTAMP
+		`, in.CompanyID, in.WorkflowInstanceID, in.StepCode, in.StepCompletedAt, in.CompleteStepBy); err != nil {
+			return nil, fmt.Errorf("complete step state: %w", err)
+		}
+	}
+
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("commit task transition: %w", err)
 	}
 
 	return r.FindTask(ctx, in.CompanyID, in.TaskID)
+}
+
+// ListCompletedStepCodes reads the step runtime (workflow_instance_step_states).
+func (r *Repository) ListCompletedStepCodes(ctx context.Context, companyID, workflowInstanceID string) ([]string, error) {
+	return completedStepCodes(ctx, r.db, companyID, workflowInstanceID)
+}
+
+type rowsQuerier interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
+
+func completedStepCodes(ctx context.Context, q rowsQuerier, companyID, workflowInstanceID string) ([]string, error) {
+	rows, err := q.QueryContext(ctx, `
+		SELECT step_code FROM workflow_instance_step_states
+		WHERE company_id = ? AND workflow_instance_id = ? AND completed_at IS NOT NULL
+	`, companyID, workflowInstanceID)
+	if err != nil {
+		return nil, fmt.Errorf("list completed steps: %w", err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var code string
+		if err := rows.Scan(&code); err != nil {
+			return nil, fmt.Errorf("list completed steps: %w", err)
+		}
+		out = append(out, code)
+	}
+	return out, rows.Err()
+}
+
+func stepHasRequiredDocument(ctx context.Context, db *sql.DB, companyID, workflowInstanceID, stepCode string) (bool, error) {
+	var one int
+	err := db.QueryRowContext(ctx, `
+		SELECT 1 FROM workflow_step_document_requirement_snapshots
+		WHERE company_id = ? AND workflow_instance_id = ? AND step_code = ? AND required = 1
+		LIMIT 1
+	`, companyID, workflowInstanceID, strings.TrimSpace(stepCode)).Scan(&one)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("probe required documents: %w", err)
+	}
+	return true, nil
 }
 
 func (r *Repository) ListTasksByInstance(ctx context.Context, companyID, workflowInstanceID string) ([]workflowapp.TaskDTO, error) {

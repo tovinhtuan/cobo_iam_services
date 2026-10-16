@@ -3,6 +3,7 @@ package inmemory
 import (
 	"context"
 	"net/http"
+	"slices"
 	"sync"
 
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
@@ -14,6 +15,33 @@ type Repository struct {
 	instances map[string]workflowapp.WorkflowInstanceDTO
 	tasks     map[string]workflowapp.TaskDTO
 	docReqs   []workflowapp.DocumentRequirementSnapshot
+	// completedSteps mirrors workflow_instance_step_states (key: company:instance → step codes).
+	// The in-memory deadline screen does not write steps, so only MarkStepCompleted and task
+	// transitions with CompleteStepBy fill it.
+	completedSteps map[string][]string
+}
+
+// MarkStepCompleted records a step as completed in the step runtime (tests / in-memory dev).
+func (r *Repository) MarkStepCompleted(companyID, workflowInstanceID, stepCode string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.markStepCompletedLocked(companyID, workflowInstanceID, stepCode)
+}
+
+func (r *Repository) markStepCompletedLocked(companyID, workflowInstanceID, stepCode string) {
+	if r.completedSteps == nil {
+		r.completedSteps = map[string][]string{}
+	}
+	k := ikey(companyID, workflowInstanceID)
+	if !slices.Contains(r.completedSteps[k], stepCode) {
+		r.completedSteps[k] = append(r.completedSteps[k], stepCode)
+	}
+}
+
+func (r *Repository) ListCompletedStepCodes(_ context.Context, companyID, workflowInstanceID string) ([]string, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return append([]string(nil), r.completedSteps[ikey(companyID, workflowInstanceID)]...), nil
 }
 
 func NewRepository() *Repository {
@@ -120,6 +148,11 @@ func (r *Repository) ApplyTaskTransition(_ context.Context, in workflowapp.TaskT
 	if cur.Status != in.FromStatus {
 		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "task is not pending", nil)
 	}
+	// GateRequiredDocuments is MySQL-only: there are no fulfillment files in memory (same as the
+	// in-memory step completion). Completed steps are enforced like MySQL.
+	if missing := workflowapp.MissingSteps(in.RequireCompletedSteps, r.completedSteps[ikey(in.CompanyID, in.WorkflowInstanceID)]); len(missing) > 0 {
+		return nil, workflowapp.StepsIncompleteError(missing)
+	}
 	cur.Status = in.ToStatus
 	r.tasks[tk] = cur
 
@@ -136,6 +169,9 @@ func (r *Repository) ApplyTaskTransition(_ context.Context, in workflowapp.TaskT
 			return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "workflow instance not found", nil)
 		}
 		r.instances[ik] = *in.Instance
+	}
+	if in.CompleteStepBy != "" && in.StepCode != "" {
+		r.markStepCompletedLocked(in.CompanyID, in.WorkflowInstanceID, in.StepCode)
 	}
 	cp := cur
 	return &cp, nil

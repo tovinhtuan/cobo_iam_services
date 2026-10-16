@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	authapp "github.com/cobo/cobo_iam_services/internal/authorization/app"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
@@ -358,6 +359,11 @@ func (s *service) transitionTask(ctx context.Context, req TaskActionRequest, act
 	if err != nil {
 		return nil, err
 	}
+	// Completing a task completes its step: the repository runs the required-document gate in the
+	// same transaction (bug-workflow-step-skip-2026-10-16, WF-02).
+	plan.WorkflowInstanceID = task.WorkflowInstanceID
+	plan.StepCode = task.StepCode
+	plan.GateRequiredDocuments = nextStatus != "rejected"
 	upd, err := s.repo.ApplyTaskTransition(ctx, *plan)
 	if err != nil {
 		return nil, err
@@ -407,6 +413,10 @@ func (s *service) planV2AdvanceOrComplete(ctx context.Context, sub Subject, task
 		TaskID:     task.TaskID,
 		FromStatus: "pending",
 		ToStatus:   terminalStatus,
+		// Completing the task completes its step in the step runtime too, so the next step becomes
+		// current there (bug-workflow-step-skip-2026-10-16, review DB-01).
+		CompleteStepBy:  sub.MembershipID,
+		StepCompletedAt: time.Now().UTC(),
 	}
 	next, hasNext := NextSnapshotStep(inst.Snapshot, task.StepCode)
 	if !hasNext {
@@ -530,7 +540,51 @@ func (s *service) planLegacyCompleteIfNoPending(ctx context.Context, sub Subject
 	}
 	inst.Status = instanceStatus
 	apply.Instance = &inst
+	// "No other pending task" only means "done" when every step has a task. A template workflow has
+	// a task for step 1 only and progresses its steps in the step runtime, so it completes once all
+	// snapshot steps are done there (bug-workflow-step-skip-2026-10-16, WF-01).
+	apply.RequireCompletedSteps = requiredCompletedSteps(inst)
 	return apply, nil
+}
+
+// requiredCompletedSteps lists the snapshot steps a task may not complete the instance without.
+// Frozen proposals advance through their own tasks, so they need none.
+func requiredCompletedSteps(inst WorkflowInstanceDTO) []string {
+	if IsProposalSnapshotFrozen(inst.WorkflowSource) || len(inst.Snapshot) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(inst.Snapshot))
+	for _, step := range OrderedSnapshotSteps(inst.Snapshot) {
+		if code := SnapshotStepIdentity(step); code != "" {
+			out = append(out, code)
+		}
+	}
+	return out
+}
+
+// MissingSteps returns the codes in required that are not in done, in order.
+func MissingSteps(required, done []string) []string {
+	have := make(map[string]bool, len(done))
+	for _, code := range done {
+		have[strings.TrimSpace(code)] = true
+	}
+	var missing []string
+	for _, code := range required {
+		if !have[code] {
+			missing = append(missing, code)
+		}
+	}
+	return missing
+}
+
+// StepsIncompleteError is the 409 returned when a template workflow still has open steps.
+func StepsIncompleteError(missing []string) error {
+	return &perr.HTTPError{
+		HTTPStatus: http.StatusConflict,
+		Code:       perr.CodeWorkflowStepsIncomplete,
+		Message:    "complete every workflow step before completing the record",
+		Details:    map[string]any{"missing_step_codes": missing},
+	}
 }
 
 func (s *service) runInstanceCompletionSideEffects(ctx context.Context, sub Subject, inst WorkflowInstanceDTO, task TaskDTO, terminalStatus string) error {

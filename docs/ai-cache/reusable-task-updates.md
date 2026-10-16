@@ -5036,3 +5036,31 @@
   - repo audit cắt UTF-8 an toàn;
   - retention cho `login_failure`;
   - xoá container `cobo-bugfue-mysql`.
+
+## 2026-10-16: Bộ quyết định PO cho các mâu thuẫn template và workflow (GATE A đã duyệt theo khuyến nghị, 16/10)
+- Hồ sơ: `docs/ai-cache/po-decisions-template-workflow-2026-10-16/` (`00-brief.md`, `01-design.md`, `02-decisions.md`). Đi theo `wf-feature` Phase 0–2, dừng ở GATE A.
+- Gồm 6 quyết định, kèm khuyến nghị:
+  - Q1: lưu trữ template mà hồ sơ đang mở vẫn hiện ở mọi màn (đúng OQ-006 đã chốt ngày 24/05);
+  - Q2: thay thế kỳ chưa sinh hồ sơ khi Activate, có "Áp dụng từ kỳ";
+  - Q3: template doanh nghiệp "Định kỳ" phải có lịch cấu trúc;
+  - Q4: `processing_days` là nguồn; Q4b: chuyển sang "không tính ngày T" sau khi pháp chế xác nhận;
+  - Q5: maker-checker theo quyền;
+  - Q6: vòng đời template doanh nghiệp và quota theo gói công ty.
+- Bài học:
+  - Nhiều "mâu thuẫn" thật ra đã có quyết định từ trước nhưng bị bỏ quên: OQ-006 (24/05), D-04, các Decision 5/7/8 (21/08) vẫn `WAIT_FOR_PO_CONFIRMATION`. Trước khi đặt câu hỏi cho PO, tìm `doc-002-po-decisions`, `cms-portal-template-workflow-requirements.md` và các file `*business-contract*`.
+  - Bộ lọc tab Cảnh báo theo template active (18/08) sinh ra để dọn dữ liệu QA. Một công cụ dọn dữ liệu không được trở thành quy tắc nghiệp vụ.
+  - Số liệu DEV giúp chọn phương án: 8/8 override do chính người soạn duyệt; 8/14 công ty có người duyệt chỉ có đúng 1 người.
+
+## 2026-10-16: MR-1, task bước 1 của workflow template bỏ qua bước 2..N (WF-01) và duyệt task không qua cổng tài liệu (WF-02)
+- Hồ sơ: `docs/ai-cache/bug-workflow-step-skip-2026-10-16/` (`00-report.md`, `01-root-cause.md`, `02-fix.md`, `03-review.md`). Chưa commit, chưa deploy.
+- Sửa trong `internal/workflow` (app, MySQL, in-memory):
+  - instance có snapshot nhưng không phải proposal chỉ kết thúc qua task khi mọi bước đã có `completed_at` (409 `WORKFLOW_STEPS_INCOMPLETE`);
+  - approve/review/confirm chạy B3 cho bước của task (422);
+  - task proposal ghi `completed_at` cho bước của nó trong cùng transaction.
+- Kiểm chứng: `go test ./...` 0 fail mới so với HEAD; MySQL 8 thật 5/5 (có test xen kẽ hai transaction); GATE V ba vòng; `go vet` sạch; docker build api OK. DEV không cần sửa dữ liệu.
+- Bài học:
+  - Hai runtime bước (`workflow_tasks` và `workflow_instance_step_states`) phải đồng bộ ở mọi chỗ ghi. Sửa một cổng ở runtime này dễ làm kẹt luồng ở runtime kia: upload tài liệu lấy "bước hiện tại" từ step runtime. Reviewer DB bắt được lỗi này sau bản sửa đầu.
+  - Ở REPEATABLE READ, câu đọc thường đầu tiên trong transaction chốt read view. Mọi câu đọc thường (kể cả probe "chỉ để tối ưu") phải đứng sau các câu khoá của cổng, hoặc chạy ngoài transaction. Nếu không, cổng đếm dữ liệu từ trước khi có khoá (V2-DB-04).
+  - Dò lock wait trong test: dùng `performance_schema.data_lock_waits`. `information_schema.innodb_trx` không báo `LOCK WAIT` cho câu `FOR UPDATE` đang chờ ở pha `statistics`.
+  - Test cũ `TestLegacy_CompleteFirstTaskCompletesInstance` khoá đúng hành vi lỗi; đọc kỹ test trước khi coi nó là đặc tả.
+  - DB test tạm: MySQL 8 trong container riêng, tạo `schema_migrations` trước, chạy migration với `--default-character-set=utf8mb4`.
