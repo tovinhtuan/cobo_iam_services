@@ -87,6 +87,7 @@ func TestListRowsV1Membership_acceptanceMatrix(t *testing.T) {
 		name            string
 		status          string
 		submittedAtNull bool
+		approvedAdHoc   bool
 		cycles          []periodicCycleDates
 		want            bool
 		flag            string
@@ -172,6 +173,27 @@ func TestListRowsV1Membership_acceptanceMatrix(t *testing.T) {
 			flag:            "IRREGULAR_POST_SUBMIT_EXCLUDED",
 		},
 		{
+			name:          "approved ad-hoc auto-submitted",
+			status:        "PendingReview",
+			approvedAdHoc: true,
+			want:          true,
+			flag:          "ADHOC_APPROVED_PENDINGREVIEW_INCLUDED",
+		},
+		{
+			name:          "approved ad-hoc workflow approved",
+			status:        "Approved",
+			approvedAdHoc: true,
+			want:          false,
+			flag:          "ADHOC_APPROVED_APPROVED_EXCLUDED",
+		},
+		{
+			name:          "approved ad-hoc published",
+			status:        "Published",
+			approvedAdHoc: true,
+			want:          false,
+			flag:          "ADHOC_APPROVED_PUBLISHED_EXCLUDED",
+		},
+		{
 			name:            "malformed periodic both dates null",
 			status:          "Draft",
 			submittedAtNull: true,
@@ -183,7 +205,7 @@ func TestListRowsV1Membership_acceptanceMatrix(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.flag, func(t *testing.T) {
-			got := listRowsV1MembershipEligible(tc.status, tc.submittedAtNull, tc.cycles, today)
+			got := listRowsV1MembershipEligible(tc.status, tc.submittedAtNull, tc.approvedAdHoc, tc.cycles, today)
 			if got != tc.want {
 				t.Fatalf("%s (%s): got=%v want=%v", tc.flag, tc.name, got, tc.want)
 			}

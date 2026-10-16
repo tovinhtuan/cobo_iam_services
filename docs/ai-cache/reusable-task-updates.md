@@ -5105,3 +5105,17 @@
   - Đọc adapter thật trước khi tin mã lỗi. Worker nhận 404 từ bước tra workflow chứ không phải 409 `TEMPLATE_ARCHIVED` như unit test giả định.
   - Danh sách cho người dùng chọn phải có tổng, và giới hạn danh sách phải khớp giới hạn của request ghi.
   - Test seed ngày cố định trong tương lai sẽ đổi nghĩa khi quy tắc phụ thuộc "hôm nay". Truyền ngày vào hàm và đặt hằng ngày trong test.
+
+## 2026-10-16: MR-3b, ObligationOpen theo v1.2 §2.2 ở mọi màn và nhắc hạn nộp
+- Hồ sơ: `docs/ai-cache/bug-mr3b-obligation-open-v12-2026-10-16/` (`00-report` … `03-review`). Chưa commit, chưa deploy.
+- Sửa:
+  - `ObligationOpenSQL` thêm nhánh ad-hoc (AC-11);
+  - "Việc của tôi" thêm record Draft đang mở (AC-13);
+  - KPI mở của dashboard là ảnh chụp hiện tại (Q-18);
+  - nhắc hạn nộp chỉ áp cho record đang mở; lần nhắc của nghĩa vụ đã đóng thành `FAILED + OBLIGATION_CLOSED`.
+- Kiểm chứng: GATE R 4/4 fail trước khi sửa; kiểm ngược M1–M10; MySQL 8 thật; `go test ./...` 0 fail mới; docker build OK.
+- Bài học:
+  - Fixture test phải giống dữ liệu do luồng thật tạo ra. Record ad-hoc do finalize tạo không có `planned_date`, nên test seed `planned_date` đã che mất việc nhắc hạn ad-hoc vẫn không chạy. Cả hai reviewer đều bắt được.
+  - Khi "thay bằng predicate chung" trong một truy vấn phục vụ nhiều KPI, kiểm tra truy vấn đó còn nuôi gì khác. `ListMineRecords` còn nuôi KPI hoàn thành, nên chỉ thêm record Draft đang mở, không thay hẳn.
+  - Đường skip ghi trạng thái kết thúc phải có điều kiện theo trạng thái (`status IN ('PENDING','RETRY_SCHEDULED')`), không thì có thể đè dòng SENT của lần dispatch chạy song song.
+  - Trước khi siết một cổng có hành động không đảo ngược (đóng bản nhắc), liệt kê mọi trạng thái record còn được coi là chưa nộp (`NotStarted` của CMS global). Giữ quy tắc cũ cho phần chưa có quyết định của PO.

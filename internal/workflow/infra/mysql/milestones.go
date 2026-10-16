@@ -96,7 +96,7 @@ func reminderStatusFromRow(sent int64, occurrenceID, occurrenceStatus, lastError
 		return "sent"
 	case "FAILED":
 		switch strings.ToUpper(strings.TrimSpace(lastErrorCode.String)) {
-		case "REMINDER_EXPIRED", "REMINDER_OBSOLETE", "COMPANY_INACTIVE":
+		case "REMINDER_EXPIRED", "REMINDER_OBSOLETE", "COMPANY_INACTIVE", "OBLIGATION_CLOSED":
 			return "cancelled"
 		}
 		return "failed"

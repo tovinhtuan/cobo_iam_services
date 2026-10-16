@@ -373,6 +373,11 @@ func (s *service) DispatchDueOccurrences(ctx context.Context, now time.Time, lim
 			result.Skipped++
 			continue
 		}
+		if c.ScopeType == ScopeTypeDisclosure && c.ObligationClosed {
+			s.skipClosedObligation(ctx, c)
+			result.Skipped++
+			continue
+		}
 
 		out := s.prepareDispatch(ctx, c, now.UTC())
 		if out.evalErr != nil {
@@ -616,13 +621,33 @@ func (s *service) skipInactiveCompany(ctx context.Context, c DispatchCandidate) 
 	if err := s.occurrenceRepo.UpdateDispatchResult(ctx, DispatchResultInput{
 		OccurrenceID:     c.OccurrenceID,
 		Status:           ReminderStatusFailed,
-		LastErrorCode:    ReminderSkipCompanyInactive,
-		LastErrorMessage: "company is inactive: reminder not sent",
+		LastErrorCode:      ReminderSkipCompanyInactive,
+		LastErrorMessage:   "company is inactive: reminder not sent",
+		OnlyIfDispatchable: true,
 	}); err != nil {
 		slog.WarnContext(ctx, "reminder_skip_inactive_company_update_failed",
 			slog.String("occurrence_id", c.OccurrenceID), slog.String("error", err.Error()))
 	}
 	s.recordDispatchSkipped(ctx, c, ReminderSkipCompanyInactive, "")
+}
+
+// ReminderSkipObligationClosed closes a deadline reminder whose record is no longer ObligationOpen
+// (contract v1.2 §2.2), e.g. submitted after the occurrence was created. Terminal like
+// COMPANY_INACTIVE and excluded from failure metrics/alerts.
+const ReminderSkipObligationClosed = "OBLIGATION_CLOSED"
+
+func (s *service) skipClosedObligation(ctx context.Context, c DispatchCandidate) {
+	if err := s.occurrenceRepo.UpdateDispatchResult(ctx, DispatchResultInput{
+		OccurrenceID:     c.OccurrenceID,
+		Status:           ReminderStatusFailed,
+		LastErrorCode:      ReminderSkipObligationClosed,
+		LastErrorMessage:   "obligation no longer open: reminder not sent",
+		OnlyIfDispatchable: true,
+	}); err != nil {
+		slog.WarnContext(ctx, "reminder_skip_closed_obligation_update_failed",
+			slog.String("occurrence_id", c.OccurrenceID), slog.String("error", err.Error()))
+	}
+	s.recordDispatchSkipped(ctx, c, ReminderSkipObligationClosed, "")
 }
 
 func (s *service) recordDispatchSkipped(ctx context.Context, c DispatchCandidate, reason, ruleCode string) {

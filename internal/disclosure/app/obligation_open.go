@@ -3,17 +3,19 @@ package app
 import "strings"
 
 // ObligationOpenSQL is the shared ObligationOpen(record) predicate (business contract v1.2 §2.2)
-// for the alerts tab, the Portal dashboard snapshot, the platform CMS dashboard and the CMS archive
-// impact. It is a
-// sequence of AND-clauses on disclosure_records dr, to follow a WHERE condition.
+// for the alerts tab, the Portal dashboard snapshot, the platform CMS dashboard, the CMS archive
+// impact, "Việc của tôi" (personalops) and deadline reminders. It is one AND-clause on
+// disclosure_records dr, to follow a WHERE condition.
 //
-// NeedsCompanyAction: Draft + submitted_at IS NULL.
+// Periodic / custom / manual: Draft + submitted_at IS NULL, and
 // Periodic AlertWindow: EXISTS cycle with COALESCE(open_at, cycle_start) <= :todayHCM
 //
 //	(open_at NULL → cycle_start = LEGACY_COMPATIBILITY_FALLBACK only).
 //
 // Irregular: NOT EXISTS cycle → no OpenAt gate.
 // Malformed cycle (both dates NULL): EXISTS branch fails → excluded.
+// Ad-hoc (PO Q-12 a′, AC-11): its proposal is approved and the record has not reached
+// Approved/Published/Completed/Done, although finalize auto-submits it (PendingReview).
 //
 // The template's state is NOT part of it: an obligation stays open after its template is archived
 // (OQ-006, PO decision Q1-B of 16/10/2026). Template state only stops new cycles and new records.
@@ -21,18 +23,31 @@ import "strings"
 // Requires one bind argument: todayHCM as YYYY-MM-DD (Asia/Ho_Chi_Minh business date).
 // EXISTS (not JOIN) avoids row duplication when multiple cycles share a record_id.
 const ObligationOpenSQL = `
-		  AND LOWER(TRIM(dr.status)) = 'draft'
-		  AND dr.submitted_at IS NULL
 		  AND (
-		    NOT EXISTS (
-		      SELECT 1 FROM periodic_cycles pc_ir
-		      WHERE pc_ir.record_id = dr.record_id
+		    (
+		      LOWER(TRIM(dr.status)) = 'draft'
+		      AND dr.submitted_at IS NULL
+		      AND (
+		        NOT EXISTS (
+		          SELECT 1 FROM periodic_cycles pc_ir
+		          WHERE pc_ir.record_id = dr.record_id
+		        )
+		        OR EXISTS (
+		          SELECT 1 FROM periodic_cycles pc
+		          WHERE pc.record_id = dr.record_id
+		            AND COALESCE(pc.open_at, pc.cycle_start) IS NOT NULL
+		            AND COALESCE(pc.open_at, pc.cycle_start) <= ?
+		        )
+		      )
 		    )
-		    OR EXISTS (
-		      SELECT 1 FROM periodic_cycles pc
-		      WHERE pc.record_id = dr.record_id
-		        AND COALESCE(pc.open_at, pc.cycle_start) IS NOT NULL
-		        AND COALESCE(pc.open_at, pc.cycle_start) <= ?
+		    OR (
+		      LOWER(TRIM(dr.status)) NOT IN ('approved', 'published', 'completed', 'done')
+		      AND EXISTS (
+		        SELECT 1 FROM ad_hoc_proposals ahp
+		        WHERE ahp.company_id = dr.company_id
+		          AND ahp.record_id = dr.record_id
+		          AND ahp.status = 'approved'
+		      )
 		    )
 		  )`
 

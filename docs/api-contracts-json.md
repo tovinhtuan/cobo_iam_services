@@ -1762,7 +1762,7 @@ Business contract v1.2 §3.2 (`docs/ai-cache/business-contract-workflow-deadline
 
 PO decision Q1-B. Record: `docs/ai-cache/mr3-obligation-open-archive-2026-10-16/`.
 
-- An open obligation (`ObligationOpen`: Draft, not submitted, periodic cycle open) stays open after its template is archived. Archiving a template only stops new cycles and new records.
+- An open obligation (`ObligationOpen`: Draft, not submitted, periodic cycle open; or, since MR-3b, an approved ad-hoc whose record is not Approved/Published/Completed/Done) stays open after its template is archived. Archiving a template only stops new cycles and new records.
 - Alerts, the Portal dashboard and the platform CMS dashboard share one predicate: `disclosure/app` `ObligationOpenSQL`.
 - `GET /api/v1/company/deadline-alerts` items gain `template_archived` (bool). Records of archived and never-activated templates now appear. Name and deadline config come from the active version, else from `archived_from_version_no`.
 - `GET /api/v1/company/deadline-alerts/next` also excludes cycles in state `SUSPENDED`/`SKIPPED`.
@@ -1783,6 +1783,20 @@ PO decision Q1-B. Record: `docs/ai-cache/mr3-obligation-open-archive-2026-10-16/
   - response: `{type_id, status, open_records: {total, companies: [{company_id, company_name, open_count}]}, cycles: {pending, suspended: [{cycle_id, company_id, company_name, cycle_label, due_date}], suspended_total, auto_resume}}`;
   - `cycles.suspended` lists the missed cycles a restore can backfill (capped at 1000, the restore limit); `suspended_total` counts all of them. When `suspended_total` is larger than the list, clients must not offer the restore (the unseen cycles would be skipped). `auto_resume` counts the cycles step 3 resumes. For an archived template both include the leftover `PENDING`/`RETRY` cycles of step 1;
   - `open_records.companies` is capped at 500 (`total` counts all).
+
+### ObligationOpen in every read model and deadline reminders (MR-3b, 2026-10-16)
+
+Contract v1.2 §2.2 and PO decisions Q-12 (a′), PO-01 and Q-18. Record: `docs/ai-cache/bug-mr3b-obligation-open-v12-2026-10-16/`. No new field and no schema change; the lists and counts below change.
+
+- `ObligationOpen` (`disclosure/app` `ObligationOpenSQL`) has two branches:
+  - periodic/custom/manual: Draft, not submitted, periodic cycle open;
+  - ad-hoc: proposal `approved` and the record not yet Approved/Published/Completed/Done, although finalize auto-submits it (`PendingReview`).
+- `GET /api/v1/company/deadline-alerts` (list and `total`), the Portal dashboard snapshot, the CMS dashboard open count and the CMS archive-impact open records include approved ad-hoc records until their workflow completes. Their due date is the ad-hoc deadline.
+- `GET /api/v1/me/operational-overview`: `my_tasks` and the personal KPI records also include open Draft records (the tasks of periodic records, which stay Draft while their workflow runs). Records past Draft are listed as before.
+- `GET /api/v1/company/dashboard/overview`: `needs_action_now`, `pending_approval`, `blocked_or_exception` and the open lists (`immediate_actions`, overdue and risk panels) are a current snapshot, independent of `?range`. The range selects only the completion KPIs (`open_overdue`, `on_time_rate`). `due_next_7_days` keeps its own 7-day window.
+- Deadline reminders (`reminder_configs` scope `DISCLOSURE`) are created only while the record is `ObligationOpen`. NotStarted CMS global records keep the previous rule (not submitted) pending a PO decision. Workflow-step configs are unchanged.
+  - A deadline occurrence whose record stopped being open before dispatch is closed as `status=FAILED`, `last_error_code=OBLIGATION_CLOSED` (terminal, like `COMPANY_INACTIVE`). It is not counted as a failure in metrics or the CMS dashboard, and the workflow milestones API shows it as `cancelled`. Skip paths never overwrite an occurrence a concurrent dispatch already marked `SENT`.
+- Known gap: approved ad-hoc records have no `planned_date` (their due lives on the proposal). They therefore get no deadline reminder, and the CMS dashboard counts them as open without due date. Follow-up with DUE-06.
 
 ## G. HTTP status mapping (goi y)
 

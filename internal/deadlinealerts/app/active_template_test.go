@@ -58,6 +58,12 @@ func TestObligationOpenSQL_isRecordStateOnly(t *testing.T) {
 	if strings.Count(sql, "?") != 1 {
 		t.Fatal("ObligationOpenSQL binds exactly one argument (todayHCM)")
 	}
+	// AC-11 (PO Q-12 a′): an approved ad-hoc stays open after finalize auto-submits its record.
+	for _, want := range []string{"ad_hoc_proposals", "ahp.status = 'approved'", "NOT IN ('approved', 'published', 'completed', 'done')"} {
+		if !strings.Contains(sql, want) {
+			t.Fatalf("ObligationOpenSQL lost the ad-hoc branch (%q)", want)
+		}
+	}
 }
 
 func TestTemplateArchivedSQL_matchesGoTwin(t *testing.T) {

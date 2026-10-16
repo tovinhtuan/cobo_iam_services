@@ -146,8 +146,9 @@ func (r *mysqlDashboardRepo) TemplateStats(ctx context.Context, now time.Time) (
 }
 
 // dashboardOpenObligationSQL counts open obligations platform-wide with the shared ObligationOpen
-// predicate of the alerts tab (deadlinealerts/app ObligationOpenSQL): record still draft and not
-// submitted, periodic cycle already open, whatever the template's state (PO decision Q1-B).
+// predicate of the alerts tab (deadlinealerts/app ObligationOpenSQL): Draft not submitted with its
+// periodic cycle open, or an approved ad-hoc whose workflow has not completed, whatever the
+// template's state (PO decisions Q1-B, Q-12).
 // Restricted to active companies. One placeholder: the HCM business date.
 const dashboardOpenObligationSQL = `
 		FROM disclosure_records dr
@@ -249,7 +250,7 @@ func (r *mysqlDashboardRepo) SystemHealthStats(ctx context.Context, now time.Tim
 		  (SELECT COUNT(*) FROM email_notifications WHERE status = 'failed_permanent' AND updated_at >= ?),
 		  (SELECT COUNT(*) FROM outbox_events WHERE status = 'processing' AND available_at < ?),
 		  (SELECT COUNT(*) FROM reminder_occurrences WHERE status = 'FAILED' AND updated_at >= ?
-		    AND (last_error_code IS NULL OR last_error_code <> 'COMPANY_INACTIVE')),
+		    AND (last_error_code IS NULL OR last_error_code NOT IN ('COMPANY_INACTIVE', 'OBLIGATION_CLOSED'))),
 		  (SELECT COUNT(*) FROM reminder_occurrences WHERE status = 'DISPATCHING' AND updated_at < ?),
 		  (SELECT COUNT(*) FROM periodic_cycles
 		    WHERE record_id IS NULL AND materialization_state = 'CLAIMED'

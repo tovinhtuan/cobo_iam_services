@@ -49,3 +49,31 @@ func TestDispatchDue_SuspendedCompanyStillReminded(t *testing.T) {
 		t.Fatalf("result = %+v, want sent=1", res)
 	}
 }
+
+// MR-3b (contract v1.2 §2.2): a deadline reminder whose record stopped being ObligationOpen after
+// the occurrence was created (e.g. submitted overnight while the send window was closed) is closed
+// as FAILED + OBLIGATION_CLOSED and not sent; a workflow-step reminder is not affected by the flag.
+func TestDispatchDue_ClosedObligationDeadlineReminderClosedWithoutSending(t *testing.T) {
+	closed := companyCandidate("occ-closed", "active")
+	closed.ScopeType = ScopeTypeDisclosure
+	closed.ObligationClosed = true
+	open := companyCandidate("occ-open", "active") // control: not flagged, sent as before
+	// The fake repository holds the first candidate's occurrence, the one actually dispatched.
+	svc, occRepo, _ := newDispatchSvc([]DispatchCandidate{open, closed}, nil, nil, fakeSender{})
+	res, err := svc.DispatchDueOccurrences(context.Background(), time.Now().UTC(), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Sent != 1 || res.Skipped != 1 {
+		t.Fatalf("result = %+v, want the open one sent and the closed one skipped", res)
+	}
+	var closedUpdate *DispatchResultInput
+	for i := range occRepo.updates {
+		if occRepo.updates[i].OccurrenceID == "occ-closed" {
+			closedUpdate = &occRepo.updates[i]
+		}
+	}
+	if closedUpdate == nil || closedUpdate.Status != ReminderStatusFailed || closedUpdate.LastErrorCode != ReminderSkipObligationClosed || closedUpdate.IncrementAttempt {
+		t.Fatalf("closed update = %+v, want FAILED/OBLIGATION_CLOSED without attempt", closedUpdate)
+	}
+}

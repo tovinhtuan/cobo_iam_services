@@ -224,6 +224,9 @@ type DispatchCandidate struct {
 	// CompanyStatus is companies.status of CompanyID ("" when unknown). An inactive company gets no
 	// reminders (contract cms-companies-safety-2026-10-11 D-04); suspended keeps receiving them.
 	CompanyStatus string
+	// ObligationClosed: a deadline (DISCLOSURE) reminder whose record is no longer ObligationOpen
+	// (contract v1.2 §2.2), e.g. submitted after the occurrence was created. Not sent.
+	ObligationClosed bool
 }
 
 // RecipientResolver resolves the email recipient list for a dispatch candidate.
@@ -362,6 +365,9 @@ type DispatchResultInput struct {
 	LastErrorMessage  string
 	ProviderMessageID string
 	IncrementAttempt  bool
+	// OnlyIfDispatchable applies the update only while the occurrence is still PENDING or
+	// RETRY_SCHEDULED (skip paths), so a concurrent dispatch's SENT row is never overwritten.
+	OnlyIfDispatchable bool
 }
 
 // AlertTemplateConfig maps a (disclosure type, alert kind) pair to an email template key.

@@ -163,3 +163,73 @@ func TestObligationOpen_NextCyclesSkipSuspendedAndSkipped(t *testing.T) {
 		t.Fatalf("next cycles=%v, want only the PENDING one", mine)
 	}
 }
+
+// seedAdHocRecord inserts a record of typeID in the given status (submitted when not Draft) and,
+// when proposalStatus is not empty, the ad-hoc proposal that created it.
+func seedAdHocRecord(t *testing.T, db *sql.DB, typeID, suffix, recordStatus, proposalStatus string) string {
+	t.Helper()
+	ctx := context.Background()
+	recordID := "m3b-" + suffix + "-" + time.Now().Format("150405.000000") // record_id is VARCHAR(36)
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO disclosure_records (record_id, company_id, type_id, department_id, title, content, status, created_by, updated_by, submitted_at)
+		VALUES (?, ?, ?, 'general', 'MR-3b ad-hoc', 'MR-3b', ?, 'it-mr3b', 'it-mr3b', IF(? = 'Draft', NULL, NOW(3)))
+	`, recordID, obligationCompany, typeID, recordStatus, recordStatus); err != nil {
+		t.Fatal(err)
+	}
+	if proposalStatus != "" {
+		if _, err := db.ExecContext(ctx, `
+			INSERT INTO ad_hoc_proposals (proposal_id, company_id, type_id, record_id, status, proposed_workflow_json, created_by, final_deadline_date)
+			VALUES (?, ?, ?, ?, ?, JSON_ARRAY(), 'it-mr3b', '2026-12-20')
+		`, recordID+"-p", obligationCompany, typeID, recordID, proposalStatus); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			_, _ = db.ExecContext(context.Background(), `DELETE FROM ad_hoc_proposals WHERE proposal_id = ?`, recordID+"-p")
+		})
+	}
+	return recordID
+}
+
+// MR-3b, AC-11 (contract v1.2 §2.2, PO Q-12 a′): an approved ad-hoc is an open obligation from
+// approval until its workflow completes, although finalize auto-submits its record.
+func TestObligationOpen_ApprovedAdHocIsOpenUntilItsWorkflowCompletes(t *testing.T) {
+	db := obligationTestDB(t)
+	ctx := context.Background()
+	repo := NewRepository(db)
+	typeID := seedObligationTemplate(t, db, "adhoc", "active")
+	want := map[string]bool{
+		seedAdHocRecord(t, db, typeID, "review", "PendingReview", "approved"):   true,
+		seedAdHocRecord(t, db, typeID, "approved", "Approved", "approved"):      false,
+		seedAdHocRecord(t, db, typeID, "published", "Published", "approved"):    false,
+		seedAdHocRecord(t, db, typeID, "completed", "Completed", "approved"):    false,
+		seedAdHocRecord(t, db, typeID, "rejected", "PendingReview", "rejected"): false,
+		seedAdHocRecord(t, db, typeID, "noprop", "PendingReview", ""):           false,
+	}
+	scope := deadlinealertsapp.DeadlineAlertAccessScope{CompanyID: obligationCompany, CanViewAll: true}
+	rows, err := repo.ListRows(ctx, obligationCompany, scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]deadlinealertsapp.AlertRow{}
+	for _, row := range rows {
+		if _, ok := want[row.RecordID]; ok {
+			seen[row.RecordID] = row
+		}
+	}
+	for recordID, open := range want {
+		row, listed := seen[recordID]
+		if listed != open {
+			t.Fatalf("%s listed=%v, want %v", recordID, listed, open)
+		}
+		if open && row.AdHocDeadlineDate != "2026-12-20" {
+			t.Fatalf("%s ad-hoc due=%q, want the approved final deadline 2026-12-20", recordID, row.AdHocDeadlineDate)
+		}
+	}
+	_, total, err := repo.ListRowsPage(ctx, obligationCompany, scope, 1, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != len(rows) {
+		t.Fatalf("count=%d list=%d, want the count to match the list", total, len(rows))
+	}
+}

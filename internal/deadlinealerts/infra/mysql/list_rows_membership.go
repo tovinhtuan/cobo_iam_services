@@ -32,12 +32,21 @@ type periodicCycleDates struct {
 // listRowsV1MembershipEligible mirrors listRowsV1ObligationMembershipSQL for
 // deterministic repository-boundary tests (same package). Keep in sync with SQL.
 // todayHCM must be a calendar date in Asia/Ho_Chi_Minh (time-of-day ignored).
+// approvedAdHoc: the record is linked to an approved ad-hoc proposal.
 func listRowsV1MembershipEligible(
 	status string,
 	submittedAtNull bool,
+	approvedAdHoc bool,
 	cycles []periodicCycleDates,
 	todayHCM time.Time,
 ) bool {
+	if approvedAdHoc {
+		switch strings.ToLower(strings.TrimSpace(status)) {
+		case "approved", "published", "completed", "done":
+		default:
+			return true // ad-hoc open from approval until its workflow completes (AC-11)
+		}
+	}
 	if strings.ToLower(strings.TrimSpace(status)) != "draft" {
 		return false
 	}

@@ -147,6 +147,9 @@ func (r *Repository) UpdateDispatchResult(_ context.Context, in reminderapp.Disp
 	if !ok {
 		return perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "occurrence not found", nil)
 	}
+	if in.OnlyIfDispatchable && occ.Status != reminderapp.ReminderStatusPending && occ.Status != reminderapp.ReminderStatusRetryScheduled {
+		return nil
+	}
 	occ.Status = in.Status
 	if in.IncrementAttempt {
 		occ.AttemptCount++

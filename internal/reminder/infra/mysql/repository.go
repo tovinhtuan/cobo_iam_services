@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	disclosureapp "github.com/cobo/cobo_iam_services/internal/disclosure/app"
 	perr "github.com/cobo/cobo_iam_services/internal/platform/errors"
 	"github.com/cobo/cobo_iam_services/internal/platform/pagination"
 	reminderapp "github.com/cobo/cobo_iam_services/internal/reminder/app"
@@ -229,6 +230,10 @@ func (r *Repository) UpdateDispatchResult(ctx context.Context, in reminderapp.Di
 	if in.IncrementAttempt {
 		inc = 1
 	}
+	guard := ""
+	if in.OnlyIfDispatchable {
+		guard = ` AND status IN ('PENDING', 'RETRY_SCHEDULED')`
+	}
 	_, err := r.db.ExecContext(ctx, `
 		UPDATE reminder_occurrences
 		SET status = ?,
@@ -239,8 +244,7 @@ func (r *Repository) UpdateDispatchResult(ctx context.Context, in reminderapp.Di
 		    last_error_message = ?,
 		    provider_message_id = ?,
 		    updated_at = CURRENT_TIMESTAMP(3)
-		WHERE occurrence_id = ?
-	`, in.Status, inc, nullableTime(in.NextRetryAt), inc, nullableString(in.LastErrorCode), nullableString(in.LastErrorMessage), nullableString(in.ProviderMessageID), in.OccurrenceID)
+		WHERE occurrence_id = ?`+guard, in.Status, inc, nullableTime(in.NextRetryAt), inc, nullableString(in.LastErrorCode), nullableString(in.LastErrorMessage), nullableString(in.ProviderMessageID), in.OccurrenceID)
 	if err != nil {
 		return fmt.Errorf("update occurrence dispatch result: %w", err)
 	}
@@ -338,12 +342,40 @@ func (r *Repository) SeedOccurrence(ctx context.Context, in reminderapp.Reminder
 	return scanOccurrenceRow(row)
 }
 
+// hcmLocation is loaded once for todayHCM.
+var hcmLocation = func() *time.Location {
+	loc, err := time.LoadLocation("Asia/Ho_Chi_Minh")
+	if err != nil {
+		return time.FixedZone("Asia/Ho_Chi_Minh", 7*60*60)
+	}
+	return loc
+}()
+
+// todayHCM is the Asia/Ho_Chi_Minh business date the ObligationOpen gate compares with.
+func todayHCM(now time.Time) string {
+	return now.In(hcmLocation).Format("2006-01-02")
+}
+
+// reminderDeadlineOpenSQL is the gate of deadline (DISCLOSURE) reminders: the record is
+// ObligationOpen (contract v1.2 §2.2). NotStarted CMS global records, which the disclosure service
+// treats as pre-submit like Draft, keep the previous rule (not submitted) until the PO decides
+// whether they are open obligations: closing their reminders would be final. One bind: todayHCM.
+const reminderDeadlineOpenSQL = `(
+			    (TRUE ` + disclosureapp.ObligationOpenSQL + `)
+			    OR (LOWER(TRIM(dr.status)) = 'notstarted' AND dr.submitted_at IS NULL)
+			  )`
+
+// Deadline (DISCLOSURE) reminders are created only while the record is ObligationOpen (contract
+// v1.2 §2.2, reminderDeadlineOpenSQL); ListDispatchCandidates flags the ones closed since.
+// Workflow-step configs keep the previous rule (not submitted). Approved ad-hoc records have no
+// planned_date (their due lives on the proposal), so they get no deadline reminder from here yet.
 // READY_FOR_5B (Reminder): reads disclosure_records.planned_date directly —
 // never cycle_start, never deadlineengine. No change needed for 5B/5E cutover
 // (planned_date remains the single reminder input regardless of which source
 // computed it). Behavior unchanged in Batch 5A.
 func (r *Repository) MaterializeDueOccurrences(ctx context.Context, now time.Time) (int, error) {
 	now = now.UTC()
+	today := todayHCM(now)
 	// Global timezone + deadline cutoff:
 	// - DaysBefore uses disclosure planned_date minus N days.
 	// - SpecificDate must be <= disclosure planned_date.
@@ -392,7 +424,10 @@ func (r *Repository) MaterializeDueOccurrences(ctx context.Context, now time.Tim
 			WHERE c.enabled = 1
 			  AND c.mode = 'DaysBefore'
 			  AND dr.planned_date IS NOT NULL
-			  AND dr.submitted_at IS NULL
+			  AND (
+			    (c.scope_type = 'DISCLOSURE' AND `+reminderDeadlineOpenSQL+`)
+			    OR (c.scope_type <> 'DISCLOSURE' AND dr.submitted_at IS NULL)
+			  )
 
 			UNION ALL
 
@@ -412,11 +447,14 @@ func (r *Repository) MaterializeDueOccurrences(ctx context.Context, now time.Tim
 			WHERE c.enabled = 1
 			  AND c.mode = 'SpecificDate'
 			  AND dr.planned_date IS NOT NULL
-			  AND dr.submitted_at IS NULL
+			  AND (
+			    (c.scope_type = 'DISCLOSURE' AND `+reminderDeadlineOpenSQL+`)
+			    OR (c.scope_type <> 'DISCLOSURE' AND dr.submitted_at IS NULL)
+			  )
 			  AND CAST(js.specific_date AS DATE) <= dr.planned_date
 		) src
 		WHERE src.due_utc <= ?
-	`, now)
+	`, today, today, now)
 	if err != nil {
 		return 0, fmt.Errorf("materialize due reminder occurrences: %w", err)
 	}
@@ -449,7 +487,10 @@ func (r *Repository) ListDispatchCandidates(ctx context.Context, now time.Time, 
 		       COALESCE(comp.company_name, ''),
 		       COALESCE(wi.workflow_instance_id, wi2.workflow_instance_id, ''),
 		       COALESCE(dr.record_id, wi.record_id, wi2.record_id, dr2.record_id, dr3.record_id, ''),
-		       COALESCE(comp.status, '')
+		       COALESCE(comp.status, ''),
+		       CASE WHEN o.scope_type = 'DISCLOSURE' AND dr.record_id IS NOT NULL
+		              AND NOT `+reminderDeadlineOpenSQL+`
+		            THEN 1 ELSE 0 END AS obligation_closed
 		FROM reminder_occurrences o
 		LEFT JOIN reminder_configs c
 		  ON c.scope_type = o.scope_type AND c.scope_id = o.scope_id
@@ -476,7 +517,7 @@ func (r *Repository) ListDispatchCandidates(ctx context.Context, now time.Time, 
 		)
 		ORDER BY o.scheduled_at ASC
 		LIMIT ?
-	`, now.UTC(), now.UTC(), limit)
+	`, todayHCM(now), now.UTC(), now.UTC(), limit)
 	if err != nil {
 		return nil, fmt.Errorf("list dispatch candidates: %w", err)
 	}
@@ -507,6 +548,7 @@ func (r *Repository) ListDispatchCandidates(ctx context.Context, now time.Time, 
 			&workflowInstanceID,
 			&recordID,
 			&c.CompanyStatus,
+			&c.ObligationClosed,
 		); err != nil {
 			return nil, fmt.Errorf("scan dispatch candidate: %w", err)
 		}

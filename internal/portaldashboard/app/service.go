@@ -133,7 +133,10 @@ func (s *service) fetchDeadlines(ctx context.Context, sub deadlinealertsapp.Subj
 		if dashboardDateInRange(item.DueDate, start7, end7) && (item.Status == "DUE_SOON" || item.Status == "UPCOMING") {
 			out.dueIn7Days++
 		}
-		if !dashboardDateInRange(item.DueDate, dr.From, dr.To) {
+		// Open-state buckets are a current snapshot whatever the range (contract v1.2 §2.2, PO
+		// Q-18): KPIs #1, #3, #5 and the open lists. The range only selects completion
+		// candidates (#4, #6): DONE here, PENDING_CONFIRM in fetchCompletion.
+		if item.Status == "DONE" && !dashboardDateInRange(item.DueDate, dr.From, dr.To) {
 			continue
 		}
 		switch item.Status {
@@ -186,9 +189,14 @@ func (s *service) fetchCompletion(
 	if s.completedAt == nil {
 		return completionFetch{ok: false, err: fmt.Errorf("completed_at reader not configured")}
 	}
-	// DueDate already resolved by deadlinealerts (terminal: planned then ad-hoc).
+	// DueDate already resolved by deadlinealerts (terminal: planned then ad-hoc). Completion KPIs
+	// follow the range: done is already in range, pending-confirm items are kept when due in it.
 	candidates := append([]deadlinealertsapp.DeadlineAlertDTO{}, deadlines.done...)
-	candidates = append(candidates, deadlines.pendingConfirm...)
+	for _, a := range deadlines.pendingConfirm {
+		if dashboardDateInRange(a.DueDate, dr.From, dr.To) {
+			candidates = append(candidates, a)
+		}
+	}
 	ids := make([]string, 0, len(candidates))
 	for _, a := range candidates {
 		ids = append(ids, a.RecordID)

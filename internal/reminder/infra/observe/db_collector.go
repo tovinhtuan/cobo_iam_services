@@ -159,13 +159,13 @@ func (s *dbCountSource) CountBacklog(ctx context.Context, now time.Time) (int, e
 
 func (s *dbCountSource) CountFailedSince(ctx context.Context, since time.Time) (int, error) {
 	return s.scalar(ctx,
-		`SELECT COUNT(*) FROM reminder_occurrences WHERE status='FAILED' AND updated_at >= ? AND (last_error_code IS NULL OR last_error_code <> 'COMPANY_INACTIVE')`,
+		`SELECT COUNT(*) FROM reminder_occurrences WHERE status='FAILED' AND updated_at >= ? AND (last_error_code IS NULL OR last_error_code NOT IN ('COMPANY_INACTIVE', 'OBLIGATION_CLOSED'))`,
 		since.UTC())
 }
 
 func (s *dbCountSource) CountFailedTotal(ctx context.Context) (int, error) {
 	return s.scalar(ctx,
-		`SELECT COUNT(*) FROM reminder_occurrences WHERE status='FAILED' AND (last_error_code IS NULL OR last_error_code <> 'COMPANY_INACTIVE')`)
+		`SELECT COUNT(*) FROM reminder_occurrences WHERE status='FAILED' AND (last_error_code IS NULL OR last_error_code NOT IN ('COMPANY_INACTIVE', 'OBLIGATION_CLOSED'))`)
 }
 
 func (s *dbCountSource) CountStuckDispatching(ctx context.Context, olderThan time.Time) (int, error) {

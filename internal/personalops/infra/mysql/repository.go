@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	adhocapp "github.com/cobo/cobo_iam_services/internal/adhoc/app"
 	deadlinealertsapp "github.com/cobo/cobo_iam_services/internal/deadlinealerts/app"
@@ -46,6 +47,26 @@ func placeholders(n int) string {
 		parts[i] = "?"
 	}
 	return strings.Join(parts, ",")
+}
+
+// mineRecordStateSQL keeps records past Draft (as before) and adds the Draft records that are open
+// obligations (shared ObligationOpen predicate: not submitted, periodic cycle opened), so the tasks
+// of periodic records, which stay Draft while their workflow runs, are mine (contract v1.2 §2.2,
+// AC-13). One bind argument: todayHCM.
+var mineRecordStateSQL = `(LOWER(TRIM(dr.status)) <> 'draft' OR (TRUE` + deadlinealertsapp.ObligationOpenSQL + `))`
+
+// hcmLocation is loaded once for todayHCM.
+var hcmLocation = func() *time.Location {
+	loc, err := time.LoadLocation("Asia/Ho_Chi_Minh")
+	if err != nil {
+		return time.FixedZone("Asia/Ho_Chi_Minh", 7*60*60)
+	}
+	return loc
+}()
+
+// todayHCM is the Asia/Ho_Chi_Minh business date the ObligationOpen gate compares with.
+func todayHCM() string {
+	return time.Now().In(hcmLocation).Format("2006-01-02")
 }
 
 func toAny(ids []string) []any {
@@ -113,7 +134,7 @@ FROM disclosure_records dr
 INNER JOIN companies c ON c.company_id = dr.company_id
 LEFT JOIN deadline_alert_confirmations dac
   ON dac.company_id = dr.company_id AND dac.record_id = dr.record_id
-WHERE LOWER(TRIM(dr.status)) <> 'draft'
+WHERE dr.company_id IN (SELECT m.company_id FROM memberships m WHERE m.membership_id IN (%s))
   AND (
     EXISTS (
       SELECT 1 FROM workflow_tasks wt
@@ -156,13 +177,17 @@ WHERE LOWER(TRIM(dr.status)) <> 'draft'
       )
     )
   )
-`, taskPred, ph, taskPred, ph, taskPred, ph)
+  AND %s
+`, taskPred, ph, ph, taskPred, ph, taskPred, ph, mineRecordStateSQL)
 
-	// 3 task predicates × 2 IN lists + 3 assignment IN lists = 9 membership arg sets.
+	// SELECT list: 3 membership sets; WHERE: 1 set for the companies of the memberships (index
+	// range instead of a platform-wide scan; tasks and assignments are company-scoped anyway), 6
+	// sets for tasks/assignments, then todayHCM for the record state clause.
 	args := toAny(membershipIDs)
-	for i := 0; i < 8; i++ {
+	for i := 0; i < 9; i++ {
 		args = append(args, toAny(membershipIDs)...)
 	}
+	args = append(args, todayHCM())
 
 	rows, err := r.db.QueryContext(ctx, q, args...)
 	if err != nil {
@@ -213,6 +238,7 @@ func (r *Repository) ListMineOpenTasks(ctx context.Context, membershipIDs []stri
 	args := toAny(membershipIDs)
 	args = append(args, toAny(membershipIDs)...)
 	args = append(args, toAny(membershipIDs)...) // matching membership COALESCE subquery
+	args = append(args, todayHCM())              // mineRecordStateSQL
 	args = append(args, limit)
 
 	q := fmt.Sprintf(`
@@ -246,10 +272,10 @@ INNER JOIN companies c ON c.company_id = wt.company_id
 LEFT JOIN disclosure_types dt ON dt.type_id = dr.type_id
 WHERE %s
   AND LOWER(TRIM(wt.status)) = 'pending'
-  AND LOWER(TRIM(dr.status)) <> 'draft'
+  AND %s
 ORDER BY wt.task_id ASC
 LIMIT ?
-`, ph, deadlinealertsapp.TemplateArchivedSQL, taskPred)
+`, ph, deadlinealertsapp.TemplateArchivedSQL, taskPred, mineRecordStateSQL)
 
 	rows, err := r.db.QueryContext(ctx, q, args...)
 	if err != nil {
