@@ -5106,6 +5106,19 @@
   - Danh sách cho người dùng chọn phải có tổng, và giới hạn danh sách phải khớp giới hạn của request ghi.
   - Test seed ngày cố định trong tương lai sẽ đổi nghĩa khi quy tắc phụ thuộc "hôm nay". Truyền ngày vào hàm và đặt hằng ngày trong test.
 
+## 2026-10-16: MR-4, maker-checker cho override workflow theo quyền (PO Q5-B)
+- Hồ sơ: `docs/ai-cache/mr4-override-maker-checker-2026-10-16/` (`00` … `06`, `99`). Commit BE `253c65f`, FE `95363723`.
+- Đã deploy DEV theo thứ tự 0156 → BE → FE, bundle `index-D8LVrMPp.js`. Smoke `scripts/devqa/smoke_mr4_override_maker_checker.py` 20/20; trình duyệt (`smoke-mr4-ui.mjs` ở repo FE) 9/9.
+- Quy tắc: mọi đường kích hoạt (PUT `publish:true`, approve, rebase-apply) cần `template.workflow.override.approve`. Người có quyền duyệt tự duyệt được, audit ghi `self_approved`. Người chỉ có quyền ghi thì gửi duyệt; người duyệt duyệt hoặc từ chối. Chỉ version mới nhất được xử lý.
+- Review (3 reviewer) bắt được High API-01: repo đã kích hoạt rồi mà service vẫn gọi approve lần hai, nên client nhận 409 và không có audit. Test in-memory không bắt được vì in-memory chưa cùng ngữ nghĩa.
+- reusable:
+  - Maker-checker chỉ có nghĩa khi nội dung version bất biến. Nếu "sửa tại chỗ" hoặc "xoá rồi dùng lại số version", thì duyệt `v:N` có thể kích hoạt nội dung người duyệt chưa thấy. Cách làm ở đây: sửa thì ghi version mới; xoá thì giữ dòng với `state=discarded`.
+  - Người duyệt phải xem được nội dung mà không cần quyền ghi, vì editor đòi quyền ghi.
+  - Gộp "lưu + kích hoạt" vào một transaction của repo, và cho in-memory cùng ngữ nghĩa. Mutation trên MySQL bắt được lỗi mà in-memory bỏ qua.
+  - MySQL không lưu `resolution_options` của xung đột. Muốn kiểm "lựa chọn hợp lệ" thì suy ra từ `conflict_type`.
+  - Trước deploy, truy vấn chỉ đọc dữ liệu thật để chốt tác động lệch phiên bản: DEV có 4 membership được cấp trực tiếp quyền ghi mà không có quyền duyệt, và 0 xung đột rebase.
+  - Smoke trình duyệt: panel duyệt nằm ở `?tab=workflow`, nút editor tên là "Cấu hình workflow".
+
 ## 2026-10-16: MR-3b, ObligationOpen theo v1.2 §2.2 ở mọi màn và nhắc hạn nộp
 - Hồ sơ: `docs/ai-cache/bug-mr3b-obligation-open-v12-2026-10-16/` (`00-report` … `04-deploy-smoke`). Commit BE `45b4a70` + `de3da9a`, FE `eec188c6`. Đã deploy DEV. Smoke `scripts/devqa/smoke_mr3b_obligation_open.py` 10/10 (+1 SKIP AC-13: task Draft trên DEV đều thuộc `m_system_worker`); hồi quy MR-3 API 15/15, UI 8/8.
 - Smoke đầu bắt được regression: `total` 88 so với 85 mục, vì ad-hoc QA cũ không có thông tin hạn bị danh sách bỏ nhưng vẫn được đếm. Bài học: phép đếm phải áp đúng các điều kiện loại dòng của danh sách; dữ liệu cũ thiếu trường là nơi hai bên lệch nhau.
