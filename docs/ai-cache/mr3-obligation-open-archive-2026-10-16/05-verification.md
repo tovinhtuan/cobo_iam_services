@@ -38,7 +38,7 @@ Các lần tắt hành vi:
 | `npm run check:mojibake` | OK |
 
 ## Chưa chạy
-- Kiểm tra trên trình duyệt: cần BE mới, sẽ làm trong smoke DEV sau khi deploy. Gồm cả `DeadlineDetail.tsx` (lỗi 404 của template đã lưu trữ không còn xoá dữ liệu đã tải): trang chưa có test cấp trang cho loader, nên phần này chỉ được kiểm bằng tsc và smoke.
+- Kiểm tra trên trình duyệt: đã làm trong smoke DEV sau deploy (`07-deploy-smoke.md`, 8/8), gồm trang chi tiết hồ sơ của template đã lưu trữ (`DeadlineDetail.tsx`: trang tải được, có nhãn). Loader của trang chưa có test cấp trang.
 - Postman: collection chưa có request CMS template nào, nên không thêm. Contract đã ghi ở `docs/api-contracts-json.md`, mục "Open obligations of archived templates (MR-3, 2026-10-16)".
 
 ## Dữ liệu trước khi deploy (chỉ đọc)

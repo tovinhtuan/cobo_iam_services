@@ -5088,7 +5088,7 @@
   - Ghi lại JSON (Postman) bằng `json.dump` sẽ đổi định dạng cả file; hãy chèn dạng text.
 
 ## 2026-10-16: MR-3, nghĩa vụ đang mở của template đã lưu trữ (Q1-B)
-- Hồ sơ: `docs/ai-cache/mr3-obligation-open-archive-2026-10-16/` (`00-brief` … `06-review`, `99-summary`). Chưa commit, chưa deploy.
+- Hồ sơ: `docs/ai-cache/mr3-obligation-open-archive-2026-10-16/` (`00-brief` … `07-deploy-smoke`, `99-summary`). Commit BE `642e3ce`, FE `742f408e`. Đã deploy DEV (0154, rồi BE, rồi FE). Smoke API `scripts/devqa/smoke_mr3_obligation_open.py` 15/15, trình duyệt 8/8. 0155 chưa chạy trên DEV.
 - Thay đổi:
   - predicate dùng chung `disclosure/app.ObligationOpenSQL`, không lọc theo template;
   - cờ `template_archived` ở cảnh báo, dashboard, "Việc của tôi";

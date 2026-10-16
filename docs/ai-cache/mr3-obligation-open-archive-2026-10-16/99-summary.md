@@ -21,8 +21,9 @@ Lưu trữ thì treo các kỳ chưa có hồ sơ. Khi khôi phục:
 - Rollback BE: chạy runbook SQL trong `02-contract.md` trước.
 - Trước khi deploy prod: chạy 3 truy vấn đếm trong `05-verification.md`.
 
-## Lưu ý khi commit
-`migrations/run_dev_migrations.sh` đang có thêm thay đổi của task khác (0099, 0150, 0155, preflight 0099, ghi chú 0038/0098), cùng các file `0155_*` chưa track. MR-3 chỉ thêm dòng `0154`. Cần tách khi commit.
+## Commit và deploy
+- BE `642e3ce`, FE `742f408e`. Commit MR-3 của BE chỉ thêm dòng `0154` vào `run_dev_migrations.sh`; các dòng 0099/0150/0155 là của `eed28f2` (task migration runner).
+- Đã deploy DEV (0154, rồi BE, rồi FE). Smoke API 15/15, trình duyệt 8/8 (`07-deploy-smoke.md`). Chưa chạy 0155 trên DEV.
 
 ## Follow-up
 - MR-3b, sửa theo v1.2:
