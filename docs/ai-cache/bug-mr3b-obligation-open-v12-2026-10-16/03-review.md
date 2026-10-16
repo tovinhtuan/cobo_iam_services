@@ -34,7 +34,7 @@ Kiểm ngược sau khi sửa (tắt từng hành vi thì test fail; khôi phụ
 
 ## Blast radius trên DEV (chỉ đọc)
 - **Tab Cảnh báo:** c_001 thêm 5 ad-hoc đã duyệt.
-- **"Việc của tôi":** thêm 332 task đang chờ của record Draft đang mở, gồm cả task của 312 hồ sơ QA thuộc mẫu đã lưu trữ (đã chốt ở GATE A của MR-3, dọn ở MR-8).
+- **"Việc của tôi":** không có thay đổi nhìn thấy được. Cả 332 task đang chờ của record Draft đang mở thuộc `m_system_worker` (membership hệ thống, không phải người dùng), và không có dòng `workflow_task_assignees` nào. Kiểm lại sau deploy (`04-deploy-smoke.md`). Lần ghi trước, "thêm 332 task", là sai.
 - **Dashboard Portal:** KPI mở giống nhau ở mọi range.
 - **Reminder:** 0 `reminder_configs` và 0 bản nhắc DISCLOSURE, nên không có thư mới hay bản bị đóng.
 - **Dữ liệu:** không cần sửa (MR-3b chỉ đổi cách đọc, không ghi dữ liệu).

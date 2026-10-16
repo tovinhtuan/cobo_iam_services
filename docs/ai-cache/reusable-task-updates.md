@@ -5107,7 +5107,8 @@
   - Test seed ngày cố định trong tương lai sẽ đổi nghĩa khi quy tắc phụ thuộc "hôm nay". Truyền ngày vào hàm và đặt hằng ngày trong test.
 
 ## 2026-10-16: MR-3b, ObligationOpen theo v1.2 §2.2 ở mọi màn và nhắc hạn nộp
-- Hồ sơ: `docs/ai-cache/bug-mr3b-obligation-open-v12-2026-10-16/` (`00-report` … `03-review`). Chưa commit, chưa deploy.
+- Hồ sơ: `docs/ai-cache/bug-mr3b-obligation-open-v12-2026-10-16/` (`00-report` … `04-deploy-smoke`). Commit BE `45b4a70` + `de3da9a`, FE `eec188c6`. Đã deploy DEV. Smoke `scripts/devqa/smoke_mr3b_obligation_open.py` 10/10 (+1 SKIP AC-13: task Draft trên DEV đều thuộc `m_system_worker`); hồi quy MR-3 API 15/15, UI 8/8.
+- Smoke đầu bắt được regression: `total` 88 so với 85 mục, vì ad-hoc QA cũ không có thông tin hạn bị danh sách bỏ nhưng vẫn được đếm. Bài học: phép đếm phải áp đúng các điều kiện loại dòng của danh sách; dữ liệu cũ thiếu trường là nơi hai bên lệch nhau.
 - Sửa:
   - `ObligationOpenSQL` thêm nhánh ad-hoc (AC-11);
   - "Việc của tôi" thêm record Draft đang mở (AC-13);
