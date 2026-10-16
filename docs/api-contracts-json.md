@@ -1735,6 +1735,28 @@ Full contract: `cobo_web_design/docs/ai-cache/adhoc-proposal-step-content-editab
   - Step without `inherited`: `description = additions.note` (`description_format = plain_text`); `documents` are the additions; reminders use the default.
   - Requirement rows include the additions, so `POST .../complete` returns `422 WORKFLOW_STEP_REQUIRED_DOCUMENT_MISSING` until they are uploaded.
 
+
+### Ad-hoc proposal — v1.2 vote rules (2026-10-16)
+
+Business contract v1.2 §3.2 (`docs/ai-cache/business-contract-workflow-deadline-final.md`). Record: `docs/ai-cache/bug-adhoc-v12-2026-10-16/`.
+
+- `POST .../ad-hoc-proposals/{id}/approve`, final values (`final_t0_date`, `final_deadline_date`, `adjustment_note`):
+  - Per field, the value entered last by any reviewer wins. A blank field keeps the value entered before it.
+  - A repeat vote keeps the reviewer's first `approved_at` and, when blank, their comment.
+  - While `pending_focal_approval`, the proposal's `final_*` fields carry these current values. Dates read back as RFC 3339 (`2026-11-02T00:00:00Z`); use the date part.
+  - Once finalize has created the proposal's record, a vote that changes a final value → `409 STATE_CONFLICT`, `details.reason = final_values_locked`. A blank or identical value is accepted.
+- `POST .../approve`, finalize:
+  - Finalize runs one at a time per proposal. A request that waits more than 5 s → `409 STATE_CONFLICT`, `details.reason = finalize_in_progress`; retry.
+  - If a vote was released meanwhile, the call returns `finalized: false`.
+  - If finalize fails before it creates the record, the caller's vote is removed. `approvals` and `approval_progress.completed` drop by one, and the reviewer can approve again.
+  - If finalize fails after it created the record, the votes stay. A retry resumes the same record and its workflow; it does not re-submit it.
+- `GET .../ad-hoc-proposals/{id}` adds `finalize_retry_available` (bool, omitempty). It is `true` when the proposal is pending and every reviewer has approved. An assigned reviewer who voted retries with `POST .../approve` and an empty body. Old servers never send the field.
+- `POST .../reject` and `POST .../cancel`: once every reviewer has approved → `409 STATE_CONFLICT`, `details.reason = all_reviewers_approved`. The check runs under the same row lock as votes.
+- `POST .../submit` re-checks the parties:
+  - a reviewer no longer active, or without `ad_hoc_alert.focal_review` → `422 INVALID_REQUEST`, `details.field = reviewer_membership_ids`. Reviewers cannot be edited on a draft; withdraw it and create a new one;
+  - the proposer lacks `disclosure.create` or `disclosure.view` → `403 PERMISSION_DENIED`, `details.permission` names it;
+  - a failure of the check itself → `5xx`.
+
 ## G. HTTP status mapping (goi y)
 
 | HTTP | Khi nao |

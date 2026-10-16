@@ -133,7 +133,9 @@ func (a *RecordCreatorAdapter) CreateAndSubmitRecordWithOpts(ctx context.Context
 			return "", "", fmt.Errorf("create record: %w", err)
 		}
 	}
-	if !opts.SkipCompanySubmit {
+	// A resumed record that the earlier attempt already submitted is not submitted again: a second
+	// SubmitRecord would move it from PendingReview to "In Progress".
+	if !opts.SkipCompanySubmit && rec.SubmittedAt == nil {
 		if _, err := a.svc.SubmitRecord(ctx, disclosureapp.SubmitRecordRequest{
 			Subject:  sub,
 			RecordID: rec.RecordID,

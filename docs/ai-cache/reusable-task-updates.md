@@ -5065,3 +5065,25 @@
   - Dò lock wait trong test: dùng `performance_schema.data_lock_waits`. `information_schema.innodb_trx` không báo `LOCK WAIT` cho câu `FOR UPDATE` đang chờ ở pha `statistics`.
   - Test cũ `TestLegacy_CompleteFirstTaskCompletesInstance` khoá đúng hành vi lỗi; đọc kỹ test trước khi coi nó là đặc tả.
   - DB test tạm: MySQL 8 trong container riêng, tạo `schema_migrations` trước, chạy migration với `--default-character-set=utf8mb4`.
+
+## 2026-10-16: MR-2, ad-hoc theo v1.2 §3.2 (H1–H3, XL-06)
+- Hồ sơ: `docs/ai-cache/bug-adhoc-v12-2026-10-16/` (`00-report.md` … `03-review.md`). BE và FE (`cobo_web_design`). Chưa commit, chưa deploy.
+- Sửa:
+  - ngày chốt: giá trị nhập sau cùng thắng, ô trống giữ giá trị; proposal mang giá trị hiện hành;
+  - đủ phiếu thì reject/cancel trả 409;
+  - finalize được tuần tự hoá bằng `GET_LOCK` theo proposal;
+  - finalize lỗi trước khi tạo record thì nhả phiếu; đã tạo record thì giữ phiếu và resume;
+  - submit kiểm lại reviewer, `disclosure.create` và `disclosure.view`;
+  - cờ `finalize_retry_available`;
+  - T0 đề xuất dạng RFC 3339 (lỗi có từ trước).
+- Kiểm chứng:
+  - GATE R/V hai vòng, mỗi vòng tắt từng hành vi một;
+  - MySQL 8 thật 9/9 (×3); `go test ./...` 0 fail mới; docker build OK;
+  - vitest 0 fail mới; tsc giống HEAD.
+- Bài học:
+  - Bật resume/retry cho một bước có side effect thì phải tuần tự hoá bước đó. Nếu không, hai retry cùng resume và nhân đôi side effect (2 workflow instance). Reviewer DB bắt được lỗi này sau bản sửa đầu.
+  - Bù trừ chỉ được chạy khi chưa có side effect; còn nếu đã có, phải giữ trạng thái để retry hoàn tất. Nhả phiếu sau khi đã tạo record sẽ mở lại reject và làm record mồ côi.
+  - Cột DATE đọc vào `string` với `parseTime=true` ra dạng RFC 3339. Mọi chỗ `time.Parse("2006-01-02")` trên giá trị đọc từ DB phải cắt lấy phần ngày, hoặc dùng `DATE_FORMAT`.
+  - Khi FE ẩn hoặc hiện hành động theo quy tắc mới của BE, hãy để BE gửi một cờ, để FE mới chạy với BE cũ vẫn an toàn khi rollback.
+  - Ghi lại JSON (Postman) bằng `json.dump` sẽ đổi định dạng cả file; hãy chèn dạng text.
+

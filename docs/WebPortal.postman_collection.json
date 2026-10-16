@@ -711,6 +711,35 @@
           }
         },
         {
+          "name": "Approve Proposal (v3 vote)",
+          "request": {
+            "method": "POST",
+            "description": "v1.2 §3.2: per field the value entered last wins; a blank field keeps the current value. The last vote finalizes, one finalize at a time per proposal (409 details.reason=finalize_in_progress). Changing a final value after finalize created the record: 409 details.reason=final_values_locked. See docs/api-contracts-json.md, Ad-hoc proposal — v1.2 vote rules (2026-10-16).",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"final_t0_date\": \"2026-11-02\",\n  \"final_deadline_date\": \"2026-11-20\",\n  \"adjustment_note\": \"Dời theo lịch họp\",\n  \"comment\": \"Đồng ý\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/company/ad-hoc-proposals/{{proposal_id}}/approve",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "company", "ad-hoc-proposals", "{{proposal_id}}", "approve"]
+            }
+          }
+        },
+        {
+          "name": "Retry Finalize (empty approve)",
+          "request": {
+            "method": "POST",
+            "description": "When GET detail returns finalize_retry_available=true (every reviewer approved, still pending), an assigned reviewer who voted retries finalize with no body. Blank fields keep the current final values.",
+            "url": {
+              "raw": "{{base_url}}/api/v1/company/ad-hoc-proposals/{{proposal_id}}/approve",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "company", "ad-hoc-proposals", "{{proposal_id}}", "approve"]
+            }
+          }
+        },
+        {
           "name": "Focal Approve Proposal",
           "request": {
             "method": "POST",

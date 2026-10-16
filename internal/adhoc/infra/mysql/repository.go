@@ -2,7 +2,10 @@ package mysql
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"database/sql/driver"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -17,6 +20,9 @@ import (
 
 type Repository struct {
 	db *sql.DB
+
+	// finalizeLockWaitSeconds overrides finalizeLockWaitSeconds (tests).
+	finalizeLockWaitSeconds *int
 
 	// CF-16: deadlineDaysCol* cache the result of detecting whether
 	// ad_hoc_proposals.proposed_deadline_days exists. Only a *successful*
@@ -275,9 +281,29 @@ func (r *Repository) UpdateStatus(ctx context.Context, upd adhocapp.StatusUpdate
 		args = []any{upd.Status, upd.ActorMembershipID, now, now, upd.ProposalID, upd.CompanyID, upd.FromStatus}
 	}
 
-	res, err := r.db.ExecContext(ctx, q, args...)
+	var execer interface {
+		ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	} = r.db
+	var tx *sql.Tx
+	if upd.RefuseIfAllApproved {
+		var err error
+		if tx, err = r.db.BeginTx(ctx, nil); err != nil {
+			return nil, false, err
+		}
+		defer func() { _ = tx.Rollback() }()
+		if err := refuseIfAllApproved(ctx, tx, upd.CompanyID, upd.ProposalID); err != nil {
+			return nil, false, err
+		}
+		execer = tx
+	}
+	res, err := execer.ExecContext(ctx, q, args...)
 	if err != nil {
 		return nil, false, fmt.Errorf("update ad_hoc_proposal status: %w", err)
+	}
+	if tx != nil {
+		if err := tx.Commit(); err != nil {
+			return nil, false, err
+		}
 	}
 	n, _ := res.RowsAffected()
 	applied := n == 1
@@ -481,22 +507,66 @@ func (r *Repository) ReserveVote(ctx context.Context, in adhocapp.ReserveVoteInp
 		return &adhocapp.VoteReservation{Proposal: p, Required: required, Completed: completed, ActorMembershipID: in.ActorMembershipID, ActorUserID: in.ActorUserID}, nil
 	}
 
-	// Insert-if-not-voted (last-writer-wins on the optional adjustment fields if
-	// the same reviewer calls Approve twice before finalize).
+	// Once finalize created the record from the current final values, a vote may not change them:
+	// the workflow already runs on them.
+	if in.FinalizeRecordID != "" && (in.FinalT0Date != nil || in.FinalDeadlineDate != nil || strings.TrimSpace(in.AdjustmentNote) != "") {
+		if err := refuseFinalValueChange(ctx, tx, in); err != nil {
+			return nil, err
+		}
+	}
+
+	// Insert-if-not-voted. A repeat vote from the same reviewer keeps its first approval time, and a
+	// blank field keeps the value entered before it (v1.2 §3.2).
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO ad_hoc_proposal_approvals
 			(proposal_id, company_id, membership_id, approved_at, final_t0_date, final_deadline_date, adjustment_note, comment)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		ON DUPLICATE KEY UPDATE
-			approved_at = VALUES(approved_at),
-			final_t0_date = VALUES(final_t0_date),
-			final_deadline_date = VALUES(final_deadline_date),
-			adjustment_note = VALUES(adjustment_note),
-			comment = VALUES(comment)
+			final_t0_date = COALESCE(VALUES(final_t0_date), final_t0_date),
+			final_deadline_date = COALESCE(VALUES(final_deadline_date), final_deadline_date),
+			adjustment_note = COALESCE(VALUES(adjustment_note), adjustment_note),
+			comment = COALESCE(VALUES(comment), comment)
 	`, in.ProposalID, in.CompanyID, in.ActorMembershipID, time.Now().UTC(),
 		nullableStr(in.FinalT0Date), nullableStr(in.FinalDeadlineDate), nullIfBlank(in.AdjustmentNote), nullIfBlank(in.Comment))
 	if err != nil {
 		return nil, fmt.Errorf("insert ad_hoc_proposal_approval: %w", err)
+	}
+
+	// The proposal carries the current final values (v1.2 §3.2), in vote order (this row lock): per
+	// field, the value entered last wins and a blank field keeps the one before it. A proposal voted
+	// on before this rule starts from the latest value a reviewer entered.
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE ad_hoc_proposals p SET
+			final_t0_date = COALESCE(?, p.final_t0_date, (
+				SELECT a.final_t0_date FROM ad_hoc_proposal_approvals a
+				WHERE a.proposal_id = p.proposal_id AND a.company_id = p.company_id AND a.final_t0_date IS NOT NULL
+				ORDER BY a.approved_at DESC, a.membership_id DESC LIMIT 1)),
+			final_deadline_date = COALESCE(?, p.final_deadline_date, (
+				SELECT a.final_deadline_date FROM ad_hoc_proposal_approvals a
+				WHERE a.proposal_id = p.proposal_id AND a.company_id = p.company_id AND a.final_deadline_date IS NOT NULL
+				ORDER BY a.approved_at DESC, a.membership_id DESC LIMIT 1)),
+			adjustment_note = COALESCE(?, NULLIF(p.adjustment_note, ''), (
+				SELECT a.adjustment_note FROM ad_hoc_proposal_approvals a
+				WHERE a.proposal_id = p.proposal_id AND a.company_id = p.company_id AND COALESCE(a.adjustment_note, '') <> ''
+				ORDER BY a.approved_at DESC, a.membership_id DESC LIMIT 1))
+		WHERE p.proposal_id = ? AND p.company_id = ?
+	`, nullableStr(in.FinalT0Date), nullableStr(in.FinalDeadlineDate), nullIfBlank(in.AdjustmentNote), in.ProposalID, in.CompanyID); err != nil {
+		return nil, fmt.Errorf("update ad_hoc_proposal current final values: %w", err)
+	}
+	// Read them back as YYYY-MM-DD for finalize (a DATE scanned as a string follows the DSN's
+	// parseTime), and the proposal as FindByID returns it.
+	var curT0, curDeadline sql.NullString
+	var curNote string
+	if err := tx.QueryRowContext(ctx, `
+		SELECT DATE_FORMAT(final_t0_date, '%Y-%m-%d'), DATE_FORMAT(final_deadline_date, '%Y-%m-%d'), COALESCE(adjustment_note, '')
+		FROM ad_hoc_proposals WHERE proposal_id = ? AND company_id = ?
+	`, in.ProposalID, in.CompanyID).Scan(&curT0, &curDeadline, &curNote); err != nil {
+		return nil, fmt.Errorf("read ad_hoc_proposal current final values: %w", err)
+	}
+	if p, err = scanProposalRow(tx.QueryRowContext(ctx, `
+		SELECT `+cols+` FROM ad_hoc_proposals WHERE proposal_id = ? AND company_id = ?
+	`, in.ProposalID, in.CompanyID), caps); err != nil {
+		return nil, err
 	}
 
 	required, completed, err := countReviewersAndApprovals(ctx, tx, in.ProposalID, in.CompanyID)
@@ -515,10 +585,167 @@ func (r *Repository) ReserveVote(ctx context.Context, in adhocapp.ReserveVoteInp
 		Completed:             completed,
 		ActorMembershipID:     in.ActorMembershipID,
 		ActorUserID:           in.ActorUserID,
-		LastFinalT0Date:       in.FinalT0Date,
-		LastFinalDeadlineDate: in.FinalDeadlineDate,
-		LastAdjustmentNote:    in.AdjustmentNote,
+		LastFinalT0Date:       nullStringPtr(curT0),
+		LastFinalDeadlineDate: nullStringPtr(curDeadline),
+		LastAdjustmentNote:    curNote,
 	}, nil
+}
+
+func nullStringPtr(v sql.NullString) *string {
+	if !v.Valid {
+		return nil
+	}
+	return &v.String
+}
+
+// refuseIfAllApproved takes the proposal row lock that votes take (ReserveVote), then refuses with
+// 409 when the proposal is pending and every assigned reviewer has approved (v1.2 §3.2). Nothing
+// before the lock reads plainly, so the counts are as of the lock.
+func refuseIfAllApproved(ctx context.Context, tx *sql.Tx, companyID, proposalID string) error {
+	var status string
+	err := tx.QueryRowContext(ctx, `
+		SELECT status FROM ad_hoc_proposals WHERE proposal_id = ? AND company_id = ? FOR UPDATE
+	`, proposalID, companyID).Scan(&status)
+	if err == sql.ErrNoRows {
+		return nil // the guarded UPDATE reports it
+	}
+	if err != nil {
+		return fmt.Errorf("lock ad_hoc_proposal: %w", err)
+	}
+	if status != adhocapp.StatusPendingFocalApproval {
+		return nil
+	}
+	required, completed, err := countReviewersAndApprovals(ctx, tx, proposalID, companyID)
+	if err != nil {
+		return err
+	}
+	if required > 0 && completed >= required {
+		return adhocapp.AllReviewersApprovedError()
+	}
+	return nil
+}
+
+// ReleaseVote removes a reviewer's vote under the row lock votes take, while the proposal is still
+// pending_focal_approval and finalize has not created its record: the compensation for a finalize
+// that failed before any side effect. Once the record exists the votes stay (reject/cancel stay
+// closed) and a retry finishes the proposal, instead of leaving the record behind a rejection.
+func (r *Repository) ReleaseVote(ctx context.Context, companyID, proposalID, membershipID, recordID string) (bool, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var status string
+	err = tx.QueryRowContext(ctx, `
+		SELECT status FROM ad_hoc_proposals WHERE proposal_id = ? AND company_id = ? FOR UPDATE
+	`, proposalID, companyID).Scan(&status)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("lock ad_hoc_proposal: %w", err)
+	}
+	if status != adhocapp.StatusPendingFocalApproval {
+		return false, tx.Commit()
+	}
+	exists, err := disclosureRecordExists(ctx, tx, companyID, recordID)
+	if err != nil {
+		return false, err
+	}
+	if exists {
+		return false, tx.Commit()
+	}
+	res, err := tx.ExecContext(ctx, `
+		DELETE FROM ad_hoc_proposal_approvals WHERE proposal_id = ? AND company_id = ? AND membership_id = ?
+	`, proposalID, companyID, membershipID)
+	if err != nil {
+		return false, fmt.Errorf("release ad_hoc_proposal vote: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, tx.Commit()
+}
+
+func disclosureRecordExists(ctx context.Context, tx *sql.Tx, companyID, recordID string) (bool, error) {
+	if strings.TrimSpace(recordID) == "" {
+		return false, nil
+	}
+	var n int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM disclosure_records WHERE record_id = ? AND company_id = ?
+	`, recordID, companyID).Scan(&n); err != nil {
+		return false, fmt.Errorf("check finalize record: %w", err)
+	}
+	return n > 0, nil
+}
+
+// refuseFinalValueChange returns 409 when the finalize record exists and the vote enters a final
+// value that differs from the current one. Runs under the proposal row lock.
+func refuseFinalValueChange(ctx context.Context, tx *sql.Tx, in adhocapp.ReserveVoteInput) error {
+	exists, err := disclosureRecordExists(ctx, tx, in.CompanyID, in.FinalizeRecordID)
+	if err != nil || !exists {
+		return err
+	}
+	var curT0, curDeadline sql.NullString
+	var curNote string
+	if err := tx.QueryRowContext(ctx, `
+		SELECT DATE_FORMAT(final_t0_date, '%Y-%m-%d'), DATE_FORMAT(final_deadline_date, '%Y-%m-%d'), COALESCE(adjustment_note, '')
+		FROM ad_hoc_proposals WHERE proposal_id = ? AND company_id = ?
+	`, in.ProposalID, in.CompanyID).Scan(&curT0, &curDeadline, &curNote); err != nil {
+		return fmt.Errorf("read ad_hoc_proposal final values: %w", err)
+	}
+	changes := func(in *string, cur sql.NullString) bool { return in != nil && (!cur.Valid || *in != cur.String) }
+	note := strings.TrimSpace(in.AdjustmentNote)
+	if changes(in.FinalT0Date, curT0) || changes(in.FinalDeadlineDate, curDeadline) || (note != "" && note != curNote) {
+		return adhocapp.FinalValuesLockedError()
+	}
+	return nil
+}
+
+const finalizeLockWaitSeconds = 5
+
+func finalizeLockName(companyID, proposalID string) string {
+	sum := sha256.Sum256([]byte(companyID + ":" + proposalID))
+	return "cobo_iam:adhoc_finalize:" + hex.EncodeToString(sum[:])[:40]
+}
+
+// LockFinalize takes a MySQL named lock on a dedicated connection, so one finalize runs at a time
+// per proposal across API instances (same pattern as LockCompanyAdmins). The finalize writes run on
+// other connections and commit before the lock is released.
+func (r *Repository) LockFinalize(ctx context.Context, companyID, proposalID string) (func(), error) {
+	conn, err := r.db.Conn(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("lock ad-hoc finalize: %w", err)
+	}
+	name := finalizeLockName(companyID, proposalID)
+	var got sql.NullInt64
+	if err := conn.QueryRowContext(ctx, `SELECT GET_LOCK(?, ?)`, name, r.finalizeLockWait()).Scan(&got); err != nil {
+		_ = conn.Close()
+		return nil, fmt.Errorf("lock ad-hoc finalize: %w", err)
+	}
+	if !got.Valid || got.Int64 != 1 {
+		_ = conn.Close()
+		return nil, adhocapp.FinalizeInProgressError()
+	}
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+			defer cancel()
+			if _, err := conn.ExecContext(rctx, `DO RELEASE_LOCK(?)`, name); err != nil {
+				// Never return a session that may still hold the lock to the pool: closing the
+				// session releases it.
+				_ = conn.Raw(func(any) error { return driver.ErrBadConn })
+			}
+			_ = conn.Close()
+		})
+	}, nil
+}
+
+func (r *Repository) finalizeLockWait() int {
+	if r.finalizeLockWaitSeconds != nil {
+		return *r.finalizeLockWaitSeconds
+	}
+	return finalizeLockWaitSeconds
 }
 
 func countReviewersAndApprovals(ctx context.Context, tx *sql.Tx, proposalID, companyID string) (required, completed int, err error) {
@@ -540,7 +767,30 @@ func countReviewersAndApprovals(ctx context.Context, tx *sql.Tx, proposalID, com
 // (finalize-retry safety instead comes from the deterministic RecordID, ADR-1B).
 func (r *Repository) CompleteFinalize(ctx context.Context, upd adhocapp.StatusUpdate) (*adhocapp.ProposalDTO, bool, error) {
 	now := time.Now().UTC()
-	res, err := r.db.ExecContext(ctx, `
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	// A failed finalize releases its vote (ReleaseVote); a concurrent finalize must not then approve
+	// without every vote. Votes and releases take this row lock.
+	var status string
+	err = tx.QueryRowContext(ctx, `
+		SELECT status FROM ad_hoc_proposals WHERE proposal_id = ? AND company_id = ? FOR UPDATE
+	`, upd.ProposalID, upd.CompanyID).Scan(&status)
+	if err != nil && err != sql.ErrNoRows {
+		return nil, false, fmt.Errorf("lock ad_hoc_proposal: %w", err)
+	}
+	if err == nil && status == upd.FromStatus {
+		required, completed, cErr := countReviewersAndApprovals(ctx, tx, upd.ProposalID, upd.CompanyID)
+		if cErr != nil {
+			return nil, false, cErr
+		}
+		if required > 0 && completed < required {
+			return nil, false, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "proposal no longer has every approval", nil)
+		}
+	}
+	res, err := tx.ExecContext(ctx, `
 		UPDATE ad_hoc_proposals
 		SET status = ?, admin_approved_by = ?, admin_approved_at = ?,
 		    record_id = NULLIF(?, ''), workflow_instance_id = NULLIF(?, ''),
@@ -553,6 +803,9 @@ func (r *Repository) CompleteFinalize(ctx context.Context, upd adhocapp.StatusUp
 		return nil, false, fmt.Errorf("complete finalize: %w", err)
 	}
 	n, _ := res.RowsAffected()
+	if err := tx.Commit(); err != nil {
+		return nil, false, err
+	}
 	if n == 0 {
 		// EV-2/EV-3 disambiguation: guarded UPDATE matched no row — re-read to
 		// distinguish an idempotent replay (already approved by a concurrent

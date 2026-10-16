@@ -386,6 +386,9 @@ func (s *service) SubmitProposal(ctx context.Context, req ProposalActionRequest)
 	if len(reviewers) == 0 {
 		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "proposal has no assigned reviewers", nil)
 	}
+	if err := s.recheckSubmitParties(ctx, req.Subject, cur, reviewers); err != nil {
+		return nil, err
+	}
 
 	submitApplied := false // read by the deferred capture log (only meaningful after UpdateStatus)
 	statusUpd := StatusUpdate{
@@ -472,6 +475,49 @@ func (s *service) SubmitProposal(ctx context.Context, req ProposalActionRequest)
 	return updated, nil
 }
 
+// recheckSubmitParties (v1.2 §3.2, XL-06): a reviewer may have been deactivated or lost
+// ad_hoc_alert.focal_review since the proposal was created, and finalize creates the disclosure
+// record as the proposer. Check both before anyone is asked to review.
+func (s *service) recheckSubmitParties(ctx context.Context, sub Subject, cur *ProposalDTO, reviewers []ReviewerDTO) error {
+	if s.membershipValidator == nil {
+		return perr.NewHTTPError(http.StatusInternalServerError, perr.CodeInternal, "membership validator is unavailable", nil)
+	}
+	for _, r := range reviewers {
+		active, err := s.membershipValidator.IsActiveMembership(ctx, sub.CompanyID, r.MembershipID)
+		if err != nil {
+			return mapRepositoryError(fmt.Errorf("check reviewer membership: %w", err))
+		}
+		if !active {
+			return newAdHocFieldError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, "reviewer_membership_ids", "reviewer_membership_ids contains invalid reviewer")
+		}
+		hasPerm, err := s.membershipValidator.HasPermission(ctx, sub.CompanyID, r.MembershipID, "ad_hoc_alert.focal_review")
+		if err != nil {
+			return mapRepositoryError(fmt.Errorf("check reviewer permission: %w", err))
+		}
+		if !hasPerm {
+			return newAdHocFieldError(http.StatusUnprocessableEntity, perr.CodeInvalidRequest, "reviewer_membership_ids", "reviewer does not have ad_hoc_alert.focal_review")
+		}
+	}
+	// Finalize creates the disclosure record as the proposer (CreateRecord: disclosure.create) and a
+	// retried finalize reads it back as them (GetRecord: disclosure.view).
+	for _, action := range []string{"disclosure.create", "disclosure.view"} {
+		if err := s.authorize(ctx, sub, action, authapp.ResourceRef{
+			Type: "disclosure_record",
+			Attributes: map[string]any{
+				"department_id":       "general",
+				"owner_membership_id": cur.CreatedBy,
+				"workflow_state":      "draft",
+			},
+		}); err != nil {
+			if he, ok := perr.AsHTTPError(err); ok && he.HTTPStatus == http.StatusForbidden {
+				return newAdHocPermissionError(action, "Missing permission "+action)
+			}
+			return err
+		}
+	}
+	return nil
+}
+
 // Approve casts one reviewer's vote (v3 D3/D4 — one round, unanimous, 1..N
 // reviewers). Replaces FocalApprove. See §6.5 for the 3-phase concurrency design.
 func (s *service) Approve(ctx context.Context, req ApproveRequest) (*ApproveResponse, error) {
@@ -496,6 +542,7 @@ func (s *service) Approve(ctx context.Context, req ApproveRequest) (*ApproveResp
 		FinalDeadlineDate: finalDeadlineDate,
 		AdjustmentNote:    strings.TrimSpace(req.AdjustmentNote),
 		Comment:           strings.TrimSpace(req.Comment),
+		FinalizeRecordID:  AdHocRecordID(req.Subject.CompanyID, req.ProposalID),
 	})
 	if err != nil {
 		return nil, err
@@ -525,8 +572,26 @@ func (s *service) Approve(ctx context.Context, req ApproveRequest) (*ApproveResp
 	// Last vote (or a safe retry of one — §6.5 test #3): attempt finalize. On
 	// error the proposal remains pending_focal_approval; retrying is safe because
 	// finalize uses a deterministic record ID and a guarded completion UPDATE.
-	result, err := s.finalizeApprovedProposal(ctx, reservation)
+	//
+	// One finalize at a time per proposal: two would both resume the same record and each create a
+	// workflow instance. While this one waited, an earlier finalize may have finished or released
+	// its vote, so the votes are read again under the lock.
+	unlock, err := s.repo.LockFinalize(ctx, req.Subject.CompanyID, req.ProposalID)
 	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+	ready, done, err := s.reloadForFinalize(ctx, req.Subject.CompanyID, req.ProposalID, reservation)
+	if err != nil || done != nil {
+		return done, err
+	}
+	progress = ApprovalProgressDTO{Required: ready.Required, Completed: ready.Completed}
+	if !ready.IsLastVote {
+		return &ApproveResponse{Proposal: *ready.Proposal, ApprovalProgress: progress, Finalized: false}, nil
+	}
+	result, err := s.finalizeApprovedProposal(ctx, ready)
+	if err != nil {
+		s.releaseVoteAfterFailedFinalize(ctx, req.Subject, req.ProposalID)
 		return nil, err
 	}
 	updated, err := s.repo.FindByID(ctx, req.Subject.CompanyID, req.ProposalID)
@@ -542,6 +607,94 @@ func (s *service) Approve(ctx context.Context, req ApproveRequest) (*ApproveResp
 	}, nil
 }
 
+// AdHocRecordID is the deterministic disclosure record id of a proposal's finalize (ADR-1B).
+func AdHocRecordID(companyID, proposalID string) string {
+	return uuid.NewSHA1(adhocRecordIDNamespace, []byte(fmt.Sprintf("%s:%s", companyID, proposalID))).String()
+}
+
+// reloadForFinalize re-reads the proposal and its votes under the finalize lock. done is the
+// response to return as is: the proposal was finalized meanwhile. Otherwise the reservation is
+// rebuilt from the current row; IsLastVote is false when a vote was released meanwhile.
+func (s *service) reloadForFinalize(ctx context.Context, companyID, proposalID string, r *VoteReservation) (*VoteReservation, *ApproveResponse, error) {
+	cur, err := s.repo.FindByID(ctx, companyID, proposalID)
+	if err != nil {
+		return nil, nil, err
+	}
+	reviewers, err := s.repo.ListReviewers(ctx, companyID, proposalID)
+	if err != nil {
+		return nil, nil, err
+	}
+	approvals, err := s.repo.ListApprovals(ctx, companyID, proposalID)
+	if err != nil {
+		return nil, nil, err
+	}
+	progress := ApprovalProgressDTO{Required: len(reviewers), Completed: len(approvals)}
+	switch cur.Status {
+	case StatusApproved:
+		return nil, &ApproveResponse{
+			Proposal: *cur, ApprovalProgress: progress, Finalized: true,
+			RecordID: cur.RecordID, WorkflowInstanceID: cur.WorkflowInstanceID,
+		}, nil
+	case StatusPendingFocalApproval:
+	default:
+		conflictErr := perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "proposal status changed concurrently", nil)
+		conflictErr.Details = map[string]any{
+			"proposal_id":             proposalID,
+			"current_status":          cur.Status,
+			"expected_from_status":    StatusPendingFocalApproval,
+			"attempted_target_status": StatusApproved,
+		}
+		return nil, nil, conflictErr
+	}
+	ready := *r
+	ready.Proposal = cur
+	ready.Required, ready.Completed = len(reviewers), len(approvals)
+	ready.IsLastVote = len(reviewers) > 0 && len(approvals) >= len(reviewers)
+	ready.LastFinalT0Date = isoDate(cur.FinalT0Date)
+	ready.LastFinalDeadlineDate = isoDate(cur.FinalDeadlineDate)
+	ready.LastAdjustmentNote = cur.AdjustmentNote
+	return &ready, nil, nil
+}
+
+// releaseVoteAfterFailedFinalize is the compensation of v1.2 §3.2: with every vote in and finalize
+// failed before it created the record, nobody would have an approve left and reject/cancel would be
+// closed, so the vote is released. Once the record exists the repository keeps the votes and a
+// retry finishes the proposal. It runs even when the request context ended.
+func (s *service) releaseVoteAfterFailedFinalize(ctx context.Context, sub Subject, proposalID string) {
+	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	released, err := s.repo.ReleaseVote(rctx, sub.CompanyID, proposalID, sub.MembershipID, AdHocRecordID(sub.CompanyID, proposalID))
+	if err != nil {
+		slog.Error("adhoc: release vote after failed finalize",
+			slog.String("proposal_id", proposalID),
+			slog.String("company_id", sub.CompanyID),
+			slog.Any("error", err),
+		)
+		return
+	}
+	slog.Info("adhoc: finalize failed",
+		slog.String("proposal_id", proposalID),
+		slog.String("company_id", sub.CompanyID),
+		slog.String("membership_id", sub.MembershipID),
+		slog.Bool("vote_released", released),
+	)
+}
+
+// isoDate returns the YYYY-MM-DD part of a stored date (RFC 3339 when read with parseTime), or nil.
+func isoDate(v *string) *string {
+	if v == nil {
+		return nil
+	}
+	d := strings.TrimSpace(*v)
+	if len(d) > 10 {
+		d = d[:10]
+	}
+	if _, err := time.Parse("2006-01-02", d); err != nil {
+		return nil
+	}
+	return &d
+}
+
 // finalizeApprovedProposal is Phase B+C of §6.5: create the disclosure record
 // (idempotent via deterministic RecordID, ADR-1B) then guarded-UPDATE the
 // proposal to approved. Must only be called when reservation.IsLastVote is true.
@@ -550,9 +703,10 @@ func (s *service) finalizeApprovedProposal(ctx context.Context, r *VoteReservati
 	typeDisplayName, _ := s.typeCatalog.GetTypeDisplayName(ctx, cur.CompanyID, cur.TypeID)
 	title := ResolveAdHocRecordTitle(cur.ChangeNote, typeDisplayName, cur.TypeID)
 
-	finalT0 := r.LastFinalT0Date
+	finalT0 := isoDate(r.LastFinalT0Date)
 	if finalT0 == nil {
-		finalT0 = cur.ProposedT0Date
+		// Read from a DATE column, this is RFC 3339 when the DSN sets parseTime.
+		finalT0 = isoDate(cur.ProposedT0Date)
 	}
 	var t0Time *time.Time
 	if finalT0 != nil {
@@ -564,10 +718,7 @@ func (s *service) finalizeApprovedProposal(ctx context.Context, r *VoteReservati
 	// ADR-1B: deterministic RecordID so a retried finalize (after a prior
 	// CreateAndSubmitRecordWithOpts failure) is recognized as a replay instead of
 	// creating an orphaned second disclosure_records row (CF-01).
-	deterministicRecordID := uuid.NewSHA1(
-		adhocRecordIDNamespace,
-		[]byte(fmt.Sprintf("%s:%s", cur.CompanyID, cur.ProposalID)),
-	).String()
+	deterministicRecordID := AdHocRecordID(cur.CompanyID, cur.ProposalID)
 	createOpts, mode, err := BuildCreateRecordOptsForFinalize(deterministicRecordID, cur)
 	if err != nil {
 		return nil, err
@@ -684,10 +835,7 @@ func (s *service) AdminApprove(ctx context.Context, req AdminApproveRequest) (*A
 		// ADR-1B: derive a deterministic RecordID from (company, proposal) so a
 		// retried creation attempt is recognized as a replay (idempotent) instead
 		// of inserting a second, orphaned disclosure_records row (CF-01).
-		deterministicRecordID := uuid.NewSHA1(
-			adhocRecordIDNamespace,
-			[]byte(fmt.Sprintf("%s:%s", cur.CompanyID, cur.ProposalID)),
-		).String()
+		deterministicRecordID := AdHocRecordID(cur.CompanyID, cur.ProposalID)
 		// CF-15: the disclosure record's creator must be the proposal's original
 		// creator (cur.CreatedBy), not the approving admin (req.Subject.MembershipID).
 		// req.Subject remains the acting/authorizing actor for this request.
@@ -786,10 +934,11 @@ func (s *service) Reject(ctx context.Context, req RejectRequest) (*ProposalDTO, 
 		CompanyID:  req.Subject.CompanyID,
 		Status:     StatusRejected,
 		// ADR-2: cur.Status == StatusPendingFocalApproval (checked above).
-		FromStatus:        cur.Status,
-		ActorMembershipID: req.Subject.MembershipID,
-		ActorUserID:       req.Subject.UserID,
-		RejectReason:      reason,
+		FromStatus:          cur.Status,
+		ActorMembershipID:   req.Subject.MembershipID,
+		ActorUserID:         req.Subject.UserID,
+		RejectReason:        reason,
+		RefuseIfAllApproved: true, // v1.2 §3.2
 	})
 	if err != nil {
 		return nil, err
@@ -829,9 +978,10 @@ func (s *service) Cancel(ctx context.Context, req ProposalActionRequest) (*Propo
 		CompanyID:  req.Subject.CompanyID,
 		Status:     StatusCancelled,
 		// ADR-2: cur.Status is one of {StatusDraft, StatusPendingFocalApproval, StatusPendingAdminApproval} (checked above).
-		FromStatus:        cur.Status,
-		ActorMembershipID: req.Subject.MembershipID,
-		ActorUserID:       req.Subject.UserID,
+		FromStatus:          cur.Status,
+		ActorMembershipID:   req.Subject.MembershipID,
+		ActorUserID:         req.Subject.UserID,
+		RefuseIfAllApproved: true, // v1.2 §3.2
 	})
 	if err != nil {
 		return nil, err
@@ -982,6 +1132,7 @@ func (s *service) embedReviewState(ctx context.Context, p *ProposalDTO) *Proposa
 		out.Approvals = approvals
 	}
 	out.ApprovalProgress = &ApprovalProgressDTO{Required: len(out.Reviewers), Completed: len(out.Approvals)}
+	out.FinalizeRetryAvailable = out.Status == StatusPendingFocalApproval && len(out.Reviewers) > 0 && len(out.Approvals) >= len(out.Reviewers)
 	return &out
 }
 

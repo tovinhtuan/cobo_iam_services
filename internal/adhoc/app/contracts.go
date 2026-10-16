@@ -66,6 +66,14 @@ type Repository interface {
 	// pending_focal_approval -> approved. The bool return follows the EV-1/EV-2
 	// contract above.
 	CompleteFinalize(ctx context.Context, upd StatusUpdate) (*ProposalDTO, bool, error)
+	// ReleaseVote removes membershipID's vote while the proposal is still pending_focal_approval and
+	// the finalize record (recordID) does not exist: the compensation for a finalize that failed
+	// before it created anything (v1.2 §3.2). Once the record exists the votes stay, so the proposal
+	// is finished by a retry instead of rejected around a live record. Reports whether it released.
+	ReleaseVote(ctx context.Context, companyID, proposalID, membershipID, recordID string) (bool, error)
+	// LockFinalize serializes finalize per proposal across API instances (a MySQL named lock).
+	// Returns 409 (details.reason finalize_in_progress) when another finalize holds it too long.
+	LockFinalize(ctx context.Context, companyID, proposalID string) (func(), error)
 	IsAssignedReviewer(ctx context.Context, companyID, proposalID, membershipID string) (bool, error)
 	ListReviewers(ctx context.Context, companyID, proposalID string) ([]ReviewerDTO, error)
 	ListApprovals(ctx context.Context, companyID, proposalID string) ([]ApprovalDTO, error)
@@ -320,12 +328,17 @@ type ReserveVoteInput struct {
 	FinalDeadlineDate *string
 	AdjustmentNote    string
 	Comment           string
+	// FinalizeRecordID is the proposal's deterministic disclosure record id. Once that record
+	// exists, finalize has started from the current final values, so a vote may not change them.
+	FinalizeRecordID string
 }
 
 // VoteReservation is the result of Repository.ReserveVote. IsLastVote is true
 // when, after this call, completed == required and the proposal is still
 // pending_focal_approval — callers must attempt finalizeApprovedProposal,
 // including on safe retry after a prior finalize failure (§6.5 test #3).
+// LastFinal* are the proposal's current final values after this vote (v1.2 §3.2): per field, the
+// value entered last by any reviewer; a blank field keeps the value entered before it.
 type VoteReservation struct {
 	Proposal              *ProposalDTO
 	IsLastVote            bool
@@ -460,6 +473,9 @@ type ProposalDTO struct {
 	Reviewers        []ReviewerDTO        `json:"reviewers,omitempty"`
 	Approvals        []ApprovalDTO        `json:"approvals,omitempty"`
 	ApprovalProgress *ApprovalProgressDTO `json:"approval_progress,omitempty"`
+	// FinalizeRetryAvailable is true when every reviewer approved but the proposal is still
+	// pending: finalize failed or was interrupted, and an assigned reviewer can retry it (v1.2 §3.2).
+	FinalizeRetryAvailable bool `json:"finalize_retry_available,omitempty"`
 
 	// Tracking is additive GetProposal enrichment (T3). Built from frozen workflow +
 	// runtime instance/tasks. Omitted on list. Never changes proposal.status.
@@ -496,4 +512,8 @@ type StatusUpdate struct {
 	// via draft PATCH (status != draft).
 	PersistProposedDeadlineDayType bool
 	ProposedDeadlineDayType        *ProposalDeadlineDayType
+	// RefuseIfAllApproved makes the transition fail with 409 (details.reason
+	// ReasonAllReviewersApproved) once every assigned reviewer has approved (v1.2 §3.2: no
+	// reject/cancel after the last vote). Checked under the proposal row lock that votes take.
+	RefuseIfAllApproved bool
 }

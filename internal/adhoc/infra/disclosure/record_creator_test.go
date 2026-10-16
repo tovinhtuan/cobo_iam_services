@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	adhocapp "github.com/cobo/cobo_iam_services/internal/adhoc/app"
 	disclosureapp "github.com/cobo/cobo_iam_services/internal/disclosure/app"
@@ -13,6 +14,7 @@ import (
 type duplicatePeriodicRecordService struct {
 	createCalls int
 	getCalls    int
+	submitCalls int
 	record      disclosureapp.RecordDTO
 }
 
@@ -28,6 +30,7 @@ func (s *duplicatePeriodicRecordService) GetRecord(context.Context, disclosureap
 }
 
 func (s *duplicatePeriodicRecordService) SubmitRecord(context.Context, disclosureapp.SubmitRecordRequest) (*disclosureapp.RecordDTO, error) {
+	s.submitCalls++
 	return nil, nil
 }
 
@@ -222,5 +225,40 @@ func TestCreateAndSubmitRecordWithOpts_ProposalSubmitSkipsWorkflowBootstrap(t *t
 	}
 	if wf.calls != 1 || recordID != "rec-1" || instanceID != "wf-resumed" {
 		t.Fatalf("exactly one (proposal) instance expected: calls=%d record=%q instance=%q", wf.calls, recordID, instanceID)
+	}
+}
+
+// MR-2 H3 (bug-adhoc-v12-2026-10-16): an ad-hoc finalize retry after a first attempt created and
+// submitted the record but failed to create its workflow must resume the workflow, without
+// submitting the record again (SubmitRecord would move PendingReview to "In Progress").
+func TestCreateAndSubmitRecordWithOpts_AdhocFinalizeRetryResumesWorkflow(t *testing.T) {
+	submittedAt := time.Date(2026, 10, 16, 2, 0, 0, 0, time.UTC)
+	records := &duplicatePeriodicRecordService{record: disclosureapp.RecordDTO{
+		RecordID: "adhoc-record", CompanyID: "co-1", TypeID: "type-1", Status: "PendingReview", SubmittedAt: &submittedAt,
+	}}
+	workflow := &fakeWorkflowMaterializer{}
+	adapter := &RecordCreatorAdapter{svc: records, workflow: workflow, workflowOn: true}
+	proposal := &adhocapp.ProposalDTO{ProposalID: "prop-1", Workflow: &adhocapp.ProposalWorkflowSnapshot{
+		SchemaVersion: 2,
+		Frozen:        true,
+		Steps: []adhocapp.ProposalWorkflowStep{{
+			ID: "step-1", Order: 1, Name: "Review", ProcessingDays: 1,
+			DepartmentID: "d-1", AssigneeMembershipID: "m-1",
+		}},
+	}}
+	opts, _, err := adhocapp.BuildCreateRecordOptsForFinalize("adhoc-record", proposal)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	recordID, workflowID, err := adapter.CreateAndSubmitRecordWithOpts(context.Background(), "co-1", "type-1", "m-1", "title", nil, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recordID != "adhoc-record" || workflowID != "wf-resumed" {
+		t.Fatalf("record=%q workflow=%q, want the existing record with a resumed workflow", recordID, workflowID)
+	}
+	if records.submitCalls != 0 {
+		t.Fatalf("submitted the already-submitted record again (%d calls)", records.submitCalls)
 	}
 }

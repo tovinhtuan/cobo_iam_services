@@ -33,6 +33,12 @@ type fakeRepository struct {
 	reserveVoteCalls      int
 	completeFinalizeCalls int
 	completeFinalizeErr   error
+
+	// existingRecords simulates disclosure_records rows (ReleaseVote keeps votes once finalize created one).
+	existingRecords     map[string]bool
+	lastReleaseRecordID string
+	lockFinalizeCalls   int
+	onLockFinalize      func() // runs while "holding" the finalize lock
 }
 
 func (f *fakeRepository) Insert(ctx context.Context, p ProposalDTO) (*ProposalDTO, error) {
@@ -101,9 +107,16 @@ func (f *fakeRepository) ReserveVote(ctx context.Context, in ReserveVoteInput) (
 	for i, a := range f.approvals {
 		if a.MembershipID == in.ActorMembershipID {
 			already = true
-			f.approvals[i].FinalT0Date = in.FinalT0Date
-			f.approvals[i].FinalDeadlineDate = in.FinalDeadlineDate
-			f.approvals[i].AdjustmentNote = in.AdjustmentNote
+			// v1.2 §3.2: a blank field keeps the value entered before it.
+			if in.FinalT0Date != nil {
+				f.approvals[i].FinalT0Date = in.FinalT0Date
+			}
+			if in.FinalDeadlineDate != nil {
+				f.approvals[i].FinalDeadlineDate = in.FinalDeadlineDate
+			}
+			if in.AdjustmentNote != "" {
+				f.approvals[i].AdjustmentNote = in.AdjustmentNote
+			}
 			f.approvals[i].Comment = in.Comment
 			break
 		}
@@ -118,7 +131,19 @@ func (f *fakeRepository) ReserveVote(ctx context.Context, in ReserveVoteInput) (
 			Comment:           in.Comment,
 		})
 	}
-	cp := *f.proposal
+	// The proposal carries the current final values: the last entered wins, blank keeps.
+	cur := *f.proposal
+	if in.FinalT0Date != nil {
+		cur.FinalT0Date = in.FinalT0Date
+	}
+	if in.FinalDeadlineDate != nil {
+		cur.FinalDeadlineDate = in.FinalDeadlineDate
+	}
+	if in.AdjustmentNote != "" {
+		cur.AdjustmentNote = in.AdjustmentNote
+	}
+	f.proposal = &cur
+	cp := cur
 	required := len(f.reviewers)
 	completed := len(f.approvals)
 	return &VoteReservation{
@@ -128,9 +153,9 @@ func (f *fakeRepository) ReserveVote(ctx context.Context, in ReserveVoteInput) (
 		Completed:             completed,
 		ActorMembershipID:     in.ActorMembershipID,
 		ActorUserID:           in.ActorUserID,
-		LastFinalT0Date:       in.FinalT0Date,
-		LastFinalDeadlineDate: in.FinalDeadlineDate,
-		LastAdjustmentNote:    in.AdjustmentNote,
+		LastFinalT0Date:       cur.FinalT0Date,
+		LastFinalDeadlineDate: cur.FinalDeadlineDate,
+		LastAdjustmentNote:    cur.AdjustmentNote,
 	}, nil
 }
 
@@ -148,6 +173,9 @@ func (f *fakeRepository) CompleteFinalize(ctx context.Context, upd StatusUpdate)
 		}
 		return nil, false, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "proposal cannot be finalized in current state", nil)
 	}
+	if len(f.reviewers) > 0 && len(f.approvals) < len(f.reviewers) {
+		return nil, false, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "proposal no longer has every approval", nil)
+	}
 	cp := *f.proposal
 	cp.Status = upd.Status
 	cp.RecordID = upd.RecordID
@@ -157,6 +185,32 @@ func (f *fakeRepository) CompleteFinalize(ctx context.Context, upd StatusUpdate)
 	cp.AdjustmentNote = upd.AdjustmentNote
 	f.proposal = &cp
 	return &cp, true, nil
+}
+
+// ReleaseVote mirrors the production compensation: drop the vote while still pending and before
+// finalize created its record.
+func (f *fakeRepository) ReleaseVote(_ context.Context, _, _, membershipID, recordID string) (bool, error) {
+	f.lastReleaseRecordID = recordID
+	if f.proposal == nil || f.proposal.Status != StatusPendingFocalApproval || f.existingRecords[recordID] {
+		return false, nil
+	}
+	kept := make([]ApprovalDTO, 0, len(f.approvals))
+	for _, a := range f.approvals {
+		if a.MembershipID != membershipID {
+			kept = append(kept, a)
+		}
+	}
+	released := len(kept) != len(f.approvals)
+	f.approvals = kept
+	return released, nil
+}
+
+func (f *fakeRepository) LockFinalize(_ context.Context, _, _ string) (func(), error) {
+	f.lockFinalizeCalls++
+	if f.onLockFinalize != nil {
+		f.onLockFinalize()
+	}
+	return func() {}, nil
 }
 
 func (f *fakeRepository) IsAssignedReviewer(ctx context.Context, companyID, proposalID, membershipID string) (bool, error) {
@@ -182,6 +236,9 @@ func (f *fakeRepository) FindByID(ctx context.Context, companyID, proposalID str
 
 func (f *fakeRepository) UpdateStatus(ctx context.Context, upd StatusUpdate) (*ProposalDTO, bool, error) {
 	f.lastUpdate = upd
+	if upd.RefuseIfAllApproved && len(f.reviewers) > 0 && len(f.approvals) >= len(f.reviewers) {
+		return nil, false, AllReviewersApprovedError()
+	}
 	f.updateCalls++
 	cp := *f.proposal
 	cp.Status = upd.Status
@@ -334,6 +391,7 @@ type fakeMembershipValidator struct {
 	active       bool
 	hasPerm      bool
 	hasAdminRole bool
+	activeErr    error
 }
 
 func newAllowValidator() *fakeMembershipValidator {
@@ -341,7 +399,7 @@ func newAllowValidator() *fakeMembershipValidator {
 }
 
 func (f *fakeMembershipValidator) IsActiveMembership(_ context.Context, _, _ string) (bool, error) {
-	return f.active, nil
+	return f.active, f.activeErr
 }
 func (f *fakeMembershipValidator) HasPermission(_ context.Context, _, _, _ string) (bool, error) {
 	return f.hasPerm, nil
@@ -492,7 +550,7 @@ func TestSubmitProposalAutoApproveIsNoOp(t *testing.T) {
 		reviewers: []ReviewerDTO{{MembershipID: "member-focal"}},
 	}
 	auth := &fakeAuthService{decision: authapp.DecisionAllow}
-	svc := NewService(repo, &fakeRecordCreator{}, &fakeTypeCatalog{category: "irregular"}, fakeIDGen{}, true, auth, nil, nil, noopMetrics{})
+	svc := NewService(repo, &fakeRecordCreator{}, &fakeTypeCatalog{category: "irregular"}, fakeIDGen{}, true, auth, newAllowValidator(), nil, noopMetrics{})
 
 	resp, err := svc.SubmitProposal(context.Background(), ProposalActionRequest{
 		Subject:    Subject{CompanyID: "company-001", MembershipID: "member-creator", UserID: "user-001"},
@@ -1422,6 +1480,14 @@ func (f *concurrencyFakeRepo) CompleteFinalize(ctx context.Context, upd StatusUp
 	return nil, false, errors.New("not used in this test")
 }
 
+func (f *concurrencyFakeRepo) ReleaseVote(ctx context.Context, companyID, proposalID, membershipID, recordID string) (bool, error) {
+	return false, nil
+}
+
+func (f *concurrencyFakeRepo) LockFinalize(ctx context.Context, companyID, proposalID string) (func(), error) {
+	return func() {}, nil
+}
+
 func (f *concurrencyFakeRepo) IsAssignedReviewer(ctx context.Context, companyID, proposalID, membershipID string) (bool, error) {
 	return false, nil
 }
@@ -1813,16 +1879,24 @@ func (f *raceFakeRepo) CompleteFinalize(ctx context.Context, upd StatusUpdate) (
 	return &cp, true, nil
 }
 
+func (f *raceFakeRepo) ReleaseVote(ctx context.Context, companyID, proposalID, membershipID, recordID string) (bool, error) {
+	return false, nil
+}
+
+func (f *raceFakeRepo) LockFinalize(ctx context.Context, companyID, proposalID string) (func(), error) {
+	return func() {}, nil
+}
+
 func (f *raceFakeRepo) IsAssignedReviewer(ctx context.Context, companyID, proposalID, membershipID string) (bool, error) {
 	return true, nil
 }
 
 func (f *raceFakeRepo) ListReviewers(ctx context.Context, companyID, proposalID string) ([]ReviewerDTO, error) {
-	return nil, nil
+	return []ReviewerDTO{{MembershipID: "member-reviewer"}}, nil
 }
 
 func (f *raceFakeRepo) ListApprovals(ctx context.Context, companyID, proposalID string) ([]ApprovalDTO, error) {
-	return nil, nil
+	return []ApprovalDTO{{MembershipID: "member-reviewer"}}, nil
 }
 
 // TestConcurrentCancelAndApprove_OneWinsOneGets409Conflict covers TC-12: a

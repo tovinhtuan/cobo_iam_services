@@ -190,7 +190,9 @@ func FirstStepAssigneeMembershipIDs(snap *ProposalWorkflowSnapshot) []string {
 
 // BuildCreateRecordOptsForFinalize selects frozen snapshot (v2|v3) vs legacy step_overrides.
 func BuildCreateRecordOptsForFinalize(recordID string, proposal *ProposalDTO) (CreateRecordOpts, string, error) {
-	opts := CreateRecordOpts{RecordID: recordID}
+	// A retry after a first attempt created the record but not its workflow resumes the workflow
+	// instead of approving without one (v1.2 §3.2, H3).
+	opts := CreateRecordOpts{RecordID: recordID, ResumeWorkflowOnDuplicate: true}
 	if proposal == nil {
 		return opts, MaterializationModeLegacy, nil
 	}
