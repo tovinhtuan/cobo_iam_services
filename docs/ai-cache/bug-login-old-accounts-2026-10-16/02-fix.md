@@ -1,4 +1,4 @@
-# Sửa lỗi và kiểm chứng (16/10/2026, chưa commit, chưa deploy)
+# Sửa lỗi và kiểm chứng (16/10/2026, đã deploy DEV)
 
 User duyệt "làm cả 3 theo khuyến nghị" (BUG-1, BUG-2, đổi email seed trên DEV).
 
@@ -60,3 +60,32 @@ User duyệt "làm cả 3 theo khuyến nghị" (BUG-1, BUG-2, đổi email seed
 
 ## Dọn dẹp
 - Container MySQL tạm `cobo-bugfue-mysql` (cổng 127.0.0.1:33991) đang dừng, chưa xoá (lệnh xoá bị kiểm tra an toàn chặn).
+
+## Deploy DEV 16/10/2026
+- BE `d32cd22` (docs `81eacdd`). Lệnh: `sh deploy-dev.sh be --skip-tests`, exit 0. Container api và worker được tạo lại. `/healthz` ok, `/readyz` ready, login-key qua `:3000` 200.
+- Binary trên server trùng bản build cục bộ: api `826637c2…`, worker `56010cce…`.
+- Không có migration mới.
+- **Rollback:** `/root/cobo_project/releases/pre-bugfix-login-old-accounts-20261016T020229Z.tar.gz` (quyền 600, gồm `bin/api`, `bin/worker`, `configs`; api `1e34916f…`, worker `a98b4be6…`).
+  - Giải nén đè vào `/root/cobo_project`, rồi `docker compose -f docker-compose.artifacts.yml up -d --force-recreate --no-deps api worker`.
+- Log api/worker sau khởi động: 0 dòng error/panic.
+
+## Smoke DEV (`refs/smoke_bugfix_dev.py` → `refs/smoke-bugfix-dev-result.json`): 8/8
+| Bước | Kết quả |
+|---|---|
+| Đăng nhập sai với tài khoản không tồn tại, gửi qua `email` | 401. `login_attempts` có dòng (success=0, `INVALID_CREDENTIALS`). Audit `login_failure` có `login_id` |
+| Đăng nhập sai mật khẩu với persona USER | 401; có dòng `login_attempts` |
+| User-Agent chứa byte 0xFF | Có dòng `login_attempts`, UA đã chuyển thành U+FFFD. **Audit không có dòng**: repo audit chưa làm sạch chuỗi (follow-up BES-04, đúng như reviewer dự đoán) |
+| Đăng nhập đúng (persona ENT) | 200, có thêm dòng thành công |
+| Quên mật khẩu, persona USER (một hộp thư, một tài khoản) | 200; thêm 1 token; sự kiện outbox `processed`, `to` = hộp thư của tài khoản |
+| Quên mật khẩu, địa chỉ không tồn tại | 200; không phát token nào |
+| Log API | 0 dòng `password_reset_lookup_failed`/panic |
+
+- Trường hợp nhiều tài khoản chung một hộp thư không smoke trên DEV, vì sẽ gửi thư thật vào gmail của người dùng. Đã có test với MySQL 8.0 thật và test service.
+- Hồi quy trình duyệt (cobo_web_design):
+  - AUTH-01 `smoke-login-empty-dev.mjs` 2/2;
+  - S1 `smoke-s1-dev.mjs` 3/3, với 5 lỗi 401 console như baseline.
+- Tác dụng phụ: 1 email reset gửi tới địa chỉ persona USER (`@cobo.test`); 4 dòng `login_attempts`, 3 dòng audit.
+
+## Còn lại
+- Mục 3 (đổi email 3 tài khoản seed) **vẫn chưa chạy**: lúc deploy, `u_admin_dn` vẫn dùng gmail của người dùng, `u_platform_tenant_admin` vẫn `@example.com`, `u_cms_operator` chưa có email. Người dùng chạy `refs/set_seed_emails_dev.py ... --apply`.
+

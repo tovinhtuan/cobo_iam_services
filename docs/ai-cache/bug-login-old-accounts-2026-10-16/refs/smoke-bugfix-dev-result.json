@@ -1,0 +1,45 @@
+{
+  "base": "DEV",
+  "results": [
+    {
+      "step": "failed-login-unknown-recorded",
+      "ok": true,
+      "detail": "status=401 attempt=0|INVALID_CREDENTIALS|0|0"
+    },
+    {
+      "step": "failed-login-unknown-audited",
+      "ok": true,
+      "detail": "audit rows=1"
+    },
+    {
+      "step": "failed-login-persona-recorded",
+      "ok": true,
+      "detail": "status=401 attempt=0|INVALID_CREDENTIALS|0|0"
+    },
+    {
+      "step": "failed-login-odd-user-agent-recorded",
+      "ok": true,
+      "detail": "status=401 attempt=0|INVALID_CREDENTIALS|0|1 audit rows=0 (audit repo not sanitised yet)"
+    },
+    {
+      "step": "login-ok-recorded",
+      "ok": true,
+      "detail": "status=200 success rows +1"
+    },
+    {
+      "step": "forgot-one-account",
+      "ok": true,
+      "detail": "status=200 tokens +1 event=processed|1"
+    },
+    {
+      "step": "forgot-unknown-silent",
+      "ok": true,
+      "detail": "status=200 tokens total +1"
+    },
+    {
+      "step": "api-log-clean",
+      "ok": true,
+      "detail": "lookup_failed/panic lines=0"
+    }
+  ]
+}

@@ -5019,7 +5019,8 @@
   - Một tài khoản thật (`tua…@gmail.com`) dùng mật khẩu seed nên không đổi hộ.
 
 ## 2026-10-16: Bug "tài khoản cũ không đăng nhập được, không nhận email quên mật khẩu" (DEV)
-- Hồ sơ: `docs/ai-cache/bug-login-old-accounts-2026-10-16/` (`01-root-cause.md`, `02-fix.md`, `refs/set_seed_emails_dev.py`). Chưa commit, chưa deploy.
+- Hồ sơ: `docs/ai-cache/bug-login-old-accounts-2026-10-16/` (`01-root-cause.md`, `02-fix.md`, `refs/set_seed_emails_dev.py`, `refs/smoke_bugfix_dev.py`).
+- Deploy DEV: BE `d32cd22`. Rollback `/root/cobo_project/releases/pre-bugfix-login-old-accounts-20261016T020229Z.tar.gz`. Smoke API 8/8; AUTH-01 2/2; S1 3/3. Mục 3 (email seed) chờ người dùng chạy script.
 - Root cause: không phải lỗi code. Người dùng đang dùng 3 tài khoản seed mà OPS-1 đã đổi mật khẩu và thu hồi phiên. Các tài khoản đó có hộp thư `@example.com`/không có, hoặc dùng chung email với tài khoản khác.
 - Sửa:
   - BUG-1: lần đăng nhập thất bại lại được ghi (FE gửi `email`, BE chỉ đọc `login_id`).
