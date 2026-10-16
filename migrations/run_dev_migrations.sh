@@ -6,6 +6,14 @@ DB_USER="${DB_USER:-root}"
 DB_PASSWORD="${DB_PASSWORD:-root}"
 DB_NAME="${DB_NAME:-cobo_iam}"
 
+# Two files in migrations/ are intentionally not listed below:
+#   0038_system_worker_membership.up.sql: inserts users.status / memberships.status (the columns
+#     are account_status / membership_status) and a membership in company 'SYSTEM', which does
+#     not exist, so it fails on this schema. Not needed: periodic records use the literal
+#     created_by 'm_system_worker' and the FE shows that ID as the system (creatorName.ts).
+#   0098_adhoc_multi_reviewer.up.sql: its backfill selects ad_hoc_proposals.id (the key is
+#     proposal_id) and fails after creating the tables. 0155 creates the same tables when
+#     missing and runs the corrected backfill; 0098 is kept unchanged.
 MIGRATIONS="
 0001_init_core.up.sql
 0003_effective_access_projection.up.sql
@@ -101,6 +109,7 @@ seed_dev_identity_authorization.sql
 0094_template_applicability_rules.up.sql
 0095_backfill_template_applicability_rules.up.sql
 0097_deadline_engine_v2_prepare.up.sql
+0099_workflow_step_instructions.up.sql
 0100_workflow_step_key.up.sql
 0101_global_workflow_versions.up.sql
 0102_global_workflow_legacy_backfill.up.sql
@@ -151,9 +160,11 @@ seed_dev_identity_authorization.sql
 0147_workflow_department_email_recipient_backfill.up.sql
 0148_cms_template_import_attempts.up.sql
 0149_cms_template_import_attempt_lease.up.sql
+0150_template_builder_oauth_authorization_codes.up.sql
 0151_periodic_cycle_materialization_state.up.sql
 0152_companies_status_suspended.up.sql
 0153_periodic_cycles_failed_claim_fence.up.sql
+0155_adhoc_multi_reviewer_tables_backfill.up.sql
 seed_dev_company_subscriptions.sql
 "
 
@@ -230,6 +241,14 @@ preflight_schema_drift() {
     0094_template_applicability_rules.up.sql)
       if [ "$(column_exists disclosure_type_versions applicability_rules_json)" -gt 0 ]; then
         echo "Preflight: ${file} — disclosure_type_versions.applicability_rules_json exists; marking ledger only"
+        mysql_exec -e "INSERT IGNORE INTO schema_migrations(file_name) VALUES ('${file}')"
+        return 0
+      fi
+      ;;
+    0099_workflow_step_instructions.up.sql)
+      # Plain ADD COLUMN; DEV received it by hand before it was listed here.
+      if [ "$(column_exists global_workflow_steps instructions)" -gt 0 ]; then
+        echo "Preflight: ${file} — global_workflow_steps.instructions exists; marking ledger only"
         mysql_exec -e "INSERT IGNORE INTO schema_migrations(file_name) VALUES ('${file}')"
         return 0
       fi
