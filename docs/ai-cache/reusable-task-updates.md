@@ -5052,7 +5052,8 @@
   - Số liệu DEV giúp chọn phương án: 8/8 override do chính người soạn duyệt; 8/14 công ty có người duyệt chỉ có đúng 1 người.
 
 ## 2026-10-16: MR-1, task bước 1 của workflow template bỏ qua bước 2..N (WF-01) và duyệt task không qua cổng tài liệu (WF-02)
-- Hồ sơ: `docs/ai-cache/bug-workflow-step-skip-2026-10-16/` (`00-report.md`, `01-root-cause.md`, `02-fix.md`, `03-review.md`). Chưa commit, chưa deploy.
+- Hồ sơ: `docs/ai-cache/bug-workflow-step-skip-2026-10-16/` (`00-report.md` … `04-deploy-smoke.md`). Commit `bedb8d7`, đã deploy BE lên DEV, smoke `scripts/devqa/smoke_workflow_step_skip.py` 20/20.
+- Smoke trên DEV: persona ENT không có `workflow.approve` (403 do policy, có từ trước), nên smoke dùng `review` để đi qua cùng cổng.
 - Sửa trong `internal/workflow` (app, MySQL, in-memory):
   - instance có snapshot nhưng không phải proposal chỉ kết thúc qua task khi mọi bước đã có `completed_at` (409 `WORKFLOW_STEPS_INCOMPLETE`);
   - approve/review/confirm chạy B3 cho bước của task (422);
