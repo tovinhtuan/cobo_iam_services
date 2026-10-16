@@ -14,6 +14,12 @@
 
 Không đổi: nhắc theo bước workflow (xem `01-root-cause.md`), schema, response shape.
 
+**Sửa sau smoke DEV (commit thứ hai):**
+- Smoke đầu tiên trên DEV cho `total=88` nhưng danh sách chỉ có 85 mục.
+- Nguyên nhân: 3 ad-hoc QA cũ đã duyệt không có thông tin hạn. Danh sách bỏ chúng đúng theo v1.2 §5.2 (chỉ hiện nghĩa vụ có hạn), nhưng phép đếm vẫn tính.
+- Sửa: `adHocDeadlineKnownSQL` (`internal/deadlinealerts/infra/mysql/list_rows_membership.go`). Danh sách và phép đếm của tab Cảnh báo chỉ nhận ad-hoc mà proposal có `final_deadline_date`, hoặc `T0 + số ngày > 0`, hoặc `proposed_deadline_date`; đây cũng là các nguồn của `FormatProposalDueDate`. `ObligationOpen` dùng chung giữ nguyên: dashboard CMS, archive-impact và "Việc của tôi" vẫn đếm nghĩa vụ đó.
+- Test: `TestObligationOpen_AdHocWithoutDeadlineIsNeitherListedNorCounted` (fail trước khi sửa; tắt điều kiện thì fail); ma trận Go thêm `ADHOC_APPROVED_NO_DEADLINE_EXCLUDED`.
+
 **Giới hạn còn lại:** record ad-hoc do finalize tạo không có `planned_date`, nên:
 - chưa có nhắc hạn nộp;
 - dashboard CMS xếp chúng vào "Chưa có ngày hạn".

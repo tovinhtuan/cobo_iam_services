@@ -233,3 +233,37 @@ func TestObligationOpen_ApprovedAdHocIsOpenUntilItsWorkflowCompletes(t *testing.
 		t.Fatalf("count=%d list=%d, want the count to match the list", total, len(rows))
 	}
 }
+
+// The alerts list only shows obligations with a due date (contract v1.2 §5.2) and its count must
+// match it: an approved ad-hoc whose proposal carries no deadline input (legacy rows on DEV) is
+// left out of both, so `total` equals the items (MR-3b smoke: total 88 vs 85 items).
+func TestObligationOpen_AdHocWithoutDeadlineIsNeitherListedNorCounted(t *testing.T) {
+	db := obligationTestDB(t)
+	ctx := context.Background()
+	repo := NewRepository(db)
+	typeID := seedObligationTemplate(t, db, "nodue", "active")
+	withDue := seedAdHocRecord(t, db, typeID, "due", "PendingReview", "approved")
+	noDue := seedAdHocRecord(t, db, typeID, "nodue", "PendingReview", "approved")
+	if _, err := db.ExecContext(ctx, `UPDATE ad_hoc_proposals SET final_deadline_date = NULL, proposed_t0_date = NULL, proposed_deadline_days = NULL, proposed_deadline_date = NULL WHERE record_id = ?`, noDue); err != nil {
+		t.Fatal(err)
+	}
+	scope := deadlinealertsapp.DeadlineAlertAccessScope{CompanyID: obligationCompany, CanViewAll: true}
+	rows, err := repo.ListRows(ctx, obligationCompany, scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed := map[string]bool{}
+	for _, row := range rows {
+		listed[row.RecordID] = true
+	}
+	if !listed[withDue] || listed[noDue] {
+		t.Fatalf("with due listed=%v, without due listed=%v; want only the one with a due date", listed[withDue], listed[noDue])
+	}
+	_, total, err := repo.ListRowsPage(ctx, obligationCompany, scope, 1, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != len(rows) {
+		t.Fatalf("count=%d list=%d, want the count to match the list", total, len(rows))
+	}
+}

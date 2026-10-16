@@ -11,7 +11,7 @@ import (
 // PO decision Q1-B (16/10/2026): open obligations of an archived template stay in the alerts tab.
 func TestListRows_keepsObligationsOfArchivedTemplates(t *testing.T) {
 	src := readDeadlineAlertsRepositorySrc(t)
-	if !strings.Contains(src, "ObligationTemplateSQLJoin") || listRowsV1ObligationMembershipSQL != deadlinealertsapp.ObligationOpenSQL {
+	if !strings.Contains(src, "ObligationTemplateSQLJoin") || !strings.HasPrefix(listRowsV1ObligationMembershipSQL, deadlinealertsapp.ObligationOpenSQL) {
 		t.Fatal("ListRows must use the shared ObligationOpen predicate and display-only template join")
 	}
 	if strings.Contains(src, "INNER JOIN disclosure_types dt ON dt.type_id = dr.type_id") {
