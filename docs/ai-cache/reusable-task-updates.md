@@ -5017,3 +5017,21 @@
   - Trước khi đóng một cổng, kiểm xem URL nào đang được sinh ra trỏ vào cổng đó (`PUBLIC_API_BASE_URL` → avatar và upload media), và giới hạn body của nginx.
   - Rule `DOCKER-USER` phải ghi vào script của service mới còn sau khi reboot.
   - Một tài khoản thật (`tua…@gmail.com`) dùng mật khẩu seed nên không đổi hộ.
+
+## 2026-10-16: Bug "tài khoản cũ không đăng nhập được, không nhận email quên mật khẩu" (DEV)
+- Hồ sơ: `docs/ai-cache/bug-login-old-accounts-2026-10-16/` (`01-root-cause.md`, `02-fix.md`, `refs/set_seed_emails_dev.py`). Chưa commit, chưa deploy.
+- Root cause: không phải lỗi code. Người dùng đang dùng 3 tài khoản seed mà OPS-1 đã đổi mật khẩu và thu hồi phiên. Các tài khoản đó có hộp thư `@example.com`/không có, hoặc dùng chung email với tài khoản khác.
+- Sửa:
+  - BUG-1: lần đăng nhập thất bại lại được ghi (FE gửi `email`, BE chỉ đọc `login_id`).
+  - BUG-2: quên mật khẩu gửi một link cho mỗi tài khoản có hộp thư bằng địa chỉ đã nhập (`FindRecoveryUsers`), thay cho `LIMIT 1` không `ORDER BY`.
+  - Thiết kế "ưu tiên login_id, từ chối khi trùng" bị review loại (BES-01).
+- Bài học:
+  - Trước khi đổi credential hoặc thu hồi phiên hàng loạt: truy `login_attempts`/`sessions` theo user-agent không phải script để biết người thật nào bị ảnh hưởng, và báo trước.
+  - Phục hồi mật khẩu: gửi thư tới chính địa chỉ đã nhập, cho mọi tài khoản dùng hộp thư đó. Chọn một tài khoản (dù theo quy tắc cố định) vẫn để lỗ cho việc chặn khôi phục.
+  - Ghi log lần thất bại: lưu đúng định danh người dùng gửi lên (`email` hoặc `login_id`), UTF-8 hợp lệ, có giới hạn độ dài.
+- Follow-up:
+  - đổi email cần mật khẩu + xác minh (BES-02);
+  - `MaxBytesReader` cho các endpoint auth;
+  - repo audit cắt UTF-8 an toàn;
+  - retention cho `login_failure`;
+  - xoá container `cobo-bugfue-mysql`.
