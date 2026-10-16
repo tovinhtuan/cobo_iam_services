@@ -1,30 +1,24 @@
 package app
 
-import "strings"
+import disclosureapp "github.com/cobo/cobo_iam_services/internal/disclosure/app"
 
-// ListRowsActiveTemplateSQLJoin is the CURRENT_TEMPLATE_ACTIVE_STATE predicate
-// for GET /api/v1/company/deadline-alerts ListRows.
-//
-// Authority matches Portal ListTypes (disclosure ListTypes INNER JOIN versions
-// on disclosure_types.active_version_no) and CMS archive
-// (status=archived AND active_version_no=0).
-//
-// Global (company_id IS NULL) and company-scoped roots share disclosure_types.
-// Workflow overrides are NOT template active state.
-const ListRowsActiveTemplateSQLJoin = `
-		INNER JOIN disclosure_types dt ON dt.type_id = dr.type_id
-			AND dt.active_version_no > 0
-		INNER JOIN disclosure_type_versions dtv ON dtv.type_id = dt.type_id AND dtv.version_no = dt.active_version_no
-`
+// ObligationOpenSQL is the shared ObligationOpen predicate (disclosure/app). The template's state
+// is not part of it (PO decision Q1-B). One bind argument: todayHCM.
+const ObligationOpenSQL = disclosureapp.ObligationOpenSQL
 
-// TemplateCurrentlyActive is the in-process equivalent of ListRowsActiveTemplateSQLJoin.
-// Missing type_id, archived/inactive (active_version_no=0), or missing version row → not visible.
-func TemplateCurrentlyActive(typeID string, activeVersionNo int, versionRowExists bool) bool {
-	if strings.TrimSpace(typeID) == "" {
-		return false
-	}
-	if activeVersionNo <= 0 {
-		return false
-	}
-	return versionRowExists
+// TemplateArchivedSQL is true when the template joined as dt is archived (disclosure/app).
+const TemplateArchivedSQL = disclosureapp.TemplateArchivedSQL
+
+// TemplateArchived is the in-process equivalent of TemplateArchivedSQL.
+func TemplateArchived(status, companyID, reviewStatus string) bool {
+	return disclosureapp.TemplateArchived(status, companyID, reviewStatus)
 }
+
+// ObligationTemplateSQLJoin joins a record's template for display only (name, category, archived
+// flag); it never filters rows. The version is the active one, else the one the template was
+// archived from, so an archived template keeps its name and deadline config.
+const ObligationTemplateSQLJoin = `
+		LEFT JOIN disclosure_types dt ON dt.type_id = dr.type_id
+		LEFT JOIN disclosure_type_versions dtv ON dtv.type_id = dt.type_id
+			AND dtv.version_no = COALESCE(NULLIF(dt.active_version_no, 0), dt.archived_from_version_no)
+`

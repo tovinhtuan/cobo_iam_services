@@ -353,3 +353,32 @@ func TestGetOperationalOverview_adHocDueIncludedInOnTime(t *testing.T) {
 		t.Fatalf("ad-hoc due should count on time: %#v", rate)
 	}
 }
+
+// MR-3 (PO decision Q1-B): a task on a record whose template is archived carries the flag.
+func TestGetOperationalOverview_myTaskCarriesTemplateArchived(t *testing.T) {
+	now := time.Date(2026, 10, 16, 3, 0, 0, 0, time.UTC)
+	members := fakeMembers{
+		items:  []caapp.MembershipView{{MembershipID: "m1", UserID: "u1", CompanyID: "c1", CompanyName: "Co One", Status: "active"}},
+		roles:  map[string][]string{"m1": {"focal"}},
+		titles: map[string][]string{"m1": {"NV"}},
+		depts:  map[string][]caapp.DepartmentView{},
+	}
+	mine := fakeMine{tasks: []personalopsapp.MineTask{
+		{TaskID: "t1", CompanyID: "c1", CompanyName: "Co One", MembershipID: "m1", RecordID: "r1", Title: "Archived", StepCode: "review", TaskStatus: "pending", PlannedDate: "2026-10-20", TemplateArchived: true},
+		{TaskID: "t2", CompanyID: "c1", CompanyName: "Co One", MembershipID: "m1", RecordID: "r2", Title: "Active", StepCode: "review", TaskStatus: "pending", PlannedDate: "2026-10-21"},
+	}}
+	auth := fakeAuth{byMembership: map[string]*authapp.EffectiveAccessSummary{"m1": {Permissions: []string{"disclosure.view"}}}}
+	svc := personalopsapp.NewService(members, mine, fakeIdentity{user: &iamapp.AuthenticatedUser{UserID: "u1", FullName: "QA"}},
+		auth, fakeInApp{}, personalopsapp.WithClock(fixedClock{t: now}), personalopsapp.WithLocation(time.UTC))
+	resp, err := svc.GetOperationalOverview(context.Background(), personalopsapp.Subject{UserID: "u1", MembershipID: "m1", CompanyID: "c1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, task := range resp.MyTasks {
+		got[task.AlertID] = task.TemplateArchived
+	}
+	if len(got) != 2 || !got["r1"] || got["r2"] {
+		t.Fatalf("template_archived by record=%v, want only r1 flagged", got)
+	}
+}

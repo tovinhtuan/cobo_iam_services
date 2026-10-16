@@ -437,6 +437,16 @@ func (r *Repository) ArchiveGlobalTemplate(ctx context.Context, params disclosur
 	if err != nil {
 		return nil, fmt.Errorf("archive global template: %w", err)
 	}
+	// Cycles without a record will not be materialized from an archived template: suspend them
+	// under the template lock (PO decision Q1-B). A CLAIMED cycle is left to its worker, which
+	// suspends it when CreateRecord answers TEMPLATE_ARCHIVED.
+	res, err := tx.ExecContext(ctx, suspendCyclesWithoutRecordSQL, typeID)
+	if err != nil {
+		return nil, fmt.Errorf("suspend periodic cycles of archived template: %w", err)
+	}
+	if n, err := res.RowsAffected(); err == nil {
+		result.SuspendedCycles = int(n)
+	}
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("commit archive: %w", err)
 	}
@@ -481,6 +491,11 @@ func (r *Repository) RestoreGlobalTemplate(ctx context.Context, params disclosur
 		metaFrom = &v
 	}
 
+	cycles, err := resolveSuspendedCycles(ctx, tx, typeID, params.BackfillCycleIDs, params.TodayHCM)
+	if err != nil {
+		return nil, err
+	}
+
 	// Draft restore path: metadata NULL and expected nil, restore av=0.
 	if params.ExpectedFromVersionNo == nil {
 		if metaFrom != nil {
@@ -516,6 +531,9 @@ func (r *Repository) RestoreGlobalTemplate(ctx context.Context, params disclosur
 			AfterActiveVersionNo:  0,
 			ArchivedFromVersionNo: nil,
 			RestoredMode:          "draft",
+			BackfilledCycles:      cycles.backfilled,
+			SkippedCycles:         cycles.skipped,
+			ResumedCycles:         cycles.resumed,
 		}, nil
 	}
 
@@ -603,7 +621,215 @@ func (r *Repository) RestoreGlobalTemplate(ctx context.Context, params disclosur
 		AfterActiveVersionNo:  restoreVer,
 		ArchivedFromVersionNo: metaFrom,
 		RestoredMode:          "active",
+		BackfilledCycles:      cycles.backfilled,
+		SkippedCycles:         cycles.skipped,
+		ResumedCycles:         cycles.resumed,
 	}, nil
+}
+
+// suspendCyclesWithoutRecordSQL suspends the template's cycles without a record that are still
+// PENDING/RETRY. Archive runs it; restore runs it again first, for cycles that escaped the archive
+// (a worker of the previous release or the lease reaper moving a CLAIMED cycle back to RETRY).
+// materialized_at stays set as the fence older workers check.
+const suspendCyclesWithoutRecordSQL = `
+		UPDATE periodic_cycles
+		SET materialization_state = 'SUSPENDED',
+		    materialized_at = COALESCE(materialized_at, NOW(3)),
+		    next_attempt_at = NULL,
+		    last_error_code = 'TEMPLATE_ARCHIVED',
+		    last_error_message = 'template archived; a restore may backfill this cycle'
+		WHERE type_id = ? AND record_id IS NULL AND materialization_state IN ('PENDING', 'RETRY')`
+
+// cycleOpenDateSQL is the date a cycle opens, the same expression the worker's ListPendingCycles
+// compares with today (due_date is NOT NULL).
+const cycleOpenDateSQL = `COALESCE(pc.open_at, pc.cycle_start, pc.due_date)`
+
+// partialRecordSQL: an earlier attempt already created the cycle's record (deterministic id), so
+// resuming finishes it instead of creating another one; skipping would orphan it.
+const partialRecordSQL = `(pc.attempt_record_id IS NOT NULL AND EXISTS (SELECT 1 FROM disclosure_records dr WHERE dr.record_id = pc.attempt_record_id))`
+
+// resumeCycleSQL puts a suspended cycle back in the worker's queue.
+const resumeCycleSQL = `
+		UPDATE periodic_cycles pc
+		SET pc.materialization_state = 'PENDING',
+		    pc.materialized_at = NULL,
+		    pc.next_attempt_at = NULL,
+		    pc.attempt_count = 0,
+		    pc.last_error_code = NULL,
+		    pc.last_error_message = NULL
+		WHERE pc.type_id = ? AND pc.record_id IS NULL AND pc.materialization_state = 'SUSPENDED'`
+
+type restoredCycles struct {
+	backfilled, resumed, skipped int
+}
+
+// resolveSuspendedCycles runs inside the restore transaction (template locked). The listed
+// SUSPENDED cycles go back to PENDING for the worker (backfill), and so do the ones that have not
+// opened yet (nothing was missed) or whose record already exists; every other SUSPENDED cycle is
+// SKIPPED, so a restore never creates missed records in bulk (PO decision Q1-B). Any listed id that is not a SUSPENDED cycle
+// of the template → 422 and nothing changes.
+func resolveSuspendedCycles(ctx context.Context, tx *sql.Tx, typeID string, backfillIDs []string, todayHCM string) (restoredCycles, error) {
+	var out restoredCycles
+	if _, err := tx.ExecContext(ctx, suspendCyclesWithoutRecordSQL, typeID); err != nil {
+		return out, fmt.Errorf("suspend leftover cycles before restore: %w", err)
+	}
+	if len(backfillIDs) > 0 {
+		ph := strings.TrimSuffix(strings.Repeat("?,", len(backfillIDs)), ",")
+		args := make([]any, 0, len(backfillIDs)+1)
+		args = append(args, typeID)
+		for _, id := range backfillIDs {
+			args = append(args, id)
+		}
+		var found int
+		if err := tx.QueryRowContext(ctx, `
+			SELECT COUNT(*) FROM periodic_cycles
+			WHERE type_id = ? AND record_id IS NULL AND materialization_state = 'SUSPENDED' AND cycle_id IN (`+ph+`)
+			FOR UPDATE
+		`, args...).Scan(&found); err != nil {
+			return out, fmt.Errorf("check backfill cycles: %w", err)
+		}
+		if found != len(backfillIDs) {
+			return out, disclosureapp.BackfillCycleIDsError("backfill_cycle_ids must be suspended cycles of this template")
+		}
+		res, err := tx.ExecContext(ctx, resumeCycleSQL+` AND pc.cycle_id IN (`+ph+`)`, args...)
+		if err != nil {
+			return out, fmt.Errorf("backfill suspended cycles: %w", err)
+		}
+		n, _ := res.RowsAffected()
+		out.backfilled = int(n)
+	}
+	resume, resumeArgs := partialRecordSQL, []any{typeID}
+	if strings.TrimSpace(todayHCM) != "" {
+		resume = `(` + cycleOpenDateSQL + ` > ? OR ` + partialRecordSQL + `)`
+		resumeArgs = append(resumeArgs, todayHCM)
+	}
+	res, err := tx.ExecContext(ctx, resumeCycleSQL+` AND `+resume, resumeArgs...)
+	if err != nil {
+		return out, fmt.Errorf("resume cycles that missed nothing: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	out.resumed = int(n)
+	res, err = tx.ExecContext(ctx, `
+		UPDATE periodic_cycles
+		SET materialization_state = 'SKIPPED',
+		    last_error_code = 'SKIPPED_AT_RESTORE',
+		    last_error_message = 'not backfilled when the template was restored'
+		WHERE type_id = ? AND record_id IS NULL AND materialization_state = 'SUSPENDED'
+	`, typeID)
+	if err != nil {
+		return out, fmt.Errorf("skip suspended cycles: %w", err)
+	}
+	n, _ = res.RowsAffected()
+	out.skipped = int(n)
+	return out, nil
+}
+
+// maxArchiveImpactRows bounds the per-company list of the archive impact; maxArchiveImpactCycles
+// bounds the missed cycles a restore dialog can choose from (SuspendedTotal tells when cut). It
+// matches the backfill ids one restore accepts, so a full selection is always sendable.
+const (
+	maxArchiveImpactRows   = 500
+	maxArchiveImpactCycles = disclosureapp.MaxBackfillCycleIDs
+)
+
+// GetTemplateArchiveImpact reads, for a global template, the open obligations per company (shared
+// ObligationOpen predicate, whatever the template's state) and its periodic cycles: how many
+// archiving would suspend, and the suspended ones a restore can backfill.
+func (r *Repository) GetTemplateArchiveImpact(ctx context.Context, typeID, todayHCM string) (*disclosureapp.CmsTemplateArchiveImpactResponse, error) {
+	typeID = strings.TrimSpace(typeID)
+	out := &disclosureapp.CmsTemplateArchiveImpactResponse{
+		TypeID:      typeID,
+		OpenRecords: disclosureapp.ArchiveImpactOpenRecords{Companies: []disclosureapp.ArchiveImpactCompanyOpen{}},
+		Cycles:      disclosureapp.ArchiveImpactCycles{Suspended: []disclosureapp.ArchiveImpactCycle{}},
+	}
+	err := r.db.QueryRowContext(ctx, `
+		SELECT COALESCE(status, '') FROM disclosure_types WHERE type_id = ? AND company_id IS NULL
+	`, typeID).Scan(&out.Status)
+	if err == sql.ErrNoRows {
+		return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "global template not found", nil)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("archive impact template: %w", err)
+	}
+
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT dr.company_id, COALESCE(c.company_name, ''), COUNT(*)
+		FROM disclosure_records dr
+		LEFT JOIN companies c ON c.company_id = dr.company_id
+		WHERE dr.type_id = ?
+`+disclosureapp.ObligationOpenSQL+`
+		GROUP BY dr.company_id, c.company_name
+		ORDER BY COUNT(*) DESC, c.company_name ASC, dr.company_id ASC
+	`, typeID, todayHCM)
+	if err != nil {
+		return nil, fmt.Errorf("archive impact open records: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var item disclosureapp.ArchiveImpactCompanyOpen
+		if err := rows.Scan(&item.CompanyID, &item.CompanyName, &item.OpenCount); err != nil {
+			return nil, fmt.Errorf("archive impact open records scan: %w", err)
+		}
+		out.OpenRecords.Total += item.OpenCount
+		if len(out.OpenRecords.Companies) < maxArchiveImpactRows {
+			out.OpenRecords.Companies = append(out.OpenRecords.Companies, item)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("archive impact open records rows: %w", err)
+	}
+
+	if err := r.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM periodic_cycles
+		WHERE type_id = ? AND record_id IS NULL AND materialization_state IN ('PENDING', 'RETRY')
+	`, typeID).Scan(&out.Cycles.Pending); err != nil {
+		return nil, fmt.Errorf("archive impact pending cycles: %w", err)
+	}
+	// What a restore resolves: SUSPENDED cycles, plus (archived template) the PENDING/RETRY ones
+	// that escaped the archive and that the restore suspends first.
+	restoreStates := `pc.materialization_state = 'SUSPENDED'`
+	if strings.EqualFold(strings.TrimSpace(out.Status), "archived") {
+		restoreStates = `pc.materialization_state IN ('SUSPENDED', 'PENDING', 'RETRY')`
+	}
+	if err := r.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM periodic_cycles pc
+		WHERE pc.type_id = ? AND pc.record_id IS NULL AND `+restoreStates+`
+		  AND (`+cycleOpenDateSQL+` > ? OR `+partialRecordSQL+`)
+	`, typeID, todayHCM).Scan(&out.Cycles.AutoResume); err != nil {
+		return nil, fmt.Errorf("archive impact auto-resumed cycles: %w", err)
+	}
+	missed := `pc.type_id = ? AND pc.record_id IS NULL AND ` + restoreStates + ` AND ` + cycleOpenDateSQL + ` <= ? AND NOT ` + partialRecordSQL
+	crows, err := r.db.QueryContext(ctx, `
+		SELECT pc.cycle_id, pc.company_id, COALESCE(c.company_name, ''), pc.cycle_label,
+		       COALESCE(DATE_FORMAT(pc.due_date, '%Y-%m-%d'), '')
+		FROM periodic_cycles pc
+		LEFT JOIN companies c ON c.company_id = pc.company_id
+		WHERE `+missed+`
+		ORDER BY pc.due_date ASC, c.company_name ASC, pc.cycle_id ASC
+		LIMIT ?
+	`, typeID, todayHCM, maxArchiveImpactCycles)
+	if err != nil {
+		return nil, fmt.Errorf("archive impact suspended cycles: %w", err)
+	}
+	defer crows.Close()
+	for crows.Next() {
+		var item disclosureapp.ArchiveImpactCycle
+		if err := crows.Scan(&item.CycleID, &item.CompanyID, &item.CompanyName, &item.CycleLabel, &item.DueDate); err != nil {
+			return nil, fmt.Errorf("archive impact suspended cycles scan: %w", err)
+		}
+		out.Cycles.Suspended = append(out.Cycles.Suspended, item)
+	}
+	if err := crows.Err(); err != nil {
+		return nil, fmt.Errorf("archive impact suspended cycles rows: %w", err)
+	}
+	out.Cycles.SuspendedTotal = len(out.Cycles.Suspended)
+	if out.Cycles.SuspendedTotal >= maxArchiveImpactCycles {
+		if err := r.db.QueryRowContext(ctx, `
+			SELECT COUNT(*) FROM periodic_cycles pc WHERE `+missed, typeID, todayHCM).Scan(&out.Cycles.SuspendedTotal); err != nil {
+			return nil, fmt.Errorf("archive impact suspended total: %w", err)
+		}
+	}
+	return out, nil
 }
 
 func nullableInt(v *int) any {

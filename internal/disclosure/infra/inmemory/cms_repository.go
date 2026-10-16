@@ -265,6 +265,10 @@ func (r *Repository) RestoreGlobalTemplate(_ context.Context, params disclosurea
 			Details:    map[string]any{"type_id": typeID, "status": root.Status},
 		}
 	}
+	// In memory there are no periodic cycles, so nothing is suspended and nothing can be backfilled.
+	if len(params.BackfillCycleIDs) > 0 {
+		return nil, disclosureapp.BackfillCycleIDsError("backfill_cycle_ids must be suspended cycles of this template")
+	}
 	beforeAV := root.ActiveVersionNo
 	metaFrom := cloneIntPtr(root.ArchivedFromVersionNo)
 
@@ -457,4 +461,23 @@ func (r *Repository) CreateTemplateDepartment(_ context.Context, req disclosurea
 	r.templateDepartments = append(r.templateDepartments, d)
 	cp := d
 	return &cp, nil
+}
+
+// GetTemplateArchiveImpact: in-memory mode keeps no open-obligation projection nor periodic cycles.
+func (r *Repository) GetTemplateArchiveImpact(_ context.Context, typeID, _ string) (*disclosureapp.CmsTemplateArchiveImpactResponse, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	typeID = strings.TrimSpace(typeID)
+	if _, ok := r.catalog[typeID]; !ok {
+		return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "global template not found", nil)
+	}
+	if scope := r.catalogScope[typeID]; scope != "" && scope != "global" {
+		return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "global template not found", nil)
+	}
+	return &disclosureapp.CmsTemplateArchiveImpactResponse{
+		TypeID:      typeID,
+		Status:      r.ensureTypeRoot(typeID).Status,
+		OpenRecords: disclosureapp.ArchiveImpactOpenRecords{Companies: []disclosureapp.ArchiveImpactCompanyOpen{}},
+		Cycles:      disclosureapp.ArchiveImpactCycles{Suspended: []disclosureapp.ArchiveImpactCycle{}},
+	}, nil
 }

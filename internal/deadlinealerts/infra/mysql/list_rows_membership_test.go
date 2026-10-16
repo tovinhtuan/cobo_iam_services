@@ -27,7 +27,8 @@ func TestBusinessDateHCM_fixedClock(t *testing.T) {
 
 func TestListRows_usesV1ObligationMembershipSQL(t *testing.T) {
 	src := readDeadlineAlertsRepositorySrc(t)
-	membSrc := readFileSrc(t, "list_rows_membership.go")
+	// The predicate is the shared ObligationOpenSQL (deadlinealerts/app); check its text.
+	membSrc := listRowsV1ObligationMembershipSQL
 
 	if !strings.Contains(src, "listRowsV1ObligationMembershipSQL") {
 		t.Fatal("ListRows must use listRowsV1ObligationMembershipSQL")
@@ -210,8 +211,8 @@ func TestListRows_preservesCompanyOrderScopeWiring(t *testing.T) {
 	if !strings.Contains(src, "enrichListRows") || !strings.Contains(src, "sqlRecordIDClause") {
 		t.Fatal("paged list must enrich only the selected record IDs")
 	}
-	if !strings.Contains(src, "ListRowsActiveTemplateSQLJoin") {
-		t.Fatal("ACTIVE_TEMPLATE filter must remain")
+	if !strings.Contains(src, "ObligationTemplateSQLJoin") {
+		t.Fatal("display-only template join must remain")
 	}
 }
 

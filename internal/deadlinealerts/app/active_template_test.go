@@ -5,89 +5,66 @@ import (
 	"testing"
 )
 
-func TestTemplateCurrentlyActive_T1_oldRecordActiveTemplate(t *testing.T) {
-	// created_at is not an input — age must not affect visibility.
-	if !TemplateCurrentlyActive("bao-cao-tai-chinh-quy-1", 1, true) {
-		t.Fatal("old record whose template root is currently active must be visible")
+// PO decision Q1-B (16/10/2026, OQ-006): an obligation stays open after its template is archived.
+// These tests replace the 18/08 "hide archived templates" contract.
+
+func TestTemplateArchived(t *testing.T) {
+	cases := []struct {
+		name                          string
+		status, companyID, reviewStat string
+		want                          bool
+	}{
+		{"active global template", "active", "", "", false},
+		{"archived global template (CMS)", "archived", "", "", true},
+		{"never activated or restored to draft (status active, version 0)", "active", "", "draft", false},
+		{"published company template", "active", "c1", "published", false},
+		{"archived company template (lifecycle)", "active", "c1", "archived", true},
+		{"review_status of a global template is not its archive state", "active", "", "archived", false},
+	}
+	for _, tc := range cases {
+		if got := TemplateArchived(tc.status, tc.companyID, tc.reviewStat); got != tc.want {
+			t.Fatalf("%s: got %v, want %v", tc.name, got, tc.want)
+		}
 	}
 }
 
-func TestTemplateCurrentlyActive_T2_newRecordInactiveTemplate(t *testing.T) {
-	if TemplateCurrentlyActive("qa-workflow-reminder-dc7-20260817", 0, false) {
-		t.Fatal("new record whose template is archived/inactive must be hidden")
+func TestObligationTemplateSQLJoin_neverFilters(t *testing.T) {
+	join := ObligationTemplateSQLJoin
+	if strings.Contains(join, "INNER JOIN") {
+		t.Fatal("the template join must not drop records: an archived template's obligations stay open")
+	}
+	if strings.Contains(join, "active_version_no > 0") {
+		t.Fatal("template state must not filter obligations")
+	}
+	if !strings.Contains(join, "LEFT JOIN disclosure_types dt") || !strings.Contains(join, "COALESCE(NULLIF(dt.active_version_no, 0), dt.archived_from_version_no)") {
+		t.Fatal("must join the active version, else the version the template was archived from")
+	}
+	lower := strings.ToLower(join)
+	if strings.Contains(lower, "created_at") || strings.Contains(lower, "company_id is null") {
+		t.Fatal("must not filter by record age or keep only global templates")
 	}
 }
 
-func TestTemplateCurrentlyActive_T3_activeGlobalTemplate(t *testing.T) {
-	if !TemplateCurrentlyActive("bao-cao-tai-chinh-quy-1", 1, true) {
-		t.Fatal("active global template must be visible")
+func TestObligationOpenSQL_isRecordStateOnly(t *testing.T) {
+	sql := ObligationOpenSQL
+	for _, want := range []string{"LOWER(TRIM(dr.status)) = 'draft'", "dr.submitted_at IS NULL", "COALESCE(pc.open_at, pc.cycle_start) <= ?"} {
+		if !strings.Contains(sql, want) {
+			t.Fatalf("ObligationOpenSQL lost %q", want)
+		}
+	}
+	if strings.Contains(sql, "dt.") || strings.Contains(sql, "disclosure_types") {
+		t.Fatal("ObligationOpen must not depend on the template's state")
+	}
+	if strings.Count(sql, "?") != 1 {
+		t.Fatal("ObligationOpenSQL binds exactly one argument (todayHCM)")
 	}
 }
 
-func TestTemplateCurrentlyActive_T4_archivedGlobalTemplate(t *testing.T) {
-	if TemplateCurrentlyActive("bao-cao-su-co-he-thong", 0, false) {
-		t.Fatal("archived global template must be hidden")
+func TestTemplateArchivedSQL_matchesGoTwin(t *testing.T) {
+	if !strings.Contains(TemplateArchivedSQL, "dt.status") || !strings.Contains(TemplateArchivedSQL, "dt.review_status") || !strings.Contains(TemplateArchivedSQL, "dt.company_id IS NOT NULL") {
+		t.Fatal("TemplateArchivedSQL drifted from TemplateArchived")
 	}
-}
-
-func TestTemplateCurrentlyActive_T5_activeCompanyScopedTemplate(t *testing.T) {
-	if !TemplateCurrentlyActive("dt-co-1781130158761665600", 1, true) {
-		t.Fatal("active company-scoped template must be visible")
-	}
-}
-
-func TestTemplateCurrentlyActive_T6_inactiveCompanyScopedTemplate(t *testing.T) {
-	if TemplateCurrentlyActive("dt-co-archived-co", 0, false) {
-		t.Fatal("inactive company-scoped template must be hidden")
-	}
-}
-
-func TestTemplateCurrentlyActive_T7_historicalVersionUnderActiveRoot(t *testing.T) {
-	// Visibility uses current root active_version_no, not the version the record was created on.
-	if !TemplateCurrentlyActive("type-root", 3, true) {
-		t.Fatal("record created under v1 while root now has active v3 must stay visible")
-	}
-}
-
-func TestTemplateCurrentlyActive_T10_missingTypeHidden(t *testing.T) {
-	if TemplateCurrentlyActive("", 1, true) {
-		t.Fatal("missing type_id must not show in deadline-alert projection")
-	}
-	if TemplateCurrentlyActive("   ", 5, true) {
-		t.Fatal("blank type_id must not show")
-	}
-}
-
-func TestListRowsActiveTemplateSQLJoin_noDateCutoffAndNoGlobalOnly(t *testing.T) {
-	sql := ListRowsActiveTemplateSQLJoin
-	if !strings.Contains(sql, "INNER JOIN disclosure_types dt") {
-		t.Fatal("must INNER JOIN disclosure_types (not LEFT JOIN) so inactive roots drop out")
-	}
-	if !strings.Contains(sql, "dt.active_version_no > 0") {
-		t.Fatal("must use active_version_no > 0 (archive/CMS authority)")
-	}
-	if !strings.Contains(sql, "dtv.version_no = dt.active_version_no") {
-		t.Fatal("must join current active version row like Portal ListTypes")
-	}
-	lower := strings.ToLower(sql)
-	if strings.Contains(lower, "created_at") {
-		t.Fatal("FAIL_DEADLINE_ALERT_DATE_COUPLING_REMAINS: join must not filter created_at")
-	}
-	if strings.Contains(lower, "company_id is null") {
-		t.Fatal("FAIL_DEADLINE_ALERT_COMPANY_TEMPLATE_FILTER: must not keep only global templates")
-	}
-}
-
-func TestTemplateCurrentlyActive_doesNotUseCreatedAt(t *testing.T) {
-	// Same template state → same visibility regardless of record age (T1 vs T2 contrast).
-	oldActive := TemplateCurrentlyActive("t-active", 1, true)
-	newActive := TemplateCurrentlyActive("t-active", 1, true)
-	oldArchived := TemplateCurrentlyActive("t-arch", 0, false)
-	newArchived := TemplateCurrentlyActive("t-arch", 0, false)
-	if !oldActive || !newActive {
-		t.Fatal("active template must be visible for both old and new records")
-	}
-	if oldArchived || newArchived {
-		t.Fatal("inactive template must be hidden for both old and new records")
+	if strings.Contains(TemplateArchivedSQL, "active_version_no") {
+		t.Fatal("active_version_no = 0 is not archived (never activated / restored to draft)")
 	}
 }

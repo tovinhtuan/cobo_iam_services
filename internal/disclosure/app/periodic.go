@@ -377,6 +377,14 @@ func permanentGateStatus(err error) (int, bool) {
 	return 0, false
 }
 
+// mayBeArchivedTemplateError reports the errors an archived template produces: the 409
+// TEMPLATE_ARCHIVED of CreateRecord, or the 404 of the workflow lookup that runs before it (the
+// archived template has no active version). MarkPeriodicCycleSuspended checks the template.
+func mayBeArchivedTemplateError(err error) bool {
+	he, ok := perr.AsHTTPError(err)
+	return ok && he != nil && (he.Code == "TEMPLATE_ARCHIVED" || he.HTTPStatus == http.StatusNotFound)
+}
+
 // materializeClaimedCycle creates the record of one claimed cycle and moves the cycle to
 // COMPLETED, RETRY or FAILED. It returns true when the cycle completed.
 func materializeClaimedCycle(ctx context.Context, repo PeriodicMaterializeRepository, creator PeriodicRecordCreator, c PeriodicCycleRow) (bool, error) {
@@ -411,6 +419,26 @@ func materializeClaimedCycle(ctx context.Context, repo PeriodicMaterializeReposi
 				slog.String("type_id", c.TypeID),
 				slog.String("company_id", c.CompanyID))
 			return false, nil
+		}
+		if mayBeArchivedTemplateError(err) {
+			// The template may have been archived after the claim. If it still is, the cycle waits,
+			// like the ones archiving suspended, for a restore that chooses to backfill it (PO
+			// decision Q1-B). Otherwise (restored meanwhile, or another 404) nothing changes here
+			// and the cycle retries or fails below.
+			suspended, markErr := repo.MarkPeriodicCycleSuspended(fin, c.CycleID, recordID)
+			if markErr != nil {
+				// For example a deadlock with a concurrent restore. The retry below keeps the cycle
+				// safe: a restore suspends any leftover cycle of an archived template under its lock.
+				slog.WarnContext(ctx, "periodic materialization: suspend failed, falling back",
+					slog.String("cycle_id", c.CycleID),
+					slog.String("err", markErr.Error()))
+			} else if suspended {
+				slog.InfoContext(ctx, "periodic materialization suspended: template archived",
+					slog.String("cycle_id", c.CycleID),
+					slog.String("type_id", c.TypeID),
+					slog.String("company_id", c.CompanyID))
+				return false, nil
+			}
 		}
 		if status, permanent := permanentGateStatus(err); permanent {
 			code := fmt.Sprintf("GATE_%d", status)

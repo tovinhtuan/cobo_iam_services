@@ -145,25 +145,15 @@ func (r *mysqlDashboardRepo) TemplateStats(ctx context.Context, now time.Time) (
 	return out, nil
 }
 
-// dashboardOpenObligationSQL is the platform-wide twin of the deadlinealerts V1 open-obligation
-// membership (deadlinealerts/infra/mysql list_rows_membership.go): active template, record still
-// draft and not submitted, periodic cycle already open. Restricted to active companies.
-// One placeholder: the HCM business date.
+// dashboardOpenObligationSQL counts open obligations platform-wide with the shared ObligationOpen
+// predicate of the alerts tab (deadlinealerts/app ObligationOpenSQL): record still draft and not
+// submitted, periodic cycle already open, whatever the template's state (PO decision Q1-B).
+// Restricted to active companies. One placeholder: the HCM business date.
 const dashboardOpenObligationSQL = `
 		FROM disclosure_records dr
 		INNER JOIN companies c ON c.company_id = dr.company_id AND c.status = 'active'
-` + deadlinealertsapp.ListRowsActiveTemplateSQLJoin + `
-		WHERE LOWER(TRIM(dr.status)) = 'draft'
-		  AND dr.submitted_at IS NULL
-		  AND (
-		    NOT EXISTS (SELECT 1 FROM periodic_cycles pc_ir WHERE pc_ir.record_id = dr.record_id)
-		    OR EXISTS (
-		      SELECT 1 FROM periodic_cycles pc
-		      WHERE pc.record_id = dr.record_id
-		        AND COALESCE(pc.open_at, pc.cycle_start) IS NOT NULL
-		        AND COALESCE(pc.open_at, pc.cycle_start) <= ?
-		    )
-		  )`
+		WHERE TRUE
+` + deadlinealertsapp.ObligationOpenSQL
 
 // Record status buckets for the platform activity bar. Terminal set = disclosure/app IsTerminalCompletionStatus.
 const (

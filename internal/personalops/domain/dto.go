@@ -76,6 +76,9 @@ type MyTaskItem struct {
 	Status             string       `json:"status"`
 	StatusLabel        string       `json:"status_label"`
 	Action             MyTaskAction `json:"action"`
+
+	// TemplateArchived marks a task on a record whose template is archived (PO decision Q1-B).
+	TemplateArchived bool `json:"template_archived,omitempty"`
 }
 
 type RoleAssignment struct {

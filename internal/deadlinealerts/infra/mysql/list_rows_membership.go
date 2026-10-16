@@ -3,34 +3,13 @@ package mysql
 import (
 	"strings"
 	"time"
+
+	deadlinealertsapp "github.com/cobo/cobo_iam_services/internal/deadlinealerts/app"
 )
 
-// listRowsV1ObligationMembershipSQL is the Phase-1 V1 membership AND-clauses
-// after `dr.company_id = ?`.
-//
-// NeedsCompanyAction: Draft + submitted_at IS NULL.
-// Periodic AlertWindow: EXISTS cycle with COALESCE(open_at, cycle_start) <= :todayHCM
-//   (open_at NULL → cycle_start = LEGACY_COMPATIBILITY_FALLBACK only).
-// Irregular: NOT EXISTS cycle → no OpenAt gate.
-// Malformed cycle (both dates NULL): EXISTS branch fails → excluded.
-//
-// Requires one bind argument: todayHCM as YYYY-MM-DD (Asia/Ho_Chi_Minh business date).
-// EXISTS (not JOIN) avoids row duplication when multiple cycles share a record_id.
-const listRowsV1ObligationMembershipSQL = `
-		  AND LOWER(TRIM(dr.status)) = 'draft'
-		  AND dr.submitted_at IS NULL
-		  AND (
-		    NOT EXISTS (
-		      SELECT 1 FROM periodic_cycles pc_ir
-		      WHERE pc_ir.record_id = dr.record_id
-		    )
-		    OR EXISTS (
-		      SELECT 1 FROM periodic_cycles pc
-		      WHERE pc.record_id = dr.record_id
-		        AND COALESCE(pc.open_at, pc.cycle_start) IS NOT NULL
-		        AND COALESCE(pc.open_at, pc.cycle_start) <= ?
-		    )
-		  )`
+// listRowsV1ObligationMembershipSQL is the shared ObligationOpen predicate (deadlinealerts/app
+// ObligationOpenSQL), after `dr.company_id = ?`. One bind argument: todayHCM.
+const listRowsV1ObligationMembershipSQL = deadlinealertsapp.ObligationOpenSQL
 
 // businessDateHCM returns the Asia/Ho_Chi_Minh calendar date for now (YYYY-MM-DD).
 // Matches deadlinealerts service calculatorLocation convention; no DB session TZ.

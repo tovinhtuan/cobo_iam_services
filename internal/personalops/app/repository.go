@@ -42,6 +42,8 @@ type MineTask struct {
 	PlannedDate  string
 	AdHocDueDate string
 	RecordStatus string
+
+	TemplateArchived bool // the record's template is archived (PO decision Q1-B)
 }
 
 // MineRepository loads mine-scoped operational rows. Implementations MUST NOT

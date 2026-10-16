@@ -389,3 +389,21 @@ type testErr struct{}
 
 func (testErr) Error() string { return "test" }
 func errTest() error          { return testErr{} }
+
+// MR-3 (PO decision Q1-B): an open obligation of an archived template keeps its flag on the
+// dashboard's immediate actions, so the card can show "Mẫu đã ngừng áp dụng".
+func TestBuildImmediateActions_carriesTemplateArchived(t *testing.T) {
+	ref := time.Date(2026, 10, 16, 3, 0, 0, 0, time.UTC)
+	overdue := []deadlinealertsapp.DeadlineAlertDTO{
+		{RecordID: "r-archived", Title: "Archived template", DueDate: "2026-10-01", Status: "OVERDUE", TemplateArchived: true},
+		{RecordID: "r-active", Title: "Active template", DueDate: "2026-10-02", Status: "OVERDUE"},
+	}
+	items := buildImmediateActions(overdue, nil, nil, nil, 10, ref)
+	got := map[string]bool{}
+	for _, it := range items {
+		got[it.ID] = it.TemplateArchived
+	}
+	if !got["r-archived"] || got["r-active"] {
+		t.Fatalf("template_archived by id=%v, want only r-archived flagged", got)
+	}
+}

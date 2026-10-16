@@ -1622,6 +1622,10 @@ func (r *Repository) MarkPeriodicCycleRetry(_ context.Context, _, _, _, _ string
 	return nil
 }
 
+func (r *Repository) MarkPeriodicCycleSuspended(_ context.Context, _, _ string) (bool, error) {
+	return false, nil
+}
+
 func (r *Repository) MarkPeriodicCycleFailed(_ context.Context, _, _, _, _ string) error {
 	return nil
 }

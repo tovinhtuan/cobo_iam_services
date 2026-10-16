@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	adhocapp "github.com/cobo/cobo_iam_services/internal/adhoc/app"
+	deadlinealertsapp "github.com/cobo/cobo_iam_services/internal/deadlinealerts/app"
 	"github.com/cobo/cobo_iam_services/internal/disclosure/app/deadlineengine"
 	personalopsapp "github.com/cobo/cobo_iam_services/internal/personalops/app"
 )
@@ -234,19 +235,21 @@ SELECT
   COALESCE(wt.step_code, ''),
   wt.status,
   COALESCE(DATE_FORMAT(dr.planned_date, '%%Y-%%m-%%d'), ''),
-  dr.status
+  dr.status,
+  %s
 FROM workflow_tasks wt
 INNER JOIN workflow_instances wi
   ON wi.workflow_instance_id = wt.workflow_instance_id AND wi.company_id = wt.company_id
 INNER JOIN disclosure_records dr
   ON dr.company_id = wi.company_id AND dr.record_id = wi.record_id
 INNER JOIN companies c ON c.company_id = wt.company_id
+LEFT JOIN disclosure_types dt ON dt.type_id = dr.type_id
 WHERE %s
   AND LOWER(TRIM(wt.status)) = 'pending'
   AND LOWER(TRIM(dr.status)) <> 'draft'
 ORDER BY wt.task_id ASC
 LIMIT ?
-`, ph, taskPred)
+`, ph, deadlinealertsapp.TemplateArchivedSQL, taskPred)
 
 	rows, err := r.db.QueryContext(ctx, q, args...)
 	if err != nil {
@@ -270,6 +273,7 @@ LIMIT ?
 			&t.TaskStatus,
 			&t.PlannedDate,
 			&t.RecordStatus,
+			&t.TemplateArchived,
 		); err != nil {
 			return nil, err
 		}

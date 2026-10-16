@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -179,5 +180,80 @@ func TestMaterializePeriodic_TimeoutStillRecordsRetry(t *testing.T) {
 	}
 	if _, ok := repo.retries["cy-1"]; !ok {
 		t.Fatal("cycle must be marked RETRY after a timed-out create")
+	}
+}
+
+// MR-3 (PO decision Q1-B): a cycle claimed before its template was archived is suspended, not
+// retried, so it does not materialize on its own after a restore.
+func TestMaterializePeriodic_TemplateArchivedAfterClaimSuspendsTheCycle(t *testing.T) {
+	repo := &leaseFakeRepo{fakePeriodicRepo: newFakePeriodicRepo([]PeriodicCycleRow{leaseCycle("cy-1")})}
+	repo.templateArchived = true
+	archived := fmt.Errorf("create record: %w", &perr.HTTPError{HTTPStatus: http.StatusConflict, Code: "TEMPLATE_ARCHIVED", Message: "template archived"})
+	creator := &fakePeriodicCreator{err: archived}
+	if _, err := materializePeriodicDisclosures(context.Background(), time.Date(2026, 9, 10, 3, 0, 0, 0, time.UTC), repo, creator); err != nil {
+		t.Fatal(err)
+	}
+	_, retried := repo.retries["cy-1"]
+	_, failed := repo.failed["cy-1"]
+	if !repo.suspended["cy-1"] || retried || failed {
+		t.Fatalf("suspended=%v retried=%v failed=%v, want only suspended", repo.suspended["cy-1"], retried, failed)
+	}
+}
+
+func TestMaterializePeriodic_TemplateRestoredBeforeTheSuspendRetriesTheCycle(t *testing.T) {
+	repo := &leaseFakeRepo{fakePeriodicRepo: newFakePeriodicRepo([]PeriodicCycleRow{leaseCycle("cy-1")})}
+	archived := fmt.Errorf("create record: %w", &perr.HTTPError{HTTPStatus: http.StatusConflict, Code: "TEMPLATE_ARCHIVED", Message: "template archived"})
+	creator := &fakePeriodicCreator{err: archived}
+	if _, err := materializePeriodicDisclosures(context.Background(), time.Date(2026, 9, 10, 3, 0, 0, 0, time.UTC), repo, creator); err != nil {
+		t.Fatal(err)
+	}
+	_, retried := repo.retries["cy-1"]
+	if repo.suspended["cy-1"] || !retried {
+		t.Fatalf("suspended=%v retried=%v, want a retry once the template is active again", repo.suspended["cy-1"], retried)
+	}
+}
+
+// The real adapter resolves the workflow before CreateRecord, so an archived template usually
+// answers 404 (no active version) rather than 409: the cycle is still suspended, not FAILED.
+func TestMaterializePeriodic_NotFoundFromAnArchivedTemplateSuspendsTheCycle(t *testing.T) {
+	repo := &leaseFakeRepo{fakePeriodicRepo: newFakePeriodicRepo([]PeriodicCycleRow{leaseCycle("cy-1")})}
+	repo.templateArchived = true
+	notFound := fmt.Errorf("resolve workflow: %w", &perr.HTTPError{HTTPStatus: http.StatusNotFound, Code: perr.CodeInvalidRequest, Message: "type not found"})
+	creator := &fakePeriodicCreator{err: notFound}
+	if _, err := materializePeriodicDisclosures(context.Background(), time.Date(2026, 9, 10, 3, 0, 0, 0, time.UTC), repo, creator); err != nil {
+		t.Fatal(err)
+	}
+	_, failed := repo.failed["cy-1"]
+	if !repo.suspended["cy-1"] || failed {
+		t.Fatalf("suspended=%v failed=%v, want suspended", repo.suspended["cy-1"], failed)
+	}
+}
+
+// A 404 while the template is active stays a permanent failure.
+func TestMaterializePeriodic_NotFoundFromAnActiveTemplateStillFails(t *testing.T) {
+	repo := &leaseFakeRepo{fakePeriodicRepo: newFakePeriodicRepo([]PeriodicCycleRow{leaseCycle("cy-1")})}
+	notFound := &perr.HTTPError{HTTPStatus: http.StatusNotFound, Code: perr.CodeInvalidRequest, Message: "type not found"}
+	creator := &fakePeriodicCreator{err: notFound}
+	if _, err := materializePeriodicDisclosures(context.Background(), time.Date(2026, 9, 10, 3, 0, 0, 0, time.UTC), repo, creator); err != nil {
+		t.Fatal(err)
+	}
+	_, failed := repo.failed["cy-1"]
+	if repo.suspended["cy-1"] || !failed {
+		t.Fatalf("suspended=%v failed=%v, want FAILED", repo.suspended["cy-1"], failed)
+	}
+}
+
+// When the suspend itself fails (e.g. a deadlock with a restore), the cycle retries instead of
+// aborting the tick.
+func TestMaterializePeriodic_SuspendFailureFallsBackToRetry(t *testing.T) {
+	repo := &leaseFakeRepo{fakePeriodicRepo: newFakePeriodicRepo([]PeriodicCycleRow{leaseCycle("cy-1")})}
+	repo.suspendErr = errors.New("Error 1213: Deadlock found")
+	archived := &perr.HTTPError{HTTPStatus: http.StatusConflict, Code: "TEMPLATE_ARCHIVED", Message: "template archived"}
+	creator := &fakePeriodicCreator{err: archived}
+	if _, err := materializePeriodicDisclosures(context.Background(), time.Date(2026, 9, 10, 3, 0, 0, 0, time.UTC), repo, creator); err != nil {
+		t.Fatalf("tick err=%v, want the cycle handled", err)
+	}
+	if _, retried := repo.retries["cy-1"]; !retried {
+		t.Fatal("cycle not retried after a failed suspend")
 	}
 }

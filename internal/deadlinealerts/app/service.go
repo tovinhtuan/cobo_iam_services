@@ -229,6 +229,7 @@ func (s *service) enrichDeadlineAlertRows(
 			CurrentStepName:    CurrentStepNameFromRow(row.CurrentStepCode, row.CurrentStepName, row.SnapshotJSON),
 			Source:             "disclosure_record",
 			TemplateCategory:   strings.TrimSpace(row.TemplateCategory),
+			TemplateArchived:   row.TemplateArchived,
 		})
 	}
 

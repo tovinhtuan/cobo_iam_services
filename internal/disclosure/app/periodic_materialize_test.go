@@ -20,6 +20,12 @@ type fakePeriodicRepo struct {
 	claimAttempts   map[string]int
 	mu              sync.Mutex
 	tryClaimReturns map[string]bool
+	suspended       map[string]bool
+	// templateArchived: the template is archived when the worker tries to suspend (else the
+	// suspend changes nothing, as for an active or restored template).
+	templateArchived bool
+	// suspendErr: MarkPeriodicCycleSuspended fails (e.g. a deadlock with a restore).
+	suspendErr error
 }
 
 func newFakePeriodicRepo(cycles []PeriodicCycleRow) *fakePeriodicRepo {
@@ -96,6 +102,23 @@ func (r *fakePeriodicRepo) MarkPeriodicCycleRetry(_ context.Context, cycleID, at
 	r.retries[cycleID] = attemptRecordID
 	delete(r.claimed, cycleID)
 	return nil
+}
+
+func (r *fakePeriodicRepo) MarkPeriodicCycleSuspended(_ context.Context, cycleID, _ string) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.suspendErr != nil {
+		return false, r.suspendErr
+	}
+	if !r.templateArchived {
+		return false, nil
+	}
+	if r.suspended == nil {
+		r.suspended = map[string]bool{}
+	}
+	r.suspended[cycleID] = true
+	delete(r.claimed, cycleID)
+	return true, nil
 }
 
 func (r *fakePeriodicRepo) MarkPeriodicCycleFailed(_ context.Context, cycleID, attemptRecordID, _, _ string) error {

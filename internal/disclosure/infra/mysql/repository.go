@@ -2721,6 +2721,32 @@ func (r *Repository) MarkPeriodicCycleRetry(ctx context.Context, cycleID, attemp
 	return nil
 }
 
+// MarkPeriodicCycleSuspended moves a CLAIMED cycle whose template is still archived to SUSPENDED: it
+// is not retried and waits for a restore that backfills it (PO decision Q1-B). It changes nothing
+// and reports false when the template was restored meanwhile (the caller retries the cycle).
+// materialized_at stays set as the fence older workers check.
+func (r *Repository) MarkPeriodicCycleSuspended(ctx context.Context, cycleID, attemptRecordID string) (bool, error) {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE periodic_cycles pc
+		INNER JOIN disclosure_types dt ON dt.type_id = pc.type_id
+		SET pc.materialization_state = 'SUSPENDED',
+		    pc.materialized_at = COALESCE(pc.materialized_at, NOW(3)),
+		    pc.attempt_record_id = COALESCE(NULLIF(?, ''), pc.attempt_record_id),
+		    pc.next_attempt_at = NULL,
+		    pc.last_error_code = 'TEMPLATE_ARCHIVED',
+		    pc.last_error_message = 'template archived; a restore may backfill this cycle'
+		WHERE pc.cycle_id = ? AND pc.record_id IS NULL AND pc.materialization_state = 'CLAIMED'
+		  AND LOWER(COALESCE(dt.status, '')) = 'archived'`, attemptRecordID, cycleID)
+	if err != nil {
+		return false, fmt.Errorf("mark periodic cycle suspended: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("mark periodic cycle suspended rows affected: %w", err)
+	}
+	return n == 1, nil
+}
+
 // periodicMaxAttempts caps claims of one cycle before it fails with RETRY_EXHAUSTED (PER-03).
 // Requeue by hand: UPDATE periodic_cycles SET materialization_state='RETRY',
 // next_attempt_at=NOW(3), attempt_count=0 WHERE cycle_id=? AND materialization_state='FAILED'

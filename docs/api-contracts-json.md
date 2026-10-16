@@ -1757,6 +1757,33 @@ Business contract v1.2 §3.2 (`docs/ai-cache/business-contract-workflow-deadline
   - the proposer lacks `disclosure.create` or `disclosure.view` → `403 PERMISSION_DENIED`, `details.permission` names it;
   - a failure of the check itself → `5xx`.
 
+
+### Open obligations of archived templates (MR-3, 2026-10-16)
+
+PO decision Q1-B. Record: `docs/ai-cache/mr3-obligation-open-archive-2026-10-16/`.
+
+- An open obligation (`ObligationOpen`: Draft, not submitted, periodic cycle open) stays open after its template is archived. Archiving a template only stops new cycles and new records.
+- Alerts, the Portal dashboard and the platform CMS dashboard share one predicate: `disclosure/app` `ObligationOpenSQL`.
+- `GET /api/v1/company/deadline-alerts` items gain `template_archived` (bool). Records of archived and never-activated templates now appear. Name and deadline config come from the active version, else from `archived_from_version_no`.
+- `GET /api/v1/company/deadline-alerts/next` also excludes cycles in state `SUSPENDED`/`SKIPPED`.
+- `GET /api/v1/company/dashboard/overview` `immediate_actions[]` and `GET /api/v1/me/operational-overview` `my_tasks[]` gain `template_archived` (omitempty).
+- `POST /api/v1/platform/cms/templates/{type_id}/archive`:
+  - suspends the template's cycles that have no record (`PENDING`/`RETRY` → `SUSPENDED`, `last_error_code = TEMPLATE_ARCHIVED`) in the same transaction;
+  - the response gains `suspended_cycles`.
+  - A worker that claimed a cycle before the archive gets `409 TEMPLATE_ARCHIVED` from `CreateRecord`, or `404` from the workflow lookup that runs first. If the template is still archived, it moves the cycle to `SUSPENDED` instead of `RETRY`/`FAILED`; otherwise the cycle retries or fails as before.
+  - Data migration `0154` suspends, the same way, the cycles of templates archived before this release.
+- `POST .../restore` accepts `{"reason"?, "backfill_cycle_ids"?: [cycle_id]}` (at most 1000 ids). Under the template lock:
+  1. `PENDING`/`RETRY` cycles without a record that escaped the archive (an older worker, the lease reaper) are suspended first;
+  2. the listed `SUSPENDED` cycles go back to `PENDING` (`backfilled_cycles`);
+  3. suspended cycles that missed nothing go back to `PENDING` without a choice (`resumed_cycles`): their open date (`COALESCE(open_at, cycle_start, due_date)`) is after today (Asia/Ho_Chi_Minh), or an earlier attempt already created their record;
+  4. every other suspended cycle (missed, not chosen) becomes `SKIPPED` (`skipped_cycles`). Without the field all missed cycles are skipped, so no missed record is created in bulk.
+  - An id that is not a suspended cycle of the template → `422 INVALID_REQUEST`, `details.field = backfill_cycle_ids`, and nothing changes.
+- New `GET /api/v1/platform/cms/templates/{type_id}/archive-impact`:
+  - permission `cms.template.archive` (same as archive/restore) with `platform.cms.view`; global templates only (404 otherwise);
+  - response: `{type_id, status, open_records: {total, companies: [{company_id, company_name, open_count}]}, cycles: {pending, suspended: [{cycle_id, company_id, company_name, cycle_label, due_date}], suspended_total, auto_resume}}`;
+  - `cycles.suspended` lists the missed cycles a restore can backfill (capped at 1000, the restore limit); `suspended_total` counts all of them. When `suspended_total` is larger than the list, clients must not offer the restore (the unseen cycles would be skipped). `auto_resume` counts the cycles step 3 resumes. For an archived template both include the leftover `PENDING`/`RETRY` cycles of step 1;
+  - `open_records.companies` is capped at 500 (`total` counts all).
+
 ## G. HTTP status mapping (goi y)
 
 | HTTP | Khi nao |

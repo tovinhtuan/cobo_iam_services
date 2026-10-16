@@ -3,6 +3,8 @@ package mysql
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"sync"
@@ -105,7 +107,8 @@ func (r *Repository) listRows(ctx context.Context, companyID string, scope deadl
 			COALESCE(wi.current_step_code, ''),
 			COALESCE(JSON_UNQUOTE(JSON_EXTRACT(dtv.deadline_config_json, '$.template_category')), ''),
 			COALESCE(dac.confirmed_by, ''),
-			dac.confirmed_at
+			dac.confirmed_at,
+			` + deadlinealertsapp.TemplateArchivedSQL + `
 		FROM disclosure_records dr
 		LEFT JOIN workflow_instances wi ON wi.company_id = dr.company_id
 			AND wi.workflow_instance_id = (
@@ -115,7 +118,7 @@ func (r *Repository) listRows(ctx context.Context, companyID string, scope deadl
 				ORDER BY wi2.workflow_instance_id ASC
 				LIMIT 1
 			)
-` + deadlinealertsapp.ListRowsActiveTemplateSQLJoin + `
+` + deadlinealertsapp.ObligationTemplateSQLJoin + `
 		LEFT JOIN deadline_alert_confirmations dac ON dac.company_id = dr.company_id
 			AND dac.record_id = dr.record_id
 		WHERE dr.company_id = ?
@@ -152,6 +155,7 @@ func (r *Repository) listRows(ctx context.Context, companyID string, scope deadl
 			&row.TemplateCategory,
 			&confirmedBy,
 			&confirmedAt,
+			&row.TemplateArchived,
 		); err != nil {
 			return nil, err
 		}
@@ -179,7 +183,6 @@ func (r *Repository) countListRows(ctx context.Context, companyID string, scope 
 	query := `
 		SELECT COUNT(*)
 		FROM disclosure_records dr
-` + deadlinealertsapp.ListRowsActiveTemplateSQLJoin + `
 		WHERE dr.company_id = ?
 ` + listRowsV1ObligationMembershipSQL + scopeClause
 	args := append([]any{companyID, businessDateHCM(nowFn())}, scopeArgs...)
@@ -451,10 +454,33 @@ func (r *Repository) GetCompanyTypeDeadlineContext(ctx context.Context, companyI
 	return r.disclosure.GetCompanyTypeDeadlineContext(ctx, companyID, typeID)
 }
 
+// GetTypeDeadlineConfig reads the deadline config of the template's active version, else of the
+// version it was archived from: an open obligation of an archived template keeps its due date
+// (PO decision Q1-B).
 func (r *Repository) GetTypeDeadlineConfig(ctx context.Context, companyID, typeID string) (*disclosureapp.TemplateDeadlineConfig, error) {
 	_ = companyID
-	_, cfg, err := r.disclosure.GetActiveVersionDeadlineConfig(ctx, typeID)
-	return cfg, err
+	var rawConfig sql.NullString
+	err := r.db.QueryRowContext(ctx, `
+		SELECT v.deadline_config_json
+		FROM disclosure_types t
+		INNER JOIN disclosure_type_versions v ON v.type_id = t.type_id
+			AND v.version_no = COALESCE(NULLIF(t.active_version_no, 0), t.archived_from_version_no)
+		WHERE t.type_id = ?
+	`, typeID).Scan(&rawConfig)
+	if err == sql.ErrNoRows {
+		return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "disclosure type not found", nil)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get obligation deadline config: %w", err)
+	}
+	if !rawConfig.Valid || rawConfig.String == "" || rawConfig.String == "null" {
+		return nil, nil
+	}
+	var cfg disclosureapp.TemplateDeadlineConfig
+	if err := json.Unmarshal([]byte(rawConfig.String), &cfg); err != nil {
+		return nil, fmt.Errorf("unmarshal deadline_config_json: %w", err)
+	}
+	return &cfg, nil
 }
 
 func (r *Repository) HasDisclosureRecord(ctx context.Context, companyID, recordID string) (bool, error) {
@@ -776,7 +802,8 @@ func (r *Repository) ListReportGroupOptions(ctx context.Context) ([]deadlinealer
 // Eligibility (SQL):
 //   - company_id = ?
 //   - record_id IS NULL (not yet materialized to disclosure_record)
-//   - active template (active_version_no > 0 + version row)
+//   - active template (active_version_no > 0 + version row): only these materialize
+//   - cycle still to be materialized (not SUSPENDED by an archive, not SKIPPED at restore)
 //   - TodayHCM < COALESCE(open_at, cycle_start)
 //     (materializer-aligned; due_date must NOT extend the Next Alert window)
 //
@@ -804,6 +831,7 @@ func (r *Repository) ListNextAlertCycles(ctx context.Context, companyID, todayHC
 			AND dtv.version_no = dt.active_version_no
 		WHERE pc.company_id = ?
 		  AND pc.record_id IS NULL
+		  AND pc.materialization_state NOT IN ('SUSPENDED', 'SKIPPED')
 		  -- BES-38: never show another tenant's company-scoped type.
 		  AND (dt.company_id IS NULL OR dt.company_id = pc.company_id)
 		  AND COALESCE(pc.open_at, pc.cycle_start) IS NOT NULL

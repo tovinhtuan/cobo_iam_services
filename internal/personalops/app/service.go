@@ -564,6 +564,7 @@ func (s *service) buildMyTasks(tasks []MineTask, now time.Time) []domain.MyTaskI
 				Label: "Xử lý",
 				Href:  "/app/deadlines/" + t.RecordID,
 			},
+			TemplateArchived: t.TemplateArchived,
 		})
 	}
 	sort.SliceStable(out, func(i, j int) bool {

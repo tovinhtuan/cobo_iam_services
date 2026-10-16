@@ -135,3 +135,18 @@ func TestMigration0153InDevRunner(t *testing.T) {
 		t.Fatalf("migration file: %v", err)
 	}
 }
+
+// MR-3: the data fix that suspends cycles of templates archived before the release ships with the
+// runner list.
+func TestMigration0154InDevRunner(t *testing.T) {
+	data, err := os.ReadFile("../../../../migrations/run_dev_migrations.sh")
+	if err != nil {
+		t.Fatalf("read runner: %v", err)
+	}
+	if !strings.Contains(string(data), "0154_periodic_cycles_suspend_archived_templates.up.sql") {
+		t.Fatal("0154_periodic_cycles_suspend_archived_templates.up.sql must be in migrations/run_dev_migrations.sh")
+	}
+	if _, err := os.Stat("../../../../migrations/0154_periodic_cycles_suspend_archived_templates.up.sql"); err != nil {
+		t.Fatalf("migration file: %v", err)
+	}
+}

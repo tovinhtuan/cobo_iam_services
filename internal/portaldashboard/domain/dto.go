@@ -68,6 +68,9 @@ type ImmediateActionItem struct {
 	TargetURL       string `json:"target_url"`
 	Source          string `json:"source"`
 	Accuracy        string `json:"accuracy"`
+
+	// TemplateArchived marks an open obligation whose template is archived (PO decision Q1-B).
+	TemplateArchived bool `json:"template_archived,omitempty"`
 }
 
 type WorkflowRiskRow struct {

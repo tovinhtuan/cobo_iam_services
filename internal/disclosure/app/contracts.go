@@ -69,6 +69,9 @@ type Service interface {
 	// CMS system template management (Sprint 2).
 	CmsArchiveTemplate(ctx context.Context, req CmsArchiveTemplateRequest) (*CmsArchiveTemplateResponse, error)
 	CmsRestoreTemplate(ctx context.Context, req CmsRestoreTemplateRequest) (*CmsRestoreTemplateResponse, error)
+	// CmsTemplateArchiveImpact reports what archiving (or restoring) a global template affects: open
+	// obligations per company and the periodic cycles it suspends (PO decision Q1-B). Read-only.
+	CmsTemplateArchiveImpact(ctx context.Context, req CmsTemplateArchiveImpactRequest) (*CmsTemplateArchiveImpactResponse, error)
 	CmsGetGlobalWorkflow(ctx context.Context, req CmsGetGlobalWorkflowRequest) (*CmsGetGlobalWorkflowResponse, error)
 	CmsUpsertGlobalWorkflow(ctx context.Context, req CmsUpsertGlobalWorkflowRequest) (*GlobalWorkflowDTO, error)
 	CmsDeleteGlobalWorkflow(ctx context.Context, req CmsDeleteGlobalWorkflowRequest) error
@@ -195,6 +198,12 @@ type Repository interface {
 	ListCmsDeadlineRules(ctx context.Context) ([]CmsDeadlineRuleDTO, error)
 	ArchiveGlobalTemplate(ctx context.Context, params ArchiveGlobalTemplateParams) (*ArchiveGlobalTemplateResult, error)
 	RestoreGlobalTemplate(ctx context.Context, params RestoreGlobalTemplateParams) (*RestoreGlobalTemplateResult, error)
+	GetTemplateArchiveImpact(ctx context.Context, typeID, todayHCM string) (*CmsTemplateArchiveImpactResponse, error)
+	// MarkPeriodicCycleSuspended moves a CLAIMED cycle whose template is still archived to
+	// SUSPENDED (instead of RETRY), so it is not materialized when the template comes back. It
+	// reports false, changing nothing, when the template is no longer archived (restored meanwhile).
+	// attemptRecordID (may be empty) is kept like MarkPeriodicCycleRetry does.
+	MarkPeriodicCycleSuspended(ctx context.Context, cycleID, attemptRecordID string) (bool, error)
 	CountGlobalWorkflowsByTypeId(ctx context.Context, typeID string) (int, error)
 	GetGlobalWorkflow(ctx context.Context, typeID string) (*GlobalWorkflowDTO, error)
 	UpsertGlobalWorkflow(ctx context.Context, req CmsUpsertGlobalWorkflowRequest, workflowID string) (*GlobalWorkflowDTO, error)
@@ -1286,6 +1295,7 @@ type PeriodicMaterializeRepository interface {
 	ReleasePeriodicCycleClaim(ctx context.Context, cycleID string) error
 	MarkPeriodicCycleRetry(ctx context.Context, cycleID, attemptRecordID, failureCode, failureMessage string) error
 	MarkPeriodicCycleFailed(ctx context.Context, cycleID, attemptRecordID, failureCode, failureMessage string) error
+	MarkPeriodicCycleSuspended(ctx context.Context, cycleID, attemptRecordID string) (bool, error)
 	UpdateCycleRecord(ctx context.Context, cycleID, recordID string) error
 }
 
@@ -1427,12 +1437,19 @@ type CmsArchiveTemplateResponse struct {
 	ActiveVersionNo       int    `json:"active_version_no"`
 	BeforeStatus          string `json:"-"`
 	BeforeActiveVersionNo int    `json:"-"`
+
+	// SuspendedCycles counts the periodic cycles without a record moved to SUSPENDED.
+	SuspendedCycles int `json:"suspended_cycles"`
 }
 
 type CmsRestoreTemplateRequest struct {
 	Subject Subject
 	TypeID  string `json:"type_id"`
 	Reason  string `json:"reason"`
+
+	// BackfillCycleIDs are the SUSPENDED cycles to create records for again; every other
+	// suspended cycle is skipped. Empty: skip them all (nothing is created in bulk).
+	BackfillCycleIDs []string `json:"backfill_cycle_ids"`
 }
 
 type CmsRestoreTemplateResponse struct {
@@ -1443,6 +1460,60 @@ type CmsRestoreTemplateResponse struct {
 	BeforeStatus          string `json:"-"`
 	BeforeActiveVersionNo int    `json:"-"`
 	ArchivedFromVersionNo *int   `json:"-"`
+
+	BackfilledCycles int `json:"backfilled_cycles"`
+	SkippedCycles    int `json:"skipped_cycles"`
+	// ResumedCycles: suspended cycles back to PENDING without a choice (not opened yet, or with a
+	// record already created by an earlier attempt).
+	ResumedCycles int `json:"resumed_cycles"`
+	// BackfillCycleIDs are the normalized ids Admin Web chose, for the audit log.
+	BackfillCycleIDs []string `json:"-"`
+}
+
+type CmsTemplateArchiveImpactRequest struct {
+	Subject Subject
+	TypeID  string
+}
+
+// CmsTemplateArchiveImpactResponse is GET .../templates/{type_id}/archive-impact.
+type CmsTemplateArchiveImpactResponse struct {
+	TypeID      string                   `json:"type_id"`
+	Status      string                   `json:"status"`
+	OpenRecords ArchiveImpactOpenRecords `json:"open_records"`
+	Cycles      ArchiveImpactCycles      `json:"cycles"`
+}
+
+type ArchiveImpactOpenRecords struct {
+	Total     int                        `json:"total"`
+	Companies []ArchiveImpactCompanyOpen `json:"companies"`
+}
+
+type ArchiveImpactCompanyOpen struct {
+	CompanyID   string `json:"company_id"`
+	CompanyName string `json:"company_name"`
+	OpenCount   int    `json:"open_count"`
+}
+
+type ArchiveImpactCycles struct {
+	// Pending counts cycles without a record that archiving would suspend (PENDING/RETRY).
+	Pending int `json:"pending"`
+	// Suspended lists the missed cycles (open date passed while the template was archived, no
+	// record yet) a restore can backfill; the ones not chosen are skipped. The list is capped;
+	// SuspendedTotal counts all of them. When the list is shorter than the total, a restore would
+	// skip cycles nobody saw, so clients must not offer it.
+	Suspended      []ArchiveImpactCycle `json:"suspended"`
+	SuspendedTotal int                  `json:"suspended_total"`
+	// AutoResume counts the suspended cycles a restore resumes without a choice: not opened yet,
+	// or with a record already created by an earlier attempt (it is finished, not duplicated).
+	AutoResume int `json:"auto_resume"`
+}
+
+type ArchiveImpactCycle struct {
+	CycleID     string `json:"cycle_id"`
+	CompanyID   string `json:"company_id"`
+	CompanyName string `json:"company_name"`
+	CycleLabel  string `json:"cycle_label"`
+	DueDate     string `json:"due_date"`
 }
 
 // ArchiveGlobalTemplateParams is the repository input for soft-archiving a global template.
@@ -1464,6 +1535,7 @@ type ArchiveGlobalTemplateResult struct {
 	ArchivedAt            *time.Time
 	ArchivedBy            string
 	ArchiveReason         string
+	SuspendedCycles       int
 }
 
 // RestoreGlobalTemplateParams is the repository input for restoring a global template.
@@ -1473,6 +1545,13 @@ type RestoreGlobalTemplateParams struct {
 	// ExpectedFromVersionNo is nil for draft restore; non-nil must match locked metadata.
 	ExpectedFromVersionNo  *int
 	RestoreActiveVersionNo int // 0 for draft restore
+	// BackfillCycleIDs: SUSPENDED cycles of this template back to PENDING; the other SUSPENDED
+	// cycles whose open date passed become SKIPPED. Validated under the template lock (422 when
+	// one is not suspended).
+	BackfillCycleIDs []string
+	// TodayHCM (YYYY-MM-DD): suspended cycles opening after this date are not missed and go back
+	// to PENDING without a choice, like the ones whose record an earlier attempt already created.
+	TodayHCM string
 }
 
 // RestoreGlobalTemplateResult carries before/after for audit.
@@ -1484,6 +1563,9 @@ type RestoreGlobalTemplateResult struct {
 	AfterActiveVersionNo  int
 	ArchivedFromVersionNo *int
 	RestoredMode          string // "active" | "draft"
+	BackfilledCycles      int
+	SkippedCycles         int
+	ResumedCycles         int
 }
 
 // TypeLifecycleDTO is the disclosure_types root row used for eligibility guards.

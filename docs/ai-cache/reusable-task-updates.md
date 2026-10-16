@@ -5087,3 +5087,21 @@
   - Khi FE ẩn hoặc hiện hành động theo quy tắc mới của BE, hãy để BE gửi một cờ, để FE mới chạy với BE cũ vẫn an toàn khi rollback.
   - Ghi lại JSON (Postman) bằng `json.dump` sẽ đổi định dạng cả file; hãy chèn dạng text.
 
+## 2026-10-16: MR-3, nghĩa vụ đang mở của template đã lưu trữ (Q1-B)
+- Hồ sơ: `docs/ai-cache/mr3-obligation-open-archive-2026-10-16/` (`00-brief` … `06-review`, `99-summary`). Chưa commit, chưa deploy.
+- Thay đổi:
+  - predicate dùng chung `disclosure/app.ObligationOpenSQL`, không lọc theo template;
+  - cờ `template_archived` ở cảnh báo, dashboard, "Việc của tôi";
+  - lưu trữ treo các kỳ chưa có hồ sơ (`SUSPENDED`); migration dữ liệu 0154 áp cho template đã lưu trữ trước đó;
+  - khôi phục: gom kỳ sót lại về treo; kỳ chưa đến ngày mở hoặc đã có hồ sơ thì tự chạy lại; kỳ đã lỡ chỉ tạo bù nếu Admin Web chọn, còn lại `SKIPPED`;
+  - endpoint mới `GET /api/v1/platform/cms/templates/{type_id}/archive-impact`.
+- Kiểm chứng:
+  - MySQL 8 thật 13/13;
+  - kiểm ngược M1–M10, kèm 2 lần cho quyền và câu treo;
+  - `go test ./...` 0 fail mới; vet sạch; docker build OK.
+- Bài học:
+  - Khi một thao tác "bỏ qua" là trạng thái cuối, phải tách kỳ đã lỡ với kỳ chưa tới. Nếu không, thao tác nhầm rồi hoàn tác sẽ xoá luôn lịch sắp tới, và seeder không tạo lại được vì unique key.
+  - Một bước treo hoặc dọn chỉ chạy một lần trong transaction lưu trữ là không đủ. Worker cũ, reaper hay seeder chạy chồng có thể tạo lại trạng thái cũ, nên hãy chạy lại bước đó dưới cùng khoá, ngay trước khi quyết định.
+  - Đọc adapter thật trước khi tin mã lỗi. Worker nhận 404 từ bước tra workflow chứ không phải 409 `TEMPLATE_ARCHIVED` như unit test giả định.
+  - Danh sách cho người dùng chọn phải có tổng, và giới hạn danh sách phải khớp giới hạn của request ghi.
+  - Test seed ngày cố định trong tương lai sẽ đổi nghĩa khi quy tắc phụ thuộc "hôm nay". Truyền ngày vào hàm và đặt hằng ngày trong test.

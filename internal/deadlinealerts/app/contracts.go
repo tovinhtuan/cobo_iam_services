@@ -51,6 +51,9 @@ type DeadlineAlertDTO struct {
 	CurrentStepName    string   `json:"current_step_name,omitempty"`
 	Source             string   `json:"source"`
 	TemplateCategory   string   `json:"template_category,omitempty"`
+	// TemplateArchived marks an open obligation whose template is archived ("Mẫu đã ngừng áp
+	// dụng"): it stays open and reminded, but no new cycle or record comes from that template.
+	TemplateArchived bool `json:"template_archived"`
 }
 
 type ListDeadlineAlertsResponse struct {
@@ -129,6 +132,7 @@ type AlertRow struct {
 	DeadlineConfigJSON    []byte
 	ConfirmedBy           string
 	ConfirmedAt           *time.Time
+	TemplateArchived      bool
 }
 
 type WorkflowInstanceRow struct {

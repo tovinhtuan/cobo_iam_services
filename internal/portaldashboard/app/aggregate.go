@@ -438,6 +438,8 @@ func buildImmediateActions(
 				TargetURL:       "/app/deadlines/" + a.RecordID,
 				Source:          SourceDeadlineAlerts,
 				Accuracy:        AccuracyExact,
+
+				TemplateArchived: a.TemplateArchived,
 			},
 		})
 	}

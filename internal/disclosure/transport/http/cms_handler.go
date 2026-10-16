@@ -42,6 +42,7 @@ func (h *Handler) cmsArchiveTemplate(w http.ResponseWriter, r *http.Request) {
 			"before_active_version_no": resp.BeforeActiveVersionNo,
 			"after_active_version_no":  resp.ActiveVersionNo,
 			"already_archived":         false,
+			"suspended_cycles":         resp.SuspendedCycles,
 		}
 		if resp.ArchivedFromVersionNo != nil {
 			meta["archived_from_version_no"] = *resp.ArchivedFromVersionNo
@@ -61,16 +62,18 @@ func (h *Handler) cmsRestoreTemplate(w http.ResponseWriter, r *http.Request) {
 	}
 	typeID := strings.TrimSpace(r.PathValue("type_id"))
 	var body struct {
-		Reason string `json:"reason"`
+		Reason           string   `json:"reason"`
+		BackfillCycleIDs []string `json:"backfill_cycle_ids"`
 	}
 	if err := decodeJSONBody(w, r, maxSmallJSONBodyBytes, &body, true); err != nil {
 		httpx.WriteError(w, nil, err)
 		return
 	}
 	resp, err := h.svc.CmsRestoreTemplate(r.Context(), disclosureapp.CmsRestoreTemplateRequest{
-		Subject: sub,
-		TypeID:  typeID,
-		Reason:  body.Reason,
+		Subject:          sub,
+		TypeID:           typeID,
+		Reason:           body.Reason,
+		BackfillCycleIDs: body.BackfillCycleIDs,
 	})
 	if err != nil {
 		httpx.WriteError(w, nil, err)
@@ -83,6 +86,10 @@ func (h *Handler) cmsRestoreTemplate(w http.ResponseWriter, r *http.Request) {
 		"before_active_version_no": resp.BeforeActiveVersionNo,
 		"after_active_version_no":  resp.ActiveVersionNo,
 		"restored_mode":            resp.RestoredMode,
+		"backfilled_cycles":        resp.BackfilledCycles,
+		"skipped_cycles":           resp.SkippedCycles,
+		"resumed_cycles":           resp.ResumedCycles,
+		"backfill_cycle_ids":       resp.BackfillCycleIDs,
 	}
 	if resp.ArchivedFromVersionNo != nil {
 		meta["archived_from_version_no"] = *resp.ArchivedFromVersionNo
@@ -348,4 +355,23 @@ func (h *Handler) cmsDeleteDeadlineRule(w http.ResponseWriter, r *http.Request) 
 	}
 	h.auditLog(r, sub, "cms_deadline_rule.delete", "deadline_rule", ruleID, nil)
 	httpx.WriteJSON(w, http.StatusOK, map[string]bool{"deleted": true})
+}
+
+// cmsTemplateArchiveImpact is GET /api/v1/platform/cms/templates/{type_id}/archive-impact: open
+// obligations per company and periodic cycles affected by archiving or restoring the template.
+func (h *Handler) cmsTemplateArchiveImpact(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subjectFromToken(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	resp, err := h.svc.CmsTemplateArchiveImpact(r.Context(), disclosureapp.CmsTemplateArchiveImpactRequest{
+		Subject: sub,
+		TypeID:  strings.TrimSpace(r.PathValue("type_id")),
+	})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, resp)
 }

@@ -86,6 +86,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/platform/cms/templates/import-history/items/{id}", h.cmsGetTemplateImportHistory)
 	mux.HandleFunc("POST /api/v1/platform/cms/templates/{type_id}/archive", h.cmsArchiveTemplate)
 	mux.HandleFunc("POST /api/v1/platform/cms/templates/{type_id}/restore", h.cmsRestoreTemplate)
+	mux.HandleFunc("GET /api/v1/platform/cms/templates/{type_id}/archive-impact", h.cmsTemplateArchiveImpact)
 	mux.HandleFunc("GET /api/v1/platform/cms/templates/{type_id}/workflow", h.cmsGetGlobalWorkflow)
 	mux.HandleFunc("PUT /api/v1/platform/cms/templates/{type_id}/workflow", h.cmsUpsertGlobalWorkflow)
 	mux.HandleFunc("DELETE /api/v1/platform/cms/templates/{type_id}/workflow", h.cmsDeleteGlobalWorkflow)
