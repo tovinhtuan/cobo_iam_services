@@ -50,6 +50,10 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/company/disclosure-types/{type_id}/workflow-override", h.getCompanyWorkflowOverride)
 	mux.HandleFunc("PUT /api/v1/company/disclosure-types/{type_id}/workflow-override/draft", h.upsertCompanyWorkflowOverrideDraft)
 	mux.HandleFunc("POST /api/v1/company/disclosure-types/{type_id}/workflow-override/approve", h.approveCompanyWorkflowOverride)
+	// MR-4 (Q5-B): a writer submits a draft; an approver approves or rejects it.
+	mux.HandleFunc("POST /api/v1/company/disclosure-types/{type_id}/workflow-override/submit", h.submitCompanyWorkflowOverride)
+	mux.HandleFunc("POST /api/v1/company/disclosure-types/{type_id}/workflow-override/reject", h.rejectCompanyWorkflowOverride)
+	mux.HandleFunc("GET /api/v1/company/workflow-overrides/pending", h.listPendingCompanyWorkflowOverrides)
 	mux.HandleFunc("DELETE /api/v1/company/disclosure-types/{type_id}/workflow-override/draft/{version_no}", h.deleteCompanyWorkflowOverrideDraft)
 	mux.HandleFunc("DELETE /api/v1/company/disclosure-types/{type_id}/workflow-override/active", h.resetCompanyWorkflowOverrideActive)
 	mux.HandleFunc("GET /api/v1/company/disclosure-types/{type_id}/workflow-override/versions", h.listCompanyWorkflowOverrideVersions)
@@ -668,9 +672,10 @@ func (h *Handler) resolveWorkflowOverrideConflict(w http.ResponseWriter, r *http
 		httpx.WriteError(w, nil, err)
 		return
 	}
+	typeID := strings.TrimSpace(r.PathValue("type_id"))
 	resp, err := h.svc.ResolveWorkflowOverrideConflict(r.Context(), disclosureapp.ResolveWorkflowOverrideConflictRequest{
 		Subject:         sub,
-		TypeID:          strings.TrimSpace(r.PathValue("type_id")),
+		TypeID:          typeID,
 		ConflictID:      strings.TrimSpace(r.PathValue("conflict_id")),
 		Resolution:      body.Resolution,
 		ResolutionValue: body.ResolutionValue,
@@ -679,6 +684,14 @@ func (h *Handler) resolveWorkflowOverrideConflict(w http.ResponseWriter, r *http
 		httpx.WriteError(w, nil, err)
 		return
 	}
+	// The choice feeds the version an approver later activates by rebase-apply (MR-4 review ROLE-02).
+	h.auditLog(r, sub, "disclosure.workflow_override.conflict_resolved", "disclosure_type", typeID, map[string]any{
+		"conflict_id":      resp.Data.ID,
+		"step_key":         resp.Data.StepKey,
+		"field_path":       resp.Data.FieldPath,
+		"resolution":       body.Resolution,
+		"resolution_value": body.ResolutionValue,
+	})
 	httpx.WriteJSON(w, http.StatusOK, resp)
 }
 
@@ -741,6 +754,13 @@ func (h *Handler) applyWorkflowOverrideRebase(w http.ResponseWriter, r *http.Req
 		httpx.WriteError(w, nil, applyErr)
 		return
 	}
+	// Rebase-apply activates a version written by the approver; conflicts another member resolved
+	// make it a four-eyes activation (MR-4, Q5-B; review ROLE-02).
+	h.auditLog(r, sub, "disclosure.workflow_override.rebase_applied", "disclosure_type", typeID, map[string]any{
+		"new_version_no": resp.Data.NewVersionNo,
+		"self_approved":  resp.Data.SelfApproved,
+		"resolved_by":    resp.Data.ResolvedBy,
+	})
 	httpx.WriteJSON(w, http.StatusOK, resp)
 }
 
@@ -781,13 +801,15 @@ func (h *Handler) upsertCompanyWorkflowOverrideDraft(w http.ResponseWriter, r *h
 		return
 	}
 	auditAction := "disclosure.workflow_override.draft_saved"
-	if payload.Publish {
-		auditAction = "disclosure.workflow_override.applied"
-	}
-	h.auditLog(r, sub, auditAction, "disclosure_type", payload.TypeID, map[string]any{
+	meta := map[string]any{
 		"draft_version_no": resp.DraftVersionNo,
 		"state":            resp.State,
-	})
+	}
+	if payload.Publish {
+		auditAction = "disclosure.workflow_override.applied"
+		meta["self_approved"] = resp.SelfApproved
+	}
+	h.auditLog(r, sub, auditAction, "disclosure_type", payload.TypeID, meta)
 	httpx.WriteJSON(w, http.StatusOK, resp)
 }
 
@@ -811,9 +833,75 @@ func (h *Handler) approveCompanyWorkflowOverride(w http.ResponseWriter, r *http.
 	}
 	h.auditLog(r, sub, "disclosure.workflow_override.approved", "disclosure_type", payload.TypeID, map[string]any{
 		"active_version_no": resp.ActiveVersionNo,
+		"version_no":        resp.ActiveVersionNo,
 		"reason":            strings.TrimSpace(payload.Reason),
+		"self_approved":     resp.SelfApproved,
+		"from_state":        resp.FromState,
 	})
 	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) submitCompanyWorkflowOverride(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subjectFromToken(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	var payload disclosureapp.SubmitCompanyWorkflowOverrideRequest
+	if err := decodeJSONBody(w, r, maxSmallJSONBodyBytes, &payload, false); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	payload.Subject = sub
+	payload.TypeID = strings.TrimSpace(r.PathValue("type_id"))
+	resp, err := h.svc.SubmitCompanyWorkflowOverride(r.Context(), payload)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	h.auditLog(r, sub, "disclosure.workflow_override.submitted", "disclosure_type", payload.TypeID, map[string]any{
+		"version_no": resp.Data.VersionNo,
+	})
+	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) rejectCompanyWorkflowOverride(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subjectFromToken(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	var payload disclosureapp.RejectCompanyWorkflowOverrideRequest
+	if err := decodeJSONBody(w, r, maxSmallJSONBodyBytes, &payload, false); err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	payload.Subject = sub
+	payload.TypeID = strings.TrimSpace(r.PathValue("type_id"))
+	resp, err := h.svc.RejectCompanyWorkflowOverride(r.Context(), payload)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	h.auditLog(r, sub, "disclosure.workflow_override.rejected", "disclosure_type", payload.TypeID, map[string]any{
+		"version_no": resp.Data.VersionNo,
+		"reason":     resp.Data.DecisionNote,
+	})
+	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) listPendingCompanyWorkflowOverrides(w http.ResponseWriter, r *http.Request) {
+	sub, err := h.subjectFromToken(r)
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	resp, err := h.svc.ListPendingCompanyWorkflowOverrides(r.Context(), disclosureapp.ListPendingCompanyWorkflowOverridesRequest{Subject: sub})
+	if err != nil {
+		httpx.WriteError(w, nil, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": resp})
 }
 
 func (h *Handler) deleteCompanyWorkflowOverrideDraft(w http.ResponseWriter, r *http.Request) {

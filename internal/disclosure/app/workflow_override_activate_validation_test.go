@@ -18,11 +18,10 @@ func TestApproveCompanyWorkflowOverride_RejectsEmptyDraft(t *testing.T) {
 	}
 
 	_, err := svc.ApproveCompanyWorkflowOverride(context.Background(), disclosureapp.ApproveCompanyWorkflowOverrideRequest{
-		Subject:               subject,
-		TypeID:                typeID,
-		VersionNo:             1,
-		Reason:                "test",
-		SkipSelfApprovalCheck: true,
+		Subject:   subject,
+		TypeID:    typeID,
+		VersionNo: 1,
+		Reason:    "test",
 	})
 	if err == nil {
 		t.Fatal("expected activation to fail for empty override")

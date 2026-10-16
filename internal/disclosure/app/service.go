@@ -1249,6 +1249,19 @@ func (s *service) UpsertCompanyWorkflowOverrideDraft(ctx context.Context, req Up
 	}); err != nil {
 		return nil, err
 	}
+	if req.Publish {
+		// Activating needs the approve permission (MR-4, Q5-B). Check it, and that the workflow can
+		// be activated, before saving anything: a writer's publish:true must leave no draft behind.
+		if err := ValidateCompanyWorkflowOverrideStepDescriptionsForActivation(req.Workflow); err != nil {
+			return nil, err
+		}
+		if err := s.authorize(ctx, req.Subject, "template.workflow.override.approve", authapp.ResourceRef{
+			Type: "disclosure_type",
+			ID:   req.TypeID,
+		}); err != nil {
+			return nil, err
+		}
+	}
 	for i := range req.Workflow {
 		req.Workflow[i].DepartmentID = strings.TrimSpace(req.Workflow[i].DepartmentID)
 		req.Workflow[i].DueRule = strings.TrimSpace(req.Workflow[i].DueRule)
@@ -1285,28 +1298,8 @@ func (s *service) UpsertCompanyWorkflowOverrideDraft(ctx context.Context, req Up
 		resp.VersionNo = resp.DraftVersionNo
 		resp.Workflow = req.Workflow
 	}
-	if req.Publish && resp != nil {
-		// Publish skips ApproveCompanyWorkflowOverride service path — enforce description here.
-		if err2 := ValidateCompanyWorkflowOverrideStepDescriptionsForActivation(req.Workflow); err2 != nil {
-			return nil, err2
-		}
-		if err2 := s.authorize(ctx, req.Subject, "template.workflow.override.approve", authapp.ResourceRef{
-			Type: "disclosure_type",
-			ID:   req.TypeID,
-		}); err2 != nil {
-			return nil, err2
-		}
-		if _, err2 := s.repo.ApproveCompanyWorkflowOverride(ctx, ApproveCompanyWorkflowOverrideRequest{
-			Subject:               req.Subject,
-			TypeID:                req.TypeID,
-			VersionNo:             resp.DraftVersionNo,
-			Reason:                "apply",
-			SkipSelfApprovalCheck: true,
-		}); err2 != nil {
-			return nil, err2
-		}
-		resp.State = "approved"
-	}
+	// With Publish the repository saved and activated the version in one transaction (state
+	// approved, self_approved); the permission and activation checks ran before (above).
 	return resp, nil
 }
 
@@ -1330,17 +1323,20 @@ func (s *service) ApproveCompanyWorkflowOverride(ctx context.Context, req Approv
 	}); err != nil {
 		return nil, err
 	}
-	view, err := s.repo.GetCompanyWorkflowOverride(ctx, req.Subject.CompanyID, req.TypeID)
+	// Only the latest version can be activated: a draft (the approver's own included, MR-4 Q5-B)
+	// or a submission pending approval. An older draft below a newer version (e.g. a rebase-apply)
+	// is stale (WF-08c).
+	draft, err := s.latestOverrideDraft(ctx, req.Subject.CompanyID, req.TypeID, req.VersionNo)
 	if err != nil {
 		return nil, err
 	}
-	if view.DraftVersion == nil || view.DraftVersion.VersionNo != req.VersionNo {
-		return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "workflow override draft version not found", nil)
+	if draft.State != OverrideVersionStateDraft && draft.State != OverrideVersionStatePendingApproval {
+		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "only a draft or a version pending approval can be approved", nil)
 	}
-	if err := ValidateCompanyWorkflowOverrideSteps(view.DraftVersion.Workflow); err != nil {
+	if err := ValidateCompanyWorkflowOverrideSteps(draft.Workflow); err != nil {
 		return nil, err
 	}
-	if err := ValidateCompanyWorkflowOverrideStepDescriptionsForActivation(view.DraftVersion.Workflow); err != nil {
+	if err := ValidateCompanyWorkflowOverrideStepDescriptionsForActivation(draft.Workflow); err != nil {
 		return nil, err
 	}
 	return s.repo.ApproveCompanyWorkflowOverride(ctx, req)

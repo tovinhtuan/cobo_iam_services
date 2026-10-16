@@ -1798,6 +1798,43 @@ Contract v1.2 §2.2 and PO decisions Q-12 (a′), PO-01 and Q-18. Record: `docs/
   - A deadline occurrence whose record stopped being open before dispatch is closed as `status=FAILED`, `last_error_code=OBLIGATION_CLOSED` (terminal, like `COMPANY_INACTIVE`). It is not counted as a failure in metrics or the CMS dashboard, and the workflow milestones API shows it as `cancelled`. Skip paths never overwrite an occurrence a concurrent dispatch already marked `SENT`.
 - Known gap: approved ad-hoc records have no `planned_date` (their due lives on the proposal). They therefore get no deadline reminder, and the CMS dashboard counts them as open without due date. Follow-up with DUE-06.
 
+### Workflow override maker-checker by permission (MR-4, 2026-10-16)
+
+PO decision Q5-B. Record: `docs/ai-cache/mr4-override-maker-checker-2026-10-16/`. Base path `/api/v1/company/disclosure-types/{type_id}`, company from the token.
+
+- **Activation needs `template.workflow.override.approve`** on every path that makes a version active:
+  - `PUT …/workflow-override/draft` with `publish:true` checks it before saving anything, then saves and activates in one transaction (`state: approved`, `self_approved: true`);
+  - `POST …/workflow-override/approve`;
+  - `POST …/workflow/override/rebase-apply` (403 for a writer).
+- **Self-approval:** an approver may activate their own version. `self_approved` is in the approve and publish responses and in the audit log; there is no `SELF_APPROVAL_NOT_ALLOWED` any more.
+- **Version states:** `draft` → `pending_approval` (submit, write permission) → `approved` (approve) or `rejected` (reject, with a reason). An approver can also go `draft` → `approved` directly.
+- **Only the latest version** can be submitted, approved or rejected (409 `STALE_ETAG`), so a draft below a newer version, e.g. a rebase-apply, can no longer be approved. Approving the version that is already active is 409 `STATE_CONFLICT`.
+- **Versions never change content in place:** the step-groups edit writes a new version, and `DELETE …/draft/{version_no}` keeps the row as `state: discarded`, so a version number is never reused. Approving `v:N` activates exactly what was shown as `v:N`.
+- **GET `…/workflow-override`:**
+  - `draft_version` is the latest version while it is open (not `approved` or `discarded`);
+  - it gains `submitted_by`, `submitted_at`, `submit_note` (the submitter's note), `rejected_by`, `rejected_at`, `decision_note` (the rejection reason), all omitempty.
+- **New `POST …/workflow-override/submit`:**
+  - body `{version_no, base_etag?, note?}` (note at most 500 characters, else 422 `details.field=note`), returns `{data: version}`;
+  - 409 `STATE_CONFLICT` unless the version is a draft;
+  - the activation errors (400 `WORKFLOW_OVERRIDE_EMPTY`/`WORKFLOW_OVERRIDE_INVALID`, 422 `WORKFLOW_STEP_DESCRIPTION_REQUIRED`) when the workflow could not be activated;
+  - 400 `INVALID_REQUEST` for a body that is not valid JSON (reject too).
+- **New `POST …/workflow-override/reject`:**
+  - body `{version_no, base_etag?, reason}`, returns `{data: version}`;
+  - 422 `details.field=reason` when the reason is empty or longer than 500 characters;
+  - 409 unless the version is `pending_approval`.
+- **New `GET /api/v1/company/workflow-overrides/pending`** (approve permission):
+  - `{data: {items: [{type_id, type_name, version_no, draft_etag, change_note, submit_note, created_by, created_by_name, submitted_by, submitted_by_name, submitted_at}], total}}`;
+  - lists the overrides whose latest version is pending, oldest submission first, at most 100;
+  - `type_name` comes only from a system type or a type of the same company.
+- **`POST …/workflow/override/conflicts/{id}/resolve`:**
+  - the resolution must be one the conflict type offers (422 `INVALID_RESOLUTION`, `details.resolution_options`);
+  - `merge_manual` needs a valid `resolution_value` for the field (422 `INVALID_REQUEST`, `details.field=resolution_value`, `details.field_path`): `due_rule` `T+N` with N ≥ 1; `assignee_role_ids` a non-empty list of role ids; `reminder_config` with `enabled` (and `days_before`, whole days 1..365, when enabled), so `{}` is refused; `stage` a non-empty string of at most 255 characters; `__step_existence__` a step object with `step_id` and `stage`. `documents`, `groups` and `department_id` take no `merge_manual`;
+  - rebase-apply checks merge_manual values again.
+- **Rebase-apply** returns 409 `STATE_CONFLICT` while the latest version is `pending_approval` (approve or reject it first). Its `data` gains `self_approved` (false when another member resolved a conflict) and `resolved_by`.
+- **Step-groups edit** (`PUT …/draft/steps/{step_id}/groups`) only changes a latest version that is a draft (409 `STATE_CONFLICT` otherwise, was 404); it writes a new version and returns the new `draft_etag` (`v:N+1`).
+- **Audit:** `disclosure.workflow_override.submitted` (`version_no`), `.rejected` (`version_no`, `reason`), `.rebase_applied` (`new_version_no`, `self_approved`, `resolved_by`), `.conflict_resolved` (`conflict_id`, `step_key`, `field_path`, `resolution`, `resolution_value`) are new; `.approved` (`version_no`, `self_approved`, `from_state`) and `.applied` carry `self_approved`.
+- **Migration** `0156_workflow_override_version_review` adds six nullable review columns (`submitted_by`, `submitted_at`, `submit_note`, `rejected_by`, `rejected_at`, `decision_note`); it is additive. Run it before the BE that reads them.
+
 ## G. HTTP status mapping (goi y)
 
 | HTTP | Khi nao |

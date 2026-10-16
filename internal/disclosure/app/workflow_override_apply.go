@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"slices"
 	"time"
 
 	authapp "github.com/cobo/cobo_iam_services/internal/authorization/app"
@@ -30,6 +31,11 @@ type ApplyWorkflowOverrideRebaseDTO struct {
 	State          string    `json:"state"`
 	AppliedAt      time.Time `json:"applied_at"`
 	WorkflowSource string    `json:"workflow_source"`
+	// SelfApproved is false when another member resolved one of the conflicts the applied version
+	// carries (ResolvedBy lists them): the approver activates content they did not choose
+	// (MR-4 review ROLE-02).
+	SelfApproved bool     `json:"self_approved"`
+	ResolvedBy   []string `json:"resolved_by,omitempty"`
 }
 
 type ApplyWorkflowOverrideRebaseResponse struct {
@@ -75,7 +81,9 @@ func (s *service) ApplyWorkflowOverrideRebase(ctx context.Context, req ApplyWork
 	if req.PreviewID == "" {
 		return nil, perr.NewHTTPError(http.StatusBadRequest, perr.CodeInvalidRequest, "preview_id is required", nil)
 	}
-	if err := s.authorize(ctx, req.Subject, "template.workflow.override.write", authapp.ResourceRef{
+	// Rebase-apply writes the active version directly, so it needs the approve permission like
+	// every other activation (MR-4, Q5-B); a writer gets 403 before any side effect.
+	if err := s.authorize(ctx, req.Subject, "template.workflow.override.approve", authapp.ResourceRef{
 		Type: "disclosure_type",
 		ID:   typeID,
 	}); err != nil {
@@ -144,13 +152,24 @@ func (s *service) ApplyWorkflowOverrideRebase(ctx context.Context, req ApplyWork
 	// (__step_existence__, Rule 2/6) are intentionally excluded — those are already handled by
 	// ApplyPatchOperations' own resolution-aware add_step/remove_step branches.
 	allOps := computed.Ops
+	var otherResolvers []string
 	for _, c := range computed.PersistedConflicts {
+		if c.ResolvedBy != nil && *c.ResolvedBy != "" && *c.ResolvedBy != req.Subject.UserID && !slices.Contains(otherResolvers, *c.ResolvedBy) {
+			otherResolvers = append(otherResolvers, *c.ResolvedBy)
+		}
 		if c.FieldPath == "__step_existence__" {
 			continue
 		}
 		resolution := ""
 		if c.Resolution != nil {
 			resolution = *c.Resolution
+		}
+		// A merge_manual value is checked when resolved; check again so a row resolved before
+		// that check (or written another way) cannot slip an invalid value into the snapshot.
+		if resolution == ResolutionMergeManual {
+			if err := ValidateMergeManualValue(c.FieldPath, c.ResolutionValue); err != nil {
+				return nil, err
+			}
 		}
 		if op := fieldConflictResolutionToOp(c.StepKey, c.FieldPath, resolution, c.GlobalNew, c.ResolutionValue); op != nil {
 			allOps = append(allOps, *op)
@@ -200,5 +219,7 @@ func (s *service) ApplyWorkflowOverrideRebase(ctx context.Context, req ApplyWork
 		State:          "approved",
 		AppliedAt:      result.AppliedAt,
 		WorkflowSource: "company_override",
+		SelfApproved:   len(otherResolvers) == 0,
+		ResolvedBy:     otherResolvers,
 	}}, nil
 }

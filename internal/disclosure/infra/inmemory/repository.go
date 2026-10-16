@@ -1041,19 +1041,98 @@ func (r *Repository) GetCompanyWorkflowOverride(_ context.Context, companyID, ty
 	} else {
 		view.EffectiveSource = r.resolveCMSDefaultEffectiveSourceLocked(companyID, typeID)
 	}
-	var latestDraft *disclosureapp.CompanyWorkflowOverrideVersionDTO
-	for _, v := range st.versions {
-		if v.State != "draft" {
-			continue
-		}
-		cp := v
-		cp.Workflow = cloneWorkflowSteps(v.Workflow)
-		if latestDraft == nil || cp.VersionNo > latestDraft.VersionNo {
-			latestDraft = &cp
+	// Same rule as MySQL: the draft is the latest version while it is open (not approved or
+	// discarded).
+	if latest, ok := st.versions[latestOverrideVersionNo(st)]; ok && latest.State != disclosureapp.OverrideVersionStateApproved && latest.State != disclosureapp.OverrideVersionStateDiscarded {
+		cp := latest
+		cp.Workflow = cloneWorkflowSteps(latest.Workflow)
+		view.DraftVersion = &cp
+	}
+	return view, nil
+}
+
+func latestOverrideVersionNo(st *overrideState) int {
+	latest := 0
+	for vn := range st.versions {
+		if vn > latest {
+			latest = vn
 		}
 	}
-	view.DraftVersion = latestDraft
-	return view, nil
+	return latest
+}
+
+func (r *Repository) SubmitCompanyWorkflowOverride(_ context.Context, req disclosureapp.SubmitCompanyWorkflowOverrideRequest) (*disclosureapp.CompanyWorkflowOverrideVersionDTO, error) {
+	return r.reviewOverrideLocked(req.Subject.CompanyID, req.TypeID, req.VersionNo,
+		disclosureapp.OverrideVersionStateDraft, func(v *disclosureapp.CompanyWorkflowOverrideVersionDTO, now time.Time) {
+			v.State = disclosureapp.OverrideVersionStatePendingApproval
+			v.SubmittedBy = req.Subject.UserID
+			v.SubmittedAt = &now
+			v.SubmitNote = strings.TrimSpace(req.Note)
+			v.RejectedBy, v.RejectedAt, v.DecisionNote = "", nil, ""
+		})
+}
+
+func (r *Repository) RejectCompanyWorkflowOverride(_ context.Context, req disclosureapp.RejectCompanyWorkflowOverrideRequest) (*disclosureapp.CompanyWorkflowOverrideVersionDTO, error) {
+	return r.reviewOverrideLocked(req.Subject.CompanyID, req.TypeID, req.VersionNo,
+		disclosureapp.OverrideVersionStatePendingApproval, func(v *disclosureapp.CompanyWorkflowOverrideVersionDTO, now time.Time) {
+			v.State = disclosureapp.OverrideVersionStateRejected
+			v.RejectedBy = req.Subject.UserID
+			v.RejectedAt = &now
+			v.DecisionNote = strings.TrimSpace(req.Reason)
+		})
+}
+
+func (r *Repository) reviewOverrideLocked(companyID, typeID string, versionNo int, from string, apply func(*disclosureapp.CompanyWorkflowOverrideVersionDTO, time.Time)) (*disclosureapp.CompanyWorkflowOverrideVersionDTO, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	st, ok := r.overrideByCompanyType[overrideKey(companyID, typeID)]
+	if !ok {
+		return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "workflow override not found", nil)
+	}
+	v, ok := st.versions[versionNo]
+	if !ok {
+		return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "workflow override version not found", nil)
+	}
+	if v.State != from {
+		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "workflow override version is "+v.State+", expected "+from, nil)
+	}
+	if versionNo != latestOverrideVersionNo(st) {
+		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStaleEtag, "a newer workflow override version exists; reload and retry", nil)
+	}
+	apply(&v, time.Now().UTC())
+	st.versions[versionNo] = v
+	cp := v
+	cp.Workflow = cloneWorkflowSteps(v.Workflow)
+	return &cp, nil
+}
+
+func (r *Repository) ListPendingCompanyWorkflowOverrides(_ context.Context, companyID string, limit int) ([]disclosureapp.PendingCompanyWorkflowOverrideItem, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := []disclosureapp.PendingCompanyWorkflowOverrideItem{}
+	for _, st := range r.overrideByCompanyType {
+		if st.header.CompanyID != companyID {
+			continue
+		}
+		v, ok := st.versions[latestOverrideVersionNo(st)]
+		if !ok || v.State != disclosureapp.OverrideVersionStatePendingApproval {
+			continue
+		}
+		out = append(out, disclosureapp.PendingCompanyWorkflowOverrideItem{
+			TypeID: st.header.TypeID, VersionNo: v.VersionNo, ChangeNote: v.ChangeNote, SubmitNote: v.SubmitNote,
+			CreatedBy: v.CreatedBy, SubmittedBy: v.SubmittedBy, SubmittedAt: v.SubmittedAt,
+		})
+	}
+	slices.SortFunc(out, func(a, b disclosureapp.PendingCompanyWorkflowOverrideItem) int {
+		if a.SubmittedAt != nil && b.SubmittedAt != nil && !a.SubmittedAt.Equal(*b.SubmittedAt) {
+			return a.SubmittedAt.Compare(*b.SubmittedAt)
+		}
+		return strings.Compare(a.TypeID, b.TypeID)
+	})
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
 }
 
 func (r *Repository) resolveCMSDefaultEffectiveSourceLocked(_, _ string) string {
@@ -1107,29 +1186,49 @@ func (r *Repository) UpsertCompanyWorkflowOverrideDraft(_ context.Context, req d
 		}
 		r.overrideByCompanyType[k] = st
 	}
+	// Same stale rule as MySQL: a base version must be the latest version that is not discarded.
+	latestKept := 0
+	for vn, v := range st.versions {
+		if v.State != disclosureapp.OverrideVersionStateDiscarded && vn > latestKept {
+			latestKept = vn
+		}
+	}
+	if req.BaseVersionNo > 0 && latestKept > 0 && req.BaseVersionNo != latestKept {
+		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStaleEtag, "draft has been modified by another session; reload and retry", nil)
+	}
 	nextVersion := 1
 	for v := range st.versions {
 		if v >= nextVersion {
 			nextVersion = v + 1
 		}
 	}
-	st.versions[nextVersion] = disclosureapp.CompanyWorkflowOverrideVersionDTO{
+	version := disclosureapp.CompanyWorkflowOverrideVersionDTO{
 		VersionNo:  nextVersion,
-		State:      "draft",
+		State:      disclosureapp.OverrideVersionStateDraft,
 		ChangeNote: strings.TrimSpace(req.ChangeNote),
 		Workflow:   cloneWorkflowSteps(req.Workflow),
 		CreatedBy:  req.Subject.UserID,
 		CreatedAt:  now,
 	}
 	st.header.Status = "draft"
+	if req.Publish {
+		// Same as MySQL: publish saves and activates at once (self-approval, MR-4 review DB-01).
+		version.State = disclosureapp.OverrideVersionStateApproved
+		version.ApprovedBy = req.Subject.UserID
+		version.ApprovedAt = &now
+		st.header.ActiveVersionNo = nextVersion
+		st.header.Status = "approved"
+	}
+	st.versions[nextVersion] = version
 	st.header.UpdatedAt = now
 	return &disclosureapp.UpsertCompanyWorkflowOverrideDraftResponse{
 		OverrideID:     st.header.OverrideID,
 		TypeID:         req.TypeID,
 		CompanyID:      req.Subject.CompanyID,
 		DraftVersionNo: nextVersion,
-		State:          "draft",
+		State:          version.State,
 		UpdatedAt:      now,
+		SelfApproved:   req.Publish,
 	}, nil
 }
 
@@ -1144,9 +1243,14 @@ func (r *Repository) ApproveCompanyWorkflowOverride(_ context.Context, req discl
 	if !ok {
 		return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "workflow override version not found", nil)
 	}
-	if v.State != "draft" {
-		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "workflow override version is not draft", nil)
+	if v.State != disclosureapp.OverrideVersionStateDraft && v.State != disclosureapp.OverrideVersionStatePendingApproval {
+		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "only a draft or a version pending approval can be approved", nil)
 	}
+	if req.VersionNo != latestOverrideVersionNo(st) {
+		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStaleEtag, "a newer workflow override version exists; reload and retry", nil)
+	}
+	fromState := v.State
+	selfApproved := (v.CreatedBy != "" && v.CreatedBy == req.Subject.UserID) || (v.SubmittedBy != "" && v.SubmittedBy == req.Subject.UserID)
 	now := time.Now().UTC()
 	v.State = "approved"
 	v.ApprovedBy = req.Subject.UserID
@@ -1164,6 +1268,8 @@ func (r *Repository) ApproveCompanyWorkflowOverride(_ context.Context, req discl
 		ApprovedBy:      req.Subject.UserID,
 		ApprovedAt:      now,
 		EffectiveSource: "company_override",
+		SelfApproved:    selfApproved,
+		FromState:       fromState,
 	}, nil
 }
 
@@ -1179,6 +1285,9 @@ func (r *Repository) ApplyWorkflowOverrideRebase(_ context.Context, params discl
 	}
 	if st.header.ActiveVersionNo != params.ExpectedActiveVersionNo {
 		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "override was modified concurrently; re-run rebase-preview and retry", nil)
+	}
+	if latest, ok := st.versions[latestOverrideVersionNo(st)]; ok && latest.State == disclosureapp.OverrideVersionStatePendingApproval {
+		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "a workflow override version is pending approval; approve or reject it before a rebase", nil)
 	}
 
 	nextVersion := 0
@@ -1232,7 +1341,9 @@ func (r *Repository) DeleteCompanyWorkflowOverrideDraft(_ context.Context, req d
 	if v.State != "draft" {
 		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "only draft version can be deleted", nil)
 	}
-	delete(st.versions, req.VersionNo)
+	// Same as MySQL: kept as discarded so the number is never reused (MR-4 review DB-02).
+	v.State = disclosureapp.OverrideVersionStateDiscarded
+	st.versions[req.VersionNo] = v
 	return &disclosureapp.DeleteCompanyWorkflowOverrideDraftResponse{Deleted: true, VersionNo: req.VersionNo}, nil
 }
 

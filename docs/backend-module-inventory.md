@@ -203,6 +203,9 @@ Use it when tracing where a behavior lives in backend code, what FE surfaces con
 - `GET /api/v1/company/disclosure-types/{type_id}/workflow-override`
 - `PUT /api/v1/company/disclosure-types/{type_id}/workflow-override/draft`
 - `POST /api/v1/company/disclosure-types/{type_id}/workflow-override/approve`
+- `POST /api/v1/company/disclosure-types/{type_id}/workflow-override/submit` (MR-4)
+- `POST /api/v1/company/disclosure-types/{type_id}/workflow-override/reject` (MR-4)
+- `GET /api/v1/company/workflow-overrides/pending` (MR-4)
 - `DELETE /api/v1/company/disclosure-types/{type_id}/workflow-override/draft/{version_no}`
 - `DELETE /api/v1/company/disclosure-types/{type_id}/workflow-override/active`
 - `GET /api/v1/company/disclosure-types/{type_id}/workflow-override/versions`

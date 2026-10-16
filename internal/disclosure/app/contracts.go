@@ -35,6 +35,9 @@ type Service interface {
 	GetCompanyWorkflowOverride(ctx context.Context, req GetCompanyWorkflowOverrideRequest) (*GetCompanyWorkflowOverrideResponse, error)
 	UpsertCompanyWorkflowOverrideDraft(ctx context.Context, req UpsertCompanyWorkflowOverrideDraftRequest) (*UpsertCompanyWorkflowOverrideDraftResponse, error)
 	ApproveCompanyWorkflowOverride(ctx context.Context, req ApproveCompanyWorkflowOverrideRequest) (*ApproveCompanyWorkflowOverrideResponse, error)
+	SubmitCompanyWorkflowOverride(ctx context.Context, req SubmitCompanyWorkflowOverrideRequest) (*SubmitCompanyWorkflowOverrideResponse, error)
+	RejectCompanyWorkflowOverride(ctx context.Context, req RejectCompanyWorkflowOverrideRequest) (*RejectCompanyWorkflowOverrideResponse, error)
+	ListPendingCompanyWorkflowOverrides(ctx context.Context, req ListPendingCompanyWorkflowOverridesRequest) (*ListPendingCompanyWorkflowOverridesResponse, error)
 	DeleteCompanyWorkflowOverrideDraft(ctx context.Context, req DeleteCompanyWorkflowOverrideDraftRequest) (*DeleteCompanyWorkflowOverrideDraftResponse, error)
 	ResetCompanyWorkflowOverrideActive(ctx context.Context, req ResetCompanyWorkflowOverrideActiveRequest) (*ResetCompanyWorkflowOverrideActiveResponse, error)
 	ListCompanyWorkflowOverrideVersions(ctx context.Context, req ListCompanyWorkflowOverrideVersionsRequest) (*ListCompanyWorkflowOverrideVersionsResponse, error)
@@ -122,6 +125,13 @@ type Repository interface {
 	GetCompanyWorkflowOverride(ctx context.Context, companyID, typeID string) (*CompanyWorkflowOverrideViewDTO, error)
 	UpsertCompanyWorkflowOverrideDraft(ctx context.Context, req UpsertCompanyWorkflowOverrideDraftRequest) (*UpsertCompanyWorkflowOverrideDraftResponse, error)
 	ApproveCompanyWorkflowOverride(ctx context.Context, req ApproveCompanyWorkflowOverrideRequest) (*ApproveCompanyWorkflowOverrideResponse, error)
+	// SubmitCompanyWorkflowOverride moves the latest version from draft to pending_approval.
+	SubmitCompanyWorkflowOverride(ctx context.Context, req SubmitCompanyWorkflowOverrideRequest) (*CompanyWorkflowOverrideVersionDTO, error)
+	// RejectCompanyWorkflowOverride moves the latest version from pending_approval to rejected.
+	RejectCompanyWorkflowOverride(ctx context.Context, req RejectCompanyWorkflowOverrideRequest) (*CompanyWorkflowOverrideVersionDTO, error)
+	// ListPendingCompanyWorkflowOverrides lists the company's overrides whose latest version is
+	// pending_approval, oldest submission first, at most limit rows.
+	ListPendingCompanyWorkflowOverrides(ctx context.Context, companyID string, limit int) ([]PendingCompanyWorkflowOverrideItem, error)
 	DeleteCompanyWorkflowOverrideDraft(ctx context.Context, req DeleteCompanyWorkflowOverrideDraftRequest) (*DeleteCompanyWorkflowOverrideDraftResponse, error)
 	ResetCompanyWorkflowOverrideActive(ctx context.Context, req ResetCompanyWorkflowOverrideActiveRequest) (*ResetCompanyWorkflowOverrideActiveResponse, error)
 	ListCompanyWorkflowOverrideVersions(ctx context.Context, companyID, typeID string, page, pageSize int) ([]CompanyWorkflowOverrideVersionDTO, int, error)
@@ -649,7 +659,28 @@ type CompanyWorkflowOverrideVersionDTO struct {
 	ApprovedBy string            `json:"approved_by,omitempty"`
 	ApprovedAt *time.Time        `json:"approved_at,omitempty"`
 	CreatedAt  time.Time         `json:"created_at"`
+
+	// Review of the version (MR-4, Q5-B): who submitted it for approval (with their note) or
+	// rejected it (with the reason, decision_note). Set on the draft version returned by GET.
+	SubmittedBy  string     `json:"submitted_by,omitempty"`
+	SubmittedAt  *time.Time `json:"submitted_at,omitempty"`
+	SubmitNote   string     `json:"submit_note,omitempty"`
+	RejectedBy   string     `json:"rejected_by,omitempty"`
+	RejectedAt   *time.Time `json:"rejected_at,omitempty"`
+	DecisionNote string     `json:"decision_note,omitempty"`
 }
+
+// Override version states. A version becomes active only through approve (or publish:true /
+// rebase-apply), which require template.workflow.override.approve (MR-4, Q5-B).
+const (
+	OverrideVersionStateDraft           = "draft"
+	OverrideVersionStatePendingApproval = "pending_approval"
+	OverrideVersionStateApproved        = "approved"
+	OverrideVersionStateRejected        = "rejected"
+	// OverrideVersionStateDiscarded marks a draft deleted by DELETE …/draft/{version_no}: the row
+	// stays so its version number is never reused for other content.
+	OverrideVersionStateDiscarded = "discarded"
+)
 
 type CompanyWorkflowOverrideViewDTO struct {
 	TypeID          string                             `json:"type_id"`
@@ -691,6 +722,8 @@ type UpsertCompanyWorkflowOverrideDraftResponse struct {
 	State          string            `json:"state"`
 	UpdatedAt      time.Time         `json:"updated_at"`
 	Workflow       []WorkflowStepDTO `json:"workflow"`
+	// SelfApproved is set by publish:true: the author activated their own version (MR-4, Q5-B).
+	SelfApproved bool `json:"self_approved,omitempty"`
 }
 
 type ApproveCompanyWorkflowOverrideRequest struct {
@@ -699,9 +732,6 @@ type ApproveCompanyWorkflowOverrideRequest struct {
 	BaseEtag  string `json:"base_etag,omitempty"`
 	VersionNo int    `json:"version_no"`
 	Reason    string `json:"reason"`
-	// SkipSelfApprovalCheck bypasses the maker-checker guard.
-	// Used internally by the save+apply (publish) path.
-	SkipSelfApprovalCheck bool `json:"-"`
 }
 
 type ApproveCompanyWorkflowOverrideResponse struct {
@@ -713,6 +743,59 @@ type ApproveCompanyWorkflowOverrideResponse struct {
 	ApprovedBy      string    `json:"approved_by"`
 	ApprovedAt      time.Time `json:"approved_at"`
 	EffectiveSource string    `json:"effective_source"`
+	// SelfApproved: the approver also authored or submitted the version (MR-4, Q5-B). Allowed
+	// for holders of the approve permission, and recorded in the audit log.
+	SelfApproved bool `json:"self_approved"`
+	// FromState is the state the version left: draft or pending_approval.
+	FromState string `json:"from_state"`
+}
+
+type SubmitCompanyWorkflowOverrideRequest struct {
+	Subject   Subject
+	TypeID    string `json:"type_id"`
+	BaseEtag  string `json:"base_etag,omitempty"`
+	VersionNo int    `json:"version_no"`
+	Note      string `json:"note,omitempty"`
+}
+
+type SubmitCompanyWorkflowOverrideResponse struct {
+	Data CompanyWorkflowOverrideVersionDTO `json:"data"`
+}
+
+type RejectCompanyWorkflowOverrideRequest struct {
+	Subject   Subject
+	TypeID    string `json:"type_id"`
+	BaseEtag  string `json:"base_etag,omitempty"`
+	VersionNo int    `json:"version_no"`
+	Reason    string `json:"reason"`
+}
+
+type RejectCompanyWorkflowOverrideResponse struct {
+	Data CompanyWorkflowOverrideVersionDTO `json:"data"`
+}
+
+type ListPendingCompanyWorkflowOverridesRequest struct {
+	Subject Subject
+}
+
+// PendingCompanyWorkflowOverrideItem is one override waiting for an approver.
+type PendingCompanyWorkflowOverrideItem struct {
+	TypeID          string     `json:"type_id"`
+	TypeName        string     `json:"type_name"`
+	VersionNo       int        `json:"version_no"`
+	DraftEtag       string     `json:"draft_etag"`
+	ChangeNote      string     `json:"change_note"`
+	SubmitNote      string     `json:"submit_note,omitempty"`
+	CreatedBy       string     `json:"created_by"`
+	CreatedByName   string     `json:"created_by_name"`
+	SubmittedBy     string     `json:"submitted_by"`
+	SubmittedByName string     `json:"submitted_by_name"`
+	SubmittedAt     *time.Time `json:"submitted_at,omitempty"`
+}
+
+type ListPendingCompanyWorkflowOverridesResponse struct {
+	Items []PendingCompanyWorkflowOverrideItem `json:"items"`
+	Total int                                  `json:"total"`
 }
 
 type DeleteCompanyWorkflowOverrideDraftRequest struct {

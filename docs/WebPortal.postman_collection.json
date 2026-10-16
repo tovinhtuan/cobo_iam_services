@@ -392,6 +392,56 @@
           }
         },
         {
+          "name": "Submit Workflow Override For Approval (MR-4)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"version_no\": 2,\n  \"note\": \"Nhờ duyệt\"\n}" },
+            "url": {
+              "raw": "{{base_url}}/api/v1/company/disclosure-types/{{type_id}}/workflow-override/submit",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "company", "disclosure-types", "{{type_id}}", "workflow-override", "submit"]
+            }
+          }
+        },
+        {
+          "name": "Approve Workflow Override (MR-4)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"version_no\": 2,\n  \"reason\": \"OK\"\n}" },
+            "url": {
+              "raw": "{{base_url}}/api/v1/company/disclosure-types/{{type_id}}/workflow-override/approve",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "company", "disclosure-types", "{{type_id}}", "workflow-override", "approve"]
+            }
+          }
+        },
+        {
+          "name": "Reject Workflow Override (MR-4)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"version_no\": 2,\n  \"reason\": \"Thiếu bước rà soát pháp lý\"\n}" },
+            "url": {
+              "raw": "{{base_url}}/api/v1/company/disclosure-types/{{type_id}}/workflow-override/reject",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "company", "disclosure-types", "{{type_id}}", "workflow-override", "reject"]
+            }
+          }
+        },
+        {
+          "name": "List Workflow Overrides Pending Approval (MR-4)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/company/workflow-overrides/pending",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "company", "workflow-overrides", "pending"]
+            }
+          }
+        },
+        {
           "name": "Preview Reminder Schedule",
           "request": {
             "method": "GET",

@@ -166,6 +166,7 @@ seed_dev_identity_authorization.sql
 0153_periodic_cycles_failed_claim_fence.up.sql
 0154_periodic_cycles_suspend_archived_templates.up.sql
 0155_adhoc_multi_reviewer_tables_backfill.up.sql
+0156_workflow_override_version_review.up.sql
 seed_dev_company_subscriptions.sql
 "
 

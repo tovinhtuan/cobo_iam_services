@@ -1575,21 +1575,59 @@ func (r *Repository) GetCompanyWorkflowOverride(ctx context.Context, companyID, 
 		// Not customized (or reset): label CMS default via canonical resolver — do not hardcode global_template.
 		view.EffectiveSource = r.resolveCMSDefaultEffectiveSource(ctx, companyID, typeID)
 	}
+	// The draft is the latest version while it is open (draft, pending_approval or rejected; not
+	// approved or discarded). An older draft below a newer version is superseded and not shown
+	// (MR-4, WF-08c).
 	draftRow := r.db.QueryRowContext(ctx, `
-		SELECT version_no, state, COALESCE(change_note, ''), workflow_json, created_by, COALESCE(approved_by, ''), approved_at, created_at
+		SELECT version_no, state, COALESCE(change_note, ''), workflow_json, created_by, COALESCE(approved_by, ''), approved_at, created_at,
+		       COALESCE(submitted_by, ''), submitted_at, COALESCE(submit_note, ''), COALESCE(rejected_by, ''), rejected_at, COALESCE(decision_note, '')
 		FROM company_template_workflow_override_versions
-		WHERE override_id = ? AND state = 'draft'
+		WHERE override_id = ?
 		ORDER BY version_no DESC
 		LIMIT 1
 	`, header.OverrideID)
-	draft, err := scanCompanyOverrideVersion(draftRow)
+	draft, err := scanCompanyOverrideReviewVersion(draftRow)
 	if err != nil && err != sql.ErrNoRows {
 		return nil, err
 	}
-	if err == nil {
+	if err == nil && draft.State != disclosureapp.OverrideVersionStateApproved && draft.State != disclosureapp.OverrideVersionStateDiscarded {
 		view.DraftVersion = draft
 	}
 	return view, nil
+}
+
+// scanCompanyOverrideReviewVersion scans scanCompanyOverrideVersion's columns followed by the
+// review columns (submitted_by, submitted_at, submit_note, rejected_by, rejected_at, decision_note).
+func scanCompanyOverrideReviewVersion(scanner rowScanner) (*disclosureapp.CompanyWorkflowOverrideVersionDTO, error) {
+	var item disclosureapp.CompanyWorkflowOverrideVersionDTO
+	var workflowRaw []byte
+	var approvedBy string
+	var approvedAt, submittedAt, rejectedAt sql.NullTime
+	if err := scanner.Scan(&item.VersionNo, &item.State, &item.ChangeNote, &workflowRaw, &item.CreatedBy, &approvedBy, &approvedAt, &item.CreatedAt,
+		&item.SubmittedBy, &submittedAt, &item.SubmitNote, &item.RejectedBy, &rejectedAt, &item.DecisionNote); err != nil {
+		return nil, err
+	}
+	if len(workflowRaw) > 0 {
+		if err := json.Unmarshal(workflowRaw, &item.Workflow); err != nil {
+			return nil, err
+		}
+	} else {
+		item.Workflow = []disclosureapp.WorkflowStepDTO{}
+	}
+	item.ApprovedBy = strings.TrimSpace(approvedBy)
+	if approvedAt.Valid {
+		t := approvedAt.Time
+		item.ApprovedAt = &t
+	}
+	if submittedAt.Valid {
+		t := submittedAt.Time
+		item.SubmittedAt = &t
+	}
+	if rejectedAt.Valid {
+		t := rejectedAt.Time
+		item.RejectedAt = &t
+	}
+	return &item, nil
 }
 
 // resolveCMSDefaultEffectiveSource preserves the existing wire value while the
@@ -1629,13 +1667,15 @@ func (r *Repository) UpsertCompanyWorkflowOverrideDraft(ctx context.Context, req
 		}
 	}
 
-	// Stale etag check: if caller sent a base version, ensure it matches the latest draft.
+	// Stale etag check: if caller sent a base version, ensure it is the latest version (draft,
+	// pending, rejected or the active one); a newer version of any state but discarded makes the
+	// edit stale.
 	if req.BaseVersionNo > 0 {
 		var latestDraft int
 		if err := tx.QueryRowContext(ctx, `
 			SELECT COALESCE(MAX(version_no), 0)
 			FROM company_template_workflow_override_versions
-			WHERE override_id = ? AND state = 'draft'
+			WHERE override_id = ? AND state <> 'discarded'
 		`, overrideID).Scan(&latestDraft); err != nil {
 			return nil, err
 		}
@@ -1663,7 +1703,27 @@ func (r *Repository) UpsertCompanyWorkflowOverrideDraft(ctx context.Context, req
 	`, overrideID, nextVersion, string(workflowJSON), req.ChangeNote, req.Subject.UserID, now, now); err != nil {
 		return nil, err
 	}
-	if _, err := tx.ExecContext(ctx, `
+	state := disclosureapp.OverrideVersionStateDraft
+	if req.Publish {
+		// publish:true saves and activates in this one transaction (MR-4 review DB-01): no draft is
+		// left behind when activation fails. The caller checked the approve permission first; the
+		// author activates their own version, i.e. self-approval.
+		state = disclosureapp.OverrideVersionStateApproved
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE company_template_workflow_override_versions
+			SET state = 'approved', approved_by = ?, approved_at = ?, updated_at = ?
+			WHERE override_id = ? AND version_no = ?
+		`, req.Subject.UserID, now, now, overrideID, nextVersion); err != nil {
+			return nil, err
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE company_template_workflow_overrides
+			SET active_version_no = ?, status = 'approved', approved_by = ?, approved_at = ?, updated_by = ?, updated_at = ?
+			WHERE override_id = ?
+		`, nextVersion, req.Subject.UserID, now, req.Subject.UserID, now, overrideID); err != nil {
+			return nil, err
+		}
+	} else if _, err := tx.ExecContext(ctx, `
 		UPDATE company_template_workflow_overrides
 		SET status = 'draft', updated_by = ?, updated_at = ?
 		WHERE override_id = ?
@@ -1678,8 +1738,9 @@ func (r *Repository) UpsertCompanyWorkflowOverrideDraft(ctx context.Context, req
 		TypeID:         req.TypeID,
 		CompanyID:      req.Subject.CompanyID,
 		DraftVersionNo: nextVersion,
-		State:          "draft",
+		State:          state,
 		UpdatedAt:      now,
+		SelfApproved:   req.Publish,
 	}, nil
 }
 
@@ -1703,37 +1764,27 @@ func (r *Repository) ApproveCompanyWorkflowOverride(ctx context.Context, req dis
 		}
 		return nil, err
 	}
-	var state, createdBy string
+	var state, createdBy, submittedBy string
 	if err := tx.QueryRowContext(ctx, `
-		SELECT state, COALESCE(created_by, '')
+		SELECT state, COALESCE(created_by, ''), COALESCE(submitted_by, '')
 		FROM company_template_workflow_override_versions
 		WHERE override_id = ? AND version_no = ?
-	`, overrideID, req.VersionNo).Scan(&state, &createdBy); err != nil {
+	`, overrideID, req.VersionNo).Scan(&state, &createdBy, &submittedBy); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "workflow override version not found", nil)
 		}
 		return nil, err
 	}
-	if state != "draft" {
-		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "workflow override version is not draft", nil)
+	if state != disclosureapp.OverrideVersionStateDraft && state != disclosureapp.OverrideVersionStatePendingApproval {
+		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "only a draft or a version pending approval can be approved", nil)
 	}
-	// Self-approval guard: drafter cannot approve their own draft.
-	// Bypassed when SkipSelfApprovalCheck=true (save+apply path).
-	if !req.SkipSelfApprovalCheck && createdBy != "" && createdBy == req.Subject.UserID {
-		return nil, perr.NewHTTPError(http.StatusForbidden, perr.CodeSelfApprovalNotAllowed, "drafter cannot approve their own workflow draft", nil)
-	}
-	// Stale etag guard: req.VersionNo must be the latest draft version.
-	var latestDraft int
-	if err := tx.QueryRowContext(ctx, `
-		SELECT COALESCE(MAX(version_no), 0)
-		FROM company_template_workflow_override_versions
-		WHERE override_id = ? AND state = 'draft'
-	`, overrideID).Scan(&latestDraft); err != nil {
+	// Stale guard: only the latest version can be activated (an older draft below a rebase-apply's
+	// version is stale, WF-08c). The approver may be the author: MR-4 Q5-B lets holders of the
+	// approve permission activate their own version, and the caller audits it as self_approved.
+	if err := overrideVersionIsLatest(ctx, tx, overrideID, req.VersionNo); err != nil {
 		return nil, err
 	}
-	if latestDraft > 0 && req.VersionNo != latestDraft {
-		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStaleEtag, "a newer draft version exists; reload and approve the latest draft", nil)
-	}
+	selfApproved := (createdBy != "" && createdBy == req.Subject.UserID) || (submittedBy != "" && submittedBy == req.Subject.UserID)
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE company_template_workflow_override_versions
 		SET state = CASE WHEN version_no = ? THEN 'approved' ELSE state END,
@@ -1763,15 +1814,151 @@ func (r *Repository) ApproveCompanyWorkflowOverride(ctx context.Context, req dis
 		ApprovedBy:      req.Subject.UserID,
 		ApprovedAt:      now,
 		EffectiveSource: "company_override",
+		SelfApproved:    selfApproved,
+		FromState:       state,
 	}, nil
 }
 
+// overrideVersionIsLatest returns 409 STALE_ETAG when a newer version of the override exists.
+// Callers hold the override header row lock (FOR UPDATE), so versions cannot be added meanwhile.
+func overrideVersionIsLatest(ctx context.Context, tx *sql.Tx, overrideID string, versionNo int) error {
+	var latest int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COALESCE(MAX(version_no), 0)
+		FROM company_template_workflow_override_versions
+		WHERE override_id = ?
+	`, overrideID).Scan(&latest); err != nil {
+		return err
+	}
+	if versionNo != latest {
+		return perr.NewHTTPError(http.StatusConflict, perr.CodeStaleEtag, "a newer workflow override version exists; reload and retry", nil)
+	}
+	return nil
+}
+
+// reviewCompanyWorkflowOverride moves the latest version from one state to another under the
+// override header lock and returns it (MR-4, Q5-B). set is the SET list for the review columns.
+func (r *Repository) reviewCompanyWorkflowOverride(ctx context.Context, companyID, typeID string, versionNo int, from, to, set string, args ...any) (*disclosureapp.CompanyWorkflowOverrideVersionDTO, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var overrideID string
+	if err := tx.QueryRowContext(ctx, `
+		SELECT override_id
+		FROM company_template_workflow_overrides
+		WHERE company_id = ? AND type_id = ?
+		FOR UPDATE
+	`, companyID, typeID).Scan(&overrideID); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "workflow override not found", nil)
+		}
+		return nil, err
+	}
+	var state string
+	if err := tx.QueryRowContext(ctx, `
+		SELECT state FROM company_template_workflow_override_versions WHERE override_id = ? AND version_no = ?
+	`, overrideID, versionNo).Scan(&state); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "workflow override version not found", nil)
+		}
+		return nil, err
+	}
+	if state != from {
+		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "workflow override version is "+state+", expected "+from, nil)
+	}
+	if err := overrideVersionIsLatest(ctx, tx, overrideID, versionNo); err != nil {
+		return nil, err
+	}
+	params := append([]any{to}, args...)
+	params = append(params, time.Now().UTC(), overrideID, versionNo, from)
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE company_template_workflow_override_versions
+		SET state = ?, `+set+`, updated_at = ?
+		WHERE override_id = ? AND version_no = ? AND state = ?
+	`, params...); err != nil {
+		return nil, err
+	}
+	row := tx.QueryRowContext(ctx, `
+		SELECT version_no, state, COALESCE(change_note, ''), workflow_json, created_by, COALESCE(approved_by, ''), approved_at, created_at,
+		       COALESCE(submitted_by, ''), submitted_at, COALESCE(submit_note, ''), COALESCE(rejected_by, ''), rejected_at, COALESCE(decision_note, '')
+		FROM company_template_workflow_override_versions
+		WHERE override_id = ? AND version_no = ?
+	`, overrideID, versionNo)
+	v, err := scanCompanyOverrideReviewVersion(row)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return v, nil
+}
+
+func (r *Repository) SubmitCompanyWorkflowOverride(ctx context.Context, req disclosureapp.SubmitCompanyWorkflowOverrideRequest) (*disclosureapp.CompanyWorkflowOverrideVersionDTO, error) {
+	return r.reviewCompanyWorkflowOverride(ctx, req.Subject.CompanyID, req.TypeID, req.VersionNo,
+		disclosureapp.OverrideVersionStateDraft, disclosureapp.OverrideVersionStatePendingApproval,
+		"submitted_by = ?, submitted_at = ?, submit_note = NULLIF(?, ''), rejected_by = NULL, rejected_at = NULL, decision_note = NULL",
+		req.Subject.UserID, time.Now().UTC(), strings.TrimSpace(req.Note))
+}
+
+func (r *Repository) RejectCompanyWorkflowOverride(ctx context.Context, req disclosureapp.RejectCompanyWorkflowOverrideRequest) (*disclosureapp.CompanyWorkflowOverrideVersionDTO, error) {
+	return r.reviewCompanyWorkflowOverride(ctx, req.Subject.CompanyID, req.TypeID, req.VersionNo,
+		disclosureapp.OverrideVersionStatePendingApproval, disclosureapp.OverrideVersionStateRejected,
+		"rejected_by = ?, rejected_at = ?, decision_note = ?",
+		req.Subject.UserID, time.Now().UTC(), strings.TrimSpace(req.Reason))
+}
+
+// ListPendingCompanyWorkflowOverrides lists the company's overrides whose latest version is
+// pending approval, with the template name and the author's and submitter's names.
+func (r *Repository) ListPendingCompanyWorkflowOverrides(ctx context.Context, companyID string, limit int) ([]disclosureapp.PendingCompanyWorkflowOverrideItem, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT o.type_id, COALESCE(dtv.name, ''), v.version_no, COALESCE(v.change_note, ''), COALESCE(v.submit_note, ''),
+		       COALESCE(v.created_by, ''), COALESCE(cu.full_name, ''), COALESCE(v.submitted_by, ''), COALESCE(su.full_name, ''), v.submitted_at
+		FROM company_template_workflow_overrides o
+		INNER JOIN company_template_workflow_override_versions v
+		  ON v.override_id = o.override_id AND v.state = 'pending_approval'
+		 AND v.version_no = (SELECT MAX(v2.version_no) FROM company_template_workflow_override_versions v2 WHERE v2.override_id = o.override_id)
+		LEFT JOIN disclosure_types dt ON dt.type_id = o.type_id AND (dt.company_id IS NULL OR dt.company_id = o.company_id)
+		LEFT JOIN disclosure_type_versions dtv ON dtv.type_id = dt.type_id
+		 AND dtv.version_no = COALESCE(NULLIF(dt.active_version_no, 0), dt.archived_from_version_no)
+		LEFT JOIN users cu ON cu.user_id = v.created_by
+		LEFT JOIN users su ON su.user_id = v.submitted_by
+		WHERE o.company_id = ?
+		ORDER BY v.submitted_at ASC, o.type_id ASC
+		LIMIT ?
+	`, companyID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list pending workflow overrides: %w", err)
+	}
+	defer rows.Close()
+	out := []disclosureapp.PendingCompanyWorkflowOverrideItem{}
+	for rows.Next() {
+		var item disclosureapp.PendingCompanyWorkflowOverrideItem
+		var submittedAt sql.NullTime
+		if err := rows.Scan(&item.TypeID, &item.TypeName, &item.VersionNo, &item.ChangeNote, &item.SubmitNote, &item.CreatedBy, &item.CreatedByName,
+			&item.SubmittedBy, &item.SubmittedByName, &submittedAt); err != nil {
+			return nil, fmt.Errorf("scan pending workflow override: %w", err)
+		}
+		if submittedAt.Valid {
+			t := submittedAt.Time
+			item.SubmittedAt = &t
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
+
 func (r *Repository) DeleteCompanyWorkflowOverrideDraft(ctx context.Context, req disclosureapp.DeleteCompanyWorkflowOverrideDraftRequest) (*disclosureapp.DeleteCompanyWorkflowOverrideDraftResponse, error) {
+	// The row is kept as 'discarded' rather than deleted, so its version number is never reused
+	// for other content an approver did not see (MR-4 review DB-02).
 	res, err := r.db.ExecContext(ctx, `
-		DELETE v FROM company_template_workflow_override_versions v
+		UPDATE company_template_workflow_override_versions v
 		INNER JOIN company_template_workflow_overrides o ON o.override_id = v.override_id
+		SET v.state = 'discarded', v.updated_at = ?
 		WHERE o.company_id = ? AND o.type_id = ? AND v.version_no = ? AND v.state = 'draft'
-	`, req.Subject.CompanyID, req.TypeID, req.VersionNo)
+	`, time.Now().UTC(), req.Subject.CompanyID, req.TypeID, req.VersionNo)
 	if err != nil {
 		return nil, err
 	}
@@ -2268,17 +2455,23 @@ func (r *Repository) UpdateWorkflowOverrideStepGroups(ctx context.Context, req d
 	baseVersionNo := disclosureapp.ResolveWorkflowBaseVersionNo(0, req.BaseEtag)
 
 	var draftVersionNo int
+	var draftState string
 	var workflowRaw []byte
 	if err := tx.QueryRowContext(ctx, `
-		SELECT version_no, workflow_json
+		SELECT version_no, state, workflow_json
 		FROM company_template_workflow_override_versions
-		WHERE override_id = ? AND state = 'draft'
+		WHERE override_id = ?
 		ORDER BY version_no DESC LIMIT 1
-	`, overrideID).Scan(&draftVersionNo, &workflowRaw); err != nil {
+	`, overrideID).Scan(&draftVersionNo, &draftState, &workflowRaw); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeInvalidRequest, "no draft version found", nil)
 		}
 		return nil, err
+	}
+	// Edits in place only on a draft: a submitted, rejected or active version is not changed
+	// under its reviewer (MR-4, Q5-B); save a new draft instead.
+	if draftState != disclosureapp.OverrideVersionStateDraft {
+		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "the latest workflow override version is not a draft; save a new draft", nil)
 	}
 	if baseVersionNo > 0 && baseVersionNo != draftVersionNo {
 		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStaleEtag, "draft has been modified; reload and retry", nil)
@@ -2385,18 +2578,25 @@ func (r *Repository) UpdateWorkflowOverrideStepGroups(ctx context.Context, req d
 	if err != nil {
 		return nil, fmt.Errorf("marshal updated workflow: %w", err)
 	}
+	// The edit becomes a new draft version (MR-4 review DB-02): content an approver saw under v:N
+	// never changes in place, so approving v:N cannot activate something else.
+	now := time.Now().UTC()
+	newVersionNo := draftVersionNo + 1
 	if _, err := tx.ExecContext(ctx, `
-		UPDATE company_template_workflow_override_versions
-		SET workflow_json = CAST(? AS JSON), updated_at = ?
+		INSERT INTO company_template_workflow_override_versions (
+			override_id, version_no, workflow_json, change_note, state, created_by, created_at, updated_at
+		)
+		SELECT override_id, ?, CAST(? AS JSON), change_note, 'draft', ?, ?, ?
+		FROM company_template_workflow_override_versions
 		WHERE override_id = ? AND version_no = ?
-	`, string(newJSON), time.Now().UTC(), overrideID, draftVersionNo); err != nil {
+	`, newVersionNo, string(newJSON), req.Subject.UserID, now, now, overrideID, draftVersionNo); err != nil {
 		return nil, err
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
 
-	newEtag := disclosureapp.WorkflowDraftEtagFromVersion(draftVersionNo)
+	newEtag := disclosureapp.WorkflowDraftEtagFromVersion(newVersionNo)
 	return &disclosureapp.UpdateWorkflowOverrideStepGroupsResponse{
 		DraftEtag: newEtag,
 		StepID:    req.StepID,

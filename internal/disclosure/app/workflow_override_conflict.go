@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -51,23 +52,23 @@ type PersistedConflictInput struct {
 // PersistedConflictDTO is the durable, API-facing shape — adds `id`/`resolution_status`/etc. to
 // PreviewConflict's fields. Never read by GetEffectiveWorkflow or any runtime path.
 type PersistedConflictDTO struct {
-	ID                string     `json:"id"`
-	PreviewID         *string    `json:"preview_id"`
-	CompanyID         string     `json:"company_id"`
-	TypeID            string     `json:"type_id"`
-	OverrideID        string     `json:"override_id,omitempty"`
-	OverrideVersionNo int        `json:"override_version_no,omitempty"`
-	BaseVersionNo     int        `json:"base_version_no"`
-	TargetVersionNo   int        `json:"target_version_no"`
-	StepKey           string     `json:"step_key"`
-	FieldPath         string     `json:"field_path"`
-	Severity          string     `json:"severity"`
-	ConflictType      string     `json:"conflict_type"`
-	GlobalOld         any        `json:"global_old"`
-	GlobalNew         any        `json:"global_new"`
-	CompanyValue      any        `json:"company_value"`
-	ResolutionStatus  string     `json:"resolution_status"`
-	Resolution        *string    `json:"resolution,omitempty"`
+	ID                string  `json:"id"`
+	PreviewID         *string `json:"preview_id"`
+	CompanyID         string  `json:"company_id"`
+	TypeID            string  `json:"type_id"`
+	OverrideID        string  `json:"override_id,omitempty"`
+	OverrideVersionNo int     `json:"override_version_no,omitempty"`
+	BaseVersionNo     int     `json:"base_version_no"`
+	TargetVersionNo   int     `json:"target_version_no"`
+	StepKey           string  `json:"step_key"`
+	FieldPath         string  `json:"field_path"`
+	Severity          string  `json:"severity"`
+	ConflictType      string  `json:"conflict_type"`
+	GlobalOld         any     `json:"global_old"`
+	GlobalNew         any     `json:"global_new"`
+	CompanyValue      any     `json:"company_value"`
+	ResolutionStatus  string  `json:"resolution_status"`
+	Resolution        *string `json:"resolution,omitempty"`
 	// ResolutionValue is the decoded resolution_json — populated so Batch 5's apply engine can
 	// read a merge_manual resolution's actual replacement value. Additive field, existing column,
 	// no migration; the resolve endpoint's response never set this before (write-only column
@@ -131,6 +132,24 @@ func (s *service) ResolveWorkflowOverrideConflict(ctx context.Context, req Resol
 		return nil, perr.NewHTTPError(http.StatusNotFound, perr.CodeNotFound, "conflict not found", nil)
 	}
 
+	// The resolution must be one the conflict offers, and a merge_manual value must be valid for
+	// the field (MR-4, Q5-B): {} used to switch a step's reminders off silently.
+	// MySQL does not store the options; they follow from the conflict type (MR-4 review API-04).
+	options := existing.ResolutionOptions
+	if len(options) == 0 {
+		options = ResolutionOptionsForConflictType(existing.ConflictType)
+	}
+	if len(options) > 0 && !slices.Contains(options, resolution) {
+		he := perr.NewHTTPError(http.StatusUnprocessableEntity, perr.CodeInvalidResolution, "resolution is not offered for this conflict", nil)
+		he.Details = map[string]any{"field": "resolution", "resolution_options": options}
+		return nil, he
+	}
+	if resolution == ResolutionMergeManual {
+		if err := ValidateMergeManualValue(existing.FieldPath, req.ResolutionValue); err != nil {
+			return nil, err
+		}
+	}
+
 	if existing.ResolutionStatus == ResolutionStatusResolved {
 		if existing.Resolution != nil && *existing.Resolution == resolution {
 			// Same resolution on an already-resolved conflict: idempotent no-op success.
@@ -147,6 +166,25 @@ func (s *service) ResolveWorkflowOverrideConflict(ctx context.Context, req Resol
 		return nil, err
 	}
 	return &ResolveWorkflowOverrideConflictResponse{Data: *updated}, nil
+}
+
+// ResolutionOptionsForConflictType returns the resolutions the conflict rules offer for a
+// conflict type (workflow_override_conflict_rules.go, workflow_override_diff.go); nil for an
+// unknown type.
+func ResolutionOptionsForConflictType(conflictType string) []string {
+	switch conflictType {
+	case ConflictTypeGlobalRenamedCompanyReassigned, ConflictTypeReorderAndDueDateChanged:
+		return []string{ResolutionKeepCompany, ResolutionAcceptGlobal}
+	case ConflictTypeNewMandatoryStepUnresolvedRole, ConflictTypeRoleNoLongerExists, ConflictTypeStepIdentityUnclear:
+		return []string{ResolutionMergeManual}
+	case ConflictTypeGlobalDeletedCustomized:
+		return []string{ResolutionKeepCompany, ResolutionCreateNewStep}
+	case ConflictTypeCompanyRemovedMandatoryStep:
+		return []string{ResolutionMarkNotApplicable, ResolutionAcceptGlobal}
+	case ConflictTypeSameFieldChanged:
+		return []string{ResolutionKeepCompany, ResolutionAcceptGlobal, ResolutionMergeManual}
+	}
+	return nil
 }
 
 // roleRegistryForConflictDetection is the single, process-wide static instance Rules 5/7 use —

@@ -51,6 +51,18 @@ func (r *Repository) ApplyWorkflowOverrideRebase(ctx context.Context, params dis
 	if currentActiveVersionNo != params.ExpectedActiveVersionNo {
 		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "override was modified concurrently; re-run rebase-preview and retry", nil)
 	}
+	// A submission waiting for approval is decided first (approve or reject): a rebase would
+	// supersede it unseen (MR-4 review DB-07).
+	var latestState string
+	if err := tx.QueryRowContext(ctx, `
+		SELECT state FROM company_template_workflow_override_versions
+		WHERE override_id = ? ORDER BY version_no DESC LIMIT 1
+	`, overrideID).Scan(&latestState); err != nil && err != sql.ErrNoRows {
+		return nil, err
+	}
+	if latestState == disclosureapp.OverrideVersionStatePendingApproval {
+		return nil, perr.NewHTTPError(http.StatusConflict, perr.CodeStateConflict, "a workflow override version is pending approval; approve or reject it before a rebase", nil)
+	}
 
 	var nextVersion int
 	if err := tx.QueryRowContext(ctx, `
