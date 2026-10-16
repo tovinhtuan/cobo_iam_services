@@ -5067,7 +5067,7 @@
   - DB test tạm: MySQL 8 trong container riêng, tạo `schema_migrations` trước, chạy migration với `--default-character-set=utf8mb4`.
 
 ## 2026-10-16: MR-2, ad-hoc theo v1.2 §3.2 (H1–H3, XL-06)
-- Hồ sơ: `docs/ai-cache/bug-adhoc-v12-2026-10-16/` (`00-report.md` … `03-review.md`). BE và FE (`cobo_web_design`). Chưa commit, chưa deploy.
+- Hồ sơ: `docs/ai-cache/bug-adhoc-v12-2026-10-16/` (`00-report.md` … `04-deploy-smoke.md`). Commit BE `2d9df78`, FE `a9823e59`. Đã deploy DEV (BE rồi FE). Smoke `scripts/devqa/smoke_adhoc_v12.py` 19/19, gồm double-click approve chỉ sinh 1 workflow instance.
 - Sửa:
   - ngày chốt: giá trị nhập sau cùng thắng, ô trống giữ giá trị; proposal mang giá trị hiện hành;
   - đủ phiếu thì reject/cancel trả 409;
