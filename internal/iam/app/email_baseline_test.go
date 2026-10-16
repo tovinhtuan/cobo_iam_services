@@ -179,8 +179,11 @@ type stubRecoveryForBaseline struct {
 	user *iamapp.RecoveryUser
 }
 
-func (s *stubRecoveryForBaseline) FindUserByEmail(_ context.Context, _ string) (*iamapp.RecoveryUser, error) {
-	return s.user, nil
+func (s *stubRecoveryForBaseline) FindRecoveryUsers(_ context.Context, _ string, _ int) ([]iamapp.RecoveryUser, error) {
+	if s.user == nil {
+		return nil, nil
+	}
+	return []iamapp.RecoveryUser{*s.user}, nil
 }
 
 func (s *stubRecoveryForBaseline) FindUserByUserID(_ context.Context, _ string) (*iamapp.RecoveryUser, error) {

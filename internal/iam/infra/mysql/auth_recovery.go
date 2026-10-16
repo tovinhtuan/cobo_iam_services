@@ -44,25 +44,53 @@ func (r *AuthRecoveryRepository) FindUserByUserID(ctx context.Context, userID st
 	return &u, nil
 }
 
-func (r *AuthRecoveryRepository) FindUserByEmail(ctx context.Context, email string) (*iamapp.RecoveryUser, error) {
-	email = strings.TrimSpace(strings.ToLower(email))
-	row := r.db.QueryRowContext(ctx, `
+func (r *AuthRecoveryRepository) FindRecoveryUsers(ctx context.Context, address string, limit int) ([]iamapp.RecoveryUser, error) {
+	address = strings.TrimSpace(strings.ToLower(address))
+	if address == "" || limit <= 0 {
+		return nil, nil
+	}
+	// Mailbox first: the reset mail must go to the address that was typed. users.email is not unique
+	// (login_id is), and `email = ? OR login_id = ? LIMIT 1` used to pick any one of the matches.
+	users, err := r.queryRecoveryUsers(ctx, `
 		SELECT user_id, IFNULL(email, ''), full_name, login_id
 		FROM users
-		WHERE LOWER(TRIM(email)) = ? OR LOWER(TRIM(login_id)) = ?
+		WHERE LOWER(TRIM(COALESCE(NULLIF(TRIM(email), ''), login_id))) = ?
+		ORDER BY created_at, user_id
+		LIMIT ?
+	`, address, limit)
+	if err != nil || len(users) > 0 {
+		return users, err
+	}
+	// Nobody receives mail there: the address may be a login_id whose mailbox is another email.
+	return r.queryRecoveryUsers(ctx, `
+		SELECT user_id, IFNULL(email, ''), full_name, login_id
+		FROM users
+		WHERE LOWER(TRIM(login_id)) = ?
 		LIMIT 1
-	`, email, email)
-	var u iamapp.RecoveryUser
-	if err := row.Scan(&u.UserID, &u.Email, &u.FullName, &u.LoginID); err != nil {
-		if err == sql.ErrNoRows {
-			return nil, nil
+	`, address)
+}
+
+func (r *AuthRecoveryRepository) queryRecoveryUsers(ctx context.Context, query string, args ...any) ([]iamapp.RecoveryUser, error) {
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("find recovery users: %w", err)
+	}
+	defer rows.Close()
+	var users []iamapp.RecoveryUser
+	for rows.Next() {
+		var u iamapp.RecoveryUser
+		if err := rows.Scan(&u.UserID, &u.Email, &u.FullName, &u.LoginID); err != nil {
+			return nil, fmt.Errorf("find recovery users: %w", err)
 		}
-		return nil, fmt.Errorf("find user by email: %w", err)
+		if strings.TrimSpace(u.Email) == "" {
+			u.Email = u.LoginID
+		}
+		users = append(users, u)
 	}
-	if strings.TrimSpace(u.Email) == "" {
-		u.Email = u.LoginID
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("find recovery users: %w", err)
 	}
-	return &u, nil
+	return users, nil
 }
 
 func (r *AuthRecoveryRepository) StorePasswordResetToken(ctx context.Context, token iamapp.RecoveryTokenRecord) error {

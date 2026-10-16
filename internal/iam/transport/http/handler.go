@@ -117,7 +117,7 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 	req.UserAgent = r.UserAgent()
 	resp, err := h.svc.Login(r.Context(), req)
 	if err != nil {
-		h.auditEvent(r, "login_failure", "deny", "", "", map[string]any{"login_id": req.LoginID})
+		h.auditEvent(r, "login_failure", "deny", "", "", map[string]any{"login_id": req.RecordedIdentifier()})
 		httpx.WriteError(w, h.log, err)
 		return
 	}

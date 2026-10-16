@@ -74,10 +74,7 @@ func NewService(cred CredentialVerifier, sessions SessionRepository, tokens Toke
 }
 
 func (s *service) Login(ctx context.Context, req LoginRequest) (*LoginResponse, error) {
-	loginID := strings.TrimSpace(req.LoginID)
-	if loginID == "" {
-		loginID = strings.TrimSpace(req.Email)
-	}
+	loginID := req.Identifier()
 	var user *AuthenticatedUser
 	if s.sso != nil {
 		u, handled, err := s.sso.TryExternalPrimaryAuth(ctx, req)
@@ -437,7 +434,8 @@ func (s *service) recordLoginAttempt(ctx context.Context, req LoginRequest, user
 	if s.attempts == nil {
 		return
 	}
-	loginID := strings.TrimSpace(strings.ToLower(req.LoginID))
+	// The web form sends `email`, not `login_id`; reading only LoginID dropped every failed attempt.
+	loginID := req.RecordedIdentifier()
 	if user != nil && strings.TrimSpace(user.LoginID) != "" {
 		loginID = strings.TrimSpace(strings.ToLower(user.LoginID))
 	}
@@ -528,14 +526,32 @@ func (s *service) ForgotPassword(ctx context.Context, req ForgotPasswordRequest)
 	if s.recovery == nil {
 		return &ForgotPasswordResponse{Success: true}, nil
 	}
-	user, err := s.recovery.FindUserByEmail(ctx, email)
-	if err != nil || user == nil {
-		// Keep generic response to prevent account enumeration.
-		return &ForgotPasswordResponse{Success: true}, nil
+	users, err := s.recovery.FindRecoveryUsers(ctx, email, maxRecoveryAccountsPerAddress+1)
+	if err != nil {
+		slog.ErrorContext(ctx, "password_reset_lookup_failed", slog.String("err", err.Error()))
 	}
+	if len(users) > maxRecoveryAccountsPerAddress {
+		slog.WarnContext(ctx, "password_reset_address_shared", slog.Int("accounts_over", len(users)-maxRecoveryAccountsPerAddress))
+		users = users[:maxRecoveryAccountsPerAddress]
+	}
+	// Every account that receives mail at this address gets its own link, sent to that address:
+	// picking one of them let the others go unrecoverable (bug-login-old-accounts-2026-10-16).
+	for _, user := range users {
+		if err := s.issuePasswordReset(ctx, user); err != nil {
+			return nil, err
+		}
+	}
+	// Same response whether zero, one or several accounts matched (no account enumeration).
+	return &ForgotPasswordResponse{Success: true}, nil
+}
+
+// maxRecoveryAccountsPerAddress caps the reset mails one request can send to a shared address.
+const maxRecoveryAccountsPerAddress = 5
+
+func (s *service) issuePasswordReset(ctx context.Context, user RecoveryUser) error {
 	rawToken, tokenHash, err := s.generateRawTokenAndHash()
 	if err != nil {
-		return nil, fmt.Errorf("generate reset token: %w", err)
+		return fmt.Errorf("generate reset token: %w", err)
 	}
 	token := RecoveryTokenRecord{
 		TokenID: s.idgen.NewUUID(), UserID: user.UserID, TokenHash: tokenHash, ExpiresAt: time.Now().UTC().Add(s.passwordResetTTL),
@@ -543,15 +559,15 @@ func (s *service) ForgotPassword(ctx context.Context, req ForgotPasswordRequest)
 	if issuer, ok := s.recovery.(LimitedRecoveryIssuer); ok {
 		issued, err := issuer.StorePasswordResetTokenWithinLimits(ctx, token, sendWindows(passwordResetSendLimits, time.Now().UTC()))
 		if err != nil {
-			return nil, fmt.Errorf("store password reset token: %w", err)
+			return fmt.Errorf("store password reset token: %w", err)
 		}
 		if !issued {
 			// Same generic response as an unknown email: the caller must not learn that the account exists.
 			slog.WarnContext(ctx, "password_reset_rate_limited", slog.String("user_id", user.UserID))
-			return &ForgotPasswordResponse{Success: true}, nil
+			return nil
 		}
 	} else if err := s.recovery.StorePasswordResetToken(ctx, token); err != nil {
-		return nil, fmt.Errorf("store password reset token: %w", err)
+		return fmt.Errorf("store password reset token: %w", err)
 	}
 	resetLink := s.buildActionLink("/reset-password", rawToken)
 	customerName := coalesce(user.FullName, user.LoginID)
@@ -569,7 +585,7 @@ func (s *service) ForgotPassword(ctx context.Context, req ForgotPasswordRequest)
 		"subject": subject,
 		"body":    body,
 	})
-	return &ForgotPasswordResponse{Success: true}, nil
+	return nil
 }
 
 func (s *service) ResendVerificationEmail(ctx context.Context, req ResendVerificationEmailRequest) (*ResendVerificationEmailResponse, error) {

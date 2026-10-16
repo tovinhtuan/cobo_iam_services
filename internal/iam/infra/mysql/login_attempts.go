@@ -37,13 +37,17 @@ func (r *LoginAttemptRecorder) Record(ctx context.Context, rec iamapp.LoginAttem
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO login_attempts (login_id, user_id, success, failure_code, ip, user_agent)
 		VALUES (?, ?, ?, ?, ?, ?)
-	`, loginID, uid, success, fc, truncStr(rec.IP, 64), truncStr(rec.UserAgent, 512))
+	`, truncStr(loginID, 191), uid, success, fc, truncStr(rec.IP, 64), truncStr(rec.UserAgent, 512))
 	return err
 }
 
+// truncStr makes s valid UTF-8 and cuts it to max runes (the VARCHAR length). Failed attempts carry
+// whatever was typed and any User-Agent: an over-long value, an invalid byte or a rune cut in half
+// makes the utf8mb4 insert fail, and the attempt goes unrecorded.
 func truncStr(s string, max int) string {
-	if len(s) <= max {
-		return s
+	s = strings.ToValidUTF8(s, "�")
+	if runes := []rune(s); len(runes) > max {
+		return string(runes[:max])
 	}
-	return s[:max]
+	return s
 }

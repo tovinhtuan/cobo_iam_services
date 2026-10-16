@@ -3,6 +3,7 @@ package inmemory
 import (
 	"context"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -86,16 +87,33 @@ func (v *StaticCredentialVerifier) FindUserByUserID(_ context.Context, userID st
 	return nil, nil
 }
 
-func (v *StaticCredentialVerifier) FindUserByEmail(_ context.Context, email string) (*iamapp.RecoveryUser, error) {
-	key := strings.TrimSpace(strings.ToLower(email))
+// FindRecoveryUsers follows the MySQL repository: every account whose mailbox (email, else login_id)
+// is the address, ordered by user id (map order used to decide); else the login_id owner.
+func (v *StaticCredentialVerifier) FindRecoveryUsers(_ context.Context, address string, limit int) ([]iamapp.RecoveryUser, error) {
+	key := strings.TrimSpace(strings.ToLower(address))
+	if key == "" || limit <= 0 {
+		return nil, nil
+	}
+	var byMailbox []iamapp.RecoveryUser
+	var byLogin []iamapp.RecoveryUser
 	for _, u := range v.Users {
-		if strings.TrimSpace(strings.ToLower(u.Email)) == key || strings.TrimSpace(strings.ToLower(u.LoginID)) == key {
-			return &iamapp.RecoveryUser{
-				UserID: u.UserID, Email: coalesce(u.Email, u.LoginID), FullName: u.FullName, LoginID: u.LoginID,
-			}, nil
+		ru := iamapp.RecoveryUser{UserID: u.UserID, Email: coalesce(u.Email, u.LoginID), FullName: u.FullName, LoginID: u.LoginID}
+		if strings.TrimSpace(strings.ToLower(ru.Email)) == key {
+			byMailbox = append(byMailbox, ru)
+		} else if strings.TrimSpace(strings.ToLower(u.LoginID)) == key {
+			byLogin = append(byLogin, ru)
 		}
 	}
-	return nil, nil
+	found := byMailbox
+	if len(found) == 0 {
+		found = byLogin
+		limit = 1
+	}
+	sort.Slice(found, func(i, j int) bool { return found[i].UserID < found[j].UserID })
+	if len(found) > limit {
+		found = found[:limit]
+	}
+	return found, nil
 }
 
 func (v *StaticCredentialVerifier) StorePasswordResetToken(_ context.Context, _ iamapp.RecoveryTokenRecord) error {

@@ -163,7 +163,7 @@ type stubRecoveryEmailFlag struct {
 	verified bool
 }
 
-func (s *stubRecoveryEmailFlag) FindUserByEmail(context.Context, string) (*iamapp.RecoveryUser, error) {
+func (s *stubRecoveryEmailFlag) FindRecoveryUsers(context.Context, string, int) ([]iamapp.RecoveryUser, error) {
 	return nil, nil
 }
 func (s *stubRecoveryEmailFlag) FindUserByUserID(context.Context, string) (*iamapp.RecoveryUser, error) {
@@ -530,8 +530,8 @@ type recordingRecovery struct {
 	activated      []string
 }
 
-func (r *recordingRecovery) FindUserByEmail(context.Context, string) (*iamapp.RecoveryUser, error) {
-	return &iamapp.RecoveryUser{UserID: "u_new", Email: "staff@example.com", FullName: "Staff", LoginID: "staff@example.com"}, nil
+func (r *recordingRecovery) FindRecoveryUsers(context.Context, string, int) ([]iamapp.RecoveryUser, error) {
+	return []iamapp.RecoveryUser{{UserID: "u_new", Email: "staff@example.com", FullName: "Staff", LoginID: "staff@example.com"}}, nil
 }
 func (r *recordingRecovery) FindUserByUserID(context.Context, string) (*iamapp.RecoveryUser, error) {
 	return &iamapp.RecoveryUser{UserID: "u_new", Email: "staff@example.com", FullName: "Staff", LoginID: "staff@example.com"}, nil

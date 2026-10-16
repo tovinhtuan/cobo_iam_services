@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"strings"
 	"time"
 )
 
@@ -88,7 +89,11 @@ type SessionRepository interface {
 }
 
 type AuthRecoveryRepository interface {
-	FindUserByEmail(ctx context.Context, email string) (*RecoveryUser, error)
+	// FindRecoveryUsers returns the accounts a password reset for `address` goes to: every account
+	// whose mailbox (email, else login_id) is the address, oldest first, at most `limit`; when there
+	// is none, the account that signs in with the address (its mail goes to its own mailbox).
+	// users.email is not unique, so several accounts can share one mailbox.
+	FindRecoveryUsers(ctx context.Context, address string, limit int) ([]RecoveryUser, error)
 	FindUserByUserID(ctx context.Context, userID string) (*RecoveryUser, error)
 	StorePasswordResetToken(ctx context.Context, token RecoveryTokenRecord) error
 	ConsumePasswordResetToken(ctx context.Context, tokenHash string, now time.Time) (string, error)
@@ -242,6 +247,24 @@ type LoginRequest struct {
 	MFAOTP string `json:"mfa_otp,omitempty"`
 	// Extensions carries forward-compatible fields (OIDC state, device id, etc.) for SSOLoginBridge / MFACheck.
 	Extensions map[string]any `json:"extensions,omitempty"`
+}
+
+// Identifier is the sign-in name as typed: login_id, else the email alias the web form sends.
+func (r LoginRequest) Identifier() string {
+	if id := strings.TrimSpace(r.LoginID); id != "" {
+		return id
+	}
+	return strings.TrimSpace(r.Email)
+}
+
+// RecordedIdentifier is Identifier lowercased and cut to 191 runes (login_attempts.login_id) for
+// login_attempts and audit rows: a failed attempt stores whatever was typed, so its size is bounded.
+func (r LoginRequest) RecordedIdentifier() string {
+	id := strings.ToLower(r.Identifier())
+	if runes := []rune(id); len(runes) > 191 {
+		id = string(runes[:191])
+	}
+	return id
 }
 
 type LoginResponse struct {

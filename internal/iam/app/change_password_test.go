@@ -13,7 +13,7 @@ type credRecoveryBridge struct {
 	cred *iaminmem.StaticCredentialVerifier
 }
 
-func (b credRecoveryBridge) FindUserByEmail(context.Context, string) (*iamapp.RecoveryUser, error) {
+func (b credRecoveryBridge) FindRecoveryUsers(context.Context, string, int) ([]iamapp.RecoveryUser, error) {
 	return nil, nil
 }
 func (b credRecoveryBridge) FindUserByUserID(context.Context, string) (*iamapp.RecoveryUser, error) {
